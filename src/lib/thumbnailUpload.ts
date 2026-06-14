@@ -12,7 +12,7 @@ export interface ThumbnailUploadResult {
 export const uploadThumbnail = async (
   file: File, 
   productId: string, 
-  scheduleId?: string
+  _scheduleId?: string
 ): Promise<ThumbnailUploadResult> => {
   try {
     // 파일 크기 제한 (5MB)
@@ -40,7 +40,7 @@ export const uploadThumbnail = async (
     const fileName = `thumbnails/${productId}/${timestamp}-${randomId}.${fileExtension}`
 
     // Supabase Storage에 업로드
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('product-media')
       .upload(fileName, file, {
         cacheControl: '3600',
@@ -143,7 +143,7 @@ export const uploadProductMedia = async (
     const fileName = `${folderPath}/${timestamp}-${randomId}.${fileExtension}`
 
     // Supabase Storage에 업로드
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('product-media')
       .upload(fileName, file, {
         cacheControl: '3600',

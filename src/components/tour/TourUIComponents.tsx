@@ -1,4 +1,3 @@
-import React from 'react'
 
 // 연결 상태 라벨 컴포넌트
 export const ConnectionStatusLabel = ({ status, section }: { status: boolean, section: string }) => (

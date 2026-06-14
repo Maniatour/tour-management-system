@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import { 
   SheetInfo, 
@@ -36,7 +36,7 @@ export function useDataSync() {
     updated: 0, 
     errors: 0 
   })
-  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupLoading] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<SyncResult | null>(null)
   const [cleanupStatus, setCleanupStatus] = useState<CleanupStatus | null>(null)
 
@@ -411,8 +411,7 @@ export function useDataSync() {
         setSyncResult({
           success: true,
           message: result.message,
-          data: result.data,
-          count: result.count
+          data: { ...(result.data ?? {}), totalProcessed: result.count ?? result.data?.totalProcessed },
         })
         setLastSyncTime(new Date().toISOString())
         

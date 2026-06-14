@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 const emptyStatus = {
   connected: false,
@@ -21,8 +22,7 @@ export async function GET() {
       console.warn('[gmail/status] Supabase client not available (SUPABASE_SERVICE_ROLE_KEY may be missing)')
       return statusOk(emptyStatus)
     }
-    const { data, error } = await client
-      .from('gmail_connections')
+    const { data, error } = await fromUntypedTable(client, 'gmail_connections')
       .select('email, updated_at')
       .limit(1)
       .maybeSingle()
@@ -31,10 +31,11 @@ export async function GET() {
       console.error('[gmail/status] Supabase error:', error.message, error.code)
       return statusOk(emptyStatus)
     }
+    const row = data as { email?: string; updated_at?: string | null } | null
     return statusOk({
-      connected: !!data,
-      email: data?.email ?? null,
-      updated_at: data?.updated_at ?? null,
+      connected: !!row,
+      email: row?.email ?? null,
+      updated_at: row?.updated_at ?? null,
     })
   } catch (err) {
     console.error('[gmail/status] Unexpected error:', err)

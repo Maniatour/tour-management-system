@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   Dialog,
   DialogContent,
@@ -11,14 +12,12 @@ import {
 } from '@/components/ui/dialog'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import TipsShareModal from '@/components/TipsShareModal'
-import html2pdf from 'html2pdf.js'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import {
   fetchEmployeeHourlyRatePeriods,
   getHourlyRateForEmployeeOnDate,
   employeeHasHourlyPeriods,
-  lasVegasDateFromCheckIn,
   type EmployeeRatePeriod,
 } from '@/lib/employeeHourlyRates'
 import {
@@ -92,7 +91,7 @@ interface BiweeklyTeamMember {
   email: string
   name_ko: string
   name_en?: string | null
-  position: string
+  position: string | null
   display_name: string | null
   languages?: string[] | null
   phone?: string | null
@@ -191,7 +190,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     photo_url: string
   } | null>(null)
   const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
-  const printContentRef = useRef<HTMLDivElement>(null)
 
   const guideFeesStandardApplied = useMemo(() => {
     if (expenseStandardCategories.length === 0) return null
@@ -446,7 +444,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       }
 
       // 선택된 직원의 이름 조회
-      const { data: teamData, error: teamError } = await supabase
+      const { data: teamData } = await supabase
         .from('team')
         .select('name_ko, display_name')
         .eq('email', selectedEmployee)
@@ -456,6 +454,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       const records = filteredData.map(record => ({
         ...record,
+        work_hours: record.work_hours ?? 0,
+        status: record.status ?? '',
         employee_name: employeeName
       }))
 
@@ -471,8 +471,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       setAttendanceRecords(sortedRecords)
 
-      const { data: mealRows, error: mealErr } = await supabase
-        .from('office_meal_log')
+      const { data: mealRows, error: mealErr } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('meal_date')
         .eq('employee_email', selectedEmployee)
         .gte('meal_date', startDate)
@@ -594,7 +593,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       const fees = await Promise.all(
         (data || []).map(async (tour) => {
           const isGuide = tour.tour_guide_id === selectedEmployee
-          const isAssistant = tour.assistant_id === selectedEmployee
           let prepayment_tip_total = 0
           let prepaidTips = 0
 
@@ -680,8 +678,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       return
     }
     try {
-      const { data, error } = await supabase
-        .from('company_expenses')
+      const { data, error } = await fromUntypedTable(supabase, 'company_expenses')
         .select('id, paid_to, paid_for, amount, submit_on, paid_on, description, payment_method, status, paid_to_employee_email')
         .eq('paid_to_employee_email', selectedEmployee)
         .order('submit_on', { ascending: false })
@@ -691,7 +688,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         setCompanyExpensesForEmployee([])
         return
       }
-      setCompanyExpensesForEmployee(data || [])
+      setCompanyExpensesForEmployee((data || []) as CompanyExpenseRow[])
     } catch (err) {
       console.error('회사 지출(지불 내역) 조회 오류:', err)
       setCompanyExpensesForEmployee([])
@@ -1000,13 +997,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               updated.guide_fee = value as number
               // 선택된 직원이 가이드인 경우 total_fee도 업데이트 (prepaid_tips, personal_car 포함)
               if (tour.tour_guide_id === selectedEmployee) {
-                updated.total_fee = value as number + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
+                updated.total_fee = (value as number) + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
               }
             } else if (field === 'driver_fee') {
               updated.driver_fee = value as number
               // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트 (prepaid_tips, personal_car 포함)
               if (tour.assistant_id === selectedEmployee) {
-                updated.total_fee = value as number + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
+                updated.total_fee = (value as number) + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
               }
             } else if (field === 'prepaid_tips') {
               updated.prepaid_tips = value as number
@@ -1014,9 +1011,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               const isGuide = tour.tour_guide_id === selectedEmployee
               const isAssistant = tour.assistant_id === selectedEmployee
               if (isGuide) {
-                updated.total_fee = (updated.guide_fee || 0) + value as number + (updated.personal_car || 0)
+                updated.total_fee = (updated.guide_fee || 0) + (value as number) + (updated.personal_car || 0)
               } else if (isAssistant) {
-                updated.total_fee = (updated.driver_fee || 0) + value as number + (updated.personal_car || 0)
+                updated.total_fee = (updated.driver_fee || 0) + (value as number) + (updated.personal_car || 0)
               }
             } else if (field === 'personal_car') {
               updated.personal_car = value as number
@@ -1024,9 +1021,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               const isGuide = tour.tour_guide_id === selectedEmployee
               const isAssistant = tour.assistant_id === selectedEmployee
               if (isGuide) {
-                updated.total_fee = (updated.guide_fee || 0) + (updated.prepaid_tips || 0) + value as number
+                updated.total_fee = (updated.guide_fee || 0) + (updated.prepaid_tips || 0) + (value as number)
               } else if (isAssistant) {
-                updated.total_fee = (updated.driver_fee || 0) + (updated.prepaid_tips || 0) + value as number
+                updated.total_fee = (updated.driver_fee || 0) + (updated.prepaid_tips || 0) + (value as number)
               }
             }
             return updated
@@ -1732,12 +1729,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       // 프린트용 HTML 생성 (handlePrint 함수의 내용 재사용)
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const employeeName = selectedMember?.display_name || selectedMember?.name_ko || ''
-      const employeePosition = selectedMember?.position?.toLowerCase() || ''
-      const isGuideOrDriver = employeePosition === '가이드' || 
-                              employeePosition === 'guide' || 
-                              employeePosition === 'tour guide' ||
-                              employeePosition === '드라이버' || 
-                              employeePosition === 'driver'
       
       // Personal Car 소계 계산
       const personalCarTotal = tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
@@ -2117,7 +2108,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       // Supabase Storage에 업로드
       const fileName = `payroll/${selectedEmployee}/${Date.now()}_payroll_${startDate}_${endDate}.pdf`
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('company-expense-files')
         .upload(fileName, pdfBlob, {
           contentType: 'application/pdf',
@@ -2287,7 +2278,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           expense_type: applied?.expense_type ?? 'operating',
           tax_deductible: applied?.tax_deductible ?? true,
           status: 'pending'
-        })
+        } as never)
 
       if (error) {
         console.error('회사 지출 추가 오류:', error)
@@ -3466,7 +3457,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       <TipsShareModal
         isOpen={tipsShareTourId !== null}
         onClose={handleCloseTipsShareModal}
-        tourId={tipsShareTourId ?? undefined}
+        {...(tipsShareTourId ? { tourId: tipsShareTourId } : {})}
         locale={locale}
         overlayClassName="z-[130]"
       />

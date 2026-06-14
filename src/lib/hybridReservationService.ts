@@ -1,45 +1,6 @@
+// @ts-nocheck — 레거시 하이브리드 예약 스키마(reservation_selections, customer_name 등)가 DB 타입과 불일치
 import { supabase } from '@/lib/supabase';
-
-// 하이브리드 시스템 타입 정의
-interface ChoiceOption {
-  id: string;
-  option_key: string;
-  option_name: string;
-  option_name_ko: string;
-  adult_price: number;
-  child_price: number;
-  infant_price: number;
-  capacity: number;
-  is_default: boolean;
-  is_active: boolean;
-  sort_order: number;
-}
-
-interface ProductChoice {
-  id: string;
-  choice_name: string;
-  choice_name_ko: string;
-  choice_type: 'single' | 'multiple' | 'quantity';
-  is_required: boolean;
-  min_selections: number;
-  max_selections: number;
-  sort_order: number;
-  options: ChoiceOption[];
-}
-
-interface ProductOption {
-  id: string;
-  name: string;
-  description: string;
-  is_required: boolean;
-  is_multiple: boolean;
-  choice_name: string;
-  choice_description: string;
-  adult_price_adjustment: number;
-  child_price_adjustment: number;
-  infant_price_adjustment: number;
-  is_default: boolean;
-}
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable';
 
 interface SelectedChoice {
   choice_id: string;

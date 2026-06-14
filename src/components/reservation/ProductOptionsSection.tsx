@@ -6,18 +6,12 @@ interface Product {
   base_price?: number
 }
 
-interface Option {
-  id: string
+interface RequiredOptionRow {
   name: string
-  type: string
-  required: boolean
-  choices: Array<{
-    id: string
-    name: string
-    adult_price_adjustment?: number
-    child_price_adjustment?: number
-    infant_price_adjustment?: number
-  }>
+  required?: boolean
+  adult_price_adjustment?: number
+  child_price_adjustment?: number
+  infant_price_adjustment?: number
 }
 
 interface ProductOptionsSectionProps {
@@ -26,9 +20,10 @@ interface ProductOptionsSectionProps {
     requiredOptions: Record<string, { choiceId: string; adult: number; child: number; infant: number }>
     selectedOptionPrices: Record<string, number>
   }
-  setFormData: (data: { [key: string]: unknown }) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setFormData: (data: any) => void
   products: Product[]
-  getRequiredOptionsForProduct: (productId: string) => Record<string, unknown>
+  getRequiredOptionsForProduct: (productId: string) => Record<string, RequiredOptionRow>
   t: (key: string) => string
 }
 
@@ -85,10 +80,10 @@ export default function ProductOptionsSection({
                           name={`option_${optionId}`}
                           value={optionId}
                           checked={formData.requiredOptions[optionId]?.choiceId === optionId}
-                                                      onChange={(e) => setFormData((prev: { [key: string]: unknown }) => ({
+                                                      onChange={(e) => setFormData((prev: any) => ({
                             ...prev,
                             requiredOptions: {
-                              ...prev.requiredOptions,
+                              ...(prev.requiredOptions as Record<string, unknown>),
                               [optionId]: {
                                 choiceId: e.target.value,
                                 adult: 0,
@@ -112,10 +107,10 @@ export default function ProductOptionsSection({
                               defaultValue={option.adult_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: { [key: string]: unknown }) => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
+                                    ...(prev.selectedOptionPrices as Record<string, unknown>),
                                     [`${optionId}_adult`]: value
                                   }
                                 }))
@@ -131,10 +126,10 @@ export default function ProductOptionsSection({
                               defaultValue={option.child_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: { [key: string]: unknown }) => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
+                                    ...(prev.selectedOptionPrices as Record<string, unknown>),
                                     [`${optionId}_child`]: value
                                   }
                                 }))
@@ -150,10 +145,10 @@ export default function ProductOptionsSection({
                               defaultValue={option.infant_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: { [key: string]: unknown }) => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
+                                    ...(prev.selectedOptionPrices as Record<string, unknown>),
                                     [`${optionId}_infant`]: value
                                   }
                                 }))

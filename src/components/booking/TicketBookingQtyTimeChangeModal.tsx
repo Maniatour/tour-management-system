@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import {
   getTicketBookingTimeSelectOptions,
   getTicketBookingTimeSlotColors,
@@ -73,7 +73,6 @@ export default function TicketBookingQtyTimeChangeModal({
   saving,
 }: TicketBookingQtyTimeChangeModalProps) {
   const t = useTranslations('booking.ticketBooking')
-  const locale = useLocale()
   const submitterDisplayName = useTeamMemberDisplayName(submittedBy)
   const slotOptions = useMemo(() => getTicketBookingTimeSelectOptions(), [])
   const slotValues = useMemo(() => new Set(slotOptions.map((o) => o.value)), [slotOptions])
@@ -111,10 +110,10 @@ export default function TicketBookingQtyTimeChangeModal({
     return buildTicketBookingChangeRequestEmail({
       company,
       checkInDate,
-      category,
-      rnNumber,
-      note,
-      submitterDisplayName,
+      ...(category !== undefined ? { category } : {}),
+      ...(rnNumber !== undefined ? { rnNumber } : {}),
+      ...(note !== undefined ? { note } : {}),
+      ...(submitterDisplayName !== undefined ? { submitterDisplayName } : {}),
       currentQuantity: initialEa,
       currentTime: initialTime,
       requestedQuantity: reqEa,

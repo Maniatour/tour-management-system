@@ -5,7 +5,7 @@
 export type SupportedLocale = 'ko' | 'en' | 'ja' | 'zh'
 
 export interface TeamLanguageData {
-  languages?: string[] | null
+  languages?: string[] | string | null
 }
 
 /**

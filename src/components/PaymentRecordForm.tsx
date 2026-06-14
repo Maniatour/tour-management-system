@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Upload, X, Check, AlertCircle, CreditCard, DollarSign } from 'lucide-react'
+import { Upload, X, Check, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 

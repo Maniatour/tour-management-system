@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
         room_id,
         participant_email: email,
         participant_name: teamMember?.name_ko || email.split('@')[0],
-        participant_position: teamMember?.position,
-        is_admin: false
+        ...(teamMember?.position != null ? { participant_position: teamMember.position } : {}),
+        is_admin: false,
       }
     })
 

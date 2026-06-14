@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search, PieChart } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { Calendar, BarChart3, TrendingUp, Users, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search, PieChart } from 'lucide-react'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -34,7 +33,6 @@ type ReportTab =
   | 'pnl'
 
 export default function AdminReports({ }: AdminReportsProps) {
-  const t = useTranslations('reports')
   const { authUser } = useAuth()
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
@@ -85,6 +83,13 @@ export default function AdminReports({ }: AdminReportsProps) {
     checkPermission()
   }, [authUser?.email])
   
+  // 상태 관리 (탭·기간 — 새로고침 유지)
+  const [reportNav, setReportNav, reportNavHydrated] = useRoutePersistedState(
+    'report-nav',
+    { activeTab: 'comprehensive' as ReportTab, reportPeriod: 'daily' as ReportPeriod }
+  )
+  const { activeTab, reportPeriod } = reportNav
+
   // 데이터 관리
   /** 종합·예약 통계 탭에서만 예약·고객 전량 로드 — 나머지 탭은 마스터만으로 충분 */
   const needsFullReservationDataset =
@@ -102,13 +107,6 @@ export default function AdminReports({ }: AdminReportsProps) {
     disableReservationsAutoLoad: !needsFullReservationDataset,
     customersByReservationIds: !needsFullReservationDataset,
   })
-
-  // 상태 관리 (탭·기간 — 새로고침 유지)
-  const [reportNav, setReportNav, reportNavHydrated] = useRoutePersistedState(
-    'report-nav',
-    { activeTab: 'comprehensive' as ReportTab, reportPeriod: 'daily' as ReportPeriod }
-  )
-  const { activeTab, reportPeriod } = reportNav
 
   /** 명세 대조는 전용 페이지로 분리됨 — 예전에 저장된 탭 값 복구 */
   useEffect(() => {
@@ -484,8 +482,8 @@ export default function AdminReports({ }: AdminReportsProps) {
             dateRange={dateRange} 
             period={reportPeriod}
             reservations={reservations}
-            products={products}
-            channels={channels}
+            products={products ?? []}
+            channels={channels ?? []}
             customers={customers}
             reservationsAggregateReady={reservationsAggregateReady}
           />
@@ -495,8 +493,8 @@ export default function AdminReports({ }: AdminReportsProps) {
             dateRange={dateRange} 
             period={reportPeriod}
             reservations={reservations}
-            products={products}
-            channels={channels}
+            products={products ?? []}
+            channels={channels ?? []}
             customers={customers}
             reservationsAggregateReady={reservationsAggregateReady}
           />

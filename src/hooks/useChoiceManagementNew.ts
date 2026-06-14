@@ -50,7 +50,7 @@ interface ChoiceCombination {
   }>;
 }
 
-export function useChoiceManagement(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
+export function useChoiceManagement(productId: string, _selectedChannelId?: string, _selectedChannelType?: string) {
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([]);
   const [choiceCombinations, setChoiceCombinations] = useState<ChoiceCombination[]>([]);
   const [showCombinationPricing, setShowCombinationPricing] = useState(false);
@@ -100,9 +100,6 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       console.log('새로운 시스템에서 로드된 초이스 데이터:', choicesData);
 
       if (choicesData && choicesData.length > 0) {
-        const combinations: ChoiceCombination[] = [];
-
-        // 모든 그룹의 경우의 수를 생성하는 함수
         const generateAllCombinations = (choices: ProductChoice[]) => {
           if (choices.length === 0) return [];
           
@@ -172,7 +169,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           });
         };
 
-        const allCombinations = generateAllCombinations(choicesData);
+        const allCombinations = generateAllCombinations(choicesData as ProductChoice[]);
         console.log('새로운 시스템에서 생성된 모든 초이스 조합:', allCombinations);
         setChoiceCombinations(allCombinations);
         return;
@@ -303,7 +300,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       }
 
       console.log('새로운 시스템에서 로드된 초이스 그룹:', data);
-      setProductChoices(data || []);
+        setProductChoices((data || []) as unknown as ProductChoice[])
     } catch (error) {
       console.error('초이스 그룹 로드 실패:', error);
       setProductChoices([]);

@@ -27,8 +27,8 @@ interface ProductFaqTabProps {
 export default function ProductFaqTab({
   productId,
   isNewProduct,
-  formData,
-  setFormData
+  formData: _formData,
+  setFormData: _setFormData
 }: ProductFaqTabProps) {
   const [faqs, setFaqs] = useState<FaqItem[]>([])
   const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null)
@@ -227,8 +227,12 @@ export default function ProductFaqTab({
           // 번역된 내용을 FAQ에 적용
           updatedFaqs[i] = {
             ...updatedFaqs[i],
-            question_en: result.translatedFields.question,
-            answer_en: result.translatedFields.answer
+            ...(result.translatedFields.question != null
+              ? { question_en: result.translatedFields.question }
+              : {}),
+            ...(result.translatedFields.answer != null
+              ? { answer_en: result.translatedFields.answer }
+              : {}),
           }
         } else {
           console.warn(`FAQ ${i + 1}번 번역 실패:`, result.error)
@@ -274,8 +278,12 @@ export default function ProductFaqTab({
         const updatedFaqs = [...faqs]
         updatedFaqs[faqIndex] = {
           ...updatedFaqs[faqIndex],
-          question_en: result.translatedFields.question,
-          answer_en: result.translatedFields.answer
+          ...(result.translatedFields.question != null
+            ? { question_en: result.translatedFields.question }
+            : {}),
+          ...(result.translatedFields.answer != null
+            ? { answer_en: result.translatedFields.answer }
+            : {}),
         }
         setFaqs(updatedFaqs)
       } else {
@@ -295,7 +303,7 @@ export default function ProductFaqTab({
     setSuggestionError(null)
 
     try {
-      const productTitle = (formData.title as string) || '투어 상품'
+      const productTitle = '투어 상품'
       const suggestedQuestion = await suggestFAQQuestion(productTitle)
       
       const updatedFaqs = [...faqs]
@@ -676,7 +684,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
                   type="button"
                   onClick={async () => {
                     try {
-                      const productTitle = (formData.title as string) || '투어 상품'
+                      const productTitle = '투어 상품'
                       const suggestedQuestion = await suggestFAQQuestion(productTitle)
                       handleInputChange('question', suggestedQuestion)
                     } catch (error) {

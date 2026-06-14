@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'

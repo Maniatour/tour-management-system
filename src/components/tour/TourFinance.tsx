@@ -111,7 +111,7 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           isOpen={isTipsShareModalOpen}
           onClose={() => setIsTipsShareModalOpen(false)}
           tourId={tour.id}
-          onReservationClick={onReservationClick}
+          {...(onReservationClick ? { onReservationClick } : {})}
         />
       )}
     </div>

@@ -103,7 +103,7 @@ function collectIds(rows: unknown): string[] {
 /** Supabase 단일 요청: 네트워크/RLS 등으로 실패해도 검색 나머지 조건은 유지 */
 async function safeSelectIds(
   label: string,
-  run: () => Promise<{ data: unknown; error: { message?: string } | null }>
+  run: () => PromiseLike<{ data: unknown; error: { message?: string } | null }>
 ): Promise<string[]> {
   try {
     const { data, error } = await run()
@@ -401,7 +401,7 @@ export async function fetchAdminReservationList(
         if (error) {
           return { data: null, count: null, error: error as Error }
         }
-        const batch = (data || []) as Record<string, unknown>[]
+        const batch = (data || []) as unknown as Record<string, unknown>[]
         if (offset === 0) {
           totalCount = count ?? null
         }
@@ -432,7 +432,7 @@ export async function fetchAdminReservationList(
     if (error) {
       return { data: null, count: null, error: error as Error }
     }
-    return { data: (data || []) as Record<string, unknown>[], count: count ?? null, error: null }
+    return { data: (data || []) as unknown as Record<string, unknown>[], count: count ?? null, error: null }
   } catch (e) {
     return { data: null, count: null, error: e instanceof Error ? e : new Error(String(e)) }
   }
@@ -481,12 +481,12 @@ export async function fetchAdminReservationListAllFlat(
         mode: 'card-flat',
         page,
         pageSize,
-        includeExactCount: page === 1 ? args.includeExactCount : false,
+        includeExactCount: page === 1 ? (args.includeExactCount ?? false) : false,
       })
       if (error) {
         return { data: null, error }
       }
-      const batch = (data || []) as Record<string, unknown>[]
+      const batch = (data || []) as unknown as Record<string, unknown>[]
       merged.push(...batch)
       if (batch.length < pageSize) {
         break
@@ -541,12 +541,12 @@ export async function fetchAdminReservationListAllFlatProgressive(
         mode: 'card-flat',
         page,
         pageSize,
-        includeExactCount: page === 1 ? args.includeExactCount : false,
+        includeExactCount: page === 1 ? (args.includeExactCount ?? false) : false,
       })
       if (error) {
         return { error, loadedRowCount: mergedLoaded }
       }
-      const batch = (data || []) as Record<string, unknown>[]
+      const batch = (data || []) as unknown as Record<string, unknown>[]
       if (page === 1) {
         totalCount = count ?? null
       }
@@ -629,7 +629,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
       if (error) {
         return { error: error as Error, loadedRowCount: merged.length }
       }
-      const batch = (data || []) as Record<string, unknown>[]
+      const batch = (data || []) as unknown as Record<string, unknown>[]
 
       if (offset === 0) {
         totalCount = count ?? null

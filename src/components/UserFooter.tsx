@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Calendar, MessageCircle, AlertCircle, Bell, X } from 'lucide-react'
+import { Home, Calendar, MessageCircle, AlertCircle, X } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -14,8 +14,9 @@ interface UserFooterProps {
 
 export default function UserFooter({ locale }: UserFooterProps) {
   const pathname = usePathname()
-  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, simulatedUser, isSimulating, isInitialized } = useAuth()
   const t = useTranslations('common')
+  const [mounted, setMounted] = useState(false)
   const [showAnnouncements, setShowAnnouncements] = useState(false)
   const [showTeamChats, setShowTeamChats] = useState(false)
   const [announcements, setAnnouncements] = useState<any[]>([])
@@ -24,6 +25,13 @@ export default function UserFooter({ locale }: UserFooterProps) {
 
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // SSR·하이드레이션: AuthContext 스냅샷과 서버 HTML이 달라지지 않도록 클라이언트 준비 후 역할별 메뉴 표시
+  const footerAuthReady = mounted && isInitialized
 
   // 컴포넌트 마운트 시 데이터 로드
   useEffect(() => {
@@ -214,21 +222,31 @@ export default function UserFooter({ locale }: UserFooterProps) {
   const shouldShowTeamFeatures = userRole && userRole !== 'customer'
   
   // 고객인 경우 고객용 메뉴 표시
-  const isCustomer = userRole === 'customer'
+  const isCustomer = footerAuthReady && userRole === 'customer'
+
+  const visibleFooterItems = footerItems.filter((item) => {
+    if (item.showForAll) return true
+    if (!footerAuthReady) return false
+    if (shouldShowTeamFeatures) return !item.showForCustomer
+    if (isCustomer) return Boolean(item.showForCustomer)
+    return false
+  })
+
+  const footerGridClass =
+    visibleFooterItems.length <= 2
+      ? 'grid-cols-2'
+      : visibleFooterItems.length === 3
+        ? 'grid-cols-3'
+        : 'grid-cols-4'
 
   return (
     <>
       {/* 푸터 */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40" style={{ height: 'var(--footer-height)' }}>
-        <div className="grid grid-cols-4 h-full">
-          {footerItems.map((item) => {
+        <div className={`grid ${footerGridClass} h-full`}>
+          {visibleFooterItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.href)
-            
-            // 팀 기능은 팀원만, 고객 기능은 고객만 볼 수 있음
-            if (!item.showForAll && !shouldShowTeamFeatures && !(item.showForCustomer && isCustomer)) {
-              return null
-            }
             
             return (
               <button

@@ -85,7 +85,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   formData,
   setFormData,
   products,
-  loadProductChoices,
+  loadProductChoices: _loadProductChoices,
   t,
   layout = 'modal',
   onAccordionToggle,
@@ -113,7 +113,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   // 새로운 간결한 초이스 시스템에서 초이스 로드
   const loadProductChoicesNew = useCallback(async (productId: string) => {
     if (!productId) {
-      setFormData(prev => ({
+      setFormData((prev: ProductSelectionSectionProps['formData']) => ({
         ...prev,
         productChoices: [],
         selectedChoices: [],
@@ -160,7 +160,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       console.log('ProductSelectionSection에서 로드된 초이스:', data, '편집모드:', isEditMode);
       
       // 편집 모드일 때는 기존 선택을 유지하고, productChoices만 업데이트
-      setFormData(prev => {
+      setFormData((prev: ProductSelectionSectionProps['formData']) => {
         const hasExistingChoices = prev.selectedChoices && prev.selectedChoices.length > 0;
         
         // 편집 모드이거나 기존 선택이 있으면 선택값 유지
@@ -182,7 +182,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
               choice_id: choice.id,
               option_id: defaultOption.id,
               quantity: 1,
-              total_price: defaultOption.adult_price
+              total_price: defaultOption.adult_price ?? 0
             });
           }
         });
@@ -196,7 +196,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       });
     } catch (error) {
       console.error('초이스 로드 오류:', error);
-      setFormData(prev => ({
+      setFormData((prev: ProductSelectionSectionProps['formData']) => ({
         ...prev,
         productChoices: [],
         selectedChoices: [],
@@ -216,7 +216,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
     }
     
     if (product) {
-      setFormData(prev => ({
+      setFormData((prev: ProductSelectionSectionProps['formData']) => ({
         ...prev,
         productId: product.id,
         selectedProductCategory: product.category || '',
@@ -230,7 +230,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         choicesTotal: 0
       }));
     } else {
-      setFormData(prev => ({
+      setFormData((prev: ProductSelectionSectionProps['formData']) => ({
         ...prev,
         productId: '',
         selectedProductCategory: '',
@@ -244,40 +244,6 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         choicesTotal: 0
       }));
     }
-  }, []);
-
-  // 초이스 선택 변경 핸들러
-  const handleChoiceChange = useCallback((choiceId: string, optionId: string, quantity: number = 1) => {
-    setFormData(prev => {
-      const existingIndex = prev.selectedChoices.findIndex(c => c.choice_id === choiceId);
-      const choice = prev.productChoices.find(c => c.id === choiceId);
-      const option = choice?.options?.find(o => o.id === optionId);
-      
-      if (!option) return prev;
-
-      const newChoice: ReservationChoice = {
-        choice_id: choiceId,
-        option_id: optionId,
-        quantity,
-        total_price: option.adult_price * quantity
-      };
-
-      let updatedChoices;
-      if (existingIndex >= 0) {
-        updatedChoices = [...prev.selectedChoices];
-        updatedChoices[existingIndex] = newChoice;
-      } else {
-        updatedChoices = [...prev.selectedChoices, newChoice];
-      }
-
-      const choicesTotal = updatedChoices.reduce((sum, choice) => sum + choice.total_price, 0);
-
-      return {
-        ...prev,
-        selectedChoices: updatedChoices,
-        choicesTotal
-      };
-    });
   }, []);
 
   // 초이스 선택 변경 핸들러 - useCallback으로 최적화
@@ -301,7 +267,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
     
     const choicesTotal = processedSelections.reduce((sum, selection) => sum + (selection.total_price || 0), 0);
     
-    setFormData(prev => {
+    setFormData((prev: ProductSelectionSectionProps['formData']) => {
       console.log('ProductSelectionSectionNew: setFormData 실행', {
         prevSelectedChoicesCount: Array.isArray(prev.selectedChoices) ? prev.selectedChoices.length : 0,
         prevSelectedChoicesType: Array.isArray(prev.selectedChoices) ? 'array' : typeof prev.selectedChoices,
@@ -349,6 +315,15 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
     }
   }, [formData.productId, formData.productChoices, formData.selectedChoices, isEditMode]);
   
+  const isOtaChannelForChoices = (() => {
+    const selectedChannel = channels.find(c => c.id === formData.channelId)
+    return Boolean(
+      selectedChannel &&
+        ((selectedChannel.type || '').toLowerCase() === 'ota' ||
+          (selectedChannel.category || '').toLowerCase() === 'ota')
+    )
+  })()
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -381,7 +356,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
             <button
               type="button"
               onClick={() => {
-                setFormData(prev => ({
+                setFormData((prev: ProductSelectionSectionProps['formData']) => ({
                   ...prev,
                   productId: '',
                   selectedProductCategory: '',
@@ -432,14 +407,15 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
                 children={formData.child || 0}
                 infants={formData.infant || 0}
                 onSelectionChange={handleSelectionChange}
-                initialSelections={formData.selectedChoices || []}
-                isOTAChannel={(() => {
-                  const selectedChannel = channels.find(c => c.id === formData.channelId);
-                  return selectedChannel && (
-                    (selectedChannel.type || '').toLowerCase() === 'ota' || 
-                    (selectedChannel.category || '').toLowerCase() === 'ota'
-                  );
-                })()}
+                initialSelections={(formData.selectedChoices || []) as Array<{
+                  choice_id: string
+                  option_id: string
+                  option_key: string
+                  option_name_ko: string
+                  quantity: number
+                  total_price: number
+                }>}
+                {...(isOtaChannelForChoices ? { isOTAChannel: true } : {})}
               />
               <div className="mt-4 text-right">
                 <span className="text-sm font-medium text-gray-900">

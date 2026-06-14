@@ -53,7 +53,7 @@ export default function ProductScheduleTab({
   const [showTableAdd, setShowTableAdd] = useState(false)
   const [tableSchedules, setTableSchedules] = useState<ScheduleItem[]>([])
   const [saving, setSaving] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string | null}>>([])
   const [viewMode, setViewMode] = useState<'customer' | 'guide'>('customer')
   const [language, setLanguage] = useState<'ko' | 'en'>('ko')
 
@@ -283,7 +283,7 @@ export default function ProductScheduleTab({
         const { error: deleteError } = await supabase
           .from('product_schedules')
           .delete()
-          .in('id', schedulesToDelete)
+          .in('id', schedulesToDelete.filter((id): id is string => Boolean(id)))
 
         if (deleteError) {
           console.error('일정 삭제 오류:', deleteError)
@@ -935,7 +935,7 @@ export default function ProductScheduleTab({
               onSave={handleSaveTableSchedules}
               onClose={() => setShowTableAdd(false)}
               saving={saving}
-              teamMembers={teamMembers}
+          teamMembers={teamMembers.map((m) => ({ ...m, position: m.position ?? '' }))}
               productId={productId}
             />
           </div>

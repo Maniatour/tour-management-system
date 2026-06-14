@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, Edit2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
 
 interface OptionManagementModalProps {
   isOpen: boolean
@@ -30,12 +29,11 @@ interface TourExpense {
   product_id?: string | null
 }
 
-const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
+const OptionManagementModal = ({
   isOpen,
   onClose,
   onOptionsUpdated
-}) => {
-  const t = useTranslations('tours.tourExpense')
+}: OptionManagementModalProps) => {
   const [activeTab, setActiveTab] = useState<'paid_to' | 'paid_for'>('paid_to')
   const [options, setOptions] = useState<OptionItem[]>([])
   const [loading, setLoading] = useState(false)

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { X, Ban, Loader2, RefreshCw, FileText, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
@@ -73,7 +73,7 @@ async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): 
 
   const rawBase = pricingRows?.[0]?.commission_base_price
   const amount =
-    rawBase != null && rawBase !== '' && !Number.isNaN(Number(rawBase)) ? Number(rawBase) : 0
+    rawBase != null && !Number.isNaN(Number(rawBase)) ? Number(rawBase) : 0
 
   const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
   const { error } = await supabase.from('payment_records').insert({
@@ -171,7 +171,7 @@ async function enrichRowsWithCustomerNames(
       .select('id, name, name_ko, name_en')
       .in('id', [...customerIds])
     for (const c of custRows || []) {
-      const row = c as { id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }
+      const row = c as unknown as { id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }
       custMap[row.id] = row
     }
   }
@@ -202,7 +202,7 @@ async function enrichRowsWithCustomerNames(
     channel_rn: r.channel_rn,
     product_id: r.product_id,
     total_people: r.total_people,
-    customers: pickDisplay(r, firstRcByReservation.get(r.id)),
+    customers: pickDisplay(r, firstRcByReservation.get(r.id)) ?? null,
   }))
 }
 

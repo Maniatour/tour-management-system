@@ -1,14 +1,10 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useRef } from 'react'
 import { 
   X, 
   Upload, 
   FileText, 
-  Calendar, 
-  AlertTriangle, 
-  Tag,
   Save,
   Loader2
 } from 'lucide-react'
@@ -64,7 +60,6 @@ export default function DocumentUploadModal({
   onSuccess,
   editingDocument
 }: DocumentUploadModalProps) {
-  const t = useTranslations('documents')
   const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -188,7 +183,7 @@ export default function DocumentUploadModal({
         // 문서 수정
         const { error } = await supabase
           .from('documents')
-          .update(documentData)
+          .update(documentData as never)
           .eq('id', editingDocument.id)
         
         if (error) throw error
@@ -200,8 +195,8 @@ export default function DocumentUploadModal({
           .from('documents')
           .insert({
             ...documentData,
-            created_by: user?.id
-          })
+            ...(user?.id ? { created_by: user.id } : {}),
+          } as never)
         
         if (error) throw error
         

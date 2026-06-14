@@ -23,7 +23,7 @@ interface AdminDashboardProps {
   params: Promise<{ locale: string }>
 }
 
-export default function AdminDashboard({ params }: AdminDashboardProps) {
+export default function AdminDashboard(_props: AdminDashboardProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('admin')

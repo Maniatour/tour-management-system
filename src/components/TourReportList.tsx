@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -10,42 +10,18 @@ import {
   FileText, 
   Search, 
   Filter, 
-  Calendar, 
   MapPin, 
   Users, 
   DollarSign, 
   Cloud, 
   Star, 
-  MessageSquare, 
-  AlertTriangle, 
-  Lightbulb, 
   MessageCircle, 
   Handshake,
-  Eye,
   Edit,
   Trash2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { displayCourseName, type CourseForMainStops } from '@/lib/tourReportMainStops'
-
-const COURSE_ID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function looksLikeCourseId(s: string) {
-  return COURSE_ID_RE.test(s)
-}
-
-const INCIDENTS_OPTIONS = [
-  { ko: '교통 지연', en: 'Traffic Delay' },
-  { ko: '날씨 문제', en: 'Weather Issue' },
-  { ko: '차량 고장', en: 'Vehicle Breakdown' },
-  { ko: '건강 문제', en: 'Health Issue' },
-  { ko: '사고', en: 'Accident' },
-  { ko: '예약 오류', en: 'Booking Error' },
-  { ko: '가이드 지연', en: 'Guide Delay' },
-  { ko: '고객 불만', en: 'Customer Complaint' },
-  { ko: '기타', en: 'Other' }
-]
 
 const LOST_DAMAGE_OPTIONS = [
   { ko: '분실물 없음', en: 'No Lost Items' },
@@ -132,7 +108,7 @@ export default function TourReportList({
 }: TourReportListProps) {
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
-  const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [stopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [weatherFilter, setWeatherFilter] = useState<string>('all')
@@ -170,7 +146,7 @@ export default function TourReportList({
       const { data, error } = await query
 
       if (error) throw error
-      setReports(data || [])
+      setReports((data ?? []) as TourReport[])
     } catch (error) {
       console.error('Error fetching tour reports:', error)
       toast.error('리포트를 불러오는 중 오류가 발생했습니다.')

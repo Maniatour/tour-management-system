@@ -6,20 +6,17 @@ import { supabase } from '@/lib/supabase'
  * 기존 테이블의 payment_method 값들을 payment_methods 테이블로 마이그레이션
  * POST /api/payment-methods/migrate
  */
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     const result = await paymentMethodMigration.migrateExistingPaymentMethods()
 
     if (!result.success) {
-      return NextResponse.json(
-        { success: false, message: result.message, ...result },
-        { status: 500 }
-      )
+      return NextResponse.json({ ...result, success: false }, { status: 500 })
     }
 
     return NextResponse.json({
+      ...result,
       success: true,
-      ...result
     })
   } catch (error) {
     console.error('Payment method migration error:', error)
@@ -38,7 +35,7 @@ export async function POST(request: NextRequest) {
  * 기존 payment_method 값들 수집 (마이그레이션 전 확인용)
  * GET /api/payment-methods/migrate
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const existingMethods = await paymentMethodMigration.collectExistingPaymentMethods()
 

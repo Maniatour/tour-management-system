@@ -78,10 +78,22 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
       }
 
       // 2. 고유한 option_id 목록 추출
-      const uniqueOptionIds = [...new Set(reservationOptionsData.map(item => item.option_id))]
+      const uniqueOptionIds = [
+        ...new Set(
+          reservationOptionsData
+            .map((item) => item.option_id)
+            .filter((id): id is string => id != null && id !== '')
+        ),
+      ]
       
       // 3. 고유한 reservation_id 목록 추출
-      const uniqueReservationIds = [...new Set(reservationOptionsData.map(item => item.reservation_id))]
+      const uniqueReservationIds = [
+        ...new Set(
+          reservationOptionsData
+            .map((item) => item.reservation_id)
+            .filter((id): id is string => id != null && id !== '')
+        ),
+      ]
       
       // 4. options 테이블에서 옵션 정보 조회
       const { data: optionsData, error: optionsError } = await supabase
@@ -104,7 +116,7 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
       }
 
       // 5. reservations 테이블에서 customer_id 조회
-      let reservationsData = []
+      let reservationsData: Array<{ id: string; customer_id: string | null }> = []
       if (uniqueReservationIds.length > 0) {
         try {
           const { data: reservationsResult, error: reservationsError } = await supabase
@@ -132,10 +144,16 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
       }
 
       // 6. 고유한 customer_id 목록 추출
-      const uniqueCustomerIds = [...new Set(reservationsData.map(reservation => reservation.customer_id).filter(Boolean))]
+      const uniqueCustomerIds = [
+        ...new Set(
+          reservationsData
+            .map((reservation) => reservation.customer_id)
+            .filter((id): id is string => id != null && id !== '')
+        ),
+      ]
       
       // 7. customers 테이블에서 고객 이름 조회
-      let customersData = []
+      let customersData: Array<{ id: string; name: string | null }> = []
       if (uniqueCustomerIds.length > 0) {
         try {
           const { data: customersResult, error: customersError } = await supabase
@@ -169,17 +187,22 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
         const customerInfo = customersData?.find(customer => customer.id === reservationInfo?.customer_id)
         
         // 실제 고객 이름이 있으면 사용, 없으면 예약 ID 사용
-        const displayName = customerInfo?.name || `예약 ${reservationOption.reservation_id.slice(-6)}`
+        const displayName =
+          customerInfo?.name ||
+          (reservationOption.reservation_id
+            ? `예약 ${reservationOption.reservation_id.slice(-6)}`
+            : '예약')
         
         return {
           ...reservationOption,
-          quantity: reservationOption.ea,
+          reservation_id: reservationOption.reservation_id ?? '',
+          quantity: reservationOption.ea ?? 0,
           customer_name: displayName,
-          option: optionInfo
+          ...(optionInfo ? { option: optionInfo } : {}),
         }
       })
 
-      setReservationOptions(combinedData)
+      setReservationOptions(combinedData as ReservationOption[])
     } catch (error) {
       console.error('옵션 조회 오류:', error)
       setError('옵션을 불러오는 중 오류가 발생했습니다.')

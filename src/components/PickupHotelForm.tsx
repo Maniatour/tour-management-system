@@ -8,64 +8,6 @@ import { translatePickupHotelFields, type PickupHotelTranslationFields } from '@
 import { suggestHotelDescription } from '@/lib/chatgptService'
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
 
-// Google Maps 타입 정의
-interface GoogleMapsMap {
-  addListener: (event: string, callback: (event: GoogleMapsMapMouseEvent) => void) => void
-}
-
-interface GoogleMapsMarker {
-  setMap: (map: GoogleMapsMap | null) => void
-}
-
-interface GoogleMapsAdvancedMarker {
-  position: { lat: () => number; lng: () => number }
-  setPosition: (position: { lat: number; lng: number }) => void
-  addListener: (event: string, callback: () => void) => void
-  setMap: (map: GoogleMapsMap | null) => void
-}
-
-interface GoogleMapsMapMouseEvent {
-  latLng?: {
-    lat: () => number
-    lng: () => number
-  }
-}
-
-interface GoogleMapsMapTypeId {
-  ROADMAP: string
-}
-
-interface GoogleMapsGeocoder {
-  geocode: (request: { location?: { lat: number; lng: number }; address?: string }, callback: (results: GoogleMapsGeocoderResult[] | null, status: string) => void) => void
-}
-
-interface GoogleMapsGeocoderResult {
-  formatted_address: string
-  geometry: {
-    location: {
-      lat: () => number
-      lng: () => number
-    }
-  }
-}
-
-declare global {
-  interface Window {
-    google: {
-      maps: {
-        Map: new (element: HTMLElement, options: { center: { lat: number; lng: number }; zoom: number; mapTypeId: string }) => GoogleMapsMap
-        Marker: new (options: { position: { lat: number; lng: number }; map: GoogleMapsMap; title: string }) => GoogleMapsMarker
-        MapTypeId: GoogleMapsMapTypeId
-        Geocoder: new () => GoogleMapsGeocoder
-        MapMouseEvent: GoogleMapsMapMouseEvent
-        marker: {
-          AdvancedMarkerElement: new (options: { position: { lat: number; lng: number }; map: GoogleMapsMap; title: string; draggable?: boolean }) => GoogleMapsAdvancedMarker
-        }
-      }
-    }
-  }
-}
-
 interface PickupHotelFormProps {
   hotel?: PickupHotel | null
   onSubmit: (hotelData: Omit<PickupHotel, 'id' | 'created_at' | 'updated_at'>) => void
@@ -180,16 +122,16 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
       const map = new window.google.maps.Map(mapElement, mapOptions)
 
-      let marker: GoogleMapsAdvancedMarker | null = null
+      let marker: google.maps.Marker | google.maps.marker.AdvancedMarkerElement | null = null
 
       // 지도 클릭 이벤트
-      map.addListener('click', (event: GoogleMapsMapMouseEvent) => {
+      map.addListener('click', (event: google.maps.MapMouseEvent) => {
         const lat = event.latLng?.lat()
         const lng = event.latLng?.lng()
         
-        if (lat && lng) {
+        if (lat != null && lng != null) {
           // 기존 마커 제거
-          if (marker) {
+          if (marker && 'setMap' in marker) {
             marker.setMap(null)
           }
 
@@ -206,7 +148,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               position: { lat, lng },
               map: map,
               title: '선택된 위치'
-            }) as GoogleMapsAdvancedMarker
+            })
             console.log('PickupHotelForm 클릭 - 기본 Marker 사용')
           }
 
@@ -218,11 +160,13 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
           // 역지오코딩으로 주소 가져오기
           const geocoder = new window.google.maps.Geocoder()
-          geocoder.geocode({ location: { lat, lng } }, (results: GoogleMapsGeocoderResult[] | null, status: string) => {
+          geocoder.geocode({ location: { lat, lng } }, (results, status) => {
             if (status === 'OK' && results && results[0]) {
               const address = results[0].formatted_address
-              setSelectedAddress(address)
-              setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
+              if (address) {
+                setSelectedAddress(address)
+                setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
+              }
             }
           })
         }
@@ -239,12 +183,12 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
     try {
       const geocoder = new window.google.maps.Geocoder()
-      geocoder.geocode({ address: searchTerm + ' Las Vegas' }, (results: GoogleMapsGeocoderResult[] | null, status: string) => {
+      geocoder.geocode({ address: searchTerm + ' Las Vegas' }, (results, status) => {
         if (status === 'OK' && results && results[0]) {
           const location = results[0].geometry.location
           const lat = location.lat()
           const lng = location.lng()
-          const address = results[0].formatted_address
+          const address = results[0].formatted_address ?? ''
 
           // 지도 중심 이동
           const mapElement = document.getElementById('map')

@@ -116,7 +116,8 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
 
       // 채널별로 그룹화
       const groupedData = data.reduce((acc, item) => {
-        const channelId = item.channel_id;
+        const channelId = item.channel_id ?? ''
+        if (!channelId) return acc
         if (!acc[channelId]) {
         // choices_pricing 파싱
         let choicesPricing: ChoicePricing = { combinations: {} };
@@ -136,13 +137,13 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           channelName: `채널 ${channelId}`, // 채널 이름은 별도로 조회 필요
           channelType: 'Unknown',
           latestPricing: {
-            adult_price: item.adult_price,
-            child_price: item.child_price,
-            infant_price: item.infant_price,
-            commission_percent: item.commission_percent,
-            markup_amount: item.markup_amount,
-            coupon_percent: item.coupon_percent,
-            is_sale_available: item.is_sale_available,
+            adult_price: item.adult_price ?? 0,
+            child_price: item.child_price ?? 0,
+            infant_price: item.infant_price ?? 0,
+            commission_percent: item.commission_percent ?? 0,
+            markup_amount: item.markup_amount ?? 0,
+            coupon_percent: item.coupon_percent ?? 0,
+            is_sale_available: item.is_sale_available ?? true,
             choices_pricing: choicesPricing
           },
           priceHistory: []
@@ -150,14 +151,14 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
         }
         
         acc[channelId].priceHistory.push({
-          date: item.updated_at,
-          adult_price: item.adult_price,
-          child_price: item.child_price,
-          infant_price: item.infant_price,
-          commission_percent: item.commission_percent,
-          markup_amount: item.markup_amount,
-          coupon_percent: item.coupon_percent,
-          is_sale_available: item.is_sale_available
+          date: item.updated_at ?? '',
+          adult_price: item.adult_price ?? 0,
+          child_price: item.child_price ?? 0,
+          infant_price: item.infant_price ?? 0,
+          commission_percent: item.commission_percent ?? 0,
+          markup_amount: item.markup_amount ?? 0,
+          coupon_percent: item.coupon_percent ?? 0,
+          is_sale_available: item.is_sale_available ?? true
         });
 
         return acc;

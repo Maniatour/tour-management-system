@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import { useTranslations } from 'next-intl'
 
 interface TagDisplayProps {
@@ -22,8 +21,8 @@ interface TagDisplayProps {
  */
 export default function TagDisplay({ 
   tags, 
-  maxDisplay = Infinity, 
-  showCount = false,
+  maxDisplay = Infinity,
+  showCount: _showCount = false,
   className = '',
   itemClassName = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800'
 }: TagDisplayProps) {

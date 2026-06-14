@@ -67,6 +67,7 @@ export async function fetchTourHotelBookingStatementReconDisplayByBookingId(
   type LineRow = {
     id: string
     amount: number | string | null
+    direction: string | null
     posted_date: string | null
     description: string | null
     merchant: string | null
@@ -77,7 +78,7 @@ export async function fetchTourHotelBookingStatementReconDisplayByBookingId(
     const chunk = lineIds.slice(i, i + LINE_CHUNK)
     const { data, error } = await supabase
       .from('statement_lines')
-      .select('id, amount, posted_date, description, merchant, statement_import_id')
+      .select('id, amount, direction, posted_date, description, merchant, statement_import_id')
       .in('id', chunk)
     if (error) throw error
     for (const line of (data || []) as LineRow[]) {
@@ -139,6 +140,7 @@ export async function fetchTourHotelBookingStatementReconDisplayByBookingId(
       amount: Number.isFinite(lineAmt) ? lineAmt : 0,
       matched_amount: alloc,
       description,
+      direction: String(line.direction ?? '').trim(),
     }
   }
 

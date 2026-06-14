@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
 
 // 예약 확인 (고객용 - 인증 없이 이메일과 예약 ID로 확인)
@@ -16,8 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 예약 조회
-    const { data: reservation, error } = await supabase
-      .from('reservations')
+    const { data: reservation, error } = await fromUntypedTable(supabase, 'reservations')
       .select(`
         *,
         product:products(
@@ -99,8 +99,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 예약 존재 확인 및 소유자 확인
-    const { data: existingReservation, error: fetchError } = await supabase
-      .from('reservations')
+    const { data: existingReservation, error: fetchError } = await fromUntypedTable(supabase, 'reservations')
       .select('*')
       .eq('id', reservation_id)
       .eq('customer_email', customer_email)

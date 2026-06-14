@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { Database } from '@/lib/database.types'
+
+export const dynamic = 'force-dynamic'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenance']['Insert']
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const body = await request.json()
     
     const {
@@ -172,7 +175,8 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const { searchParams } = new URL(request.url)
     
     const vehicleId = searchParams.get('vehicle_id')
@@ -181,22 +185,18 @@ export async function GET(request: NextRequest) {
     
     let query = supabase
       .from('vehicle_maintenance')
-      .select(`
+      .select(
+        `
         *,
         vehicles (
           id,
           vehicle_number,
           vehicle_type,
-          vehicle_category
-        ),
-        company_expenses (
-          id,
-          amount,
-          status,
-          submit_by,
-          submit_on
+          vehicle_category,
+          nick
         )
-      `)
+      `
+      )
     
     if (vehicleId) {
       query = query.eq('vehicle_id', vehicleId)

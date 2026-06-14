@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, RefreshCw, Trash2 } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { MessageCircle, Plus, Pin, Search, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'

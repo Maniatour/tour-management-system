@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 function gmailRedirectUri(request: NextRequest): string {
   const explicit = process.env.GOOGLE_GMAIL_REDIRECT_URI?.trim()
@@ -88,12 +89,10 @@ export async function GET(request: NextRequest) {
       `${redirectTo}?error=${encodeURIComponent('DB 연결 불가 (SUPABASE_SERVICE_ROLE_KEY 확인)')}`
     )
   }
-  const { error: upsertError } = await client
-    .from('gmail_connections')
-    .upsert(
-      { email, refresh_token: refreshToken, updated_at: new Date().toISOString() },
-      { onConflict: 'email' }
-    )
+  const { error: upsertError } = await fromUntypedTable(client, 'gmail_connections').upsert(
+    { email, refresh_token: refreshToken, updated_at: new Date().toISOString() } as never,
+    { onConflict: 'email' }
+  )
 
   if (upsertError) {
     console.error('[gmail/auth] upsert error:', upsertError.message, upsertError.code)

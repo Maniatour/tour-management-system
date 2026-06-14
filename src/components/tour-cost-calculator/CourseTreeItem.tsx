@@ -9,6 +9,7 @@ type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
   price_minivan?: number | null
   price_9seater?: number | null
   price_13seater?: number | null
+  google_maps_url?: string | null
   children?: TourCourse[]
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, User, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -8,8 +8,8 @@ import { supabase } from '@/lib/supabase'
 interface TeamMember {
   email: string
   name_ko: string
-  position: string
-  is_active: boolean
+  position: string | null
+  is_active: boolean | null
 }
 
 interface SimulationModalProps {
@@ -40,7 +40,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
       const filtered = teamMembers.filter(member =>
         member.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.position.toLowerCase().includes(searchTerm.toLowerCase())
+        member.position?.toLowerCase().includes(searchTerm.toLowerCase())
       )
       setFilteredMembers(filtered)
     }
@@ -84,14 +84,16 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
                  member.position === 'manager' ? 'manager' :
                  member.position === 'team_member' ? 'team_member' : 'team_member'
 
-    const simulatedUser = {
+    startSimulation({
+      id: member.email,
       email: member.email,
       name_ko: member.name_ko,
-      position: member.position,
-      role: role as 'admin' | 'manager' | 'team_member'
-    }
-
-    startSimulation(simulatedUser)
+      phone: null,
+      language: null,
+      created_at: new Date().toISOString(),
+      position: member.position ?? 'team_member',
+      role: role as 'admin' | 'manager' | 'team_member',
+    })
     onClose()
   }
 

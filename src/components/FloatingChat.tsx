@@ -192,6 +192,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
       window.addEventListener('resize', handleResize)
       return () => window.removeEventListener('resize', handleResize)
     }
+    return undefined
   }, [size.width, size.height])
 
   // 위치와 크기 변경 시 localStorage에 저장
@@ -254,11 +255,11 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
           if (reservationsError) {
             console.error('Error fetching reservations:', reservationsError)
           } else if (reservationsData) {
-            assignedPeople = reservationsData.reduce((total: number, reservation: { adults?: number; child?: number; infant?: number }) => {
-              return total + 
-                (reservation.adults || 0) + 
-                (reservation.child || 0) + 
-                (reservation.infant || 0)
+            assignedPeople = reservationsData.reduce((total, reservation) => {
+              return total +
+                (reservation.adults ?? 0) +
+                (reservation.child ?? 0) +
+                (reservation.infant ?? 0)
             }, 0)
           }
         }
@@ -271,7 +272,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
         setTourInfo({
           tour_date: chatInfo.tourDate || tourData.tour_date, // 전달된 tourDate 우선 사용
           product_name: product?.name_ko || product?.name_en || '상품명 없음',
-          tour_status: tourData.tour_status,
+          tour_status: tourData.tour_status ?? '',
           assigned_people: assignedPeople
         })
       } catch (error) {

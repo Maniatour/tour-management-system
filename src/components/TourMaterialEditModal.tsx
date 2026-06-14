@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Upload, MapPin, Tag, Globe, Clock } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Upload } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { Database } from '@/lib/database.types'
 import { toast } from 'sonner'

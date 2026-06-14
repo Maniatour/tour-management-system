@@ -18,7 +18,7 @@ const RichTextEditorExample: React.FC = () => {
         <h2 className="text-xl font-semibold">1. 기본 에디터 (모든 기능 포함)</h2>
         <LightRichEditor
           value={content}
-          onChange={setContent}
+          onChange={(v) => setContent(v ?? '')}
           height={300}
           placeholder="모든 기능이 활성화된 에디터입니다... (하단 핸들을 드래그하여 크기 조정 가능)"
           enableResize={true}
@@ -38,7 +38,7 @@ const RichTextEditorExample: React.FC = () => {
         <h2 className="text-xl font-semibold">2. 간단한 에디터 (기본 서식만)</h2>
         <LightRichEditor
           value={simpleContent}
-          onChange={setSimpleContent}
+          onChange={(v) => setSimpleContent(v ?? '')}
           height={200}
           placeholder="굵게, 기울임, 밑줄만 사용 가능한 에디터입니다... (크기 조정 가능)"
           enableImageUpload={false}
@@ -63,7 +63,7 @@ const RichTextEditorExample: React.FC = () => {
         <h2 className="text-xl font-semibold">3. 최소한의 에디터 (툴바 없음, 크기 조정 비활성화)</h2>
         <LightRichEditor
           value={minimalContent}
-          onChange={setMinimalContent}
+          onChange={(v) => setMinimalContent(v ?? '')}
           height={150}
           placeholder="툴바가 없는 순수 텍스트 에디터입니다... (크기 조정 비활성화)"
           showToolbar={false}

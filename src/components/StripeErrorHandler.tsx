@@ -76,6 +76,7 @@ export default function StripeErrorHandler() {
         }
         return false
       }
+      return undefined
     }
 
     window.addEventListener('unhandledrejection', handleUnhandledRejection)

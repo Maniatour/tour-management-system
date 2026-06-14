@@ -1,13 +1,13 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Eye, Smartphone, Tablet, Monitor } from 'lucide-react'
+import { X, Eye, Smartphone, Tablet, Monitor, type LucideIcon } from 'lucide-react'
 
 type DeviceSize = 'mobile' | 'tablet' | 'desktop'
 
 interface DeviceConfig {
   name: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: LucideIcon
   width: number
   height: number
   label: string
@@ -272,7 +272,6 @@ function CardViewPreview({
 }) {
   const isMobile = deviceSize === 'mobile'
   const isTablet = deviceSize === 'tablet'
-  const isDesktop = deviceSize === 'desktop'
 
   return (
     <div className={`${isMobile ? 'p-2' : isTablet ? 'p-4' : 'p-6'}`}>
@@ -373,7 +372,6 @@ function DetailViewPreview({
 }) {
   const isMobile = deviceSize === 'mobile'
   const isTablet = deviceSize === 'tablet'
-  const isDesktop = deviceSize === 'desktop'
   return (
     <div className={`${isMobile ? 'p-2' : isTablet ? 'p-4' : 'p-6'}`}>
       {/* 상품 헤더 */}

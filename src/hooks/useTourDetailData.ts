@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { Database } from '@/lib/supabase'
 import { chunkStrings } from '@/lib/supabaseInChunks'
 import {
@@ -17,6 +18,7 @@ import {
 } from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 
 // 타입 정의
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -57,8 +59,7 @@ async function fetchCancellationFollowUpMeta(
   const map = new Map<string, CancellationFollowUpMeta>()
   const ids = [...new Set(reservationIds.map((x) => String(x).trim()).filter(Boolean))]
   if (ids.length === 0) return map
-  const { data, error } = await supabase
-    .from('reservation_follow_ups')
+  const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
     .select('reservation_id, content, created_at')
     .in('reservation_id', ids)
     .eq('type', 'cancellation_reason')
@@ -69,11 +70,12 @@ async function fetchCancellationFollowUpMeta(
   }
   const grouped = new Map<string, Array<{ content: string | null; created_at: string | null }>>()
   for (const row of data || []) {
-    const rid = String((row as { reservation_id: string }).reservation_id)
+    const typed = row as unknown as { reservation_id: string; content?: string | null; created_at?: string | null }
+    const rid = String(typed.reservation_id)
     const list = grouped.get(rid) || []
     list.push({
-      content: (row as { content?: string | null }).content ?? null,
-      created_at: (row as { created_at?: string | null }).created_at ?? null,
+      content: typed.content ?? null,
+      created_at: typed.created_at ?? null,
     })
     grouped.set(rid, list)
   }
@@ -107,7 +109,8 @@ function attachCancellationFollowUpMeta<T extends { id: string }>(
   })
 }
 
-export function useTourDetailData(opts?: { tourId?: string | null }) {
+export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoad?: boolean }) {
+  const modalLightLoad = opts?.modalLightLoad === true
   const params = useParams()
   const locale = useLocale()
   const effectiveTourId =
@@ -134,7 +137,17 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
   const [showAssignmentStatusDropdown, setShowAssignmentStatusDropdown] = useState(false)
   
   // 아코디언 상태 관리
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition', 'vehicle-assignment', 'team-vehicle-assignment', 'pickup-schedule', 'assignment-management']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() =>
+    modalLightLoad
+      ? new Set(['pickup-schedule'])
+      : new Set([
+          'team-composition',
+          'vehicle-assignment',
+          'team-vehicle-assignment',
+          'pickup-schedule',
+          'assignment-management',
+        ])
+  )
 
   // 데이터 상태들
   const [product, setProduct] = useState<ProductRow | null>(null)
@@ -376,16 +389,7 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
             : Promise.resolve({ data: null as TeamMember | null, error: null }),
         ])
 
-        const [
-          reservationsExtended,
-          sameDayTours,
-          refBundle,
-          vehiclesPack,
-          assignedVehicleRes,
-          [guideRes, assistantRes],
-        ] = await Promise.all([
-          loadReservationsForProductDate(),
-          loadSameDayTours(),
+        const loadCatalogRefBundle = () =>
           Promise.all([
             supabase
               .from('pickup_hotels')
@@ -399,102 +403,104 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
               .from('team')
               .select('email, name_ko, name_en, display_name, nick_name, position, is_active')
               .order('name_ko'),
-          ]),
-          loadVehicles(),
-          assignedVehiclePromise,
-          guideAssistantPromise,
-        ])
+          ])
 
-        if (cancelled) return
-
-        setAllReservations(reservationsExtended)
-
-        const [pickupHotelsResult, productsResult, channelsResult, teamMembersResult] = refBundle
-        const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
-        if (pickupHotelsError) {
-          console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
-        } else {
-          setPickupHotels(pickupHotelsData || [])
-        }
-
-        const { data: productsData, error: productsError } = productsResult
-        if (productsError) {
-          console.error('상품 데이터 가져오기 오류:', productsError)
-        } else {
-          setAllProducts(productsData || [])
-        }
-
-        const { data: channelsData, error: channelsError } = channelsResult
-        if (channelsError) {
-          console.error('채널 데이터 가져오기 오류:', channelsError)
-        } else {
-          setChannels((channelsData || []) as { id: string; name: string; favicon_url?: string }[])
-        }
-
-        const { data: allTeamMembers, error: teamMembersError } = teamMembersResult
-        if (teamMembersError) {
-          console.error('팀 멤버 목록 가져오기 오류:', teamMembersError)
-        } else {
-          setTeamMembers((allTeamMembers || []) as TeamMember[])
-        }
-
-        setVehicles(vehiclesPack.rows)
-        setVehiclesError(vehiclesPack.err)
-
-        if (tour.tour_guide_id) {
-          const { data: guideData, error: guideError } = guideRes
-          if (guideError && guideError.code !== 'PGRST116') {
-            console.error('가이드 정보 가져오기 오류:', guideError)
-          }
-          if (guideData) {
-            const g = guideData as TeamMember
-            setSelectedGuide(g.email || tour.tour_guide_id || '')
+        const applyRefBundle = (refBundle: Awaited<ReturnType<typeof loadCatalogRefBundle>>) => {
+          const [pickupHotelsResult, productsResult, channelsResult, teamMembersResult] = refBundle
+          const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
+          if (pickupHotelsError) {
+            console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
           } else {
-            setSelectedGuide(tour.tour_guide_id || '')
+            setPickupHotels(pickupHotelsData || [])
           }
-        } else {
-          setSelectedGuide('')
-        }
 
-        if (tour.assistant_id) {
-          const { data: assistantData, error: assistantError } = assistantRes
-          if (assistantError && assistantError.code !== 'PGRST116') {
-            console.error('어시스턴트 정보 가져오기 오류:', assistantError)
-          }
-          if (assistantData) {
-            const a = assistantData as TeamMember
-            setSelectedAssistant(a.email || tour.assistant_id || '')
+          const { data: productsData, error: productsError } = productsResult
+          if (productsError) {
+            console.error('상품 데이터 가져오기 오류:', productsError)
           } else {
-            setSelectedAssistant(tour.assistant_id || '')
+            setAllProducts(productsData || [])
           }
-        } else {
-          setSelectedAssistant('')
+
+          const { data: channelsData, error: channelsError } = channelsResult
+          if (channelsError) {
+            console.error('채널 데이터 가져오기 오류:', channelsError)
+          } else {
+            setChannels((channelsData || []) as { id: string; name: string; favicon_url?: string }[])
+          }
+
+          const { data: allTeamMembers, error: teamMembersError } = teamMembersResult
+          if (teamMembersError) {
+            console.error('팀 멤버 목록 가져오기 오류:', teamMembersError)
+          } else {
+            setTeamMembers((allTeamMembers || []) as TeamMember[])
+          }
         }
 
-        if (tour.tour_car_id?.trim()) {
-          const { data: vehicleData, error: vehicleError } = assignedVehicleRes
-          if (vehicleError && vehicleError.code !== 'PGRST116') {
-            console.error('차량 정보 가져오기 오류:', vehicleError)
+        const applyGuideVehicle = (
+          assignedVehicleRes: Awaited<typeof assignedVehiclePromise>,
+          [guideRes, assistantRes]: Awaited<typeof guideAssistantPromise>
+        ) => {
+          if (tour.tour_guide_id) {
+            const { data: guideData, error: guideError } = guideRes
+            if (guideError && guideError.code !== 'PGRST116') {
+              console.error('가이드 정보 가져오기 오류:', guideError)
+            }
+            if (guideData) {
+              const g = guideData as TeamMember
+              setSelectedGuide(g.email || tour.tour_guide_id || '')
+            } else {
+              setSelectedGuide(tour.tour_guide_id || '')
+            }
+          } else {
+            setSelectedGuide('')
           }
-          if (vehicleData) {
-            setSelectedVehicleId(tour.tour_car_id || '')
-            setAssignedVehicle(vehicleData as Vehicle)
+
+          if (tour.assistant_id) {
+            const { data: assistantData, error: assistantError } = assistantRes
+            if (assistantError && assistantError.code !== 'PGRST116') {
+              console.error('어시스턴트 정보 가져오기 오류:', assistantError)
+            }
+            if (assistantData) {
+              const a = assistantData as TeamMember
+              setSelectedAssistant(a.email || tour.assistant_id || '')
+            } else {
+              setSelectedAssistant(tour.assistant_id || '')
+            }
+          } else {
+            setSelectedAssistant('')
+          }
+
+          if (tour.tour_car_id?.trim()) {
+            const { data: vehicleData, error: vehicleError } = assignedVehicleRes
+            if (vehicleError && vehicleError.code !== 'PGRST116') {
+              console.error('차량 정보 가져오기 오류:', vehicleError)
+            }
+            if (vehicleData) {
+              setSelectedVehicleId(tour.tour_car_id || '')
+              setAssignedVehicle(vehicleData as Vehicle)
+            } else {
+              setSelectedVehicleId('')
+              setAssignedVehicle(null)
+            }
           } else {
             setSelectedVehicleId('')
             setAssignedVehicle(null)
           }
-        } else {
-          setSelectedVehicleId('')
-          setAssignedVehicle(null)
         }
 
-        if (!productId || !tourDate) {
-          setSameDayTourIds([])
-          setAssignedReservations([])
-          setPendingReservations([])
-          setOtherToursAssignedReservations([])
-          setOtherStatusReservations([])
-        } else {
+        const processAssignmentBuckets = async (
+          reservationsExtended: ExtendedReservationRow[],
+          sameDayTours: Array<{ id: string; reservation_ids?: unknown }>
+        ) => {
+          if (!productId || !tourDate) {
+            setSameDayTourIds([])
+            setAssignedReservations([])
+            setPendingReservations([])
+            setOtherToursAssignedReservations([])
+            setOtherStatusReservations([])
+            return
+          }
+
           let extendedList = [...reservationsExtended]
           const byCanonId = new Map<string, ExtendedReservationRow>()
           for (const r of extendedList) {
@@ -636,35 +642,169 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
           )
         }
 
-        // 예약 폼 등에 쓰는 전체 고객 목록은 수천 건일 수 있어, 화면 표시를 막지 않도록 백그라운드 로드
-        void (async () => {
-          try {
-            let allCustomersData: CustomerRow[] = []
-            let hasMore = true
-            let page = 0
-            const pageSize = 1000
-            while (hasMore && !cancelled) {
-              const { data, error } = await supabase
-                .from('customers')
-                .select('*')
-                .order('name')
-                .range(page * pageSize, (page + 1) * pageSize - 1)
-              if (error) {
-                console.error('고객 데이터 가져오기 오류:', error)
-                break
-              }
-              if (data && data.length > 0) {
-                allCustomersData = [...allCustomersData, ...data]
-                page++
-              } else {
-                hasMore = false
-              }
+        const loadAssignedReservationsOnly = async (): Promise<ExtendedReservationRow[]> => {
+          const assignedIds = normalizeReservationIds(tour.reservation_ids)
+          const ids = [...new Set(assignedIds.map((id) => String(id).trim()).filter(Boolean))]
+          if (!ids.length) return []
+
+          const rows: ReservationRow[] = []
+          for (const chunk of chunkStrings(ids)) {
+            const { data, error } = await supabase.from('reservations').select('*').in('id', chunk)
+            if (error) {
+              console.error('배정 예약 데이터 가져오기 오류:', error)
+              continue
             }
-            if (!cancelled) setCustomers(allCustomersData)
-          } catch (e) {
-            console.error('전체 고객 백그라운드 로드 오류:', e)
+            if (data?.length) rows.push(...(data as ReservationRow[]))
           }
-        })()
+          if (!rows.length) return []
+
+          const customerIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[])]
+          let customerRows: CustomerRow[] = []
+          if (customerIds.length > 0) {
+            const { data: customersData, error: customersError } = await supabase
+              .from('customers')
+              .select('*')
+              .in('id', customerIds)
+            if (customersError) {
+              console.error('배정 예약 고객 정보 조회 오류:', customersError)
+            } else {
+              customerRows = (customersData || []) as CustomerRow[]
+            }
+          }
+
+          return rows.map((reservation) => {
+            const customer = customerRows.find((c) => c.id === reservation.customer_id)
+            return {
+              ...reservation,
+              customers: customer || null,
+              customer_name: customer?.name || '정보 없음',
+              customer_email: customer?.email || '',
+              customer_language: customer?.language || 'Unknown',
+            } as ExtendedReservationRow
+          })
+        }
+
+        const loadAllCustomersInBackground = () => {
+          void (async () => {
+            try {
+              let allCustomersData: CustomerRow[] = []
+              let hasMore = true
+              let page = 0
+              const pageSize = 1000
+              while (hasMore && !cancelled) {
+                const { data, error } = await supabase
+                  .from('customers')
+                  .select('*')
+                  .order('name')
+                  .range(page * pageSize, (page + 1) * pageSize - 1)
+                if (error) {
+                  console.error('고객 데이터 가져오기 오류:', error)
+                  break
+                }
+                if (data && data.length > 0) {
+                  allCustomersData = [...allCustomersData, ...data]
+                  page++
+                } else {
+                  hasMore = false
+                }
+              }
+              if (!cancelled) setCustomers(allCustomersData)
+            } catch (e) {
+              console.error('전체 고객 백그라운드 로드 오류:', e)
+            }
+          })()
+        }
+
+        if (modalLightLoad) {
+          const [reservationsExtended, sameDayTours, pickupHotelsResult, assignedVehicleRes, guideAssistantPair] =
+            await Promise.all([
+              loadAssignedReservationsOnly(),
+              loadSameDayTours(),
+              supabase
+                .from('pickup_hotels')
+                .select('*')
+                .eq('use_for_pickup', true)
+                .or('is_active.is.null,is_active.eq.true')
+                .order('hotel'),
+              assignedVehiclePromise,
+              guideAssistantPromise,
+            ])
+
+          if (cancelled) return
+
+          setAllReservations(reservationsExtended)
+
+          const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
+          if (pickupHotelsError) {
+            console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
+          } else {
+            setPickupHotels(pickupHotelsData || [])
+          }
+
+          applyGuideVehicle(assignedVehicleRes, guideAssistantPair)
+          await processAssignmentBuckets(reservationsExtended, sameDayTours)
+
+          if (cancelled) return
+          setPageLoading(false)
+
+          scheduleDeferredWork(() => {
+            void (async () => {
+              if (cancelled) return
+              setLoadingStates((s) => ({ ...s, reservations: true }))
+              try {
+                const [fullReservations, refBundle, vehiclesPack] = await Promise.all([
+                  loadReservationsForProductDate(),
+                  loadCatalogRefBundle(),
+                  loadVehicles(),
+                ])
+                if (cancelled) return
+
+                setAllReservations(fullReservations)
+                applyRefBundle(refBundle)
+                setVehicles(vehiclesPack.rows)
+                setVehiclesError(vehiclesPack.err)
+                await processAssignmentBuckets(fullReservations, sameDayTours)
+              } catch (e) {
+                console.error('투어 모달 백그라운드 데이터 로드 오류:', e)
+              } finally {
+                if (!cancelled) {
+                  setLoadingStates((s) => ({ ...s, reservations: false }))
+                }
+              }
+            })()
+          })
+
+          scheduleDeferredWork(loadAllCustomersInBackground, 4000)
+          return
+        }
+
+        const [
+          reservationsExtended,
+          sameDayTours,
+          refBundle,
+          vehiclesPack,
+          assignedVehicleRes,
+          [guideRes, assistantRes],
+        ] = await Promise.all([
+          loadReservationsForProductDate(),
+          loadSameDayTours(),
+          loadCatalogRefBundle(),
+          loadVehicles(),
+          assignedVehiclePromise,
+          guideAssistantPromise,
+        ])
+
+        if (cancelled) return
+
+        setAllReservations(reservationsExtended)
+
+        applyRefBundle(refBundle)
+        setVehicles(vehiclesPack.rows)
+        setVehiclesError(vehiclesPack.err)
+        applyGuideVehicle(assignedVehicleRes, [guideRes, assistantRes])
+        await processAssignmentBuckets(reservationsExtended, sameDayTours)
+
+        loadAllCustomersInBackground()
 
       } catch (error) {
         if (!isAbortLikeError(error)) {
@@ -679,7 +819,7 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
     return () => {
       cancelled = true
     }
-  }, [effectiveTourId])
+  }, [effectiveTourId, modalLightLoad])
 
   // 권한 체크는 AdminAuthGuard에서 처리하므로 여기서는 리다이렉트하지 않음
   // AdminAuthGuard가 이미 권한 없는 사용자를 홈으로 리다이렉트함

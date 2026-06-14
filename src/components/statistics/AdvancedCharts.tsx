@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import {
   BarChart,
   Bar,
@@ -137,14 +136,14 @@ export default function AdvancedCharts({
             />
             {showLegend && <Legend />}
             {data[0]?.revenue !== undefined && (
-              <Bar dataKey="revenue" fill="#00C49F" name="수익" stackId={stacked ? 'stack' : undefined}>
+              <Bar dataKey="revenue" fill="#00C49F" name="수익" {...(stacked ? { stackId: 'stack' } : {})}>
                 {bottomLabelKey && (
                   <LabelList dataKey={bottomLabelKey} position="bottom" offset={10} formatter={(v: any) => bottomLabelFormatter ? bottomLabelFormatter(v) : String(v)} style={{ fill: '#374151', fontWeight: 600 }} />
                 )}
               </Bar>
             )}
             {data[0]?.expenses !== undefined && (
-              <Bar dataKey="expenses" fill="#FF8042" name="지출" stackId={stacked ? 'stack' : undefined}>
+              <Bar dataKey="expenses" fill="#FF8042" name="지출" {...(stacked ? { stackId: 'stack' } : {})}>
                 {!data[0]?.revenue && bottomLabelKey && (
                   <LabelList dataKey={bottomLabelKey} position="bottom" offset={10} formatter={(v: any) => bottomLabelFormatter ? bottomLabelFormatter(v) : String(v)} style={{ fill: '#374151', fontWeight: 600 }} />
                 )}
@@ -174,16 +173,16 @@ export default function AdvancedCharts({
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               outerRadius={80}
               fill="#8884d8"
               dataKey="value"
             >
-              {data.map((entry, index) => (
+              {data.map((_entry, index) => (
                 <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+            <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
             {showLegend && <Legend />}
           </PieChart>
         )

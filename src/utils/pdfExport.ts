@@ -44,7 +44,7 @@ interface PDFExportProps {
   chartElementId?: string
 }
 
-export function generateTourStatisticsPDF({ data, dateRange, chartElementId }: PDFExportProps) {
+export function generateTourStatisticsPDF({ data, dateRange }: PDFExportProps) {
   const doc = new jsPDF()
   
   // 페이지 설정

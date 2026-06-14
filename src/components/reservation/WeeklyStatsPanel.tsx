@@ -118,9 +118,9 @@ export default function WeeklyStatsPanel({
   weeklyRegCancelByDay = [],
   regCancelGranularity = 'week',
   onRegCancelGranularityChange,
-  regCancelMonthOffset = 0,
+  regCancelMonthOffset: _regCancelMonthOffset = 0,
   onRegCancelMonthOffsetChange,
-  regCancelYearOffset = 0,
+  regCancelYearOffset: _regCancelYearOffset = 0,
   onRegCancelYearOffsetChange,
   chartRangeSubtitle = '',
   isWeeklyStatsCollapsed,
@@ -200,7 +200,7 @@ export default function WeeklyStatsPanel({
       }
       return {
         ...row,
-        weekdayLongForAvg,
+        ...(weekdayLongForAvg ? { weekdayLongForAvg } : {}),
         cancelStackPeople,
         remainingPeople,
         shortLabel,
@@ -561,13 +561,11 @@ export default function WeeklyStatsPanel({
                       dataKey="shortLabel"
                       tick={
                         regCancelGranularity === 'week'
-                          ? (props: {
-                              x: number
-                              y: number
-                              payload?: { value?: string }
-                              index: number
-                            }) => {
-                              const { x, y, payload, index } = props
+                          ? (props: Record<string, unknown>) => {
+                              const x = Number(props.x ?? 0)
+                              const y = Number(props.y ?? 0)
+                              const payload = props.payload as { value?: string } | undefined
+                              const index = Number(props.index ?? 0)
                               const row = regCancelChartData[index]
                               const avg = row?.avgLineRegistered ?? 0
                               const avgLine = formatAxisAvgPeople(avg)
@@ -679,15 +677,8 @@ export default function WeeklyStatsPanel({
                       <LabelList
                         dataKey="cancelStackPeople"
                         position="center"
-                        content={(props: {
-                          x?: string | number
-                          y?: string | number
-                          width?: string | number
-                          height?: string | number
-                          value?: string | number
-                          index?: number
-                        }) => {
-                          const idx = props.index ?? 0
+                        content={((props: Record<string, unknown>) => {
+                          const idx = Number(props.index ?? 0)
                           const row = regCancelChartData[idx]
                           const v = Number(props.value ?? 0)
                           const h = Number(props.height ?? 0)
@@ -732,7 +723,7 @@ export default function WeeklyStatsPanel({
                               {mid}
                             </g>
                           )
-                        }}
+                        }) as any}
                       />
                     </Bar>
                     {/* 스택 상단: 등록 − 취소 — 회색, 막대 전체 높이 = 등록 인원 */}
@@ -746,15 +737,8 @@ export default function WeeklyStatsPanel({
                     >
                       <LabelList
                         dataKey="remainingPeople"
-                        content={(props: {
-                          x?: string | number
-                          y?: string | number
-                          width?: string | number
-                          height?: string | number
-                          value?: string | number
-                          index?: number
-                        }) => {
-                          const idx = props.index ?? 0
+                        content={((props: Record<string, unknown>) => {
+                          const idx = Number(props.index ?? 0)
                           const row = regCancelChartData[idx]
                           const v = Number(props.value ?? 0)
                           const h = Number(props.height ?? 0)
@@ -797,7 +781,7 @@ export default function WeeklyStatsPanel({
                               {centerLabel}
                             </g>
                           )
-                        }}
+                        }) as any}
                       />
                     </Bar>
                     <Line

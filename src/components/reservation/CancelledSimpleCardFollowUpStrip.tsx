@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { ClipboardList, PhoneForwarded, Globe, X, Loader2, Send, Mail } from 'lucide-react'
 import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
 import type { CancellationFollowUpMessageKind } from '@/lib/cancellationFollowUpMessage'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useAuth } from '@/contexts/AuthContext'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
@@ -84,8 +85,7 @@ export default function CancelledSimpleCardFollowUpStrip({
     if (!reservationId) return
     setReasonLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('reservation_follow_ups')
+      const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
         .select('id, content')
         .eq('reservation_id', reservationId)
         .eq('type', 'cancellation_reason')
@@ -126,13 +126,12 @@ export default function CancelledSimpleCardFollowUpStrip({
     try {
       const trimmed = reasonDraft.trim()
       if (reasonRowId) {
-        const { error } = await supabase
-          .from('reservation_follow_ups')
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
           .update({ content: trimmed || null })
           .eq('id', reasonRowId)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('reservation_follow_ups').insert({
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
           reservation_id: reservationId,
           type: 'cancellation_reason',
           content: trimmed || null,

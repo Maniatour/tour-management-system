@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { X, Download, ImageIcon } from 'lucide-react'
 
 interface PickupHotelPhotoGalleryProps {

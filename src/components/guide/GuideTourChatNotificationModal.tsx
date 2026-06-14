@@ -122,7 +122,9 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
       if (toursData.length === 0) return
 
       const tourIds = toursData.map((tour) => tour.id)
-      const productIds = [...new Set(toursData.map((tour) => tour.product_id).filter(Boolean))]
+      const productIds = [
+        ...new Set(toursData.map((tour) => tour.product_id).filter((id): id is string => id != null)),
+      ]
       const memberEmails = [
         ...new Set(
           toursData.flatMap((tour) =>
@@ -137,7 +139,9 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
           )
         ),
       ]
-      const vehicleIds = [...new Set(toursData.map((tour) => tour.tour_car_id).filter(Boolean))]
+      const vehicleIds = [
+        ...new Set(toursData.map((tour) => tour.tour_car_id).filter((id): id is string => id != null)),
+      ]
       const allReservationIds = [
         ...new Set(toursData.flatMap((tour) => normalizeReservationIds(tour.reservation_ids))),
       ]

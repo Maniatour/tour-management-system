@@ -23,7 +23,7 @@ export interface GroupColorClassesString {
 export function getGroupColorClasses(
   groupId: string, 
   groupName?: string, 
-  optionName?: string,
+  _optionName?: string,
   format: 'object' = 'object'
 ): GroupColorClasses | GroupColorClassesString {
   // 그룹 이름이나 ID에 따라 색상 결정

@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         purpose: 'resident_check_nps',
       },
       automatic_payment_methods: { enabled: true },
-      receipt_email: customerEmail || undefined,
+      ...(customerEmail ? { receipt_email: customerEmail } : {}),
       description: `NPS / residency — reservation ${token.reservation_id}`,
     })
 

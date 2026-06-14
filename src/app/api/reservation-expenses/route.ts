@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 
 const db = supabaseAdmin ?? supabase
+
+type ExpenseListRow = {
+  reservation_id?: string | null
+  reservations?: { id?: string; customer_id?: string | null } | null
+  [key: string]: unknown
+}
 
 const ADMIN_LIST_MAX = 5000
 const RESERVATION_DETAIL_MAX = 500
@@ -40,16 +47,8 @@ export async function GET(request: NextRequest) {
 
     const submitOnBounds = lvSubmitOnBoundsFromYmdFilter(dateFrom, dateTo)
 
-    const applyListFilters = <
-      Q extends {
-        is: (column: string, value: null) => Q
-        gte: (column: string, value: string) => Q
-        lte: (column: string, value: string) => Q
-        eq: (column: string, value: string) => Q
-      },
-    >(
-      q: Q
-    ): Q => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const applyListFilters = (q: any): any => {
       let next = q
       if (useBaseTable) {
         next = next.is('deleted_at', null)
@@ -73,7 +72,7 @@ export async function GET(request: NextRequest) {
     }
 
     let query = applyListFilters(
-      db.from(tableName).select(
+      fromUntypedTable(db, tableName).select(
         `
         *,
         reservations (
@@ -130,8 +129,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (isAmountSearchQuery(raw)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let scanQ: any = applyListFilters(db.from(tableName).select('id, amount'))
+        const scanQ = applyListFilters(fromUntypedTable(db, tableName).select('id, amount'))
         const { data: scanRows } = await scanQ.limit(AMOUNT_SEARCH_SCAN_LIMIT)
         const amountIds = (scanRows || [])
           .filter((r: { id: string; amount: unknown }) =>
@@ -160,20 +158,21 @@ export async function GET(request: NextRequest) {
     }
 
     // 고객 정보 추가
-    const expensesWithCustomers = await Promise.all((data || []).map(async (expense) => {
-      if (expense.reservations && expense.reservations.customer_id) {
+    const expensesWithCustomers = await Promise.all(((data || []) as ExpenseListRow[]).map(async (expense) => {
+      const reservations = expense.reservations
+      if (reservations && reservations.customer_id) {
         const { data: customerData } = await db
           .from('customers')
           .select('id, name, email')
-          .eq('id', expense.reservations.customer_id)
+          .eq('id', reservations.customer_id)
           .single()
 
         return {
           ...expense,
           reservations: {
-            ...expense.reservations,
-            customers: customerData || { name: 'Unknown', email: '' }
-          }
+            ...reservations,
+            customers: customerData || { name: 'Unknown', email: '' },
+          },
         }
       }
       return expense
@@ -182,8 +181,8 @@ export async function GET(request: NextRequest) {
     /** 예약별 payment_records 금액 합계 (입금 내역) */
     const reservationIds = [
       ...new Set(
-        (expensesWithCustomers || [])
-          .map((e: { reservation_id?: string | null; reservations?: { id?: string } | null }) => {
+        (expensesWithCustomers as ExpenseListRow[])
+          .map((e) => {
             const rid = e.reservation_id || e.reservations?.id
             return rid && String(rid).trim() ? String(rid).trim() : null
           })
@@ -215,15 +214,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const dataWithPayments = expensesWithCustomers.map(
-      (e: { reservation_id?: string | null; reservations?: { id?: string } | null }) => {
+    const dataWithPayments = (expensesWithCustomers as ExpenseListRow[]).map((e) => {
         const rid = e.reservation_id || e.reservations?.id
         const key = rid && String(rid).trim() ? String(rid).trim() : null
         const reservation_payments_total =
           !paymentTotalsOk ? null : key == null ? null : (paymentTotalByReservation.get(key) ?? 0)
         return { ...e, reservation_payments_total }
-      }
-    )
+      })
 
     const total = count ?? dataWithPayments.length
     const totalPages = Math.max(1, Math.ceil(total / limit))
@@ -326,8 +323,8 @@ export async function POST(request: NextRequest) {
         file_path,
         reservation_id,
         event_id,
-        status
-      })
+        status,
+      } as never)
       .select()
       .single()
 

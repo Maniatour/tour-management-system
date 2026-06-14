@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { CreditCard, DollarSign, TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
@@ -54,7 +54,7 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       }
 
       // 결제 방법 정보 조회
-      const paymentMethodIds = [...new Set(deposits.map(d => d.payment_method).filter(Boolean))]
+      const paymentMethodIds = [...new Set(deposits.map(d => d.payment_method).filter((id): id is string => id != null))]
       const { data: paymentMethods } = await supabase
         .from('payment_methods')
         .select('id, method, display_name, card_holder_name, user_email')
@@ -96,7 +96,13 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
               user_email: pm.user_email,
               card_holder_name: pm.card_holder_name,
             },
-            team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+            team
+              ? {
+                  nick_name: team.nick_name ?? null,
+                  name_en: team.name_en ?? null,
+                  name_ko: team.name_ko ?? null,
+                }
+              : undefined
           )
           methodNameMap.set(pm.id, methodName)
         })
@@ -212,8 +218,8 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
             payment_method_name: methodNameMap.get(d.payment_method || '') || d.payment_method || 'Unknown',
             channel_name: channelName || '채널 미지정'
           }
-        }).sort((a, b) => 
-          new Date(b.submit_on).getTime() - new Date(a.submit_on).getTime()
+        }).sort((a, b) =>
+          new Date(b.submit_on ?? 0).getTime() - new Date(a.submit_on ?? 0).getTime()
         )
       })
     } catch (error) {

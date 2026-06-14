@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/tourStatusUtils'
@@ -376,6 +376,7 @@ export function useTourHandlers() {
         return updatedReservationIds
       } catch (error) {
         console.error('Error assigning reservation:', error)
+        return undefined
       }
     },
     [handleMoveReservationBetweenTours]
@@ -403,6 +404,7 @@ export function useTourHandlers() {
       return updatedReservationIds
     } catch (error) {
       console.error('Error unassigning reservation:', error)
+      return undefined
     }
   }, [])
 
@@ -453,6 +455,7 @@ export function useTourHandlers() {
       return updatedReservationIds
     } catch (error) {
       console.error('Error assigning all reservations:', error)
+      return undefined
     }
   }, [])
 
@@ -474,6 +477,7 @@ export function useTourHandlers() {
       return []
     } catch (error) {
       console.error('Error unassigning all reservations:', error)
+      return undefined
     }
   }, [])
 

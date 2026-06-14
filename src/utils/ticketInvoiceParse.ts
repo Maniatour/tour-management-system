@@ -183,7 +183,7 @@ export function parseTicketInvoiceOcrText(raw: string): ParsedTicketInvoice {
     invoiceNumber,
     invoiceDateIso,
     lines: lineItems,
-    rawNotes: notes.length ? notes.join(' ') : undefined,
+    ...(notes.length ? { rawNotes: notes.join(' ') } : {}),
   };
 }
 

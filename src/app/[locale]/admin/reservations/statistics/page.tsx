@@ -2,13 +2,11 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search, DollarSign, PieChart } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { BarChart3, TrendingUp, Users, Package, Link, CheckCircle, XCircle, Receipt, Search, DollarSign, PieChart } from 'lucide-react'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
   getProductName, 
   getChannelName, 
-  getStatusLabel,
   getCustomerName 
 } from '@/utils/reservationUtils'
 import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
@@ -113,7 +111,6 @@ function buildStatisticsSearchParams(input: {
 }
 
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
-  const t = useTranslations('reservations')
   const { authUser } = useAuth()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -335,7 +332,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     const totalPeople = filteredReservations.reduce((sum, r) => sum + r.totalPeople, 0)
     const totalRevenue = filteredReservations.reduce((sum, r) => {
       // 간단한 가격 계산 (실제로는 더 복잡한 로직 필요)
-      const product = products.find(p => p.id === r.productId)
+      const product = (products ?? []).find(p => p.id === r.productId)
       return sum + (product?.base_price || 0) * r.totalPeople
     }, 0)
 
@@ -347,7 +344,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       }
       groups[channelName].count++
       groups[channelName].people += reservation.totalPeople
-      const product = products.find(p => p.id === reservation.productId)
+      const product = (products ?? []).find(p => p.id === reservation.productId)
       groups[channelName].revenue += (product?.base_price || 0) * reservation.totalPeople
       return groups
     }, {} as Record<string, {count: number, people: number, revenue: number}>)
@@ -364,13 +361,13 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
     // 상품별 통계
     const productGroups = filteredReservations.reduce((groups, reservation) => {
-      const productName = getProductName(reservation.productId, products)
+      const productName = getProductName(reservation.productId, products ?? []).toLowerCase()
       if (!groups[productName]) {
         groups[productName] = { count: 0, people: 0, revenue: 0 }
       }
       groups[productName].count++
       groups[productName].people += reservation.totalPeople
-      const product = products.find(p => p.id === reservation.productId)
+      const product = (products ?? []).find(p => p.id === reservation.productId)
       groups[productName].revenue += (product?.base_price || 0) * reservation.totalPeople
       return groups
     }, {} as Record<string, {count: number, people: number, revenue: number}>)
@@ -426,7 +423,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         }
         groups[period].reservations++
         groups[period].people += reservation.totalPeople
-        const product = products.find(p => p.id === reservation.productId)
+        const product = (products ?? []).find(p => p.id === reservation.productId)
         groups[period].revenue += (product?.base_price || 0) * reservation.totalPeople
       })
       
@@ -689,7 +686,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
             <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
             <div className="flex flex-wrap gap-1">
-              {(['inquiry', 'pending', 'confirmed', 'completed', 'cancelled', 'recruiting'] as const).map((status) => {
+              {(['inquiry', 'pending', 'confirmed', 'completed', 'cancelled', 'no_show', 'recruiting'] as const).map((status) => {
                 const isSelected = selectedStatuses.some(s => s.toLowerCase() === status.toLowerCase())
                 return (
                   <button
@@ -713,6 +710,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                      status === 'confirmed' ? '확정' : 
                      status === 'completed' ? '완료' : 
                      status === 'cancelled' ? '취소' : 
+                     status === 'no_show' ? '노쇼' :
                      status === 'recruiting' ? '모집중' : status}
                   </button>
                 )

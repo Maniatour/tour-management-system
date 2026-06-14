@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await getSupabaseForApiRoute(request)
     if (supabase instanceof NextResponse) return supabase
-    const { data, error } = await supabase.rpc('company_expense_paid_for_normalization_stats')
+    const { data, error } = await supabase.rpc(
+      'company_expense_paid_for_normalization_stats' as never
+    )
 
     if (error) {
       console.error('결제 내용 정규화 통계 RPC 오류:', error)

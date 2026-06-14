@@ -9,7 +9,6 @@ import React, {
   useRef,
   useState
 } from 'react'
-import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
   ArrowLeftRight,
@@ -20,7 +19,6 @@ import {
   ChevronRight,
   Clock,
   CreditCard,
-  FileText,
   Link2,
   Lock,
   MapPinned,
@@ -48,6 +46,7 @@ import {
   Trash2
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   findStaleStatementLineMatchedStatusIds,
   isStatementLineShownAsUnmatched,
@@ -506,6 +505,7 @@ const AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS = 540
 const RECON_STATEMENT_DAY_WINDOW = 4
 /** 지출 연결 모달 — 테이블 탐색 시 «넓게 보기» 옵션의 ±N일 */
 const PICKER_BROWSE_WIDE_DAY_WINDOW = 15
+type ExpensePickerBrowseDateScope = 'line_window' | 'wide' | 'all'
 /** 자동 매칭 미리보기: 한 실행에서 처리할 명세 줄 상한(실제 대상은 표 현재 페이지의 출금·미연결 줄뿐) */
 const AUTO_MATCH_MAX_STATEMENT_LINES = 800
 /** 자동 매칭: 지출 결제수단의 금융 계정이 명세 계정과 일치할 때 가산점 (후보 제외는 아님) */
@@ -708,8 +708,7 @@ async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Prom
   const out: StatementLine[] = []
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
-      .from('statement_lines')
+    const { data, error } = await fromUntypedTable(supabase, 'statement_lines')
       .select(STATEMENT_LINE_LIST_SELECT)
       .in('statement_import_id', importChunk)
       .order('id', { ascending: true })
@@ -1153,8 +1152,7 @@ async function fetchAllUsedExpenseKeysForAutoMatch(): Promise<Set<string>> {
   const used = new Set<string>()
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
-      .from('reconciliation_matches')
+    const { data, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
       .select('source_table, source_id')
       .in('source_table', AUTO_MATCH_USED_SOURCE_TABLES)
       .order('id', { ascending: true })
@@ -1233,8 +1231,7 @@ async function fetchReconciliationMatchesForLineIds(lineIds: string[]): Promise<
     try {
       const results = await Promise.all(
         wave.map(async (chunk) => {
-          const { data: matchData, error: e2 } = await supabase
-            .from('reconciliation_matches')
+          const { data: matchData, error: e2 } = await fromUntypedTable(supabase, 'reconciliation_matches')
             .select('id,statement_line_id,source_table,source_id,matched_by,matched_at,updated_by,updated_at')
             .in('statement_line_id', chunk)
           if (e2) {
@@ -1430,9 +1427,6 @@ function expenseOptionSecondaryDateYmd(o: ExpenseOption): string | null {
   return null
 }
 
-function formatExpenseOptionSubmitDate(o: ExpenseOption) {
-  return expenseOptionPrimaryDateYmd(o) || '—'
-}
 
 function formatExpenseOptionPickerDate(o: ExpenseOption): string {
   const primary = formatExpenseSubmitOnUsMdY(expenseOptionPrimaryDateYmd(o))
@@ -1604,6 +1598,45 @@ function dedupeExpensePickerQuickItems(items: ExpensePickerQuickItem[]): Expense
     else m.set(k, { o: it.o, blockedElsewhere: prev.blockedElsewhere || it.blockedElsewhere })
   }
   return [...m.values()]
+}
+
+/** 지출 연결 모달 — 테이블 직접 선택 검색(PostgREST or) */
+function buildExpensePickerBrowseTextOrFilter(table: ExpensePickerBrowseTable, rawQ: string): string {
+  const q = rawQ.trim().replace(/,/g, ' ')
+  if (!q) return ''
+  const like = `%${q}%`
+  const parts: string[] = []
+  switch (table) {
+    case 'company_expenses':
+      parts.push(
+        `paid_for.ilike.${like}`,
+        `paid_to.ilike.${like}`,
+        `description.ilike.${like}`,
+        `id.ilike.${like}`
+      )
+      break
+    case 'tour_expenses':
+      parts.push(`paid_for.ilike.${like}`, `paid_to.ilike.${like}`, `note.ilike.${like}`, `id.ilike.${like}`)
+      break
+    case 'reservation_expenses':
+      parts.push(`paid_for.ilike.${like}`, `paid_to.ilike.${like}`, `note.ilike.${like}`, `id.ilike.${like}`)
+      break
+    case 'ticket_bookings':
+      parts.push(
+        `category.ilike.${like}`,
+        `company.ilike.${like}`,
+        `rn_number.ilike.${like}`,
+        `id.ilike.${like}`
+      )
+      break
+  }
+  const qAmt = q.replace(/[$,]/g, '')
+  const n = Number(qAmt)
+  if (Number.isFinite(n)) {
+    const col = table === 'ticket_bookings' ? 'expense' : 'amount'
+    parts.push(`${col}.eq.${n}`)
+  }
+  return parts.join(',')
 }
 
 /** 지출 연결 모달 검색 — 옵션별 haystack 1회만 생성 */
@@ -1780,8 +1813,7 @@ async function fetchMatchedExpenseKeysForOptions(
       }
       const settled = await Promise.allSettled(
         wave.map((chunk) =>
-          client
-            .from('reconciliation_matches')
+          fromUntypedTable(client, 'reconciliation_matches')
             .select('source_id')
             .eq('source_table', table)
             .in('source_id', chunk)
@@ -1821,7 +1853,7 @@ export default function StatementReconciliationTab() {
   const [reconciliationLinesLoading, setReconciliationLinesLoading] = useState(false)
 
   const [filterAccountId, setFilterAccountId] = useState('')
-  /** true면 matched_status가 unmatched·partial인 명세 줄만 표시(완전 대조 제외) */
+  /** true면 reconciliation_matches가 없는 명세 줄만 표시(지출·입금 연결·부분대조 줄 제외) */
   const [showOnlyUnmatchedLines, setShowOnlyUnmatchedLines] = useState(true)
   /** true면 상계(출금·수입 짝) 연결된 줄만 표시 */
   const [showOnlyPairedLines, setShowOnlyPairedLines] = useState(false)
@@ -1954,8 +1986,10 @@ export default function StatementReconciliationTab() {
   const [expensePickerBrowseRows, setExpensePickerBrowseRows] = useState<ExpenseOption[]>([])
   const [expensePickerBrowseLoading, setExpensePickerBrowseLoading] = useState(false)
   const [expensePickerBrowseHasMore, setExpensePickerBrowseHasMore] = useState(false)
-  /** 테이블 탐색 조회 폭: false면 ±RECON_STATEMENT_DAY_WINDOW일, true면 ±PICKER_BROWSE_WIDE_DAY_WINDOW일 */
-  const [expensePickerBrowseWide, setExpensePickerBrowseWide] = useState(false)
+  /** 테이블 탐색 조회 폭: line_window | wide | all(일자 제한 없음) */
+  const [expensePickerBrowseDateScope, setExpensePickerBrowseDateScope] =
+    useState<ExpensePickerBrowseDateScope>('line_window')
+  const [expensePickerBrowseQuery, setExpensePickerBrowseQuery] = useState('')
   const [expensePickerSearchSourceFilter, setExpensePickerSearchSourceFilter] = useState<
     '' | ExpensePickerBrowseTable
   >('')
@@ -2049,7 +2083,7 @@ export default function StatementReconciliationTab() {
       let token = getStoredAccessToken() || (await getSessionToken())
       const fetchAccounts = (accessToken: string | null) =>
         fetch('/api/financial/accounts', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
           credentials: 'same-origin',
         })
 
@@ -2099,7 +2133,7 @@ export default function StatementReconciliationTab() {
       let token = getStoredAccessToken() || (await getSessionToken())
       const fetchPaymentMethods = (accessToken: string | null) =>
         fetch('/api/payment-methods?limit=5000', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
           credentials: 'same-origin'
         })
 
@@ -2164,8 +2198,7 @@ export default function StatementReconciliationTab() {
   }, [])
 
   const loadImports = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('statement_imports')
+    const { data, error } = await fromUntypedTable(supabase, 'statement_imports')
       .select('id,financial_account_id,period_label,period_start,period_end,status,original_filename,created_at')
       .order('period_start', { ascending: false })
       .limit(200)
@@ -2644,20 +2677,6 @@ export default function StatementReconciliationTab() {
       const lines = expenseKeyToLineIds.get(k)
       if (!lines) return true
       for (const lid of lines) {
-        if (lid !== lineId) return false
-      }
-      return true
-    },
-    [expenseKeyToLineIds, expensePairOnLine]
-  )
-
-  const canPickExpenseKeysFast = useCallback(
-    (lineId: string, sourceTable: string, sourceId: string) => {
-      const k = expenseKey(sourceTable, sourceId)
-      if (expensePairOnLine.has(`${lineId}|${k}`)) return true
-      const lids = expenseKeyToLineIds.get(k)
-      if (!lids) return true
-      for (const lid of lids) {
         if (lid !== lineId) return false
       }
       return true
@@ -3646,29 +3665,21 @@ export default function StatementReconciliationTab() {
     return lines.find((l) => l.id === expensePickerLineId)?.posted_date?.trim().slice(0, 10) ?? ''
   }, [expensePickerLineId, lines])
 
+  const deferredExpensePickerBrowseQuery = useDeferredValue(expensePickerBrowseQuery)
+
   const loadExpensePickerBrowse = useCallback(
-    async (table: ExpensePickerBrowseTable, page: number) => {
+    async (table: ExpensePickerBrowseTable, page: number, browseQuery: string) => {
+      const q = browseQuery.trim().toLowerCase()
+      const hasSearch = q.length >= PICKER_SEARCH_MIN_CHARS
+      const skipDate = expensePickerBrowseDateScope === 'all' || hasSearch
       const lineDate = expensePickerLinePostedYmd
-      if (!lineDate || lineDate.length < 10) {
-        setExpensePickerBrowseRows([])
-        setExpensePickerBrowseHasMore(false)
-        return
-      }
-      const mid = new Date(`${lineDate}T12:00:00`)
-      if (Number.isNaN(mid.getTime())) {
+      if (!skipDate && lineDate.length < 10) {
         setExpensePickerBrowseRows([])
         setExpensePickerBrowseHasMore(false)
         return
       }
       setExpensePickerBrowseLoading(true)
       try {
-        const dayWindow = expensePickerBrowseWide ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW
-        const startYmd = addCalendarDaysYmd(lineDate, -dayWindow)
-        const endYmd = addCalendarDaysYmd(lineDate, dayWindow)
-        const start = new Date(`${startYmd}T00:00:00`)
-        const end = new Date(`${endYmd}T23:59:59.999`)
-        const startIso = start.toISOString()
-        const endIso = end.toISOString()
         const from = page * PICKER_BROWSE_PAGE_SIZE
         const sel =
           table === 'ticket_bookings'
@@ -3681,14 +3692,29 @@ export default function StatementReconciliationTab() {
 
         const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
         let query = withActiveExpenseRowsOnly(sb.from(table).select(sel), table)
-        if (table === 'ticket_bookings') {
-          query = query
-            .or(
+        if (!skipDate) {
+          const dayWindow =
+            expensePickerBrowseDateScope === 'wide' ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW
+          const startYmd = addCalendarDaysYmd(lineDate, -dayWindow)
+          const endYmd = addCalendarDaysYmd(lineDate, dayWindow)
+          const startIso = new Date(`${startYmd}T00:00:00`).toISOString()
+          const endIso = new Date(`${endYmd}T23:59:59.999`).toISOString()
+          if (table === 'ticket_bookings') {
+            query = query.or(
               `and(check_in_date.gte.${startYmd},check_in_date.lte.${endYmd}),and(submit_on.gte.${startIso},submit_on.lte.${endIso})`
             )
-            .order('check_in_date', { ascending: false, nullsFirst: false })
+          } else {
+            query = query.gte('submit_on', startIso).lte('submit_on', endIso)
+          }
+        }
+        if (hasSearch) {
+          const orFilter = buildExpensePickerBrowseTextOrFilter(table, q)
+          if (orFilter) query = query.or(orFilter)
+        }
+        if (table === 'ticket_bookings') {
+          query = query.order('check_in_date', { ascending: false, nullsFirst: false })
         } else {
-          query = query.gte('submit_on', startIso).lte('submit_on', endIso).order('submit_on', { ascending: false })
+          query = query.order('submit_on', { ascending: false })
         }
         const { data, error } = await query.range(from, from + PICKER_BROWSE_PAGE_SIZE)
 
@@ -3697,7 +3723,7 @@ export default function StatementReconciliationTab() {
         const hasMore = rows.length > PICKER_BROWSE_PAGE_SIZE
         const slice = rows
           .slice(0, PICKER_BROWSE_PAGE_SIZE)
-          .map((r) => recordToExpenseOption(table, r as Record<string, unknown>))
+          .map((r: Record<string, unknown>) => recordToExpenseOption(table, r))
         setExpensePickerBrowseRows(slice)
         setExpensePickerBrowseHasMore(hasMore)
       } catch (e) {
@@ -3710,18 +3736,19 @@ export default function StatementReconciliationTab() {
         setExpensePickerBrowseLoading(false)
       }
     },
-    [expensePickerLinePostedYmd, expensePickerBrowseWide]
+    [expensePickerLinePostedYmd, expensePickerBrowseDateScope]
   )
 
   useEffect(() => {
     if (!expensePickerBrowseTable || !expensePickerLineId) return
-    void loadExpensePickerBrowse(expensePickerBrowseTable, expensePickerBrowsePage)
+    void loadExpensePickerBrowse(expensePickerBrowseTable, expensePickerBrowsePage, deferredExpensePickerBrowseQuery)
   }, [
     expensePickerBrowseTable,
     expensePickerBrowsePage,
     expensePickerLineId,
     expensePickerLinePostedYmd,
-    expensePickerBrowseWide,
+    expensePickerBrowseDateScope,
+    deferredExpensePickerBrowseQuery,
     loadExpensePickerBrowse
   ])
 
@@ -3730,7 +3757,8 @@ export default function StatementReconciliationTab() {
     setExpensePickerBrowsePage(0)
     setExpensePickerBrowseRows([])
     setExpensePickerBrowseHasMore(false)
-    setExpensePickerBrowseWide(false)
+    setExpensePickerBrowseDateScope('line_window')
+    setExpensePickerBrowseQuery('')
     setExpensePickerSearchSourceFilter('')
     setExpensePickerSearchDateScope('line_window')
     setExpensePickerSearchSort('relevance')
@@ -3763,7 +3791,7 @@ export default function StatementReconciliationTab() {
         setUnmatchedEditOption(null)
         return
       }
-      const row = data as Record<string, unknown>
+      const row = data as unknown as Record<string, unknown>
       if (source_table === 'ticket_bookings') {
         setUnmatchedEditCategory(String(row.category ?? ''))
         setUnmatchedEditCompany(String(row.company ?? ''))
@@ -3847,7 +3875,7 @@ export default function StatementReconciliationTab() {
             paid_to: unmatchedEditPaidTo.trim(),
             amount: amt,
             submit_on: datetimeLocalValueToIso(unmatchedEditSubmitOn)
-          })
+          } as never)
           .eq('id', source_id)
         if (error) throw error
       }
@@ -3864,7 +3892,11 @@ export default function StatementReconciliationTab() {
       }
       await refreshUnmatchedExpenseKeys()
       if (expensePickerBrowseTable !== null && expensePickerLineId) {
-        await loadExpensePickerBrowse(expensePickerBrowseTable, expensePickerBrowsePage)
+        await loadExpensePickerBrowse(
+          expensePickerBrowseTable,
+          expensePickerBrowsePage,
+          expensePickerBrowseQuery
+        )
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
@@ -3886,6 +3918,7 @@ export default function StatementReconciliationTab() {
     refreshUnmatchedExpenseKeys,
     expensePickerBrowseTable,
     expensePickerBrowsePage,
+    expensePickerBrowseQuery,
     expensePickerLineId,
     loadExpensePickerBrowse
   ])
@@ -4123,8 +4156,7 @@ export default function StatementReconciliationTab() {
       }
 
       const contentHash = await hashStatementCsvContent(csvText)
-      const { data: dup, error: dupErr } = await supabase
-        .from('statement_imports')
+      const { data: dup, error: dupErr } = await fromUntypedTable(supabase, 'statement_imports')
         .select('id, created_at, original_filename')
         .eq('financial_account_id', importAccountId)
         .eq('content_hash', contentHash)
@@ -4145,8 +4177,7 @@ export default function StatementReconciliationTab() {
 
       const periodLabel = `${periodStart.slice(0, 7)}`
 
-      const { data: imp, error: eImp } = await supabase
-        .from('statement_imports')
+      const { data: imp, error: eImp } = await fromUntypedTable(supabase, 'statement_imports')
         .insert({
           financial_account_id: importAccountId,
           period_label: periodLabel,
@@ -4192,7 +4223,7 @@ export default function StatementReconciliationTab() {
 
       const chunk = 150
       for (let i = 0; i < rows.length; i += chunk) {
-        const { error: e2 } = await supabase.from('statement_lines').insert(rows.slice(i, i + chunk))
+        const { error: e2 } = await fromUntypedTable(supabase, 'statement_lines').insert(rows.slice(i, i + chunk))
         if (e2) {
           notifyImport(e2.message)
           return
@@ -4589,8 +4620,7 @@ export default function StatementReconciliationTab() {
         const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]?.key
         const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]
         if (!selected) continue
-        const { data: inserted, error } = await supabase
-          .from('reconciliation_matches')
+        const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
           .insert({
             statement_line_id: p.statement_line_id,
             source_table: selected.source_table,
@@ -4641,14 +4671,12 @@ export default function StatementReconciliationTab() {
     setResetAllMatchesOpen(false)
     setMessage(null)
     try {
-      const { error: delErr } = await supabase
-        .from('reconciliation_matches')
+      const { error: delErr } = await fromUntypedTable(supabase, 'reconciliation_matches')
         .delete()
         .gte('created_at', '1970-01-01T00:00:00.000Z')
       if (delErr) throw delErr
 
-      const { error: upErr } = await supabase
-        .from('statement_lines')
+      const { error: upErr } = await fromUntypedTable(supabase, 'statement_lines')
         .update({ matched_status: 'unmatched' })
         .in('matched_status', ['matched', 'partial'])
       if (upErr) throw upErr
@@ -4675,8 +4703,7 @@ export default function StatementReconciliationTab() {
       return
     }
     setLoading(true)
-    await supabase
-      .from('statement_imports')
+    await fromUntypedTable(supabase, 'statement_imports')
       .update({ status: 'locked' })
       .eq('id', lockTargetImport.id)
     setLoading(false)
@@ -4719,7 +4746,7 @@ export default function StatementReconciliationTab() {
     setLoading(true)
     setMessage(null)
     try {
-      const { error } = await supabase.from('statement_imports').delete().eq('id', imp.id)
+      const { error } = await fromUntypedTable(supabase, 'statement_imports').delete().eq('id', imp.id)
       if (error) throw error
       setMessage(`명세 업로드 1건을 삭제했습니다. (${fileLabel})`)
       await loadImports()
@@ -4739,8 +4766,7 @@ export default function StatementReconciliationTab() {
   const toggleLineFlags = async (line: StatementLine, field: 'exclude_from_pnl' | 'is_personal') => {
     if (field === 'is_personal') {
       const next = !line.is_personal
-      await supabase
-        .from('statement_lines')
+      await fromUntypedTable(supabase, 'statement_lines')
         .update({
           is_personal: next,
           personal_partner: next ? line.personal_partner : null
@@ -4759,7 +4785,7 @@ export default function StatementReconciliationTab() {
       )
     } else {
       const next = !line.exclude_from_pnl
-      await supabase.from('statement_lines').update({ exclude_from_pnl: next }).eq('id', line.id)
+      await fromUntypedTable(supabase, 'statement_lines').update({ exclude_from_pnl: next }).eq('id', line.id)
       setLines((prev) =>
         prev.map((row) => (row.id === line.id ? { ...row, exclude_from_pnl: next } : row))
       )
@@ -4770,8 +4796,7 @@ export default function StatementReconciliationTab() {
     line: StatementLine,
     partner: 'partner1' | 'partner2' | 'erica' | ''
   ) => {
-    await supabase
-      .from('statement_lines')
+    await fromUntypedTable(supabase, 'statement_lines')
       .update({ personal_partner: partner || null })
       .eq('id', line.id)
     setLines((prev) =>
@@ -4781,115 +4806,6 @@ export default function StatementReconciliationTab() {
 
   const syncLineMatchedFlag = async (lineId: string) => {
     await syncStatementLineMatchedStatus(supabase, lineId)
-  }
-
-  const saveExpenseSelection = async (line: StatementLine, value: string) => {
-    if (!email) {
-      setMessage('로그인이 필요합니다.')
-      return
-    }
-    if (!filterAccountId) return
-    setLoading(true)
-    setMessage(null)
-    try {
-      if (value) {
-        const colon = value.indexOf(':')
-        const st = value.slice(0, colon)
-        const sid = value.slice(colon + 1)
-        if (!canPickExpenseKeysFast(line.id, st, sid)) {
-          setMessage('이미 다른 명세 줄에 연결된 지출입니다.')
-          setLoading(false)
-          return
-        }
-      }
-      const lineMatches = matches.filter(
-        (m) =>
-          m.statement_line_id === line.id &&
-          EXPENSE_TABLES.includes(m.source_table as (typeof EXPENSE_TABLES)[number])
-      )
-      if (value) {
-        const colon = value.indexOf(':')
-        const st = value.slice(0, colon)
-        const sid = value.slice(colon + 1)
-        const existing = lineMatches[0]
-        if (existing) {
-          if (existing.source_table !== st || existing.source_id !== sid) {
-            const { error } = await supabase
-              .from('reconciliation_matches')
-              .update({
-                source_table: st,
-                source_id: sid,
-                matched_amount: Number(line.amount),
-                updated_by: email,
-                updated_at: new Date().toISOString()
-              } as any)
-              .eq('id', existing.id)
-            if (error) throw error
-            await logReconciliationMatchEvent({
-              match_id: existing.id,
-              statement_line_id: line.id,
-              action: 'updated',
-              actor_email: email,
-              before_source_table: existing.source_table,
-              before_source_id: existing.source_id,
-              after_source_table: st,
-              after_source_id: sid,
-              before_matched_amount: Number(line.amount),
-              after_matched_amount: Number(line.amount)
-            })
-          }
-        } else {
-          const { data: inserted, error } = await supabase
-            .from('reconciliation_matches')
-            .insert({
-              statement_line_id: line.id,
-              source_table: st,
-              source_id: sid,
-              matched_amount: Number(line.amount),
-              matched_by: email
-            })
-            .select('id')
-            .maybeSingle()
-          if (error) throw error
-          await logReconciliationMatchEvent({
-            match_id: inserted?.id ? String(inserted.id) : null,
-            statement_line_id: line.id,
-            action: 'created',
-            actor_email: email,
-            before_source_table: null,
-            before_source_id: null,
-            after_source_table: st,
-            after_source_id: sid,
-            before_matched_amount: null,
-            after_matched_amount: Number(line.amount)
-          })
-        }
-      } else {
-        for (const m of lineMatches) {
-          await logReconciliationMatchEvent({
-            match_id: m.id,
-            statement_line_id: line.id,
-            action: 'deleted',
-            actor_email: email,
-            before_source_table: m.source_table,
-            before_source_id: m.source_id,
-            after_source_table: null,
-            after_source_id: null,
-            before_matched_amount: Number(line.amount),
-            after_matched_amount: null
-          })
-          await supabase.from('reconciliation_matches').delete().eq('id', m.id)
-        }
-      }
-      await syncLineMatchedFlag(line.id)
-      setMessage(value ? '지출 매칭을 저장했습니다.' : '지출 매칭을 해제했습니다.')
-      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
-      await refreshUnmatchedExpenseKeys()
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : '저장 실패')
-    } finally {
-      setLoading(false)
-    }
   }
 
   const addPaymentRecordMatch = async (line: StatementLine, prId: string) => {
@@ -4905,7 +4821,7 @@ export default function StatementReconciliationTab() {
     setLoading(true)
     setMessage(null)
     try {
-      await supabase.from('reconciliation_matches').insert({
+      await fromUntypedTable(supabase, 'reconciliation_matches').insert({
         statement_line_id: line.id,
         source_table: 'payment_records',
         source_id: prId,
@@ -4942,7 +4858,7 @@ export default function StatementReconciliationTab() {
           after_matched_amount: null
         })
       }
-      await supabase.from('reconciliation_matches').delete().eq('id', matchRowId)
+      await fromUntypedTable(supabase, 'reconciliation_matches').delete().eq('id', matchRowId)
       await syncLineMatchedFlag(lineId)
       await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
       await refreshUnmatchedExpenseKeys()
@@ -5422,8 +5338,6 @@ export default function StatementReconciliationTab() {
               : Math.abs(Number(line.amount))
 
           const otherLineIds = expenseKeyToLineIds.get(expenseKey(st, sid))
-          const linkedElsewhere =
-            otherLineIds != null && [...otherLineIds].some((lid) => lid !== line.id)
           const useReplace = expensePickerPendingReconnectKeys.has(rawKey)
 
           if (useReplace) {
@@ -5440,8 +5354,7 @@ export default function StatementReconciliationTab() {
               linkMode: 'replace'
             })
           } else {
-            const { data: inserted, error } = await supabase
-              .from('reconciliation_matches')
+            const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
               .insert({
                 statement_line_id: line.id,
                 source_table: st,
@@ -5752,8 +5665,7 @@ export default function StatementReconciliationTab() {
           if (unique.length === 0) return
           for (let i = 0; i < unique.length; i += OPERATIONAL_LEDGER_MATCH_IN_CHUNK) {
             const chunk = unique.slice(i, i + OPERATIONAL_LEDGER_MATCH_IN_CHUNK)
-            const { data, error } = await (supabase as any)
-              .from('reconciliation_matches')
+            const { data, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
               .select('source_id')
               .eq('source_table', table)
               .in('source_id', chunk)
@@ -5956,8 +5868,7 @@ export default function StatementReconciliationTab() {
       const all: StatementLineCandidate[] = []
       for (let i = 0; i < importIds.length; i += 80) {
         const chunk = importIds.slice(i, i + 80)
-        const { data, error } = await (supabase as any)
-          .from('statement_lines')
+        const { data, error } = await fromUntypedTable(supabase, 'statement_lines')
           .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
           .in('statement_import_id', chunk)
           .gte('posted_date', startYmd)
@@ -6042,8 +5953,7 @@ export default function StatementReconciliationTab() {
     async (row: OperationalLedgerRow, candidate: StatementLineCandidate) => {
       if (!email) throw new Error('로그인이 필요합니다.')
       if (row.already_matched) throw new Error('이미 명세와 연결된 운영 원장 행입니다.')
-      const { data: inserted, error } = await (supabase as any)
-        .from('reconciliation_matches')
+      const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
         .insert({
           statement_line_id: candidate.id,
           source_table: row.source_table,
@@ -10223,6 +10133,8 @@ export default function StatementReconciliationTab() {
             setExpensePickerBrowsePage(0)
             setExpensePickerBrowseRows([])
             setExpensePickerBrowseHasMore(false)
+            setExpensePickerBrowseDateScope('line_window')
+            setExpensePickerBrowseQuery('')
             setExpensePickerSearchSourceFilter('')
             setExpensePickerSearchDateScope('line_window')
             setExpensePickerSearchSort('relevance')
@@ -10421,13 +10333,13 @@ export default function StatementReconciliationTab() {
                       <button
                         type="button"
                         className={`px-2 py-0.5 text-[11px] ${
-                          expensePickerBrowseWide
-                            ? 'bg-white text-slate-600 hover:bg-slate-50'
-                            : 'bg-slate-700 text-white'
+                          expensePickerBrowseDateScope === 'line_window'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-50'
                         }`}
                         disabled={loading || expensePickerBrowseLoading}
                         onClick={() => {
-                          setExpensePickerBrowseWide(false)
+                          setExpensePickerBrowseDateScope('line_window')
                           setExpensePickerBrowsePage(0)
                         }}
                       >
@@ -10436,33 +10348,78 @@ export default function StatementReconciliationTab() {
                       <button
                         type="button"
                         className={`px-2 py-0.5 text-[11px] border-l border-slate-200 ${
-                          expensePickerBrowseWide
+                          expensePickerBrowseDateScope === 'wide'
                             ? 'bg-slate-700 text-white'
                             : 'bg-white text-slate-600 hover:bg-slate-50'
                         }`}
                         disabled={loading || expensePickerBrowseLoading}
                         onClick={() => {
-                          setExpensePickerBrowseWide(true)
+                          setExpensePickerBrowseDateScope('wide')
                           setExpensePickerBrowsePage(0)
                         }}
                       >
                         ±{PICKER_BROWSE_WIDE_DAY_WINDOW}일
                       </button>
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 text-[11px] border-l border-slate-200 ${
+                          expensePickerBrowseDateScope === 'all'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                        disabled={loading || expensePickerBrowseLoading}
+                        onClick={() => {
+                          setExpensePickerBrowseDateScope('all')
+                          setExpensePickerBrowsePage(0)
+                        }}
+                      >
+                        일자 제한 없음
+                      </button>
                     </div>
                   </div>
                   <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
-                    위 명세 줄 거래일 <strong className="text-slate-700">{expensePickerLinePostedYmd || '—'}</strong> 기준
-                    ±{expensePickerBrowseWide ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW}일
-                    {expensePickerBrowseTable === 'ticket_bookings' ? (
-                      <> (<span className="tabular-nums">체크인일 또는 등록일 submit_on</span>)</>
-                    ) : expensePickerBrowseTable ? (
-                      <> (<span className="tabular-nums">등록일 submit_on</span>)</>
+                    {expensePickerBrowseQuery.trim().length >= PICKER_SEARCH_MIN_CHARS ? (
+                      <>
+                        검색어 기준으로 <strong className="text-slate-700">전 기간</strong>에서 조회합니다. 페이지당{' '}
+                        {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
+                      </>
+                    ) : expensePickerBrowseDateScope === 'all' ? (
+                      <>
+                        일자 제한 없이 최신순으로 조회합니다. 페이지당 {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
+                      </>
                     ) : (
-                      <> — 회사·투어·예약은 등록일, 입장권은 체크인일·등록일</>
+                      <>
+                        위 명세 줄 거래일{' '}
+                        <strong className="text-slate-700">{expensePickerLinePostedYmd || '—'}</strong> 기준 ±
+                        {expensePickerBrowseDateScope === 'wide'
+                          ? PICKER_BROWSE_WIDE_DAY_WINDOW
+                          : RECON_STATEMENT_DAY_WINDOW}
+                        일
+                        {expensePickerBrowseTable === 'ticket_bookings' ? (
+                          <> (<span className="tabular-nums">체크인일 또는 등록일 submit_on</span>)</>
+                        ) : expensePickerBrowseTable ? (
+                          <> (<span className="tabular-nums">등록일 submit_on</span>)</>
+                        ) : (
+                          <> — 회사·투어·예약은 등록일, 입장권은 체크인일·등록일</>
+                        )}
+                        만 조회합니다. 검색({PICKER_SEARCH_MIN_CHARS}자 이상) 시 전 기간에서 찾습니다. 페이지당{' '}
+                        {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
+                      </>
                     )}
-                    만 조회합니다. 페이지당 {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
                   </span>
                 </div>
+                <label className="text-xs text-slate-600 block space-y-1">
+                  검색 ({PICKER_SEARCH_MIN_CHARS}자 이상 — 비고·금액·ID·RN# 등, 일자 무관)
+                  <input
+                    className="w-full border rounded px-2 py-1.5 text-sm"
+                    value={expensePickerBrowseQuery}
+                    onChange={(e) => {
+                      setExpensePickerBrowseQuery(e.target.value)
+                      setExpensePickerBrowsePage(0)
+                    }}
+                    placeholder="회사·투어·예약·입장권 탭 선택 후 검색"
+                  />
+                </label>
                 <div className="flex flex-wrap gap-1.5">
                   {(
                     [
@@ -10471,26 +10428,37 @@ export default function StatementReconciliationTab() {
                       { t: 'reservation_expenses' as const, label: '예약' },
                       { t: 'ticket_bookings' as const, label: '입장권' }
                     ] as const
-                  ).map(({ t, label }) => (
-                    <Button
-                      key={t}
-                      type="button"
-                      size="sm"
-                      variant={expensePickerBrowseTable === t ? 'secondary' : 'outline'}
-                      className="text-xs"
-                      disabled={loading || expensePickerLinePostedYmd.length < 10}
-                      onClick={() => {
-                        setExpensePickerBrowseTable(t)
-                        setExpensePickerBrowsePage(0)
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  ))}
+                  ).map(({ t, label }) => {
+                    const browseNeedsLineDate =
+                      expensePickerBrowseDateScope !== 'all' &&
+                      expensePickerBrowseQuery.trim().length < PICKER_SEARCH_MIN_CHARS
+                    return (
+                      <Button
+                        key={t}
+                        type="button"
+                        size="sm"
+                        variant={expensePickerBrowseTable === t ? 'secondary' : 'outline'}
+                        className="text-xs"
+                        disabled={
+                          loading ||
+                          (browseNeedsLineDate && expensePickerLinePostedYmd.length < 10)
+                        }
+                        onClick={() => {
+                          setExpensePickerBrowseTable(t)
+                          setExpensePickerBrowsePage(0)
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    )
+                  })}
                 </div>
-                {expensePickerLinePostedYmd.length < 10 ? (
+                {expensePickerBrowseDateScope !== 'all' &&
+                expensePickerBrowseQuery.trim().length < PICKER_SEARCH_MIN_CHARS &&
+                expensePickerLinePostedYmd.length < 10 ? (
                   <p className="text-[11px] text-amber-800">
-                    명세 줄에 유효한 거래일(posted_date)이 없으면 이 목록을 불러올 수 없습니다.
+                    명세 줄에 유효한 거래일(posted_date)이 없으면 날짜 구간 목록을 불러올 수 없습니다.{' '}
+                    <strong>일자 제한 없음</strong> 또는 검색을 이용하세요.
                   </p>
                 ) : expensePickerBrowseTable ? (
                   <div className="space-y-2">
@@ -10515,7 +10483,9 @@ export default function StatementReconciliationTab() {
                             {expensePickerBrowseRows.length === 0 ? (
                               <tr>
                                 <td colSpan={6} className="px-2 py-4 text-slate-500 text-center">
-                                  이 구간에 해당 지출이 없습니다.
+                                  {expensePickerBrowseQuery.trim().length >= PICKER_SEARCH_MIN_CHARS
+                                    ? '검색 결과가 없습니다.'
+                                    : '이 구간에 해당 지출이 없습니다.'}
                                 </td>
                               </tr>
                             ) : (

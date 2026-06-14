@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, isAbortLikeError, canUseAuthenticatedRest } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 import {
   findOpenAttendanceSession,
   formatOpenSessionBlockMessage,
@@ -298,9 +299,11 @@ export function useAttendanceSync() {
     }
   }, [currentSession, calculateElapsedTime])
 
-  // 컴포넌트 마운트 시 데이터 로드
+  // 컴포넌트 마운트 직후가 아닌 idle 시점에 출퇴근 기록 조회
   useEffect(() => {
-    fetchTodayRecords()
+    return scheduleDeferredWork(() => {
+      void fetchTodayRecords()
+    })
   }, [fetchTodayRecords])
 
   return {

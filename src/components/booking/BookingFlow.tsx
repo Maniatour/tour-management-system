@@ -265,7 +265,7 @@ function PaymentForm({
   const stripe = useStripe()
   const elements = useElements()
   const [cardError, setCardError] = useState<string>('')
-  const [processing, setProcessing] = useState(false)
+  const [_processing, setProcessing] = useState(false)
   const handleSubmitRef = React.useRef<(() => Promise<void>) | null>(null)
   const onPaymentSubmitRef = React.useRef(onPaymentSubmit)
 
@@ -394,7 +394,7 @@ function PaymentForm({
     // 여러 단계의 지연을 사용하여 렌더링 완료 보장
     const timeoutId1 = setTimeout(() => {
       requestAnimationFrame(() => {
-        const timeoutId2 = setTimeout(() => {
+        setTimeout(() => {
           // onPaymentSubmit을 호출하기 전에 한 번 더 확인
           // handleSubmit은 ref를 통해 접근하므로 항상 최신 버전 사용
           if (onPaymentSubmitRef.current && !hasRegisteredHandler.current) {
@@ -645,14 +645,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         const choiceAvailabilityMap: Record<string, Record<string, boolean>> = {}
         
         if (pricingData) {
-          pricingData.forEach((item: { 
-            date: string
-            is_sale_available: boolean
-            adult_price: number
-            child_price: number
-            infant_price: number
-            choices_pricing?: Record<string, { is_sale_available?: boolean }>
-          }) => {
+          pricingData.forEach((item) => {
             if (item.is_sale_available === false) {
               closedDatesSet.add(item.date)
             }
@@ -667,9 +660,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
             if (item.choices_pricing && typeof item.choices_pricing === 'object') {
               const choiceStatus: Record<string, boolean> = {}
               Object.entries(item.choices_pricing).forEach(([choiceId, choiceData]) => {
-                if (choiceData && typeof choiceData === 'object') {
-                  // is_sale_available이 명시적으로 false인 경우만 마감으로 처리
-                  choiceStatus[choiceId] = choiceData.is_sale_available !== false
+                if (choiceData && typeof choiceData === 'object' && !Array.isArray(choiceData)) {
+                  const choicePricing = choiceData as { is_sale_available?: boolean }
+                  choiceStatus[choiceId] = choicePricing.is_sale_available !== false
                 }
               })
               choiceAvailabilityMap[item.date] = choiceStatus
@@ -719,14 +712,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           // Dynamic pricing에 날짜가 있으면 해당 날짜들 우선 표시
           console.log('Dynamic pricing에서 가져온 날짜들:', pricingData.map((item: { date: string }) => item.date))
           
-          const pricingDates = pricingData.map((item: { 
-            date: string
-            is_sale_available: boolean
-            adult_price: number
-            child_price: number
-            infant_price: number
-            choices_pricing?: Record<string, { is_sale_available?: boolean }>
-          }) => item.date)
+          const pricingDates = pricingData.map((item) => item.date)
           
           // Dynamic pricing 날짜들을 스케줄로 생성
           pricingDates.forEach(date => {
@@ -897,7 +883,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         // linked_option_id가 있으면 options 테이블에서 상세 정보 가져오기
         if (data && data.length > 0) {
           const linkedOptionIds = data
-            .map((opt: ProductOption) => opt.linked_option_id)
+            .map((opt) => opt.linked_option_id)
             .filter((id): id is string => id !== null && id !== undefined)
           
           const optionsData: Record<string, {
@@ -955,7 +941,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           }
           
           // product_options 데이터에 options 정보 병합
-          const enrichedData = data.map((po: ProductOption) => ({
+          const enrichedData = data.map((po) => ({
             ...po,
             option_name: po.linked_option_id ? (optionsData[po.linked_option_id]?.name || po.name) : po.name,
             option_name_ko: po.linked_option_id ? optionsData[po.linked_option_id]?.name_ko : null,
@@ -970,7 +956,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
             option_infant_price: po.linked_option_id ? optionsData[po.linked_option_id]?.infant_price : po.infant_price_adjustment
           }))
           
-          setProductOptions(enrichedData)
+          setProductOptions(enrichedData as ProductOption[])
         } else {
           setProductOptions([])
         }
@@ -1026,7 +1012,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         const counts: Record<string, number> = {}
         
         // 실제 데이터 처리
-        data?.forEach((reservation: { tour_date: string; total_people: number; status: string }) => {
+        data?.forEach((reservation) => {
           const st = String(reservation.status ?? '').toLowerCase()
           if (st.includes('cancel') || st === 'inquiry') return
           const date = reservation.tour_date
@@ -2771,7 +2757,6 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           
                           // 애뉴얼 패스 조건부 로직
                           const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
-                          const isAnnualPassBuyer = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('buyer')
                           const isAnnualPassCompanion = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('companion')
                           const isIndividualFee = optionName.includes('resident') || optionName.includes('거주자') || optionName.includes('비 거주자')
                           

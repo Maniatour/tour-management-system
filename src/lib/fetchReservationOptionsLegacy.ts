@@ -39,7 +39,7 @@ function mapRow(
     nameKoRaw != null && String(nameKoRaw).trim() !== '' ? String(nameKoRaw) : null
   const lineRaw = row.total_price
   const line =
-    lineRaw != null && lineRaw !== ''
+    lineRaw != null
       ? Number(lineRaw)
       : (Number(row.price) || 0) * (Number(row.ea) || 1)
   const unit = catalog?.adult_price != null ? Number(catalog.adult_price) : null

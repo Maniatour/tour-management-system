@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { X, FileText, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock } from 'lucide-react'
+import { X, FileText, Calendar, MapPin, Users, User, Car } from 'lucide-react'
 import TourReportForm from './TourReportForm'
 
 type Tour = Database['public']['Tables']['tours']['Row']
@@ -29,17 +29,15 @@ interface TourReportModalProps {
 
 export default function TourReportModal({ isOpen, onClose, locale }: TourReportModalProps) {
   const supabase = createClientSupabase()
-  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole: _userRole, simulatedUser, isSimulating } = useAuth()
   
   // 번역 함수
   const getText = (ko: string, en: string) => locale === 'en' ? en : ko
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [tours, setTours] = useState<ExtendedTour[]>([])
-  const [selectedTour, setSelectedTour] = useState<ExtendedTour | null>(null)
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('')
@@ -77,7 +75,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
       }
 
       // 상품 정보 가져오기
-      const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+      const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => !!id))]
       let productMap = new Map()
       let productEnMap = new Map()
       
@@ -92,8 +90,8 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
       }
 
       // 팀원 정보 가져오기
-      const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+      const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((id): id is string => !!id))]
+      const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((id): id is string => !!id))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
       
       let teamMap = new Map()
@@ -107,16 +105,16 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
       }
 
       // 차량 정보 가져오기
-      const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+      const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => !!id))]
       
       let vehicleMap = new Map()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number, nick')
+          .select('id, vehicle_number')
           .in('id', vehicleIds)
         
-        vehicleMap = new Map((vehiclesData || []).map((vehicle: { id: string; vehicle_number: string | null; nick?: string | null }) => [vehicle.id, (vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || null]))
+        vehicleMap = new Map((vehiclesData || []).map((vehicle) => [vehicle.id, vehicle.vehicle_number || null]))
       }
 
       // 예약 정보로 인원 계산
@@ -503,7 +501,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
               {currentEditingTour && (
                 <TourReportForm
                   tourId={currentEditingTour.id}
-                  productId={currentEditingTour.product_id ?? undefined}
+                  productId={currentEditingTour.product_id ?? null}
                   variant="modal"
                   onSuccess={handleReportFormSuccess}
                   onCancel={handleReportFormCancel}

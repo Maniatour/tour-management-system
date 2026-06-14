@@ -1,9 +1,11 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
@@ -76,11 +78,24 @@ import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseRe
 import { cn } from '@/lib/utils'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { paidForComboboxHelpWhenStandardUnset } from '@/lib/companyExpenseFormCopy'
-import { collectPaidForFromStandardUnsetExpenses, collectPaidForFilterOptions } from '@/lib/companyExpensePaidForSuggestions'
+import { collectPaidForFromStandardUnsetExpenses } from '@/lib/companyExpensePaidForSuggestions'
+import { appendMultiQueryValues } from '@/lib/multiQueryParam'
+import {
+  companyExpenseFilterKey,
+  parseCompanyExpenseFiltersFromSearchParams,
+  setsFromFilterArrays,
+  type CompanyExpenseFilterUrlState,
+} from '@/lib/companyExpenseFilterUrl'
+import {
+  resolveInitialCompanyExpenseFilters,
+  saveCompanyExpenseFiltersToStorage,
+  searchParamsHasCompanyExpenseFilters,
+  stripCompanyExpenseFilterParams,
+} from '@/lib/companyExpenseFilterStorage'
+import StringMultiSelectFilter from '@/components/filters/StringMultiSelectFilter'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import ReservationExpenseTabPager, {
   RESERVATION_EXPENSE_PAGE_SIZES,
-  reservationExpenseTotalPages
 } from '@/components/expenses/ReservationExpenseTabPager'
 import { lvYmdFromSubmitOnIso } from '@/lib/lasVegasCalendar'
 
@@ -177,6 +192,14 @@ export default function CompanyExpenseManager({
     console.warn('로케일을 가져올 수 없습니다. 기본값(ko)을 사용합니다.', error)
   }
   const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+  const urlInit = resolveInitialCompanyExpenseFilters(searchParams)
+  const urlInitSets = setsFromFilterArrays(urlInit)
+  const filterStorageBootRef = useRef(false)
+  const prevFilterKeyRef = useRef<string | null>(null)
+
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -187,25 +210,36 @@ export default function CompanyExpenseManager({
   const [saving, setSaving] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<CompanyExpense | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [vehicleFilter, setVehicleFilter] = useState('all')
-  const [paidForFilter, setPaidForFilter] = useState('all')
-  /** 표준 결제내용(standard_paid_for) 저장 여부: all | set | unset */
-  const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
-  /** 카테고리 매니저 표준 리프 id — all 이면 미적용 */
-  const [standardLeafFilter, setStandardLeafFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState(urlInit.searchTerm)
+  const [statusFilters, setStatusFilters] = useState<Set<string>>(() => new Set(urlInitSets.statusFilters))
+  const [vehicleFilters, setVehicleFilters] = useState<Set<string>>(() => new Set(urlInitSets.vehicleFilters))
+  const [paidToFilters, setPaidToFilters] = useState<Set<string>>(() => new Set(urlInitSets.paidToFilters))
+  /** 표준 결제내용(standard_paid_for) 텍스트 다중 선택 */
+  const [standardPaidForValueFilters, setStandardPaidForValueFilters] = useState<Set<string>>(
+    () => new Set(urlInitSets.standardPaidForValueFilters)
+  )
+  const [paymentMethodFilters, setPaymentMethodFilters] = useState<Set<string>>(
+    () => new Set(urlInitSets.paymentMethodFilters)
+  )
+  const [submitByFilters, setSubmitByFilters] = useState<Set<string>>(() => new Set(urlInitSets.submitByFilters))
+  /** 표준 결제내용(standard_paid_for) 저장 여부: all | set | unset — 값 다중 선택이 없을 때만 적용 */
+  const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>(
+    urlInit.standardPaidForFilter
+  )
   /** 환급 목록 필터 — API `reimbursement` 쿼리와 동일 */
-  const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>(
+    urlInit.reimbursementFilter
+  )
   /** 지출 등록·수정 모달: 환급 입력란 표시 여부 */
   const [reimbursementSectionOpen, setReimbursementSectionOpen] = useState(false)
   /** 명세 대조: 전체 | reconciliation_matches 미연결만 */
-  const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageLimit, setPageLimit] = useState(20)
+  const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>(
+    urlInit.statementMatchFilter
+  )
+  const [dateFrom, setDateFrom] = useState(urlInit.dateFrom)
+  const [dateTo, setDateTo] = useState(urlInit.dateTo)
+  const [page, setPage] = useState(urlInit.page)
+  const [pageLimit, setPageLimit] = useState(urlInit.pageLimit)
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -214,6 +248,11 @@ export default function CompanyExpenseManager({
     paid_for: string[]
     /** standard_paid_for 미저장 지출에 저장된 paid_for 목록 */
     paid_for_standard_unset: string[]
+    payment_method: string[]
+    payment_method_filters: { value: string; count: number }[]
+    standard_paid_for_filters: { value: string; count: number }[]
+    standard_paid_for: string[]
+    submit_by: string[]
   } | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [expenseVendors, setExpenseVendors] = useState<ExpenseVendorRecord[]>([])
@@ -323,6 +362,61 @@ export default function CompanyExpenseManager({
     setStmtReconOpen(true)
   }, [])
 
+  const filterUrlState = useMemo((): CompanyExpenseFilterUrlState => {
+    return {
+      searchTerm,
+      statusFilters: [...statusFilters],
+      vehicleFilters: [...vehicleFilters],
+      paidToFilters: [...paidToFilters],
+      standardPaidForValueFilters: [...standardPaidForValueFilters],
+      paymentMethodFilters: [...paymentMethodFilters],
+      submitByFilters: [...submitByFilters],
+      standardPaidForFilter,
+      reimbursementFilter,
+      statementMatchFilter,
+      dateFrom,
+      dateTo,
+      page,
+      pageLimit,
+    }
+  }, [
+    searchTerm,
+    statusFilters,
+    vehicleFilters,
+    paidToFilters,
+    standardPaidForValueFilters,
+    paymentMethodFilters,
+    submitByFilters,
+    standardPaidForFilter,
+    reimbursementFilter,
+    statementMatchFilter,
+    dateFrom,
+    dateTo,
+    page,
+    pageLimit,
+  ])
+
+  /** 레거시 URL 필터 → localStorage 이전 후 URL 정리(431 방지) */
+  useEffect(() => {
+    if (filterStorageBootRef.current) return
+    filterStorageBootRef.current = true
+
+    if (searchParamsHasCompanyExpenseFilters(searchParams)) {
+      saveCompanyExpenseFiltersToStorage(parseCompanyExpenseFiltersFromSearchParams(searchParams))
+    }
+
+    const cleaned = stripCompanyExpenseFilterParams(new URLSearchParams(searchParams.toString()))
+    const nextQs = cleaned.toString()
+    const curQs = searchParams.toString()
+    if (nextQs !== curQs) {
+      router.replace(nextQs ? `${pathname}?${nextQs}` : pathname, { scroll: false })
+    }
+  }, [pathname, router, searchParams])
+
+  useEffect(() => {
+    saveCompanyExpenseFiltersToStorage(filterUrlState)
+  }, [filterUrlState])
+
   const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
@@ -330,21 +424,23 @@ export default function CompanyExpenseManager({
       params.set('page', String(page))
       params.set('limit', String(pageLimit))
       if (searchTerm) params.append('search', searchTerm)
-      if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
-      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
-      if (vehicleFilter && vehicleFilter !== 'all') params.append('vehicle_id', vehicleFilter)
-      if (paidForFilter && paidForFilter !== 'all') params.append('paid_for', paidForFilter)
-      if (standardPaidForFilter === 'set' || standardPaidForFilter === 'unset') {
-        params.append('standard_paid_for', standardPaidForFilter)
+      appendMultiQueryValues(params, 'status', statusFilters)
+      appendMultiQueryValues(params, 'vehicle_id', vehicleFilters)
+      appendMultiQueryValues(params, 'paid_to', paidToFilters)
+      appendMultiQueryValues(params, 'standard_paid_for', standardPaidForValueFilters)
+      appendMultiQueryValues(params, 'payment_method', paymentMethodFilters)
+      appendMultiQueryValues(params, 'submit_by', submitByFilters)
+      if (
+        standardPaidForValueFilters.size === 0 &&
+        (standardPaidForFilter === 'set' || standardPaidForFilter === 'unset')
+      ) {
+        params.append('standard_paid_for_presence', standardPaidForFilter)
       }
       if (reimbursementFilter !== 'all') {
         params.append('reimbursement', reimbursementFilter)
       }
       if (statementMatchFilter === 'unmatched' && !searchTerm.trim()) {
         params.append('statement_match', 'unmatched')
-      }
-      if (standardLeafFilter && standardLeafFilter !== 'all') {
-        params.append('standard_leaf_id', standardLeafFilter)
       }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
@@ -369,12 +465,13 @@ export default function CompanyExpenseManager({
     }
   }, [
     searchTerm,
-    categoryFilter,
-    statusFilter,
-    vehicleFilter,
-    paidForFilter,
+    statusFilters,
+    vehicleFilters,
+    paidToFilters,
+    standardPaidForValueFilters,
+    paymentMethodFilters,
+    submitByFilters,
     standardPaidForFilter,
-    standardLeafFilter,
     reimbursementFilter,
     statementMatchFilter,
     dateFrom,
@@ -452,23 +549,49 @@ export default function CompanyExpenseManager({
     }
   }, [])
 
-  // 필터 변경 시 1페이지로
+  // 필터 변경 시 1페이지로 (URL 복원·최초 마운트는 제외)
+  const filterKeySansPage = useMemo(
+    () =>
+      companyExpenseFilterKey({
+        searchTerm,
+        statusFilters: [...statusFilters],
+        vehicleFilters: [...vehicleFilters],
+        paidToFilters: [...paidToFilters],
+        standardPaidForValueFilters: [...standardPaidForValueFilters],
+        paymentMethodFilters: [...paymentMethodFilters],
+        submitByFilters: [...submitByFilters],
+        standardPaidForFilter,
+        reimbursementFilter,
+        statementMatchFilter,
+        dateFrom,
+        dateTo,
+      }),
+    [
+      searchTerm,
+      statusFilters,
+      vehicleFilters,
+      paidToFilters,
+      standardPaidForValueFilters,
+      paymentMethodFilters,
+      submitByFilters,
+      standardPaidForFilter,
+      reimbursementFilter,
+      statementMatchFilter,
+      dateFrom,
+      dateTo,
+    ]
+  )
+
   useEffect(() => {
-    setPage(1)
-  }, [
-    searchTerm,
-    categoryFilter,
-    statusFilter,
-    vehicleFilter,
-    paidForFilter,
-    standardPaidForFilter,
-    standardLeafFilter,
-    reimbursementFilter,
-    statementMatchFilter,
-    dateFrom,
-    dateTo,
-    pageLimit,
-  ])
+    if (prevFilterKeyRef.current === null) {
+      prevFilterKeyRef.current = filterKeySansPage
+      return
+    }
+    if (prevFilterKeyRef.current !== filterKeySansPage) {
+      prevFilterKeyRef.current = filterKeySansPage
+      setPage(1)
+    }
+  }, [filterKeySansPage])
 
   const loadExpenseStandardCategories = useCallback(async () => {
     try {
@@ -547,19 +670,58 @@ export default function CompanyExpenseManager({
         const json = await res.json()
         if (cancelled) return
         if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {
-          const paid_to = Array.isArray(json.paid_to) ? json.paid_to.filter((x: unknown) => typeof x === 'string') : []
-          const paid_for = Array.isArray(json.paid_for) ? json.paid_for.filter((x: unknown) => typeof x === 'string') : []
-          const paid_for_standard_unset = Array.isArray(json.paid_for_standard_unset)
-            ? json.paid_for_standard_unset.filter((x: unknown) => typeof x === 'string')
-            : []
-          setExpenseSuggestions({ paid_to, paid_for, paid_for_standard_unset })
+          const asStr = (v: unknown) =>
+            Array.isArray(v) ? v.filter((x: unknown) => typeof x === 'string') : []
+          const parseCountRows = (raw: unknown) =>
+            Array.isArray(raw)
+              ? raw
+                  .filter(
+                    (r: unknown): r is { value: string; count: number } =>
+                      !!r &&
+                      typeof r === 'object' &&
+                      typeof (r as { value?: unknown }).value === 'string' &&
+                      typeof (r as { count?: unknown }).count === 'number'
+                  )
+                  .map((r: { value: string; count: number }) => ({
+                    value: r.value.trim(),
+                    count: r.count,
+                  }))
+              : []
+          setExpenseSuggestions({
+            paid_to: asStr(json.paid_to),
+            paid_for: asStr(json.paid_for),
+            paid_for_standard_unset: asStr(json.paid_for_standard_unset),
+            payment_method: asStr(json.payment_method),
+            payment_method_filters: parseCountRows(json.payment_method_filters),
+            standard_paid_for_filters: parseCountRows(json.standard_paid_for_filters),
+            standard_paid_for: asStr(json.standard_paid_for),
+            submit_by: asStr(json.submit_by),
+          })
         } else {
-          setExpenseSuggestions({ paid_to: [], paid_for: [], paid_for_standard_unset: [] })
+          setExpenseSuggestions({
+            paid_to: [],
+            paid_for: [],
+            paid_for_standard_unset: [],
+            payment_method: [],
+            payment_method_filters: [],
+            standard_paid_for_filters: [],
+            standard_paid_for: [],
+            submit_by: [],
+          })
           if (!res.ok) toast.error(t('messages.suggestionsLoadError'))
         }
       } catch {
         if (!cancelled) {
-          setExpenseSuggestions({ paid_to: [], paid_for: [], paid_for_standard_unset: [] })
+          setExpenseSuggestions({
+            paid_to: [],
+            paid_for: [],
+            paid_for_standard_unset: [],
+            payment_method: [],
+            payment_method_filters: [],
+            standard_paid_for_filters: [],
+            standard_paid_for: [],
+            submit_by: [],
+          })
           toast.error(t('messages.suggestionsLoadError'))
         }
       } finally {
@@ -828,31 +990,106 @@ export default function CompanyExpenseManager({
     unifiedFlatLeaves,
   ])
 
-  const paidForFilterOptions = useMemo(() => {
-    const options = collectPaidForFilterOptions({
-      standardPaidForFilter,
-      expenseSuggestions,
-      expenses,
-    })
-    const s = new Set(options)
-    if (paidForFilter && paidForFilter !== 'all' && paidForFilter.trim()) {
-      s.add(paidForFilter.trim())
-    }
-    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [expenseSuggestions, expenses, paidForFilter, standardPaidForFilter])
+  const multiSelectedCountLabel = useCallback(
+    (count: number) => t('filters.multiSelectedCount', { count }),
+    [t]
+  )
 
-  useEffect(() => {
-    if (paidForFilter === 'all') return
-    if (standardPaidForFilter === 'all') return
-    const allowed = collectPaidForFilterOptions({
-      standardPaidForFilter,
-      expenseSuggestions,
-      expenses,
+  const paidToFilterOptions = useMemo(() => {
+    const s = new Set<string>()
+    expenseSuggestions?.paid_to?.forEach((x) => {
+      const t0 = x.trim()
+      if (t0) s.add(t0)
     })
-    if (!allowed.includes(paidForFilter)) {
-      setPaidForFilter('all')
+    paidToFilters.forEach((v) => s.add(v))
+    return Array.from(s)
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map((value) => ({ value, label: value }))
+  }, [expenseSuggestions, paidToFilters])
+
+  const standardPaidForValueFilterOptions = useMemo(() => {
+    const byValue = new Map<string, number>()
+    for (const row of expenseSuggestions?.standard_paid_for_filters ?? []) {
+      if (row.value) byValue.set(row.value, row.count)
     }
-  }, [standardPaidForFilter, expenseSuggestions, expenses, paidForFilter])
+    expenseSuggestions?.standard_paid_for?.forEach((x) => {
+      const t0 = x.trim()
+      if (t0 && !byValue.has(t0)) byValue.set(t0, 0)
+    })
+    standardPaidForValueFilters.forEach((v) => {
+      if (v && !byValue.has(v)) byValue.set(v, 0)
+    })
+    return Array.from(byValue.entries())
+      .map(([value, count]) => ({
+        value,
+        label:
+          count > 0
+            ? t('filters.standardPaidForWithCount', { label: value, count })
+            : value,
+        searchText: value,
+      }))
+      .sort((a, b) => {
+        const ca = byValue.get(a.value) ?? 0
+        const cb = byValue.get(b.value) ?? 0
+        return cb - ca || a.label.localeCompare(b.label, 'ko')
+      })
+  }, [expenseSuggestions, standardPaidForValueFilters, t])
+
+  const paymentMethodFilterOptions = useMemo(() => {
+    const byValue = new Map<string, number>()
+    for (const row of expenseSuggestions?.payment_method_filters ?? []) {
+      if (row.value) byValue.set(row.value, row.count)
+    }
+    for (const id of paymentMethodFilters) {
+      if (id && !byValue.has(id)) byValue.set(id, 0)
+    }
+    return Array.from(byValue.entries())
+      .map(([value, count]) => {
+        const baseLabel = paymentMethodMap[value] || value
+        return {
+          value,
+          label: t('filters.paymentMethodWithCount', { label: baseLabel, count }),
+          searchText: baseLabel,
+        }
+      })
+      .sort((a, b) => {
+        const ca = byValue.get(a.value) ?? 0
+        const cb = byValue.get(b.value) ?? 0
+        return cb - ca || a.label.localeCompare(b.label, 'ko')
+      })
+  }, [expenseSuggestions, paymentMethodFilters, paymentMethodMap, t])
+
+  const submitByFilterOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    teamList.forEach((m) => {
+      const email = m.email.trim()
+      if (!email) return
+      map.set(email, m.name_ko || m.display_name || email)
+    })
+    expenseSuggestions?.submit_by?.forEach((email) => {
+      const e = email.trim()
+      if (!e) return
+      if (!map.has(e)) {
+        map.set(e, teamMembers.get(e.toLowerCase())?.name_ko || e)
+      }
+    })
+    submitByFilters.forEach((email) => {
+      if (!map.has(email)) map.set(email, teamMembers.get(email.toLowerCase())?.name_ko || email)
+    })
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], 'ko'))
+      .map(([value, label]) => ({ value, label, searchText: value }))
+  }, [teamList, teamMembers, expenseSuggestions, submitByFilters])
+
+  const applyStandardPaidForPresence = useCallback((presence: 'all' | 'set' | 'unset') => {
+    setStandardPaidForFilter(presence)
+    if (presence !== 'all') setStandardPaidForValueFilters(new Set())
+  }, [])
+
+  const openStandardUnifyWorkflow = useCallback(() => {
+    applyStandardPaidForPresence('unset')
+    setPaidForNormModalOpen(true)
+  }, [applyStandardPaidForPresence])
 
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1165,8 +1402,7 @@ export default function CompanyExpenseManager({
 
   const updatePaidToEmployeeEmail = async (expenseId: string, email: string | null) => {
     try {
-      const { error } = await supabase
-        .from('company_expenses')
+      const { error } = await fromUntypedTable(supabase, 'company_expenses')
         .update({ paid_to_employee_email: email || null, updated_at: new Date().toISOString() })
         .eq('id', expenseId)
       if (error) throw error
@@ -1250,6 +1486,16 @@ export default function CompanyExpenseManager({
   ]
 
   const categoryKeys = new Set(categories.map((c) => c.value))
+  const statusFilterOptions = [
+    { value: 'pending', label: tTour('filterPending') },
+    { value: 'approved', label: tTour('filterApproved') },
+    { value: 'rejected', label: tTour('filterRejected') },
+    { value: 'paid', label: t('status.paid') },
+  ]
+  const vehicleFilterOptions = vehicles.map((vehicle) => ({
+    value: vehicle.id,
+    label: `${vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} (${vehicle.vehicle_category || 'N/A'})`,
+  }))
   const getCategoryLabel = (category: string) => {
     if (category === '인건비') return t('categories.laborCost')
     return categoryKeys.has(category) ? t(`categories.${category}`) : category
@@ -1299,22 +1545,36 @@ export default function CompanyExpenseManager({
 
   const resetFilters = () => {
     setSearchTerm('')
-    setCategoryFilter('all')
-    setStatusFilter('all')
-    setVehicleFilter('all')
-    setPaidForFilter('all')
-    setStandardPaidForFilter('all')
-    setStandardLeafFilter('all')
+    setStatusFilters(new Set())
+    setVehicleFilters(new Set())
+    setPaidToFilters(new Set())
+    setStandardPaidForValueFilters(new Set())
+    setPaymentMethodFilters(new Set())
+    setSubmitByFilters(new Set())
+    setStandardPaidForFilter('unset')
     setReimbursementFilter('all')
     setStatementMatchFilter('all')
     setDateFrom('')
     setDateTo('')
+    setPage(1)
+    setPageLimit(20)
   }
+
+  const isSubmitYearFilterActive = useCallback(
+    (year: number) => dateFrom === `${year}-01-01` && dateTo === `${year}-12-31`,
+    [dateFrom, dateTo]
+  )
+
+  const applySubmitYearFilter = useCallback((year: number) => {
+    setDateFrom(`${year}-01-01`)
+    setDateTo(`${year}-12-31`)
+  }, [])
 
   const getVehicleLineLabel = (vehicleId: string) => {
     const v = vehicles.find((x) => x.id === vehicleId)
     if (!v) return vehicleId
-    return `${v.vehicle_number || v.vehicle_type || 'Unknown'} (${v.vehicle_category || 'N/A'})`
+    const nick = (v as Vehicle & { nick?: string | null }).nick?.trim()
+    return nick || v.vehicle_number || v.vehicle_type || 'Unknown'
   }
 
   const hasUsableVehicleId = (id: string | null | undefined) => Boolean(id && id !== 'none')
@@ -1441,12 +1701,6 @@ export default function CompanyExpenseManager({
     [paidForLabels, formData.paid_for_label_id]
   )
 
-  const paidForLabelById = useMemo(() => {
-    const m = new Map<string, (typeof paidForLabels)[number]>()
-    paidForLabels.forEach((l) => m.set(l.id, l))
-    return m
-  }, [paidForLabels])
-
   const openVehicleMaintenanceHistory = (vehicleId: string) => {
     setVehicleMaintenanceForId(vehicleId)
     setVehicleMaintenanceOpen(true)
@@ -1456,7 +1710,8 @@ export default function CompanyExpenseManager({
     void (async () => {
       try {
         const res = await fetch(
-          `/api/vehicle-maintenance/integration?vehicle_id=${encodeURIComponent(vehicleId)}`
+          `/api/vehicle-maintenance/integration?vehicle_id=${encodeURIComponent(vehicleId)}`,
+          { headers: apiBearerAuthHeaders() }
         )
         const json: { data?: VehicleMaintenanceIntegrationRow[]; error?: string } = await res.json()
         if (!res.ok) {
@@ -1731,11 +1986,28 @@ export default function CompanyExpenseManager({
     </TableCell>
   )
 
-  const vmT = (key: string) => tVm(key as never)
+  const formatVmMaintenanceType = useCallback(
+    (type: string) => {
+      const v = (type || '').trim()
+      if (!v) return '—'
+      const known = new Set(['maintenance', 'repair', 'service', 'inspection', 'emergency'])
+      return known.has(v) ? tVm(`maintenanceTypes.${v}` as never) : v
+    },
+    [tVm]
+  )
+
+  const formatVmStatus = useCallback(
+    (status: string | null | undefined) => {
+      const v = (status || 'completed').trim()
+      const known = new Set(['scheduled', 'in_progress', 'completed', 'cancelled'])
+      return known.has(v) ? tVm(`status.${v}` as never) : v
+    },
+    [tVm]
+  )
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
+      <div className="bg-gray-50 rounded-lg p-2 sm:p-3 space-y-2">
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-stretch">
           <div className="flex flex-1 gap-2 min-w-0">
             <div className="flex-1 relative min-w-0">
@@ -2417,138 +2689,249 @@ export default function CompanyExpenseManager({
         </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-category">
-              {t('filters.category')}
-            </label>
-            <select
-              id="co-filter-category"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+        <div className="rounded-md border border-gray-200/90 bg-white/80 p-1.5 sm:p-2 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/70 px-2 py-1.5">
+            <span className="text-[10px] font-medium text-amber-950 shrink-0">{t('filters.standardPaidFor')}</span>
+            <button
+              type="button"
+              onClick={() => applyStandardPaidForPresence('unset')}
+              aria-pressed={standardPaidForFilter === 'unset' && standardPaidForValueFilters.size === 0}
+              className={`h-7 px-2 text-[11px] rounded-md border transition-colors ${
+                standardPaidForFilter === 'unset' && standardPaidForValueFilters.size === 0
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-white text-amber-950 border-amber-300 hover:bg-amber-100'
+              }`}
             >
-              <option value="all">{t('filters.all')}</option>
-              {categories.map((category) => (
-                <option key={category.value} value={category.value}>
-                  {category.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-status">
-              {tTour('statusLabel')}
-            </label>
-            <select
-              id="co-filter-status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              {t('filters.standardPaidForUnset')}
+            </button>
+            <button
+              type="button"
+              onClick={() => applyStandardPaidForPresence('set')}
+              aria-pressed={standardPaidForFilter === 'set' && standardPaidForValueFilters.size === 0}
+              className={`h-7 px-2 text-[11px] rounded-md border transition-colors ${
+                standardPaidForFilter === 'set' && standardPaidForValueFilters.size === 0
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-white text-amber-950 border-amber-300 hover:bg-amber-100'
+              }`}
             >
-              <option value="all">{tTour('filterAll')}</option>
-              <option value="pending">{tTour('filterPending')}</option>
-              <option value="approved">{tTour('filterApproved')}</option>
-              <option value="rejected">{tTour('filterRejected')}</option>
-              <option value="paid">{t('status.paid')}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-date-from">
-              {tTour('startDate')}
-            </label>
-            <input
-              id="co-filter-date-from"
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-date-to">
-              {tTour('endDate')}
-            </label>
-            <input
-              id="co-filter-date-to"
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 items-end">
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-standard-paid-for">
-              {t('filters.standardPaidFor')}
-            </label>
-            <select
-              id="co-filter-standard-paid-for"
-              value={standardPaidForFilter}
-              onChange={(e) => {
-                const v = e.target.value as 'all' | 'set' | 'unset'
-                setStandardPaidForFilter(v)
-                if (v === 'unset' || v === 'set') {
-                  setPaidForFilter('all')
-                }
-              }}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              {t('filters.standardPaidForSet')}
+            </button>
+            <button
+              type="button"
+              onClick={() => applyStandardPaidForPresence('all')}
+              aria-pressed={standardPaidForFilter === 'all' && standardPaidForValueFilters.size === 0}
+              className={`h-7 px-2 text-[11px] rounded-md border transition-colors ${
+                standardPaidForFilter === 'all' && standardPaidForValueFilters.size === 0
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-white text-amber-950 border-amber-300 hover:bg-amber-100'
+              }`}
             >
-              <option value="all">{t('filters.all')}</option>
-              <option value="set">{t('filters.standardPaidForSet')}</option>
-              <option value="unset">{t('filters.standardPaidForUnset')}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-vehicle">
-              {t('filters.vehicle')}
-            </label>
-            <select
-              id="co-filter-vehicle"
-              value={vehicleFilter}
-              onChange={(e) => setVehicleFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="all">{t('filters.all')}</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} ({vehicle.vehicle_category || 'N/A'})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-paid-for">
-              {t('filters.paidFor')}
-            </label>
-            <select
-              id="co-filter-paid-for"
-              value={paidForFilter}
-              onChange={(e) => setPaidForFilter(e.target.value)}
-              disabled={suggestionsLoading}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white disabled:opacity-60"
-            >
-              <option value="all">{t('filters.all')}</option>
-              {paidForFilterOptions.map((v) => (
-                <option key={v} value={v} title={v}>
-                  {v.length > 80 ? `${v.slice(0, 80)}…` : v}
-                </option>
-              ))}
-            </select>
-            {standardPaidForFilter === 'unset' ? (
-              <p className="mt-1 text-[11px] sm:text-xs text-muted-foreground leading-snug">
-                {t('filters.paidForUnsetOnlyHint')}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex justify-end sm:justify-start">
+              {t('filters.all')}
+            </button>
+            <div className="min-w-[9rem] flex-1 basis-[9rem] max-w-xs">
+              <StringMultiSelectFilter
+                compact
+                id="co-filter-standard-paid-for-values"
+                groupLabel={t('filters.standardPaidForPick')}
+                options={standardPaidForValueFilterOptions}
+                selected={standardPaidForValueFilters}
+                onChange={(next) => {
+                  setStandardPaidForValueFilters(next)
+                  if (next.size > 0) setStandardPaidForFilter('all')
+                }}
+                searchable
+                searchPlaceholder={t('filters.searchInList')}
+                allLabel={t('filters.all')}
+                clearLabel={t('filters.clear')}
+                selectedCountLabel={multiSelectedCountLabel}
+                emptySearchLabel={t('filters.searchEmpty')}
+                disabled={suggestionsLoading}
+              />
+            </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs sm:text-sm w-full sm:w-auto"
+              className="h-7 px-2 text-[11px] border-amber-400 text-amber-950 hover:bg-amber-100"
+              onClick={openStandardUnifyWorkflow}
+            >
+              {t('filters.standardUnifyAction')}
+            </Button>
+            {standardPaidForFilter === 'unset' && standardPaidForValueFilters.size === 0 ? (
+              <span className="text-[10px] text-amber-900/80">
+                {t('filters.standardUnsetListHint', { count: pagination.total })}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5">
+            <StringMultiSelectFilter
+              compact
+              id="co-filter-status"
+              groupLabel={tTour('statusLabel')}
+              options={statusFilterOptions}
+              selected={statusFilters}
+              onChange={setStatusFilters}
+              allLabel={tTour('filterAll')}
+              clearLabel={t('filters.clear')}
+              selectedCountLabel={multiSelectedCountLabel}
+            />
+            <StringMultiSelectFilter
+              compact
+              id="co-filter-payment-method"
+              groupLabel={t('form.paymentMethod')}
+              options={paymentMethodFilterOptions}
+              selected={paymentMethodFilters}
+              onChange={setPaymentMethodFilters}
+              searchable
+              searchPlaceholder={t('filters.searchInList')}
+              allLabel={t('filters.all')}
+              clearLabel={t('filters.clear')}
+              selectedCountLabel={multiSelectedCountLabel}
+              emptySearchLabel={t('filters.searchEmpty')}
+            />
+            <StringMultiSelectFilter
+              compact
+              id="co-filter-submit-by"
+              groupLabel={t('filters.submitBy')}
+              options={submitByFilterOptions}
+              selected={submitByFilters}
+              onChange={setSubmitByFilters}
+              searchable
+              searchPlaceholder={t('filters.searchInList')}
+              allLabel={t('filters.all')}
+              clearLabel={t('filters.clear')}
+              selectedCountLabel={multiSelectedCountLabel}
+              emptySearchLabel={t('filters.searchEmpty')}
+              disabled={suggestionsLoading}
+            />
+            <StringMultiSelectFilter
+              compact
+              id="co-filter-paid-to"
+              groupLabel={t('form.paidTo')}
+              options={paidToFilterOptions}
+              selected={paidToFilters}
+              onChange={setPaidToFilters}
+              searchable
+              searchPlaceholder={t('filters.searchInList')}
+              allLabel={t('filters.all')}
+              clearLabel={t('filters.clear')}
+              selectedCountLabel={multiSelectedCountLabel}
+              emptySearchLabel={t('filters.searchEmpty')}
+              disabled={suggestionsLoading}
+            />
+            <StringMultiSelectFilter
+              compact
+              id="co-filter-vehicle"
+              groupLabel={t('filters.vehicle')}
+              options={vehicleFilterOptions}
+              selected={vehicleFilters}
+              onChange={setVehicleFilters}
+              allLabel={t('filters.all')}
+              clearLabel={t('filters.clear')}
+              selectedCountLabel={multiSelectedCountLabel}
+            />
+            <div className="min-w-0">
+              <label
+                className="block text-[10px] font-medium text-gray-600 mb-0 leading-tight truncate"
+                htmlFor="co-filter-date-from"
+              >
+                {t('filters.dateFromShort')}
+              </label>
+              <input
+                id="co-filter-date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+              />
+            </div>
+            <div className="min-w-0">
+              <label
+                className="block text-[10px] font-medium text-gray-600 mb-0 leading-tight truncate"
+                htmlFor="co-filter-date-to"
+              >
+                {t('filters.dateToShort')}
+              </label>
+              <input
+                id="co-filter-date-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-1.5">
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] text-gray-500">{t('filters.submitYearPresetLabel')}</span>
+              {[2025, 2026].map((year) => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => applySubmitYearFilter(year)}
+                  aria-pressed={isSubmitYearFilterActive(year)}
+                  aria-label={t('filters.submitYearPresetAria', { year })}
+                  className={`h-7 min-w-[2.5rem] px-2 text-[11px] rounded-md border transition-colors ${
+                    isSubmitYearFilterActive(year)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                  }`}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+            <div className="min-w-[6.5rem] shrink-0">
+              <label
+                className="block text-[10px] font-medium text-gray-600 mb-0 leading-tight truncate"
+                htmlFor="co-filter-statement-match"
+              >
+                {t('filters.statementMatch')}
+              </label>
+              <select
+                id="co-filter-statement-match"
+                value={statementMatchFilter}
+                onChange={(e) => setStatementMatchFilter(e.target.value as 'all' | 'unmatched')}
+                title={
+                  statementMatchFilter === 'unmatched'
+                    ? searchTerm.trim()
+                      ? t('filters.statementMatchUnmatchedSearchHint')
+                      : t('filters.statementMatchUnmatchedHint')
+                    : undefined
+                }
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+              >
+                <option value="all">{t('filters.statementMatchAll')}</option>
+                <option value="unmatched">{t('filters.statementMatchUnmatched')}</option>
+              </select>
+            </div>
+            <div className="min-w-[6.5rem] shrink-0">
+              <label
+                className="block text-[10px] font-medium text-gray-600 mb-0 leading-tight truncate"
+                htmlFor="co-filter-reimbursement"
+              >
+                {tTour('reimbursementFilterLabel')}
+              </label>
+              <select
+                id="co-filter-reimbursement"
+                value={reimbursementFilter}
+                onChange={(e) =>
+                  setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
+                }
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+              >
+                <option value="all">{tTour('reimbursementFilterAll')}</option>
+                <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
+                <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5 text-[11px] shrink-0"
               onClick={resetFilters}
             >
               {t('buttons.resetFilters')}
@@ -2556,72 +2939,7 @@ export default function CompanyExpenseManager({
           </div>
         </div>
 
-        <div className="max-w-xl pt-1">
-          <label
-            className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
-            htmlFor="co-filter-standard-category"
-          >
-            {t('filters.standardCategory')}
-          </label>
-          <UnifiedStandardLeafPicker
-            groups={unifiedStandardGroups}
-            value={standardLeafFilter === 'all' ? '' : standardLeafFilter}
-            onPick={(leafId) => setStandardLeafFilter(leafId || 'all')}
-            allowClear
-            compact
-            placeholderWhenEmpty={t('filters.all')}
-            clearOptionLabel={t('filters.all')}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 max-w-2xl pt-1">
-          <div>
-            <label
-              className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
-              htmlFor="co-filter-statement-match"
-            >
-              {t('filters.statementMatch')}
-            </label>
-            <select
-              id="co-filter-statement-match"
-              value={statementMatchFilter}
-              onChange={(e) => setStatementMatchFilter(e.target.value as 'all' | 'unmatched')}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="all">{t('filters.statementMatchAll')}</option>
-              <option value="unmatched">{t('filters.statementMatchUnmatched')}</option>
-            </select>
-            {statementMatchFilter === 'unmatched' ? (
-              <p className="mt-1 text-[11px] sm:text-xs text-amber-800 leading-snug">
-                {searchTerm.trim()
-                  ? t('filters.statementMatchUnmatchedSearchHint')
-                  : t('filters.statementMatchUnmatchedHint')}
-              </p>
-            ) : null}
-          </div>
-          <div>
-            <label
-              className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
-              htmlFor="co-filter-reimbursement"
-            >
-              {tTour('reimbursementFilterLabel')}
-            </label>
-            <select
-              id="co-filter-reimbursement"
-              value={reimbursementFilter}
-              onChange={(e) =>
-                setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
-              }
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="all">{tTour('reimbursementFilterAll')}</option>
-              <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
-              <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2 pt-2 border-t border-gray-200/80">
           <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-100/80">
             <div className="text-xs sm:text-sm text-gray-600">{tTour('totalExpenseSum')}</div>
             <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalAmount)}</div>
@@ -2792,27 +3110,8 @@ export default function CompanyExpenseManager({
                             titleUnmatched={tStmtRecon('unmatchedTitle')}
                             onClick={() => openStmtReconForExpense(expense)}
                           />
-                          <span className="truncate">{expense.paid_for}</span>
+                          <span className="truncate">{expense.paid_to || '—'}</span>
                         </p>
-                        {expense.paid_for_label_id ? (
-                          (() => {
-                            const lab = paidForLabelById.get(String(expense.paid_for_label_id))
-                            const text = lab
-                              ? locale === 'ko'
-                                ? lab.label_ko
-                                : lab.label_en || lab.label_ko
-                              : t('listInlineEdit.labelUnknown')
-                            return (
-                              <Badge
-                                variant="secondary"
-                                className={`w-fit text-[10px] font-normal ${lab?.is_active === false ? 'opacity-70' : ''}`}
-                              >
-                                {text}
-                                {lab?.is_active === false ? ` ${t('listInlineEdit.labelInactiveSuffix')}` : ''}
-                              </Badge>
-                            )
-                          })()
-                        ) : null}
                       </div>
                       <p className="text-lg font-bold text-green-600 whitespace-nowrap">
                         ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
@@ -2861,27 +3160,23 @@ export default function CompanyExpenseManager({
                           return m && !m.is_active ? `${name} (Inactive)` : name
                         })()}
                       </span>
-                      {expense.category && (
-                        <>
-                          <span className="text-gray-400">카테고리</span>
-                          <span><Badge variant="outline" className="text-xs">{getCategoryLabel(expense.category)}</Badge></span>
-                        </>
-                      )}
                       <span className="text-gray-400">차량</span>
                       <div className="flex items-center justify-end gap-1 min-w-0 text-right">
-                        <button
-                          type="button"
-                          className="truncate flex-1 min-w-0 text-left text-blue-700 underline-offset-2 hover:underline"
-                          title={t('listQuickEdit.openVehicleHint')}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openListQuickVehicle(expense)
-                          }}
-                        >
-                          {hasUsableVehicleId(expense.vehicle_id)
-                            ? getVehicleLineLabel(expense.vehicle_id!)
-                            : t('listQuickEdit.tapToSetVehicle')}
-                        </button>
+                        {hasUsableVehicleId(expense.vehicle_id) ? (
+                          <button
+                            type="button"
+                            className="truncate flex-1 min-w-0 text-left text-blue-700 underline-offset-2 hover:underline"
+                            title={t('listQuickEdit.openVehicleHint')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openListQuickVehicle(expense)
+                            }}
+                          >
+                            {getVehicleLineLabel(expense.vehicle_id!)}
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                         {hasUsableVehicleId(expense.vehicle_id) && (
                           <Button
                             type="button"
@@ -2909,7 +3204,7 @@ export default function CompanyExpenseManager({
               <div className="overflow-x-auto rounded-lg border border-gray-200/80 [-webkit-overflow-scrolling:touch]">
               <Table
                 wrapperClassName="overflow-visible min-w-0"
-                className="min-w-[1380px] w-full border-collapse text-xs [&_th]:h-auto [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:leading-tight [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1"
+                className="min-w-[1180px] w-full border-collapse text-xs [&_th]:h-auto [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:leading-tight [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1"
               >
                 <TableHeader>
                   <TableRow>
@@ -2938,14 +3233,6 @@ export default function CompanyExpenseManager({
                         active={companyTableSortKey === 'paid_to'}
                         dir={companyTableSortDir}
                         onClick={() => handleCompanyTableSort('paid_to')}
-                      />
-                    </TableHead>
-                    <TableHead className="align-bottom">
-                      <TableSortHeaderButton
-                        label="결제내용"
-                        active={companyTableSortKey === 'paid_for'}
-                        dir={companyTableSortDir}
-                        onClick={() => handleCompanyTableSort('paid_for')}
                       />
                     </TableHead>
                     <TableHead className="min-w-[7.5rem] whitespace-normal align-bottom" title={t('listStandardPaidFor.columnHint')}>
@@ -2981,14 +3268,6 @@ export default function CompanyExpenseManager({
                         active={companyTableSortKey === 'payment_method'}
                         dir={companyTableSortDir}
                         onClick={() => handleCompanyTableSort('payment_method')}
-                      />
-                    </TableHead>
-                    <TableHead className="align-bottom">
-                      <TableSortHeaderButton
-                        label="카테고리"
-                        active={companyTableSortKey === 'category'}
-                        dir={companyTableSortDir}
-                        onClick={() => handleCompanyTableSort('category')}
                       />
                     </TableHead>
                     <TableHead className="whitespace-normal align-bottom">
@@ -3034,7 +3313,6 @@ export default function CompanyExpenseManager({
                   reconciledExpenseIds={reconciledExpenseIds}
                   onOpenStatementRecon={openStmtReconForExpense}
                   paymentMethodMap={paymentMethodMap}
-                  getCategoryLabel={getCategoryLabel}
                   getStatusBadge={getStatusBadge}
                   hasUsableVehicleId={hasUsableVehicleId}
                   getVehicleLineLabel={getVehicleLineLabel}
@@ -3042,7 +3320,6 @@ export default function CompanyExpenseManager({
                   renderEmployeeEmailCell={renderEmployeeEmailCell}
                   teamMembers={teamMembers}
                   locale={locale}
-                  paidForLabels={paidForLabels}
                   t={t}
                   selectedExpenseIds={listSelectedIds}
                   onToggleExpenseSelect={toggleListExpenseSelect}
@@ -3085,7 +3362,7 @@ export default function CompanyExpenseManager({
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[min(90vh,880px)] flex flex-col">
+        <DialogContent className="w-[min(96vw,72rem)] max-w-[min(96vw,72rem)] max-h-[min(90vh,880px)] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {t('vehicleMaintenanceHistory.modalTitle')}
@@ -3106,19 +3383,31 @@ export default function CompanyExpenseManager({
                 {t('vehicleMaintenanceHistory.loading')}
               </div>
             ) : vehicleMaintenanceRows.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">{t('vehicleMaintenanceHistory.tableDate')}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t('vehicleMaintenanceHistory.tableType')}</TableHead>
-                      <TableHead className="whitespace-nowrap">{t('vehicleMaintenanceHistory.tableCategory')}</TableHead>
-                      <TableHead className="min-w-[7rem]">{t('vehicleMaintenanceHistory.tableDescription')}</TableHead>
-                      <TableHead className="text-right whitespace-nowrap">{t('vehicleMaintenanceHistory.tableCost')}</TableHead>
-                      <TableHead className="hidden md:table-cell min-w-[6rem]">
+              <div className="overflow-x-auto min-h-0">
+                <Table
+                  wrapperClassName="overflow-visible"
+                  className="table-fixed w-full min-w-[40rem]"
+                >
+                  <TableHeader className="sticky top-0 z-10 bg-background shadow-[0_1px_0_0_hsl(var(--border))]">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[5.5rem] whitespace-nowrap bg-background">
+                        {t('vehicleMaintenanceHistory.tableDate')}
+                      </TableHead>
+                      <TableHead className="w-[4.5rem] whitespace-nowrap bg-background">
+                        {t('vehicleMaintenanceHistory.tableType')}
+                      </TableHead>
+                      <TableHead className="min-w-[10rem] w-[38%] bg-background">
+                        {t('vehicleMaintenanceHistory.tableDescription')}
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap bg-background">
+                        {t('vehicleMaintenanceHistory.tableCost')}
+                      </TableHead>
+                      <TableHead className="hidden md:table-cell min-w-[6rem] bg-background">
                         {t('vehicleMaintenanceHistory.tableProvider')}
                       </TableHead>
-                      <TableHead className="whitespace-nowrap">{t('vehicleMaintenanceHistory.tableStatus')}</TableHead>
+                      <TableHead className="whitespace-nowrap bg-background">
+                        {t('vehicleMaintenanceHistory.tableStatus')}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3130,17 +3419,14 @@ export default function CompanyExpenseManager({
                             : '—'}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {vmT(`maintenanceTypes.${row.maintenance_type}`)}
+                          {formatVmMaintenanceType(row.maintenance_type)}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {vmT(`categories.${row.category}`)}
-                        </TableCell>
-                        <TableCell className="text-sm max-w-[14rem]">
-                          <div className="line-clamp-2" title={row.description}>
+                        <TableCell className="text-sm align-top">
+                          <div className="line-clamp-2 break-words leading-snug" title={row.description}>
                             {row.description}
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm text-right font-medium">
+                        <TableCell className="text-sm text-right font-medium whitespace-nowrap">
                           {formatCurrency(Number(row.total_cost))}
                         </TableCell>
                         <TableCell
@@ -3150,7 +3436,7 @@ export default function CompanyExpenseManager({
                           {row.service_provider || '—'}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {vmT(`status.${row.status || 'completed'}`)}
+                          {formatVmStatus(row.status)}
                         </TableCell>
                       </TableRow>
                     ))}

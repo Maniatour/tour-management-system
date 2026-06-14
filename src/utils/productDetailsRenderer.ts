@@ -217,7 +217,7 @@ export const productDetailsRenderers = {
   /**
    * 슬로건들만 렌더링
    */
-  renderSlogans: (details: ProductDetails, locale: 'ko' | 'en' = 'ko') => {
+  renderSlogans: (details: ProductDetails, _locale: 'ko' | 'en' = 'ko') => {
     if (!details) return ''
     
     let html = '<div class="slogans-only" style="padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">'

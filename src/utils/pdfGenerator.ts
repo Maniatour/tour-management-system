@@ -1,5 +1,4 @@
 import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 
 export interface ReservationPDFData {
   id: string
@@ -120,7 +119,7 @@ export const generateReservationPDF = async (
     }
   ]
 
-  basicInfo.forEach((info, index) => {
+  basicInfo.forEach((info) => {
     if (yPosition > pageHeight - 30) {
       doc.addPage()
       yPosition = 20

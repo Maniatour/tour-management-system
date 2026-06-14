@@ -66,7 +66,11 @@ export default function StatementLinePairPickerDialog({
 
   const candidates = useMemo(() => {
     if (!anchor) return []
-    return buildStatementLinePairCandidates(anchor, poolLines, { max: 200 })
+    return buildStatementLinePairCandidates(
+      { ...anchor, amount: Number(anchor.amount) || 0 },
+      poolLines,
+      { max: 200 }
+    )
   }, [anchor, poolLines])
 
   const quickOptions = useMemo(() => {

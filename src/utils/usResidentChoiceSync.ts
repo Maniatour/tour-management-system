@@ -190,7 +190,7 @@ export function parseResidentLineStateFromSelections<
     id: string
     choice_group_ko?: string | null
     choice_group?: string | null
-    options?: Array<{ id: string; option_name_ko?: string; option_name?: string; option_key?: string }>
+    options?: Array<{ id: string; option_name_ko?: string | null; option_name?: string | null; option_key?: string | null }>
   }>,
   selectedChoices: T[]
 ): ResidentLineState | null {
@@ -292,10 +292,10 @@ export function buildResidentChoiceRowsFromLineState(
     rows.push({
       choice_id: choice.id,
       option_id: opt.id,
-      option_key: opt.option_key,
-      option_name_ko: opt.option_name_ko,
       quantity: qty,
       total_price: price(line, qty),
+      ...(opt.option_key != null && opt.option_key !== '' ? { option_key: opt.option_key } : {}),
+      ...(opt.option_name_ko != null && opt.option_name_ko !== '' ? { option_name_ko: opt.option_name_ko } : {}),
     })
   }
 

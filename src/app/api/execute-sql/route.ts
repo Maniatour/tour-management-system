@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     // SQL 실행
-    const { data, error } = await supabase.rpc('exec_sql', { sql })
+    const { data, error } = await supabase.rpc('exec_sql' as never, { sql } as never)
 
     if (error) {
       console.error('SQL 실행 오류:', error)

@@ -19,7 +19,7 @@ interface WorkflowTemplateModalProps {
   onClose: () => void
 }
 
-export default function WorkflowTemplateModal({ onSelectTemplate, onClose }: WorkflowTemplateModalProps) {
+export default function WorkflowTemplateModal({ onSelectTemplate: _onSelectTemplate, onClose }: WorkflowTemplateModalProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
 

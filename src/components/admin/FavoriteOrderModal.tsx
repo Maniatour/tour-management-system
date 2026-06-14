@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, ChevronUp, ChevronDown, GripVertical, Star } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -34,14 +34,14 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
         .from('products')
         .select('*')
         .eq('is_favorite', true)
-        .order('favorite_order', { ascending: true, nullsLast: true })
+        .order('favorite_order', { ascending: true })
 
       if (error) {
         console.error('Failed to fetch favorite products:', error)
         return
       }
 
-      setFavoriteProducts(data || [])
+      setFavoriteProducts((data || []) as Product[])
     } catch (error) {
       console.error('Error fetching favorite products:', error)
     } finally {

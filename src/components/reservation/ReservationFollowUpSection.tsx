@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { MessageSquare, Plus, Send, User, Clock, History } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useAuth } from '@/contexts/AuthContext'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
@@ -131,17 +132,6 @@ const STATUS_LABELS: Record<string, { ko: string; en: string }> = {
   completed: { ko: '완료', en: 'Completed' },
   cancelled: { ko: '취소', en: 'Cancelled' },
   canceled: { ko: '취소', en: 'Cancelled' }
-}
-
-function formatAuditValue(fieldKey: string, value: unknown, isEn: boolean): string {
-  if (value === null || value === undefined) return '-'
-  if (fieldKey === 'status' && typeof value === 'string') {
-    const v = value.toLowerCase()
-    return STATUS_LABELS[v] ? (isEn ? STATUS_LABELS[v].en : STATUS_LABELS[v].ko) : value
-  }
-  if (typeof value === 'object') return JSON.stringify(value).slice(0, 80) + (JSON.stringify(value).length > 80 ? '…' : '')
-  const s = String(value)
-  return s.length > 40 ? s.slice(0, 40) + '…' : s
 }
 
 // 픽업 호텔/초이스 ID → 이름 lookup으로 사람이 읽기 쉬운 값 표시
@@ -470,14 +460,12 @@ export default function ReservationFollowUpSection({
   const isCancelled =
     (status && (status as string).toLowerCase()) === 'cancelled' ||
     (status && (status as string).toLowerCase()) === 'canceled'
-  const isPending = (status && (status as string).toLowerCase()) === 'pending'
 
   const fetchFollowUps = useCallback(async () => {
     if (!reservationId) return
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('reservation_follow_ups')
+      const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
         .select('id, reservation_id, type, content, created_at, created_by')
         .eq('reservation_id', reservationId)
         .order('created_at', { ascending: false })
@@ -489,7 +477,7 @@ export default function ReservationFollowUpSection({
         setFollowUps([])
         return
       }
-      const rows = (data || []) as ReservationFollowUpRow[]
+      const rows = (data || []) as unknown as ReservationFollowUpRow[]
       setFollowUps(rows)
 
       const reasonRow = rows.find((r) => r.type === 'cancellation_reason')
@@ -514,13 +502,12 @@ export default function ReservationFollowUpSection({
     setSaving(true)
     try {
       if (cancellationReasonId) {
-        const { error } = await supabase
-          .from('reservation_follow_ups')
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
           .update({ content: cancellationReason.trim() || null })
           .eq('id', cancellationReasonId)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('reservation_follow_ups').insert({
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
           reservation_id: reservationId,
           type: 'cancellation_reason',
           content: cancellationReason.trim() || null,
@@ -542,7 +529,7 @@ export default function ReservationFollowUpSection({
     if (!reservationId || !userEmail || !content) return
     setSaving(true)
     try {
-      const { error } = await supabase.from('reservation_follow_ups').insert({
+      const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
         reservation_id: reservationId,
         type: 'contact',
         content,
@@ -672,7 +659,10 @@ export default function ReservationFollowUpSection({
     ]).then(([pickupRes, choiceRes, optionRes]) => {
       const byId: Record<string, { hotel?: string | null; pick_up_location?: string | null }> = {}
       ;(pickupRes.data || []).forEach((row: { id: string; hotel?: string | null; pick_up_location?: string | null }) => {
-        byId[row.id] = { hotel: row.hotel, pick_up_location: row.pick_up_location }
+        byId[row.id] = {
+          hotel: row.hotel ?? null,
+          pick_up_location: row.pick_up_location ?? null,
+        }
       })
       setPickupHotelsById(byId)
       const choiceNames: Record<string, string> = {}
@@ -711,13 +701,12 @@ export default function ReservationFollowUpSection({
     setSaving(true)
     try {
       if (cancellationReasonId) {
-        const { error } = await supabase
-          .from('reservation_follow_ups')
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
           .update({ content: trimmed })
           .eq('id', cancellationReasonId)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('reservation_follow_ups').insert({
+        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
           reservation_id: reservationId,
           type: 'cancellation_reason',
           content: trimmed,
@@ -1038,7 +1027,7 @@ export default function ReservationFollowUpSection({
           tourDate={followUpPipelineReservation.tourDate ?? null}
           productName={getProductName(
             followUpPipelineReservation.productId,
-            followUpPipelineProducts ?? []
+            (followUpPipelineProducts ?? []) as unknown as import('@/types/reservation').Product[]
           )}
           channelRN={followUpPipelineReservation.channelRN ?? null}
         />
@@ -1055,8 +1044,8 @@ export default function ReservationFollowUpSection({
           tourDate={pipelineEmailPreview.tourDate}
           productName={pipelineEmailPreview.productName || ''}
           channelRN={pipelineEmailPreview.channelRN}
-          productCode={pipelineEmailPreview.productCode}
-          productTags={pipelineEmailPreview.productTags}
+          productCode={pipelineEmailPreview.productCode ?? null}
+          productTags={pipelineEmailPreview.productTags ?? null}
           onSend={sendPipelineEmailFromPreview}
         />
       ) : null}

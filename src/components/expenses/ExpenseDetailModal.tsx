@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { X, Save, Edit2, Check, XCircle } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, Edit2, Check, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 
@@ -36,15 +37,8 @@ export default function ExpenseDetailModal({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
-  const [standardCategories, setStandardCategories] = useState<{ id: string; name: string; name_ko: string }[]>([])
+  const [standardCategories, setStandardCategories] = useState<{ id: string; name: string; name_ko: string | null }[]>([])
   const [reconciledKeys, setReconciledKeys] = useState<Set<string>>(() => new Set())
-
-  useEffect(() => {
-    if (isOpen) {
-      loadExpenses()
-      loadStandardCategories()
-    }
-  }, [isOpen, loadExpenses, loadStandardCategories])
 
   // 카테고리 정규화 함수 (대소문자, 띄어쓰기 무시)
   const normalizeCategory = useCallback((cat: string | null | undefined): string => {
@@ -89,22 +83,29 @@ export default function ExpenseDetailModal({
       const normalizedCategory = normalizeCategory(category)
 
       // 날짜 범위로만 필터링하고, 카테고리는 클라이언트에서 필터링
+      type ExpenseDbRow = {
+        id: string
+        amount: number | null
+        paid_for?: string | null
+        paid_to?: string | null
+        description?: string | null
+        submit_on?: string | null
+        category?: string | null
+      }
+
       const [tourExpensesResult, reservationExpensesResult, companyExpensesResult] = await Promise.all([
-        supabase
-          .from('tour_expenses')
+        fromUntypedTable(supabase, 'tour_expenses')
           .select('id, amount, paid_for, paid_to, description, submit_on')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        supabase
-          .from('reservation_expenses')
+        fromUntypedTable(supabase, 'reservation_expenses')
           .select('id, amount, paid_for, paid_to, description, submit_on')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        supabase
-          .from('company_expenses')
+        fromUntypedTable(supabase, 'company_expenses')
           .select('id, amount, category, paid_to, description, submit_on')
           .gte('submit_on', startISO)
-          .lte('submit_on', endISO)
+          .lte('submit_on', endISO),
       ])
 
       // 에러 로깅 및 처리
@@ -118,44 +119,40 @@ export default function ExpenseDetailModal({
         console.error('company_expenses 조회 오류:', companyExpensesResult.error)
       }
 
-      // 에러가 발생한 경우 빈 배열로 처리
-      // tour_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const tourExpenses = (tourExpensesResult.error ? [] : (tourExpensesResult.data || [])).filter(e => {
-        const paidFor = normalizeCategory(e.paid_for)
-        return paidFor === normalizedCategory
+      const mapPaidForRow = (e: ExpenseDbRow, source_table: ExpenseItem['source_table']): ExpenseItem => ({
+        id: e.id,
+        amount: e.amount,
+        paid_for: e.paid_for || '기타',
+        ...(e.paid_to != null ? { paid_to: e.paid_to } : {}),
+        ...(e.description != null ? { description: e.description } : {}),
+        ...(e.submit_on != null ? { submit_on: e.submit_on } : {}),
+        source_table,
       })
 
-      tourExpenses.forEach(e => {
-        allExpenses.push({ ...e, source_table: 'tour_expenses' })
-      })
+      const tourRows = (tourExpensesResult.error ? [] : (tourExpensesResult.data || [])) as ExpenseDbRow[]
+      tourRows
+        .filter(e => normalizeCategory(e.paid_for) === normalizedCategory)
+        .forEach(e => allExpenses.push(mapPaidForRow(e, 'tour_expenses')))
 
-      // reservation_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const reservationExpenses = (reservationExpensesResult.error ? [] : (reservationExpensesResult.data || [])).filter(e => {
-        const paidFor = normalizeCategory(e.paid_for)
-        return paidFor === normalizedCategory
-      })
+      const reservationRows = (reservationExpensesResult.error ? [] : (reservationExpensesResult.data || [])) as ExpenseDbRow[]
+      reservationRows
+        .filter(e => normalizeCategory(e.paid_for) === normalizedCategory)
+        .forEach(e => allExpenses.push(mapPaidForRow(e, 'reservation_expenses')))
 
-      reservationExpenses.forEach(e => {
-        allExpenses.push({ ...e, source_table: 'reservation_expenses' })
-      })
-
-      // company_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const companyExpenses = (companyExpensesResult.error ? [] : (companyExpensesResult.data || [])).filter(e => {
-        const cat = normalizeCategory(e.category)
-        return cat === normalizedCategory
-      })
-
-      companyExpenses.forEach(e => {
-        allExpenses.push({ 
-          id: e.id, 
-          amount: e.amount, 
-          paid_for: e.category || '기타', 
-          paid_to: (e as any).paid_to,
-          description: e.description,
-          submit_on: e.submit_on,
-          source_table: 'company_expenses' 
+      const companyRows = (companyExpensesResult.error ? [] : (companyExpensesResult.data || [])) as ExpenseDbRow[]
+      companyRows
+        .filter(e => normalizeCategory(e.category) === normalizedCategory)
+        .forEach(e => {
+          allExpenses.push({
+            id: e.id,
+            amount: e.amount,
+            paid_for: e.category || '기타',
+            ...(e.paid_to != null ? { paid_to: e.paid_to } : {}),
+            ...(e.description != null ? { description: e.description } : {}),
+            ...(e.submit_on != null ? { submit_on: e.submit_on } : {}),
+            source_table: 'company_expenses',
+          })
         })
-      })
 
       setExpenses(allExpenses.sort((a, b) => 
         new Date(b.submit_on || 0).getTime() - new Date(a.submit_on || 0).getTime()
@@ -166,6 +163,13 @@ export default function ExpenseDetailModal({
       setLoading(false)
     }
   }, [dateRange, category, normalizeCategory])
+
+  useEffect(() => {
+    if (isOpen) {
+      loadExpenses()
+      loadStandardCategories()
+    }
+  }, [isOpen, loadExpenses, loadStandardCategories])
 
   useEffect(() => {
     if (!expenses.length) {
@@ -218,9 +222,8 @@ export default function ExpenseDetailModal({
     try {
       const fieldName = expense.source_table === 'company_expenses' ? 'category' : 'paid_for'
       
-      const { error } = await supabase
-        .from(expense.source_table)
-        .update({ [fieldName]: editValue.trim() })
+      const { error } = await fromUntypedTable(supabase, expense.source_table)
+        .update({ [fieldName]: editValue.trim() } as never)
         .eq('id', expense.id)
 
       if (error) throw error
@@ -258,27 +261,24 @@ export default function ExpenseDetailModal({
 
       if (tourIds.length > 0) {
         updates.push(
-          supabase
-            .from('tour_expenses')
-            .update({ paid_for: newCategory })
+          fromUntypedTable(supabase, 'tour_expenses')
+            .update({ paid_for: newCategory } as never)
             .in('id', tourIds)
         )
       }
 
       if (reservationIds.length > 0) {
         updates.push(
-          supabase
-            .from('reservation_expenses')
-            .update({ paid_for: newCategory })
+          fromUntypedTable(supabase, 'reservation_expenses')
+            .update({ paid_for: newCategory } as never)
             .in('id', reservationIds)
         )
       }
 
       if (companyIds.length > 0) {
         updates.push(
-          supabase
-            .from('company_expenses')
-            .update({ category: newCategory })
+          fromUntypedTable(supabase, 'company_expenses')
+            .update({ category: newCategory } as never)
             .in('id', companyIds)
         )
       }

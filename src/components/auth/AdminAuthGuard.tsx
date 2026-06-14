@@ -38,7 +38,12 @@ function AdminAuthGuardContent({
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
   const currentUserPosition = isSimulating && simulatedUser ? simulatedUser.position : userPosition
 
+  const [mounted, setMounted] = useState(false)
   const [authTimedOut, setAuthTimedOut] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!loading && isInitialized) {
@@ -84,18 +89,13 @@ function AdminAuthGuardContent({
   }, [currentUser, currentUserRole, currentUserPosition, isInitialized, loading, router, locale, redirectToPath])
 
   const showBlockingAuth =
-    !authTimedOut &&
-    (!isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating))
+    !mounted ||
+    (!authTimedOut &&
+      !(currentUser?.email && currentUserRole !== null && isInitialized) &&
+      (!isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating)))
 
   if (showBlockingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto" />
-          <p className="mt-4 text-gray-600">{'\uC778\uC99D \uD655\uC778 \uC911...'}</p>
-        </div>
-      </div>
-    )
+    return <AdminAuthLoadingScreen />
   }
 
   if (authTimedOut && (!currentUser || currentUserRole === null)) {

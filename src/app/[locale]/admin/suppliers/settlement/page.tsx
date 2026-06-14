@@ -86,10 +86,10 @@ export default function SettlementPage() {
       if (purchasesError) throw purchasesError;
 
       setSuppliers(suppliersData || []);
-      setPurchases(purchasesData || []);
+      setPurchases((purchasesData || []) as SupplierTicketPurchase[]);
       
       // 정산 요약 계산
-      calculateSettlementSummary(suppliersData || [], purchasesData || []);
+      calculateSettlementSummary(suppliersData || [], (purchasesData || []) as SupplierTicketPurchase[]);
     } catch (error) {
       console.error('데이터 로딩 오류:', error);
     } finally {

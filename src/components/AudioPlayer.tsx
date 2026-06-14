@@ -23,7 +23,7 @@ interface AudioPlayerProps {
 export default function AudioPlayer({ 
   src, 
   title, 
-  audioDuration, 
+  audioDuration: _audioDuration, 
   language,
   attraction,
   category,
@@ -228,7 +228,7 @@ export default function AudioPlayer({
             >
               <h4 className="font-medium text-gray-900 text-sm truncate">{title}</h4>
               <ReactCountryFlag
-                countryCode={getLanguageFlag(language)}
+                countryCode={getLanguageFlag(language ?? null)}
                 svg
                 style={{
                   width: '20px',

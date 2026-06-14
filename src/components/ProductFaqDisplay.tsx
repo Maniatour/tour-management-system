@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -36,7 +36,16 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
         throw new Error(`데이터베이스 오류: ${error.message}`)
       }
 
-      setFaqs(data || [])
+      setFaqs(
+        (data || []).map((row) => ({
+          id: row.id,
+          product_id: row.product_id,
+          question: row.question,
+          answer: row.answer,
+          order_index: row.order_index ?? 0,
+          is_active: row.is_active ?? true,
+        }))
+      )
     } catch (error) {
       console.error('FAQ 로드 오류:', error)
       setFaqs([])

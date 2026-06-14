@@ -133,7 +133,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const [showVehicleTypeManagement, setShowVehicleTypeManagement] = useState(false)
 
   // 차량 사진 가져오기
-  const fetchVehiclePhotos = async (vehicleId: string) => {
+  const fetchVehiclePhotos = async (_vehicleId: string) => {
     // vehicle_photos 조회는 선택적이므로 에러가 발생해도 무시
     // 현재 Supabase 서버에서 500 에러가 발생하고 있어 조용히 처리
     // 차량 편집은 정상적으로 진행되며, 사진이 없어도 문제없음
@@ -203,7 +203,6 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       }
 
       // 차종 사진을 배치로 한 번에 조회 (최적화: N+1 문제 해결)
-      const typeIds = typesData.map(t => t.id)
       let photosByTypeId = new Map<string, any[]>()
       
       // vehicle_type_photos 조회는 현재 500 에러가 발생하여 임시로 비활성화
@@ -607,6 +606,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   }
 
   const setPrimaryPhoto = async (photoId: string) => {
+    if (!vehicle?.id) return
     try {
       // 모든 사진의 기본 상태 해제
       await supabase
@@ -652,7 +652,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     try {
       const templates = imagePreviews.map((preview, index) => ({
         vehicle_type: formData.vehicle_type,
-        vehicle_model: formData.vehicle_number,
+        vehicle_model: formData.vehicle_number || null,
         photo_url: preview,
         photo_name: `${formData.vehicle_type} - ${formData.vehicle_number} (${index + 1})`,
         description: `차량 번호: ${formData.vehicle_number}`,
@@ -661,7 +661,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
       const { error } = await supabase
         .from('vehicle_photo_templates')
-        .insert(templates)
+        .insert(templates as never)
 
       if (error) throw error
       
@@ -698,7 +698,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     
     try {
       // 날짜 필드 정리 및 유효성 검사
-      const cleanedData = { ...formData }
+      const cleanedData = { ...formData } as Record<string, unknown>
       
       // 빈 문자열인 날짜 필드들을 null로 변환
       const dateFields = [
@@ -710,9 +710,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       ]
       
       dateFields.forEach(field => {
-        if (cleanedData[field as keyof typeof cleanedData] === '' || 
-            cleanedData[field as keyof typeof cleanedData] === null) {
-          cleanedData[field as keyof typeof cleanedData] = null
+        if (cleanedData[field] === '' || cleanedData[field] === null) {
+          cleanedData[field] = null
         }
       })
 
@@ -723,12 +722,12 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       ]
       
       numberFields.forEach(field => {
-        const value = cleanedData[field as keyof typeof cleanedData]
+        const value = cleanedData[field]
         if (value === '' || value === null || value === undefined) {
-          cleanedData[field as keyof typeof cleanedData] = 0
+          cleanedData[field] = 0
         } else if (typeof value === 'string') {
           const numValue = parseFloat(value)
-          cleanedData[field as keyof typeof cleanedData] = isNaN(numValue) ? 0 : numValue
+          cleanedData[field] = isNaN(numValue) ? 0 : numValue
         }
       })
 
@@ -736,17 +735,17 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         const booking = Number(cleanedData.rental_booking_price) || 0
         const implied = rentalImpliedDailyUsd(
           booking,
-          cleanedData.rental_start_date,
-          cleanedData.rental_end_date
+          cleanedData.rental_start_date as string | null | undefined,
+          cleanedData.rental_end_date as string | null | undefined
         )
-        ;(cleanedData as Record<string, unknown>).daily_rate = implied ? implied.perDay : 0
+        cleanedData.daily_rate = implied ? implied.perDay : 0
       }
 
       // 차량 데이터 저장 (이미지는 별도로 처리)
       const vehicleData = {
         ...cleanedData,
-        vehicle_image_url: null // 단일 이미지 URL 제거
-      }
+        vehicle_image_url: null,
+      } as unknown as Partial<Vehicle>
 
       console.log('정리된 차량 데이터:', vehicleData)
 
@@ -779,7 +778,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
           const { error } = await supabase
             .from('vehicle_photos')
-            .insert(photosData)
+            .insert(photosData as never)
 
           if (error) {
             console.error('사진 저장 오류:', error)

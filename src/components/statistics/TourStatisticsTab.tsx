@@ -1,13 +1,12 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, Fragment } from 'react'
 import { useLocale } from 'next-intl'
 import { 
   BarChart3, 
   TrendingUp, 
   DollarSign, 
   Car, 
-  Fuel, 
   Users, 
   Calendar,
   PieChart,
@@ -35,7 +34,6 @@ import {
   reservationExcludedFromTourSettlementAggregates,
   sumOperatingProfitForTourPricing,
 } from '@/lib/tourStatsCalculator'
-import TourExpenseManager from '../TourExpenseManager'
 import {
   Dialog,
   DialogContent,
@@ -332,7 +330,7 @@ function ticketBookingRowToDetailModal(
 }
 
 // 투어별 정산 통계를 가져오는 함수 (TourExpenseManager 로직 재사용)
-async function getTourFinancialStats(tourId: string) {
+export async function getTourFinancialStats(tourId: string) {
   try {
     console.log('투어 정산 통계 조회 시작:', tourId)
 
@@ -383,7 +381,7 @@ async function getTourFinancialStats(tourId: string) {
     console.log('예약 데이터:', reservations)
 
     // 고객 정보 별도 조회
-    let customersData = []
+    let customersData: Array<{ id: string; name: string | null }> = []
     if (reservations && reservations.length > 0) {
       const customerIds = [...new Set(reservations.map(r => r.customer_id).filter(Boolean))]
       
@@ -487,7 +485,13 @@ async function getTourFinancialStats(tourId: string) {
           if (batchPaymentsError) {
             console.error(`실입금 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchPaymentsError)
           } else if (batchPayments) {
-            allPaymentRecords.push(...batchPayments)
+            allPaymentRecords.push(
+              ...batchPayments.map((p) => ({
+                reservation_id: p.reservation_id,
+                amount: p.amount ?? 0,
+                ...(p.payment_status != null ? { payment_status: p.payment_status } : {}),
+              }))
+            )
           }
         } catch (error) {
           console.error(`실입금 정보 조회 예외 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, error)
@@ -518,7 +522,7 @@ async function getTourFinancialStats(tourId: string) {
 
     const { data: ticketBookingsRaw, error: ticketError } = await supabase
       .from('ticket_bookings')
-      .select('id, expense, ea, status, deleted_at, deletion_requested_at')
+      .select('id, expense, ea, status, deletion_requested_at')
       .eq('tour_id', tourId)
     const ticketBookings = (ticketBookingsRaw || []).filter((b) => isTicketBookingActiveForReports(b))
     if (ticketError) console.error('입장권 부킹 조회 오류:', ticketError)
@@ -683,13 +687,14 @@ async function getTourFinancialStats(tourId: string) {
 
     console.log('투어 정산 통계 결과:', result)
     return result
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('투어 정산 통계 조회 오류:', error)
+    const err = error && typeof error === 'object' ? (error as Record<string, unknown>) : {}
     console.error('오류 상세:', {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint
+      message: err.message,
+      code: err.code,
+      details: err.details,
+      hint: err.hint
     })
     return {
       tourId,
@@ -714,11 +719,7 @@ async function getTourFinancialStats(tourId: string) {
 export default function TourStatisticsTab({ dateRange, isSuper = false }: TourStatisticsTabProps) {
   const locale = useLocale()
   const { authUser, userPosition, permissions } = useAuth()
-  const {
-    reservations,
-    products,
-    loading
-  } = useReservationData()
+  const { loading } = useReservationData()
 
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; productName: string } | null>(null)
   const [ticketBookingDetailTourId, setTicketBookingDetailTourId] = useState<string | null>(null)
@@ -748,12 +749,20 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
 
       let tourMeta: TicketBookingReservationDetailRow['tours'] = undefined
       if (tourRes.data) {
+        const rawProducts = tourRes.data.products
+        const productsMeta =
+          rawProducts && typeof rawProducts === 'object' && !Array.isArray(rawProducts)
+            ? {
+                ...(rawProducts.name != null ? { name: rawProducts.name } : {}),
+                ...(rawProducts.name_en != null ? { name_en: rawProducts.name_en } : {}),
+                ...('name_ko' in rawProducts && rawProducts.name_ko != null
+                  ? { name_ko: String(rawProducts.name_ko) }
+                  : {}),
+              }
+            : undefined
         tourMeta = {
           tour_date: tourRes.data.tour_date,
-          products: tourRes.data.products as
-            | { name?: string; name_en?: string }
-            | null
-            | undefined,
+          ...(productsMeta ? { products: productsMeta } : {}),
         }
       }
 
@@ -947,27 +956,27 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
   const getTourExpenseDetails = async (tourId: string, tourDate?: string) => {
     try {
       // 투어 지출 상세 조회 (모든 상태의 지출 포함)
-      const { data: expenses, error: expensesError } = await supabase
+      const { data: expenses } = await supabase
         .from('tour_expenses')
         .select('*')
         .eq('tour_id', tourId)
         .is('deleted_at', null)
 
       // 입장권 부킹 상세 (expense 합 — 정산 기준과 동일)
-      const { data: ticketBookingsRaw, error: ticketError } = await supabase
+      const { data: ticketBookingsRaw } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
       const ticketBookings = (ticketBookingsRaw || []).filter((b) => isTicketBookingActiveForReports(b))
 
-      const { data: hotelBookingsRaw, error: hotelError } = await supabase
+      const { data: hotelBookingsRaw } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
       const hotelBookings = (hotelBookingsRaw || []).filter((b) => isHotelBookingActiveForReports(b))
 
       // 투어 수수료 조회 (가이드/어시스턴트 이름 포함)
-      const { data: tour, error: tourError } = await supabase
+      const { data: tour } = await supabase
         .from('tours')
         .select('guide_fee, assistant_fee, tour_guide_id, assistant_id')
         .eq('id', tourId)
@@ -1067,7 +1076,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
       if (reservations && reservations.length > 0) {
         const customerIds = reservations.map(r => r.customer_id).filter(Boolean)
         if (customerIds.length > 0) {
-          const { data: customersData, error: customersError } = await supabase
+          const { data: customersData } = await supabase
             .from('customers')
             .select('id, name')
             .in('id', customerIds)
@@ -1207,9 +1216,9 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           end: dateRange.end
         })
         const res = await fetch(`/api/statistics/tour-stats?${params}`, {
-          headers: session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : undefined
+          ...(session?.access_token
+            ? { headers: { Authorization: `Bearer ${session.access_token}` } }
+            : {}),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -1790,34 +1799,20 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                   const denom = Math.max(tour.totalPeople || 0, 0)
                   const name = `${tour.productName} (${formatDate(tour.tourDate)})`
                   if (perPersonMetric === 'revenuePer') {
-                    return {
-                      name,
-                      revenue: denom > 0 ? tour.revenue / denom : 0,
-                      expenses: undefined,
-                      profit: undefined,
-                      people: tour.totalPeople
-                    }
+                    const value = denom > 0 ? tour.revenue / denom : 0
+                    return { name, value, revenue: value, people: tour.totalPeople }
                   }
                   if (perPersonMetric === 'expensesPer') {
-                    return {
-                      name,
-                      revenue: undefined,
-                      expenses: denom > 0 ? tour.expenses / denom : 0,
-                      profit: undefined,
-                      people: tour.totalPeople
-                    }
+                    const value = denom > 0 ? tour.expenses / denom : 0
+                    return { name, value, expenses: value, people: tour.totalPeople }
                   }
                   if (perPersonMetric === 'profitPer') {
-                    return {
-                      name,
-                      revenue: undefined,
-                      expenses: undefined,
-                      profit: denom > 0 ? tour.netProfit / denom : 0,
-                      people: tour.totalPeople
-                    }
+                    const value = denom > 0 ? tour.netProfit / denom : 0
+                    return { name, value, profit: value, people: tour.totalPeople }
                   }
                   return {
                     name,
+                    value: tour.netProfit,
                     revenue: tour.revenue,
                     expenses: tour.expenses,
                     profit: tour.netProfit,
@@ -2070,7 +2065,13 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 const chartData = sortedDates.map(({ d }) => {
                   const row = byDate[d]
                   if (dailyMetric === 'people') return { name: d, value: row.people }
-                  return { name: d, revenue: row.revenue, expenses: row.expenses, profit: row.profit }
+                  const value =
+                    dailyMetric === 'revenue'
+                      ? row.revenue
+                      : dailyMetric === 'expenses'
+                        ? row.expenses
+                        : row.profit
+                  return { name: d, value, revenue: row.revenue, expenses: row.expenses, profit: row.profit }
                 })
 
                 return (
@@ -2150,7 +2151,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {visibleTourStats.map((tour, index) => (
-                <React.Fragment key={index}>
+                <Fragment key={index}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900">
                       {formatDate(tour.tourDate)}
@@ -2598,7 +2599,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                       </td>
                     </tr>
                   )}
-                </React.Fragment>
+                </Fragment>
               ))}
               {/* 총합 행 */}
               {visibleTourStats.length > 0 && (
@@ -2692,8 +2693,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           setTicketHistoryBookingId(id)
           setTicketHistoryOpen(true)
         }}
-        onRequestSoftDelete={canSoftDeleteFromStats ? handleTicketBookingRowSoftDelete : undefined}
-        onHardDelete={isSuper ? handleTicketBookingRowHardDelete : undefined}
+        {...(canSoftDeleteFromStats ? { onRequestSoftDelete: handleTicketBookingRowSoftDelete } : {})}
+        {...(isSuper ? { onHardDelete: handleTicketBookingRowHardDelete } : {})}
         onActionApplied={() => {
           if (ticketBookingDetailTourId) void reloadTicketBookingDetailRows(ticketBookingDetailTourId)
         }}

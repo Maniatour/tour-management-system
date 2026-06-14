@@ -16,11 +16,9 @@ export async function sendSopPublishedStaffPush(
   admin: SupabaseClient,
   params: { versionId: string; title: string; signPath: string }
 ): Promise<{ sent: number; failed: number; skippedNoVapid: boolean }> {
-  let skippedNoVapid = false
   try {
     setupVapid()
   } catch {
-    skippedNoVapid = true
     return { sent: 0, failed: 0, skippedNoVapid: true }
   }
 
@@ -101,11 +99,9 @@ export async function sendEmployeeContractPublishedStaffPush(
   admin: SupabaseClient,
   params: { versionId: string; title: string; signPath: string }
 ): Promise<{ sent: number; failed: number; skippedNoVapid: boolean }> {
-  let skippedNoVapid = false
   try {
     setupVapid()
   } catch {
-    skippedNoVapid = true
     return { sent: 0, failed: 0, skippedNoVapid: true }
   }
 

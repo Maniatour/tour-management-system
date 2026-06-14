@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Activity, Zap, Clock, Database, TrendingUp, RefreshCw } from 'lucide-react'
 
 interface PerformanceMetrics {
@@ -22,7 +22,7 @@ interface PerformanceMonitorProps {
 
 export default function PerformanceMonitor({ 
   metrics, 
-  onRefreshCache, 
+  onRefreshCache: _onRefreshCache, 
   onClearCache 
 }: PerformanceMonitorProps) {
   const [cacheStats, setCacheStats] = useState<{ size: number, hitRate: number } | null>(null)

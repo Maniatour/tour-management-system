@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Download, Upload, RefreshCw, Edit2, Save, X, Trash2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Upload, RefreshCw } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import koData from '@/i18n/locales/ko.json'
@@ -18,14 +18,14 @@ interface JsonSyncManagerProps {
   locale: string
 }
 
-export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
+export default function JsonSyncManager({ locale: _locale }: JsonSyncManagerProps) {
   const t = useTranslations('tagTranslations')
   const [jsonTranslations, setJsonTranslations] = useState<JsonTranslation[]>([])
   const [dbTranslations, setDbTranslations] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<string>('')
   const [syncStatusError, setSyncStatusError] = useState(false)
-  const [showOnlyMissing, setShowOnlyMissing] = useState(true)
+  const [showOnlyMissing] = useState(true)
 
   useEffect(() => {
     loadJsonTranslations()
@@ -72,8 +72,10 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
       
       // 각 네임스페이스별로 키 수집
       for (const ns of allNamespaces) {
-        const koNamespace = koData[ns] || {}
-        const enNamespace = enData[ns] || {}
+        const koRecord = koData as Record<string, unknown>
+        const enRecord = enData as Record<string, unknown>
+        const koNamespace = (koRecord[ns] ?? {}) as Record<string, unknown>
+        const enNamespace = (enRecord[ns] ?? {}) as Record<string, unknown>
         
         // 모든 키 수집 (ko 또는 en에 있으면 포함)
         const allKeys = new Set([
@@ -205,13 +207,8 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
     }
   }
 
-  const namespaces = Array.from(new Set(jsonTranslations.map(t => t.namespace))).sort()
   const missingCount = jsonTranslations.filter(t => 
     !dbTranslations.has(`${t.namespace}.${t.key}`)
-  ).length
-
-  const existingCount = jsonTranslations.filter(t => 
-    dbTranslations.has(`${t.namespace}.${t.key}`)
   ).length
 
   const filteredTranslations = jsonTranslations.filter(t => 

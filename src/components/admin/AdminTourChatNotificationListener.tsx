@@ -208,7 +208,7 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
               senderName: String(row.sender_name || '고객'),
               messagePreview: preview || '(내용 없음)',
               tourTitle,
-              roomCode: r.room_code ? String(r.room_code) : undefined,
+              ...(r.room_code ? { roomCode: String(r.room_code) } : {}),
               tourDate,
               guideLabel,
               assistantLabel,

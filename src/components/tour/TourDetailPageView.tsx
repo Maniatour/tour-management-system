@@ -45,12 +45,14 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import TourPrintModal from '@/components/tour/modals/TourPrintModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
+import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import type { Customer } from '@/types/reservation'
@@ -131,7 +133,13 @@ const ReservationFormAny = ReservationForm as any
 const TicketBookingFormAny = TicketBookingForm as any
 const TourHotelBookingFormAny = TourHotelBookingForm as any
 
-export function TourDetailPageView({ tourId }: { tourId: string }) {
+export function TourDetailPageView({
+  tourId,
+  modalLightLoad = false,
+}: {
+  tourId: string
+  modalLightLoad?: boolean
+}) {
   const router = useRouter()
   const locale = useLocale()
   const t = useTranslations('tours')
@@ -142,7 +150,7 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
   const { openChat } = useFloatingChat()
 
   // 커스텀 훅으로 데이터와 상태 관리 (모달에서는 route의 id 대신 tourId 사용)
-  const tourData = useTourDetailData({ tourId })
+  const tourData = useTourDetailData({ tourId, modalLightLoad })
   const tourHandlers = useTourHandlers()
   
   // 부킹 관련 상태 (로컬 상태로 유지)
@@ -1143,6 +1151,20 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
       await tourData.refreshReservations()
       return
     }
+    if (normalized === 'no_show') {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: newStatus })
+        .eq('id', reservationId)
+      if (error) {
+        console.error('예약 상태 변경 오류:', error)
+        throw error
+      }
+      await upsertReservationCancellationReason(reservationId, 'No Show', authUser?.email ?? null)
+      await applyNoShowReservationSideEffects(reservationId)
+      await tourData.refreshReservations()
+      return
+    }
     const { error } = await supabase
       .from('reservations')
       .update({ status: newStatus })
@@ -1152,6 +1174,31 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
       throw error
     }
     await tourData.refreshReservations()
+  }
+
+  const handleCommunicationChannelChange = async (
+    reservationId: string,
+    channel: CustomerCommunicationChannel
+  ) => {
+    const patchReservation = (r: { id: string }) =>
+      r.id === reservationId ? { ...r, customer_communication_channel: channel } : r
+
+    tourData.setAllReservations((prev) => prev.map(patchReservation))
+    tourData.setAssignedReservations((prev) => prev.map(patchReservation))
+    tourData.setPendingReservations((prev) => prev.map(patchReservation))
+    tourData.setOtherToursAssignedReservations((prev) => prev.map(patchReservation))
+    tourData.setOtherStatusReservations((prev) => prev.map(patchReservation))
+
+    const { error } = await supabase
+      .from('reservations')
+      .update({ customer_communication_channel: channel })
+      .eq('id', reservationId)
+
+    if (error) {
+      console.error('소통 채널 변경 오류:', error)
+      await tourData.refreshReservations()
+      throw error
+    }
   }
 
   const handleCopyTour = async () => {
@@ -2095,6 +2142,7 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
               tourDate={tourData.tour?.tour_date ?? null}
               onAutoAssignSuccess={tourData.refreshReservations}
               allProducts={tourData.allProducts ?? []}
+              onCommunicationChannelChange={handleCommunicationChannelChange}
             />
             </div>
           </div>

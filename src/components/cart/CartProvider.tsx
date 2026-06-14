@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, createContext, useContext, useRef, useMemo } from 'react'
+import React, { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar, Clock } from 'lucide-react'
 import { useLocale } from 'next-intl'
 

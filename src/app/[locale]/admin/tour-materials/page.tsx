@@ -28,60 +28,64 @@ import TourMaterialEditModal from '@/components/TourMaterialEditModal'
 import GuideQuizModal from '@/components/GuideQuizModal'
 import AttractionModal from '@/components/AttractionModal'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import type { Database } from '@/lib/database.types'
+
+type DbTourMaterial = Database['public']['Tables']['tour_materials']['Row']
 
 // 타입 정의 (데이터베이스에 없는 테이블들)
 type TourAttraction = {
   id: string
   name_ko: string
   name_en: string
-  description_ko?: string
-  description_en?: string
-  location?: string
-  category?: string
-  visit_duration?: number
-  created_at: string
-  updated_at: string
+  description_ko?: string | null
+  description_en?: string | null
+  location?: string | null
+  category?: string | null
+  visit_duration?: number | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 type TourMaterial = {
   id: string
   title: string
-  description?: string
+  description?: string | null
   file_name: string
   file_path: string
   file_size: number
   file_type: string
-  duration?: number
-  language?: string
-  attraction_id?: string
-  category_id?: string
+  duration?: number | null
+  language?: string | null
+  attraction_id?: string | null
+  category_id?: string | null
   tags?: string[] | null
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 type TourMaterialCategory = {
   id: string
   name_ko: string
   name_en: string
-  icon?: string
-  color?: string
-  sort_order: number
-  created_at: string
-  updated_at: string
+  icon?: string | null
+  color?: string | null
+  sort_order: number | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 type GuideQuiz = {
   id: string
   title: string
-  description?: string
+  description?: string | null
   question: string
-  answer: string
-  difficulty?: string
-  language?: string
-  attraction_id?: string
-  created_at: string
-  updated_at: string
+  answer?: string
+  correct_answer?: number
+  difficulty?: string | null
+  language?: string | null
+  attraction_id?: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export default function TourMaterialsManagementPage() {
@@ -646,7 +650,7 @@ export default function TourMaterialsManagementPage() {
       <TourMaterialEditModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
-        material={selectedMaterial}
+        material={selectedMaterial as DbTourMaterial | null}
         onSuccess={handleEditSuccess}
       />
 

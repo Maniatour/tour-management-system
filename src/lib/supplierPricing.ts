@@ -54,7 +54,16 @@ export async function getSupplierPrice(
     const { data, error } = await query.limit(1);
 
     if (error) throw error;
-    return data?.[0] || null;
+    const row = data?.[0]
+    if (!row) return null
+    return {
+      ...row,
+      is_active: row.is_active ?? false,
+      markup_percent: row.markup_percent ?? 0,
+      markup_amount: row.markup_amount ?? 0,
+      regular_price: row.regular_price ?? 0,
+      supplier_price: row.supplier_price ?? 0,
+    }
   } catch (error) {
     console.error('공급 업체 가격 조회 오류:', error);
     return null;
@@ -66,7 +75,7 @@ export async function getSupplierPrice(
  */
 export function calculateSupplierBasedPricing(
   supplierProduct: SupplierProduct,
-  basePrice: number = 0
+  _basePrice: number = 0
 ): {
   supplierPrice: number;
   markupPrice: number;
@@ -184,11 +193,23 @@ export async function updateDynamicPricingWithSupplierPrices(
 
     if (existingPricing) {
       // 기존 데이터가 있으면 공급 업체 가격 반영
+      const pricingInput: DynamicPricingData = {
+        product_id: existingPricing.product_id ?? productId,
+        channel_id: existingPricing.channel_id ?? channelId,
+        date: existingPricing.date ?? date,
+        adult_price: existingPricing.adult_price ?? 0,
+        child_price: existingPricing.child_price ?? 0,
+        infant_price: existingPricing.infant_price ?? 0,
+        choices_pricing: existingPricing.choices_pricing,
+        ...(existingPricing.markup_percent != null ? { markup_percent: existingPricing.markup_percent } : {}),
+        ...(existingPricing.markup_amount != null ? { markup_amount: existingPricing.markup_amount } : {}),
+      }
+      const productChoices = product.choices as { required?: Array<{ id: string; options: Array<{ id: string; price?: number }> }> } | null
       updatedPricing = await applySupplierPricingToDynamicPricing(
-        existingPricing,
+        pricingInput,
         productId,
-        product.choices
-      );
+        productChoices
+      )
       
       // 업데이트
       const { error: updateError } = await supabase
@@ -216,9 +237,10 @@ export async function updateDynamicPricingWithSupplierPrices(
         };
 
         // 선택 옵션별 가격 설정
-        if (product.choices?.required) {
+        const productChoices = product.choices as { required?: Array<{ id: string; options: Array<{ id: string; price?: number }> }> } | null
+        if (productChoices?.required) {
           updatedPricing.choices_pricing = {};
-          for (const choice of product.choices.required) {
+          for (const choice of productChoices.required) {
             updatedPricing.choices_pricing[choice.id] = {};
             for (const option of choice.options) {
               const choiceSupplierPrice = await getSupplierPrice(productId, choice.id, option.id);

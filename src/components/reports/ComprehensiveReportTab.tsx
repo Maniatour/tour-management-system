@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
-import { BarChart3, TrendingUp, DollarSign, Users, Package, Receipt, CreditCard, Calendar, Wallet, Settings } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { TrendingUp, DollarSign, Users, Receipt, CreditCard, Calendar, Wallet, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
@@ -36,6 +37,14 @@ interface ComprehensiveStats {
   expenses: {
     total: number
     byCategory: Array<{ category: string; amount: number }>
+    breakdown?: {
+      tourExpenses: number
+      reservationExpenses: number
+      companyExpenses: number
+      ticketBookings: number
+      guideFees: number
+      assistantFees: number
+    }
   }
   deposits: {
     total: number
@@ -47,6 +56,12 @@ interface ComprehensiveStats {
     netProfit: number
     profitMargin: number
   }
+  cash?: {
+    balance: number
+    periodDeposits: number
+    periodWithdrawals: number
+    netFlow: number
+  }
 }
 
 export default function ComprehensiveReportTab({
@@ -55,7 +70,7 @@ export default function ComprehensiveReportTab({
   reservations,
   products,
   channels,
-  customers,
+  customers: _customers,
   reservationsAggregateReady = true,
 }: ComprehensiveReportTabProps) {
   const [stats, setStats] = useState<ComprehensiveStats | null>(null)
@@ -122,10 +137,7 @@ export default function ComprehensiveReportTab({
               }
             )
       const pricingByReservationId = new Map(
-        reservationPricing.map((p: { reservation_id: string; total_price?: number }) => [
-          p.reservation_id,
-          p.total_price || 0,
-        ])
+        reservationPricing.map((p) => [p.reservation_id, p.total_price ?? 0])
       )
 
       const reservationStats = {
@@ -259,20 +271,17 @@ export default function ComprehensiveReportTab({
         companyExpensesResult,
         toursForFeesResult
       ] = await Promise.all([
-        supabase
-          .from('tour_expenses')
+        fromUntypedTable(supabase, 'tour_expenses')
           .select('amount, paid_for')
           .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        supabase
-          .from('reservation_expenses')
+        fromUntypedTable(supabase, 'reservation_expenses')
           .select('amount, paid_for')
           .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        supabase
-          .from('company_expenses')
+        fromUntypedTable(supabase, 'company_expenses')
           .select('amount, category')
           .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
@@ -393,7 +402,7 @@ export default function ComprehensiveReportTab({
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
 
       // 결제 방법 정보 조회
-      const paymentMethodIds = [...new Set((deposits || []).map(d => d.payment_method).filter(Boolean))]
+      const paymentMethodIds = [...new Set((deposits || []).map(d => d.payment_method).filter((id): id is string => id != null))]
       const { data: paymentMethods } = await supabase
         .from('payment_methods')
         .select('id, method, display_name, card_holder_name, user_email')
@@ -435,7 +444,13 @@ export default function ComprehensiveReportTab({
               user_email: pm.user_email,
               card_holder_name: pm.card_holder_name,
             },
-            team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+            team
+              ? {
+                  nick_name: team.nick_name ?? null,
+                  name_en: team.name_en ?? null,
+                  name_ko: team.name_ko ?? null,
+                }
+              : undefined
           )
           methodNameMap.set(pm.id, methodName)
         })

@@ -1,6 +1,6 @@
 'use client'
 
-import { Phone, PhoneOff, Mic, MicOff, X } from 'lucide-react'
+import { Phone, PhoneOff, Mic, MicOff } from 'lucide-react'
 import { CallStatus } from '@/hooks/useVoiceCall'
 
 interface VoiceCallModalProps {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 type PmRow = {
@@ -51,8 +52,7 @@ export function usePaymentMethodOptions() {
 
   const loadPaymentMethods = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('payment_methods')
+      const { data, error } = await fromUntypedTable(supabase, 'payment_methods')
         .select('id, method, method_type, display_name, user_email, status, card_holder_name, financial_account_id')
         .order('method')
       if (error) throw error
@@ -72,19 +72,21 @@ export function usePaymentMethodOptions() {
       const map: Record<string, string> = {}
       const faNameByPmId: Record<string, string> = {}
       const options: PaymentMethodOption[] = []
-      const rows: PmRow[] = (data || []) as PmRow[]
+      const rows: PmRow[] = (data || []) as unknown as PmRow[]
 
       const faIds = [...new Set(rows.map((r) => r.financial_account_id).filter(Boolean) as string[])]
       const faNameById = new Map<string, string>()
       if (faIds.length > 0) {
         for (let i = 0; i < faIds.length; i += 80) {
           const chunk = faIds.slice(i, i + 80)
-          const { data: faRows, error: faErr } = await supabase.from('financial_accounts').select('id,name').in('id', chunk)
+          const { data: faRows, error: faErr } = await fromUntypedTable(supabase, 'financial_accounts')
+            .select('id,name')
+            .in('id', chunk)
           if (faErr) {
             console.warn('financial_accounts 로드(결제방법·계정 표시용):', faErr)
             break
           }
-          for (const fa of (faRows || []) as { id: string; name: string }[]) {
+          for (const fa of (faRows || []) as unknown as { id: string; name: string }[]) {
             faNameById.set(fa.id, fa.name)
           }
         }

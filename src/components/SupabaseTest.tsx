@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getSupabaseClient } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 
 export default function SupabaseTest() {
   const [status, setStatus] = useState('Testing...')
@@ -13,7 +13,7 @@ export default function SupabaseTest() {
       try {
         setStatus('Testing Supabase connection...')
         
-        const client = getSupabaseClient()
+        const client = createClientSupabase()
         if (!client) {
           setError('Supabase client is null')
           setStatus('Failed')

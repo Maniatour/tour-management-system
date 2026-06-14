@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, ShoppingCart, CreditCard, Ticket, Lock, Loader2 } from 'lucide-react'
+import { X, CreditCard, Ticket, Lock, Loader2 } from 'lucide-react'
 import { useCart } from './CartProvider'
 import { useLocale } from 'next-intl'
 import { loadStripe } from '@stripe/stripe-js'
@@ -17,8 +17,8 @@ interface CartCheckoutProps {
 
 // Stripe Elements를 사용하는 결제 폼
 function CheckoutPaymentForm({
-  totalAmount,
-  discountAmount,
+  totalAmount: _totalAmount,
+  discountAmount: _discountAmount,
   finalAmount,
   customerInfo,
   onPaymentComplete,
@@ -512,7 +512,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
           <div className="mb-6">
             <h3 className="font-medium text-gray-900 mb-4">{translate('주문 요약', 'Order Summary')}</h3>
             <div className="space-y-4 text-sm">
-              {items.map((item, index) => (
+              {items.map((item) => (
                 <div key={item.id} className="border rounded-lg p-3">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">

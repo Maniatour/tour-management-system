@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { AlertCircle, CheckCircle, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -17,7 +17,7 @@ interface TranslationCheckerProps {
   locale: string
 }
 
-export default function TranslationChecker({ locale }: TranslationCheckerProps) {
+export default function TranslationChecker({ locale: _locale }: TranslationCheckerProps) {
   const [isChecking, setIsChecking] = useState(false)
   const [results, setResults] = useState<TranslationCheckResult[]>([])
   const [summary, setSummary] = useState({ total: 0, unused: 0, missing: 0 })
@@ -107,7 +107,6 @@ export default function TranslationChecker({ locale }: TranslationCheckerProps) 
 
     try {
       const koData = require('@/i18n/locales/ko.json')
-      const enData = require('@/i18n/locales/en.json')
       
       for (const ns in koData) {
         flatten(koData[ns], ns)

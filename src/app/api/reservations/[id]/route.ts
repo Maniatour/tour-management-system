@@ -186,7 +186,7 @@ export async function PUT(
 
       const { error: optionsError } = await supabase
         .from('reservation_options')
-        .insert(reservationOptions)
+        .insert(reservationOptions as never)
 
       if (optionsError) {
         console.error('예약 옵션 업데이트 오류:', optionsError)
@@ -251,8 +251,8 @@ export async function DELETE(
         .update({
           status: 'cancelled',
           updated_at: new Date().toISOString(),
-          updated_by: user.email
-        })
+          ...(user.email != null ? { updated_by: user.email } : {}),
+        } as never)
         .eq('id', reservationId)
         .select('*')
         .single()

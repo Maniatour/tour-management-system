@@ -10,22 +10,28 @@ declare global {
 
 declare const self: ServiceWorkerGlobalScope
 
+/** 직원·관리 화면: 탭 여러 개 동시 사용 시 SW 캐시로 구버전 HTML이 섞이지 않도록 */
+function isStaffAppDocumentNavigation(url: URL, request: Request): boolean {
+  if (request.mode !== 'navigate' && request.destination !== 'document') return false
+  const p = url.pathname
+  return /^\/(ko|en)\/(admin|dashboard|guide)(\/|$)/.test(p)
+}
+
 // Push 알림 (기존 public/sw.js 동작 유지)
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {}
   const title = data.title || '새 메시지'
-  const options: NotificationOptions = {
+  const options = {
     body: data.body || '새로운 채팅 메시지가 도착했습니다',
     icon: data.icon || '/images/logo.png',
     badge: data.badge || '/images/logo.png',
     tag: data.tag || 'chat-message',
     data: data.data || {},
     requireInteraction: false,
-    vibrate: [200, 100, 200],
-    actions: data.actions || [],
+    ...(Array.isArray(data.actions) && data.actions.length > 0 ? { actions: data.actions } : {}),
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(self.registration.showNotification(title, options as NotificationOptions))
 })
 
 self.addEventListener('notificationclick', (event) => {
@@ -44,12 +50,13 @@ self.addEventListener('notificationclick', (event) => {
       if (self.clients.openWindow) {
         return self.clients.openWindow(urlToOpen)
       }
+      return undefined
     }),
   )
 })
 
 const serwist = new Serwist({
-  precacheEntries: self.__SW_MANIFEST,
+  precacheEntries: self.__SW_MANIFEST ?? [],
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
@@ -60,6 +67,12 @@ const serwist = new Serwist({
       matcher({ url, request }) {
         if (!url.pathname.startsWith('/chat/')) return false
         return request.mode === 'navigate' || request.destination === 'document'
+      },
+      handler: new NetworkOnly(),
+    },
+    {
+      matcher({ url, request }) {
+        return isStaffAppDocumentNavigation(url, request)
       },
       handler: new NetworkOnly(),
     },

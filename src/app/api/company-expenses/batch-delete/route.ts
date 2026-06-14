@@ -19,25 +19,25 @@ export async function POST(request: NextRequest) {
     const deletedBy = user?.email ?? null
 
     const body = await request.json()
-    const rawIds = Array.isArray(body.expenseIds) ? body.expenseIds : []
-    const expenseIds = [...new Set(rawIds.filter((x: unknown) => typeof x === 'string' && String(x).trim()))].slice(
-      0,
-      MAX_IDS
-    )
+    const rawIds: unknown[] = Array.isArray(body.expenseIds) ? body.expenseIds : []
+    const expenseIds = rawIds
+      .filter((x): x is string => typeof x === 'string' && String(x).trim() !== '')
+      .map((x) => x.trim())
+    const uniqueExpenseIds = [...new Set(expenseIds)].slice(0, MAX_IDS)
 
-    if (expenseIds.length === 0) {
+    if (uniqueExpenseIds.length === 0) {
       return NextResponse.json({ error: 'expenseIds 가 필요합니다.' }, { status: 400 })
     }
 
     const results = await Promise.allSettled(
-      expenseIds.map((id) => softDeleteExpenseRecord(supabase, 'company_expenses', id, deletedBy))
+      uniqueExpenseIds.map((id) => softDeleteExpenseRecord(supabase, 'company_expenses', id, deletedBy))
     )
     const deletedCount = results.filter((r) => r.status === 'fulfilled').length
     const failedCount = results.length - deletedCount
 
     if (deletedCount === 0) {
       return NextResponse.json(
-        { error: '선택한 지출을 삭제할 수 없습니다.', deletedCount: 0, failedCount, requestedCount: expenseIds.length },
+        { error: '선택한 지출을 삭제할 수 없습니다.', deletedCount: 0, failedCount, requestedCount: uniqueExpenseIds.length },
         { status: 500 }
       )
     }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       deletedCount,
       failedCount,
-      requestedCount: expenseIds.length,
+      requestedCount: uniqueExpenseIds.length,
     })
   } catch (e) {
     console.error('회사 지출 일괄 삭제 오류:', e)

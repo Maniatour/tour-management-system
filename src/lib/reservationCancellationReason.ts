@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 async function resolveCreatedByEmail(providedEmail?: string | null): Promise<string | null> {
   if (providedEmail && providedEmail.trim()) return providedEmail.trim()
@@ -20,8 +21,7 @@ export async function upsertReservationCancellationReason(
 
   const createdBy = await resolveCreatedByEmail(createdByEmail)
 
-  const { data: existingRows, error: fetchError } = await supabase
-    .from('reservation_follow_ups')
+  const { data: existingRows, error: fetchError } = await fromUntypedTable(supabase, 'reservation_follow_ups')
     .select('id')
     .eq('reservation_id', reservationId)
     .eq('type', 'cancellation_reason')
@@ -32,15 +32,14 @@ export async function upsertReservationCancellationReason(
 
   const existingId = existingRows?.[0]?.id ?? null
   if (existingId) {
-    const { error: updateError } = await supabase
-      .from('reservation_follow_ups')
+    const { error: updateError } = await fromUntypedTable(supabase, 'reservation_follow_ups')
       .update({ content: trimmed })
       .eq('id', existingId)
     if (updateError) throw updateError
     return
   }
 
-  const { error: insertError } = await supabase.from('reservation_follow_ups').insert({
+  const { error: insertError } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
     reservation_id: reservationId,
     type: 'cancellation_reason',
     content: trimmed,

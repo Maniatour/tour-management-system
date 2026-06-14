@@ -41,13 +41,13 @@ export const ChannelSelector = memo(function ChannelSelector({
   isLoadingChannels,
   selectedChannelType,
   selectedChannel,
-  isMultiChannelMode,
-  selectedChannels,
-  onChannelTypeSelect,
+  isMultiChannelMode: _isMultiChannelMode,
+  selectedChannels: _selectedChannels,
+  onChannelTypeSelect: _onChannelTypeSelect,
   onChannelSelect,
-  onMultiChannelToggle,
-  onChannelToggle,
-  onSelectAllChannelsInType,
+  onMultiChannelToggle: _onMultiChannelToggle,
+  onChannelToggle: _onChannelToggle,
+  onSelectAllChannelsInType: _onSelectAllChannelsInType,
   onChannelEdit,
   channelPricingStats = {}
 }: ChannelSelectorProps) {
@@ -83,28 +83,6 @@ export const ChannelSelector = memo(function ChannelSelector({
       });
       
       const statsChannelIds = new Set(Object.keys(channelPricingStats));
-      
-      // 채널 ID로 매칭 확인
-      const missingInStatsById = Array.from(allChannelIds).filter(id => !statsChannelIds.has(id));
-      
-      // 채널 이름으로 매칭 확인
-      const missingInStatsByName = Array.from(allChannelIds).filter(id => {
-        if (statsChannelIds.has(id)) return false; // ID로 이미 매칭됨
-        const channelName = channelIdToName.get(id);
-        if (!channelName) return true;
-        const normalizedName = channelName.toLowerCase().trim();
-        return !statsChannelIds.has(normalizedName);
-      });
-      
-      const missingInChannels = Array.from(statsChannelIds).filter(id => {
-        // ID로 매칭 확인
-        if (allChannelIds.has(id)) return false;
-        // 이름으로 매칭 확인
-        const matchingChannelId = Array.from(channelNameToId.entries()).find(([name, chId]) => {
-          return name === id.toLowerCase().trim();
-        });
-        return !matchingChannelId;
-      });
       
       // 각 채널의 매칭 상태 확인
       const channelMatchingStatus = Array.from(allChannelIds).map(id => {

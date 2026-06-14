@@ -6,6 +6,9 @@ import AbortErrorHandler from "@/components/AbortErrorHandler";
 import AppToaster from "@/components/AppToaster";
 import SopComplianceGate from "@/components/sop/SopComplianceGate";
 import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
+import DevBootRecovery from "@/components/DevBootRecovery";
+import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineScript";
+import RouteTransitionProgress from "@/components/RouteTransitionProgress";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -41,9 +44,12 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={inter.className}>
+        <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
         <DevServiceWorkerCleanup />
+        <DevBootRecovery />
         <AuthProvider>
+          <RouteTransitionProgress />
           <AppToaster />
           <SopComplianceGate />
           {children}

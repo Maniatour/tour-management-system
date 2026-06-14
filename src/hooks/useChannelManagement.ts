@@ -11,12 +11,6 @@ interface Channel {
   [key: string]: unknown;
 }
 
-interface ChannelGroup {
-  type: 'OTA' | 'SELF';
-  label: string;
-  channels: Channel[];
-}
-
 export function useChannelManagement() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
@@ -106,7 +100,16 @@ export function useChannelManagement() {
           console.log(`채널 ${channel.name} (${channel.id}): commission_percent=${channel.commission_percent}, commission=${channel.commission}`);
         });
       }
-      setChannels(uniqueChannels);
+      setChannels(
+        uniqueChannels.map((ch) => ({
+          ...ch,
+          type: ch.type ?? '',
+          category: ch.category ?? '',
+          status: ch.status ?? '',
+          commission_base_price_only: ch.commission_base_price_only ?? false,
+          commission_adult_only: ch.commission_adult_only ?? false,
+        })) as Channel[]
+      );
     } catch (error) {
       console.error('채널 로드 실패:', error);
       setChannels([]);

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { 
   FileText, 
   Calendar, 
@@ -11,7 +11,6 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Clock,
   Tag
 } from 'lucide-react'
 import { format } from 'date-fns'

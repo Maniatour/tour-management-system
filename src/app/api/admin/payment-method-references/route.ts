@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { PAYMENT_METHOD_REF_TABLES, type PaymentMethodRefTable } from '@/lib/paymentMethodRefTables'
 
 function isRefTable(t: string): t is PaymentMethodRefTable {
@@ -167,8 +168,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, message: '허용되지 않은 table입니다.' }, { status: 400 })
     }
 
-    const { data: row, error: fetchErr } = await supabaseAdmin
-      .from(table)
+    const { data: row, error: fetchErr } = await fromUntypedTable(supabaseAdmin, table)
       .select('*')
       .eq('id', id)
       .maybeSingle()
@@ -201,9 +201,8 @@ export async function PATCH(request: NextRequest) {
     }
     updateData.updated_at = new Date().toISOString()
 
-    const { data: updated, error: upErr } = await supabaseAdmin
-      .from(table)
-      .update(updateData)
+    const { data: updated, error: upErr } = await fromUntypedTable(supabaseAdmin, table)
+      .update(updateData as never)
       .eq('id', id)
       .select()
       .maybeSingle()
@@ -253,8 +252,7 @@ export async function POST(request: NextRequest) {
     }
 
     const noteColumn = noteColumnForTable(table)
-    const { data: rows, error: fetchError } = await supabaseAdmin
-      .from(table)
+    const { data: rows, error: fetchError } = await fromUntypedTable(supabaseAdmin, table)
       .select(`id,payment_method,${noteColumn}`)
       .in('id', ids)
 
@@ -263,7 +261,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString()
-    const rowsToUpdate = (rows || []) as Array<{
+    const rowsToUpdate = (rows || []) as unknown as Array<{
       id: string
       payment_method?: string | null
       note?: string | null
@@ -285,9 +283,8 @@ export async function POST(request: NextRequest) {
       }
       updatePayload.updated_at = now
 
-      const { error: updateError } = await supabaseAdmin
-        .from(table)
-        .update(updatePayload)
+      const { error: updateError } = await fromUntypedTable(supabaseAdmin, table)
+        .update(updatePayload as never)
         .eq('id', row.id)
 
       if (updateError) {

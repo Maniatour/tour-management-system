@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import {
   Dialog,
@@ -147,8 +148,7 @@ async function fetchExpenseLines(
   let hasMore = true
 
   while (hasMore) {
-    const { data, error } = await supabase
-      .from(sourceTable)
+    const { data, error } = await fromUntypedTable(supabase, sourceTable)
       .select(select)
       .eq(matchField, originalValue)
       .is('deleted_at', null)
@@ -157,7 +157,7 @@ async function fetchExpenseLines(
     if (error) throw error
 
     const batch = data ?? []
-    for (const row of batch as Record<string, unknown>[]) {
+    for (const row of (batch as unknown as Record<string, unknown>[])) {
       const classification =
         sourceTable === 'company_expenses'
           ? String(row.category ?? '').trim()
@@ -394,7 +394,7 @@ export default function CategoryMappingExpenseDetailDialog({
     }))
   }
 
-  const draftWithLeaf = (lineId: string, leafId: string, cur: RowDraft): RowDraft => {
+  const draftWithLeaf = (_lineId: string, leafId: string, cur: RowDraft): RowDraft => {
     const leaf = byId.get(leafId)
     const suggested =
       leaf && leafId

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { buildCompanyExpenseStandardLeafOrClause } from '@/lib/companyExpenseStandardLeafFilter'
 import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
@@ -8,18 +9,23 @@ import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { Database } from '@/lib/database.types'
 import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
+import { parseMultiQueryValues } from '@/lib/multiQueryParam'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 
 const AMOUNT_SEARCH_SCAN_LIMIT = 10_000
 
 type CompanyExpenseListFilterParams = {
-  category: string | null
-  status: string | null
-  vehicleId: string | null
+  categories: string[]
+  statuses: string[]
+  vehicleIds: string[]
   dateFrom: string | null
   dateTo: string | null
-  paidFor: string | null
+  paidForValues: string[]
+  paidToValues: string[]
+  standardPaidForValues: string[]
+  paymentMethodIds: string[]
+  submitByEmails: string[]
   standardPaidFor: string | null
   reimbursement: string
   standardLeafId: string
@@ -34,22 +40,33 @@ async function applyCompanyExpenseListFilters(
 ): Promise<{ query: typeof query; empty?: boolean }> {
   let q = query
 
-  if (params.category && params.category !== 'all') {
-    q = q.eq('category', params.category)
+  if (params.categories.length > 0) {
+    q = q.in('category', params.categories)
   }
-  if (params.status && params.status !== 'all') {
-    q = q.eq('status', params.status)
+  if (params.statuses.length > 0) {
+    q = q.in('status', params.statuses)
   }
-  if (params.vehicleId && params.vehicleId !== 'all') {
-    q = q.eq('vehicle_id', params.vehicleId)
+  if (params.vehicleIds.length > 0) {
+    q = q.in('vehicle_id', params.vehicleIds)
   }
-  if (params.paidFor && params.paidFor.trim() !== '' && params.paidFor !== 'all') {
-    q = q.eq('paid_for', params.paidFor.trim())
+  if (params.paidForValues.length > 0) {
+    q = q.in('paid_for', params.paidForValues)
   }
-  if (params.standardPaidFor === 'set') {
+  if (params.paidToValues.length > 0) {
+    q = q.in('paid_to', params.paidToValues)
+  }
+  if (params.standardPaidForValues.length > 0) {
+    q = q.in('standard_paid_for', params.standardPaidForValues)
+  } else if (params.standardPaidFor === 'set') {
     q = q.not('standard_paid_for', 'is', null).neq('standard_paid_for', '')
   } else if (params.standardPaidFor === 'unset') {
     q = q.or('standard_paid_for.is.null,standard_paid_for.eq.')
+  }
+  if (params.paymentMethodIds.length > 0) {
+    q = q.in('payment_method', params.paymentMethodIds)
+  }
+  if (params.submitByEmails.length > 0) {
+    q = q.in('submit_by', params.submitByEmails)
   }
   const submitOnBounds = lvSubmitOnBoundsFromYmdFilter(params.dateFrom, params.dateTo)
   if (submitOnBounds.gte) {
@@ -108,14 +125,18 @@ export async function GET(request: NextRequest) {
     
     // 쿼리 파라미터 추출
     const search = searchParams.get('search')
-    const category = searchParams.get('category')
-    const status = searchParams.get('status')
-    const vehicleId = searchParams.get('vehicle_id')
+    const categories = parseMultiQueryValues(searchParams, 'category')
+    const statuses = parseMultiQueryValues(searchParams, 'status')
+    const vehicleIds = parseMultiQueryValues(searchParams, 'vehicle_id')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
-    const paidFor = searchParams.get('paid_for')
-    /** all 외: set = standard_paid_for 있음, unset = 없음(null) */
-    const standardPaidFor = searchParams.get('standard_paid_for')
+    const paidForValues = parseMultiQueryValues(searchParams, 'paid_for')
+    const paidToValues = parseMultiQueryValues(searchParams, 'paid_to')
+    const standardPaidForValues = parseMultiQueryValues(searchParams, 'standard_paid_for')
+    const paymentMethodIds = parseMultiQueryValues(searchParams, 'payment_method')
+    const submitByEmails = parseMultiQueryValues(searchParams, 'submit_by')
+    /** all 외: set = standard_paid_for 있음, unset = 없음(null) — 값 다중 선택과 분리 */
+    const standardPaidForPresence = (searchParams.get('standard_paid_for_presence') || '').trim().toLowerCase()
     /** all | employee_card | outstanding */
     const reimbursement = (searchParams.get('reimbursement') || 'all').toLowerCase()
     /** all | unmatched — unmatched: reconciliation_matches에 없는 지출만(뷰) */
@@ -134,19 +155,25 @@ export async function GET(request: NextRequest) {
         : 'company_expenses_no_statement_match'
 
     const listFilterParams: CompanyExpenseListFilterParams = {
-      category,
-      status,
-      vehicleId,
+      categories,
+      statuses,
+      vehicleIds,
       dateFrom,
       dateTo,
-      paidFor,
-      standardPaidFor,
+      paidForValues,
+      paidToValues,
+      standardPaidForValues,
+      paymentMethodIds,
+      submitByEmails,
+      standardPaidFor:
+        standardPaidForPresence === 'set' || standardPaidForPresence === 'unset'
+          ? standardPaidForPresence
+          : null,
       reimbursement,
       standardLeafId,
     }
 
-    let query = supabase
-      .from(expenseTable)
+    let query = fromUntypedTable(supabase, expenseTable)
       .select('*', { count: 'exact' })
       .is('deleted_at', null)
 
@@ -191,7 +218,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (isAmountSearchQuery(raw)) {
-        let scanQ = supabase.from(expenseTable).select('id, amount').is('deleted_at', null)
+        let scanQ = fromUntypedTable(supabase, expenseTable).select('id, amount').is('deleted_at', null)
         try {
           const scanFiltered = await applyCompanyExpenseListFilters(supabase, scanQ, listFilterParams)
           if (!scanFiltered.empty) {
@@ -407,7 +434,7 @@ export async function PUT(request: NextRequest) {
     
     const { data, error } = await supabase
       .from('company_expenses')
-      .update(updateData)
+      .update(updateData as never)
       .eq('id', id)
       .select()
       .single()

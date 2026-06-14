@@ -1,24 +1,14 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { MapPin, Search, Check, X, Plus, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useEffect, type ComponentProps } from 'react'
+import { MapPin, Search, Check, X, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
 
-interface TourCourse {
-  id: string
-  name_ko: string
-  name_en: string
-  team_name_ko?: string
-  team_name_en?: string
-  customer_name_ko?: string
-  customer_name_en?: string
-  location?: string
-  category?: string
-  is_active: boolean
-  parent_id?: string
+type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
+  parent?: TourCourse
   children?: TourCourse[]
-  level?: number
 }
 
 interface TourCoursesTabProps {
@@ -674,8 +664,8 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
       <TourCourseEditModal
         isOpen={showEditModal}
         onClose={handleCloseEditModal}
-        course={modalCourse}
-        onSave={handleSaveCourse}
+        course={modalCourse as ComponentProps<typeof TourCourseEditModal>['course']}
+        onSave={handleSaveCourse as unknown as ComponentProps<typeof TourCourseEditModal>['onSave']}
       />
     </div>
   )

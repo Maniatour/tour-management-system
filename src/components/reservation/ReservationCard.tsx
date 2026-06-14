@@ -1,9 +1,8 @@
 'use client'
 
-import React, { useCallback } from 'react'
+import { useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { MapPin, Users, Calendar, Play, DollarSign, Edit, Trash2, Eye } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
+import { MapPin, Users, Calendar, DollarSign, Edit, Trash2, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -11,11 +10,11 @@ import {
   getPickupHotelDisplay, 
   getCustomerName, 
   getProductName, 
-  getChannelName, 
   getStatusLabel, 
   getStatusColor, 
   calculateTotalPrice 
 } from '@/utils/reservationUtils'
+import type { Product, ProductOptionChoice } from '@/types/reservation'
 
 interface ReservationCardProps {
   reservation: Reservation
@@ -40,7 +39,7 @@ export default function ReservationCard({
   customers,
   products,
   channels,
-  productOptions,
+  productOptions: _productOptions,
   optionChoices,
   options,
   pickupHotels,
@@ -80,7 +79,6 @@ export default function ReservationCard({
   }, [router, locale, reservation.id])
 
   const customer = customers.find(c => c.id === reservation.customerId)
-  const product = products.find(p => p.id === reservation.productId)
   const channel = channels.find(c => c.id === reservation.channelId)
 
   return (
@@ -93,17 +91,10 @@ export default function ReservationCard({
               <h3 className="text-lg font-semibold text-gray-900">
                 {getCustomerName(reservation.customerId, customers)}
               </h3>
-              {customer?.country && (
-                <ReactCountryFlag
-                  countryCode={customer.country}
-                  svg
-                  style={{ width: '20px', height: '20px' }}
-                />
-              )}
             </div>
             <div className="flex items-center space-x-4 text-sm text-gray-600">
               <span className="font-medium">#{reservation.channelRN}</span>
-              <span>{getProductName(reservation.productId, products)}</span>
+              <span>{getProductName(reservation.productId, products as unknown as Product[])}</span>
             </div>
           </div>
           <div className="flex items-center space-x-1">
@@ -151,7 +142,11 @@ export default function ReservationCard({
           <div className="flex items-center space-x-2">
             <DollarSign size={16} className="text-gray-400" />
             <span className="text-gray-600">
-              ${calculateTotalPrice(reservation, productOptions, optionChoices, options).toLocaleString()}
+              ${calculateTotalPrice(
+                reservation,
+                products as Product[],
+                optionChoices as unknown as ProductOptionChoice[]
+              ).toLocaleString()}
             </span>
           </div>
         </div>
@@ -176,7 +171,7 @@ export default function ReservationCard({
         {/* 상태 */}
         <div className="flex items-center justify-between">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-            {getStatusLabel(reservation.status)}
+            {getStatusLabel(reservation.status, t)}
           </span>
           <div className="flex items-center space-x-1">
             <button
@@ -201,18 +196,26 @@ export default function ReservationCard({
         </div>
 
         {/* 선택된 옵션들 */}
-        {reservation.selectedOptions && reservation.selectedOptions.length > 0 && (
+        {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
           <div className="space-y-1">
             <div className="text-xs text-gray-500">선택된 옵션:</div>
             <div className="flex flex-wrap gap-1">
-              {reservation.selectedOptions.map((option, index) => (
-                <span
-                  key={index}
-                  className={getGroupColorClasses(option.groupId, option.groupName, option.optionName)}
-                >
-                  {option.optionName}
-                </span>
-              ))}
+              {Object.entries(reservation.selectedOptions).flatMap(([groupId, choiceIds]) =>
+                (choiceIds ?? []).map((choiceId, index) => {
+                  const choice = optionChoices.find((c) => c.id === choiceId)
+                  const option = options.find((o) => o.id === groupId)
+                  const optionName = choice?.name ?? choiceId
+                  const groupName = option?.name_ko ?? option?.name ?? groupId
+                  return (
+                    <span
+                      key={`${groupId}-${choiceId}-${index}`}
+                      className={getGroupColorClasses(groupId, groupName, optionName)}
+                    >
+                      {optionName}
+                    </span>
+                  )
+                })
+              )}
             </div>
           </div>
         )}

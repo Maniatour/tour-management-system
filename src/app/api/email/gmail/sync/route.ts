@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
+import type { Json } from '@/lib/database.types'
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
 
@@ -63,13 +65,19 @@ export async function POST(request: Request) {
   }
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
-  const { data: conn, error: connError } = await client
-    .from('gmail_connections')
+  const { data: conn, error: connError } = await fromUntypedTable(client, 'gmail_connections')
     .select('id, email, refresh_token, last_history_id')
     .limit(1)
     .maybeSingle()
 
-  if (connError || !conn?.refresh_token) {
+  const connRow = conn as {
+    id?: string
+    email?: string
+    refresh_token?: string
+    last_history_id?: string | null
+  } | null
+
+  if (connError || !connRow?.refresh_token) {
     return NextResponse.json({ error: 'Gmail not connected' }, { status: 400 })
   }
 
@@ -88,7 +96,7 @@ export async function POST(request: Request) {
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
-      refresh_token: conn.refresh_token,
+      refresh_token: connRow.refresh_token,
       grant_type: 'refresh_token',
     }),
   })
@@ -101,10 +109,10 @@ export async function POST(request: Request) {
     const oauthErr = tokenData.error ?? ''
     // invalid_grant: 리프레시 토큰 폐기·만료, 비밀번호 변경, OAuth 클라이언트 불일치, 사용자가 앱 연결 해제 등
     if (oauthErr === 'invalid_grant') {
-      const connId = (conn as { id?: string }).id
-      const connEmail = (conn as { email?: string }).email
+      const connId = connRow.id
+      const connEmail = connRow.email
       try {
-        const del = client.from('gmail_connections').delete()
+        const del = fromUntypedTable(client, 'gmail_connections').delete()
         if (connId) await del.eq('id', connId)
         else if (connEmail) await del.eq('email', connEmail)
       } catch {
@@ -128,9 +136,9 @@ export async function POST(request: Request) {
   }
 
   const accessToken = tokenData.access_token
-  const connId = (conn as { id?: string }).id
-  const connEmail = (conn as { email?: string }).email
-  const lastHistoryId = forceFullSync ? null : ((conn as { last_history_id?: string | null }).last_history_id ?? null)
+  const connId = connRow.id
+  const connEmail = connRow.email
+  const lastHistoryId = forceFullSync ? null : (connRow.last_history_id ?? null)
 
   const processOneMessage = async (full: FullMsg, skipInboxCheck = false): Promise<boolean> => {
     if (!full.payload) return false
@@ -141,6 +149,7 @@ export async function POST(request: Request) {
     const from = getHeader(full.payload.headers ?? [], 'From')
     const body = decodeBody(full.payload)
     const messageId = full.id ? `<${full.id}@gmail>` : null
+    if (!messageId) return false
 
     const { data: existing } = await client
       .from('reservation_imports')
@@ -173,7 +182,7 @@ export async function POST(request: Request) {
       received_at: receivedAt,
       raw_body_text: body.slice(0, 50000),
       raw_body_html: null,
-      extracted_data: extracted_data as object,
+      extracted_data: extracted_data as Json,
       status: 'pending',
     })
     if (insertErr) {
@@ -184,10 +193,10 @@ export async function POST(request: Request) {
 
   const updateHistoryId = async (historyId: string) => {
     if (!connId && !connEmail) return
-    const q = client.from('gmail_connections').update({
+    const q = fromUntypedTable(client, 'gmail_connections').update({
       last_history_id: historyId,
       updated_at: new Date().toISOString(),
-    } as Record<string, unknown>)
+    } as never)
     if (connId) await q.eq('id', connId)
     else if (connEmail) await q.eq('email', connEmail)
   }
@@ -210,7 +219,9 @@ export async function POST(request: Request) {
       })
 
       if (histRes.status === 404) {
-        const clearQ = client.from('gmail_connections').update({ last_history_id: null } as Record<string, unknown>)
+        const clearQ = fromUntypedTable(client, 'gmail_connections').update({
+          last_history_id: null,
+        } as never)
         if (connId) await clearQ.eq('id', connId)
         else if (connEmail) await clearQ.eq('email', connEmail)
         break

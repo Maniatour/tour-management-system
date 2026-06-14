@@ -6,6 +6,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +15,8 @@ import {
   rowsToPatchMap,
   type SiteAccessPatchMap,
 } from '@/lib/site-access-matrix-overrides'
+import { readSiteAccessPatchCache, writeSiteAccessPatchCache } from '@/lib/siteAccessPatchCache'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 
 export type SiteAccessMatrixPatchContextValue = {
   patchMap: SiteAccessPatchMap
@@ -24,26 +27,42 @@ export type SiteAccessMatrixPatchContextValue = {
 
 const SiteAccessMatrixPatchContext = createContext<SiteAccessMatrixPatchContextValue | null>(null)
 
+function initialPatchState(): { patchMap: SiteAccessPatchMap; hasCache: boolean } {
+  const cachedRows = readSiteAccessPatchCache()
+  return {
+    patchMap: cachedRows ? rowsToPatchMap(cachedRows) : new Map(),
+    hasCache: cachedRows !== null,
+  }
+}
+
 export function SiteAccessMatrixPatchProvider({ children }: { children: React.ReactNode }) {
-  const [patchMap, setPatchMap] = useState<SiteAccessPatchMap>(new Map())
-  const [loading, setLoading] = useState(true)
+  const initial = initialPatchState()
+  const hadCacheOnMount = useRef(initial.hasCache)
+  const [patchMap, setPatchMap] = useState<SiteAccessPatchMap>(initial.patchMap)
+  const [loading, setLoading] = useState(!initial.hasCache)
   const [error, setError] = useState<Error | null>(null)
 
   const refetch = useCallback(async () => {
-    setLoading(true)
+    if (!hadCacheOnMount.current) {
+      setLoading(true)
+    }
     const { rows, error: fetchErr } = await fetchSiteAccessMatrixOverrides(supabase)
     if (fetchErr) {
       setError(fetchErr)
-      setPatchMap(new Map())
+      setPatchMap((prev) => (prev.size > 0 ? prev : new Map()))
     } else {
       setError(null)
       setPatchMap(rowsToPatchMap(rows))
+      writeSiteAccessPatchCache(rows)
     }
+    hadCacheOnMount.current = false
     setLoading(false)
   }, [])
 
   useEffect(() => {
-    void refetch()
+    return scheduleDeferredWork(() => {
+      void refetch()
+    })
   }, [refetch])
 
   const value = useMemo(

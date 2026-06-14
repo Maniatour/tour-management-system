@@ -24,7 +24,7 @@ import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/Expen
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
-type TicketBookingRow = Tables<'ticket_bookings'>['Row']
+type TicketBookingRow = Tables<'ticket_bookings'>
 
 type TicketRow = Pick<
   Tables<'ticket_bookings'>,
@@ -441,7 +441,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                 key={ticketEditingRow.id}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB row를 폼 초기값으로 그대로 전달
                 booking={ticketEditingRow as any}
-                tourId={ticketEditingRow.tour_id ?? undefined}
+                {...(ticketEditingRow.tour_id ? { tourId: ticketEditingRow.tour_id } : {})}
                 softDeleteVariant="expense"
                 canRequestSoftDelete={canSoftDeleteTicket}
                 onRequestDelete={(id) => void handleTicketExpenseSoftDelete(id)}

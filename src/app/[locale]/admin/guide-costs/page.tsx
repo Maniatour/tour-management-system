@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Calendar, DollarSign, Save, X, History, FileText } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { Edit, Trash2, Calendar, Save, X, History, FileText } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import GuideCostHistory from '@/components/GuideCostHistory'
@@ -55,8 +54,6 @@ export default function GuideCostManagementPage() {
   })
   const [saving, setSaving] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [editingRow, setEditingRow] = useState<string | null>(null)
-  const [inlineEditData, setInlineEditData] = useState<Partial<GuideCost>>({})
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [rowEditData, setRowEditData] = useState<{
     '1_guide': Partial<GuideCost>
@@ -273,85 +270,6 @@ export default function GuideCostManagementPage() {
     })
   }
 
-  // 편집 모드 열기
-  const openEditModal = (cost: GuideCost) => {
-    setEditingCost(cost)
-    setFormData({
-      productId: cost.product_id,
-      teamType: cost.team_type,
-      guideFee: cost.guide_fee,
-      assistantFee: cost.assistant_fee,
-      driverFee: cost.driver_fee,
-      effectiveFrom: cost.effective_from,
-      effectiveTo: cost.effective_to || ''
-    })
-    setShowModal(true)
-  }
-
-  // 새 가이드비 모달 열기
-  const openNewModal = (productId: string) => {
-    resetForm()
-    setFormData(prev => ({ ...prev, productId }))
-    setEditingCost(null)
-    setShowModal(true)
-  }
-
-  // 인라인 편집 시작
-  const startInlineEdit = (cost: GuideCost) => {
-    setEditingRow(cost.id)
-    setInlineEditData({
-      guide_fee: cost.guide_fee,
-      assistant_fee: cost.assistant_fee,
-      driver_fee: cost.driver_fee,
-      effective_from: cost.effective_from,
-      effective_to: cost.effective_to
-    })
-  }
-
-  // 인라인 편집 취소
-  const cancelInlineEdit = () => {
-    setEditingRow(null)
-    setInlineEditData({})
-  }
-
-  // 인라인 편집 저장
-  const saveInlineEdit = async (costId: string) => {
-    try {
-      setSaving(true)
-      
-      const response = await fetch('/api/guide-costs', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          id: costId,
-          guideFee: inlineEditData.guide_fee,
-          assistantFee: inlineEditData.assistant_fee,
-          driverFee: inlineEditData.driver_fee,
-          effectiveFrom: inlineEditData.effective_from,
-          effectiveTo: inlineEditData.effective_to || null
-        })
-      })
-
-      const data = await response.json()
-      
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
-      alert('가이드비가 수정되었습니다.')
-      setEditingRow(null)
-      setInlineEditData({})
-      loadProducts()
-    } catch (error) {
-      console.error('가이드비 수정 오류:', error)
-      alert('가이드비 수정 중 오류가 발생했습니다.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   // 행 편집 시작
   const startRowEdit = (productId: string, costsByType: any) => {
     setEditingProductId(productId)
@@ -408,7 +326,7 @@ export default function GuideCostManagementPage() {
       setSaving(true)
       
       // 각 팀 타입별로 저장
-      const savePromises = []
+      const savePromises: Promise<Response>[] = []
       
       // 1가이드 저장
       if (rowEditData['1_guide'].guide_fee !== undefined) {
@@ -620,7 +538,7 @@ export default function GuideCostManagementPage() {
     try {
       setSaving(true)
       
-      const savePromises = []
+      const savePromises: Promise<Response>[] = []
       
       // 모든 상품의 모든 팀 타입별로 저장
       Object.entries(globalEditData).forEach(([productId, productData]) => {
@@ -767,26 +685,6 @@ export default function GuideCostManagementPage() {
       alert('전체 가이드비 저장 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)
-    }
-  }
-
-  // 팀 타입별 라벨
-  const getTeamTypeLabel = (teamType: string) => {
-    switch (teamType) {
-      case '1_guide': return '1가이드'
-      case '2_guides': return '2가이드'
-      case 'guide_driver': return '가이드+드라이버'
-      default: return teamType
-    }
-  }
-
-  // 팀 타입별 색상
-  const getTeamTypeColor = (teamType: string) => {
-    switch (teamType) {
-      case '1_guide': return 'bg-blue-100 text-blue-800'
-      case '2_guides': return 'bg-green-100 text-green-800'
-      case 'guide_driver': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
     }
   }
 

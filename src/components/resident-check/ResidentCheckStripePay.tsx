@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js'
 
 const cardStyle = {
@@ -64,8 +64,8 @@ export default function ResidentCheckStripePay({
         payment_method: {
           card,
           billing_details: {
-            name: customerName || undefined,
-            email: customerEmail || undefined,
+            ...(customerName ? { name: customerName } : {}),
+            ...(customerEmail ? { email: customerEmail } : {}),
           },
         },
       })

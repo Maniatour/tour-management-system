@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { mapSupabaseProductChoices } from '@/lib/mapSupabaseProductChoices';
 import SimpleChoiceSelector from './SimpleChoiceSelector';
 
 // 새로운 간결한 타입 정의
@@ -92,7 +93,6 @@ export default function SimpleReservationForm({
       const { data, error } = await supabase
         .from('channels')
         .select('id, name, name_ko')
-        .eq('is_active', true)
         .order('name_ko');
 
       if (error) throw error;
@@ -139,7 +139,7 @@ export default function SimpleReservationForm({
         .order('sort_order');
 
       if (error) throw error;
-      setProductChoices(data || []);
+      setProductChoices(mapSupabaseProductChoices(data) as unknown as ProductChoice[]);
     } catch (error) {
       console.error('상품 초이스 로드 오류:', error);
     }
@@ -155,21 +155,30 @@ export default function SimpleReservationForm({
         .from('reservations')
         .select(`
           id,
-          customer_name,
-          customer_email,
-          customer_phone,
+          customer_id,
           adults,
-          children,
-          infants,
+          child,
+          infant,
           product_id,
           tour_date,
           channel_id,
-          notes
+          event_note,
+          customers (
+            name,
+            email,
+            phone
+          )
         `)
         .eq('id', reservation.id)
         .single();
 
       if (reservationError) throw reservationError;
+
+      const embeddedCustomer = reservationData.customers as
+        | { name?: string | null; email?: string | null; phone?: string | null }
+        | { name?: string | null; email?: string | null; phone?: string | null }[]
+        | null
+      const customerRow = Array.isArray(embeddedCustomer) ? embeddedCustomer[0] : embeddedCustomer
 
       // 예약 초이스 로드
       const { data: choicesData, error: choicesError } = await supabase
@@ -193,26 +202,28 @@ export default function SimpleReservationForm({
       if (choicesError) throw choicesError;
 
       // 초이스 데이터를 SelectedChoice 형식으로 변환
-      const selectedChoices: SelectedChoice[] = (choicesData || []).map(choice => ({
-        choice_id: choice.choice_id,
-        option_id: choice.option_id,
+      const selectedChoices: SelectedChoice[] = (choicesData || [])
+        .filter((choice) => choice.choice_id && choice.option_id)
+        .map((choice) => ({
+        choice_id: choice.choice_id as string,
+        option_id: choice.option_id as string,
         option_key: choice.option.option_key,
         option_name_ko: choice.option.option_name_ko,
-        quantity: choice.quantity,
-        total_price: choice.total_price
+        quantity: choice.quantity ?? 1,
+        total_price: choice.total_price ?? 0
       }));
 
       setFormData({
-        customerName: reservationData.customer_name || '',
-        customerEmail: reservationData.customer_email || '',
-        customerPhone: reservationData.customer_phone || '',
+        customerName: customerRow?.name || '',
+        customerEmail: customerRow?.email || '',
+        customerPhone: customerRow?.phone || '',
         adults: reservationData.adults || 1,
-        children: reservationData.children || 0,
-        infants: reservationData.infants || 0,
+        children: reservationData.child || 0,
+        infants: reservationData.infant || 0,
         productId: reservationData.product_id || '',
         tourDate: reservationData.tour_date || '',
         channelId: reservationData.channel_id || '',
-        notes: reservationData.notes || '',
+        notes: reservationData.event_note || '',
         selectedChoices
       });
 
@@ -416,7 +427,6 @@ export default function SimpleReservationForm({
             adults={formData.adults}
             children={formData.children}
             infants={formData.infants}
-            totalPeople={totalPeople}
             onSelectionChange={handleChoicesChange}
             initialSelections={formData.selectedChoices}
           />

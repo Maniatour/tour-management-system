@@ -1,3 +1,4 @@
+import type { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { readSheetData } from '@/lib/googleSheets'
 
@@ -107,12 +108,11 @@ export class ReservationExpensesSyncService {
         file_path: data.File || null,
         status: (data.Status || 'pending').toLowerCase() as 'pending' | 'approved' | 'rejected',
         reservation_id: data['Reservation ID'] || null,
-        event_id: data['Event ID'] || null
       }
 
       const { error } = await supabase
         .from('reservation_expenses')
-        .insert(insertData)
+        .insert(insertData as Database['public']['Tables']['reservation_expenses']['Insert'])
 
       if (error) {
         console.error(`예약 지출 삽입 오류 (ID: ${data.ID}):`, error)

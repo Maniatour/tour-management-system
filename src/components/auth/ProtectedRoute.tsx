@@ -1,15 +1,14 @@
 'use client'
 
-import React from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { UserPermissions } from '@/lib/roles'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 
 interface ProtectedRouteProps {
-  children: React.ReactNode
+  children: ReactNode
   requiredPermission?: keyof UserPermissions
-  fallback?: React.ReactNode
+  fallback?: ReactNode
   redirectTo?: string
 }
 
@@ -19,7 +18,7 @@ export default function ProtectedRoute({
   fallback,
   redirectTo = '/'
 }: ProtectedRouteProps) {
-  const { user, userRole, permissions, loading, hasPermission, isSimulating, simulatedUser } = useAuth()
+  const { user, userRole, loading, hasPermission, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
 
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용

@@ -4,7 +4,8 @@ export type Customer = Database['public']['Tables']['customers']['Row']
 export type Product = Database['public']['Tables']['products']['Row']
 export type Channel = Database['public']['Tables']['channels']['Row']
 export type ProductOption = Database['public']['Tables']['product_options']['Row']
-export type ProductOptionChoice = Database['public']['Tables']['product_option_choices']['Row']
+/** product_option_choices 테이블은 product_options로 통합됨 */
+export type ProductOptionChoice = ProductOption
 export type Option = Database['public']['Tables']['options']['Row']
 
 export interface PickupHotel {
@@ -77,7 +78,7 @@ export interface Reservation {
   addedBy: string
   addedTime: string
   tourId: string
-  status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'deleted'
+  status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show' | 'deleted'
   /** DB updated_at (상태 변경 순 정렬 등에 사용) */
   updated_at?: string | null
   /** reservations.amount_audited — 채널 정산·예약 처리 필요 등에서 금액 더블체크 완료 여부 */

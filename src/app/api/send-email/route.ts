@@ -321,15 +321,14 @@ export async function POST(request: NextRequest) {
     try {
       const { data: emailResult, error: emailError } = await resend.emails.send({
         from: fromEmail,
-        reply_to: replyTo,
+        replyTo,
         to: email,
         cc: getOperationsCc(email),
         subject: emailContent.subject,
         html: emailContent.html,
-        // 읽음 추적 활성화
         open_tracking: true,
         click_tracking: true,
-      })
+      } as never)
 
       if (emailError) {
         console.error('Resend 이메일 발송 오류:', emailError)

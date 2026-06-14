@@ -20,7 +20,6 @@ export type StatementLinePairCandidate = {
   dayDiff: number
 }
 
-const PAIR_FETCH_CHUNK = 80
 const PAIR_IN_CHUNK = 100
 
 function ymdToDayNum(ymd: string): number {

@@ -74,6 +74,12 @@ import ReservationLocalScratchList from '@/components/reservation/ReservationLoc
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
+import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
+import {
+  RESERVATION_STATUS_I18N_OPTIONS,
+  isNoShowReservationStatus,
+  type ReservationStatusCode,
+} from '@/lib/reservationStatus'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
@@ -583,7 +589,7 @@ export default function ReservationForm({
     addedBy: string
     addedTime: string
     tourId: string
-    status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled'
+    status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
     selectedOptions: { [optionId: string]: string[] }
     selectedOptionPrices: { [key: string]: number }
     // 새로운 간결한 초이스 시스템
@@ -834,7 +840,7 @@ export default function ReservationForm({
     addedBy: reservation?.addedBy || rez.added_by || '',
     addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
     tourId: reservation?.tourId || rez.tour_id || '',
-    status: (reservation?.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+    status: (reservation?.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show') || 'pending',
     selectedOptions: reservation?.selectedOptions || rez.selected_options || {},
     selectedOptionPrices: reservation?.selectedOptionPrices || rez.selected_option_prices || {},
     // 초이스 정보 초기값
@@ -5955,6 +5961,10 @@ export default function ReservationForm({
           !!reservation?.id &&
           (nextStatus === 'cancelled' || nextStatus === 'canceled') &&
           !(prevStatus === 'cancelled' || prevStatus === 'canceled')
+        const isMovingToNoShow =
+          !!reservation?.id &&
+          isNoShowReservationStatus(nextStatus) &&
+          !isNoShowReservationStatus(prevStatus)
         let cancellationReasonForSave: string | null = null
 
         if (isMovingToCancelled && reservation?.id) {
@@ -5990,7 +6000,11 @@ export default function ReservationForm({
           )
         }
         if (isMovingToCancelled && reservation?.id && cancellationReasonForSave) {
-          await upsertReservationCancellationReason(reservation.id, cancellationReasonForSave)
+          await upsertReservationCancellationReason(reservation.id, cancellationReasonForSave, authUser?.email ?? null)
+        }
+        if (isMovingToNoShow && reservation?.id) {
+          await upsertReservationCancellationReason(reservation.id, 'No Show', authUser?.email ?? null)
+          await applyNoShowReservationSideEffects(reservation.id)
         }
         console.log('ReservationForm: onSubmit 호출 완료')
       } catch (onSubmitError) {
@@ -6177,14 +6191,12 @@ export default function ReservationForm({
               <select
                 id="reservation-status-mobile"
                 value={formData.status}
-                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
                 className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"
               >
-                <option value="inquiry">{t('status.inquiry')}</option>
-                <option value="pending">{t('status.pending')}</option>
-                <option value="confirmed">{t('status.confirmed')}</option>
-                <option value="completed">{t('status.completed')}</option>
-                <option value="cancelled">{t('status.cancelled')}</option>
+                {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                ))}
               </select>
               <button
                 type="button"
@@ -6203,14 +6215,12 @@ export default function ReservationForm({
               <select
                 id="reservation-status-desktop"
                 value={formData.status}
-                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
                 className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
               >
-                <option value="inquiry">{t('status.inquiry')}</option>
-                <option value="pending">{t('status.pending')}</option>
-                <option value="confirmed">{t('status.confirmed')}</option>
-                <option value="completed">{t('status.completed')}</option>
-                <option value="cancelled">{t('status.cancelled')}</option>
+                {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                ))}
               </select>
             </div>
             {onViewCustomer && (
@@ -6542,14 +6552,12 @@ export default function ReservationForm({
                     <select
                       id="reservation-status-section"
                       value={formData.status}
-                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
                       className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="inquiry">{t('status.inquiry')}</option>
-                      <option value="pending">{t('status.pending')}</option>
-                      <option value="confirmed">{t('status.confirmed')}</option>
-                      <option value="completed">{t('status.completed')}</option>
-                      <option value="cancelled">{t('status.cancelled')}</option>
+                      {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

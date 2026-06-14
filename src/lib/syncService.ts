@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fromUntypedTable } from './supabaseUntypedTable'
 import { readSheetData } from './googleSheets'
 
 // 구글 시트의 컬럼명을 데이터베이스 컬럼명으로 매핑
@@ -448,8 +449,7 @@ export const runIncrementalSync = async (spreadsheetId: string, reservationsShee
     console.log('Starting incremental sync...')
     
     // 마지막 동기화 시간 확인
-    const { data: lastSync } = await supabase
-      .from('sync_logs')
+    const { data: lastSync } = await fromUntypedTable(supabase, 'sync_logs')
       .select('last_sync_time')
       .eq('spreadsheet_id', spreadsheetId)
       .order('created_at', { ascending: false })
@@ -464,8 +464,7 @@ export const runIncrementalSync = async (spreadsheetId: string, reservationsShee
     const tourResult = await syncTours(spreadsheetId, toursSheet)
     
     // 동기화 로그 저장
-    await supabase
-      .from('sync_logs')
+    await fromUntypedTable(supabase, 'sync_logs')
       .insert({
         spreadsheet_id: spreadsheetId,
         reservations_sheet: reservationsSheet,
@@ -507,8 +506,7 @@ export const runFullSync = async (spreadsheetId: string, reservationsSheet: stri
     const tourResult = await syncTours(spreadsheetId, toursSheet)
     
     // 동기화 로그 저장
-    await supabase
-      .from('sync_logs')
+    await fromUntypedTable(supabase, 'sync_logs')
       .insert({
         spreadsheet_id: spreadsheetId,
         reservations_sheet: reservationsSheet,

@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     const emailPromises = admins.map(admin =>
       resend.emails.send({
         from: fromEmail,
-        reply_to: replyTo,
+        replyTo,
         to: admin.email,
         subject: `[${period === 'daily' ? '일별' : period === 'weekly' ? '주별' : period === 'monthly' ? '월별' : '연간'}] 통계 리포트 - ${dateRange.start} ~ ${dateRange.end}`,
         html: emailContent,

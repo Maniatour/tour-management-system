@@ -68,7 +68,6 @@ export default function TourHeader({
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
-  const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
   
   // 모달 상태 관리
   const [showStatusModal, setShowStatusModal] = useState(false)
@@ -166,9 +165,9 @@ export default function TourHeader({
             getAssignmentStatusColor={getAssignmentStatusColor}
             getAssignmentStatusText={getAssignmentStatusText}
             locale={params.locale}
-            onEditClick={onEditClick}
-            onCopyTour={onCopyTour}
-            onDeleteTour={onDeleteTour}
+            {...(onEditClick ? { onEditClick } : {})}
+            {...(onCopyTour ? { onCopyTour } : {})}
+            {...(onDeleteTour ? { onDeleteTour } : {})}
             {...(onRestoreTour ? { onRestoreTour } : {})}
           />
 

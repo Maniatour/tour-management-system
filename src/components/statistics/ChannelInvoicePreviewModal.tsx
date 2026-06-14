@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useRef } from 'react'
+import { useRef } from 'react'
 import { X, Printer, Download } from 'lucide-react'
 import type { ChannelInvoiceItem } from '@/utils/pdfExport'
 import { generateChannelInvoicePDF } from '@/utils/pdfExport'

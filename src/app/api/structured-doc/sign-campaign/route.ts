@@ -40,7 +40,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '문서 구조가 비어 있거나 올바르지 않습니다' }, { status: 400 })
     }
 
-    const emails = [...new Set(emailsIn.map((e: unknown) => normalizeEmail(String(e || ''))))].filter(Boolean)
+    const emails = [...new Set(emailsIn.map((e: unknown) => normalizeEmail(String(e || ''))))].filter(
+      (e): e is string => Boolean(e)
+    )
     if (emails.length === 0) {
       return NextResponse.json({ error: '수신할 팀원 이메일을 한 명 이상 선택하세요' }, { status: 400 })
     }
@@ -86,7 +88,7 @@ export async function POST(request: NextRequest) {
       status: 'pending' as const,
     }))
 
-    const { error: rErr } = await sb.from('company_structured_doc_sign_campaign_recipients').insert(rows)
+    const { error: rErr } = await sb.from('company_structured_doc_sign_campaign_recipients').insert(rows as never)
     if (rErr) {
       console.error('sign-campaign recipients:', rErr)
       await sb.from('company_structured_doc_sign_campaigns').delete().eq('id', campaign.id)

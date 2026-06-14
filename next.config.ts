@@ -1,11 +1,35 @@
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import withSerwistInit from '@serwist/next'
 import createNextIntlPlugin from 'next-intl/plugin'
+
+const require = createRequire(import.meta.url)
+const { getWinDevDistDirRel } = require('./scripts/win-dev-dist-dir.cjs') as {
+	getWinDevDistDirRel: () => string
+}
+
+/** Windows dev: homedir/.cache 상대 distDir — IDE·OneDrive·TEMP 경합으로 open -4094 완화. NODE_PATH는 scripts/dev-win.cjs. */
+const WIN_DEV_DIST_DIR = getWinDevDistDirRel()
+const useWinDevDistDir =
+	process.platform === 'win32' &&
+	process.env.NODE_ENV !== 'production' &&
+	process.env.NEXT_DEV_USE_PROJECT_DIST !== '1'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const revision =
 	process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_REF ?? randomUUID()
+
+/** dev 전용: 여러 탭·페이지 동시 사용 시 컴파일 캐시 유지 (NEXT_DEV_PAGES_BUFFER_LENGTH 등으로 조정) */
+const DEV_PAGES_BUFFER_LENGTH = Math.max(
+	2,
+	parseInt(process.env.NEXT_DEV_PAGES_BUFFER_LENGTH ?? '24', 10) || 24
+)
+const DEV_MAX_INACTIVE_AGE_MS = Math.max(
+	60_000,
+	parseInt(process.env.NEXT_DEV_MAX_INACTIVE_AGE_MS ?? String(15 * 60 * 1000), 10) ||
+		15 * 60 * 1000
+)
 
 const withSerwist = withSerwistInit({
 	swSrc: 'src/app/sw.ts',
@@ -17,6 +41,8 @@ const withSerwist = withSerwistInit({
 })
 
 const nextConfig = {
+	...(useWinDevDistDir ? { distDir: WIN_DEV_DIST_DIR } : {}),
+
 	// Next 16 dev: `app/admin` 페이지와 `app/api/admin` API가 동시에 있으면 /api/admin/* 가 404 나는 경우가 있음
 	// 동일하게 `app/admin` 과 `app/[locale]/admin` 이 함께 있으면 /ko/admin/* 하위 페이지가 전부 404 — MDGC 유틸은 app/mdgc-tools 로 분리
 	// `[locale]/admin/team-chat` 페이지와 `app/api/team-chat/*` 가 같이 있으면 dev에서 일부 하위 API가 HTML 404가 나는 경우가 있음
@@ -32,11 +58,6 @@ const nextConfig = {
 	// tesseract.js는 worker 스크립트 경로를 번들에 넣으면 __dirname 이 깨져 MODULE_NOT_FOUND 발생
 	serverExternalPackages: ['tesseract.js', 'tesseract.js-core'],
 
-	// 빌드 최적화 설정
-	typescript: {
-		ignoreBuildErrors: true // 빌드 시 TypeScript 에러 무시 (개발 시에만 체크)
-	},
-	
 	// 이미지 최적화
 	images: {
 		formats: ['image/webp', 'image/avif'] as ('image/webp' | 'image/avif')[],
@@ -72,10 +93,10 @@ const nextConfig = {
 		disableOptimizedLoading: false,
 	},
 
-	// webpack dev: 동시 컴파일 페이지 수 제한 → layout.js 등 청크 open 경합 완화
+	// dev: 여러 admin 탭·페이지를 동시에 열어도 재컴파일 최소화 (prod 빌드에는 영향 없음)
 	onDemandEntries: {
-		maxInactiveAge: 60 * 1000,
-		pagesBufferLength: 2,
+		maxInactiveAge: DEV_MAX_INACTIVE_AGE_MS,
+		pagesBufferLength: DEV_PAGES_BUFFER_LENGTH,
 	},
 	
 	// 웹팩 최적화
@@ -83,18 +104,53 @@ const nextConfig = {
 		// Windows: Defender·OneDrive 등과 Webpack 디스크 캐시(rename)·.next 산출물이 겹치면
 		// PackFileCache ENOENT / open UNKNOWN(-4094) 등이 난다. 개발만 디스크 캐시 끔(컴파일은 다소 느려질 수 있음).
 		if (dev && process.platform === 'win32') {
-			// 메모리 캐시만으로도 -4094가 나면 디스크 Pack 캐시 완전 비활성화(느리지만 안정).
-			// NEXT_DEV_WEBPACK_DISK_CACHE=1 이면 메모리 캐시만 사용.
+			// 기본: 메모리 캐시(디스크 Pack 캐시 -4094 회피 + 재컴파일 속도).
+			// -4094 지속 시 NEXT_DEV_WEBPACK_DISK_CACHE=0 으로 디스크 캐시 완전 비활성화.
 			config.cache =
-				process.env.NEXT_DEV_WEBPACK_DISK_CACHE === '1'
-					? { type: 'memory' }
-					: false
-			config.parallelism = 1
+				process.env.NEXT_DEV_WEBPACK_DISK_CACHE === '0'
+					? false
+					: { type: 'memory' }
+			config.parallelism = Math.max(
+				1,
+				parseInt(process.env.NEXT_DEV_WEBPACK_PARALLELISM ?? '2', 10) || 2
+			)
 			config.watchOptions = {
 				...config.watchOptions,
 				poll: 1000,
 				aggregateTimeout: 600,
-				ignored: ['**/node_modules/**', '**/.git/**'],
+				ignored: [
+					'**/node_modules/**',
+					'**/.git/**',
+					'**/.tms-next-dev/**',
+					'**/.cache/tms-next-dev*/**',
+					'**/node_modules/.cache/tms-next-dev*/**',
+				],
+			}
+			// emit 후 대기: 기본 0ms(페이지 이동 속도). open -4094 재발 시 NEXT_DEV_WIN_EMIT_SETTLE_MS=2500
+			const emitSettleMs = Math.max(
+				0,
+				parseInt(process.env.NEXT_DEV_WIN_EMIT_SETTLE_MS ?? '0', 10) || 0
+			)
+			if (emitSettleMs > 0) {
+				config.plugins = config.plugins ?? []
+				config.plugins.push({
+					apply(compiler: { hooks: { afterEmit: { tapAsync: Function } } }) {
+						compiler.hooks.afterEmit.tapAsync(
+							'TmsWinEmitSettle',
+							(_compilation: unknown, callback: () => void) => {
+								setTimeout(callback, emitSettleMs)
+							}
+						)
+					},
+				})
+			}
+			// dev 클라이언트 청크 분할 최소화 → layout.js 등 동시 open(-4094) 완화
+			if (!isServer) {
+				config.optimization = {
+					...config.optimization,
+					splitChunks: false,
+					runtimeChunk: false,
+				}
 			}
 		}
 

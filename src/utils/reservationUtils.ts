@@ -7,8 +7,6 @@ import type {
   Channel, 
   ProductOption, 
   ProductOptionChoice, 
-  Option, 
-  PickupHotel, 
   Reservation 
 } from '@/types/reservation'
 
@@ -242,6 +240,8 @@ export const getStatusColor = (status: string) => {
     case 'completed': return 'bg-blue-100 text-blue-800'
     case 'cancelled': return 'bg-red-100 text-red-800'
     case 'Canceled': return 'bg-red-100 text-red-800'
+    case 'no_show': return 'bg-orange-100 text-orange-800'
+    case 'No Show': return 'bg-orange-100 text-orange-800'
     case 'recruiting': return 'bg-purple-100 text-purple-800'
     case 'Recruiting': return 'bg-purple-100 text-purple-800'
     case 'Payment Requested': return 'bg-orange-100 text-orange-800'
@@ -263,7 +263,7 @@ export const calculateTotalPrice = (reservation: Reservation, products: Product[
   
   // 선택된 옵션의 가격 조정 적용
   if (reservation.selectedOptions) {
-    Object.entries(reservation.selectedOptions).forEach(([optionId, choiceIds]) => {
+    Object.entries(reservation.selectedOptions).forEach(([, choiceIds]) => {
       if (Array.isArray(choiceIds)) {
         choiceIds.forEach(choiceId => {
           const choice = optionChoices.find(c => c.id === choiceId)

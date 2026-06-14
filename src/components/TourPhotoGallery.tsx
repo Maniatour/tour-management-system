@@ -1,16 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle, Plus, Upload, EyeOff, User } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, Plus, EyeOff, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-
-interface SupabaseFile {
-  id?: string
-  name: string
-  updated_at?: string
-  created_at?: string
-}
 
 interface TourPhoto {
   id: string
@@ -37,7 +30,7 @@ interface TourPhotoGalleryProps {
   uploadedBy?: string // 업로드한 사용자 정보
 }
 
-export default function TourPhotoGallery({ isOpen, onClose, tourId, language = 'ko', allowUpload = false, uploadedBy }: TourPhotoGalleryProps) {
+export default function TourPhotoGallery({ isOpen, onClose, tourId, language = 'ko', allowUpload = false, uploadedBy: _uploadedBy }: TourPhotoGalleryProps) {
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
@@ -56,7 +49,6 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   const [showDownloadWarning, setShowDownloadWarning] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [hidingPhotos, setHidingPhotos] = useState(false)
-  const [hiddenPhotoIds, setHiddenPhotoIds] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 다국어 텍스트
@@ -160,7 +152,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       console.log('폴더 경로:', folderPath)
       
       // Storage에서 파일 목록 가져오기 (페이지네이션으로 모든 파일 가져오기)
-      let allFiles: SupabaseFile[] = []
+      let allFiles: Array<{ id?: string | null; name: string; updated_at?: string | null; created_at?: string | null }> = []
       let hasMore = true
       let offset = 0
       const limit = 1000 // 한 번에 가져올 최대 파일 수
@@ -171,8 +163,8 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
           .list(folderPath, {
             limit: limit,
             offset: offset,
-            sort: { column: 'created_at', order: 'desc' }
-          })
+            sort: { column: 'created_at', order: 'desc' },
+          } as never)
         
         console.log(`Storage 응답 (offset: ${offset}):`, { files, error })
 
@@ -187,7 +179,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
         }
 
         // 실제 사진 파일만 필터링
-        const photoFiles = files.filter((file: SupabaseFile) => 
+        const photoFiles = files.filter((file) => 
           !file.name.includes('.folder_info.json') && 
           !file.name.includes('folder.info') &&
           !file.name.includes('.info') &&
@@ -236,13 +228,13 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       // 원본: 모달과 다운로드 시에만 사용
       
       // 썸네일 파일 필터링
-      const thumbnailFiles = allFiles.filter((file: SupabaseFile) => 
+      const thumbnailFiles = allFiles.filter((file) => 
         file.name.includes('_thumb')
       )
       
       // 썸네일 매핑 생성
       const thumbnailMap = new Map<string, string>()
-      thumbnailFiles.forEach((thumbFile: SupabaseFile) => {
+      thumbnailFiles.forEach((thumbFile) => {
         const originalName = thumbFile.name.replace('_thumb', '')
         const thumbPath = `${tourId}/${thumbFile.name}`
         const { data: { publicUrl } } = supabase.storage
@@ -252,12 +244,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       })
       
       // 원본 파일만 필터링 (썸네일 제외)
-      const originalFiles = allFiles.filter((file: SupabaseFile) => 
+      const originalFiles = allFiles.filter((file) => 
         !file.name.includes('_thumb') && !hiddenFileNames.has(file.name)
       )
       
       const photosWithUrls: TourPhoto[] = originalFiles
-        .map((file: SupabaseFile) => {
+        .map((file) => {
           const filePath = `${tourId}/${file.name}`
           const { data: { publicUrl } } = supabase.storage
             .from('tour-photos')
@@ -322,7 +314,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       const customerIds = [...new Set(
         reservations
           .map((r: { customer_id: string | null }) => r.customer_id)
-          .filter(Boolean)
+          .filter((id): id is string => !!id)
       )]
 
       if (customerIds.length === 0) {
@@ -567,10 +559,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   }, [showModal, selectedPhoto, photos])
 
   useEffect(() => {
-    if (showModal) {
-      document.addEventListener('keydown', handleKeyDown)
-      return () => document.removeEventListener('keydown', handleKeyDown)
-    }
+    if (!showModal) return undefined
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
   }, [showModal, handleKeyDown])
 
   // 포맷된 날짜 문자열 (항상 영어로 표시)

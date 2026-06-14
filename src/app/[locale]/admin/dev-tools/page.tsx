@@ -11,14 +11,13 @@ import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, Chevron
 import { useRouter, useParams } from 'next/navigation'
 
 interface TeamMember {
-  id: string
   email: string
   name_ko: string
   phone: string | null
   language: string | null
   created_at: string
-  position: string
-  is_active: boolean
+  position: string | null
+  is_active: boolean | null
 }
 
 
@@ -39,7 +38,7 @@ export default function DevToolsPage() {
         const supabase = createClientSupabase()
         const { data, error } = await supabase
           .from('team')
-          .select('email, name_ko, position, is_active')
+          .select('email, name_ko, position, is_active, phone, language, created_at')
           .eq('is_active', true)
           .order('position')
 
@@ -48,7 +47,7 @@ export default function DevToolsPage() {
           return
         }
 
-        setTeamMembers(data || [])
+        setTeamMembers((data || []) as unknown as TeamMember[])
       } catch (err) {
         console.error('Error:', err)
       } finally {
@@ -75,20 +74,20 @@ export default function DevToolsPage() {
   }
 
   const handleStartSimulation = (member: TeamMember) => {
-    const simulatedRole = getRoleFromPosition(member.position)
+    const simulatedRole = getRoleFromPosition(member.position ?? '')
     const simulatedUserData = {
-      id: member.id,
+      id: member.email,
       email: member.email,
       name_ko: member.name_ko,
       phone: member.phone,
-      language: member.language,
+      language: member.language ?? 'ko',
       created_at: member.created_at,
-      position: member.position,
+      position: member.position ?? '',
       role: simulatedRole as UserRole
     }
     
     startSimulation(simulatedUserData)
-    setSelectedPosition(member.position)
+    setSelectedPosition(member.position ?? '')
     setSimulatedRole(simulatedRole)
     console.log('시뮬레이션 시작:', simulatedUserData)
   }
@@ -348,7 +347,7 @@ export default function DevToolsPage() {
               {/* Position별 시뮬레이터 */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {teamMembers.map((member) => {
-                  const info = getPositionInfo(member.position)
+                  const info = getPositionInfo(member.position ?? '')
                   const IconComponent = info.icon
                   const isCurrentlySimulating = simulatedUser?.email === member.email
 

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, User, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +14,24 @@ interface Customer {
   phone?: string
   language: string
   created_at: string
+}
+
+function mapCustomerRow(row: {
+  id: string
+  email: string | null
+  name: string
+  phone: string | null
+  language: string | null
+  created_at: string | null
+}): Customer {
+  return {
+    id: row.id,
+    email: row.email ?? '',
+    name: row.name,
+    ...(row.phone != null ? { phone: row.phone } : {}),
+    language: row.language ?? '',
+    created_at: row.created_at ?? '',
+  }
 }
 
 interface CustomerSimulationModalProps {
@@ -70,8 +88,9 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
         return
       }
 
-      setCustomers(data || [])
-      setFilteredCustomers(data || [])
+      const rows = (data || []).map(mapCustomerRow)
+      setCustomers(rows)
+      setFilteredCustomers(rows)
     } catch (err) {
       console.error('고객 목록 조회 중 오류:', err)
       setError('고객 목록을 불러오는데 실패했습니다.')

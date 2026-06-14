@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 
 // POST: 기존 payment_method를 새로운 시스템으로 마이그레이션
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     const result = await paymentMethodIntegration.migrateExistingPaymentMethods()
     

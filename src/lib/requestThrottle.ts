@@ -83,10 +83,10 @@ export const requestThrottle = new RequestThrottle({
  * Supabase 요청을 제한된 방식으로 실행하는 헬퍼 함수
  */
 export async function throttledSupabaseRequest<T>(
-  requestFn: () => Promise<{ data: T | null; error: any }>
+  requestFn: () => PromiseLike<{ data: T | null; error: any }>
 ): Promise<{ data: T | null; error: any }> {
   try {
-    return await requestThrottle.execute(requestFn)
+    return await requestThrottle.execute(() => Promise.resolve(requestFn()))
   } catch (error) {
     console.warn('Throttled request failed:', error)
     return { data: null, error }

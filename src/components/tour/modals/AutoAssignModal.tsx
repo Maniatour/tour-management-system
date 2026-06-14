@@ -1,8 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
-// @ts-expect-error - react-country-flag 타입 정의 없음
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
@@ -157,7 +156,7 @@ interface AutoAssignModalProps {
 export default function AutoAssignModal({
   isOpen,
   onClose,
-  currentTourId,
+  currentTourId: _currentTourId,
   productId,
   tourDate,
   getCustomerName,
@@ -188,9 +187,7 @@ export default function AutoAssignModal({
     return () => document.removeEventListener('mousedown', close)
   }, [openMoveDropdownRid])
 
-  const tourIds = initialTours.map(t => t.id)
   const vehicleById = useCallback((id: string) => vehicles.find(v => v.id === id), [vehicles])
-  const tourById = useCallback((id: string) => initialTours.find(t => t.id === id), [initialTours])
   const teamByEmail = useCallback((email: string) => teamMembers.find(m => m.email === email), [teamMembers])
   const pickupHotelById = useCallback((id: string | null) => (id ? pickupHotels.find(h => h.id === id) : null), [pickupHotels])
 
@@ -236,20 +233,16 @@ export default function AutoAssignModal({
   const hasKorean = useCallback((tour: TourRow) => {
     const guide = tour.tour_guide_id ? teamByEmail(tour.tour_guide_id) : null
     const asst = tour.assistant_id ? teamByEmail(tour.assistant_id) : null
-    const langArr = (v: TeamRow | undefined) => (v?.languages && Array.isArray(v.languages) ? v.languages : [])
+    const langArr = (v: TeamRow | null | undefined) => (v?.languages && Array.isArray(v.languages) ? v.languages : [])
     const guideLangs = langArr(guide).map((l: string) => String(l).toLowerCase())
     const asstLangs = langArr(asst).map((l: string) => String(l).toLowerCase())
     return guideLangs.includes('ko') || asstLangs.includes('ko')
   }, [teamByEmail])
 
-  const peopleCount = useCallback((res: ReservationRow) => {
+  const peopleCount = useCallback((res: ReservationRow | null | undefined) => {
+    if (!res) return 0
     return (res.adults || 0) + (res.child || 0) + (res.infant || 0)
   }, [])
-
-  const tourPeopleCount = useCallback((tour: TourRow) => {
-    const ids = tour.reservation_ids || []
-    return reservations.filter(r => ids.includes(r.id)).reduce((sum, r) => sum + peopleCount(r), 0)
-  }, [reservations, peopleCount])
 
   const maxCapacity = useCallback((tour: TourRow) => {
     if (!tour.tour_car_id) return null
@@ -357,7 +350,7 @@ export default function AutoAssignModal({
         ids.sort((a, b) => {
           const ra = reservations.find(r => r.id === a)
           const rb = reservations.find(r => r.id === b)
-          return peopleCount(rb || {}) - peopleCount(ra || {})
+          return peopleCount(rb) - peopleCount(ra)
         })
         const targetTour = currentTours.find(
           t => t.id !== tour.id && (maxCapacity(t) == null || tourPeople(t) < (maxCapacity(t) ?? 0))
@@ -368,7 +361,7 @@ export default function AutoAssignModal({
           const res = reservations.find(r => r.id === rid)
           const name = res?.customer_id ? getCustomerName(res.customer_id) : rid.slice(0, 8)
           next.push({ reservationId: rid, reservationLabel: name, fromTourId: tour.id, toTourId: targetTour.id })
-          toMove -= peopleCount(res || {})
+          toMove -= peopleCount(res)
         }
       })
       return next
@@ -462,7 +455,7 @@ export default function AutoAssignModal({
         setTeamMembers((teamRes.data || []) as TeamRow[])
 
         // Vehicles
-        setVehicles((vehiclesRes.data || []) as VehicleRow[])
+        setVehicles((vehiclesRes.data || []) as unknown as VehicleRow[])
         setPickupHotels((pickupHotelsRes.data || []) as PickupHotelRow[])
 
         const chMap = new Map<string, string>()
@@ -529,22 +522,19 @@ export default function AutoAssignModal({
                 )
               `)
               .in('reservation_id', batchIds)
-            type RcRow = {
-              reservation_id: string
-              option_key?: string | null
-              choice_options?: { option_key?: string | null; option_name?: string | null; option_name_ko?: string | null } | { option_key?: string | null; option_name?: string | null; option_name_ko?: string | null }[] | null
-            }
             if (!rcErr && rcData && rcData.length > 0) {
-              rcData.forEach((row: RcRow) => {
+              rcData.forEach((row) => {
+                const reservationId = row.reservation_id
+                if (!reservationId) return
                 const raw = row.choice_options
                 const opt = Array.isArray(raw) ? raw[0] : raw
                 const optionKey = (row.option_key ?? opt?.option_key ?? '') || null
                 const nameKo = opt?.option_name_ko ?? null
                 const nameEn = opt?.option_name ?? null
                 const key = choiceLabelToKey(nameKo, nameEn, optionKey)
-                const existing = choiceMap.get(row.reservation_id)
+                const existing = choiceMap.get(reservationId)
                 const value = (key === 'L' || key === 'X') ? key : (existing ?? key)
-                if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(row.reservation_id, value)
+                if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(reservationId, value)
               })
             }
             const missingIds = batchIds.filter(id => !choiceMap.has(id))
@@ -563,16 +553,22 @@ export default function AutoAssignModal({
                   .select('id, option_key, option_name_ko, option_name')
                   .in('id', optionIds)
                 ;(optData || []).forEach((o: { id: string; option_key?: string | null; option_name_ko?: string | null; option_name?: string | null }) => {
-                  optionInfoById.set(o.id, { option_key: o.option_key, option_name_ko: o.option_name_ko, option_name: o.option_name })
+                  optionInfoById.set(o.id, {
+                    ...(o.option_key != null ? { option_key: o.option_key } : {}),
+                    ...(o.option_name_ko != null ? { option_name_ko: o.option_name_ko } : {}),
+                    ...(o.option_name != null ? { option_name: o.option_name } : {}),
+                  })
                 })
               }
-              ;(rcFallback || []).forEach((row: { reservation_id: string; option_id?: string | null; option_key?: string | null }) => {
+              ;(rcFallback || []).forEach((row) => {
+                const reservationId = row.reservation_id
+                if (!reservationId) return
                 const info = row.option_id ? optionInfoById.get(row.option_id) : null
                 const optionKey = row.option_key ?? info?.option_key ?? null
                 const key = choiceLabelToKey(info?.option_name_ko ?? null, info?.option_name ?? null, optionKey)
-                const existing = choiceMap.get(row.reservation_id)
+                const existing = choiceMap.get(reservationId)
                 const value = (key === 'L' || key === 'X') ? key : (existing ?? key)
-                if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(row.reservation_id, value)
+                if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(reservationId, value)
               })
             }
           }
@@ -683,7 +679,7 @@ export default function AutoAssignModal({
                   <p className="text-xs font-medium text-gray-500 uppercase">현재 배정</p>
                   {initialTours.map(tour => {
                     const ids = tour.reservation_ids || []
-                    const tourPeople = ids.reduce((sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid) || {}), 0)
+                    const tourPeople = ids.reduce((sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid)), 0)
                     const guideName = getTeamDisplayName(tour.tour_guide_id)
                     const assistantName = getTeamDisplayName(tour.assistant_id)
                     const vehicleName = getVehicleDisplayName(tour.tour_car_id)
@@ -751,7 +747,7 @@ export default function AutoAssignModal({
                   <p className="text-xs font-medium text-gray-500 uppercase">자동 배정</p>
                   {displayTours.map(tour => {
                     const ids = tour.reservation_ids || []
-                    const tourPeople = ids.reduce((sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid) || {}), 0)
+                    const tourPeople = ids.reduce((sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid)), 0)
                     const guideName = getTeamDisplayName(tour.tour_guide_id)
                     const assistantName = getTeamDisplayName(tour.assistant_id)
                     const vehicleName = getVehicleDisplayName(tour.tour_car_id)

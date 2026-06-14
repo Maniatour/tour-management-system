@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
@@ -12,7 +13,12 @@ import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES }
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { PickupSchedule } from '@/components/tour/PickupSchedule'
+
+const PickupSchedule = dynamic(
+  () => import('@/components/tour/PickupSchedule').then((mod) => mod.PickupSchedule),
+  { ssr: false, loading: () => null }
+)
+
 import {
   formatTourChatStaffDisplayName,
   type TourChatStaffTeamFields

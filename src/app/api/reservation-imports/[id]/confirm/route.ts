@@ -210,7 +210,7 @@ export async function POST(
     )
   }
 
-  const _tourResult = await autoCreateOrUpdateTour(
+  await autoCreateOrUpdateTour(
     body.product_id,
     body.tour_date,
     reservationId,
@@ -369,7 +369,7 @@ export async function POST(
     }
     const { error: pricingError } = await client
       .from('reservation_pricing')
-      .insert(pricingData as Record<string, unknown>)
+      .insert(pricingData as never)
     if (pricingError) {
       console.error('[reservation-imports/confirm] reservation_pricing insert error:', pricingError)
     }
@@ -389,7 +389,7 @@ export async function POST(
         amount: depositAmount,
         payment_method: paymentMethodId,
         submit_by: body.added_by,
-      } as Record<string, unknown>)
+      } as never)
     if (paymentError) {
       console.error('[reservation-imports/confirm] payment_records insert error:', paymentError)
     }

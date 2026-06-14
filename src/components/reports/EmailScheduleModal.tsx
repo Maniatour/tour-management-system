@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Mail, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 

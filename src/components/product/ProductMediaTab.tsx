@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Image, Upload, Plus, Edit, Trash2, Save, AlertCircle, Eye, Download, Star, FolderOpen, Search, Copy, Loader2 } from 'lucide-react'
+import { Image, Upload, Edit, Trash2, Save, AlertCircle, Eye, Download, Star, FolderOpen, Copy, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface MediaItem {
@@ -29,8 +29,8 @@ interface ProductMediaTabProps {
 export default function ProductMediaTab({
   productId,
   isNewProduct,
-  formData,
-  setFormData
+  formData: _formData,
+  setFormData: _setFormData
 }: ProductMediaTabProps) {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [editingMedia, setEditingMedia] = useState<MediaItem | null>(null)
@@ -143,7 +143,8 @@ export default function ProductMediaTab({
             file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
           ) || []
 
-          folderImageFiles.forEach((file: { name: string; id: string }) => {
+          folderImageFiles.forEach((file) => {
+            if (!file.id) return
             const filePath = `${folder.name}/${file.name}`
             const { data: { publicUrl } } = supabase
               .storage
@@ -179,7 +180,8 @@ export default function ProductMediaTab({
                 file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
               ) || []
 
-              subFolderImageFiles.forEach((file: { name: string; id: string }) => {
+              subFolderImageFiles.forEach((file) => {
+                if (!file.id) return
                 const filePath = `${folder.name}/${subFolder.name}/${file.name}`
                 const { data: { publicUrl } } = supabase
                   .storage
@@ -233,7 +235,7 @@ export default function ProductMediaTab({
       const fileName = `${Date.now()}.${fileExt}`
       const filePath = `products/${productId}/${fileName}`
 
-      const { data: uploadData, error: uploadError } = await (supabase as any)
+      const { error: uploadError } = await (supabase as any)
         .storage
         .from('product-media')
         .upload(filePath, file)

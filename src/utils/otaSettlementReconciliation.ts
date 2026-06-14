@@ -191,7 +191,7 @@ export function aggregateOtaFileRowsByRn(rows: OtaFileRow[]): OtaFileRow[] {
       amount: sumAmount,
       rowIndex: group[0].rowIndex,
       fileLineCount: n,
-      fileRowIndices: n > 1 ? indices : undefined,
+      ...(n > 1 ? { fileRowIndices: indices } : {}),
     })
   }
   out.sort((a, b) => a.rowIndex - b.rowIndex)

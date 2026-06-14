@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Edit2, Trash2, Save, X, Ban } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationOptions } from '@/hooks/useReservationOptions'
 import {
@@ -196,13 +196,33 @@ export default function ReservationOptionsSection({
         price: option.price,
         total_price: option.total_price,
         status: option.status || 'active',
-        note: option.note
+        ...(option.note !== undefined ? { note: option.note } : {}),
       })
       setEditingOption(null)
       onPersistedMutation?.()
     } catch (error) {
       console.error('Error updating reservation option:', error)
       alert('옵션 수정 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleCancelOption = async (option: ReservationOption) => {
+    if (option.status === 'cancelled' || option.status === 'refunded') return
+    if (!confirm(t('confirmCancelOption') || '이 옵션을 취소 처리하고 금액을 $0으로 설정할까요?')) return
+    try {
+      await updateReservationOption({
+        id: option.id,
+        option_id: option.option_id,
+        ea: option.ea,
+        price: 0,
+        total_price: 0,
+        status: 'cancelled',
+        note: option.note || 'Cancelled',
+      })
+      onPersistedMutation?.()
+    } catch (error) {
+      console.error('Error cancelling reservation option:', error)
+      alert('옵션 취소 중 오류가 발생했습니다.')
     }
   }
 
@@ -555,6 +575,16 @@ export default function ReservationOptionsSection({
                     </div>
                   </div>
                   <div className="flex space-x-2 ml-4">
+                    {(option.status || 'active') === 'active' && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelOption(option)}
+                        className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
+                        title={t('cancelOption') || '취소'}
+                      >
+                        <Ban size={16} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setEditingOption(option.id)}

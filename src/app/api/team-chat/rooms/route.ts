@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     // 시뮬레이션 중인 사용자 확인 (클라이언트에서 전달된 정보)
     const simulatedUserEmail = request.headers.get('x-simulated-user-email')
     const effectiveUserEmail = simulatedUserEmail || user.email
+    if (!effectiveUserEmail) {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
 
     const { searchParams } = new URL(request.url)
     const roomType = searchParams.get('type')
@@ -104,12 +107,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    if (!user.email) {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+
     console.log('현재 사용자:', user.email)
 
     // 팀 권한 확인
     const { data: teamData, error: teamError } = await supabase
       .from('team')
-      .select('email, position, is_active')
+      .select('email, position, is_active, name_ko')
       .eq('email', user.email)
       .eq('is_active', true)
       .single()
@@ -123,7 +130,7 @@ export async function POST(request: NextRequest) {
 
     // 권한 확인 (super, op, office manager)
     const allowedPositions = ['super', 'op', 'office manager']
-    const userPosition = teamData.position?.toLowerCase()
+    const userPosition = teamData.position?.toLowerCase() ?? ''
     console.log('사용자 직책:', userPosition, '허용된 직책:', allowedPositions)
     
     if (!allowedPositions.includes(userPosition)) {
@@ -142,8 +149,8 @@ export async function POST(request: NextRequest) {
       .insert({
         room_name,
         room_type,
-        description,
-        created_by: user.email
+        ...(description != null ? { description } : {}),
+        created_by: user.email,
       })
       .select()
       .single()
@@ -175,8 +182,8 @@ export async function POST(request: NextRequest) {
             room_id: room.id,
             participant_email: email,
             participant_name: teamMember?.name_ko || email.split('@')[0],
-            participant_position: teamMember?.position,
-            is_admin: false
+            ...(teamMember?.position != null ? { participant_position: teamMember.position } : {}),
+            is_admin: false,
           }
         })
 
@@ -198,8 +205,8 @@ export async function POST(request: NextRequest) {
         room_id: room.id,
         participant_email: user.email,
         participant_name: teamData.name_ko || user.email.split('@')[0],
-        participant_position: teamData.position,
-        is_admin: true
+        ...(teamData.position != null ? { participant_position: teamData.position } : {}),
+        is_admin: true,
       })
 
     if (creatorError) {

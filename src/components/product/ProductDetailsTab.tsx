@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Save, AlertCircle, Users, ChevronRight, ChevronDown, CheckSquare, Square, LayoutGrid, Plus } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useAuth } from '@/contexts/AuthContext'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
 import { suggestTourDescription } from '@/lib/chatgptService'
@@ -987,8 +988,7 @@ export default function ProductDetailsTab({
       let allData: any[] = []
 
       for (const { channel_id: channelId, variant_key: variantKey } of uniqueQueries) {
-        const { data: channelData, error: channelError } = await supabase
-          .from('product_details_multilingual')
+        const { data: channelData, error: channelError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
           .eq('channel_id', channelId)
@@ -1364,8 +1364,7 @@ export default function ProductDetailsTab({
       if (saveTargets.length === 0) return
 
       const copyPromises = saveTargets.map(async ({ storedChannelId: groupChannelId, variantKey: targetVariantKey }) => {
-        const existingResult = await supabase
-          .from('product_details_multilingual')
+        const existingResult = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
           .eq('channel_id', groupChannelId)
@@ -1389,8 +1388,7 @@ export default function ProductDetailsTab({
         })
 
         if (existingData) {
-          const { error: updateError } = await supabase
-            .from('product_details_multilingual')
+          const { error: updateError } = await fromUntypedTable(supabase, 'product_details_multilingual')
             .update(updateData)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .eq('id', (existingData as any).id)
@@ -1407,8 +1405,7 @@ export default function ProductDetailsTab({
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             insertData[field] = (currentDetails as any)[field]
           })
-          const { error: insertError } = await (supabase as any)
-            .from('product_details_multilingual')
+          const { error: insertError } = await fromUntypedTable(supabase, 'product_details_multilingual')
             .insert([insertData])
 
           if (insertError) throw insertError
@@ -1470,8 +1467,7 @@ export default function ProductDetailsTab({
           )
         : getPrimaryVariantForChannel(actualFromChannelId)
       
-      const { data: sourceData, error: fetchError } = await supabase
-        .from('product_details_multilingual')
+      const { data: sourceData, error: fetchError } = await fromUntypedTable(supabase, 'product_details_multilingual')
         .select('*')
         .eq('product_id', productId)
         .eq('channel_id', actualFromChannelId)
@@ -1513,7 +1509,7 @@ export default function ProductDetailsTab({
             ? getPrimaryVariantForChannel(group.channelIds[0])
             : 'default'
           
-          for (const sourceItem of sourceData as Array<{
+          for (const sourceItem of sourceData as unknown as Array<{
             language_code: string
             variant_key?: string | null
             slogan1: string | null
@@ -1563,8 +1559,7 @@ export default function ProductDetailsTab({
             }
 
             // 기존 데이터 확인
-            const { data: existingData, error: selectError } = await supabase
-              .from('product_details_multilingual')
+            const { data: existingData, error: selectError } = await fromUntypedTable(supabase, 'product_details_multilingual')
               .select('id')
               .eq('product_id', productId)
               .eq('channel_id', group.channelId)
@@ -1579,8 +1574,7 @@ export default function ProductDetailsTab({
 
             if (existingData) {
               // 업데이트
-              const { error: updateError } = await supabase
-                .from('product_details_multilingual')
+              const { error: updateError } = await fromUntypedTable(supabase, 'product_details_multilingual')
                 .update({
                   ...copyData,
                   updated_at: new Date().toISOString()
@@ -1594,8 +1588,7 @@ export default function ProductDetailsTab({
               }
             } else {
               // 삽입
-              const { error: insertError } = await supabase
-                .from('product_details_multilingual')
+              const { error: insertError } = await fromUntypedTable(supabase, 'product_details_multilingual')
                 .insert([copyData])
 
               if (insertError) {
@@ -1745,8 +1738,7 @@ export default function ProductDetailsTab({
         })
         
         // 기존 데이터 확인 (product_id, channel_id, language_code, variant_key 조합으로)
-        const { data: existingData, error: selectError } = await supabase
-          .from('product_details_multilingual')
+        const { data: existingData, error: selectError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
           .eq('channel_id', groupChannelId)
@@ -1761,8 +1753,7 @@ export default function ProductDetailsTab({
 
         if (existingData) {
           // 업데이트
-          const { error: updateError } = await supabase
-            .from('product_details_multilingual')
+          const { error: updateError } = await fromUntypedTable(supabase, 'product_details_multilingual')
             .update({
               ...detailsData,
               updated_at: new Date().toISOString()
@@ -1775,8 +1766,7 @@ export default function ProductDetailsTab({
             throw new Error(`채널 그룹 ${channelIdLabel} 업데이트 실패: ${updateError.message}`)
           } else {
             // 업데이트 후 실제 저장된 값 확인
-            const { data: savedData, error: verifyError } = await supabase
-              .from('product_details_multilingual')
+            const { data: savedData, error: verifyError } = await fromUntypedTable(supabase, 'product_details_multilingual')
               .select('private_tour_info, chat_announcement')
               .eq('product_id', productId)
               .eq('channel_id', groupChannelId)
@@ -1796,16 +1786,14 @@ export default function ProductDetailsTab({
         } else {
           // 이제 unique constraint가 (product_id, language_code, channel_id)로 업데이트되었으므로
           // 직접 insert를 시도하고, 중복 오류가 발생하면 업데이트
-          const { error: insertError } = await supabase
-            .from('product_details_multilingual')
+          const { error: insertError } = await fromUntypedTable(supabase, 'product_details_multilingual')
             .insert([detailsData])
           
           if (insertError) {
             // 중복 키 오류인 경우 (23505) - 이미 같은 (product_id, language_code, channel_id) 조합이 존재
             if (insertError.code === '23505') {
               // 기존 레코드를 찾아 업데이트
-              const { data: existingRecord, error: findError } = await supabase
-                .from('product_details_multilingual')
+              const { data: existingRecord, error: findError } = await fromUntypedTable(supabase, 'product_details_multilingual')
                 .select('id')
                 .eq('product_id', productId)
                 .eq('language_code', currentLang)
@@ -1819,8 +1807,7 @@ export default function ProductDetailsTab({
               }
 
               if (existingRecord) {
-                const { error: updateError } = await supabase
-                  .from('product_details_multilingual')
+                const { error: updateError } = await fromUntypedTable(supabase, 'product_details_multilingual')
                   .update({
                     ...detailsData,
                     updated_at: new Date().toISOString()
@@ -1833,8 +1820,7 @@ export default function ProductDetailsTab({
                   throw new Error(`채널 그룹 ${channelIdLabel} 업데이트 실패: ${updateError.message}`)
                 } else {
                   // 업데이트 후 실제 저장된 값 확인
-                  const { data: savedData, error: verifyError } = await supabase
-                    .from('product_details_multilingual')
+                  const { data: savedData, error: verifyError } = await fromUntypedTable(supabase, 'product_details_multilingual')
                     .select('private_tour_info, chat_announcement')
                     .eq('product_id', productId)
                     .eq('channel_id', groupChannelId)
@@ -1914,8 +1900,7 @@ export default function ProductDetailsTab({
 
     ;(async () => {
       try {
-        const { data, error } = await supabase
-          .from('product_details_multilingual')
+        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select(`channel_id, variant_key, ${String(field)}`)
           .eq('product_id', productId)
           .eq('language_code', importSourceLanguage)
@@ -1927,7 +1912,7 @@ export default function ProductDetailsTab({
           return
         }
 
-        const rows = (data || []) as Array<Record<string, unknown>>
+        const rows = (data || []) as unknown as Array<Record<string, unknown>>
         const stats: Record<string, { plainLen: number; hasContent: boolean }> = {}
         for (const ch of channels) {
           const sid = resolveStoredChannelId(ch.id)
@@ -1973,8 +1958,7 @@ export default function ProductDetailsTab({
 
     setImportingField(true)
     try {
-      const { data, error } = await supabase
-        .from('product_details_multilingual')
+      const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
         .select(previewEditingField)
         .eq('product_id', productId)
         .eq('channel_id', sourceStoredChannelId)
@@ -2045,8 +2029,7 @@ export default function ProductDetailsTab({
       let detailsError: { code?: string } | null = null
 
         // 채널별 product_details_multilingual — channel_id NULL 행을 언어별 기본으로 두고 병합
-        const { data: allData, error: allError } = await supabase
-          .from('product_details_multilingual')
+        const { data: allData, error: allError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('*')
           .eq('product_id', productId) as { 
             data: Array<{
@@ -2401,8 +2384,7 @@ export default function ProductDetailsTab({
           : channel.id
 
         // 해당 채널의 모든 variant 데이터 가져오기 (현재 선택된 언어 기준)
-        const { data: channelData, error } = await supabase
-          .from('product_details_multilingual')
+        const { data: channelData, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
           .eq('channel_id', channelId)
@@ -2816,8 +2798,7 @@ export default function ProductDetailsTab({
       const currentLang = formData.currentLanguage || 'ko'
       const currentDetails = getCurrentLanguageDetails()
       
-      const { data: existingDetails, error: selectDetailsError } = await supabase
-        .from('product_details_multilingual')
+      const { data: existingDetails, error: selectDetailsError } = await fromUntypedTable(supabase, 'product_details_multilingual')
         .select('id')
         .eq('product_id', productId)
         .eq('language_code', currentLang)
@@ -2886,8 +2867,7 @@ export default function ProductDetailsTab({
 
       if (existingDetails) {
         // 업데이트
-        const { error: detailsError } = await supabase
-          .from('product_details_multilingual')
+        const { error: detailsError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .update({
             ...detailsData,
             updated_at: new Date().toISOString()
@@ -2904,8 +2884,7 @@ export default function ProductDetailsTab({
         console.log('product_details 업데이트 완료')
         
         // 업데이트 후 실제 저장된 값 확인
-        const { data: savedData, error: verifyError } = await supabase
-          .from('product_details_multilingual')
+        const { data: savedData, error: verifyError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('private_tour_info, chat_announcement')
           .eq('product_id', productId)
           .eq('language_code', currentLang)
@@ -2923,8 +2902,7 @@ export default function ProductDetailsTab({
         }
       } else {
         // 새로 생성
-        const { error: detailsError } = await supabase
-          .from('product_details_multilingual')
+        const { error: detailsError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .insert([detailsData])
 
         if (detailsError) {
@@ -2934,8 +2912,7 @@ export default function ProductDetailsTab({
         console.log('product_details 생성 완료')
         
         // 저장 후 실제 저장된 값 확인
-        const { data: savedData, error: verifyError } = await supabase
-          .from('product_details_multilingual')
+        const { data: savedData, error: verifyError } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .select('private_tour_info, chat_announcement')
           .eq('product_id', productId)
           .eq('language_code', currentLang)

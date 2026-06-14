@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import type { Json } from '@/lib/database.types'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -95,8 +96,8 @@ export default function CashLedgerReportEditModals({
           transaction_id: transactionId,
           source_table: sourceTable,
           change_type: changeType,
-          old_values: oldValues,
-          new_values: newValues,
+          old_values: oldValues as Json,
+          new_values: newValues as Json,
           modified_by: user?.email || '',
           modified_at: new Date().toISOString()
         })
@@ -386,7 +387,7 @@ export default function CashLedgerReportEditModals({
               <div className="space-y-2">
                 <Label htmlFor="cr_category">카테고리</Label>
                 <Select
-                  value={cashForm.category || undefined}
+                  {...(cashForm.category ? { value: cashForm.category } : {})}
                   onValueChange={(value) => setCashForm({ ...cashForm, category: value })}
                 >
                   <SelectTrigger id="cr_category">

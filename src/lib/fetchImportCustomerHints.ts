@@ -32,7 +32,7 @@ export async function fetchCustomerHintsForImportExtracted(
     }
   }
 
-  const queries: Promise<{ data: Customer[] | null }>[] = []
+  const queries: PromiseLike<{ data: Customer[] | null }>[] = []
 
   if (email.includes('@')) {
     queries.push(

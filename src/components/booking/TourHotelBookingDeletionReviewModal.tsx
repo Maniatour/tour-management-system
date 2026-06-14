@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import {

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Link2,
   Search,
   User,
   Users,
@@ -67,7 +68,9 @@ import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
-import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
+import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
+import type { ExpenseStatementReconContext, ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
 import {
   buildTicketBookingStatementReconContextResolved,
   isTicketBookingStatementReconDisabled,
@@ -167,6 +170,30 @@ function isPnlLineStmtReconDisabled(line: PnlDetailLine): boolean {
   }
   const submitYmd = isoToYmd(line.submit_on)
   return !submitYmd || Math.abs(line.amount) <= 0
+}
+
+const PNL_AUTO_MATCH_SOURCES = new Set<PnlExpenseSource>([
+  'tour_expenses',
+  'reservation_expenses',
+  'company_expenses',
+  'ticket_bookings',
+  'tour_hotel_bookings',
+])
+
+function pnlLineToAutoMatchRow(line: PnlDetailLine): ExpenseAutoMatchInputRow | null {
+  if (!PNL_AUTO_MATCH_SOURCES.has(line.source)) return null
+  if (line.statementReconciled || isPnlLineStmtReconDisabled(line)) return null
+  const submitYmd = isoToYmd(line.submit_on)
+  if (!submitYmd) return null
+  return {
+    id: line.id,
+    submit_on: submitYmd,
+    amount: Number(line.amount ?? 0),
+    paid_to: line.paid_to ?? '',
+    paid_for: line.paid_for ?? '',
+    payment_method: line.payment_method,
+    sourceTable: line.source as ExpenseReconSourceTable,
+  }
 }
 
 async function buildPnlLineStatementReconContext(
@@ -707,7 +734,7 @@ async function persistExcludeFromPnl(line: PnlDetailLine, next: boolean): Promis
     case 'tour_expenses': {
       const { error } = await supabase
         .from('tour_expenses')
-        .update({ exclude_from_pnl: next, updated_at: new Date().toISOString() })
+        .update({ exclude_from_pnl: next, updated_at: new Date().toISOString() } as never)
         .eq('id', line.id)
       if (error) throw error
       return
@@ -788,6 +815,9 @@ export default function PnlUnifiedExpenseDetailDialog({
   /** PNL 제외 즉시 토글의 낙관적 표시값 (재조회 전까지 유지) */
   const [excludeOverride, setExcludeOverride] = useState<Record<string, boolean>>({})
   const [excludeSavingKey, setExcludeSavingKey] = useState<string | null>(null)
+  const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
+
+  const isUnmatchedDrill = drill?.mode === 'unmatched'
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
   const sourcesInVisible = useMemo(() => {
@@ -835,6 +865,13 @@ export default function PnlUnifiedExpenseDetailDialog({
     rows.sort((a, b) => comparePnlDetailLines(a, b, sortKey, sortDir))
     return rows
   }, [filteredRows, sortKey, sortDir])
+  const autoMatchExpenseRows = useMemo(
+    () =>
+      filteredRows
+        .map(pnlLineToAutoMatchRow)
+        .filter((x): x is ExpenseAutoMatchInputRow => x !== null),
+    [filteredRows]
+  )
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize))
   const safePage = Math.min(Math.max(1, page), totalPages)
@@ -1112,7 +1149,7 @@ export default function PnlUnifiedExpenseDetailDialog({
               note: draft.note.trim() || null,
               exclude_from_pnl: draft.exclude_from_pnl,
               updated_at: new Date().toISOString(),
-            })
+            } as never)
             .eq('id', line.id)
           if (error) throw error
         } else if (line.source === 'reservation_expenses') {
@@ -1275,18 +1312,23 @@ export default function PnlUnifiedExpenseDetailDialog({
         <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b shrink-0">
           <DialogTitle className="text-base leading-snug">지출 상세 — {title}</DialogTitle>
           <p className="text-xs text-muted-foreground font-normal pt-1">
-            상단에서 원문·출처별 <strong>표준 리프</strong>를 지정·저장하면 카테고리 매니저와 동일하게{' '}
-            <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>가 갱신됩니다. 개별
-            지출은 아래에서 금액·결제내용을 수정하거나, 행을 선택해 중복·불필요 지출을 삭제 보관함으로 옮길 수
-            있습니다. 별개인 지출이 중복으로 잡히면 <strong>«중복 아님 처리»</strong>로 경고에서 제외할 수 있습니다.
-            연결 <strong>tour_id</strong>·<strong>RN#</strong>·예약 ID가 다른 지출, 그리고 <strong>Entrance Fee</strong>끼리
-            연결 ID가 다르면 같은 금액·날짜여도 중복 후보에서 자동 제외됩니다.
-            {drill?.mode === 'unmatched' ? (
+            {isUnmatchedDrill ? (
               <>
-                {' '}
-                <strong>명세 대조</strong> 열의 은행 아이콘을 누르면 유사 명세 줄을 찾아 바로 연결할 수 있습니다.
+                아래 목록은 은행·카드 명세와 아직 연결되지 않은 지출입니다.{' '}
+                <strong>명세 자동 매칭</strong>으로 일괄 연결하거나,{' '}
+                <strong>명세 대조</strong> 열의 은행 아이콘을 눌러 건별로 유사 명세 줄을 찾을 수 있습니다. 개별 지출은
+                금액·결제내용을 수정할 수 있습니다.
               </>
-            ) : null}
+            ) : (
+              <>
+                상단에서 원문·출처별 <strong>표준 리프</strong>를 지정·저장하면 카테고리 매니저와 동일하게{' '}
+                <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>가 갱신됩니다. 개별
+                지출은 아래에서 금액·결제내용을 수정하거나, 행을 선택해 중복·불필요 지출을 삭제 보관함으로 옮길 수
+                있습니다. 별개인 지출이 중복으로 잡히면 <strong>«중복 아님 처리»</strong>로 경고에서 제외할 수
+                있습니다. 연결 <strong>tour_id</strong>·<strong>RN#</strong>·예약 ID가 다른 지출, 그리고{' '}
+                <strong>Entrance Fee</strong>끼리 연결 ID가 다르면 같은 금액·날짜여도 중복 후보에서 자동 제외됩니다.
+              </>
+            )}
           </p>
         </DialogHeader>
 
@@ -1338,6 +1380,20 @@ export default function PnlUnifiedExpenseDetailDialog({
                   <>{visible.length}건</>
                 )}
               </span>
+              {isUnmatchedDrill ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1.5 border-emerald-300 text-emerald-900 hover:bg-emerald-50"
+                  disabled={deleting || autoMatchExpenseRows.length === 0}
+                  onClick={() => setBulkAutoMatchOpen(true)}
+                  title={tStmtRecon('bulkAutoMatch.buttonTitle')}
+                >
+                  <Link2 className="h-4 w-4" aria-hidden />
+                  {tStmtRecon('bulkAutoMatch.button')}
+                </Button>
+              ) : null}
             </div>
             {sourcesInVisible.length > 1 ? (
               <div className="flex min-w-0 flex-col gap-1 rounded border border-slate-200 bg-slate-50/80 px-2 py-1.5">
@@ -1548,7 +1604,7 @@ export default function PnlUnifiedExpenseDetailDialog({
         ) : null}
 
         <div ref={scrollAreaRef} className="overflow-auto flex-1 min-h-0 px-2 sm:px-4 py-3 flex flex-col">
-          {visible.length > 0 && (
+          {visible.length > 0 && !isUnmatchedDrill && (
             <PnlMappingAssignBlock
               visible={visible}
               expenseStandardCategories={expenseStandardCategories}
@@ -2111,6 +2167,19 @@ export default function PnlUnifiedExpenseDetailDialog({
         nestedElevated
         onApplied={() => void onSaved()}
       />
+
+      {isUnmatchedDrill ? (
+        <ExpenseStatementBulkAutoMatchModal
+          open={bulkAutoMatchOpen}
+          onOpenChange={setBulkAutoMatchOpen}
+          expenses={autoMatchExpenseRows}
+          reconciledExpenseIds={new Set()}
+          nestedElevated
+          title="명세 미대조 지출 — 자동 매칭"
+          description="현재 목록(검색·출처 필터 반영) 중 명세와 연결 가능한 지출을 은행 명세 출금 줄과 맞춥니다. 미리보기에서 확인한 뒤 저장하세요."
+          onApplied={() => void onSaved()}
+        />
+      ) : null}
     </>
   )
 }

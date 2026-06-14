@@ -9,7 +9,9 @@ function normalizeTourStatusKey(tourStatus: string | null | undefined): string {
 export function isTourDeleted(tourStatus: string | null | undefined): boolean {
   const s = normalizeTourStatusKey(tourStatus)
   if (!s) return false
-  return s === 'deleted' || s.includes('requested for delete')
+  if (s === 'deleted' || s.includes('requested for delete')) return true
+  if (s.includes('삭제')) return true
+  return false
 }
 
 /** 투어 상태가 취소 계열인지 (삭제는 제외) */
@@ -86,12 +88,10 @@ export const getStatusText = (status: string | null, locale: string = 'ko') => {
     ko: {
       undefined: '미정',
       recruiting: '모집중',
-      'recruiting': '모집중',
-      'Recruiting': '모집중',
+      Recruiting: '모집중',
       confirm: '확정',
       confirmed: '확정',
-      'confirmed': '확정',
-      'Confirmed': '확정',
+      Confirmed: '확정',
       'canceled - no minimum': '취소 - 최소인원 미달',
       'Canceled - No Minimum': '취소 - 최소인원 미달',
       'canceled - by customer': '취소 - 고객 요청',
@@ -114,12 +114,10 @@ export const getStatusText = (status: string | null, locale: string = 'ko') => {
     en: {
       undefined: 'Undefined',
       recruiting: 'Recruiting',
-      'recruiting': 'Recruiting',
-      'Recruiting': 'Recruiting',
+      Recruiting: 'Recruiting',
       confirm: 'Confirmed',
       confirmed: 'Confirmed',
-      'confirmed': 'Confirmed',
-      'Confirmed': 'Confirmed',
+      Confirmed: 'Confirmed',
       'canceled - no minimum': 'Canceled - No Minimum',
       'Canceled - No Minimum': 'Canceled - No Minimum',
       'canceled - by customer': 'Canceled - by customer',

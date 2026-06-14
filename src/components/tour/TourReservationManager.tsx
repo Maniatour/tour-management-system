@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ReservationRow } from '@/types/reservation'
+import type { Database } from '@/lib/supabase'
+
+type ReservationRow = Database['public']['Tables']['reservations']['Row']
 
 interface TourReservationManagerProps {
   tourId: string

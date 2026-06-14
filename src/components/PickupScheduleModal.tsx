@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Camera, MapPin, Play, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -40,7 +40,6 @@ function ScheduleItem({
   const [hotelMediaUrls, setHotelMediaUrls] = useState<string[]>([])
   const [googleMapsLink, setGoogleMapsLink] = useState<string | null>(null)
   const [youtubeLink, setYoutubeLink] = useState<string | null>(null)
-  const [isExpanded, setIsExpanded] = useState(false)
 
   // 픽업 호텔 미디어 데이터, 구글맵 링크, 유튜브 링크 가져오기
   useEffect(() => {
@@ -94,11 +93,6 @@ function ScheduleItem({
       window.open(youtubeLink, '_blank')
     }
   }
-
-  const t = {
-    ko: { people: '명' },
-    en: { people: ' people' }
-  }[language]
 
   return (
     <div className="border border-gray-200 rounded-lg p-3">
@@ -233,7 +227,7 @@ export default function PickupScheduleModal({
                   key={index}
                   schedule={schedule}
                   language={language}
-                  onPhotoClick={onPhotoClick}
+                  {...(onPhotoClick ? { onPhotoClick } : {})}
                 />
               ))
             ) : (

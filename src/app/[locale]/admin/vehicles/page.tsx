@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy, Settings, Building2 } from 'lucide-react'
+import { Plus, Search, Car, Edit, Trash2, Copy, Settings, Building2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import VehicleEditModal from '@/components/VehicleEditModal'
 // 차종 관리 모달은 lazy load로 최적화
@@ -11,6 +11,7 @@ const VehicleTypeManagementModal = dynamic(() => import('@/components/VehicleTyp
 })
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   getVehicleStatusBadgeClass,
   getVehicleStatusLabelKo,
@@ -86,6 +87,61 @@ interface Vehicle {
   nick?: string | null
 }
 
+type VehicleDbRow = Record<string, unknown>
+
+function mapDbRowToVehicle(row: VehicleDbRow): Vehicle {
+  return {
+    id: String(row.id ?? ''),
+    vehicle_number: String(row.vehicle_number ?? ''),
+    vin: row.vin != null ? String(row.vin) : undefined,
+    vehicle_type: String(row.vehicle_type ?? ''),
+    capacity: Number(row.capacity ?? 0),
+    year: Number(row.year ?? 0),
+    mileage_at_purchase: Number(row.mileage_at_purchase ?? 0),
+    purchase_amount: Number(row.purchase_amount ?? 0),
+    purchase_date: row.purchase_date != null ? String(row.purchase_date) : undefined,
+    memo: row.memo != null ? String(row.memo) : undefined,
+    engine_oil_change_cycle: Number(row.engine_oil_change_cycle ?? 0),
+    current_mileage: Number(row.current_mileage ?? 0),
+    recent_engine_oil_change_mileage: Number(row.recent_engine_oil_change_mileage ?? 0),
+    maintenance_duty_preset: row.maintenance_duty_preset != null ? String(row.maintenance_duty_preset) : undefined,
+    fuel_type: row.fuel_type != null ? String(row.fuel_type) : undefined,
+    maintenance_vehicle_class: row.maintenance_vehicle_class != null ? String(row.maintenance_vehicle_class) : undefined,
+    status: String(row.status ?? ''),
+    front_tire_size: row.front_tire_size != null ? String(row.front_tire_size) : undefined,
+    rear_tire_size: row.rear_tire_size != null ? String(row.rear_tire_size) : undefined,
+    windshield_wiper_size: row.windshield_wiper_size != null ? String(row.windshield_wiper_size) : undefined,
+    headlight_model: row.headlight_model != null ? String(row.headlight_model) : undefined,
+    headlight_model_name: row.headlight_model_name != null ? String(row.headlight_model_name) : undefined,
+    is_installment: Boolean(row.is_installment),
+    installment_amount: Number(row.installment_amount ?? 0),
+    interest_rate: Number(row.interest_rate ?? 0),
+    monthly_payment: Number(row.monthly_payment ?? 0),
+    additional_payment: Number(row.additional_payment ?? 0),
+    payment_due_date: row.payment_due_date != null ? String(row.payment_due_date) : undefined,
+    installment_start_date: row.installment_start_date != null ? String(row.installment_start_date) : undefined,
+    installment_end_date: row.installment_end_date != null ? String(row.installment_end_date) : undefined,
+    vehicle_image_url: row.vehicle_image_url != null ? String(row.vehicle_image_url) : undefined,
+    color: row.color != null ? String(row.color) : undefined,
+    created_at: String(row.created_at ?? ''),
+    updated_at: String(row.updated_at ?? ''),
+    vehicle_category: row.vehicle_category != null ? String(row.vehicle_category) : undefined,
+    rental_company: row.rental_company != null ? String(row.rental_company) : undefined,
+    daily_rate: row.daily_rate != null ? Number(row.daily_rate) : undefined,
+    rental_booking_price: row.rental_booking_price != null ? Number(row.rental_booking_price) : null,
+    rental_start_date: row.rental_start_date != null ? String(row.rental_start_date) : undefined,
+    rental_end_date: row.rental_end_date != null ? String(row.rental_end_date) : undefined,
+    rental_pickup_location: row.rental_pickup_location != null ? String(row.rental_pickup_location) : undefined,
+    rental_return_location: row.rental_return_location != null ? String(row.rental_return_location) : undefined,
+    rental_total_cost: row.rental_total_cost != null ? Number(row.rental_total_cost) : undefined,
+    rental_notes: row.rental_notes != null ? String(row.rental_notes) : undefined,
+    rental_agreement_number: row.rental_agreement_number != null ? String(row.rental_agreement_number) : null,
+    nick: row.nick != null ? String(row.nick) : null,
+    photos: [],
+    typePhotos: [],
+  } as Vehicle
+}
+
 const VEHICLES_UI_DEFAULT = {
   searchTerm: '',
   activeTab: 'company' as 'company' | 'rental_active' | 'rental_returned' | 'vehicle_types',
@@ -140,8 +196,7 @@ export default function VehiclesPage() {
     try {
       setLoading(true)
 
-      const { data: vehiclesData, error: vehiclesError } = await supabase
-        .from('vehicles')
+      const { data: vehiclesData, error: vehiclesError } = await fromUntypedTable(supabase, 'vehicles')
         .select(`
           id,
           vehicle_number,
@@ -202,25 +257,26 @@ export default function VehiclesPage() {
         return
       }
 
-      const vehiclesWithLegacyPhotos: Vehicle[] = vehiclesData.map((vehicle) => {
-        if (vehicle.vehicle_image_url) {
+      const vehiclesWithLegacyPhotos: Vehicle[] = (vehiclesData as VehicleDbRow[]).map((vehicle) => {
+        const mapped = mapDbRowToVehicle(vehicle)
+        if (mapped.vehicle_image_url) {
           return {
-            ...vehicle,
+            ...mapped,
             photos: [
               {
                 id: 'legacy',
-                vehicle_id: vehicle.id,
-                photo_url: vehicle.vehicle_image_url,
+                vehicle_id: mapped.id,
+                photo_url: mapped.vehicle_image_url,
                 is_primary: true,
                 display_order: 0,
-                created_at: vehicle.created_at,
-                updated_at: vehicle.updated_at,
+                created_at: mapped.created_at,
+                updated_at: mapped.updated_at,
               },
             ],
             typePhotos: [],
           }
         }
-        return { ...vehicle, photos: [], typePhotos: [] }
+        return mapped
       })
 
       // 첫 페인트: 목록·탭·카드 UI를 먼저 보여 주고, 차종/갤러리 사진은 뒤이어 합성
@@ -268,7 +324,7 @@ export default function VehiclesPage() {
                 if (!typeNameToPhotos.has(name)) typeNameToPhotos.set(name, [])
                 typeNameToPhotos.get(name)!.push({
                   photo_url: p.photo_url,
-                  is_primary: p.is_primary,
+                  is_primary: p.is_primary ?? false,
                   display_order: p.display_order ?? 0,
                 })
               })
@@ -357,10 +413,7 @@ export default function VehiclesPage() {
             return { ...v, typePhotos }
           }
           const gallery = photosByVehicleId.get(v.id)
-          const photos =
-            gallery && gallery.length > 0
-              ? gallery
-              : v.photos
+          const photos = gallery && gallery.length > 0 ? gallery : (v.photos ?? [])
           return { ...v, typePhotos, photos }
         })
         setVehicles(enriched)
@@ -445,7 +498,7 @@ export default function VehiclesPage() {
       memo: vehicle.memo || '',
       photos: undefined
     }
-    setSelectedVehicle(copiedVehicle as Vehicle)
+    setSelectedVehicle(copiedVehicle as unknown as Vehicle)
     setIsEditModalOpen(true)
   }, [])
 
@@ -509,9 +562,8 @@ export default function VehiclesPage() {
     try {
       setUpdatingStatus(vehicleId)
       
-      const { error } = await supabase
-        .from('vehicles')
-        .update({ status: newStatus })
+      const { error } = await fromUntypedTable(supabase, 'vehicles')
+        .update({ status: newStatus } as never)
         .eq('id', vehicleId)
 
       if (error) throw error
@@ -563,9 +615,9 @@ export default function VehiclesPage() {
       ]
       
       dateFields.forEach(field => {
-        if (cleanedData[field as keyof Vehicle] === '' || 
-            cleanedData[field as keyof Vehicle] === null) {
-          cleanedData[field as keyof Vehicle] = null
+        const key = field as keyof Vehicle
+        if (cleanedData[key] === '' || cleanedData[key] === null) {
+          ;(cleanedData as Record<string, unknown>)[field] = null
         }
       })
 
@@ -573,18 +625,16 @@ export default function VehiclesPage() {
         .filter(key => allowedFields.includes(key))
         .reduce((obj, key) => {
           const value = cleanedData[key as keyof Vehicle]
-          // 빈 문자열을 null로 변환
           obj[key] = value === '' ? null : value
           return obj
-        }, {} as Partial<Vehicle>)
+        }, {} as Record<string, unknown>)
 
       console.log('저장할 데이터:', filteredData)
 
       if (selectedVehicle) {
         // 수정
-        const { error } = await supabase
-          .from('vehicles')
-          .update(filteredData)
+        const { error } = await fromUntypedTable(supabase, 'vehicles')
+          .update(filteredData as never)
           .eq('id', selectedVehicle.id)
 
         if (error) throw error
@@ -594,15 +644,14 @@ export default function VehiclesPage() {
         ))
       } else {
         // 추가
-        const { data, error } = await supabase
-          .from('vehicles')
-          .insert([filteredData])
+        const { data, error } = await fromUntypedTable(supabase, 'vehicles')
+          .insert([filteredData as never])
           .select()
           .single()
 
         if (error) throw error
         
-        setVehicles([data, ...vehicles])
+        setVehicles([mapDbRowToVehicle(data as VehicleDbRow), ...vehicles])
       }
       
       setIsEditModalOpen(false)

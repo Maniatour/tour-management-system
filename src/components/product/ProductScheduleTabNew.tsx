@@ -22,6 +22,7 @@ interface ScheduleItem {
   transport_details: string
   notes: string
   // 새로운 필드들
+  no_time?: boolean | null
   latitude?: number
   longitude?: number
   show_to_customers: boolean
@@ -69,7 +70,7 @@ export default function ProductScheduleTab({
   const [showTableAdd, setShowTableAdd] = useState(false)
   const [tableSchedules, setTableSchedules] = useState<ScheduleItem[]>([])
   const [saving, setSaving] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string | null}>>([])
 
   const fetchSchedules = React.useCallback(async () => {
     try {
@@ -86,7 +87,7 @@ export default function ProductScheduleTab({
         return
       }
 
-      setSchedules(data || [])
+      setSchedules((data || []) as unknown as ScheduleItem[])
     } catch (error) {
       console.error('일정 로드 오류:', error)
     } finally {
@@ -136,9 +137,6 @@ export default function ProductScheduleTab({
       transport_type: '',
       transport_details: '',
       notes: '',
-      // 새로운 필드들
-      latitude: undefined,
-      longitude: undefined,
       show_to_customers: true,
       guide_assignment_type: 'none',
       assigned_guide_1: '',
@@ -290,8 +288,6 @@ export default function ProductScheduleTab({
                 transport_type: '',
                 transport_details: '',
                 notes: '',
-                latitude: undefined,
-                longitude: undefined,
                 show_to_customers: true,
                 guide_assignment_type: 'none',
                 assigned_guide_1: '',
@@ -421,12 +417,12 @@ export default function ProductScheduleTab({
       {/* 테이블 형식 일정 추가 모달 */}
       {showTableAdd && (
         <TableScheduleAdd
-          schedules={tableSchedules as unknown as ScheduleItem[]}
-          onSchedulesChange={(schedules: unknown) => setTableSchedules(schedules as ScheduleItem[])}
+          schedules={tableSchedules as never}
+          onSchedulesChange={(schedules) => setTableSchedules(schedules as ScheduleItem[])}
           onSave={handleSaveTableSchedules}
           onClose={() => setShowTableAdd(false)}
           saving={saving}
-          teamMembers={teamMembers}
+          teamMembers={teamMembers.map((m) => ({ ...m, position: m.position ?? '' }))}
           productId={productId}
         />
       )}

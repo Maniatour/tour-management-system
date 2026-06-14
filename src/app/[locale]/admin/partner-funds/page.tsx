@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
 import PartnerFundsManagement from '@/components/PartnerFundsManagement'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { Users, Lock } from 'lucide-react'

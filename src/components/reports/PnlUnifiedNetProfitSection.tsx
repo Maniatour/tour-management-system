@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import PnlStatementInflowDetailDialog, {
@@ -109,7 +109,7 @@ export default function PnlUnifiedNetProfitSection({
     <div className="rounded-lg border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/90 to-white p-4 shadow-sm">
       <h3 className="font-semibold flex flex-wrap items-center gap-x-2 gap-y-1 mb-2 text-indigo-950">
         <TrendingUp className="h-5 w-5 shrink-0 text-indigo-700" aria-hidden />
-        <AccountingTerm termKey="순수익">순수익</AccountingTerm>
+        <AccountingTerm termKey="손익">순수익</AccountingTerm>
         <span className="font-normal text-gray-600 text-sm">(입금 순합계 − 지출 월 합계)</span>
       </h3>
       <p className="text-xs text-indigo-900/85 mb-3 leading-relaxed">
@@ -350,7 +350,7 @@ export default function PnlUnifiedNetProfitSection({
         drill={statementDetailDrill}
         lines={statementInflowDetailLines}
         formatMonthLabel={formatPnlMonthLabel}
-        onChanged={onStatementInflowChanged}
+        {...(onStatementInflowChanged ? { onChanged: onStatementInflowChanged } : {})}
       />
     </div>
   )

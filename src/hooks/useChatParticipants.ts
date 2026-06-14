@@ -44,15 +44,19 @@ export function useChatParticipants({
       setOnlineParticipants(prev => {
         const updated = new Map<string, Participant>()
         
-        participants.forEach((participant: { participant_id: string; participant_name: string; participant_type: string; is_active: boolean }) => {
+        participants.forEach((participant) => {
+          if (participant.is_active === false) return
           const key = participant.participant_id
-          updated.set(key, {
+          const entry: Participant = {
             id: key,
             name: participant.participant_name || key,
             type: participant.participant_type === 'customer' ? 'customer' : 'guide',
-            email: participant.participant_type === 'guide' ? (key || undefined) : undefined,
-            lastSeen: new Date()
-          })
+            lastSeen: new Date(),
+          }
+          if (participant.participant_type === 'guide' && key) {
+            entry.email = key
+          }
+          updated.set(key, entry)
         })
         
         prev.forEach((value, key) => {
@@ -112,7 +116,7 @@ export function useChatParticipants({
           const updated = new Map(prev)
           const currentMessages = messagesRef.current
 
-          Object.entries(state).forEach(([key, presences]) => {
+          Object.entries(state).forEach(([, presences]) => {
             if (Array.isArray(presences) && presences.length > 0) {
               const presence = presences[0] as any
               if (presence && presence.userId !== userId) {
@@ -149,7 +153,7 @@ export function useChatParticipants({
           return updated
         })
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
         if (Array.isArray(newPresences) && newPresences.length > 0) {
           const presence = newPresences[0] as any
           if (presence && presence.userId !== userId) {

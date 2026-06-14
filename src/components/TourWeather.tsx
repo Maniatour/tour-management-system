@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog, CloudHail } from 'lucide-react'
+import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog } from 'lucide-react'
 import { getGoblinTourWeatherData, normalizeDate, type LocationWeather } from '@/lib/weatherApi'
 
 interface TourWeatherProps {
@@ -61,53 +61,6 @@ const getWeatherIconComponent = (weatherMain: string, weatherDescription: string
       return <CloudFog className="w-6 h-6 text-gray-500" />
     default:
       return <Cloud className="w-6 h-6 text-gray-500" />
-  }
-}
-
-// 날씨 상태에 따른 아이콘 반환 함수 (상세 정보용)
-const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
-  const main = weatherMain?.toLowerCase() || ''
-  const description = weatherDescription?.toLowerCase() || ''
-  
-  // 구체적인 날씨 상태별 아이콘
-  if (description.includes('thunderstorm') || description.includes('storm')) {
-    return <CloudLightning className="h-3 w-3 text-purple-600" />
-  }
-  if (description.includes('snow') || description.includes('blizzard')) {
-    return <CloudSnow className="h-3 w-3 text-blue-400" />
-  }
-  if (description.includes('rain') || description.includes('drizzle') || description.includes('shower')) {
-    return <CloudRain className="h-3 w-3 text-blue-500" />
-  }
-  if (description.includes('fog') || description.includes('mist') || description.includes('haze')) {
-    return <EyeOff className="h-3 w-3 text-gray-500" />
-  }
-  if (description.includes('clear') || description.includes('sunny')) {
-    return <Sun className="h-3 w-3 text-yellow-500" />
-  }
-  if (description.includes('clouds')) {
-    return <Cloud className="h-3 w-3 text-gray-500" />
-  }
-  
-  // 기본 날씨 상태별 아이콘
-  switch (main) {
-    case 'thunderstorm':
-      return <CloudLightning className="h-3 w-3 text-purple-600" />
-    case 'drizzle':
-    case 'rain':
-      return <CloudRain className="h-3 w-3 text-blue-500" />
-    case 'snow':
-      return <CloudSnow className="h-3 w-3 text-blue-400" />
-    case 'clear':
-      return <Sun className="h-3 w-3 text-yellow-500" />
-    case 'clouds':
-      return <Cloud className="h-3 w-3 text-gray-500" />
-    case 'mist':
-    case 'fog':
-    case 'haze':
-      return <EyeOff className="h-3 w-3 text-gray-500" />
-    default:
-      return <Cloud className="h-3 w-3 text-gray-500" />
   }
 }
 
@@ -219,12 +172,6 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       console.error('Error converting time:', error)
       return { localTime: timeString, vegasTime: timeString }
     }
-  }
-
-  // 기존 함수 유지 (호환성)
-  const convertToLocalTime = (timeString: string, location: string, isSunrise: boolean = false): string => {
-    const { localTime } = convertTimeWithTimezones(timeString, location)
-    return localTime
   }
 
   const loadWeatherData = useCallback(async () => {

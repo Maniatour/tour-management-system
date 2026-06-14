@@ -144,30 +144,33 @@ export class PaymentMethodIntegration {
         return { isValid: false, reason: '비활성화된 결제 방법입니다.' }
       }
 
+      const monthUsage = data.current_month_usage ?? 0
+      const dayUsage = data.current_day_usage ?? 0
+
       // 총 한도 체크
-      if (data.limit_amount && (data.current_month_usage + amount) > data.limit_amount) {
+      if (data.limit_amount && monthUsage + amount > data.limit_amount) {
         return { 
           isValid: false, 
           reason: '총 한도를 초과합니다.',
-          remainingLimit: data.limit_amount - data.current_month_usage
+          remainingLimit: data.limit_amount - monthUsage
         }
       }
 
       // 월 한도 체크
-      if (data.monthly_limit && (data.current_month_usage + amount) > data.monthly_limit) {
+      if (data.monthly_limit && monthUsage + amount > data.monthly_limit) {
         return { 
           isValid: false, 
           reason: '월 한도를 초과합니다.',
-          remainingLimit: data.monthly_limit - data.current_month_usage
+          remainingLimit: data.monthly_limit - monthUsage
         }
       }
 
       // 일 한도 체크
-      if (data.daily_limit && (data.current_day_usage + amount) > data.daily_limit) {
+      if (data.daily_limit && dayUsage + amount > data.daily_limit) {
         return { 
           isValid: false, 
           reason: '일 한도를 초과합니다.',
-          remainingLimit: data.daily_limit - data.current_day_usage
+          remainingLimit: data.daily_limit - dayUsage
         }
       }
 

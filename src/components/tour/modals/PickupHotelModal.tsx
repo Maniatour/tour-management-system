@@ -1,4 +1,3 @@
-import { X } from 'lucide-react'
 
 interface PickupHotelModalProps {
   isOpen: boolean

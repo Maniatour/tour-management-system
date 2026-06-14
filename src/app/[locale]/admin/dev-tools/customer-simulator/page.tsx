@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 interface Customer {
   id: string
   name: string
-  email: string
+  email: string | null
   phone: string | null
   language: string | null
   created_at: string
@@ -62,7 +62,7 @@ export default function CustomerSimulatorPage() {
         return
       }
 
-      setCustomers(data || [])
+      setCustomers((data || []) as Customer[])
     } catch (error) {
       console.error('데이터 로드 오류:', error)
       setCustomers([])
@@ -75,7 +75,7 @@ export default function CustomerSimulatorPage() {
   const handleStartSimulation = (customer: Customer) => {
     const simulatedUserData = {
       id: customer.id,
-      email: customer.email,
+      email: customer.email ?? '',
       name_ko: customer.name,
       phone: customer.phone,
       language: customer.language,

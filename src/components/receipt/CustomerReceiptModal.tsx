@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { X, Printer, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -60,10 +60,7 @@ type ReceiptData = {
 const labels = {
   ko: {
     /** 모달 상단 제목(앱 언어) */
-    modalTitle: '인보이스',
-    /** 인보이스 본문 큰 제목(고객 언어 문서) */
-    invoiceTitle: 'INVOICE',
-    /** 고객 수신 블록 라벨 */
+    modalTitle: '영수증',
     toLabel: 'To',
     title: '영수증',
     reservationSummary: '예약 요약',
@@ -124,10 +121,6 @@ const labels = {
     printLayout: '인쇄 형식',
     printOptionLetter: 'Letter (1장당 1매)',
     printOptionHalf: '가로 절반 (1장당 2매)',
-    showExchangeRate: '환율 추가',
-    hideExchangeRate: '환율 숨기기',
-    transferExchangeRate: '송금보낼때 환율 (1 USD =',
-    refreshExchangeRate: '환율 새로고침',
     selectCustomers: '인쇄할 고객 선택',
     selectAll: '전체 선택',
     deselectAll: '전체 해제',
@@ -136,8 +129,7 @@ const labels = {
     infant: '유아',
   },
   en: {
-    modalTitle: 'Invoice',
-    invoiceTitle: 'INVOICE',
+    modalTitle: 'Receipt',
     toLabel: 'To',
     title: 'Receipt',
     reservationSummary: 'Reservation Summary',
@@ -198,10 +190,6 @@ const labels = {
     printLayout: 'Print layout',
     printOptionLetter: 'Letter (1 per page)',
     printOptionHalf: 'Half width (2 per page)',
-    showExchangeRate: 'Show Exchange Rate',
-    hideExchangeRate: 'Hide Exchange Rate',
-    transferExchangeRate: 'Transfer Exchange Rate (1 USD =',
-    refreshExchangeRate: 'Refresh exchange rate',
     selectCustomers: 'Select customers to print',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
@@ -210,8 +198,7 @@ const labels = {
     infant: 'Infant',
   },
   ja: {
-    modalTitle: 'インボイス',
-    invoiceTitle: 'INVOICE',
+    modalTitle: '領収書',
     toLabel: '宛先',
     title: '領収書',
     reservationSummary: '予約概要',
@@ -348,7 +335,7 @@ function convertToKRW(usd: number, rate: number): number {
 function billingPartyCount(reservation: ReceiptData['reservation'], pricingAdults: number | null | undefined): number {
   const paRaw = pricingAdults
   const pa =
-    paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))
+    paRaw != null && Number.isFinite(Number(paRaw))
       ? Math.max(0, Math.floor(Number(paRaw)))
       : (reservation.adults ?? 0)
   return Math.max(1, pa + (reservation.child ?? 0) + (reservation.infant ?? 0))
@@ -550,18 +537,22 @@ export default function CustomerReceiptModal({
       setLoading(true)
       try {
         const results: ReceiptData[] = []
+        type ReceiptCustomer = { name?: string; language?: string | null; email?: string | null; phone?: string | null }
+        type ReceiptProduct = {
+          name_ko?: string | null
+          name_en?: string | null
+          customer_name_ko?: string | null
+          customer_name_en?: string | null
+        }
+        type ReceiptPickupHotel = { hotel?: string | null }
+        type ReceiptChannel = { name?: string | null }
+
         for (const id of ids) {
           let rez: Record<string, unknown> | null = null
-          let customer: { name?: string; language?: string | null; email?: string | null; phone?: string | null } | null =
-            null
-          let product: {
-            name_ko?: string | null
-            name_en?: string | null
-            customer_name_ko?: string | null
-            customer_name_en?: string | null
-          } | null = null
-          let pickupHotel: { hotel?: string | null } | null = null
-          let channel: { name?: string | null } | null = null
+          let customer: ReceiptCustomer | null = null
+          let product: ReceiptProduct | null = null
+          let pickupHotel: ReceiptPickupHotel | null = null
+          let channel: ReceiptChannel | null = null
 
           try {
             const metaRes = await fetch(
@@ -571,10 +562,10 @@ export default function CustomerReceiptModal({
               const meta = (await metaRes.json()) as {
                 ok?: boolean
                 reservation?: Record<string, unknown>
-                customer?: typeof customer
-                product?: typeof product
-                pickupHotel?: typeof pickupHotel
-                channel?: typeof channel
+                customer?: ReceiptCustomer
+                product?: ReceiptProduct
+                pickupHotel?: ReceiptPickupHotel
+                channel?: ReceiptChannel
               }
               if (meta.ok && meta.reservation) {
                 rez = meta.reservation
@@ -624,10 +615,10 @@ export default function CustomerReceiptModal({
                 ? supabase.from('channels').select('name').eq('id', channelId).single()
                 : Promise.resolve({ data: null }),
             ])
-            customer = (cRes.data as typeof customer) ?? null
-            product = (pRes.data as typeof product) ?? null
-            pickupHotel = (phRes.data as typeof pickupHotel) ?? null
-            channel = (chRes.data as typeof channel) ?? null
+            customer = (cRes.data as ReceiptCustomer | null) ?? null
+            product = (pRes.data as ReceiptProduct | null) ?? null
+            pickupHotel = (phRes.data as ReceiptPickupHotel | null) ?? null
+            channel = (chRes.data as ReceiptChannel | null) ?? null
           }
           let pricingRow: Record<string, unknown> | null = null
           const pr = await supabase.from('reservation_pricing').select('*').eq('reservation_id', id).maybeSingle()
@@ -655,7 +646,7 @@ export default function CustomerReceiptModal({
             }
           }
           const pickupHotelName = pickupHotel?.hotel || ''
-          const channelName = (channel as any)?.name || ''
+          const channelName = channel?.name || ''
           // 실제 입금액 = payment_records에서 보증금 수령 + 잔금 수령 합계
           let paidAmountFromRecords: number | undefined
           const { data: paymentRecords } = await supabase
@@ -664,8 +655,8 @@ export default function CustomerReceiptModal({
             .eq('reservation_id', id)
           if (paymentRecords && paymentRecords.length > 0) {
             const { depositTotalNet, balanceReceivedTotal } = summarizePaymentRecordsForBalance(
-              paymentRecords.map((r: { payment_status?: string; amount?: number }) => ({
-                payment_status: r.payment_status || '',
+              paymentRecords.map((r) => ({
+                payment_status: r.payment_status ?? '',
                 amount: Number(r.amount) || 0,
               }))
             )
@@ -722,65 +713,60 @@ export default function CustomerReceiptModal({
               option_name: option_name || o.option_id || '',
             }
           })
-          const lang = (customer?.language || 'ko').toString().toLowerCase()
-          const isEn = lang === 'en' || lang === 'english' || lang === 'en-us'
-          const productName = isEn
-            ? (product?.customer_name_en || product?.name_en || product?.customer_name_ko || product?.name_ko || '')
-            : (product?.customer_name_ko || product?.name_ko || product?.customer_name_en || product?.name_en || '')
           results.push({
             reservation: {
-              id: (rez as any).id,
-              tour_date: (rez as any).tour_date || '',
-              tour_time: (rez as any).tour_time,
-              adults: (rez as any).adults ?? 0,
-              child: (rez as any).child ?? 0,
-              infant: (rez as any).infant ?? 0,
-              total_people: (rez as any).total_people ?? 0,
-              status: (rez as any).status,
-              created_at: (rez as any).created_at,
-              pickup_hotel: (rez as any).pickup_hotel,
+              id: String((rez as Record<string, unknown>).id ?? ''),
+              tour_date: String((rez as Record<string, unknown>).tour_date || ''),
+              tour_time: ((rez as Record<string, unknown>).tour_time ?? null) as string | null,
+              adults: Number((rez as Record<string, unknown>).adults) || 0,
+              child: Number((rez as Record<string, unknown>).child) || 0,
+              infant: Number((rez as Record<string, unknown>).infant) || 0,
+              total_people: Number((rez as Record<string, unknown>).total_people) || 0,
+              status: ((rez as Record<string, unknown>).status ?? null) as string | null,
+              created_at: ((rez as Record<string, unknown>).created_at ?? null) as string | null,
+              pickup_hotel: ((rez as Record<string, unknown>).pickup_hotel ?? null) as string | null,
             },
             customer: {
               name: customer?.name || '',
-              language: customer?.language,
-              email: (customer as any)?.email,
-              phone: (customer as any)?.phone,
+              ...(customer?.language != null ? { language: customer.language } : {}),
+              ...(customer?.email != null ? { email: customer.email } : {}),
+              ...(customer?.phone != null ? { phone: customer.phone } : {}),
             },
             product: {
-              name_ko: product?.name_ko || null,
-              name_en: product?.name_en || null,
-              customer_name_ko: (product as any)?.customer_name_ko || null,
-              customer_name_en: (product as any)?.customer_name_en || null,
+              name_ko: product?.name_ko ?? null,
+              name_en: product?.name_en ?? null,
+              customer_name_ko: product?.customer_name_ko ?? null,
+              customer_name_en: product?.customer_name_en ?? null,
             },
             pickupHotelName,
             channelName,
             reservationOptions,
             pricing: {
-              adult_product_price: toNum((pricingRow as any)?.adult_product_price),
-              child_product_price: toNum((pricingRow as any)?.child_product_price),
-              infant_product_price: toNum((pricingRow as any)?.infant_product_price),
+              adult_product_price: toNum(pricingRow?.adult_product_price),
+              child_product_price: toNum(pricingRow?.child_product_price),
+              infant_product_price: toNum(pricingRow?.infant_product_price),
               product_price_total: toNum(pricingRow?.product_price_total),
               subtotal: toNum(pricingRow?.subtotal),
               total_price: toNum(pricingRow?.total_price),
               not_included_price: toNum(pricingRow?.not_included_price),
               balance_amount: toNum(pricingRow?.balance_amount),
               deposit_amount: toNum(pricingRow?.deposit_amount),
-              paid_amount_from_records: paidAmountFromRecords,
-              coupon_discount: discountAmount((pricingRow as any)?.coupon_discount),
-              additional_discount: discountAmount((pricingRow as any)?.additional_discount),
-              option_total: toNum((pricingRow as any)?.option_total),
-              required_option_total: toNum((pricingRow as any)?.required_option_total),
-              choices_total: toNum((pricingRow as any)?.choices_total),
-              private_tour_additional_cost: toNum((pricingRow as any)?.private_tour_additional_cost),
-              additional_cost: toNum((pricingRow as any)?.additional_cost),
-              tax: toNum((pricingRow as any)?.tax),
-              card_fee: toNum((pricingRow as any)?.card_fee),
-              prepayment_cost: toNum((pricingRow as any)?.prepayment_cost),
-              prepayment_tip: toNum((pricingRow as any)?.prepayment_tip),
-              currency: (pricingRow as any)?.currency || 'USD',
+              ...(paidAmountFromRecords !== undefined ? { paid_amount_from_records: paidAmountFromRecords } : {}),
+              coupon_discount: discountAmount(pricingRow?.coupon_discount),
+              additional_discount: discountAmount(pricingRow?.additional_discount),
+              option_total: toNum(pricingRow?.option_total),
+              required_option_total: toNum(pricingRow?.required_option_total),
+              choices_total: toNum(pricingRow?.choices_total),
+              private_tour_additional_cost: toNum(pricingRow?.private_tour_additional_cost),
+              additional_cost: toNum(pricingRow?.additional_cost),
+              tax: toNum(pricingRow?.tax),
+              card_fee: toNum(pricingRow?.card_fee),
+              prepayment_cost: toNum(pricingRow?.prepayment_cost),
+              prepayment_tip: toNum(pricingRow?.prepayment_tip),
+              currency: (pricingRow?.currency as string | null | undefined) || 'USD',
               pricing_adults:
-                (pricingRow as any)?.pricing_adults != null && (pricingRow as any)?.pricing_adults !== ''
-                  ? Math.max(0, Math.floor(Number((pricingRow as any).pricing_adults)))
+                pricingRow?.pricing_adults != null && pricingRow?.pricing_adults !== ''
+                  ? Math.max(0, Math.floor(Number(pricingRow.pricing_adults)))
                   : null,
             },
           })
@@ -837,7 +823,7 @@ export default function CustomerReceiptModal({
     }
 
     const iframe = document.createElement('iframe')
-    iframe.title = 'Invoice Print'
+    iframe.title = 'Receipt Print'
     iframe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:none;overflow:hidden;'
     document.body.appendChild(iframe)
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
@@ -903,7 +889,7 @@ export default function CustomerReceiptModal({
     const bodyContent = printRoot.outerHTML
     const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:279mm;max-width:279mm;box-sizing:border-box"' : ''
     iframeDoc.write(`
-      <!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title>
+      <!DOCTYPE html><html><head><meta charset="utf-8"><title>${modalLabels.modalTitle}</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
       <style>${printStyles}</style>
       </head><body${bodyAttrs}>${bodyContent}</body></html>`)
@@ -1085,9 +1071,9 @@ export default function CustomerReceiptModal({
                       </div>
                     </div>
 
-                    {/* 인보이스 본문 제목 */}
+                    {/* 영수증 본문 제목 */}
                     <h3 className="receipt-doc-heading text-center font-bold text-gray-900 py-1.5 mb-2 border-b border-gray-100 text-base uppercase tracking-wide">
-                      {L.invoiceTitle}
+                      {L.title}
                     </h3>
 
                     <div className="receipt-to-block mb-2 text-xs border-b border-gray-100 pb-2">

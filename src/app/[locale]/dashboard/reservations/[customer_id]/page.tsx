@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, Printer } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, ExternalLink, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   choiceOptionIdsForSupabaseIn,
@@ -69,37 +69,27 @@ interface Customer {
   created_at: string
 }
 
-interface SupabaseCustomer {
-  id: string
-  name: string
-  email: string
-  phone: string | null
-  language: string | null
-  resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
-  created_at: string
-}
-
 interface SupabaseReservation {
   id: string
-  customer_id: string
-  product_id: string
-  tour_date: string
+  customer_id: string | null
+  product_id: string | null
+  tour_date: string | null
   tour_time: string | null
   pickup_hotel: string | null
   pickup_time: string | null
-  adults: number
-  child: number
-  infant: number
-  total_people: number
-  status: string
+  adults: number | null
+  child: number | null
+  infant: number | null
+  total_people: number | null
+  status: string | null
   event_note: string | null
-  created_at: string
-  tour_id?: string
-  channel_id?: string
+  created_at: string | null
+  tour_id?: string | null
+  channel_id?: string | null
 }
 
 export default function CustomerReservations() {
-  const { user, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const { simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
@@ -109,7 +99,7 @@ export default function CustomerReservations() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [, setError] = useState<string | null>(null)
 
   // 프린트 함수
   const handlePrint = (reservation: Reservation) => {
@@ -174,6 +164,7 @@ export default function CustomerReservations() {
       case 'confirmed': return t('confirmed')
       case 'completed': return t('completed')
       case 'cancelled': return t('cancelled')
+      case 'no_show': return t('no_show')
       default: return status
     }
   }
@@ -186,6 +177,7 @@ export default function CustomerReservations() {
       case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'completed': return 'bg-blue-100 text-blue-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
+      case 'no_show': return 'bg-orange-100 text-orange-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -241,13 +233,17 @@ export default function CustomerReservations() {
       if (reservationsData && reservationsData.length > 0) {
         // 각 예약에 대해 기본 정보만 조회 (간단한 카드뷰용)
         const reservationsWithBasicInfo = await Promise.all(
-          reservationsData.map(async (reservation: SupabaseReservation) => {
+          reservationsData.map(async (reservation) => {
+            const row = reservation as SupabaseReservation
             try {
+              if (!row.product_id) {
+                return { ...row, product: null, pricing: null, choices: null } as unknown as Reservation
+              }
               // 상품 기본 정보만 조회
               const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('name, customer_name_ko, customer_name_en, duration, base_price')
-                .eq('id', reservation.product_id)
+                .eq('id', row.product_id)
                 .single()
 
               if (productError) {
@@ -260,7 +256,7 @@ export default function CustomerReservations() {
                 const { data: pricingData, error: pricingError } = await supabase
                   .from('reservation_pricing')
                   .select('total_price, deposit_amount, balance_amount')
-                  .eq('reservation_id', reservation.id.toString())
+                  .eq('reservation_id', row.id.toString())
                   .single()
                 
                 if (!pricingError) {
@@ -276,12 +272,12 @@ export default function CustomerReservations() {
                 const { data: choicesData, error: choicesError } = await supabase
                   .from('reservation_choices')
                   .select('id, choice_id, option_id, quantity')
-                  .eq('reservation_id', reservation.id.toString())
+                  .eq('reservation_id', row.id.toString())
                 
                 if (!choicesError && choicesData && choicesData.length > 0) {
                   // choice와 option 정보 매핑
-                  const choiceIds = [...new Set(choicesData.map((c: { choice_id: string }) => c.choice_id))]
-                  const optionIds = [...new Set(choicesData.map((c: { option_id: string }) => c.option_id))]
+                  const choiceIds = [...new Set(choicesData.map((c) => c.choice_id).filter((id): id is string => id != null))]
+                  const optionIds = [...new Set(choicesData.map((c) => c.option_id).filter((id): id is string => id != null))]
                   const optionIdsForDb = choiceOptionIdsForSupabaseIn(optionIds)
                   const undecidedNames = undecidedOptionDisplayNames()
                   
@@ -299,12 +295,7 @@ export default function CustomerReservations() {
                       : { data: [] as { id: string; option_key?: string; option_name?: string; option_name_ko?: string }[] }
                   
                   if (choicesData2 && optionsData) {
-                    reservationChoicesInfo = choicesData.map((choice: {
-                      id: string
-                      choice_id: string
-                      option_id: string
-                      quantity: number
-                    }) => {
+                    reservationChoicesInfo = choicesData.map((choice) => {
                       const choiceInfo = choicesData2.find((c: { id: string }) => c.id === choice.choice_id)
                       const optionInfo = optionsData.find((o: { id: string }) => o.id === choice.option_id)
                       
@@ -337,7 +328,7 @@ export default function CustomerReservations() {
               }
 
               return {
-                ...reservation,
+                ...row,
                 products: productData || { 
                   name: t('noProductName'), 
                   customer_name_ko: null,
@@ -351,7 +342,7 @@ export default function CustomerReservations() {
             } catch (error) {
               console.error('상품 정보 조회 중 예외:', error)
               return {
-                ...reservation,
+                ...row,
                 products: { 
                   name: t('noProductName'), 
                   customer_name_ko: null,
@@ -495,7 +486,8 @@ export default function CustomerReservations() {
                 { value: 'pending', label: t('pending') },
                 { value: 'confirmed', label: t('confirmed') },
                 { value: 'completed', label: t('completed') },
-                { value: 'cancelled', label: t('cancelled') }
+                { value: 'cancelled', label: t('cancelled') },
+                { value: 'no_show', label: t('no_show') }
               ].map((option) => (
                 <button
                   key={option.value}

@@ -105,7 +105,6 @@ import {
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import GuideAssignmentEmailModal from '@/components/GuideAssignmentEmailModal'
 import {
   buildToursAssignmentBaseline,
@@ -124,6 +123,18 @@ const ScheduleTicketBookingForm = dynamic(() => import('@/components/booking/Tic
   ssr: false,
   loading: () => null,
 })
+
+const TourDetailModalContent = dynamic(
+  () => import('@/components/tour/TourDetailModalContent').then((mod) => mod.TourDetailModalContent),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[320px] items-center justify-center text-sm text-gray-500">
+        투어 상세 불러오는 중…
+      </div>
+    ),
+  }
+)
 
 const SCHEDULE_VEHICLE_EDIT_SELECT = `
   id,
@@ -253,6 +264,18 @@ function resolveScheduleMemberDisplayForBookingTooltip(
   return (typeof nick === 'string' && nick.trim() ? nick.trim() : '') || m.name_ko || m.email || '—'
 }
 
+/** 배차 일별 합계·불일치: 취소·삭제·배정 인원 0인 투어 제외 */
+function isTourCountedForVehicleScheduleDay(
+  tour: Tour,
+  dateString: string,
+  reservations: Reservation[],
+  tourCoversScheduleDate: (tour: Tour, dateString: string) => boolean,
+): boolean {
+  if (!isTourStatusForVehicleScheduleDayCount(tour.tour_status)) return false
+  if (!tourCoversScheduleDate(tour, dateString)) return false
+  return computeTourAssignedPeopleForScheduleTooltip(tour, reservations) > 0
+}
+
 /** 가이드 스케줄 용량과 동일: 해당 투어에 배정된 예약(확정·모집) total_people 합 */
 function computeTourAssignedPeopleForScheduleTooltip(tour: Tour, reservations: Reservation[]): number {
   const tourDate = (tour.tour_date || '').toString().trim().substring(0, 10)
@@ -359,6 +382,69 @@ function formatProductScheduleCellPeopleWithPrivateSplit(
   if (waiting > 0) out += ` +${waiting}`
   if (canceled > 0) out += ` (${canceled})`
   return out
+}
+
+type ScheduleDailyBreakdownSlice = {
+  koPeople?: number
+  enPeople?: number
+  koWaitingPeople?: number
+  enWaitingPeople?: number
+  choiceCounts?: Record<string, number>
+}
+
+function aggregateScheduleBreakdownFromDailyData(
+  dailyData: Record<string, ScheduleDailyBreakdownSlice | undefined>,
+  dateStrings: string[],
+) {
+  let ko = 0
+  let en = 0
+  const choiceCounts: Record<string, number> = {}
+  for (const dateString of dateStrings) {
+    const dd = dailyData[dateString]
+    if (!dd) continue
+    ko += (dd.koPeople || 0) + (dd.koWaitingPeople || 0)
+    en += (dd.enPeople || 0) + (dd.enWaitingPeople || 0)
+    if (dd.choiceCounts) {
+      for (const [k, v] of Object.entries(dd.choiceCounts)) {
+        if (v > 0) choiceCounts[k] = (choiceCounts[k] || 0) + v
+      }
+    }
+  }
+  return { ko, en, choiceCounts }
+}
+
+function ScheduleTotalColumnWithTooltip({
+  total,
+  valueClassName,
+  breakdown,
+}: {
+  total: number
+  valueClassName: string
+  breakdown: { ko: number; en: number; choiceCounts: Record<string, number> }
+}) {
+  const x = breakdown.choiceCounts.X || 0
+  const l = breakdown.choiceCounts.L || 0
+  return (
+    <div className="group relative overflow-visible cursor-default">
+      <div className={valueClassName}>{total}</div>
+      <div className="absolute z-[1020] right-0 top-full mt-1 min-w-[200px] w-max max-w-[min(90vw,320px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left opacity-0 transition-none group-hover:opacity-100">
+        <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
+            <span>한국인 {breakdown.ko}명</span>
+          </span>
+          <span className="text-gray-400 shrink-0">/</span>
+          <span className="inline-flex items-center gap-1 shrink-0">
+            <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
+            <span>미국인 {breakdown.en}명</span>
+          </span>
+        </div>
+        <div className="whitespace-nowrap break-keep leading-tight">
+          엑스 {x}명 / 로어 {l}명
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function scheduleReservationPrivateBucket(res: Reservation, dayTours: Tour[]): 'private' | 'companion' {
@@ -1903,6 +1989,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     () => monthDays.filter((d) => !d.isEdgePadding),
     [monthDays]
   )
+  const monthDaysCoreDateStrings = useMemo(
+    () => monthDaysCore.map((d) => d.dateString),
+    [monthDaysCore]
+  )
 
   /** 그리드 마지막 컬럼 날짜(익월 1일 패딩). 달력 월 말일만 기준으로 멀티데이를 자르면 말일 시작 1박2일이 하루로 잘림 */
   const scheduleGridLastDay = useMemo(
@@ -2605,7 +2695,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   )
 
   /** 상품별 인원 모달에서 상태만 빠르게 변경 */
-  const productCellQuickStatusValues = ['inquiry', 'pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
+  const productCellQuickStatusValues = ['inquiry', 'pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'no_show', 'deleted'] as const
   const [productCellStatusSavingId, setProductCellStatusSavingId] = useState<string | null>(null)
   const [productCellCreateTourLoading, setProductCellCreateTourLoading] = useState(false)
   const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
@@ -4935,6 +5025,22 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return dailyTotals
   }, [productScheduleData, monthDays])
 
+  const productScheduleGrandBreakdown = useMemo(() => {
+    const result = { ko: 0, en: 0, choiceCounts: {} as Record<string, number> }
+    for (const product of Object.values(productScheduleData)) {
+      const breakdown = aggregateScheduleBreakdownFromDailyData(
+        product.dailyData,
+        monthDaysCoreDateStrings,
+      )
+      result.ko += breakdown.ko
+      result.en += breakdown.en
+      for (const [k, v] of Object.entries(breakdown.choiceCounts)) {
+        result.choiceCounts[k] = (result.choiceCounts[k] || 0) + v
+      }
+    }
+    return result
+  }, [productScheduleData, monthDaysCoreDateStrings])
+
   const scheduleMonthKey = useMemo(
     () => `${currentDate.getFullYear()}-${currentDate.getMonth()}`,
     [currentDate]
@@ -5044,16 +5150,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const vehicleMismatch: Array<{ dateString: string; tourCount: number; vehicleCount: number }> = []
     for (let d = 0; d < 7; d++) {
       const dateString = today.add(d, 'day').format('YYYY-MM-DD')
-      const tourCount = wt.filter(
-        (t) =>
-          isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
-          tourCoversScheduleDate(t, dateString),
+      const tourCount = wt.filter((t) =>
+        isTourCountedForVehicleScheduleDay(t, dateString, resList, tourCoversScheduleDate),
       ).length
       const vehicleCount = wt.filter(
         (t) =>
-          isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
-          Boolean(t.tour_car_id && String(t.tour_car_id).trim()) &&
-          tourCoversScheduleDate(t, dateString),
+          isTourCountedForVehicleScheduleDay(t, dateString, resList, tourCoversScheduleDate) &&
+          Boolean(t.tour_car_id && String(t.tour_car_id).trim()),
       ).length
       if (tourCount !== vehicleCount) {
         vehicleMismatch.push({ dateString, tourCount, vehicleCount })
@@ -5840,10 +5943,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = tours.filter(
           (t) =>
-            isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
+            isTourCountedForVehicleScheduleDay(t, dateString, reservations, tourCoversScheduleDate) &&
             t.tour_car_id &&
-            String(t.tour_car_id).trim() === id &&
-            tourCoversScheduleDate(t, dateString),
+            String(t.tour_car_id).trim() === id,
         )
         const guideNames = [...new Set(dayTours.map(t => {
           const guide = teamMembers.find(m => m.email === t.tour_guide_id)
@@ -5889,6 +5991,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     monthVehiclesWithColors.vehicleList,
     monthDays,
     tours,
+    reservations,
     teamMembers,
     productColors,
     products,
@@ -6028,16 +6131,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return totals
   }, [vehicleScheduleData, monthDays])
 
-  // 날짜별 투어 갯수: 해당일이 진행일인 scheduled·모집중·확정 투어 전체 (차량 미배정 포함). 멀티데이는 진행일마다 1건
+  // 날짜별 투어 갯수: 해당일이 진행일인 scheduled·모집중·확정 투어 (배정 인원 0·취소·삭제 제외). 멀티데이는 진행일마다 1건
   const tourCountPerDate = useMemo(() => {
     const counts: Record<string, number> = {}
     monthDays.forEach(({ dateString }) => {
-      counts[dateString] = tours.filter(
-        (t) => isTourStatusForVehicleScheduleDayCount(t.tour_status) && tourCoversScheduleDate(t, dateString),
+      counts[dateString] = tours.filter((t) =>
+        isTourCountedForVehicleScheduleDay(t, dateString, reservations, tourCoversScheduleDate),
       ).length
     })
     return counts
-  }, [tours, monthDays, tourCoversScheduleDate])
+  }, [tours, monthDays, tourCoversScheduleDate, reservations])
 
   const scheduleHealthFabEl = (() => {
     if (!scheduleHealthFabHydrated || !scheduleHealthFabPos || scheduleHealthModalOpen) return null
@@ -6726,26 +6829,33 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       )
                     })}
                 <td className="px-2 py-0.5 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <div className={(() => {
-                    const rowWaiting = monthDaysCore.reduce(
-                      (s, d) => s + (product.dailyData[d.dateString]?.waitingPeople ?? 0),
-                      0
-                    )
-                    const rowOverflow = monthDaysCore.some((d) => {
-                      const br = product.dailyData[d.dateString]?.tourCapacityBreakdown
-                      return br != null && br.totalAssigned > br.totalMax
-                    })
-                    const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
-                    if (rowOverflow) return 'font-bold text-red-600'
-                    if (onlyWaitingTotal) return 'font-medium text-blue-600'
-                    return `font-medium ${
-                      product.totalPeople === 0
-                        ? 'text-gray-300'
-                        : product.totalPeople < 4
-                          ? 'text-blue-600'
-                          : 'text-gray-900'
-                    }`
-                  })()}>{product.totalPeople}</div>
+                  <ScheduleTotalColumnWithTooltip
+                    total={product.totalPeople}
+                    breakdown={aggregateScheduleBreakdownFromDailyData(
+                      product.dailyData,
+                      monthDaysCoreDateStrings,
+                    )}
+                    valueClassName={(() => {
+                      const rowWaiting = monthDaysCore.reduce(
+                        (s, d) => s + (product.dailyData[d.dateString]?.waitingPeople ?? 0),
+                        0
+                      )
+                      const rowOverflow = monthDaysCore.some((d) => {
+                        const br = product.dailyData[d.dateString]?.tourCapacityBreakdown
+                        return br != null && br.totalAssigned > br.totalMax
+                      })
+                      const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
+                      if (rowOverflow) return 'font-bold text-red-600'
+                      if (onlyWaitingTotal) return 'font-medium text-blue-600'
+                      return `font-medium ${
+                        product.totalPeople === 0
+                          ? 'text-gray-300'
+                          : product.totalPeople < 4
+                            ? 'text-blue-600'
+                            : 'text-gray-900'
+                      }`
+                    })()}
+                  />
                 </td>
                   </tr>
                 )
@@ -6792,7 +6902,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   )
                 })}
                 <td className="px-2 py-0.5 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <div>{Object.values(productScheduleData).reduce((sum, product) => sum + product.totalPeople, 0)}</div>
+                  <ScheduleTotalColumnWithTooltip
+                    total={Object.values(productScheduleData).reduce(
+                      (sum, product) => sum + product.totalPeople,
+                      0,
+                    )}
+                    breakdown={productScheduleGrandBreakdown}
+                    valueClassName="font-medium text-gray-900"
+                  />
                 </td>
               </tr>
             </tbody>

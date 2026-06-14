@@ -1,5 +1,4 @@
 import { X } from 'lucide-react'
-// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 
 interface PickupTimeModalProps {
@@ -9,6 +8,9 @@ interface PickupTimeModalProps {
     customer_id: string | null
     pickup_time: string | null
     pickup_hotel: string | null
+    adults?: number | null
+    child?: number | null
+    infant?: number | null
   }
   pickupTimeValue: string
   onTimeChange: (time: string) => void

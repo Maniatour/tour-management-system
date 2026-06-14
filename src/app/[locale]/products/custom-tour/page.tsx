@@ -1,19 +1,19 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { useLocale } from 'next-intl'
-import { Calculator, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, FileText, MapPin, User, Mail, Phone, Star } from 'lucide-react'
+import { Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, FileText, MapPin, User, Star } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 import EstimateModal from '@/components/tour-cost-calculator/EstimateModal'
-import VehicleSettingsModal from '@/components/tour-cost-calculator/VehicleSettingsModal'
 import DaySelectModal from '@/components/tour-cost-calculator/DaySelectModal'
 import EntranceFeeDetailModal from '@/components/tour-cost-calculator/EntranceFeeDetailModal'
 import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
 import { markdownToHtml } from '@/components/LightRichEditor'
 
 type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
+  is_favorite?: boolean | null
   price_type?: string | null
   price_minivan?: number | null
   price_9seater?: number | null
@@ -49,15 +49,12 @@ export default function CustomTourPage() {
   const [participantCount, setParticipantCount] = useState<number>(1)
   const [vehicleType, setVehicleType] = useState<'minivan' | '9seater' | '13seater'>('minivan')
   const [vehicleSettings, setVehicleSettings] = useState<VehicleRentalSetting[]>([])
-  const [showVehicleSettingsModal, setShowVehicleSettingsModal] = useState(false)
-  const [gasPrice, setGasPrice] = useState<number>(4.00)
+  const [gasPrice] = useState<number>(4.00)
   const [mileage, setMileage] = useState<number | null>(null)
   const [travelTime, setTravelTime] = useState<number | null>(null)
   const [guideHourlyRate] = useState<number>(50) // 기본 가이드 시급 $50/시간
-  const [guideFee] = useState<number | null>(null) // 자동 계산만 사용
-  const [marginType, setMarginType] = useState<MarginType>('default')
+  const [marginType] = useState<MarginType>('default')
   const [courseSearchTerm, setCourseSearchTerm] = useState<string>('')
-  const [expandedCourseNodes, setExpandedCourseNodes] = useState<Set<string>>(new Set())
   
   type CourseScheduleItem = {
     id: string
@@ -68,7 +65,7 @@ export default function CustomTourPage() {
 
   const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<CourseScheduleItem[]>([])
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false)
-  const [travelTimes, setTravelTimes] = useState<number[]>([])
+  const [, setTravelTimes] = useState<number[]>([])
   const [map, setMap] = useState<any>(null)
   const [directionsRenderer, setDirectionsRenderer] = useState<any>(null)
   const mapRef = useRef<HTMLDivElement>(null)
@@ -344,65 +341,6 @@ export default function CustomTourPage() {
     } catch (error) {
       console.error('차량 설정 로드 오류:', error)
     }
-  }
-
-  // 계층적 구조 빌드
-  const buildHierarchy = (courses: TourCourse[]): TourCourse[] => {
-    const courseMap = new Map<string, TourCourse>()
-    const rootCourses: TourCourse[] = []
-
-    courses.forEach(course => {
-      courseMap.set(course.id, { ...course, children: [] })
-    })
-
-    courses.forEach(course => {
-      const courseWithChildren = courseMap.get(course.id)!
-      if (course.parent_id) {
-        const parent = courseMap.get(course.parent_id)
-        if (parent) {
-          parent.children!.push(courseWithChildren)
-          courseWithChildren.parent = parent
-        }
-      } else {
-        rootCourses.push(courseWithChildren)
-      }
-    })
-
-    const calculateLevels = (course: TourCourse, level: number = 0) => {
-      course.level = level
-      if (course.children) {
-        course.children.forEach((child: TourCourse) => calculateLevels(child, level + 1))
-      }
-    }
-
-    rootCourses.forEach(course => calculateLevels(course, 0))
-    return rootCourses
-  }
-
-  const filteredTourCoursesFlat = useMemo(() => {
-    if (!courseSearchTerm) return tourCourses
-    
-    const searchLower = courseSearchTerm.toLowerCase()
-    return tourCourses.filter(course => 
-      course.name_ko?.toLowerCase().includes(searchLower) ||
-      course.name_en?.toLowerCase().includes(searchLower) ||
-      course.location?.toLowerCase().includes(searchLower)
-    )
-  }, [tourCourses, courseSearchTerm])
-
-  const hierarchicalCourses = useMemo(() => {
-    const coursesToUse = courseSearchTerm ? filteredTourCoursesFlat : tourCourses
-    return buildHierarchy(coursesToUse)
-  }, [tourCourses, filteredTourCoursesFlat, courseSearchTerm])
-
-  const toggleCourseNode = (nodeId: string) => {
-    const newExpanded = new Set(expandedCourseNodes)
-    if (newExpanded.has(nodeId)) {
-      newExpanded.delete(nodeId)
-    } else {
-      newExpanded.add(nodeId)
-    }
-    setExpandedCourseNodes(newExpanded)
   }
 
   // 일정 일수 계산
@@ -719,7 +657,7 @@ export default function CustomTourPage() {
       }
 
       directionsService.route(request, (result: any, status: any) => {
-        if (status === window.google.maps.DirectionsStatus.OK && directionsRenderer) {
+        if (status === (window.google.maps as any).DirectionsStatus.OK && directionsRenderer) {
           directionsRenderer.setDirections(result)
           
           const route = result.routes[0]
@@ -754,15 +692,15 @@ export default function CustomTourPage() {
                       text: String(index + 1),
                       color: 'white',
                       fontWeight: 'bold'
-                    },
+                    } as any,
                     icon: {
-                      path: window.google.maps.SymbolPath.CIRCLE,
+                      path: (window.google.maps as any).SymbolPath.CIRCLE,
                       scale: 8,
                       fillColor: '#3B82F6',
                       fillOpacity: 1,
-                      strokeColor: 'white',
-                      strokeWeight: 2
-                    }
+                      strokeWeight: 2,
+                      strokeColor: '#ffffff',
+                    } as any,
                   })
                   markersRef.current.push(marker)
                 }
@@ -859,8 +797,8 @@ export default function CustomTourPage() {
                         break
                       }
                       
-                      const parentId = current.parent_id
-                      const parent = tourCourses.find((c: TourCourse) => c.id === parentId)
+                      const parentId: string = current.parent_id
+                      const parent: TourCourse | undefined = tourCourses.find((c: TourCourse) => c.id === parentId)
                       if (parent) {
                         current = parent
                       } else {
@@ -1192,10 +1130,13 @@ export default function CustomTourPage() {
                           
                           return (
                             <Draggable key={item.id} draggableId={item.id} index={index}>
-                              {(provided, snapshot) => (
+                              {(provided, snapshot) => {
+                                const { style: dragStyle, ...dragProps } = provided.draggableProps
+                                return (
                                 <div
                                   ref={provided.innerRef}
-                                  {...provided.draggableProps}
+                                  {...dragProps}
+                                  style={dragStyle as CSSProperties}
                                   className={`bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 ${
                                     snapshot.isDragging ? 'shadow-lg' : ''
                                   }`}
@@ -1257,7 +1198,7 @@ export default function CustomTourPage() {
                                     </button>
                                   </div>
                                 </div>
-                              )}
+                              )}}
                             </Draggable>
                           )
                         })}
@@ -1401,8 +1342,8 @@ export default function CustomTourPage() {
                             break
                           }
                           
-                          const parentId = current.parent_id
-                          const parent = tourCourses.find((c: TourCourse) => c.id === parentId)
+                          const parentId: string = current.parent_id
+                          const parent: TourCourse | undefined = tourCourses.find((c: TourCourse) => c.id === parentId)
                           if (parent) {
                             current = parent
                           } else {

@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useRef, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import { Database } from '@/lib/database.types'
 import { 
@@ -11,11 +10,6 @@ import {
   Volume2, 
   Video, 
   Image, 
-  MapPin, 
-  Tag, 
-  Globe,
-  Clock,
-  AlertCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -29,7 +23,6 @@ interface UploadModalProps {
 }
 
 export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
-  const t = useTranslations('admin')
   const supabase = createClientSupabase()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -256,7 +249,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
   }
 
   // 모달이 열릴 때 데이터 로드
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       loadData()
     }

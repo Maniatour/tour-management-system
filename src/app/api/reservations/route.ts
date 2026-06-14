@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin, createSupabaseClientWithToken } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { fetchReservationOptionsLegacyByReservationIds } from '@/lib/fetchReservationOptionsLegacy'
@@ -12,6 +13,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       product_id,
+      channel_id,
       customer_name,
       customer_email,
       customer_phone,
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest) {
     } = body
 
     // 필수 필드 검증
-    if (!product_id || !customer_name || !customer_email || !customer_phone || !tour_date || !adults || !total_price) {
+    if (!product_id || !channel_id || !customer_name || !customer_email || !customer_phone || !tour_date || !adults || !total_price) {
       return NextResponse.json({ 
         error: '필수 필드가 누락되었습니다' 
       }, { status: 400 })
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
     const reservationData = {
       id: reservationId,
       product_id,
+      channel_id,
       customer_name,
       customer_email,
       customer_phone,
@@ -79,7 +82,7 @@ export async function POST(request: NextRequest) {
     // 예약 생성
     const { data: newReservation, error } = await supabase
       .from('reservations')
-      .insert(reservationData)
+      .insert(reservationData as never)
       .select('*')
       .single()
 
@@ -101,7 +104,7 @@ export async function POST(request: NextRequest) {
 
       const { error: optionsError } = await supabase
         .from('reservation_options')
-        .insert(reservationOptions)
+        .insert(reservationOptions as never)
 
       if (optionsError) {
         console.error('예약 옵션 저장 오류:', optionsError)
@@ -153,9 +156,7 @@ export async function GET(request: NextRequest) {
 
     const userSb = createSupabaseClientWithToken(token)
 
-    let query = userSb
-      .from('reservations')
-      .select(`
+    let query = fromUntypedTable(userSb, 'reservations').select(`
         *,
         product:products(
           id,
@@ -219,8 +220,7 @@ export async function GET(request: NextRequest) {
     })
 
     // 총 개수 조회
-    let countQuery = userSb
-      .from('reservations')
+    let countQuery = fromUntypedTable(userSb, 'reservations')
       .select('*', { count: 'exact', head: true })
 
     if (customerEmail) {

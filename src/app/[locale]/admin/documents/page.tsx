@@ -36,7 +36,7 @@ interface DocumentCategory {
   updated_at: string
 }
 
-interface Document {
+interface AdminDocument {
   id: string
   title: string
   description?: string
@@ -84,7 +84,7 @@ export default function DocumentManagementPage() {
   const { user } = useAuth()
   
   // 상태 관리
-  const [documents, setDocuments] = useState<Document[]>([])
+  const [documents, setDocuments] = useState<AdminDocument[]>([])
   const [categories, setCategories] = useState<DocumentCategory[]>([])
   const [stats, setStats] = useState<DocumentStats>({
     total: 0,
@@ -107,7 +107,7 @@ export default function DocumentManagementPage() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showReminderDashboard, setShowReminderDashboard] = useState(false)
-  const [editingDocument, setEditingDocument] = useState<Document | null>(null)
+  const [editingDocument, setEditingDocument] = useState<AdminDocument | null>(null)
   const [editingCategory, setEditingCategory] = useState<DocumentCategory | null>(null)
 
   const loadDocuments = useCallback(async () => {
@@ -123,8 +123,8 @@ export default function DocumentManagementPage() {
 
       if (error) throw error
 
-      setDocuments(data || [])
-      calculateStats(data || [])
+      setDocuments((data || []) as unknown as AdminDocument[])
+      calculateStats((data || []) as unknown as AdminDocument[])
     } catch (error) {
       console.error('문서 로드 오류:', error)
       toast.error('문서를 불러오는 중 오류가 발생했습니다.')
@@ -142,13 +142,13 @@ export default function DocumentManagementPage() {
         .order('sort_order')
 
       if (error) throw error
-      setCategories(data || [])
+      setCategories((data || []) as unknown as DocumentCategory[])
     } catch (error) {
       console.error('카테고리 로드 오류:', error)
     }
   }, [])
 
-  const calculateStats = (docs: Document[]) => {
+  const calculateStats = (docs: AdminDocument[]) => {
     const now = new Date()
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
     
@@ -265,32 +265,30 @@ export default function DocumentManagementPage() {
   }
 
   // 문서 다운로드
-  const handleDownloadDocument = async (document: Document) => {
+  const handleDownloadDocument = async (doc: AdminDocument) => {
     try {
       const { data, error } = await supabase.storage
         .from('document-files')
-        .download(document.file_path)
+        .download(doc.file_path)
 
       if (error) throw error
 
-      // 다운로드 로그 기록
       await supabase
         .from('document_download_logs')
         .insert({
-          document_id: document.id,
-          user_id: user?.id,
-          ip_address: null, // 클라이언트에서는 IP 주소를 가져올 수 없음
+          document_id: doc.id,
+          user_id: user?.id ?? null,
+          ip_address: null,
           user_agent: navigator.userAgent
-        })
+        } as never)
 
-      // 파일 다운로드
       const url = URL.createObjectURL(data)
-      const a = document.createElement('a')
+      const a = window.document.createElement('a')
       a.href = url
-      a.download = document.file_name
-      document.body.appendChild(a)
+      a.download = doc.file_name
+      window.document.body.appendChild(a)
       a.click()
-      document.body.removeChild(a)
+      window.document.body.removeChild(a)
       URL.revokeObjectURL(url)
 
       toast.success('문서가 다운로드되었습니다.')

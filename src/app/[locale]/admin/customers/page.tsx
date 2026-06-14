@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
@@ -31,8 +32,6 @@ import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { filterRowsByArchiveSearchTier } from '@/lib/customerArchiveSearchFilter'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
-import ReservationForm from '@/components/reservation/ReservationForm'
-import InvoiceModal from '@/components/customer/InvoiceModal'
 import type { 
   Customer as ReservationCustomer, 
   Product, 
@@ -42,6 +41,9 @@ import type {
   PickupHotel, 
   Reservation 
 } from '@/types/reservation'
+
+const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), { ssr: false, loading: () => null })
+const InvoiceModal = dynamic(() => import('@/components/customer/InvoiceModal'), { ssr: false, loading: () => null })
 
 // 실제 데이터베이스 스키마에 맞는 Customer 타입 정의
 type Customer = {
@@ -510,7 +512,7 @@ export default function AdminCustomers() {
   // 고객별 예약 정보 — 화면에 로드된 고객 ID에 한해 조회(전 테이블 스캔·Supabase 부하 방지)
   const fetchReservationInfo = useCallback(async () => {
     try {
-      const customerIds = customers.map((c) => c.id).filter(Boolean)
+      const customerIds = (customers ?? []).map((c) => c.id).filter(Boolean)
       if (customerIds.length === 0) {
         setReservationInfo({})
         return

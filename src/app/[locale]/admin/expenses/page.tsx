@@ -10,12 +10,13 @@ import AllTourExpensesManager from '@/components/AllTourExpensesManager'
 import CashManagement from '@/components/CashManagement'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PaymentRecordsHistoryTab from '@/components/expenses/PaymentRecordsHistoryTab'
+import ReservationOptionsHistoryTab from '@/components/expenses/ReservationOptionsHistoryTab'
 import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
 import DeletedUnifiedExpensesModal from '@/components/reconciliation/DeletedUnifiedExpensesModal'
 import { useAuth } from '@/contexts/AuthContext'
-import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle, Archive } from 'lucide-react'
+import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle, Archive, Package } from 'lucide-react'
 
-type ExpenseTab = 'payments' | 'reservation' | 'company' | 'tour' | 'cash'
+type ExpenseTab = 'payments' | 'reservation' | 'options' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
   const t = useTranslations('expenses')
@@ -36,7 +37,7 @@ export default function ExpensesManagementPage() {
   }, [])
 
   useEffect(() => {
-    if (tabFromUrl && ['payments', 'reservation', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['payments', 'reservation', 'options', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl)
     }
   }, [tabFromUrl])
@@ -69,6 +70,12 @@ export default function ExpensesManagementPage() {
       label: t('tabReservation'),
       icon: Calendar,
       description: t('tabReservationDesc')
+    },
+    {
+      id: 'options' as ExpenseTab,
+      label: t('tabOptions'),
+      icon: Package,
+      description: t('tabOptionsDesc')
     },
     {
       id: 'company' as ExpenseTab,
@@ -189,6 +196,16 @@ export default function ExpensesManagementPage() {
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionReservationDesc')}</p>
             </div>
             <ReservationExpenseTabPanel />
+          </div>
+        )}
+
+        {activeTab === 'options' && (
+          <div className="p-3 sm:p-4 lg:p-6">
+            <div className="mb-3 sm:mb-4">
+              <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionOptionsTitle')}</h2>
+              <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionOptionsDesc')}</p>
+            </div>
+            <ReservationOptionsHistoryTab />
           </div>
         )}
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     // Update products with English names
     const updates = [
@@ -61,13 +61,14 @@ export async function POST(request: NextRequest) {
         .from('products')
         .update({ name_en: update.name_en })
         .like('name', update.pattern)
-        .is('name_en', null);
+        .is('name_en', null)
+        .select('id');
       
       if (error) {
         console.error(`Error updating products with pattern ${update.pattern}:`, error);
       } else {
-        updatedCount += data?.length || 0;
-        console.log(`Updated ${data?.length || 0} products with pattern ${update.pattern}`);
+        updatedCount += data?.length ?? 0;
+        console.log(`Updated ${data?.length ?? 0} products with pattern ${update.pattern}`);
       }
     }
 

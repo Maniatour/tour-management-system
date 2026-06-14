@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Copy, Download, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -22,6 +22,25 @@ interface ChoiceGroup {
   name_ko?: string
   description?: string
   choices: Choice[]
+}
+
+type ProductChoices = {
+  required?: Array<{
+    id: string
+    name: string
+    name_ko?: string
+    description?: string
+    options?: Array<{
+      id: string
+      name: string
+      name_ko?: string
+      description?: string
+      adult_price?: number
+      child_price?: number
+      infant_price?: number
+      is_default?: boolean
+    }>
+  }>
 }
 
 interface ChoicesTabProps {
@@ -52,7 +71,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .order('name', { ascending: true })
 
       if (error) throw error
-      setProducts(data || [])
+      setProducts((data || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(p.name_ko != null ? { name_ko: p.name_ko } : {}),
+      })))
     } catch (error) {
       console.error('상품 목록 로드 오류:', error)
     }
@@ -69,18 +92,20 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       if (error) throw error
 
-      if (product?.choices?.required) {
+      const choices = product?.choices as ProductChoices | null
+
+      if (choices?.required) {
         // choices.required를 그룹으로 변환
-        const groups: ChoiceGroup[] = product.choices.required.map((group: { id: string; name: string; name_ko?: string; description?: string; options?: Array<{ id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }> }) => ({
+        const groups: ChoiceGroup[] = choices.required.map((group) => ({
           id: group.id,
           name: group.name,
-          name_ko: group.name_ko,
-          description: group.description,
-          choices: group.options?.map((option: { id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }) => ({
+          ...(group.name_ko != null ? { name_ko: group.name_ko } : {}),
+          ...(group.description != null ? { description: group.description } : {}),
+          choices: group.options?.map((option) => ({
             id: option.id,
             name: option.name,
-            name_ko: option.name_ko,
-            description: option.description,
+            ...(option.name_ko != null ? { name_ko: option.name_ko } : {}),
+            ...(option.description != null ? { description: option.description } : {}),
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
@@ -208,17 +233,19 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       if (error) throw error
 
-      if (product?.choices?.required) {
-        const groups: ChoiceGroup[] = product.choices.required.map((group: { id: string; name: string; name_ko?: string; description?: string; options?: Array<{ id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }> }) => ({
+      const importedChoices = product?.choices as ProductChoices | null
+
+      if (importedChoices?.required) {
+        const groups: ChoiceGroup[] = importedChoices.required.map((group) => ({
           id: `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: group.name,
-          name_ko: group.name_ko,
-          description: group.description,
-          choices: group.options?.map((option: { id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }) => ({
+          ...(group.name_ko != null ? { name_ko: group.name_ko } : {}),
+          ...(group.description != null ? { description: group.description } : {}),
+          choices: group.options?.map((option) => ({
             id: `choice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: option.name,
-            name_ko: option.name_ko,
-            description: option.description,
+            ...(option.name_ko != null ? { name_ko: option.name_ko } : {}),
+            ...(option.description != null ? { description: option.description } : {}),
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,

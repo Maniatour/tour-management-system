@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
-import { AlertTriangle, CheckCircle, RefreshCw, Download, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle, RefreshCw, Upload } from 'lucide-react'
 
 type Reservation = Database['public']['Tables']['reservations']['Row']
 type ProductOption = Database['public']['Tables']['product_options']['Row']
@@ -20,7 +20,7 @@ interface MappingRule {
 }
 
 export default function ProductIdMappingTool({ onDataUpdated }: ProductIdMappingToolProps) {
-  const [mappingRules, setMappingRules] = useState<MappingRule[]>([
+  const [mappingRules] = useState<MappingRule[]>([
     {
       oldProductId: 'MDGCSUNRISE_X',
       newProductId: 'MDGCSUNRISE',
@@ -81,11 +81,11 @@ export default function ProductIdMappingTool({ onDataUpdated }: ProductIdMapping
       setLoading(true)
       
       // 마이그레이션 함수 실행
-      const { data, error } = await supabase.rpc('migrate_product_ids_simple')
+      const { data, error } = await supabase.rpc('migrate_product_ids_simple' as never)
       
       if (error) throw error
       
-      setMigrationResults(data || [])
+      setMigrationResults(Array.isArray(data) ? data : [])
       setPreviewMode(false)
       
       // 데이터 새로고침
@@ -112,10 +112,6 @@ export default function ProductIdMappingTool({ onDataUpdated }: ProductIdMapping
     const optionId = getOptionId(optionName)
     if (!optionId || !reservation.selected_options) return false
     return reservation.selected_options.hasOwnProperty(optionId)
-  }
-
-  const getReservationsByProduct = (productId: string) => {
-    return affectedReservations.filter(r => r.product_id === productId)
   }
 
   return (

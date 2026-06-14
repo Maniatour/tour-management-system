@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Users, Package, Link, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
@@ -157,8 +157,10 @@ export default function ReservationReportTab({
       // 예약별 지출 합계를 Map으로 미리 계산
       const expensesByReservation = new Map<string, number>()
       allExpenses.forEach(e => {
-        const current = expensesByReservation.get(e.reservation_id) || 0
-        expensesByReservation.set(e.reservation_id, current + (e.amount || 0))
+        const current = expensesByReservation.get(e.reservation_id ?? '') || 0
+        if (e.reservation_id) {
+          expensesByReservation.set(e.reservation_id, current + (e.amount || 0))
+        }
       })
 
       // 채널/상품/고객 조회를 Map으로 최적화

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import CategoryMappingExpenseDetailDialog, {
   type CategoryMappingSourceTable,
 } from '@/components/expenses/CategoryMappingExpenseDetailDialog'
@@ -244,7 +245,20 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
           .order('display_order')
         
         if (!error) {
-          categories = data || []
+          categories = (data || []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            name_ko: row.name_ko,
+            description: row.description,
+            tax_deductible: row.tax_deductible ?? false,
+            display_order: row.display_order ?? 0,
+            is_active: row.is_active ?? true,
+            ...(row.parent_id != null ? { parent_id: row.parent_id } : {}),
+            ...(row.irs_schedule_c_line != null ? { irs_schedule_c_line: row.irs_schedule_c_line } : {}),
+            ...(row.deduction_limit_percent != null
+              ? { deduction_limit_percent: row.deduction_limit_percent }
+              : {}),
+          }))
         }
       } catch (e) {
         console.warn('표준 카테고리 테이블이 없습니다. 마이그레이션을 실행하세요.')
@@ -260,7 +274,10 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
           .order('original_value')
         
         if (!error) {
-          mappingsData = data || []
+          mappingsData = (data || []).map((row) => ({
+            ...row,
+            match_count: row.match_count ?? 0,
+          }))
         }
       } catch (e) {
         console.warn('매핑 테이블이 없습니다. 마이그레이션을 실행하세요.')
@@ -324,8 +341,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
 
     while (hasMore) {
       batchCount++
-      const { data, error } = await supabase
-        .from(tableName)
+      const { data, error } = await fromUntypedTable(supabase, tableName)
         .select(selectFields)
         .range(from, from + batchSize - 1)
 
@@ -455,35 +471,6 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   }
 
-  const handleMapCategory = async (originalValue: string, sourceTable: string, categoryId: string) => {
-    if (standardCategories.length === 0) {
-      alert('표준 카테고리 테이블이 없습니다. 마이그레이션을 먼저 실행하세요.')
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('expense_category_mappings')
-        .upsert({
-          original_value: originalValue,
-          source_table: sourceTable,
-          standard_category_id: categoryId || null,
-          match_count: 1,
-          last_matched_at: new Date().toISOString()
-        }, {
-          onConflict: 'original_value,source_table'
-        })
-
-      if (error) throw error
-
-      // 데이터 다시 로드
-      await loadData()
-    } catch (error) {
-      console.error('매핑 저장 오류:', error)
-      alert('매핑 저장 중 오류가 발생했습니다. 마이그레이션이 실행되었는지 확인하세요.')
-    }
-  }
-
   const handleUpdateMapping = async (mappingId: string, mainCategoryId: string, subCategoryId?: string | null) => {
     if (standardCategories.length === 0) {
       alert('표준 카테고리 테이블이 없습니다. 마이그레이션을 먼저 실행하세요.')
@@ -508,67 +495,6 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     } catch (error) {
       console.error('매핑 수정 오류:', error)
       alert('매핑 수정 중 오류가 발생했습니다.')
-    }
-  }
-
-  // 일괄 매핑: 정규화된 그룹의 모든 원본 값들을 한 번에 매핑
-  const handleBulkMapCategory = async (expense: UnmappedExpense, categoryId: string) => {
-    if (standardCategories.length === 0) {
-      alert('표준 카테고리 테이블이 없습니다. 마이그레이션을 먼저 실행하세요.')
-      return
-    }
-
-    if (!categoryId) {
-      alert('표준 카테고리를 선택하세요.')
-      return
-    }
-
-    const categoryName = standardCategories.find(c => c.id === categoryId)?.name_ko || 
-                        standardCategories.find(c => c.id === categoryId)?.name || 
-                        categoryId
-
-    if (!confirm(`"${expense.original_values.join(', ')}" (${expense.original_values.length}개 변형)의 모든 항목을 "${categoryName}"로 매핑하시겠습니까?`)) {
-      return
-    }
-
-    setSaving(true)
-    try {
-      // 모든 원본 값들을 매핑
-      const mappings = expense.original_values.map(originalValue => ({
-        original_value: originalValue,
-        source_table: expense.source_table,
-        standard_category_id: categoryId,
-        match_count: 1,
-        last_matched_at: new Date().toISOString()
-      }))
-
-      // upsert를 병렬로 실행
-      const promises = mappings.map(mapping =>
-        supabase
-          .from('expense_category_mappings')
-          .upsert(mapping, {
-            onConflict: 'original_value,source_table'
-          })
-      )
-
-      const results = await Promise.all(promises)
-      
-      // 에러 체크
-      const errors = results.filter(r => r.error)
-      if (errors.length > 0) {
-        console.error('일부 매핑 저장 오류:', errors)
-        alert(`${errors.length}개의 매핑 저장 중 오류가 발생했습니다.`)
-      } else {
-        alert(`${mappings.length}개의 매핑이 완료되었습니다.`)
-      }
-
-      // 데이터 다시 로드
-      await loadData()
-    } catch (error) {
-      console.error('일괄 매핑 오류:', error)
-      alert('일괄 매핑 중 오류가 발생했습니다.')
-    } finally {
-      setSaving(false)
     }
   }
 

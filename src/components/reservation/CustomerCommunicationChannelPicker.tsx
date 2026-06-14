@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import {
   CUSTOMER_COMMUNICATION_CHANNELS,
@@ -35,8 +35,10 @@ export function CustomerCommunicationChannelPicker({
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const resolveOpts = { channelId, channelName }
-  const current = resolveCustomerCommunicationChannel(value, resolveOpts)
+  const current = resolveCustomerCommunicationChannel(value, {
+    ...(channelId !== undefined ? { channelId: channelId ?? null } : {}),
+    ...(channelName !== undefined ? { channelName: channelName ?? null } : {}),
+  })
 
   useEffect(() => {
     if (!open) return

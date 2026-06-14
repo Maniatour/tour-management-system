@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Dialog,
@@ -104,7 +104,7 @@ function rowAmount(table: string, row: Record<string, unknown>): unknown {
   }
 }
 
-function rowDate(table: string, row: Record<string, unknown>): unknown {
+function rowDate(_table: string, row: Record<string, unknown>): unknown {
   return row.submit_on ?? row.event_date ?? row.check_in_date ?? row.created_at
 }
 

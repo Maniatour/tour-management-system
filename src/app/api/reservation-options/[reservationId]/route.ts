@@ -13,7 +13,7 @@ async function syncPricingAfterOptionChange(reservationId: string) {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ reservationId: string }> }
 ) {
   try {

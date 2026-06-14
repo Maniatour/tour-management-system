@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Eye, Clock, User, Database, Activity } from 'lucide-react'
+import { Eye, Clock, User, Activity } from 'lucide-react'
 
 interface ChangeHistoryProps {
   tableName: string
@@ -41,7 +41,7 @@ export default function ChangeHistory({
       
       // 감사 로그 시스템이 준비되었는지 확인 (더 안전한 방법)
       try {
-        const { data: systemCheck, error: systemError } = await supabase
+        const { error: systemError } = await supabase
           .from('audit_logs')
           .select('id')
           .limit(1)
@@ -94,8 +94,8 @@ export default function ChangeHistory({
         }
 
         setChanges(data || [])
-      } catch (timeoutError) {
-        if (timeoutError.message === 'TIMEOUT') {
+      } catch (timeoutError: unknown) {
+        if (timeoutError instanceof Error && timeoutError.message === 'TIMEOUT') {
           console.warn('감사 로그 조회 시간 초과. 최근 데이터만 표시합니다.')
           setChanges([])
         } else {
@@ -228,7 +228,7 @@ export default function ChangeHistory({
 
       {/* 변경 내역 목록 */}
       <div className="divide-y divide-gray-200">
-        {displayChanges.map((change, index) => (
+        {displayChanges.map((change) => (
           <div key={change.id} className="p-4 hover:bg-gray-50">
             <div className="flex items-start justify-between">
               <div className="flex-1">

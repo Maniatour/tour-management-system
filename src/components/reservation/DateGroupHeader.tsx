@@ -1,7 +1,8 @@
 'use client'
 
-import React from 'react'
+import { memo } from 'react'
 import { Calendar, UserMinus, UserPlus, Users } from 'lucide-react'
+import type { Product } from '@/types/reservation'
 import { useLocale, useTranslations } from 'next-intl'
 import {
   getProductName,
@@ -158,7 +159,7 @@ function DateGroupHeaderInner({
   reservations,
   isCollapsed,
   onToggleCollapse,
-  customers,
+  customers: _customers,
   products,
   channels,
   cancellationStats = { mode: 'default' },
@@ -228,17 +229,18 @@ function DateGroupHeaderInner({
   const hasActivityBreakdown = regCount > 0 || cancelCount > 0 || cancelStatsPending
   const dayRegCancelNetPeople = regPeopleTotal - (cancelStatsPending ? 0 : cancelPeople)
 
+  const productList = (products || []) as Product[]
   const productRegByName = sumPeopleByKey(registeredOnDate, (r) =>
-    getProductName(r.productId, products || [])
+    getProductName(r.productId, productList)
   )
   const productRegCountByName = countByKey(registeredOnDate, (r) =>
-    getProductName(r.productId, products || [])
+    getProductName(r.productId, productList)
   )
   const productCancelByName = sumPeopleByKey(cancelledOnDate, (r) =>
-    getProductName(r.productId, products || [])
+    getProductName(r.productId, productList)
   )
   const productCancelCountByName = countByKey(cancelledOnDate, (r) =>
-    getProductName(r.productId, products || [])
+    getProductName(r.productId, productList)
   )
   const productRowKeys = [...new Set([...Object.keys(productRegByName), ...Object.keys(productCancelByName)])].sort(
     (a, b) =>
@@ -267,7 +269,7 @@ function DateGroupHeaderInner({
   )
 
   const productGroupsFallback = reservationsForActivityBreakdown.reduce((groups, reservation) => {
-    const productName = getProductName(reservation.productId, products || [])
+    const productName = getProductName(reservation.productId, productList)
     groups[productName] = (groups[productName] ?? 0) + reservation.totalPeople
     return groups
   }, {} as Record<string, number>)
@@ -384,18 +386,14 @@ function DateGroupHeaderInner({
                     cancel={cancelPeople}
                     total={dayRegCancelNetPeople}
                     peopleSuffix={t('stats.people')}
-                    regBookingSuffix={
-                      regCount > 0 ? t('stats.bookingCountInline', { count: regCount }) : undefined
-                    }
-                    cancelBookingSuffix={
-                      cancelStatsPending
-                        ? undefined
-                        : cancelCount > 0
-                          ? t('stats.bookingCountInline', { count: cancelCount })
-                          : undefined
-                    }
-                    cancelPending={cancelStatsPending}
-                    totalPending={cancelStatsPending}
+                    {...(regCount > 0
+                      ? { regBookingSuffix: t('stats.bookingCountInline', { count: regCount }) }
+                      : {})}
+                    {...(!cancelStatsPending && cancelCount > 0
+                      ? { cancelBookingSuffix: t('stats.bookingCountInline', { count: cancelCount }) }
+                      : {})}
+                    {...(cancelStatsPending ? { cancelPending: true } : {})}
+                    {...(cancelStatsPending ? { totalPending: true } : {})}
                     groupAriaLabel={t('stats.activityBadgesGroupLabel')}
                   />
                 </div>
@@ -604,4 +602,4 @@ function DateGroupHeaderInner({
   )
 }
 
-export const DateGroupHeader = React.memo(DateGroupHeaderInner)
+export const DateGroupHeader = memo(DateGroupHeaderInner)

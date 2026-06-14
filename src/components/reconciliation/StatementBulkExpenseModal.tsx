@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { AlertTriangle, ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
@@ -19,7 +20,6 @@ import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCatego
 import {
   applyStandardLeafToCompanyExpense,
   buildUnifiedStandardLeafGroups,
-  flattenUnifiedLeaves,
   matchStandardLeafIdForPaidForAndCategory,
   unifiedStandardTriggerLabel
 } from '@/lib/companyExpenseStandardUnified'
@@ -256,7 +256,7 @@ function buildProposalsCompany(
       line_desc: lineDesc,
       exclude_from_pnl: Boolean(line.exclude_from_pnl),
       suggestion_source,
-      rule_id,
+      ...(rule_id !== undefined ? { rule_id } : {}),
       paid_to,
       paid_for,
       category,
@@ -451,8 +451,7 @@ export default function StatementBulkExpenseModal({
     try {
       if (expenseKind === 'company_expenses') {
         const [{ data: rulesData, error: rulesErr }, { data: histData, error: histErr }] = await Promise.all([
-          supabase
-            .from('statement_expense_autofill_rules')
+          fromUntypedTable(supabase, 'statement_expense_autofill_rules')
             .select('*')
             .order('priority', { ascending: false }),
           supabase
@@ -660,10 +659,10 @@ export default function StatementBulkExpenseModal({
         source: 'template' as const,
         created_by: email || null
       }
-      let { error } = await supabase.from('statement_expense_autofill_rules').insert(insertPayload)
+      let { error } = await fromUntypedTable(supabase, 'statement_expense_autofill_rules').insert(insertPayload)
       if (error && shouldRetryAutofillRuleWithoutStandardLeafId(error)) {
         const { standard_leaf_id: _omitLeaf, ...rest } = insertPayload
-        const second = await supabase.from('statement_expense_autofill_rules').insert(rest)
+        const second = await fromUntypedTable(supabase, 'statement_expense_autofill_rules').insert(rest)
         error = second.error
       }
       if (error) throw new Error(autofillRuleSupabaseErrorText(error))
@@ -680,7 +679,7 @@ export default function StatementBulkExpenseModal({
     setFormError(null)
     setEditRuleDraft((draft) => (draft?.id === id ? null : draft))
     try {
-      const { error } = await supabase.from('statement_expense_autofill_rules').delete().eq('id', id)
+      const { error } = await fromUntypedTable(supabase, 'statement_expense_autofill_rules').delete().eq('id', id)
       if (error) throw error
       if (expenseKind === 'company_expenses') await loadAll()
     } catch (e) {
@@ -728,13 +727,12 @@ export default function StatementBulkExpenseModal({
         priority: Math.min(9999, Math.max(0, Math.floor(Number(d.priority) || 0))),
         financial_account_id: d.scopeThisAccount ? financialAccountId : null
       }
-      let { error } = await supabase
-        .from('statement_expense_autofill_rules')
+      let { error } = await fromUntypedTable(supabase, 'statement_expense_autofill_rules')
         .update(updatePayload)
         .eq('id', d.id)
       if (error && shouldRetryAutofillRuleWithoutStandardLeafId(error)) {
         const { standard_leaf_id: _omitLeaf, ...rest } = updatePayload
-        const second = await supabase.from('statement_expense_autofill_rules').update(rest).eq('id', d.id)
+        const second = await fromUntypedTable(supabase, 'statement_expense_autofill_rules').update(rest).eq('id', d.id)
         error = second.error
       }
       if (error) throw new Error(autofillRuleSupabaseErrorText(error))
@@ -755,7 +753,7 @@ export default function StatementBulkExpenseModal({
     sourceId: string,
     amount: number
   ) => {
-    const { error: mErr } = await supabase.from('reconciliation_matches').insert({
+    const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
       statement_line_id: lineId,
       source_table: sourceTable,
       source_id: sourceId,
@@ -811,13 +809,12 @@ export default function StatementBulkExpenseModal({
       }
     }
     for (const [rid, n] of ruleUsage) {
-      const { data: cur } = await supabase
-        .from('statement_expense_autofill_rules')
+      const { data: cur } = await fromUntypedTable(supabase, 'statement_expense_autofill_rules')
         .select('usage_count')
         .eq('id', rid)
         .maybeSingle()
       const base = Number(cur?.usage_count ?? 0)
-      await supabase.from('statement_expense_autofill_rules').update({ usage_count: base + n }).eq('id', rid)
+      await fromUntypedTable(supabase, 'statement_expense_autofill_rules').update({ usage_count: base + n }).eq('id', rid)
     }
   }
 
@@ -921,7 +918,7 @@ export default function StatementBulkExpenseModal({
               statement_line_id: p.statement_line_id,
               exclude_from_pnl: p.exclude_from_pnl,
               is_personal: false
-            })
+            } as never)
             .select('id')
             .single()
           if (insErr || !ins?.id) throw insErr || new Error('투어 지출 저장 실패')
@@ -951,7 +948,7 @@ export default function StatementBulkExpenseModal({
             statement_line_id: p.statement_line_id,
             exclude_from_pnl: p.exclude_from_pnl,
             is_personal: false
-          })
+          } as never)
           if (insErr) throw insErr
           await linkStatement(p.statement_line_id, 'reservation_expenses', newId, p.amount)
         }

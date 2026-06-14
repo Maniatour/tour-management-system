@@ -2,11 +2,56 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 
+type ChoicesPricingRecord = Record<string, {
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+  is_sale_available?: boolean;
+}>;
+
+function parseChoicesPricingRecord(raw: unknown): ChoicesPricingRecord {
+  if (raw == null) return {}
+  let parsed: unknown = raw
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return {}
+    }
+  }
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+  return parsed as ChoicesPricingRecord
+}
+
+function mapDbPricingRowToSimpleRule(row: Record<string, unknown>, fallbackProductId: string): SimplePricingRule {
+  const priceType = row.price_type === 'base' ? 'base' : 'dynamic'
+  return {
+    id: String(row.id ?? ''),
+    product_id: String(row.product_id ?? fallbackProductId),
+    channel_id: String(row.channel_id ?? ''),
+    date: String(row.date ?? ''),
+    adult_price: Number(row.adult_price ?? 0),
+    child_price: Number(row.child_price ?? 0),
+    infant_price: Number(row.infant_price ?? 0),
+    commission_percent: Number(row.commission_percent ?? 0),
+    markup_amount: Number(row.markup_amount ?? 0),
+    coupon_percent: Number(row.coupon_percent ?? 0),
+    is_sale_available: row.is_sale_available !== false,
+    ...(row.not_included_price != null ? { not_included_price: Number(row.not_included_price) } : {}),
+    ...(row.markup_percent != null ? { markup_percent: Number(row.markup_percent) } : {}),
+    price_type: priceType,
+    ...(row.variant_key != null ? { variant_key: String(row.variant_key) } : {}),
+    choices_pricing: parseChoicesPricingRecord(row.choices_pricing),
+    created_at: String(row.created_at ?? ''),
+    updated_at: String(row.updated_at ?? ''),
+  }
+}
+
 interface UseDynamicPricingProps {
   productId: string;
   selectedChannelId?: string;
   selectedChannelType?: string;
-  onSave?: (rule: SimplePricingRule) => void;
+  onSave?: (rule: SimplePricingRule | { type: 'batch_complete'; count: number }) => void;
 }
 
 export function useDynamicPricing({ productId, selectedChannelId, selectedChannelType, onSave }: UseDynamicPricingProps) {
@@ -124,7 +169,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         if (!acc[normalizedDate]) {
           acc[normalizedDate] = [];
         }
-        acc[normalizedDate].push(rule);
+        acc[normalizedDate].push(mapDbPricingRowToSimpleRule(rule as Record<string, unknown>, productId));
         return acc;
       }, {} as Record<string, SimplePricingRule[]>);
 
@@ -256,15 +301,13 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         
         // choices_pricing이 있으면 기존 데이터와 병합
         if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
-          const existingChoicesPricing = fullExistingData.choices_pricing || {};
-          // 기존 choices_pricing과 새로운 choices_pricing 병합
+          const existingChoicesPricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
           updateData.choices_pricing = {
             ...existingChoicesPricing,
-            ...ruleData.choices_pricing
-          };
+            ...ruleData.choices_pricing,
+          }
         } else if (fullExistingData.choices_pricing) {
-          // choices_pricing이 전달되지 않았으면 기존 값 유지
-          updateData.choices_pricing = fullExistingData.choices_pricing;
+          updateData.choices_pricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
         }
         
         const { data, error } = await supabase
@@ -298,7 +341,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           price_adjustment_adult: ruleData.price_adjustment_adult ?? 0,
           price_adjustment_child: ruleData.price_adjustment_child ?? 0,
           price_adjustment_infant: ruleData.price_adjustment_infant ?? 0,
-          choices_pricing: ruleData.choices_pricing
+          ...(ruleData.choices_pricing ? { choices_pricing: ruleData.choices_pricing } : {}),
         };
         
         const { data, error } = await supabase
@@ -320,7 +363,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
       await loadDynamicPricingData();
       
       if (onSave && result) {
-        onSave(result);
+        onSave(mapDbPricingRowToSimpleRule(result as Record<string, unknown>, ruleData.product_id));
       }
     } catch (error) {
       console.error('가격 규칙 저장 실패:', error);
@@ -392,7 +435,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 product_id: ruleData.product_id,
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
-                price_type: ruleData.price_type !== undefined ? ruleData.price_type : (fullExistingData.price_type || 'dynamic'), // price_type 필드 추가
+                price_type: (ruleData.price_type !== undefined ? ruleData.price_type : (fullExistingData.price_type || 'dynamic')) as 'base' | 'dynamic',
                 variant_key: ruleData.variant_key !== undefined ? ruleData.variant_key : (fullExistingData.variant_key || 'default'), // variant_key 필드 추가
                 
                 // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
@@ -480,8 +523,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 
                 updateData.choices_pricing = mergedChoicesPricing;
               } else if (fullExistingData.choices_pricing) {
-                // choices_pricing이 전달되지 않았으면 기존 값 유지
-                updateData.choices_pricing = fullExistingData.choices_pricing;
+                updateData.choices_pricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
               }
               
               // 업데이트
@@ -498,8 +540,8 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 product_id: ruleData.product_id,
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
-                price_type: ruleData.price_type || 'dynamic', // price_type 필드 추가
-                variant_key: variantKey, // variant_key 추가
+                price_type: ruleData.price_type === 'base' ? 'base' : 'dynamic',
+                variant_key: variantKey,
                 adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
                 child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
                 infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,
@@ -512,7 +554,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 price_adjustment_adult: ruleData.price_adjustment_adult ?? 0,
                 price_adjustment_child: ruleData.price_adjustment_child ?? 0,
                 price_adjustment_infant: ruleData.price_adjustment_infant ?? 0,
-                choices_pricing: ruleData.choices_pricing
+                ...(ruleData.choices_pricing ? { choices_pricing: ruleData.choices_pricing } : {}),
               };
               
               const { error } = await supabase

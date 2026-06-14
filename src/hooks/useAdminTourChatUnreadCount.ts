@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 
 const ROOM_BATCH = 50
 
@@ -10,6 +11,7 @@ const ROOM_BATCH = 50
  * 채팅 관리 페이지의 unread_count 집계와 동일 (customer + is_read false + 활성 방만).
  */
 const REALTIME_REFRESH_DEBOUNCE_MS = 1200
+const INITIAL_REFRESH_DEFER_MS = 2000
 
 export function useAdminTourChatUnreadCount(enabled: boolean): number {
   const [count, setCount] = useState(0)
@@ -75,7 +77,9 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
       return
     }
 
-    void refresh()
+    const cancelDeferredRefresh = scheduleDeferredWork(() => {
+      void refresh()
+    }, INITIAL_REFRESH_DEFER_MS)
 
     const channel = supabase
       .channel('admin-tour-chat-unread-badge')
@@ -100,6 +104,7 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
     }, 300_000)
 
     return () => {
+      cancelDeferredRefresh()
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
         debounceTimerRef.current = null

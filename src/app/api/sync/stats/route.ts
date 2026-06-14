@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+
+type SyncLogRow = {
+  success?: boolean | null
+  last_sync_time?: string | null
+  reservations_count?: number | null
+  tours_count?: number | null
+  created_at?: string | null
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,8 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 동기화 통계 조회
-    const { data: syncStats, error } = await supabase
-      .from('sync_logs')
+    const { data: syncStats, error } = await fromUntypedTable(supabase, 'sync_logs')
       .select('*')
       .eq('spreadsheet_id', spreadsheetId)
       .order('created_at', { ascending: false })
@@ -30,26 +38,28 @@ export async function GET(request: NextRequest) {
     }
 
     // 통계 계산
-    const totalSyncs = syncStats?.length || 0
-    const successfulSyncs = syncStats?.filter(s => s.success).length || 0
+    const stats = (syncStats ?? []) as SyncLogRow[]
+    const totalSyncs = stats.length
+    const successfulSyncs = stats.filter((s) => s.success).length
     const failedSyncs = totalSyncs - successfulSyncs
-    const lastSyncTime = syncStats?.[0]?.last_sync_time || null
-    const totalReservations = syncStats?.reduce((sum, s) => sum + (s.reservations_count || 0), 0) || 0
-    const totalTours = syncStats?.reduce((sum, s) => sum + (s.tours_count || 0), 0) || 0
+    const lastSyncTime = stats[0]?.last_sync_time || null
+    const totalReservations = stats.reduce((sum, s) => sum + (s.reservations_count || 0), 0)
+    const totalTours = stats.reduce((sum, s) => sum + (s.tours_count || 0), 0)
 
     // 최근 7일간의 동기화 통계
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const { data: recentStats } = await supabase
-      .from('sync_logs')
+    const { data: recentStats } = await fromUntypedTable(supabase, 'sync_logs')
       .select('created_at, success, reservations_count, tours_count')
       .eq('spreadsheet_id', spreadsheetId)
       .gte('created_at', sevenDaysAgo.toISOString())
       .order('created_at', { ascending: false })
 
-    const dailyStats = recentStats?.reduce((acc, stat) => {
-      const date = new Date(stat.created_at).toISOString().split('T')[0]
+    const dailyStats = ((recentStats ?? []) as SyncLogRow[]).reduce((acc, stat) => {
+      const createdAt = stat.created_at
+      if (!createdAt) return acc
+      const date = new Date(createdAt).toISOString().split('T')[0]
       if (!acc[date]) {
         acc[date] = { syncs: 0, successful: 0, reservations: 0, tours: 0 }
       }
@@ -72,7 +82,7 @@ export async function GET(request: NextRequest) {
           totalReservations,
           totalTours
         },
-        recentSyncs: syncStats?.slice(0, 5) || [],
+        recentSyncs: stats.slice(0, 5),
         dailyStats: Object.entries(dailyStats).map(([date, stats]) => ({
           date,
           ...stats

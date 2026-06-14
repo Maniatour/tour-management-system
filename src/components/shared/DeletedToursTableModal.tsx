@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { X, Trash2, RotateCcw } from 'lucide-react'
 import { canPermanentDeleteRecords } from '@/utils/tourUtils'
 

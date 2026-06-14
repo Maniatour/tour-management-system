@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { toast } from 'sonner'
 import type { PnlStatementInflowLine } from '@/lib/pnlReportDataFetch'
 import { formatPnlMoney } from '@/lib/pnlPaymentRecords'
@@ -129,14 +130,12 @@ export default function PnlStatementInflowDetailDialog({
 
       try {
         if (field === 'is_personal') {
-          const { error } = await supabase
-            .from('statement_lines')
+          const { error } = await fromUntypedTable(supabase, 'statement_lines')
             .update({ is_personal: nextPersonal, personal_partner: null })
             .eq('id', line.id)
           if (error) throw error
         } else {
-          const { error } = await supabase
-            .from('statement_lines')
+          const { error } = await fromUntypedTable(supabase, 'statement_lines')
             .update({ exclude_from_pnl: nextExclude })
             .eq('id', line.id)
           if (error) throw error

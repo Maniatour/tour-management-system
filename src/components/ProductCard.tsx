@@ -11,7 +11,6 @@ import { FaHelicopter } from 'react-icons/fa'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { getGroupColorClasses } from '@/utils/groupColors'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -359,24 +358,6 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
     return subCategoryLabels[subCategory] || subCategory
   }
 
-  const _getStatusLabel = (status: string) => {
-    const statusLabels: { [key: string]: string } = {
-      active: '활성',
-      inactive: '비활성',
-      draft: '초안'
-    }
-    return statusLabels[status] || status
-  }
-
-  const _getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800'
-      case 'inactive': return 'bg-red-100 text-red-800'
-      case 'draft': return 'bg-yellow-100 text-yellow-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   // 초이스 옵션 가격 범위 로드
   useEffect(() => {
     const loadChoicePriceRange = async () => {
@@ -430,103 +411,6 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
 
     loadChoicePriceRange()
   }, [product.id])
-
-  // choices 데이터를 파싱하여 선택지 옵션들을 추출하는 함수 (그룹 정보 포함)
-  const getChoicesOptions = (product: Product) => {
-    if (!product.choices || typeof product.choices !== 'object') {
-      return []
-    }
-
-    const choices = product.choices as {
-      required?: Array<{
-        id?: string;
-        name?: string;
-        name_ko?: string;
-        options?: Array<{
-          id?: string;
-          name?: string;
-          name_ko?: string;
-          price?: number;
-          adult_price?: number;
-        }>;
-      }>;
-    }
-    
-    const options: Array<{ 
-      id: string; 
-      name: string; 
-      name_ko?: string; 
-      price?: number;
-      groupId?: string;
-      groupName?: string;
-      groupNameKo?: string;
-    }> = []
-
-    // required choices에서 옵션들 추출 (그룹 정보 포함)
-    if (choices.required && Array.isArray(choices.required)) {
-      choices.required.forEach((choice) => {
-        if (choice.options && Array.isArray(choice.options)) {
-          choice.options.forEach((option) => {
-            options.push({
-              id: option.id || '',
-              name: option.name || '',
-              name_ko: option.name_ko || '',
-              price: option.price || option.adult_price || 0,
-              groupId: choice.id || '',
-              groupName: choice.name || '',
-              groupNameKo: choice.name_ko || ''
-            })
-          })
-        }
-      })
-    }
-
-    return options
-  }
-
-  // choices 옵션들을 뱃지로 렌더링하는 함수 (그룹별 색상 적용) - 추후 사용 가능
-  const _renderChoicesBadges = (product: Product) => {
-    const options = getChoicesOptions(product)
-    
-    if (options.length === 0) {
-      return null
-    }
-
-    return (
-      <div className="flex flex-wrap gap-1 mt-2">
-        {options.slice(0, 4).map((option, index) => {
-          const colorClasses = getGroupColorClasses(option.groupId || '', option.groupName, 'object') as {
-            bg: string;
-            text: string;
-            border: string;
-            price: string;
-          }
-          
-          const optionLabel = locale === 'en' ? (option.name || option.name_ko) : (option.name_ko || option.name)
-          const groupLabel = locale === 'en' ? (option.groupName || option.groupNameKo) : (option.groupNameKo || option.groupName)
-          return (
-            <span
-              key={`${option.id}-${index}`}
-              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}`}
-              title={`${groupLabel || ''} - ${optionLabel || ''}`}
-            >
-              {optionLabel}
-              {(option.price || 0) > 0 && (
-                <span className={`ml-1 ${colorClasses.price}`}>
-                  (+${option.price})
-                </span>
-              )}
-            </span>
-          )
-        })}
-        {options.length > 4 && (
-          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
-            +{options.length - 4}{locale === 'en' ? ` ${t('moreItems')}` : t('moreItems')}
-          </span>
-        )}
-      </div>
-    )
-  }
 
   // 운송수단 아이콘 매핑 함수
   const getTransportationIcon = (method: string) => {

@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
@@ -102,7 +102,7 @@ function cashTransactionDateYmd(tx: CashTransaction): string {
 }
 
 export default function CashManagement() {
-  const t = useTranslations('cashManagement')
+  useTranslations('cashManagement')
   let locale = 'ko'
   try {
     locale = useLocale()
@@ -127,7 +127,7 @@ export default function CashManagement() {
   const [endDate, setEndDate] = useState('')
   const [teamMembers, setTeamMembers] = useState<Map<string, string>>(new Map()) // email(lower) -> display_name
   const [showHistory, setShowHistory] = useState(false)
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null)
+  const [, setSelectedTransactionId] = useState<string | null>(null)
   const [transactionHistory, setTransactionHistory] = useState<TransactionHistory[]>([])
   const [showPaymentRecordModal, setShowPaymentRecordModal] = useState(false)
   const [showCompanyExpenseModal, setShowCompanyExpenseModal] = useState(false)
@@ -202,7 +202,12 @@ export default function CashManagement() {
         modified_by_name: teamDisplayLabel(history.modified_by)
       }))
       
-      setTransactionHistory(historyWithNames)
+      setTransactionHistory(
+        historyWithNames.map((history) => ({
+          ...history,
+          change_type: history.change_type as TransactionHistory['change_type'],
+        }))
+      )
     } catch (error) {
       console.error('수정 히스토리 로드 오류:', error)
       toast.error('수정 히스토리를 불러오는 중 오류가 발생했습니다.')
@@ -350,10 +355,13 @@ export default function CashManagement() {
 
       // cash_transactions 변환
       if (cashTransactions) {
-        const converted = cashTransactions.map(t => ({
+        const converted: CashTransaction[] = cashTransactions.map((t) => ({
           ...t,
+          transaction_type: t.transaction_type as CashTransaction['transaction_type'],
           source: 'cash_transactions' as const,
-          created_by_name: teamDisplayLabel(t.created_by)
+          created_by_name: teamDisplayLabel(t.created_by),
+          created_at: t.created_at ?? '',
+          updated_at: t.updated_at ?? '',
         }))
         allTransactions.push(...converted)
       }
@@ -1503,8 +1511,7 @@ export default function CashManagement() {
                   </TableHeader>
                   <TableBody>
                     {paginatedTransactions.map((transaction) => {
-                      const isEditable = transaction.source === 'cash_transactions'
-                      const sourceLabel = 
+                      const sourceLabel =
                         transaction.source === 'payment_records' ? '예약 결제' :
                         transaction.source === 'company_expenses' ? '회사 지출' :
                         transaction.source === 'reservation_expenses' ? '예약 지출' :
@@ -1715,7 +1722,7 @@ export default function CashManagement() {
               <div className="text-center py-8 text-gray-500">수정 히스토리가 없습니다.</div>
             ) : (
               <div className="space-y-4">
-                {transactionHistory.map((history, index) => (
+                {transactionHistory.map((history) => (
                   <Card key={history.id}>
                     <CardHeader>
                       <div className="flex items-center justify-between">

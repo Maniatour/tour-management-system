@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// 기존 UUID → 새로운 UUID 매핑
-const UUID_MAPPING: Record<string, string> = {
+// 기존 UUID → 새로운 UUID 매핑 (레거시 참조용)
+const _UUID_MAPPING: Record<string, string> = {
   '3a842aec-a3c3-4516-b846-13fed5dd95b8': '478c70bb-08c3-4b49-8492-6a3367d1f5dd',
-  '8aab7091-b636-4426-9c1e-df37ed7d6538': '982a5e11-7d81-42cc-9011-f2ec5a379899'
+  '8aab7091-b636-4426-9c1e-df37ed7d6538': '982a5e11-7d81-42cc-9011-f2ec5a379899',
 }
+void _UUID_MAPPING
 
 // Antelope X Canyon → Lower Antelope Canyon 매핑
 // 3a842aec-a3c3-4516-b846-13fed5dd95b8 (Antelope X Canyon) → 8aab7091-b636-4426-9c1e-df37ed7d6538 (Lower Antelope Canyon)

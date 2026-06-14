@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -267,7 +267,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .order('name', { ascending: true })
 
       if (error) throw error
-      setProducts(data || [])
+      setProducts((data || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(p.name_ko != null ? { name_ko: p.name_ko } : {}),
+      })))
     } catch (error) {
       console.error('상품 목록 로드 오류:', error)
     }
@@ -965,52 +969,6 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       setSaveMessage('초이스 복사 중 오류가 발생했습니다.')
     }
   }, [selectedProductId])
-
-  // 초이스 내보내기
-  const exportChoices = useCallback(() => {
-    const exportData = {
-      product_id: productId,
-      choices: productChoices.map((choice, index) => ({
-        choice_group: choice.choice_group,
-        choice_group_ko: choice.choice_group_ko,
-        choice_group_en: choice.choice_group_en,
-        description_ko: choice.description_ko,
-        description_en: choice.description_en,
-        choice_type: choice.choice_type,
-        is_required: choice.is_required,
-        min_selections: choice.min_selections,
-        max_selections: choice.max_selections,
-        sort_order: choice.sort_order || index,
-        options: choice.options.map(option => ({
-          option_key: option.option_key,
-          option_name: option.option_name,
-          option_name_ko: option.option_name_ko,
-          description: option.description,
-          description_ko: option.description_ko,
-          adult_price: option.adult_price,
-          child_price: option.child_price,
-          infant_price: option.infant_price,
-          capacity: option.capacity,
-          is_default: option.is_default,
-          is_active: option.is_active,
-          sort_order: option.sort_order,
-          image_url: option.image_url,
-          image_alt: option.image_alt,
-          thumbnail_url: option.thumbnail_url
-        }))
-      }))
-    }
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `choices_${productId}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, [productId, productChoices])
 
   // 초이스 가져오기
   const importChoices = useCallback(() => {

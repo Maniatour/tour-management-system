@@ -652,7 +652,13 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
         .order('name')
 
       if (error) throw error
-      setChannels(data || [])
+      setChannels(
+        (data || []).map((c) => ({
+          ...c,
+          type: c.type ?? '',
+          status: c.status ?? '',
+        }))
+      )
     } catch (error) {
       console.error('채널 로드 오류:', error)
     } finally {
@@ -677,7 +683,13 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
       const { data, error } = await query
 
       if (error) throw error
-      setProducts(data || [])
+      setProducts(
+        (data || []).map((p) => ({
+          ...p,
+          sub_category: p.sub_category ?? '',
+          status: p.status ?? '',
+        }))
+      )
     } catch (error) {
       console.error('상품 로드 오류:', error)
     } finally {

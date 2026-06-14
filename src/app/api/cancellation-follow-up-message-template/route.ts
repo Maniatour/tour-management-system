@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   getBuiltinCancellationFollowUpTemplate,
   type CancellationFollowUpMessageChannel,
@@ -75,7 +76,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const db = supabaseAdmin ?? supabase
-    const { error } = await db.from('cancellation_follow_up_message_templates').upsert(
+    const { error } = await fromUntypedTable(db, 'cancellation_follow_up_message_templates').upsert(
       {
         locale,
         channel,
@@ -83,8 +84,8 @@ export async function PUT(request: NextRequest) {
         subject_template: channel === 'email' ? subject_template?.trim() ?? '' : null,
         body_template: body_template.trim(),
         updated_at: new Date().toISOString(),
-        updated_by,
-      },
+        ...(updated_by != null ? { updated_by } : {}),
+      } as never,
       { onConflict: 'locale,channel,message_kind' }
     )
 
@@ -112,8 +113,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const db = supabaseAdmin ?? supabase
-  const { error } = await db
-    .from('cancellation_follow_up_message_templates')
+  const { error } = await fromUntypedTable(db, 'cancellation_follow_up_message_templates')
     .delete()
     .eq('locale', locale)
     .eq('channel', channel)

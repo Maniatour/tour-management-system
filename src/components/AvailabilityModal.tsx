@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Calendar, CheckCircle, XCircle, Save, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 interface AvailabilityModalProps {
   isOpen: boolean
@@ -98,8 +99,7 @@ export default function AvailabilityModal({
     if (!selectedChannel) return
 
     try {
-      const { data, error } = await supabase
-        .from('dynamic_pricing')
+      const { data, error } = await fromUntypedTable(supabase, 'dynamic_pricing')
         .select('start_date, end_date, is_sale_available')
         .eq('product_id', productId)
         .eq('channel_id', selectedChannel)
@@ -139,8 +139,7 @@ export default function AvailabilityModal({
 
     try {
       // 기존 데이터 삭제
-      await supabase
-        .from('dynamic_pricing')
+      await fromUntypedTable(supabase, 'dynamic_pricing')
         .delete()
         .eq('product_id', productId)
         .eq('channel_id', selectedChannel)
@@ -166,8 +165,7 @@ export default function AvailabilityModal({
         created_at: new Date().toISOString()
       }))
 
-      const { error } = await supabase
-        .from('dynamic_pricing')
+      const { error } = await fromUntypedTable(supabase, 'dynamic_pricing')
         .insert(availabilityRules)
 
       if (error) throw error

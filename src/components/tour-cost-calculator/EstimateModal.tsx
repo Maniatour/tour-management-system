@@ -122,16 +122,16 @@ export default function EstimateModal({
   tourCourses,
   isCharterGuide,
   locale = 'ko',
-  tourCourseDescription,
-  scheduleDescription,
-  totalCost,
-  entranceFees,
-  hotelAccommodationCost,
-  vehicleRentalCost,
-  fuelCost,
-  guideFee,
+  tourCourseDescription: _tourCourseDescription,
+  scheduleDescription: _scheduleDescription,
+  totalCost: _totalCost,
+  entranceFees: _entranceFees,
+  hotelAccommodationCost: _hotelAccommodationCost,
+  vehicleRentalCost: _vehicleRentalCost,
+  fuelCost: _fuelCost,
+  guideFee: _guideFee,
   otherExpenses,
-  otherExpensesTotal,
+  otherExpensesTotal: _otherExpensesTotal,
   participantCount,
   vehicleType,
   vehicleTypeLabel,
@@ -142,10 +142,10 @@ export default function EstimateModal({
   tipAmount,
   sellingPriceWithTip,
   mileage,
-  configId,
+  configId: _configId,
   onClose,
-  onTourCourseDescriptionChange,
-  onScheduleDescriptionChange
+  onTourCourseDescriptionChange: _onTourCourseDescriptionChange,
+  onScheduleDescriptionChange: _onScheduleDescriptionChange
 }: EstimateModalProps) {
   const [sending, setSending] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -372,7 +372,7 @@ export default function EstimateModal({
         updated_at: new Date().toISOString()
       }
 
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('reservations')
         .insert(reservationData)
         .select()
@@ -594,8 +594,7 @@ export default function EstimateModal({
   const resolvedVehicleTypeName = vehicleTypeLabel ?? (vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승')
 
   // PDF용 Estimate HTML 생성 (인보이스 스타일)
-  const generateEstimateHTMLForPDF = (mapImageDataParam?: string | null): string => {
-    const vehicleTypeName = resolvedVehicleTypeName
+  const _generateEstimateHTMLForPDF = (mapImageDataParam?: string | null): string => {
     const isEnglish = locale === 'en'
     const estimateNumber = `EST-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`
     const formattedDate = estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : new Date().toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')
@@ -1084,6 +1083,7 @@ export default function EstimateModal({
 
   // Estimate 저장 함수 (다운로드 없이 저장만)
   const handleSaveEstimate = async () => {
+    void _generateEstimateHTMLForPDF
     if (!estimateContentRef.current || !mapRef.current) return
 
     setSaving(true)
@@ -1307,7 +1307,8 @@ export default function EstimateModal({
         console.warn('지도 이미지가 캡처되지 않았습니다.')
       }
 
-      const fileName = `Estimate_${customerName || 'customer'}_${new Date().toISOString().split('T')[0]}.pdf`
+      const _fileName = `Estimate_${customerName || 'customer'}_${new Date().toISOString().split('T')[0]}.pdf`
+      void _fileName
 
       // jsPDF로 PDF 생성 (마진 포함)
       const pageMargin = 20 // mm
@@ -1903,7 +1904,6 @@ export default function EstimateModal({
         `, false)
         
         const page3Canvas = await sectionToCanvas(page3HTML)
-        const page3ImgData = page3Canvas.toDataURL('image/jpeg', 0.95)
         const page3Width = page3Canvas.width
         const page3Height = page3Canvas.height
         const page3AspectRatio = page3Height / page3Width

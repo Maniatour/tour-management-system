@@ -10,7 +10,7 @@ import LightRichEditor from '@/components/LightRichEditor'
 
 interface Product {
   id: string
-  name_ko: string
+  name_ko: string | null
   name_en: string | null
   category: string | null
   sub_category: string | null
@@ -181,7 +181,7 @@ export default function ProductDetailsPage() {
           .update({
             ...formData,
             language_code: 'ko'
-          })
+          } as never)
           .eq('product_id', productId)
           .eq('language_code', 'ko')
 
@@ -195,7 +195,7 @@ export default function ProductDetailsPage() {
           .insert({
             ...formData,
             language_code: 'ko'
-          })
+          } as never)
 
         if (error) {
           throw error

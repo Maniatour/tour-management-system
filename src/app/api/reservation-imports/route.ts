@@ -10,7 +10,8 @@ import {
   isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '@/lib/database.types'
+import type { Database, Json } from '@/lib/database.types'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { ReservationImportInsert, ExtractedReservationData } from '@/types/reservationImport'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
@@ -35,6 +36,11 @@ interface ResendInboundPayload {
     subject?: string
     message_id?: string
   }
+}
+
+function parseExtractedData(json: Json | null | undefined): ExtractedReservationData | null {
+  if (json == null || typeof json === 'string') return null
+  return json as ExtractedReservationData
 }
 
 function isResendInboundPayload(body: unknown): body is ResendInboundPayload {
@@ -107,7 +113,11 @@ export async function POST(request: NextRequest) {
     }
     try {
       const resend = new Resend(process.env.RESEND_API_KEY)
-      const verified = (resend as { webhooks?: { verify: (payload: string, headers: Record<string, string>, secret: string) => unknown } }).webhooks?.verify?.(
+      const verified = (resend as unknown as {
+        webhooks?: {
+          verify: (payload: string, headers: Record<string, string>, secret: string) => unknown
+        }
+      }).webhooks?.verify?.(
         rawBody,
         { 'svix-id': svixId, 'svix-timestamp': svixTimestamp, 'svix-signature': svixSignature },
         webhookSecret
@@ -260,8 +270,7 @@ async function fetchReservationCustomerIdentityKeys(client: SupabaseClient<Datab
   const pageSize = 1000
   let offset = 0
   for (;;) {
-    const { data, error } = await client
-      .from('reservations')
+    const { data, error } = await fromUntypedTable(client, 'reservations')
       .select('customer_name, customer_email, customer_phone, customer:customers(name, phone, email)')
       .not('status', 'eq', 'deleted')
       .range(offset, offset + pageSize - 1)
@@ -351,22 +360,21 @@ export async function GET(request: NextRequest) {
   const cancellationMetaList: Array<{ id: string; variantSet: Set<string> }> = []
 
   for (const r of list) {
-    const row = r as { id: string; subject?: string | null; extracted_data?: ExtractedReservationData }
-    if (!isCancellationRequestEmailSubject(row.subject)) continue
+    if (!isCancellationRequestEmailSubject(r.subject)) continue
 
-    const ext = row.extracted_data
+    const ext = parseExtractedData(r.extracted_data)
     const fromExt = ext?.channel_rn?.trim()
     const rnRaw =
       fromExt && fromExt.toLowerCase() !== 'id'
         ? fromExt
-        : extractChannelRnForCancellationLookup(String(row.subject ?? ''), '')
+        : extractChannelRnForCancellationLookup(String(r.subject ?? ''), '')
 
     if (!rnRaw?.trim()) {
-      cancellationBadgeByImportId.set(row.id, 'needed')
+      cancellationBadgeByImportId.set(r.id, 'needed')
       continue
     }
     cancellationMetaList.push({
-      id: row.id,
+      id: r.id,
       variantSet: new Set(expandChannelRnMatchVariants(rnRaw.trim())),
     })
   }
@@ -401,8 +409,8 @@ export async function GET(request: NextRequest) {
   }
 
   const channelRns = list
-    .map((r: { extracted_data?: { channel_rn?: string } }) => r.extracted_data?.channel_rn)
-    .filter((rn: string | undefined): rn is string => typeof rn === 'string' && rn.trim().length > 0)
+    .map((r) => parseExtractedData(r.extracted_data)?.channel_rn)
+    .filter((rn): rn is string => typeof rn === 'string' && rn.trim().length > 0)
   const uniqueChannelRns = [...new Set(channelRns)]
   const lookupChannelRns = [...new Set(uniqueChannelRns.flatMap(expandChannelRnMatchVariants))]
 
@@ -422,8 +430,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const listNeedsCustomerMatch = list.some((r: { extracted_data?: ExtractedReservationData }) => {
-    const ext = r.extracted_data
+  const listNeedsCustomerMatch = list.some((r) => {
+    const ext = parseExtractedData(r.extracted_data)
     const n = normalizeCustomerNameFromImport(String(ext?.customer_name ?? ''))
     if (n.length === 0) return false
     const d = String(ext?.customer_phone ?? '').replace(/\D/g, '')
@@ -437,22 +445,8 @@ export async function GET(request: NextRequest) {
     existingCustomerIdentityKeys = await fetchReservationCustomerIdentityKeys(client as SupabaseClient<Database>)
   }
 
-  const data = list.map(
-    (r: {
-      id: string
-      subject?: string | null
-      platform_key?: string | null
-      extracted_data?: ExtractedReservationData | null
-      raw_body_text?: string | null
-      raw_body_html?: string | null
-      reservation_id?: string | null
-      message_id?: string | null
-      source_email?: string | null
-      received_at?: string | null
-      status?: string | null
-      created_at?: string | null
-    }) => {
-      let extracted_data = r.extracted_data ?? undefined
+  const data = list.map((r) => {
+      let extracted_data = parseExtractedData(r.extracted_data) ?? undefined
       const looksKlook =
         r.platform_key === 'klook' || isKlookOrderEmailSubjectForReservation(r.subject)
       if (looksKlook) {
@@ -479,10 +473,10 @@ export async function GET(request: NextRequest) {
       const { raw_body_text: _rawOmit, raw_body_html: _htmlOmit, ...rest } = r
       void _rawOmit
       void _htmlOmit
-      const channelRn = (extracted_data ?? r.extracted_data)?.channel_rn?.trim()
+      const channelRn = (extracted_data ?? parseExtractedData(r.extracted_data))?.channel_rn?.trim()
       const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
       const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(
-        extracted_data ?? r.extracted_data,
+        extracted_data ?? parseExtractedData(r.extracted_data),
         existingCustomerIdentityKeys
       )
       const cancellationListBadge = isCancellationRequestEmailSubject(r.subject)
@@ -499,8 +493,7 @@ export async function GET(request: NextRequest) {
         reservation_exists_by_customer_match: existsByCustomerMatch,
         cancellation_list_badge: cancellationListBadge,
       }
-    }
-  )
+    })
 
   return NextResponse.json({ data })
 }

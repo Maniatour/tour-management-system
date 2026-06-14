@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import {

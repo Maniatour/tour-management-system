@@ -3,17 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { createClientSupabase } from '@/lib/supabase'
-import { Database } from '@/lib/database.types'
-
-type Customer = Database['public']['Tables']['customers']['Row']
-type Reservation = Database['public']['Tables']['reservations']['Row']
-type ReservationPricing = Database['public']['Tables']['reservation_pricing']['Row']
-type ReservationOption = Database['public']['Tables']['reservation_options']['Row']
-type Payment = Database['public']['Tables']['payment_records']['Row']
-type TourHotelBooking = Database['public']['Tables']['tour_hotel_bookings']['Row']
-type Tour = Database['public']['Tables']['tours']['Row']
-type Team = Database['public']['Tables']['team']['Row']
-type Product = Database['public']['Tables']['products']['Row']
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 interface AdminDataReviewProps {
   params: Promise<{ locale: string }>
@@ -240,14 +230,14 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
     }
 
     // 고객 정보 가져오기
-    const customerIds = [...new Set(reservations?.map(r => r.customer_id).filter(Boolean) || [])]
+    const customerIds = [...new Set(reservations?.map(r => r.customer_id).filter((id): id is string => id != null) || [])]
     const { data: customers } = await supabase
       .from('customers')
       .select('id, name')
       .in('id', customerIds)
 
     // 채널 정보 가져오기
-    const channelIds = [...new Set(reservations?.map(r => r.channel_id).filter(Boolean) || [])]
+    const channelIds = [...new Set(reservations?.map(r => r.channel_id).filter((id): id is string => id != null) || [])]
     const { data: channels } = await supabase
       .from('channels')
       .select('id, name')
@@ -274,8 +264,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           severity: 'high',
           data: {
             ...reservation,
-            customer_name: customerMap.get(reservation.customer_id) || '-',
-            channel_name: channelMap.get(reservation.channel_id) || '-'
+            customer_name: reservation.customer_id ? (customerMap.get(reservation.customer_id) || '-') : '-',
+            channel_name: reservation.channel_id ? (channelMap.get(reservation.channel_id) || '-') : '-'
           }
         })
         count++
@@ -290,8 +280,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           severity: 'medium',
           data: {
             ...reservation,
-            customer_name: customerMap.get(reservation.customer_id) || '-',
-            channel_name: channelMap.get(reservation.channel_id) || '-'
+            customer_name: reservation.customer_id ? (customerMap.get(reservation.customer_id) || '-') : '-',
+            channel_name: reservation.channel_id ? (channelMap.get(reservation.channel_id) || '-') : '-'
           }
         })
         count++
@@ -306,8 +296,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           severity: 'medium',
           data: {
             ...reservation,
-            customer_name: customerMap.get(reservation.customer_id) || '-',
-            channel_name: channelMap.get(reservation.channel_id) || '-'
+            customer_name: reservation.customer_id ? (customerMap.get(reservation.customer_id) || '-') : '-',
+            channel_name: reservation.channel_id ? (channelMap.get(reservation.channel_id) || '-') : '-'
           }
         })
         count++
@@ -322,8 +312,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           severity: 'high',
           data: {
             ...reservation,
-            customer_name: customerMap.get(reservation.customer_id) || '-',
-            channel_name: channelMap.get(reservation.channel_id) || '-'
+            customer_name: reservation.customer_id ? (customerMap.get(reservation.customer_id) || '-') : '-',
+            channel_name: reservation.channel_id ? (channelMap.get(reservation.channel_id) || '-') : '-'
           }
         })
         count++
@@ -338,8 +328,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           severity: 'medium',
           data: {
             ...reservation,
-            customer_name: customerMap.get(reservation.customer_id) || '-',
-            channel_name: channelMap.get(reservation.channel_id) || '-'
+            customer_name: reservation.customer_id ? (customerMap.get(reservation.customer_id) || '-') : '-',
+            channel_name: reservation.channel_id ? (channelMap.get(reservation.channel_id) || '-') : '-'
           }
         })
         count++
@@ -401,7 +391,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
     }
 
     // 상품 데이터 가져오기 (sub_category 확인용)
-    const productIds = [...new Set(reservations?.map(r => r.product_id).filter(Boolean) || [])]
+    const productIds = [...new Set(reservations?.map(r => r.product_id).filter((id): id is string => id != null) || [])]
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, sub_category')
@@ -451,22 +441,22 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       if (!reservation) return
 
       // 1. 기본 가격 계산 검증
-      const product = productMap.get(reservation.product_id)
+      const product = reservation.product_id ? productMap.get(reservation.product_id) : undefined
       const isServiceProduct = product?.sub_category === 'Mania Service' || product?.sub_category === 'Agency Service'
       
       let calculatedProductTotal
       if (isServiceProduct) {
         // Mania Service 또는 Agency Service는 단일가 적용
-        calculatedProductTotal = price.adult_product_price
+        calculatedProductTotal = price.adult_product_price ?? 0
       } else {
         // 일반 상품은 인원별 계산
         calculatedProductTotal = 
-          (price.adult_product_price * reservation.adults) +
-          (price.child_product_price * reservation.child) +
-          (price.infant_product_price * reservation.infant)
+          ((price.adult_product_price ?? 0) * (reservation.adults ?? 0)) +
+          ((price.child_product_price ?? 0) * (reservation.child ?? 0)) +
+          ((price.infant_product_price ?? 0) * (reservation.infant ?? 0))
       }
 
-      if (Math.abs(calculatedProductTotal - price.product_price_total) > 0.01) {
+      if (Math.abs((calculatedProductTotal ?? 0) - (price.product_price_total ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing1',
@@ -479,10 +469,10 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
 
       // 2. 옵션 가격 계산 검증
       const reservationOptions = optionsMap.get(price.reservation_id) || []
-      const calculatedOptionTotal = reservationOptions.reduce((sum, option) => 
+      const calculatedOptionTotal = reservationOptions.reduce((sum: number, option: { ea: number; price: number }) => 
         sum + (option.ea * option.price), 0)
 
-      if (Math.abs(calculatedOptionTotal - price.option_total) > 0.01) {
+      if (Math.abs(calculatedOptionTotal - (price.option_total ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing2',
@@ -494,8 +484,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       }
 
       // 3. 소계 계산 검증
-      const subtotal = price.product_price_total + price.option_total
-      if (Math.abs(subtotal - price.subtotal) > 0.01) {
+      const subtotal = (price.product_price_total ?? 0) + (price.option_total ?? 0)
+      if (Math.abs(subtotal - (price.subtotal ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing3',
@@ -507,7 +497,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       }
 
       // 4. 총 가격 계산 검증
-      const totalPrice = price.subtotal - 
+      const totalPrice = (price.subtotal ?? 0) - 
         (price.coupon_discount || 0) - 
         (price.additional_discount || 0) + 
         (price.additional_cost || 0) - 
@@ -517,7 +507,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
         (price.prepayment_tip || 0) + 
         (price.private_tour_additional_cost || 0)
 
-      if (Math.abs(totalPrice - price.total_price) > 0.01) {
+      if (Math.abs(totalPrice - (price.total_price ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing4',
@@ -529,8 +519,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       }
 
       // 5. 잔액 계산 검증
-      const balanceAmount = price.total_price - price.deposit_amount - (price.commission_amount || 0)
-      if (Math.abs(balanceAmount - price.balance_amount) > 0.01) {
+      const balanceAmount = (price.total_price ?? 0) - (price.deposit_amount ?? 0) - (price.commission_amount || 0)
+      if (Math.abs(balanceAmount - (price.balance_amount ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing5',
@@ -543,9 +533,9 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
 
       // 6. 결제 금액 검증
       const reservationPayments = paymentsMap.get(price.reservation_id) || []
-      const totalPaymentAmount = reservationPayments.reduce((sum, payment) => sum + payment.amount, 0)
+      const totalPaymentAmount = reservationPayments.reduce((sum: number, payment: { amount: number }) => sum + payment.amount, 0)
 
-      if (Math.abs(totalPaymentAmount - price.deposit_amount) > 0.01) {
+      if (Math.abs(totalPaymentAmount - (price.deposit_amount ?? 0)) > 0.01) {
         pricingIssues.push({
           id: price.id,
           type: 'reservationPricing6',
@@ -753,7 +743,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       }
 
       // 호텔명이 없는 경우
-      if (!hotel.hotel_name) {
+      if (!hotel.hotel) {
         hotelIssues.push({
           id: hotel.id,
           type: 'tourHotelBookings',
@@ -993,9 +983,8 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                        activeTab === 'payments' ? 'payment_records' :
                        activeTab === 'tours' ? 'tours' : activeTab
 
-      const { error } = await supabase
-        .from(tableName)
-        .update(updatedData)
+      const { error } = await fromUntypedTable(supabase, tableName)
+        .update(updatedData as never)
         .eq('id', editingItem.id)
 
       if (error) {

@@ -1,4 +1,5 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type {
   CancellationFollowUpMessageChannel,
   CancellationFollowUpMessageKind,
@@ -11,8 +12,7 @@ export async function fetchCancellationFollowUpMessageTemplateFromDb(
   messageKind: CancellationFollowUpMessageKind
 ): Promise<{ subject_template: string | null; body_template: string } | null> {
   const db = supabaseAdmin ?? supabase
-  const { data, error } = await db
-    .from('cancellation_follow_up_message_templates')
+  const { data, error } = await fromUntypedTable(db, 'cancellation_follow_up_message_templates')
     .select('subject_template,body_template')
     .eq('locale', locale)
     .eq('channel', channel)

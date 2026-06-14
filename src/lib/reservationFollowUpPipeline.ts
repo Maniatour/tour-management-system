@@ -36,7 +36,7 @@ export type FollowUpPipelineStepKey = 'confirmation' | 'resident' | 'departure' 
 
 export function reservationExcludedFromFollowUpPipeline(status: string | null | undefined): boolean {
   const s = String(status ?? '').toLowerCase()
-  return s === 'cancelled' || s === 'canceled' || s === 'deleted'
+  return s === 'cancelled' || s === 'canceled' || s === 'deleted' || s === 'no_show'
 }
 
 /** 문의만(inquiry) 단계 — 결제 전 등. 컨펌·거주·출발·픽업 Follow-up 집계에서 제외 */
@@ -165,7 +165,7 @@ export function followUpModalMatchesPickupTab(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
-  if (!isWithin48HoursBeforeTourStartLocal({ tourDate, tourTime })) return false
+  if (!isWithin48HoursBeforeTourStartLocal({ tourDate: tourDate ?? null, tourTime: tourTime ?? null })) return false
   return !s.pickupSent
 }
 

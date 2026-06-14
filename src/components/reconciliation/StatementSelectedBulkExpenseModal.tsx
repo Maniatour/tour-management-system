@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { AlertTriangle, ListChecks } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
@@ -77,7 +78,7 @@ export default function StatementSelectedBulkExpenseModal({
   open,
   onOpenChange,
   selectedLines,
-  financialAccountId,
+  financialAccountId: _financialAccountId,
   defaultPaymentMethodId,
   email,
   onCompleted
@@ -203,7 +204,7 @@ export default function StatementSelectedBulkExpenseModal({
     sourceId: string,
     amount: number
   ) => {
-    const { error: mErr } = await supabase.from('reconciliation_matches').insert({
+    const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
       statement_line_id: lineId,
       source_table: sourceTable,
       source_id: sourceId,
@@ -364,7 +365,7 @@ export default function StatementSelectedBulkExpenseModal({
             statement_line_id: line.id,
             exclude_from_pnl: Boolean(line.exclude_from_pnl),
             is_personal: false
-          })
+          } as never)
           .select('id')
           .single()
         if (insErr || !ins?.id) throw insErr || new Error('투어 지출 저장 실패')

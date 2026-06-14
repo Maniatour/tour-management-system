@@ -174,8 +174,10 @@ export function parseVehicleMaintenanceBody(body: Record<string, unknown>): {
   const documents = parseStringArray(body.documents)
   if (documents !== undefined) maintenance.documents = documents
 
-  if (body.parts_cost_breakdown !== undefined) {
-    maintenance.parts_cost_breakdown = body.parts_cost_breakdown as VehicleMaintenanceUpdate['parts_cost_breakdown']
+  if (body.parts_cost_breakdown != null) {
+    maintenance.parts_cost_breakdown = body.parts_cost_breakdown as NonNullable<
+      VehicleMaintenanceUpdate['parts_cost_breakdown']
+    >
   }
 
   return { maintenance, payment_method }

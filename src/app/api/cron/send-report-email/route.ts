@@ -148,7 +148,7 @@ async function sendReportEmail(period: string, dateRange: { start: string; end: 
   const emailPromises = admins.map(admin =>
     resend.emails.send({
       from: fromEmail,
-      reply_to: replyTo,
+      replyTo: replyTo,
       to: admin.email,
       subject: `[${periodLabel}] 통계 리포트 - ${dateRange.start} ~ ${dateRange.end}`,
       html: emailContent,

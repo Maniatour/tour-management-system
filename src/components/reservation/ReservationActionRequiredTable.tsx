@@ -28,6 +28,7 @@ import {
   getStatusColor,
   formatChannelDashVariant,
 } from '@/utils/reservationUtils'
+import { RESERVATION_STATUS_I18N_OPTIONS } from '@/lib/reservationStatus'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
@@ -194,13 +195,7 @@ function ReservationStatusDropdown({
     return () => document.removeEventListener('mousedown', close)
   }, [statusOpen])
 
-  const statusOptions = [
-    { value: 'inquiry', labelKey: 'status.inquiry' },
-    { value: 'pending', labelKey: 'status.pending' },
-    { value: 'confirmed', labelKey: 'status.confirmed' },
-    { value: 'completed', labelKey: 'status.completed' },
-    { value: 'cancelled', labelKey: 'status.cancelled' },
-  ] as const
+  const statusOptions = RESERVATION_STATUS_I18N_OPTIONS
 
   const handleStatusSelect = async (newStatus: string) => {
     if (!onStatusChange || newStatus === (reservation.status as string)?.toLowerCase?.()) {
@@ -544,6 +539,18 @@ function ActionsCell(row: TableRowProps) {
   )
 }
 
+function tourDateSortThProps(
+  tourDateSortActive?: boolean,
+  tourDateSortDir?: SortDir,
+  onTourDateSortClick?: () => void
+) {
+  return {
+    ...(tourDateSortActive !== undefined ? { tourDateSortActive } : {}),
+    ...(tourDateSortDir !== undefined ? { tourDateSortDir } : {}),
+    ...(onTourDateSortClick ? { onTourDateSortClick } : {}),
+  }
+}
+
 function TourDateSortTh({
   label,
   tourDateSortActive,
@@ -606,9 +613,7 @@ function VariantTableThead({
             </th>
             <TourDateSortTh
               label={tc('tourDate')}
-              tourDateSortActive={tourDateSortActive}
-              tourDateSortDir={tourDateSortDir}
-              onTourDateSortClick={onTourDateSortClick}
+              {...tourDateSortThProps(tourDateSortActive, tourDateSortDir, onTourDateSortClick)}
             />
             <th scope="col" className="px-2 py-2 whitespace-nowrap">
               {tc('daysLeft')}
@@ -637,9 +642,7 @@ function VariantTableThead({
             </th>
             <TourDateSortTh
               label={tc('tourDate')}
-              tourDateSortActive={tourDateSortActive}
-              tourDateSortDir={tourDateSortDir}
-              onTourDateSortClick={onTourDateSortClick}
+              {...tourDateSortThProps(tourDateSortActive, tourDateSortDir, onTourDateSortClick)}
             />
             <th scope="col" className="px-2 py-2">
               {tc('pickup')}
@@ -671,9 +674,7 @@ function VariantTableThead({
             </th>
             <TourDateSortTh
               label={tc('tourDate')}
-              tourDateSortActive={tourDateSortActive}
-              tourDateSortDir={tourDateSortDir}
-              onTourDateSortClick={onTourDateSortClick}
+              {...tourDateSortThProps(tourDateSortActive, tourDateSortDir, onTourDateSortClick)}
             />
             <th scope="col" className="px-2 py-2 whitespace-nowrap">
               {tc('status')}
@@ -705,9 +706,7 @@ function VariantTableThead({
             </th>
             <TourDateSortTh
               label={tc('tourDate')}
-              tourDateSortActive={tourDateSortActive}
-              tourDateSortDir={tourDateSortDir}
-              onTourDateSortClick={onTourDateSortClick}
+              {...tourDateSortThProps(tourDateSortActive, tourDateSortDir, onTourDateSortClick)}
             />
             <th scope="col" className="px-2 py-2 min-w-[12rem]">
               {tc('incompleteDraftNote')}
@@ -777,7 +776,10 @@ function VariantTableBody({
               <TourDateCell reservation={reservation} />
               <td className="px-2 py-2 whitespace-nowrap tabular-nums text-gray-800">{d == null ? '—' : d}</td>
               <td className="px-2 py-2 whitespace-nowrap">
-                <ReservationStatusDropdown reservation={reservation} onStatusChange={row.onStatusChange} />
+                <ReservationStatusDropdown
+                  reservation={reservation}
+                  {...(row.onStatusChange ? { onStatusChange: row.onStatusChange } : {})}
+                />
               </td>
               <ChannelCell reservation={reservation} channels={row.channels} />
               <ActionsCell {...row} />
@@ -806,7 +808,10 @@ function VariantTableBody({
                 onPickupHotelClick={row.onPickupHotelClick}
               />
               <td className="px-2 py-2 whitespace-nowrap">
-                <ReservationStatusDropdown reservation={reservation} onStatusChange={row.onStatusChange} />
+                <ReservationStatusDropdown
+                  reservation={reservation}
+                  {...(row.onStatusChange ? { onStatusChange: row.onStatusChange } : {})}
+                />
               </td>
               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-800">
                 <span className={assigned ? 'text-green-700 font-medium' : 'text-amber-700 font-medium'}>
@@ -844,7 +849,10 @@ function VariantTableBody({
               />
               <TourDateCell reservation={reservation} />
               <td className="px-2 py-2 whitespace-nowrap">
-                <ReservationStatusDropdown reservation={reservation} onStatusChange={row.onStatusChange} />
+                <ReservationStatusDropdown
+                  reservation={reservation}
+                  {...(row.onStatusChange ? { onStatusChange: row.onStatusChange } : {})}
+                />
               </td>
               <td className="px-2 py-2 text-xs text-gray-800 leading-snug max-w-[14rem]">{issueLabel}</td>
               <ChannelCell reservation={reservation} channels={row.channels} />
@@ -936,8 +944,8 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           products={rest.products}
           channels={rest.channels}
           reservationPricingMap={rest.reservationPricingMap}
-          paymentRecordsByReservationId={rest.paymentRecordsByReservationId}
-          reservationOptionSumByReservationId={rest.reservationOptionSumByReservationId}
+          paymentRecordsByReservationId={rest.paymentRecordsByReservationId ?? new Map()}
+          reservationOptionSumByReservationId={rest.reservationOptionSumByReservationId ?? new Map()}
           locale={rest.locale}
           emailDropdownOpen={rest.emailDropdownOpen}
           sendingEmail={rest.sendingEmail}
@@ -951,20 +959,20 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           onEmailDropdownToggle={rest.onEmailDropdownToggle}
           onEditClick={rest.onEditClick}
           onCustomerClick={rest.onCustomerClick}
-          onStatusChange={rest.onStatusChange}
+          {...(rest.onStatusChange ? { onStatusChange: rest.onStatusChange } : {})}
           onFollowUpClick={setFollowUpReservation}
-          onRefreshReservations={rest.onRefreshReservations}
-          onRefreshReservationPricing={rest.onRefreshReservationPricing}
-          balanceReservationsForApply={
-            tableVariant === 'balance' ? rest.balanceReservationsForApply : undefined
-          }
+          {...(rest.onRefreshReservations ? { onRefreshReservations: rest.onRefreshReservations } : {})}
+          {...(rest.onRefreshReservationPricing ? { onRefreshReservationPricing: rest.onRefreshReservationPricing } : {})}
+          {...(tableVariant === 'balance' && rest.balanceReservationsForApply
+            ? { balanceReservationsForApply: rest.balanceReservationsForApply }
+            : {})}
           actionsColumnEditOnly
           enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch'}
-          showPartnerCancelRefundAction={showPartnerCancelRefundAction}
-          onRefreshPaymentAggregates={onRefreshPaymentAggregates}
-          tourDateSortActive={tourDateSortActive}
-          tourDateSortDir={tourDateSortDir}
-          onTourDateSortClick={onTourDateSortClick}
+          showPartnerCancelRefundAction={showPartnerCancelRefundAction ?? false}
+          {...(onRefreshPaymentAggregates ? { onRefreshPaymentAggregates } : {})}
+          {...(tourDateSortActive !== undefined ? { tourDateSortActive } : {})}
+          {...(tourDateSortDir !== undefined ? { tourDateSortDir } : {})}
+          {...(onTourDateSortClick ? { onTourDateSortClick } : {})}
         />
         {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
       </>
@@ -984,9 +992,7 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
         <table className={`w-full text-sm text-left ${minW}`}>
           <VariantTableThead
             variant={tableVariant}
-            tourDateSortActive={tourDateSortActive}
-            tourDateSortDir={tourDateSortDir}
-            onTourDateSortClick={onTourDateSortClick}
+            {...tourDateSortThProps(tourDateSortActive, tourDateSortDir, onTourDateSortClick)}
           />
           <VariantTableBody
             variant={tableVariant}

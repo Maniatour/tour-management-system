@@ -23,6 +23,7 @@ import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { isSuperAdminEmail } from '@/lib/superAdmin'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 import {
   clearSimulationBrowserStorage,
   getPublicSupabaseUrl,
@@ -40,9 +41,11 @@ function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
       sessionUser.user_metadata?.name ||
       sessionUser.user_metadata?.full_name ||
       (sessionUser.email ? sessionUser.email.split('@')[0] : 'User'),
-    avatar_url: sessionUser.user_metadata?.avatar_url,
+    ...(sessionUser.user_metadata?.avatar_url
+      ? { avatar_url: sessionUser.user_metadata.avatar_url }
+      : {}),
     created_at: sessionUser.created_at,
-    user_metadata: sessionUser.user_metadata,
+    ...(sessionUser.user_metadata != null ? { user_metadata: sessionUser.user_metadata } : {}),
   }
 }
 
@@ -69,7 +72,9 @@ function authUserFromStoredAccessToken(): AuthUser | null {
         email.split('@')[0] ||
         'User',
       created_at: payload.iat ? new Date(payload.iat * 1000).toISOString() : new Date().toISOString(),
-      user_metadata: meta as AuthUser['user_metadata'],
+      ...(Object.keys(meta).length > 0
+        ? { user_metadata: meta as NonNullable<AuthUser['user_metadata']> }
+        : {}),
     }
     if (typeof meta.avatar_url === 'string' && meta.avatar_url) {
       authUser.avatar_url = meta.avatar_url
@@ -150,19 +155,122 @@ interface SimulatedUser {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const AUTH_SNAPSHOT_KEY = 'tms-auth-snapshot-v1'
+
+type AuthSnapshot = {
+  user: AuthUser | null
+  authUser: AuthUser | null
+  userRole: UserRole | null
+  userPosition: string | null
+  permissions: UserPermissions | null
+  isInitialized: boolean
+  isSimulating: boolean
+  simulatedUser: SimulatedUser | null
+}
+
+function clearAuthSnapshot() {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.removeItem(AUTH_SNAPSHOT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function readAuthSnapshot(): AuthSnapshot | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(AUTH_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as AuthSnapshot
+    if (!parsed?.isInitialized) return null
+
+    if (parsed.isSimulating && parsed.simulatedUser?.email) {
+      return parsed
+    }
+
+    const hydrated = authUserFromStoredAccessToken()
+    const snapshotEmail = parsed.user?.email?.trim().toLowerCase()
+    const hydratedEmail = hydrated?.email?.trim().toLowerCase()
+    if (!hydrated || !snapshotEmail || snapshotEmail !== hydratedEmail) {
+      clearAuthSnapshot()
+      return null
+    }
+    if (parsed.userRole == null) return null
+    return parsed
+  } catch {
+    clearAuthSnapshot()
+    return null
+  }
+}
+
+function writeAuthSnapshot(snapshot: AuthSnapshot) {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(AUTH_SNAPSHOT_KEY, JSON.stringify(snapshot))
+  } catch {
+    /* ignore */
+  }
+}
+
+function getInitialAuthState(): {
+  user: AuthUser | null
+  authUser: AuthUser | null
+  userRole: UserRole | null
+  userPosition: string | null
+  permissions: UserPermissions | null
+  loading: boolean
+  isInitialized: boolean
+  simulatedUser: SimulatedUser | null
+  isSimulating: boolean
+  restoredFromSnapshot: boolean
+} {
+  const empty = {
+    user: null,
+    authUser: null,
+    userRole: null,
+    userPosition: null,
+    permissions: null,
+    loading: true,
+    isInitialized: false,
+    simulatedUser: null,
+    isSimulating: false,
+    restoredFromSnapshot: false,
+  }
+  if (typeof window === 'undefined') return empty
+
+  const snapshot = readAuthSnapshot()
+  if (!snapshot) return empty
+
+  return {
+    user: snapshot.user,
+    authUser: snapshot.authUser ?? snapshot.user,
+    userRole: snapshot.userRole,
+    userPosition: snapshot.userPosition,
+    permissions: snapshot.permissions,
+    loading: false,
+    isInitialized: true,
+    simulatedUser: snapshot.simulatedUser,
+    isSimulating: snapshot.isSimulating,
+    restoredFromSnapshot: true,
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
-  const [userRole, setUserRole] = useState<UserRole | null>(null)
-  const [userPosition, setUserPosition] = useState<string | null>(null)
-  const [permissions, setPermissions] = useState<UserPermissions | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const initialAuth = getInitialAuthState()
+  const [user, setUser] = useState<AuthUser | null>(initialAuth.user)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(initialAuth.authUser)
+  const [userRole, setUserRole] = useState<UserRole | null>(initialAuth.userRole)
+  const [userPosition, setUserPosition] = useState<string | null>(initialAuth.userPosition)
+  const [permissions, setPermissions] = useState<UserPermissions | null>(initialAuth.permissions)
+  const [loading, setLoading] = useState(initialAuth.loading)
+  const [isInitialized, setIsInitialized] = useState(initialAuth.isInitialized)
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
   
   // 시뮬레이션 상태 (SSR 호환성을 위해 초기값은 null/false로 설정)
-  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
-  const [isSimulating, setIsSimulating] = useState(false)
+  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(initialAuth.simulatedUser)
+  const [isSimulating, setIsSimulating] = useState(initialAuth.isSimulating)
+  const restoredFromSnapshotRef = useRef(initialAuth.restoredFromSnapshot)
 
   const userRef = useRef<AuthUser | null>(null)
   userRef.current = user
@@ -553,7 +661,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const hasStoredAuth = !!(
       localStorage.getItem('sb-refresh-token') || localStorage.getItem('sb-access-token')
     )
-    if (!userRef.current?.email && hasStoredAuth) {
+    if (!userRef.current?.email && hasStoredAuth && !isInitializedRef.current) {
       setLoading(true)
     }
 
@@ -592,7 +700,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const email = session.user.email
       if (userRef.current?.email === email) return
 
-      setLoading(true)
+      if (!isInitializedRef.current || userRoleRef.current === null) {
+        setLoading(true)
+      }
       const authUserData = authUserFromSupabaseSessionUser(session.user)
       setUser(authUserData)
       setAuthUser(authUserData)
@@ -844,19 +954,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('AuthContext: Simulation in progress but no simulatedUser yet, waiting...')
       return
     }
-    
-    console.log('AuthContext: Initializing authentication...')
+
+    const skipHeavyBootstrap = restoredFromSnapshotRef.current
+
+    if (skipHeavyBootstrap) {
+      restoredFromSnapshotRef.current = false
+      setLoading(false)
+      console.log('AuthContext: Restored from snapshot, skipping heavy bootstrap')
+    } else {
+      console.log('AuthContext: Initializing authentication...')
+    }
 
     let delayedAuthTimer: ReturnType<typeof setTimeout> | undefined
-    const bootstrapFailsafe = setTimeout(() => {
-      if (isInitializedRef.current) return
-      console.warn('AuthContext: bootstrap failsafe — forcing guest init (mobile/slow network)')
-      setUserRole((role) => role ?? 'customer')
-      setUserPosition((pos) => pos ?? null)
-      setPermissions((perms) => perms ?? null)
-      setLoading(false)
-      setIsInitialized(true)
-    }, AUTH_BOOTSTRAP_FAILSAFE_MS)
+    let bootstrapFailsafe: ReturnType<typeof setTimeout> | undefined
+
+    if (!skipHeavyBootstrap) {
+      bootstrapFailsafe = setTimeout(() => {
+        if (isInitializedRef.current) return
+        console.warn('AuthContext: bootstrap failsafe — forcing guest init (mobile/slow network)')
+        setUserRole((role) => role ?? 'customer')
+        setUserPosition((pos) => pos ?? null)
+        setPermissions((perms) => perms ?? null)
+        setLoading(false)
+        setIsInitialized(true)
+      }, AUTH_BOOTSTRAP_FAILSAFE_MS)
+    }
 
     // localStorage에서 토큰 확인
     const checkStoredTokens = async () => {
@@ -1122,9 +1244,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 350) // INITIAL_SESSION·스토리지 반영 여유 (짧을수록 미인증 판정까지 대기 시간 감소)
     }
     
-    checkStoredTokens().catch(error => {
-      console.error('AuthContext: Error in checkStoredTokens:', error)
-    })
+    if (!skipHeavyBootstrap) {
+      checkStoredTokens().catch(error => {
+        console.error('AuthContext: Error in checkStoredTokens:', error)
+      })
+    }
     
     console.log('AuthContext: Initialization complete, setting up auth listener')
 
@@ -1132,7 +1256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) {
       console.error('AuthContext: Supabase client not available')
       return () => {
-        clearTimeout(bootstrapFailsafe)
+        if (bootstrapFailsafe) clearTimeout(bootstrapFailsafe)
         if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       }
     }
@@ -1156,6 +1280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('AuthContext: SIGNED_OUT received, verifying session (mobile resume guard)')
           void (async () => {
             const clearSignedOutState = () => {
+              clearAuthSnapshot()
               setUser(null)
               setAuthUser(null)
               setUserRole('customer')
@@ -1352,11 +1477,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
 
     return () => {
-      clearTimeout(bootstrapFailsafe)
+      if (bootstrapFailsafe) clearTimeout(bootstrapFailsafe)
       if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       subscription.unsubscribe()
     }
   }, [checkUserRole, hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isInitialized) return
+
+    if (isSimulating && simulatedUser) {
+      writeAuthSnapshot({
+        user: null,
+        authUser: null,
+        userRole: simulatedUser.role,
+        userPosition: simulatedUser.position,
+        permissions: null,
+        isInitialized: true,
+        isSimulating: true,
+        simulatedUser,
+      })
+      return
+    }
+
+    if (user?.email && userRole !== null) {
+      writeAuthSnapshot({
+        user,
+        authUser: authUser ?? user,
+        userRole,
+        userPosition,
+        permissions,
+        isInitialized: true,
+        isSimulating: false,
+        simulatedUser: null,
+      })
+    }
+  }, [
+    isInitialized,
+    user,
+    authUser,
+    userRole,
+    userPosition,
+    permissions,
+    isSimulating,
+    simulatedUser,
+  ])
 
   // 모바일: 다른 앱 후 복귀 시(bfcache·visibility) React 상태와 Supabase 세션이 어긋나면 가이드 레이아웃이 auth로 보내는 문제 방지
   useEffect(() => {
@@ -1508,6 +1673,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       roleCheckInflightRef.current.clear()
       clearStoredAuthTokens()
+      clearAuthSnapshot()
       resetSupabaseTokenSyncCache()
       
       setUser(null)
@@ -1659,41 +1825,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user?.email])
 
-  // 사용자가 로그인되어 있을 때만 안읽은 메시지 수 조회
+  // 사용자가 로그인되어 있을 때만 안읽은 메시지 수 조회 (초기 fetch는 idle 시점으로 지연)
   useEffect(() => {
-    if (user?.email && userRole && userRole !== 'customer' && isInitialized) {
-      void refreshTeamChatUnreadCount()
-      
-      // 실시간 구독으로 새 메시지 감지
-      if (supabase) {
-        const subscription = supabase
-          .channel('team-chat-unread')
-          .on('postgres_changes', 
-            { 
-              event: 'INSERT', 
-              schema: 'public', 
-              table: 'team_chat_messages'
-            }, 
-            () => {
-              refreshTeamChatUnreadCount()
-            }
-          )
-          .subscribe()
-      
-        // 5분마다 안읽은 메시지 수 새로고침
-        const interval = setInterval(refreshTeamChatUnreadCount, 300000)
-        
-        return () => {
-          subscription.unsubscribe()
-          clearInterval(interval)
-        }
-      }
-    } else {
+    if (!(user?.email && userRole && userRole !== 'customer' && isInitialized)) {
       setTeamChatUnreadCount(0)
+      return
     }
-    
-    // 모든 경우에 cleanup 함수 반환 (빈 함수라도)
-    return () => {}
+
+    const cancelDeferred = scheduleDeferredWork(() => {
+      void refreshTeamChatUnreadCount()
+    }, 2000)
+
+    if (supabase) {
+      const subscription = supabase
+        .channel('team-chat-unread')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'team_chat_messages',
+          },
+          () => {
+            void refreshTeamChatUnreadCount()
+          }
+        )
+        .subscribe()
+
+      const interval = setInterval(() => {
+        void refreshTeamChatUnreadCount()
+      }, 300000)
+
+      return () => {
+        cancelDeferred()
+        subscription.unsubscribe()
+        clearInterval(interval)
+      }
+    }
+
+    return () => {
+      cancelDeferred()
+    }
   }, [user?.email, userRole, isInitialized, refreshTeamChatUnreadCount])
 
   // 토큰 자동 갱신 (30분마다 체크)

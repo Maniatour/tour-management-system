@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, DollarSign, Copy, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Settings, Copy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -23,7 +23,7 @@ interface AdminOptionsProps {
   params: Promise<{ locale: string }>
 }
 
-export default function AdminOptions({ params }: AdminOptionsProps) {
+export default function AdminOptions({}: AdminOptionsProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('options')
@@ -111,10 +111,9 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
         thumbnail_url: emptyToNull((option as any).thumbnail_url)
       }
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('options')
         .insert([newOption])
-        .select()
 
       if (error) {
         console.error('Error adding option:', error)
@@ -449,13 +448,13 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
               {/* 카테고리, 가격유형, 상태 뱃지 */}
               <div className="flex items-center gap-2 mt-3 flex-wrap">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(option.category)}`}>
-                  {getCategoryLabel(option.category)}
+                  {getCategoryLabel(option.category ?? '')}
                 </span>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                  {getPriceTypeLabel(option.price_type)}
+                  {getPriceTypeLabel(option.price_type ?? '')}
                 </span>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(option.status)}`}>
-                  {getStatusLabel(option.status)}
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(option.status ?? '')}`}>
+                  {getStatusLabel(option.status ?? '')}
                 </span>
               </div>
             </div>
@@ -572,6 +571,8 @@ interface OptionFormProps {
 }
 
 function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFormProps) {
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
   
@@ -650,7 +651,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit(formData as Omit<Option, 'id' | 'created_at'>)
   }
 
   const addTag = () => {

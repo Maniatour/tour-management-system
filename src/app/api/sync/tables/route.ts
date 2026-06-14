@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { suggestColumnMapping } from '@/lib/flexibleSyncService'
+import { suggestColumnMapping, getTableColumnMapping } from '@/lib/flexibleSyncService'
 
 export async function GET(request: NextRequest) {
   try {

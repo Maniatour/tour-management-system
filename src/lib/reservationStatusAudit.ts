@@ -40,7 +40,7 @@ export function statusFromReservationAuditJson(json: unknown): string | null {
 
 function isCancelledLikeReservationStatus(s: string): boolean {
   const t = s.toLowerCase().trim()
-  return t === 'cancelled' || t === 'canceled' || t === 'deleted'
+  return t === 'cancelled' || t === 'canceled' || t === 'deleted' || t === 'no_show'
 }
 
 /**
@@ -274,8 +274,8 @@ export function isIntoCancelledLikeTransition(tr: { from: string; to: string } |
   if (!tr) return false
   const to = tr.to.toLowerCase()
   const from = tr.from.toLowerCase()
-  const toTerm = to === 'cancelled' || to === 'canceled' || to === 'deleted'
-  const fromTerm = from === 'cancelled' || from === 'canceled' || from === 'deleted'
+  const toTerm = to === 'cancelled' || to === 'canceled' || to === 'deleted' || to === 'no_show'
+  const fromTerm = from === 'cancelled' || from === 'canceled' || from === 'deleted' || from === 'no_show'
   return toTerm && !fromTerm
 }
 

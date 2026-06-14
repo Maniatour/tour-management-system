@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { X, Trash2 } from 'lucide-react'
 import { canPermanentDeleteRecords } from '@/utils/tourUtils'
 import type { Reservation } from '@/types/reservation'

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useCallback, memo, useEffect } from 'react'
+import { useState, useMemo, useCallback, memo, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import type { Database } from '@/lib/supabase'
@@ -38,6 +38,7 @@ const STATUS_LEGEND: Array<{ status: string; label: string }> = [
   { status: 'confirmed', label: '확정' },
   { status: 'completed', label: '완료' },
   { status: 'cancelled', label: '취소' },
+  { status: 'no_show', label: '노쇼' },
   { status: 'recruiting', label: '모집중' },
 ]
 
@@ -54,6 +55,8 @@ function getReservationStatusColor(status: string): string {
     case 'cancelled':
     case 'canceled':
       return 'bg-red-500'
+    case 'no_show':
+      return 'bg-orange-500'
     case 'recruiting':
       return 'bg-purple-500'
     default:
@@ -73,6 +76,8 @@ function getStatusLabelKo(status: string): string {
     case 'cancelled':
     case 'canceled':
       return '취소'
+    case 'no_show':
+      return '노쇼'
     case 'recruiting':
       return '모집중'
     default:
@@ -170,7 +175,7 @@ const CalendarDayCell = memo(function CalendarDayCell({
           const secondLineContent =
             dateFilter === 'created_at'
               ? `${formatDateMDY(reservation.tour_date)} ${productName} | ${statusLabel}`
-              : `${productName} | ${statusLabel} (${formatDateMDY(reservation.created_at)})`
+              : `${productName} | ${statusLabel} (${formatDateMDY(reservation.created_at ?? '')})`
 
           return (
             <div
@@ -237,6 +242,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
     for (const reservation of reservations) {
       let dateString: string
       if (dateFilter === 'created_at') {
+        if (!reservation.created_at) continue
         dateString = formatYmdLocal(new Date(reservation.created_at))
       } else {
         dateString = reservation.tour_date

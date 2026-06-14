@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp, Navigation, Map } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp, Map } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ScheduleItem {
@@ -69,7 +69,7 @@ export default function TourScheduleSection({
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedSchedules, setExpandedSchedules] = useState<Set<string>>(new Set())
-  const [isExpanded, setIsExpanded] = useState(true)
+  const [isExpanded] = useState(true)
   const [showOnlyMySchedules, setShowOnlyMySchedules] = useState(false) // 자신의 일정만 보기 필터
 
   // 아코디언 토글 함수
@@ -228,7 +228,7 @@ export default function TourScheduleSection({
   }
 
   // 구글맵 네비게이션 함수
-  const openGoogleMapsNavigation = (schedule: ScheduleItem) => {
+  const _openGoogleMapsNavigation = (schedule: ScheduleItem) => {
     if (schedule.latitude && schedule.longitude) {
       // 구글맵 네비게이션 URL 생성
       const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${schedule.latitude},${schedule.longitude}`
@@ -304,7 +304,7 @@ export default function TourScheduleSection({
     return labels
   }
 
-  const generateRouteUrl = (dayNumber: number) => {
+  const _generateRouteUrl = (dayNumber: number) => {
     // 해당 일차의 모든 일정에서 위치 정보 추출 (좌표 우선, 텍스트 대체)
     const daySchedules = schedulesByDay[dayNumber] || []
     const locations = daySchedules
@@ -461,6 +461,9 @@ export default function TourScheduleSection({
   const allSchedulesExpanded = filteredSchedulesWithDescription.length > 0 && 
     filteredSchedulesWithDescription.every(s => expandedSchedules.has(s.id))
 
+  void _openGoogleMapsNavigation
+  void _generateRouteUrl
+
   return (
     <div>
       {/* 필터 버튼 (가이드 페이지에서만 표시) */}
@@ -563,7 +566,7 @@ export default function TourScheduleSection({
                 
                 {/* 일정 목록 - 항상 표시 */}
                 <div className="space-y-3">
-                  {daySchedules.map((schedule, scheduleIndex) => {
+                  {daySchedules.map((schedule, _scheduleIndex) => {
                     const isExpanded = expandedSchedules.has(schedule.id)
                     const hasDescription = getLocalizedText(schedule.description_ko, schedule.description_en, '')
                     // 다음 목적지 찾기 (전체 일정에서 찾기)

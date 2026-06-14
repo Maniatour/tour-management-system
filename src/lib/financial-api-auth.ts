@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
+import type { Database } from '@/lib/database.types'
 
 const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
 
 export async function assertSuper(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<Database>,
   userEmail: string | undefined
 ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
   if (!userEmail) {
@@ -36,7 +37,7 @@ export async function assertSuper(
 
 /** Bearer 또는 쿠키 세션으로 Supabase + 이메일 확보 */
 export async function resolveFinancialApiAuth(request: NextRequest): Promise<
-  | { ok: true; supabase: ReturnType<typeof createClient>; userEmail: string }
+  | { ok: true; supabase: SupabaseClient<Database>; userEmail: string }
   | { ok: false; response: NextResponse }
 > {
   const authHeader = request.headers.get('Authorization')
@@ -54,7 +55,7 @@ export async function resolveFinancialApiAuth(request: NextRequest): Promise<
   }
 
   if (token) {
-    const supabase = createClient(
+    const supabase: SupabaseClient<Database> = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {

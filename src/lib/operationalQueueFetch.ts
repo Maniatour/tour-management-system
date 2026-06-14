@@ -117,7 +117,7 @@ export async function fetchReservationsByIdsProgressive(
         if (error) {
           return { error: error as Error, loadedRowCount }
         }
-        const batch = (data || []) as Record<string, unknown>[]
+        const batch = (data || []) as unknown as Record<string, unknown>[]
         if (batch.length === 0) continue
         loadedRowCount += batch.length
         const keepGoing = await handlers.onChunk(batch)

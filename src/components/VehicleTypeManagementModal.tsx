@@ -110,7 +110,20 @@ export default function VehicleTypeManagementModal({
       }
 
       // 목록은 즉시 표시, 썸네일은 병렬 조회 후 반영
-      const skeleton: VehicleType[] = typesData.map((t) => ({ ...t, photos: [] }))
+      const skeleton: VehicleType[] = typesData.map((t) => ({
+        id: t.id,
+        name: t.name,
+        brand: t.brand,
+        model: t.model,
+        passenger_capacity: t.passenger_capacity,
+        vehicle_category: t.vehicle_category,
+        is_active: t.is_active ?? true,
+        display_order: t.display_order ?? 0,
+        created_at: t.created_at ?? '',
+        updated_at: t.updated_at ?? '',
+        ...(t.description != null ? { description: t.description } : {}),
+        photos: [] as VehicleTypePhoto[],
+      }))
       setVehicleTypes(skeleton)
       setLoading(false)
 
@@ -179,8 +192,9 @@ export default function VehicleTypeManagementModal({
 
         return {
           ...vehicleType,
-          photos: sortedPhotos
-        }
+          description: vehicleType.description ?? undefined,
+          photos: sortedPhotos,
+        } as VehicleType
       })
 
       setVehicleTypes(typesWithPhotos)

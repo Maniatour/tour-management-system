@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import { Grid3X3, Calendar } from 'lucide-react'
 
 interface ReservationsEmptyStateProps {

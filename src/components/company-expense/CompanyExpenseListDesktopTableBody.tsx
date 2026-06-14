@@ -1,10 +1,9 @@
 'use client'
 
-import React from 'react'
+import type { ReactNode } from 'react'
 import { TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Wrench } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
@@ -12,56 +11,19 @@ import { Database } from '@/lib/database.types'
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
 
-type PaidForLabelRow = {
-  id: string
-  code: string
-  label_ko: string
-  label_en: string | null
-  links_vehicle_maintenance?: boolean
-  is_active?: boolean
-}
-
-function paidForLabelBadge(
-  expense: CompanyExpense,
-  labels: PaidForLabelRow[],
-  locale: string,
-  t: (key: string) => string
-): React.ReactNode {
-  const id = expense.paid_for_label_id
-  if (!id || String(id).trim() === '') return null
-  const lab = labels.find((l) => l.id === id)
-  const text = lab
-    ? locale === 'ko'
-      ? lab.label_ko
-      : lab.label_en || lab.label_ko
-    : t('listInlineEdit.labelUnknown')
-  return (
-    <Badge
-      variant="secondary"
-      className={`mt-0.5 w-fit max-w-full truncate text-[10px] font-normal ${lab?.is_active === false ? 'opacity-70' : ''}`}
-      title={lab?.code}
-    >
-      {text}
-      {lab?.is_active === false ? ` ${t('listInlineEdit.labelInactiveSuffix')}` : ''}
-    </Badge>
-  )
-}
-
 type Props = {
   expenses: CompanyExpense[]
   handleEdit: (e: CompanyExpense) => void
   reconciledExpenseIds: Set<string>
   onOpenStatementRecon: (e: CompanyExpense) => void
   paymentMethodMap: Record<string, string>
-  getCategoryLabel: (c: string) => string
-  getStatusBadge: (s: string | null) => React.ReactNode
+  getStatusBadge: (s: string | null) => ReactNode
   hasUsableVehicleId: (id: string | null | undefined) => boolean
   getVehicleLineLabel: (id: string) => string
   openVehicleMaintenanceHistory: (id: string) => void
-  renderEmployeeEmailCell: (e: CompanyExpense) => React.ReactNode
+  renderEmployeeEmailCell: (e: CompanyExpense) => ReactNode
   teamMembers: Map<string, TeamMember>
   locale: string
-  paidForLabels: PaidForLabelRow[]
   t: (key: string) => string
   selectedExpenseIds: Set<string>
   onToggleExpenseSelect: (id: string, selected: boolean) => void
@@ -80,7 +42,6 @@ export function CompanyExpenseListDesktopTableBody({
   reconciledExpenseIds,
   onOpenStatementRecon,
   paymentMethodMap,
-  getCategoryLabel,
   getStatusBadge,
   hasUsableVehicleId,
   getVehicleLineLabel,
@@ -88,14 +49,13 @@ export function CompanyExpenseListDesktopTableBody({
   renderEmployeeEmailCell,
   teamMembers,
   locale,
-  paidForLabels,
   t,
   selectedExpenseIds,
   onToggleExpenseSelect,
   onOpenQuickStandard,
   onOpenQuickPayment,
   onOpenQuickVehicle,
-  formatCurrency,
+  formatCurrency: _formatCurrency,
 }: Props) {
   const tStmt = useTranslations('expenses.statementRecon')
   return (
@@ -127,14 +87,6 @@ export function CompanyExpenseListDesktopTableBody({
             <span className="line-clamp-2 break-words text-[11px] leading-snug" title={expense.paid_to ?? undefined}>
               {expense.paid_to}
             </span>
-          </TableCell>
-          <TableCell className="min-w-0 px-1.5 py-1">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-[11px] leading-snug" title={expense.paid_for ?? undefined}>
-                {expense.paid_for}
-              </span>
-              {paidForLabelBadge(expense, paidForLabels, locale, t)}
-            </div>
           </TableCell>
           <TableCell className="min-w-0 px-1.5 py-1 align-top" onClick={(e) => e.stopPropagation()}>
             <button
@@ -170,26 +122,19 @@ export function CompanyExpenseListDesktopTableBody({
                 : t('listQuickEdit.tapToSetPayment')}
             </button>
           </TableCell>
-          <TableCell className="min-w-0 px-1.5 py-1">
-            {expense.category && (
-              <Badge variant="outline" className="max-w-full truncate px-1 py-0 text-[10px] font-normal leading-tight">
-                <span className="truncate">{getCategoryLabel(expense.category)}</span>
-              </Badge>
-            )}
-          </TableCell>
           <TableCell className="min-w-0 px-1.5 py-1 align-top" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className={`${cellClickableCls} line-clamp-2 w-full min-w-0 break-words text-left text-[11px]`}
-              title={t('listQuickEdit.openVehicleHint')}
-              onClick={() => onOpenQuickVehicle(expense)}
-            >
-              {hasUsableVehicleId(expense.vehicle_id) ? (
+            {hasUsableVehicleId(expense.vehicle_id) ? (
+              <button
+                type="button"
+                className={`${cellClickableCls} line-clamp-2 w-full min-w-0 break-words text-left text-[11px]`}
+                title={t('listQuickEdit.openVehicleHint')}
+                onClick={() => onOpenQuickVehicle(expense)}
+              >
                 <span title={getVehicleLineLabel(expense.vehicle_id!)}>{getVehicleLineLabel(expense.vehicle_id!)}</span>
-              ) : (
-                <span className="text-muted-foreground">{t('listQuickEdit.tapToSetVehicle')}</span>
-              )}
-            </button>
+              </button>
+            ) : (
+              <span className="text-muted-foreground text-[11px]">—</span>
+            )}
           </TableCell>
           <TableCell className="px-0.5 py-1 text-center" onClick={(e) => e.stopPropagation()}>
             {hasUsableVehicleId(expense.vehicle_id) ? (

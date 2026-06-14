@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MessageSquare, Send } from 'lucide-react'
 
 interface CancellationReasonModalProps {

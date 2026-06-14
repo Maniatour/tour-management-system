@@ -26,7 +26,7 @@ export default function AddAttendanceForm({
   onClose, 
   onSuccess, 
   selectedEmployee,
-  selectedMonth 
+  selectedMonth: _selectedMonth,
 }: AddAttendanceFormProps) {
   const [formData, setFormData] = useState({
     employee_email: selectedEmployee,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 /**
  * 명세 대조 — 결제수단(payment_methods) ↔ 금융 계정 연결.
@@ -36,8 +37,7 @@ export async function PATCH(
     const faId = raw === null || raw === '' ? null : String(raw).trim()
 
     if (faId) {
-      const { data: fa, error: faErr } = await auth.supabase
-        .from('financial_accounts')
+      const { data: fa, error: faErr } = await fromUntypedTable(auth.supabase, 'financial_accounts')
         .select('id')
         .eq('id', faId)
         .maybeSingle()
@@ -56,7 +56,7 @@ export async function PATCH(
       .update({
         financial_account_id: faId,
         updated_at: new Date().toISOString(),
-      })
+      } as never)
       .eq('id', id)
       .select('id, financial_account_id')
       .maybeSingle()

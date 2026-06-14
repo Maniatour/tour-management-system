@@ -54,11 +54,9 @@ export default function TicketBookingVendorPeriodStatsPanel({
           iconBg="bg-blue-100"
           label={t('vendorPeriodStatsTotalBookings')}
           value={String(stats.totalRows)}
-          sub={
-            stats.cancelledRows > 0
-              ? t('vendorPeriodStatsCancelledSub', { count: stats.cancelledRows })
-              : undefined
-          }
+          {...(stats.cancelledRows > 0
+            ? { sub: t('vendorPeriodStatsCancelledSub', { count: stats.cancelledRows }) }
+            : {})}
         />
         <StatCard
           icon={<Ticket className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600" />}

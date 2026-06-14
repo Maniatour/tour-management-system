@@ -565,14 +565,18 @@ export default function SopStructureEditor({
           content_ko: cat.content_ko,
           content_en: cat.content_en,
           sort_order: 0,
-          checklist_items:
-            cat.checklist_items && cat.checklist_items.length > 0 ? cat.checklist_items : undefined,
+          ...(cat.checklist_items && cat.checklist_items.length > 0
+            ? { checklist_items: cat.checklist_items }
+            : {}),
         },
       ],
     }
 
-    const updatedOldSection: SopSection = { ...sec, categories: fixedRemaining }
-    const reordered = [...sortedSecs.slice(0, si + 1), newSection, ...sortedSecs.slice(si + 1)]
+    const updatedSec: SopSection = { ...sec, categories: fixedRemaining }
+    const reordered = sortedSecs.flatMap((s, idx) => {
+      if (idx === si) return [updatedSec, newSection]
+      return [s]
+    })
     emit({
       ...value,
       sections: reordered.map((s, i) => ({ ...s, sort_order: i })),
@@ -627,13 +631,16 @@ export default function SopStructureEditor({
       content_ko: '',
       content_en: '',
       sort_order: ci + 1,
-      checklist_items: movedChecklist.length > 0 ? movedChecklist : undefined,
+      ...(movedChecklist.length > 0 ? { checklist_items: movedChecklist } : {}),
     }
 
-    const updatedCurrentCat: SopCategory = {
-      ...cat,
-      checklist_items: remainingInCat.length > 0 ? remainingInCat : undefined,
-    }
+    const updatedCurrentCat: SopCategory =
+      remainingInCat.length > 0
+        ? { ...cat, checklist_items: remainingInCat }
+        : (() => {
+            const { checklist_items: _drop, ...rest } = cat
+            return rest as SopCategory
+          })()
     const catsWithUpdated = cats.map((c) => (c.id === catId ? updatedCurrentCat : c))
     const mergedCats = [...catsWithUpdated.slice(0, ci + 1), newCat, ...catsWithUpdated.slice(ci + 1)]
 
@@ -671,7 +678,7 @@ export default function SopStructureEditor({
       content_ko: '',
       content_en: '',
       sort_order: 0,
-      checklist_items: movedChecklist.length > 0 ? movedChecklist : undefined,
+      ...(movedChecklist.length > 0 ? { checklist_items: movedChecklist } : {}),
     }
 
     const newSection: SopSection = {
@@ -682,13 +689,21 @@ export default function SopStructureEditor({
       categories: [innerCategory],
     }
 
-    const updatedCats = cats.map((c) =>
-      c.id === catId
-        ? { ...c, checklist_items: remainingInCat.length > 0 ? remainingInCat : undefined }
-        : c
-    )
-    const updatedOld: SopSection = { ...sec, categories: updatedCats }
-    const reordered = [...sortedSecs.slice(0, si + 1), newSection, ...sortedSecs.slice(si + 1)]
+    const updatedCats = cats.map((c) => {
+      if (c.id !== catId) return c
+      if (remainingInCat.length > 0) return { ...c, checklist_items: remainingInCat }
+      const { checklist_items: _drop, ...rest } = c
+      return rest as SopCategory
+    })
+    const reordered = sortedSecs.flatMap((s, idx) => {
+      if (idx === si) {
+        return [
+          { ...s, categories: updatedCats.map((c, i) => ({ ...c, sort_order: i })) },
+          newSection,
+        ]
+      }
+      return [s]
+    })
     emit({
       ...value,
       sections: reordered.map((s, i) => ({ ...s, sort_order: i })),

@@ -1,24 +1,26 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import dynamic from 'next/dynamic'
 import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, Receipt, ExternalLink, Trash2, MapPin } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
-import TourCourseEditModal from '@/components/TourCourseEditModal'
-import EstimateModal from '@/components/tour-cost-calculator/EstimateModal'
 import CourseTreeItem from '@/components/tour-cost-calculator/CourseTreeItem'
-import VehicleSettingsModal from '@/components/tour-cost-calculator/VehicleSettingsModal'
-import SaveConfigModal from '@/components/tour-cost-calculator/SaveConfigModal'
-import LoadConfigModal from '@/components/tour-cost-calculator/LoadConfigModal'
-import TemplateSaveModal from '@/components/tour-cost-calculator/TemplateSaveModal'
-import TemplateLoadModal from '@/components/tour-cost-calculator/TemplateLoadModal'
-import DaySelectModal from '@/components/tour-cost-calculator/DaySelectModal'
-import EntranceFeeDetailModal from '@/components/tour-cost-calculator/EntranceFeeDetailModal'
-import InvoiceModal from '@/components/customer/InvoiceModal'
 import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
+
+const TourCourseEditModal = dynamic(() => import('@/components/TourCourseEditModal'), { ssr: false, loading: () => null })
+const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), { ssr: false, loading: () => null })
+const VehicleSettingsModal = dynamic(() => import('@/components/tour-cost-calculator/VehicleSettingsModal'), { ssr: false, loading: () => null })
+const SaveConfigModal = dynamic(() => import('@/components/tour-cost-calculator/SaveConfigModal'), { ssr: false, loading: () => null })
+const LoadConfigModal = dynamic(() => import('@/components/tour-cost-calculator/LoadConfigModal'), { ssr: false, loading: () => null })
+const TemplateSaveModal = dynamic(() => import('@/components/tour-cost-calculator/TemplateSaveModal'), { ssr: false, loading: () => null })
+const TemplateLoadModal = dynamic(() => import('@/components/tour-cost-calculator/TemplateLoadModal'), { ssr: false, loading: () => null })
+const DaySelectModal = dynamic(() => import('@/components/tour-cost-calculator/DaySelectModal'), { ssr: false, loading: () => null })
+const EntranceFeeDetailModal = dynamic(() => import('@/components/tour-cost-calculator/EntranceFeeDetailModal'), { ssr: false, loading: () => null })
+const InvoiceModal = dynamic(() => import('@/components/customer/InvoiceModal'), { ssr: false, loading: () => null })
 
 // Google Maps 타입 정의 - 다른 파일의 타입 선언과 충돌을 피하기 위해 any 사용
 
@@ -2061,7 +2063,7 @@ export default function TourCostCalculatorPage() {
                                 className={`flex items-center gap-2 py-1 px-2 border-t first:border-t-0 bg-white cursor-move min-w-[520px] ${
                                   snapshot.isDragging ? 'shadow-lg border-blue-500 z-50 opacity-100' : 'border-gray-100 hover:bg-gray-50'
                                 }`}
-                                style={provided.draggableProps.style}
+                                style={provided.draggableProps.style as CSSProperties | undefined}
                               >
                                 {/* 드래그 핸들 */}
                                 <div

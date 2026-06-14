@@ -46,11 +46,12 @@ export async function POST(request: NextRequest) {
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
     const replyTo = process.env.RESEND_REPLY_TO || 'info@maniatour.com'
 
+    const opsCc = getOperationsCc(to)
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: fromEmail,
-      reply_to: replyTo,
+      replyTo,
       to,
-      cc: getOperationsCc(to),
+      ...(opsCc ? { cc: opsCc } : {}),
       subject,
       html,
     })

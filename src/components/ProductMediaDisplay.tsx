@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Image, Play, Download, Eye } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -59,7 +59,22 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
         throw new Error(`데이터베이스 오류: ${error.message}`)
       }
 
-      setMediaItems(data || [])
+      setMediaItems(
+        (data || []).map((row) => ({
+          id: row.id,
+          product_id: row.product_id,
+          file_name: row.file_name,
+          file_url: row.file_url,
+          file_type: row.file_type as MediaItem['file_type'],
+          file_size: row.file_size ?? 0,
+          mime_type: row.mime_type ?? '',
+          alt_text: row.alt_text ?? '',
+          caption: row.caption ?? '',
+          order_index: row.order_index ?? 0,
+          is_primary: row.is_primary ?? false,
+          is_active: row.is_active ?? true,
+        }))
+      )
 
       // 2. 투어 코스 사진 가져오기
       // 먼저 상품에 연결된 투어 코스들을 찾기
@@ -82,7 +97,22 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
             .order('sort_order', { ascending: true })
 
           if (!photosError && photosData) {
-            setTourCoursePhotos(photosData)
+            setTourCoursePhotos(
+              photosData
+                .filter((p): p is typeof p & { course_id: string } => p.course_id != null)
+                .map((p) => ({
+                  id: p.id,
+                  course_id: p.course_id,
+                  photo_url: p.photo_url,
+                  photo_alt_ko: p.photo_alt_ko,
+                  photo_alt_en: p.photo_alt_en,
+                  display_order: p.display_order ?? 0,
+                  is_primary: p.is_primary ?? false,
+                  sort_order: p.sort_order ?? 0,
+                  thumbnail_url: p.thumbnail_url,
+                  uploaded_by: p.uploaded_by,
+                }))
+            )
           }
         }
       }

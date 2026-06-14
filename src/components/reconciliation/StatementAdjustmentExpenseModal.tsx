@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { BookOpen, Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import {
@@ -378,7 +379,7 @@ export default function StatementAdjustmentExpenseModal({
 
   const linkStatement = async (sourceTable: string, sourceId: string) => {
     if (!line) return
-    const { error: mErr } = await supabase.from('reconciliation_matches').insert({
+    const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
       statement_line_id: line.id,
       source_table: sourceTable,
       source_id: sourceId,
@@ -512,7 +513,7 @@ export default function StatementAdjustmentExpenseModal({
           statement_line_id: line.id,
           exclude_from_pnl: line.exclude_from_pnl,
           is_personal: false
-        })
+        } as never)
         if (insErr) throw insErr
         await linkStatement('reservation_expenses', newId)
       } else if (kind === 'tour_expenses') {
@@ -548,7 +549,7 @@ export default function StatementAdjustmentExpenseModal({
             statement_line_id: line.id,
             exclude_from_pnl: line.exclude_from_pnl,
             is_personal: false
-          })
+          } as never)
           .select('id')
           .single()
         if (insErr || !ins?.id) throw insErr || new Error('투어 지출 저장 실패')

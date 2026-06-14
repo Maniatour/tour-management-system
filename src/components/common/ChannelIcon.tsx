@@ -1,19 +1,14 @@
-import React from 'react'
-import { getChannelIcon } from '@/utils/tourStatusUtils'
-
 interface ChannelIconProps {
-  channelInfo: any
+  channelInfo: { favicon_url?: string; name?: string }
 }
 
 export default function ChannelIcon({ channelInfo }: ChannelIconProps) {
-  const iconData = getChannelIcon(channelInfo)
-  
-  if (typeof iconData === 'object' && iconData.type === 'image') {
+  if (channelInfo?.favicon_url) {
     return (
-      <img 
-        src={iconData.src} 
-        alt={iconData.alt} 
-        className={iconData.className}
+      <img
+        src={channelInfo.favicon_url}
+        alt={`${channelInfo.name || 'Channel'} favicon`}
+        className="h-4 w-4 rounded flex-shrink-0"
         onError={(e) => {
           e.currentTarget.style.display = 'none'
           e.currentTarget.nextElementSibling?.classList.remove('hidden')
@@ -21,6 +16,6 @@ export default function ChannelIcon({ channelInfo }: ChannelIconProps) {
       />
     )
   }
-  
-  return <span>{iconData}</span>
+
+  return <span>🌐</span>
 }

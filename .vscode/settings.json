@@ -2,6 +2,16 @@
   "files.encoding": "utf8",
   "files.autoGuessEncoding": false,
   "files.eol": "\n",
+  "files.watcherExclude": {
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/node_modules/.cache/tms-next-dev*/**": true,
+    "**/.tms-next-dev/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/node_modules/.cache/tms-next-dev*": true
+  },
   "deno.enablePaths": [
     "supabase/functions"
   ],

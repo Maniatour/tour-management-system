@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon, ListOrdered } from 'lucide-react'
+import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon, ListOrdered, Link2 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -16,6 +16,7 @@ import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-quer
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import ReservationExpenseTabPager, {
@@ -227,6 +228,7 @@ export default function ReservationExpenseManager({
   const [reconciledReservationIds, setReconciledReservationIds] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
   const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
   const [tableSortKey, setTableSortKey] = useState<string>('submit_on')
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc')
@@ -992,6 +994,16 @@ export default function ReservationExpenseManager({
     setStatementMatchFilter('all')
   }
 
+  const isSubmitYearFilterActive = useCallback(
+    (year: number) => dateFrom === `${year}-01-01` && dateTo === `${year}-12-31`,
+    [dateFrom, dateTo]
+  )
+
+  const applySubmitYearFilter = useCallback((year: number) => {
+    setDateFrom(`${year}-01-01`)
+    setDateTo(`${year}-12-31`)
+  }, [])
+
   const showTitle = !hideTitle || titleProp
   const titleText = titleProp ?? t('expenseManagement')
   return (
@@ -1025,6 +1037,17 @@ export default function ReservationExpenseManager({
                 <ListOrdered className="w-4 h-4" />
                 <span className="hidden sm:inline">결제처 정리</span>
                 <span className="sm:hidden">결제처</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 text-sm py-1.5 sm:py-2 px-3 border-gray-300 flex items-center gap-1.5 bg-white"
+                onClick={() => setBulkAutoMatchOpen(true)}
+                title={tStmtRecon('bulkAutoMatch.buttonTitle')}
+              >
+                <Link2 className="w-4 h-4" />
+                <span className="hidden sm:inline">{tStmtRecon('bulkAutoMatch.button')}</span>
+                <span className="sm:hidden">{tStmtRecon('bulkAutoMatch.buttonShort')}</span>
               </Button>
             </div>
             <button
@@ -1125,6 +1148,25 @@ export default function ReservationExpenseManager({
                 {t('filterReset')}
               </button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs sm:text-sm text-gray-600 shrink-0">{t('submitYearPresetLabel')}</span>
+            {[2025, 2026].map((year) => (
+              <button
+                key={year}
+                type="button"
+                onClick={() => applySubmitYearFilter(year)}
+                aria-pressed={isSubmitYearFilterActive(year)}
+                aria-label={t('submitYearPresetAria', { year })}
+                className={`px-2.5 py-1 text-xs sm:text-sm rounded-md border transition-colors ${
+                  isSubmitYearFilterActive(year)
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                {year}
+              </button>
+            ))}
           </div>
           <div className="max-w-md">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
@@ -2120,6 +2162,24 @@ export default function ReservationExpenseManager({
         context={stmtReconCtx}
         onApplied={() => void loadExpenses()}
       />
+
+      {adminList ? (
+        <ExpenseStatementBulkAutoMatchModal
+          open={bulkAutoMatchOpen}
+          onOpenChange={setBulkAutoMatchOpen}
+          expenses={filteredExpenses.map((e) => ({
+            id: e.id,
+            submit_on: e.submit_on,
+            amount: Number(e.amount ?? 0),
+            paid_to: e.paid_to ?? '',
+            paid_for: e.paid_for ?? '',
+            payment_method: e.payment_method,
+          }))}
+          reconciledExpenseIds={reconciledReservationIds}
+          sourceTable="reservation_expenses"
+          onApplied={() => void loadExpenses()}
+        />
+      ) : null}
 
       <ExpenseVendorManagerModal
         open={vendorManagerOpen}

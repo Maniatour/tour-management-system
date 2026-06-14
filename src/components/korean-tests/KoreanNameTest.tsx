@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { getEnhancedKoreanTransliteration, transliterateKorean, getKoreanNameInEnglishOrder } from '@/utils/koreanTransliteration'
 
 export default function KoreanNameTest() {

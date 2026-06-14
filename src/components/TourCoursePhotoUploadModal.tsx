@@ -1,30 +1,29 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
-import { 
-  Upload, 
-  X, 
-  Image as ImageIcon, 
-  Trash2, 
+import {
+  Upload,
+  X,
+  Image as ImageIcon,
+  Trash2,
   Star,
-  RotateCcw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface TourCoursePhoto {
   id: string
   course_id: string
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  mime_type: string
-  thumbnail_url?: string
-  is_primary: boolean
-  sort_order: number
-  uploaded_by?: string
-  created_at: string
-  updated_at: string
+  photo_url: string
+  photo_alt_ko?: string | null
+  photo_alt_en?: string | null
+  is_primary: boolean | null
+  sort_order: number | null
+  thumbnail_url?: string | null
+  uploaded_by?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  /** storage 삭제용 (업로드 직후 로컬에만 보관) */
+  storage_path?: string
 }
 
 interface PhotoUploadModalProps {
@@ -35,66 +34,72 @@ interface PhotoUploadModalProps {
   onPhotosUpdate: (photos: TourCoursePhoto[]) => void
 }
 
-export default function PhotoUploadModal({ 
-  isOpen, 
-  onClose, 
+function photoImageSrc(photo: TourCoursePhoto): string {
+  if (photo.photo_url.startsWith('http')) return photo.photo_url
+  if (photo.storage_path) {
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.storage_path}`
+  }
+  return photo.photo_url
+}
+
+export default function PhotoUploadModal({
+  isOpen,
+  onClose,
   courseId,
   existingPhotos = [],
-  onPhotosUpdate 
+  onPhotosUpdate,
 }: PhotoUploadModalProps) {
   const [photos, setPhotos] = useState<TourCoursePhoto[]>(existingPhotos)
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 파일 업로드 처리
   const handleFileUpload = async (files: FileList) => {
     if (!files.length) return
 
     setUploading(true)
     const uploadPromises = Array.from(files).map(async (file) => {
       try {
-        // 파일 크기 체크 (10MB 제한)
         if (file.size > 10 * 1024 * 1024) {
           throw new Error(`파일 ${file.name}이 너무 큽니다. (최대 10MB)`)
         }
 
-        // 파일 타입 체크
         if (!file.type.startsWith('image/')) {
           throw new Error(`파일 ${file.name}은 이미지 파일이 아닙니다.`)
         }
 
-        // 고유한 파일명 생성
         const fileExt = file.name.split('.').pop()
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `tour-courses/${courseId}/${fileName}`
 
-        // Supabase Storage에 업로드
         const { error: uploadError } = await supabase.storage
           .from('tour-course-photos')
           .upload(filePath, file)
 
         if (uploadError) throw uploadError
 
-        // 데이터베이스에 메타데이터 저장
+        const { data: urlData } = supabase.storage
+          .from('tour-course-photos')
+          .getPublicUrl(filePath)
+
         const { data, error: insertError } = await supabase
           .from('tour_course_photos')
           .insert({
             course_id: courseId,
-            file_name: file.name,
-            file_path: filePath,
-            file_size: file.size,
-            file_type: fileExt || '',
-            mime_type: file.type,
+            photo_url: urlData.publicUrl,
             sort_order: photos.length,
-            uploaded_by: (await supabase.auth.getSession()).data.session?.user?.email || 'unknown'
-          })
+            is_primary: photos.length === 0,
+            uploaded_by: (await supabase.auth.getSession()).data.session?.user?.email || 'unknown',
+          } as never)
           .select()
           .single()
 
         if (insertError) throw insertError
 
-        return data
+        return {
+          ...(data as TourCoursePhoto),
+          storage_path: filePath,
+        }
       } catch (error) {
         console.error('파일 업로드 오류:', error)
         alert(`파일 업로드 중 오류가 발생했습니다: ${error}`)
@@ -104,8 +109,8 @@ export default function PhotoUploadModal({
 
     try {
       const uploadedPhotos = await Promise.all(uploadPromises)
-      const validPhotos = uploadedPhotos.filter(photo => photo !== null) as TourCoursePhoto[]
-      
+      const validPhotos = uploadedPhotos.filter((photo): photo is NonNullable<typeof photo> => photo !== null) as TourCoursePhoto[]
+
       const newPhotos = [...photos, ...validPhotos]
       setPhotos(newPhotos)
       onPhotosUpdate(newPhotos)
@@ -114,28 +119,22 @@ export default function PhotoUploadModal({
     }
   }
 
-  // 파일 삭제
   const deletePhoto = async (photoId: string) => {
     if (!confirm('이 사진을 삭제하시겠습니까?')) return
 
     try {
-      const photo = photos.find(p => p.id === photoId)
+      const photo = photos.find((p) => p.id === photoId)
       if (!photo) return
 
-      // Storage에서 파일 삭제
-      await supabase.storage
-        .from('tour-course-photos')
-        .remove([photo.file_path])
+      if (photo.storage_path) {
+        await supabase.storage.from('tour-course-photos').remove([photo.storage_path])
+      }
 
-      // 데이터베이스에서 레코드 삭제
-      const { error } = await supabase
-        .from('tour_course_photos')
-        .delete()
-        .eq('id', photoId)
+      const { error } = await supabase.from('tour_course_photos').delete().eq('id', photoId)
 
       if (error) throw error
 
-      const newPhotos = photos.filter(p => p.id !== photoId)
+      const newPhotos = photos.filter((p) => p.id !== photoId)
       setPhotos(newPhotos)
       onPhotosUpdate(newPhotos)
     } catch (error) {
@@ -144,16 +143,10 @@ export default function PhotoUploadModal({
     }
   }
 
-  // 대표 사진 설정
   const setPrimaryPhoto = async (photoId: string) => {
     try {
-      // 기존 대표 사진 해제
-      await supabase
-        .from('tour_course_photos')
-        .update({ is_primary: false })
-        .eq('course_id', courseId)
+      await supabase.from('tour_course_photos').update({ is_primary: false }).eq('course_id', courseId)
 
-      // 새 대표 사진 설정
       const { error } = await supabase
         .from('tour_course_photos')
         .update({ is_primary: true })
@@ -161,9 +154,9 @@ export default function PhotoUploadModal({
 
       if (error) throw error
 
-      const newPhotos = photos.map(p => ({
+      const newPhotos = photos.map((p) => ({
         ...p,
-        is_primary: p.id === photoId
+        is_primary: p.id === photoId,
       }))
       setPhotos(newPhotos)
       onPhotosUpdate(newPhotos)
@@ -173,7 +166,6 @@ export default function PhotoUploadModal({
     }
   }
 
-  // 드래그 앤 드롭 처리
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -189,15 +181,14 @@ export default function PhotoUploadModal({
     e.stopPropagation()
     setDragActive(false)
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileUpload(e.dataTransfer.files)
+    if (e.dataTransfer.files?.[0]) {
+      void handleFileUpload(e.dataTransfer.files)
     }
   }
 
-  // 파일 선택 처리
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFileUpload(e.target.files)
+    if (e.target.files?.[0]) {
+      void handleFileUpload(e.target.files)
     }
   }
 
@@ -208,15 +199,11 @@ export default function PhotoUploadModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">투어 코스 사진 관리</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        {/* 업로드 영역 */}
         <div
           className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 ${
             dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
@@ -251,27 +238,25 @@ export default function PhotoUploadModal({
           />
         </div>
 
-        {/* 사진 목록 */}
         {photos.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {photos.map((photo, index) => (
               <div key={photo.id} className="relative group">
                 <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
                   <img
-                    src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.file_path}`}
-                    alt={photo.file_name}
+                    src={photoImageSrc(photo)}
+                    alt={photo.photo_alt_ko || photo.photo_alt_en || 'tour course photo'}
                     className="w-full h-full object-cover"
                   />
                 </div>
-                
-                {/* 오버레이 */}
+
                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
                   <div className="opacity-0 group-hover:opacity-100 flex gap-2">
                     <button
-                      onClick={() => setPrimaryPhoto(photo.id)}
+                      onClick={() => void setPrimaryPhoto(photo.id)}
                       className={`p-2 rounded-full ${
-                        photo.is_primary 
-                          ? 'bg-yellow-500 text-white' 
+                        photo.is_primary
+                          ? 'bg-yellow-500 text-white'
                           : 'bg-white text-gray-600 hover:bg-yellow-500 hover:text-white'
                       }`}
                       title={photo.is_primary ? '대표 사진' : '대표 사진으로 설정'}
@@ -279,7 +264,7 @@ export default function PhotoUploadModal({
                       <Star className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => deletePhoto(photo.id)}
+                      onClick={() => void deletePhoto(photo.id)}
                       className="p-2 bg-white text-gray-600 rounded-full hover:bg-red-500 hover:text-white"
                       title="삭제"
                     >
@@ -288,14 +273,12 @@ export default function PhotoUploadModal({
                   </div>
                 </div>
 
-                {/* 대표 사진 표시 */}
                 {photo.is_primary && (
                   <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-medium">
                     대표
                   </div>
                 )}
 
-                {/* 순서 표시 */}
                 <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded-full text-xs">
                   {index + 1}
                 </div>
@@ -304,7 +287,6 @@ export default function PhotoUploadModal({
           </div>
         )}
 
-        {/* 사진이 없을 때 */}
         {photos.length === 0 && (
           <div className="text-center py-12">
             <ImageIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />

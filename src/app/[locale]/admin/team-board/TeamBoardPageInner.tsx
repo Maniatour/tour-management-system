@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useTranslations } from 'next-intl'
 import { Check, Edit, Loader2, MessageCircle, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
 import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
@@ -509,8 +510,7 @@ export default function TeamBoardPageInner() {
     void (async () => {
       try {
         const [{ data: anns }, { data: acks }, { data: iss }, { data: tks }] = await Promise.all([
-          supabase
-            .from('team_announcements')
+          fromUntypedTable(supabase, 'team_announcements')
             .select(
               'id,title,content,is_pinned,recipients,target_positions,priority,tags,due_by,is_archived,is_deleted,deleted_at,deleted_by,created_by,created_at,updated_at'
             )
@@ -687,8 +687,7 @@ export default function TeamBoardPageInner() {
         finalIndividuals = [...new Set([...selectedTaskIndividuals, ...groupMembers])]
       }
 
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .insert([{ 
           title: newAnnouncement.title.trim(), 
           content: newAnnouncement.content.trim(), 
@@ -717,8 +716,7 @@ export default function TeamBoardPageInner() {
 
   const togglePin = async (announcement: Announcement) => {
     try {
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .update({ is_pinned: !announcement.is_pinned })
         .eq('id', announcement.id)
         .select()
@@ -800,8 +798,7 @@ export default function TeamBoardPageInner() {
         finalIndividuals = [...new Set([...selectedTaskIndividuals, ...groupMembers])]
       }
 
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .update({
           title: editAnnouncement.title.trim(),
           content: editAnnouncement.content.trim(),
@@ -828,8 +825,7 @@ export default function TeamBoardPageInner() {
     if (!confirm('정말로 이 전달사항을 삭제하시겠습니까?')) return
     if (!authUser?.email) return
     try {
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .update({
           is_deleted: true,
           deleted_at: new Date().toISOString(),
@@ -1211,8 +1207,7 @@ export default function TeamBoardPageInner() {
     if (!isAdminUser) return
     try {
       const target = announcements.find(announcement => announcement.id === announcementId)
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .update({ is_archived: true } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .eq('id', announcementId)
         .select()
@@ -1306,8 +1301,7 @@ export default function TeamBoardPageInner() {
   const restoreAnnouncement = async (announcementId: string) => {
     if (!isAdminUser) return
     try {
-      const { data, error } = await supabase
-        .from('team_announcements')
+      const { data, error } = await fromUntypedTable(supabase, 'team_announcements')
         .update({
           is_archived: false,
           is_deleted: false,

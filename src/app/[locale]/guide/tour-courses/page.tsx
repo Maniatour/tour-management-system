@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { 
   Search, 
   MapPin,
@@ -9,29 +9,14 @@ import {
   TreePine,
   ChevronRight,
   ChevronDown,
-  ExternalLink,
   Eye,
   EyeOff,
-  FileText,
-  Navigation,
-  Camera,
-  Star,
-  Info,
   X
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 
 // 타입 정의
-interface Product {
-  id: string
-  name_ko: string
-  name_en: string
-  description: string | null
-  category: string | null
-  status: string | null
-}
-
 interface TourCourse {
   id: string
   product_id: string | null
@@ -247,7 +232,7 @@ const TourCourseCard = ({
 
 export default function GuideTourCoursesPage() {
   // 최적화된 투어 코스 데이터 로딩
-  const { data: tourCourses = [], loading: coursesLoading, refetch: refetchCourses } = useOptimizedData({
+  const { data: tourCourses = [], loading: coursesLoading } = useOptimizedData<TourCourse[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('tour_courses')
@@ -265,7 +250,7 @@ export default function GuideTourCoursesPage() {
         return []
       }
 
-      return data || []
+      return (data || []) as TourCourse[]
     },
     cacheKey: 'guide-tour-courses-list',
     cacheTime: 5 * 60 * 1000, // 5분 캐시
@@ -301,7 +286,7 @@ export default function GuideTourCoursesPage() {
   const [showInternalNotes, setShowInternalNotes] = useState(false)
 
   // 계층적 구조로 변환
-  const hierarchicalCourses = buildHierarchy(tourCourses)
+  const hierarchicalCourses = buildHierarchy(tourCourses ?? [])
   
   // 필터링된 투어 코스 목록
   const filteredCourses = searchFilteredCourses(hierarchicalCourses, searchTerm, selectedProduct)
@@ -339,7 +324,7 @@ export default function GuideTourCoursesPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">전체 상품</option>
-              {products.map((product) => (
+              {(products ?? []).map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name_ko}
                 </option>

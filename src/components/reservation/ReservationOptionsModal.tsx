@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import { X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
@@ -56,7 +55,7 @@ export default function ReservationOptionsModal({
               isPersisted
               itemVariant="line"
               title={tRes('title')}
-              onPersistedMutation={onPersistedMutation}
+              {...(onPersistedMutation ? { onPersistedMutation } : {})}
               addOptionModalZClass="z-[110]"
             />
           </div>

@@ -1,10 +1,7 @@
 'use client'
-import { useTranslations } from 'next-intl'
 import BulkCreateTourPhotoBuckets from '@/components/BulkCreateTourPhotoBuckets'
 
 export default function TourPhotoBucketsPage() {
-  const t = useTranslations('admin')
-
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">

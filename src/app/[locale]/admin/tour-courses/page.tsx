@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
 import LocationPickerModal from '@/components/LocationPickerModal'
@@ -309,8 +310,7 @@ export default function TourCoursesPage() {
       
       if (newFavoriteStatus) {
         // 즐겨찾기 추가 시 순서 설정
-        const { data: favorites } = await supabase
-          .from('tour_courses')
+        const { data: favorites } = await fromUntypedTable(supabase, 'tour_courses')
           .select('favorite_order')
           .eq('is_favorite', true)
           .not('favorite_order', 'is', null)

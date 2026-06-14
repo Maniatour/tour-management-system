@@ -56,7 +56,7 @@ export function useChatMessages({
             p_limit: 200
           })
           if (error) throw error
-          const rows = (data || []) as ChatMessage[]
+          const rows = (data || []) as unknown as ChatMessage[]
           const sortedMessages = [...rows].reverse()
 
           if (options?.publicPoll) {
@@ -89,7 +89,7 @@ export function useChatMessages({
           .limit(200)
 
         if (error) throw error
-        const sortedMessages = (data || []).reverse()
+        const sortedMessages = ((data || []).reverse()) as unknown as ChatMessage[]
         setMessages(sortedMessages)
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
@@ -173,7 +173,7 @@ export function useChatMessages({
           filter: `room_id=eq.${roomId}`
         },
         (payload: { new: Record<string, unknown> }) => {
-          const newMessage = payload.new as ChatMessage
+          const newMessage = payload.new as unknown as ChatMessage
 
           if (isPublicView) {
             if (

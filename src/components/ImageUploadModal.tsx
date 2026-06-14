@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { X, Upload, Image as ImageIcon, Eye } from 'lucide-react'
+import { X, Upload, Image as ImageIcon } from 'lucide-react'
 
 interface ImageUploadModalProps {
   onImageSelect: (imageUrl: string) => void

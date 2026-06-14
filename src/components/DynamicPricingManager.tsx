@@ -78,7 +78,7 @@ const extractYearMonth = (value: string | Date | null | undefined) => {
 
 interface DynamicPricingManagerProps {
   productId: string;
-  onSave?: (rule: SimplePricingRule) => void;
+  onSave?: (rule: SimplePricingRule | { type: 'batch_complete'; count: number }) => void;
   isNewProduct?: boolean;
 }
 
@@ -1405,15 +1405,6 @@ export default function DynamicPricingManager({
         
         // calculationConfig.choicePricing에서 기본 가격 정보 가져오기 (나중에 병합할 때 사용)
         // 실제로는 아래에서 기존 레코드와 현재 입력값을 병합할 때 사용됨
-        
-        // 선택된 채널의 pricing_type 확인 (기존 레코드 로드 전에 확인)
-        let foundChannel = null;
-        for (const group of channelGroups) {
-          foundChannel = group.channels.find(ch => ch.id === channelId);
-          if (foundChannel) break;
-        }
-        const channelPricingType = (foundChannel as any)?.pricing_type || 'separate';
-        const isChannelSinglePrice = channelPricingType === 'single';
         
         // 기존 저장된 레코드에서 초이스 가격 정보 가져오기 (같은 날짜, 같은 채널, 같은 variant)
         const existingChoices: Record<string, any> = {};

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package, Camera, ZoomIn, ZoomOut } from 'lucide-react'
+import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, type LucideIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
@@ -31,12 +31,10 @@ import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstant
 import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
 import { buildReceiptOcrCandidates, type ReceiptOcrCandidates as ReceiptOcrParseCandidates } from '@/lib/receiptOcrParse'
 import {
-  DEFAULT_RECEIPT_OCR_PARSE_RUNTIME,
   fetchReceiptOcrParseRuntime,
   MAX_BODY_MATCH_PHRASE,
   prependBodyMatchRuleToStoredSettings,
   suggestBodyMatchPhraseFromOcrText,
-  type ReceiptOcrParseRuntime,
 } from '@/lib/receiptOcrParseRules'
 import { canSaveReceiptOcrParseRules } from '@/lib/receiptOcrParseRulesPermissions'
 import { toast } from 'sonner'
@@ -165,19 +163,8 @@ export default function TourExpenseManager({
     userPosition,
     email: authUser?.email,
   })
-
-  const [ocrParseRuntime, setOcrParseRuntime] = useState<ReceiptOcrParseRuntime>(DEFAULT_RECEIPT_OCR_PARSE_RUNTIME)
-
-  useEffect(() => {
-    let cancelled = false
-    void fetchReceiptOcrParseRuntime(supabase).then((r) => {
-      if (!cancelled) setOcrParseRuntime(r)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
+
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   /** 명세 대조(reconciliation_matches)에 연결된 투어 지출 id */
   const [reconciledTourExpenseIds, setReconciledTourExpenseIds] = useState<Set<string>>(() => new Set())
@@ -265,12 +252,12 @@ export default function TourExpenseManager({
   const [tourData, setTourData] = useState<any>(null)
   const [guideFee, setGuideFee] = useState<number>(0)
   const [assistantFee, setAssistantFee] = useState<number>(0)
-  const [isLoadingTourData, setIsLoadingTourData] = useState(false)
+  const [_isLoadingTourData, setIsLoadingTourData] = useState(false)
   
   // 부킹 데이터 관련 상태
   const [ticketBookings, setTicketBookings] = useState<any[]>([])
   const [hotelBookings, setHotelBookings] = useState<any[]>([])
-  const [isLoadingBookings, setIsLoadingBookings] = useState(false)
+  const [_isLoadingBookings, setIsLoadingBookings] = useState(false)
   
   // 예약별 지출 데이터 상태
   const [reservationExpenses, setReservationExpenses] = useState<Record<string, number>>({})
@@ -475,7 +462,11 @@ export default function TourExpenseManager({
       if (!url) throw new Error(t('receiptOcrNoImage'))
 
       try {
-        const imgRes = await fetch(url, { mode: 'cors', cache: 'no-store', signal })
+        const imgRes = await fetch(url, {
+          mode: 'cors',
+          cache: 'no-store',
+          ...(signal ? { signal } : {}),
+        })
         if (imgRes.ok) {
           const mime = imgRes.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg'
           const buffer = await imgRes.arrayBuffer()
@@ -509,7 +500,6 @@ export default function TourExpenseManager({
         const { buffer, mime } = await loadReceiptImageBytesForOcr(stub)
         const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
         const rt = await fetchReceiptOcrParseRuntime(supabase)
-        setOcrParseRuntime(rt)
         const ocrResult: ReceiptOcrResult = {
           text,
           candidates: buildReceiptOcrCandidates(text, { runtime: rt }),
@@ -650,7 +640,27 @@ export default function TourExpenseManager({
       }
       
       console.log('✅ Reservation pricing data:', data)
-      setReservationPricing(data || [])
+      setReservationPricing(
+        (data || []).map((row) => ({
+          id: row.id,
+          reservation_id: row.reservation_id,
+          total_price: row.total_price ?? 0,
+          adult_product_price: row.adult_product_price ?? 0,
+          child_product_price: row.child_product_price ?? 0,
+          infant_product_price: row.infant_product_price ?? 0,
+          ...(row.commission_amount != null ? { commission_amount: row.commission_amount } : {}),
+          ...(row.commission_percent != null ? { commission_percent: row.commission_percent } : {}),
+          ...(row.coupon_discount != null ? { coupon_discount: row.coupon_discount } : {}),
+          ...(row.additional_discount != null ? { additional_discount: row.additional_discount } : {}),
+          ...(row.additional_cost != null ? { additional_cost: row.additional_cost } : {}),
+          ...(row.product_price_total != null ? { product_price_total: row.product_price_total } : {}),
+          ...(row.option_total != null ? { option_total: row.option_total } : {}),
+          ...(row.subtotal != null ? { subtotal: row.subtotal } : {}),
+          ...(row.card_fee != null ? { card_fee: row.card_fee } : {}),
+          ...(row.prepayment_tip != null ? { prepayment_tip: row.prepayment_tip } : {}),
+          ...(row.choices_total != null ? { choices_total: row.choices_total } : {}),
+        }))
+      )
       
       // 예약별 채널 정보 가져오기
       const { data: reservationsData, error: reservationsError } = await supabase
@@ -716,10 +726,12 @@ export default function TourExpenseManager({
       // 예약별 지출 총합 계산
       const expensesMap: Record<string, number> = {}
       data?.forEach(expense => {
-        if (!expensesMap[expense.reservation_id]) {
-          expensesMap[expense.reservation_id] = 0
+        const reservationId = expense.reservation_id
+        if (!reservationId) return
+        if (!expensesMap[reservationId]) {
+          expensesMap[reservationId] = 0
         }
-        expensesMap[expense.reservation_id] += expense.amount || 0
+        expensesMap[reservationId] += expense.amount || 0
       })
       
       setReservationExpenses(expensesMap)
@@ -763,7 +775,8 @@ export default function TourExpenseManager({
       console.log('🔍 Raw expense data from database:', data?.length || 0, 'items')
       
       // file_path가 있지만 image_url이 없는 경우 공개 URL 생성
-      const processedExpenses = await Promise.all((data || []).map(async (expense: TourExpense) => {
+      const processedExpenses = await Promise.all((data || []).map(async (row) => {
+        const expense = row as TourExpense
         // 원본 데이터 로그
         console.log(`📄 Expense "${expense.paid_for}" (ID: ${expense.id}):`, {
           original_image_url: expense.image_url,
@@ -776,14 +789,9 @@ export default function TourExpenseManager({
           try {
             console.log(`  🔗 Generating public URL from file_path: ${expense.file_path}`)
             // Supabase Storage에서 공개 URL 생성
-            const { data: urlData, error: urlError } = supabase.storage
+            const { data: urlData } = supabase.storage
               .from('tour-expenses')
               .getPublicUrl(expense.file_path)
-            
-            if (urlError) {
-              console.error('  ❌ Error generating URL:', urlError)
-              return expense
-            }
             
             console.log(`  ✅ Generated URL: ${urlData.publicUrl}`)
             return {
@@ -995,18 +1003,18 @@ export default function TourExpenseManager({
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           tour_date: tourDate,
-          product_id: finalProductId,
+          product_id: finalProductId ?? null,
           submitted_by: effectiveSubmittedBy,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
           status: 'pending'
-        })
+        } as never)
         .select()
         .single()
 
       if (error) throw error
 
-      setExpenses(prev => [data, ...prev])
+      setExpenses(prev => [data as TourExpense, ...prev])
       setShowAddForm(false)
       setFormData({
         paid_to: '',
@@ -1414,7 +1422,6 @@ export default function TourExpenseManager({
       const { buffer, mime } = await loadReceiptImageBytesForOcr(expense, controller.signal)
       const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
       const rt = await fetchReceiptOcrParseRuntime(supabase)
-      setOcrParseRuntime(rt)
       const ocrResult: ReceiptOcrResult = {
         text,
         candidates: buildReceiptOcrCandidates(text, { runtime: rt }),
@@ -1559,8 +1566,7 @@ export default function TourExpenseManager({
         return
       }
       toast.success(t('receiptOcrQuickRuleSaved'))
-      const rt = await fetchReceiptOcrParseRuntime(supabase)
-      setOcrParseRuntime(rt)
+      await fetchReceiptOcrParseRuntime(supabase)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('unknownError'))
     } finally {
@@ -1659,7 +1665,7 @@ export default function TourExpenseManager({
           file_path: formData.file_path || null,
           updated_at: new Date().toISOString(),
           ...reimbPayload
-        })
+        } as never)
         .eq('id', editingExpense.id)
 
       if (error) throw error
@@ -1669,7 +1675,7 @@ export default function TourExpenseManager({
         expense.id === editingExpense.id 
           ? {
               ...expense,
-              paid_to: finalPaidTo,
+              paid_to: finalPaidTo ?? expense.paid_to,
               paid_for: formData.custom_paid_for || formData.paid_for,
               amount: amountNum,
               payment_method: formData.payment_method || null,
@@ -2965,10 +2971,7 @@ export default function TourExpenseManager({
                                         .filter((c) => !['Entrance Fee', 'Gas', 'Meals'].includes(c.name))
                                         .map((category) => {
                                           const getCategoryIcon = (name: string) => {
-                                            const iconMap: Record<
-                                              string,
-                                              React.ComponentType<{ className?: string }>
-                                            > = {
+                                            const iconMap: Record<string, LucideIcon> = {
                                               Meals: UtensilsCrossed,
                                               Bento: Package,
                                               'Guide Bento': Package,
@@ -3522,7 +3525,7 @@ export default function TourExpenseManager({
                           .map((category) => {
                             // 카테고리별 아이콘 매핑
                             const getCategoryIcon = (name: string) => {
-                              const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+                              const iconMap: Record<string, LucideIcon> = {
                                 'Meals': UtensilsCrossed,
                                 'Bento': Package,
                                 'Guide Bento': Package,

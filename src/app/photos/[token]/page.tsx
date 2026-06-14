@@ -20,11 +20,11 @@ interface TourPhoto {
   thumbnail_path?: string | null
   file_size: number
   mime_type: string
-  description?: string
-  created_at: string
+  description?: string | null
+  created_at: string | null
   uploaded_by: string
   tour_id: string
-  reservation_id?: string
+  reservation_id?: string | null
   share_token?: string | null
 }
 
@@ -39,9 +39,9 @@ interface Product {
 
 interface TourInfo {
   id: string
-  product_id: string
+  product_id: string | null
   tour_date: string
-  tour_status: string
+  tour_status: string | null
   photos_extended_access?: boolean | null
   products?: Product | null
 }
@@ -229,7 +229,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
 
       // share_token으로 사진을 찾았으면 사용
       if (tokenData && tokenData.length > 0) {
-        photosData = tokenData
+        photosData = tokenData as unknown as TourPhoto[]
         if (tokenData[0].tours) {
           tourInfoData = tokenData[0].tours
         }
@@ -277,7 +277,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         }
 
         if (tourData && tourData.length > 0) {
-          photosData = tourData
+          photosData = tourData as unknown as TourPhoto[]
           if (tourData[0].tours) {
             tourInfoData = tourData[0].tours
           }
@@ -372,8 +372,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             .list(tourIdToUse, {
               limit: limit,
               offset: offset,
-              sort: { column: 'created_at', order: 'desc' }
-            })
+            } as { limit?: number; offset?: number })
 
           if (storageError) {
             console.error('Error loading photos from storage:', storageError)
@@ -499,9 +498,9 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         return
       }
 
-      setPhotos(photosData)
+      setPhotos(photosData as TourPhoto[])
       if (tourInfoData) {
-        setTourInfo(tourInfoData)
+        setTourInfo(tourInfoData as TourInfo)
         
         // 투어 날짜로부터 7일 후 접속 제한 체크
         // photos_extended_access가 true이면 제한 우회
@@ -1545,7 +1544,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                 <div className="mt-1 sm:mt-2 text-[10px] sm:text-xs text-gray-600">
                   <p className="truncate">{photo.file_name}</p>
                   <p className="hidden sm:block">{formatFileSize(photo.file_size)}</p>
-                  <p className="hidden sm:block">{new Date(photo.created_at).toLocaleString()}</p>
+                  <p className="hidden sm:block">{photo.created_at ? new Date(photo.created_at).toLocaleString() : ''}</p>
                 </div>
               </div>
             ))}

@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { renderTemplateString } from '@/lib/template'
 import { generateTemplateContext } from '@/lib/templateContext'
-import { getPickupHotelDisplay } from '@/utils/reservationUtils'
 
 export default function ReservationConfirmationPage() {
   const params = useParams() as { id?: string; locale?: string }

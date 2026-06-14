@@ -101,7 +101,7 @@ export function processPickupRequest(requestedHotelName: string, hotels: PickupH
       success: false,
       message: `요청하신 "${requestedHotelName}" 호텔을 찾을 수 없거나 그룹 번호가 설정되지 않았습니다.`,
       targetHotel: null,
-      requestedHotel: requestedHotel
+      requestedHotel: requestedHotel ?? null
     }
   }
   
@@ -113,7 +113,7 @@ export function processPickupRequest(requestedHotelName: string, hotels: PickupH
       success: false,
       message: `그룹 ${Math.round(requestedHotel.group_number)}에 해당하는 활성 호텔을 찾을 수 없습니다.`,
       targetHotel: null,
-      requestedHotel: requestedHotel
+      requestedHotel: requestedHotel ?? null
     }
   }
   
@@ -122,7 +122,7 @@ export function processPickupRequest(requestedHotelName: string, hotels: PickupH
       success: true,
       message: `"${requestedHotel.hotel}" 호텔로 픽업이 가능합니다.`,
       targetHotel: targetHotel,
-      requestedHotel: requestedHotel
+      requestedHotel: requestedHotel ?? null
     }
   }
   

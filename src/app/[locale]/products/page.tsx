@@ -95,7 +95,8 @@ export default function ProductsPage() {
         
         // 각 상품의 대표사진 가져오기
         const productsWithImages = await Promise.all(
-          (data || []).map(async (product: Product) => {
+          (data || []).map(async (row) => {
+            const product = row as Product
             try {
               // 1. product_media에서 대표사진 찾기
               const { data: mediaData } = await supabase
@@ -135,7 +136,9 @@ export default function ProductsPage() {
                 .eq('product_id', product.id)
               
               if (tourCoursesData && tourCoursesData.length > 0) {
-                const courseIds = tourCoursesData.map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id).filter(Boolean)
+                const courseIds = tourCoursesData
+                  .map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id)
+                  .filter((id): id is string => id != null)
                 if (courseIds.length > 0) {
                   const { data: photoData } = await supabase
                     .from('tour_course_photos')
@@ -414,7 +417,7 @@ export default function ProductsPage() {
 
   // 선택된 카테고리가 'all'이 아니거나 검색/필터가 적용되면 자동으로 확장
   useEffect(() => {
-    const hasActiveFilters = selectedCategory !== 'all' || searchTerm || selectedTag !== 'all' || priceRange !== 'all'
+    const hasActiveFilters = selectedCategory !== 'all' || searchTerm !== '' || selectedTag !== 'all' || priceRange !== 'all'
     const filtersChanged = 
       prevFilterRef.current.selectedCategory !== selectedCategory ||
       prevFilterRef.current.searchTerm !== searchTerm ||

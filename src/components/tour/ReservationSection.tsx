@@ -1,6 +1,7 @@
 import React from 'react'
 import { ReservationCard } from './ReservationCard'
 import { getReservationPartySize } from '@/utils/reservationUtils'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 interface Reservation {
   id: string
@@ -46,6 +47,10 @@ interface ReservationSectionProps {
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   getProductCodeForReservation?: (reservation: Reservation) => string | null | undefined
   headerBadges?: React.ReactNode
+  onCommunicationChannelChange?: (
+    reservationId: string,
+    channel: CustomerCommunicationChannel
+  ) => void | Promise<void>
 }
 
 export const ReservationSection: React.FC<ReservationSectionProps> = ({
@@ -65,8 +70,8 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   onMoveReservationToOtherTour,
   moveToOtherTourButtonTitle,
   onStatusChange,
-  onEditPickupTime,
-  onEditPickupHotel,
+  onEditPickupTime: _onEditPickupTime,
+  onEditPickupHotel: _onEditPickupHotel,
   getCustomerName,
   getCustomerLanguage,
   getChannelInfo,
@@ -74,7 +79,8 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   pickupHotels = [],
   onRefresh,
   getProductCodeForReservation,
-  headerBadges
+  headerBadges,
+  onCommunicationChannelChange,
 }) => {
   // 중복 제거: 같은 ID를 가진 예약 중 첫 번째 것만 유지
   const uniqueReservations = React.useMemo(() => {
@@ -126,23 +132,22 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               showActions={showActions}
               showStatus={showStatus}
               showTourInfo={showTourInfo}
-              onEdit={onEditReservation}
-              onAssign={onAssignReservation}
-              onUnassign={onUnassignReservation}
-              onReassign={onReassignFromOtherTour}
+              {...(onEditReservation ? { onEdit: onEditReservation } : {})}
+              {...(onAssignReservation ? { onAssign: onAssignReservation } : {})}
+              {...(onUnassignReservation ? { onUnassign: onUnassignReservation } : {})}
+              {...(onReassignFromOtherTour ? { onReassign: onReassignFromOtherTour } : {})}
               {...(assignIconVariant && { assignIconVariant })}
               {...(assignButtonTitle && { assignButtonTitle })}
               {...(onMoveReservationToOtherTour && { onMoveToOtherTour: onMoveReservationToOtherTour })}
               {...(moveToOtherTourButtonTitle && { moveToOtherTourTitle: moveToOtherTourButtonTitle })}
-              onStatusChange={onStatusChange}
-              onEditPickupTime={onEditPickupTime}
-              onEditPickupHotel={onEditPickupHotel}
+              {...(onStatusChange ? { onStatusChange } : {})}
               getCustomerName={getCustomerName}
               getCustomerLanguage={getCustomerLanguage}
-              getChannelInfo={getChannelInfo}
+              {...(getChannelInfo ? { getChannelInfo } : {})}
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
-              onRefresh={onRefresh}
+              {...(onRefresh ? { onRefresh } : {})}
+              {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
             />
           ))
         )}

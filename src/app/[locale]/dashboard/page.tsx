@@ -7,11 +7,12 @@ import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 interface Customer {
   id: string
   name: string
-  email: string
+  email: string | null
   phone: string | null
   language: string | null
   resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
@@ -20,7 +21,7 @@ interface Customer {
 
 interface Reservation {
   id: string
-  customer_id: string
+  customer_id: string | null
   product_id: string
   tour_date: string
   tour_time: string | null
@@ -239,7 +240,7 @@ export default function CustomerDashboard() {
         } else if (reservationsData && reservationsData.length > 0) {
           // 각 예약에 대해 상품 정보를 별도로 조회
           const reservationsWithProducts = await Promise.all(
-            reservationsData.map(async (reservation: Reservation) => {
+            reservationsData.map(async (reservation) => {
               try {
                 const { data: productData } = await supabase
                   .from('products')
@@ -367,16 +368,15 @@ export default function CustomerDashboard() {
 
       // 방법 2: customer_email로 조회 (아직 예약이 없거나 customer_id로 찾지 못한 경우)
       if (reservationsData.length === 0 && simulatedUser.email) {
-        const { data: emailReservations, error: emailError } = await supabase
-          .from('reservations')
+        const { data: emailReservations, error: emailError } = await fromUntypedTable(supabase, 'reservations')
           .select('*')
           .eq('customer_email', simulatedUser.email)
           .order('tour_date', { ascending: false })
 
         if (!emailError && emailReservations) {
           // 중복 제거 (customer_id와 customer_email 둘 다 매칭되는 경우)
-          const existingIds = new Set(reservationsData.map((r: Reservation) => r.id))
-          const newReservations = emailReservations.filter((r: Reservation) => !existingIds.has(r.id))
+          const existingIds = new Set(reservationsData.map((r) => r.id))
+          const newReservations = emailReservations.filter((r) => !existingIds.has(r.id))
           reservationsData = [...reservationsData, ...newReservations]
         }
       }
@@ -559,15 +559,17 @@ export default function CustomerDashboard() {
 
         if (reservationsData) {
           const matchingCustomerIds = reservationsData
-            .filter((reservation: { tour_date: string; products?: { name?: string } }) => {
+            .filter((reservation) => {
+              const products = reservation.products as { name?: string } | null | undefined
               const matchesDate = !searchForm.tourDate || 
                 reservation.tour_date === searchForm.tourDate
               const matchesProduct = !searchForm.productName || 
-                reservation.products?.name?.toLowerCase().includes(searchForm.productName.toLowerCase())
+                products?.name?.toLowerCase().includes(searchForm.productName.toLowerCase())
               
               return matchesDate && matchesProduct
             })
-            .map((reservation: { customer_id: string }) => reservation.customer_id)
+            .map((reservation) => reservation.customer_id)
+            .filter((id): id is string => id != null)
 
           filteredResults = filteredResults.filter((customer: { id: string }) => 
             matchingCustomerIds.includes(customer.id)
@@ -575,7 +577,7 @@ export default function CustomerDashboard() {
         }
       }
 
-      setSearchResults(filteredResults)
+      setSearchResults(filteredResults as Customer[])
 
       // 자동 매칭 시도 (단일 결과이고 정확히 일치하는 경우)
       if (filteredResults.length === 1 && authUser?.id && authUser?.email) {

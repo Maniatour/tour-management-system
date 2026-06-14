@@ -131,14 +131,14 @@ export async function POST(request: NextRequest) {
 
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: fromEmail,
-      reply_to: replyTo,
+      replyTo,
       to: toEmail,
       cc: getOperationsCc(toEmail),
       subject,
       html,
       open_tracking: true,
       click_tracking: true,
-    })
+    } as never)
 
     if (emailError) {
       try {

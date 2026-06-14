@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -104,7 +104,7 @@ export default function ReceiptOcrParseRulesAdmin() {
   const [selectedReceiptId, setSelectedReceiptId] = useState('')
   const [ocrFromReceiptLoading, setOcrFromReceiptLoading] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
-  const previewUrlRef = React.useRef<string | null>(null)
+  const previewUrlRef = useRef<string | null>(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
 
   const replacePreviewImage = useCallback((buffer: ArrayBuffer, mime: string) => {
@@ -448,7 +448,7 @@ export default function ReceiptOcrParseRulesAdmin() {
             <FriendlyLineMatchRuleRow
               key={row.id}
               storedPattern={row.pattern}
-              plainPhrase={row.plain_phrase}
+              {...(row.plain_phrase !== undefined ? { plainPhrase: row.plain_phrase } : {})}
               flags={row.flags ?? 'i'}
               enabled={row.enabled}
               plainLabel={t('plainPhraseLabel')}
@@ -469,7 +469,7 @@ export default function ReceiptOcrParseRulesAdmin() {
                     ...('plain_phrase' in patch ? { plain_phrase: patch.plain_phrase } : {}),
                     ...(patch.flags !== undefined ? { flags: patch.flags } : {}),
                     ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-                  }
+                  } as typeof cur
                   return { ...p, paid_to_skip_patterns: list }
                 })
               }
@@ -497,7 +497,7 @@ export default function ReceiptOcrParseRulesAdmin() {
             <FriendlyLineMatchRuleRow
               key={row.id}
               storedPattern={row.line_pattern}
-              plainPhrase={row.plain_phrase}
+              {...(row.plain_phrase !== undefined ? { plainPhrase: row.plain_phrase } : {})}
               flags={row.flags ?? 'i'}
               enabled={row.enabled}
               plainLabel={t('plainPhraseLabelAmount')}
@@ -518,7 +518,7 @@ export default function ReceiptOcrParseRulesAdmin() {
                     ...('plain_phrase' in patch ? { plain_phrase: patch.plain_phrase } : {}),
                     ...(patch.flags !== undefined ? { flags: patch.flags } : {}),
                     ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-                  }
+                  } as typeof cur
                   return { ...p, amount_line_hints: list }
                 })
               }

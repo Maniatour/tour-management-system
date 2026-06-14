@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, Copy, Upload, ChevronUp, ChevronDown, BookOpen, X } from 'lucide-react'
+import { useState, useEffect, type FormEvent } from 'react'
+import { Plus, Search, Edit, Trash2, Copy, Upload, ChevronUp, ChevronDown, BookOpen, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ImageUpload from '@/components/common/ImageUpload'
@@ -93,7 +93,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         return
       }
 
-      setTemplates(data || [])
+      setTemplates((data || []) as ChoiceTemplate[])
     } catch (error) {
       console.error('Error fetching templates:', error)
     } finally {
@@ -144,7 +144,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
       const { data, error } = await supabase
         .from('options')
-        .insert([newTemplate])
+        .insert([newTemplate as never])
         .select()
 
       if (error) {
@@ -153,7 +153,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
       }
 
       if (data) {
-        setTemplates([data[0], ...templates])
+        setTemplates([data[0] as ChoiceTemplate, ...templates])
       }
       setShowAddForm(false)
     } catch (error) {
@@ -203,7 +203,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
         const { error } = await supabase
           .from('options')
-          .update(updatedTemplate)
+          .update(updatedTemplate as never)
           .eq('id', editingTemplate.id)
 
         if (error) {
@@ -211,7 +211,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
           return
         }
 
-        setTemplates(templates.map(t => t.id === editingTemplate.id ? { ...t, ...updatedTemplate } : t))
+        setTemplates(templates.map(t => t.id === editingTemplate.id ? { ...t, ...updatedTemplate } as ChoiceTemplate : t))
         setEditingTemplate(null)
       } catch (error) {
         console.error('Error updating template:', error)
@@ -280,7 +280,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
       const { data, error } = await supabase
         .from('options')
-        .insert([copiedTemplate])
+        .insert([copiedTemplate as never])
         .select()
 
       if (error) {
@@ -1424,9 +1424,9 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     image_order: template?.image_order || 0
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit(formData as Omit<ChoiceTemplate, 'id' | 'created_at'>)
   }
 
   const addTag = () => {
@@ -1730,7 +1730,7 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
         return
       }
 
-      setProducts(data || [])
+      setProducts((data || []) as Array<{ id: string; name: string; name_ko?: string }>)
     } catch (error) {
       console.error('Error loading products:', error)
     } finally {

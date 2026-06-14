@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
         .update({
           enabled,
           send_time: time,
-          updated_by: user.email
+          ...(user.email != null ? { updated_by: user.email } : {}),
         })
         .eq('id', existingSchedule.id)
 
@@ -47,8 +47,7 @@ export async function POST(request: NextRequest) {
           enabled,
           period,
           send_time: time,
-          created_by: user.email,
-          updated_by: user.email
+          ...(user.email != null ? { created_by: user.email, updated_by: user.email } : {}),
         })
 
       if (error) throw error

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, memo, useEffect } from 'react';
+import { useState, useCallback, memo, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { X, Calendar, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
 import { DateRangeSelection } from '@/lib/types/dynamic-pricing';
@@ -41,7 +41,6 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   const [selectedDates, setSelectedDates] = useState<Date[]>(initialDates);
   const [saleStatus, setSaleStatus] = useState<'sale' | 'closed'>(initialStatus);
   const [dateStatusMap, setDateStatusMap] = useState<Record<string, 'sale' | 'closed'>>({});
-  const [choiceStatusMap, setChoiceStatusMap] = useState<Record<string, boolean>>({});
   const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
   // 초이스별 날짜별 판매 상태 (choiceId -> date -> 'sale' | 'closed')
   const [choiceDateStatusMap, setChoiceDateStatusMap] = useState<Record<string, Record<string, 'sale' | 'closed'>>>({});
@@ -50,7 +49,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
     endDate: '',
     selectedDays: [0, 1, 2, 3, 4, 5, 6]
   });
-  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [, setLoadingStatus] = useState(false);
 
   // 현재 채널의 날짜별 판매 상태 로드
   useEffect(() => {
@@ -228,24 +227,6 @@ export const SaleStatusModal = memo(function SaleStatusModal({
       console.error('초이스별 날짜 상태 저장 실패:', error);
     }
   }, [selectedChoiceId, onSave]);
-
-  // 저장 핸들러
-  const handleSave = useCallback(() => {
-    // 초이스별 날짜별 상태가 있으면 통합하여 저장
-    if (selectedChoiceId && Object.keys(choiceDateStatusMap[selectedChoiceId] || {}).length > 0) {
-      const dates = Object.keys(choiceDateStatusMap[selectedChoiceId]).map(dateStr => new Date(dateStr));
-      const choiceStatusMapForSave: Record<string, boolean> = {};
-      Object.entries(choiceDateStatusMap[selectedChoiceId]).forEach(([date, status]) => {
-        choiceStatusMapForSave[selectedChoiceId] = status === 'sale';
-      });
-      onSave(dates, saleStatus, choiceStatusMapForSave);
-    } else {
-      // 초이스별 상태가 설정된 경우에만 choiceStatusMap 전달
-      const hasChoiceStatus = Object.keys(choiceStatusMap).length > 0;
-      onSave(selectedDates, saleStatus, hasChoiceStatus ? choiceStatusMap : undefined);
-    }
-    onClose();
-  }, [selectedDates, saleStatus, choiceStatusMap, choiceDateStatusMap, selectedChoiceId, onSave, onClose]);
 
   if (!isOpen) return null;
 

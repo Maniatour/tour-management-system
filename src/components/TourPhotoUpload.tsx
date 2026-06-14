@@ -104,8 +104,8 @@ export default function TourPhotoUpload({
       const { data: files, error } = await supabase.storage
         .from('tour-photos')
         .list(tourId, {
-          sort: { column: 'created_at', order: 'desc' }
-        })
+          sort: { column: 'created_at', order: 'desc' },
+        } as never)
 
       if (error) {
         console.error('Error loading photos from storage:', error)
@@ -226,7 +226,7 @@ export default function TourPhotoUpload({
       }
       
       // Storage 파일을 TourPhoto 형식으로 변환
-      const photos: TourPhoto[] = photoFiles.map((file: { id?: string; name: string; metadata?: { size?: number; mimetype?: string }; created_at?: string }) => {
+      const photos: TourPhoto[] = photoFiles.map((file) => {
         const dbRow = dbPhotoByFileName.get(file.name)
         // 데이터베이스에서 썸네일 경로를 찾거나, Storage에서 찾기
         let thumbnailPath = (dbRow?.thumbnail_path
@@ -558,8 +558,8 @@ export default function TourPhotoUpload({
       const { data: files, error } = await supabase.storage
         .from('tour-photos')
         .list(tourId, {
-          sort: { column: 'created_at', order: 'desc' }
-        })
+          sort: { column: 'created_at', order: 'desc' },
+        } as never)
 
       if (error) {
         throw error

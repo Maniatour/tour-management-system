@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import {
@@ -59,7 +59,7 @@ export default function TicketBookingDeletionReviewModal({
         .not('deletion_requested_at', 'is', null)
         .order('deletion_requested_at', { ascending: false });
       if (error) throw error;
-      setRows((data as TicketBookingPendingDeletionRow[]) || []);
+      setRows((data as unknown as TicketBookingPendingDeletionRow[]) || []);
       setSelected(new Set());
     } catch (e) {
       console.error(e);

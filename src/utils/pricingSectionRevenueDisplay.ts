@@ -1,5 +1,6 @@
 import { shouldOmitOtaExtrasFromCompanyRevenueSum } from '@/utils/channelSettlement'
 import { roundUsd2 } from '@/utils/pricingSectionDisplay'
+import { isNoShowReservationStatus } from '@/lib/reservationStatus'
 
 /** PricingSection 우측 「4. 최종 매출 & 운영 이익」의 총 매출 표시값과 동일 */
 export type PricingSectionRevenueDisplayInput = {
@@ -26,9 +27,14 @@ export type PricingSectionRevenueDisplayInput = {
   customerPaymentNetForOtaOmitCheck?: number
   commissionAmount?: number
   channelPaymentNet?: number
+  reservationStatus?: string | null
 }
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
+  if (isNoShowReservationStatus(inp.reservationStatus)) {
+    return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal)
+  }
+
   if (inp.isReservationCancelled) {
     if (inp.isOTAChannel) {
       return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal)
@@ -108,6 +114,12 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
 }
 
 export function computePricingSectionDisplayOperatingProfit(inp: PricingSectionRevenueDisplayInput): number {
+  if (isNoShowReservationStatus(inp.reservationStatus)) {
+    return roundUsd2(
+      computePricingSectionDisplayTotalRevenue(inp) - inp.prepaymentTip
+    )
+  }
+
   if (inp.isReservationCancelled) {
     if (inp.isOTAChannel) {
       return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.prepaymentTip)

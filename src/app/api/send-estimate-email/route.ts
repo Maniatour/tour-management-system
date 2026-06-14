@@ -9,7 +9,7 @@ import { Resend } from 'resend'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { to, subject, html, customerName, customerPhone } = body
+    const { to, subject, html, customerName } = body
 
     if (!to || !subject || !html) {
       return NextResponse.json(
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // 이메일 발송
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: fromEmail,
-      reply_to: replyTo,
+      replyTo,
       to: to,
       subject: subject,
       html: html,

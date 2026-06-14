@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Cloud, Download, Calendar, RefreshCw, Sun } from 'lucide-react'
 
 interface WeatherDataCollectorProps {

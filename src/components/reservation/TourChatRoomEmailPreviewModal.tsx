@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Eye, Loader2, Copy, Check, Share2, Link2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'

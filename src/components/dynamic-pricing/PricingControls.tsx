@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Save, Loader2, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
 // 테이블 존재 여부 확인 및 간단한 테스트
@@ -20,7 +20,7 @@ export async function GET() {
     }
 
     // 2. product_guide_costs 테이블 존재 여부 확인
-    const { data: guideCosts, error: guideCostsError } = await supabase
+    const { error: guideCostsError } = await supabase
       .from('product_guide_costs')
       .select('id')
       .limit(1)

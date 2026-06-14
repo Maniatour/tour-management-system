@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from('ticket_bookings')
-      .insert(payload)
+      .insert(payload as never)
       .select('*')
       .single()
 

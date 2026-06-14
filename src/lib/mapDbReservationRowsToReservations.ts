@@ -13,11 +13,11 @@ export function mapDbReservationRowsToReservations(
   productMap: Map<string, string>,
   tourMap: Map<string, boolean>
 ): Reservation[] {
-  return raw.map((item: Record<string, unknown>) => {
+  return raw.map((item: Record<string, unknown>): Reservation => {
     const subCategory = productMap.get((item.product_id as string) || '')
     const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
     const hasExistingTour = isManiaTour ? tourMap.has(`${item.product_id}-${item.tour_date}`) : false
-    return {
+    const base: Reservation = {
       id: item.id as string,
       customerId: (item.customer_id as string) || '',
       productId: (item.product_id as string) || '',
@@ -62,9 +62,12 @@ export function mapDbReservationRowsToReservations(
               }
             })()
           : (item.selected_option_prices as { [k: string]: number }) || {},
-      choices: (item.choices as Reservation['choices']) || null,
       hasExistingTour,
       customerCommunicationChannel: (item.customer_communication_channel as string | null) ?? null,
     }
+    if (item.choices != null && typeof item.choices === 'object') {
+      return { ...base, choices: item.choices as Record<string, unknown> }
+    }
+    return base
   })
 }

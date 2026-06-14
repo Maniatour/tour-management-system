@@ -1,22 +1,18 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { 
   CreditCard, 
   Plus, 
   Edit, 
   Trash2, 
-  Eye, 
   DollarSign, 
-  Calendar, 
   User, 
   AlertTriangle,
   CheckCircle,
   XCircle,
   Clock,
-  Filter,
   Search,
-  Download,
   Upload,
   LayoutGrid,
   Table2,
@@ -240,7 +236,7 @@ function teamMemberMatchesSearchQuery(member: TeamMemberWithStatus, rawQuery: st
 
 export default function PaymentMethodManager({ 
   userEmail, 
-  userRole = 'team_member',
+  userRole: _userRole = 'team_member',
   onMethodUpdated 
 }: PaymentMethodManagerProps) {
   

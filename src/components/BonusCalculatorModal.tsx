@@ -14,8 +14,6 @@ interface BonusCalculatorModalProps {
 }
 
 const NON_RESIDENT_OPTION_ID = '6941b5d0' // 비거주자 비용 옵션
-/** reservation_choices fallback용 (option_key) */
-const NON_RESIDENT_OPTION_KEY = 'non_resident'
 
 const BONUS_CALC_STORAGE_KEY_START = 'bonusCalculator_startDate'
 const BONUS_CALC_STORAGE_KEY_END = 'bonusCalculator_endDate'
@@ -185,7 +183,7 @@ async function getNonResidentOptionTotal(
   }
   const fromChoices = (choicesData || []).reduce((sum, row) => {
     if (!nonResidentOptionIds.has((row as { option_id?: string }).option_id || '')) return sum
-    const total = (row as { total_price?: number }).total_price ?? (row as { quantity?: number }).quantity * 0
+    const total = (row as { total_price?: number }).total_price ?? ((row as { quantity?: number }).quantity ?? 0) * 0
     return sum + Number(total || 0)
   }, 0)
   return roundTo100(fromChoices)
@@ -263,9 +261,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   const [startDate, setStartDate] = useState<string>(getStoredStartDate)
   const [endDate, setEndDate] = useState<string>(getStoredEndDate)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string | null}>>([])
   /** 계산법 2: OP, Office Manager (보너스 입력 0인 분의 몫을 나눠 가짐) */
-  const [opOfficeManagers, setOpOfficeManagers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [opOfficeManagers, setOpOfficeManagers] = useState<Array<{email: string, name_ko: string, position: string | null}>>([])
   /** 계산법 2: OP/Office Manager별 보너스 입력 오버라이드 (없으면 균등 분배 몫) */
   const [method2OpOfficeManagerOverrides, setMethod2OpOfficeManagerOverrides] = useState<Record<string, number>>({})
   /** 계산법 2: OP/OM 배분 총액 직접 입력 (null이면 0원 입력분 합계 사용) */
@@ -521,7 +519,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           }
 
           // 비거주자 인원 수 계산
-          const { data: reservationCustomers, error: rcError } = await supabase
+          const { data: reservationCustomers } = await supabase
             .from('reservation_customers')
             .select('reservation_id, resident_status')
             .in('reservation_id', reservationIds)
@@ -533,7 +531,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           const nonResidentOptionTotal = await getNonResidentOptionTotal(reservationIds, roundNonResidentOptionTo100)
 
           // 후기 조회 및 보너스 포인트 계산
-          const { data: reviewsData, error: reviewsError } = await supabase
+          const { data: reviewsData } = await supabase
             .from('reservation_reviews')
             .select('reservation_id, rating, platform')
             .in('reservation_id', reservationIds)
@@ -673,7 +671,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           for (const row of optionsDataFixed) {
             if (isExcludedStatus((row as { status?: string }).status)) continue
             const rid = row.reservation_id
-            const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
+            const ea = (row as { ea?: number }).ea ?? 0
+            const price = (row as { price?: number }).price ?? 0
+            const total = (row as { total_price?: number }).total_price ?? ea * price
             if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
             byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
             byRes[rid].option_total += Number(total || 0)
@@ -707,7 +707,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             const oid = String((row as { option_id?: string }).option_id || '').trim()
             if (!nonResidentIds.has(oid)) continue
             const rid = row.reservation_id
-            const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
+            const ea = (row as { ea?: number }).ea ?? 0
+            const price = (row as { price?: number }).price ?? 0
+            const total = (row as { total_price?: number }).total_price ?? ea * price
             if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
             byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
             byRes[rid].option_total += Number(total || 0)
@@ -748,7 +750,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         .from('reservations')
         .select('id, customer_id, adults, child, infant, total_people')
         .in('id', resIds)
-      const customerIds = [...new Set((resData || []).map(r => r.customer_id).filter(Boolean))]
+      const customerIds = [...new Set((resData || []).map(r => r.customer_id).filter((id): id is string => !!id))]
       const { data: custData } = await supabase
         .from('customers')
         .select('id, name')
@@ -1328,7 +1330,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           status: 'approved',
           expense_type: 'operating',
           tax_deductible: true
-        })
+        } as never)
       if (error) throw error
       alert(`${row.guide_name}님 보너스가 회사 지출에 추가되었습니다.`)
     } catch (error: any) {
@@ -1378,7 +1380,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           status: 'approved',
           expense_type: 'operating',
           tax_deductible: true
-        })
+        } as never)
       if (error) throw error
       alert(`${person.name_ko}님 보너스가 회사 지출에 추가되었습니다.`)
     } catch (error: any) {
@@ -2084,7 +2086,6 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             .reduce((s, r) => s + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0)
                           const opOmCount = opOfficeManagers.length
                           const effectiveOpOmTotal = method2OpOmTotalOverride ?? unclaimedPool
-                          const sharePerOpOm = opOmCount > 0 ? Math.round((effectiveOpOmTotal / opOmCount) * 100) / 100 : 0
                           if (opOmCount === 0) return null
                           return (
                             <>

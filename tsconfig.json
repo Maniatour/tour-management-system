@@ -47,7 +47,11 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "node_modules/.cache/tms-next-dev/types/**/*.ts",
+    "node_modules/.cache/tms-next-dev/dev/types/**/*.ts",
+    "../.cache/tms-next-dev/types/**/*.ts",
+    "../.cache/tms-next-dev/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

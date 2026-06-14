@@ -16,7 +16,7 @@ export async function POST(
 
   const { data: row, error: fetchError } = await client
     .from('reservation_imports')
-    .select('id, subject, raw_body_text, raw_body_html, source_email, extracted_data, status')
+    .select('id, subject, raw_body_text, raw_body_html, source_email, extracted_data, status, platform_key')
     .eq('id', id)
     .single()
 
@@ -44,7 +44,7 @@ export async function POST(
     .from('reservation_imports')
     .update({
       platform_key: platform_key ?? row.platform_key,
-      extracted_data: extracted_data as Record<string, unknown>,
+      extracted_data: extracted_data as never,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

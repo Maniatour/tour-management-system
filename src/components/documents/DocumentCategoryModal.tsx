@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState } from 'react'
 import { 
   X, 
   Save, 
@@ -68,7 +67,6 @@ export default function DocumentCategoryModal({
   onSuccess,
   editingCategory
 }: DocumentCategoryModalProps) {
-  const t = useTranslations('documents')
   
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({

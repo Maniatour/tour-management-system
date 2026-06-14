@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { X } from 'lucide-react'
 import TourChatRoom from './TourChatRoom'
 import { Button } from '@/components/ui/button'
@@ -46,7 +45,6 @@ export default function TourChatModal({
             tourId={tourId}
             guideEmail={guideEmail}
             tourDate={tourDate}
-            isModalView={true}
           />
         </div>
       </div>

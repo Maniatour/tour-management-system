@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isOptionIdUuidLike } from '@/utils/reservationOptionsShared'
 
 export type ReservationOptionLineForEmail = {
   label: string
@@ -130,10 +131,19 @@ async function loadOptionsNameMap(
     if (o?.id != null) optionsMap[String(o.id)] = o as typeof optionsMap[string]
   }
   const missing = optionIds.filter((id) => !optionsMap[id])
-  if (missing.length > 0) {
-    const { data: po } = await client.from('product_options').select('id, name').in('id', missing)
+  for (const id of missing) {
+    if (!isOptionIdUuidLike(id)) {
+      optionsMap[id] = { name: id, name_ko: id, name_en: id }
+    }
+  }
+  const missingUuids = missing.filter((id) => isOptionIdUuidLike(id) && !optionsMap[id])
+  if (missingUuids.length > 0) {
+    const { data: po } = await client.from('product_options').select('id, name').in('id', missingUuids)
     for (const o of po || []) {
-      if (o?.id != null) optionsMap[String(o.id)] = { name: (o as { name?: string }).name }
+      if (o?.id != null) optionsMap[String(o.id)] = { name: (o as { name?: string }).name ?? null }
+    }
+    for (const id of missingUuids) {
+      if (!optionsMap[id]) optionsMap[id] = { name: id, name_ko: id, name_en: id }
     }
   }
   return optionsMap

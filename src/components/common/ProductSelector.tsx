@@ -123,7 +123,7 @@ export default function ProductSelector({
         return aName.localeCompare(bName, 'ko');
       });
       
-      setProducts(sortedData);
+      setProducts(sortedData as Product[]);
     } catch (error) {
       console.error('상품 로드 오류:', error);
     } finally {

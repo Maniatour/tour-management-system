@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ShieldCheck, AlertTriangle, Link2, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'

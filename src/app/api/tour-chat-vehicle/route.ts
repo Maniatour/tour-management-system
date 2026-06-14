@@ -20,13 +20,22 @@ function toPublicPhotoUrl(
   const raw = photo.photo_url
   if (!raw) return null
   if (raw.startsWith('data:image') || raw.startsWith('http')) {
-    return { url: simplifyUrl(raw), alt: photo.photo_name || undefined }
+    return {
+      url: simplifyUrl(raw),
+      ...(photo.photo_name ? { alt: photo.photo_name } : {}),
+    }
   }
   try {
     const { data } = db.storage.from('images').getPublicUrl(raw)
-    return { url: simplifyUrl(data.publicUrl), alt: photo.photo_name || undefined }
+    return {
+      url: simplifyUrl(data.publicUrl),
+      ...(photo.photo_name ? { alt: photo.photo_name } : {}),
+    }
   } catch {
-    return { url: raw, alt: photo.photo_name || undefined }
+    return {
+      url: raw,
+      ...(photo.photo_name ? { alt: photo.photo_name } : {}),
+    }
   }
 }
 

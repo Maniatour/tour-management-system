@@ -1,10 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import TourReportForm from './TourReportForm'
 import TourReportList from './TourReportList'
-import { FileText, Plus, Eye, Edit, Trash2 } from 'lucide-react'
+import { FileText, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -27,7 +25,7 @@ export default function TourReportSection({
   productId,
   tourName,
   tourDate,
-  canCreateReport = true,
+  canCreateReport: _canCreateReport = true,
   canEditReport = true,
   canDeleteReport = true,
   showHeader = true
@@ -69,12 +67,6 @@ export default function TourReportSection({
     }
   }
 
-  const handleCreateReport = () => {
-    setEditingReport(null)
-    setShowForm(true)
-    setShowList(false)
-  }
-
   const handleViewReports = () => {
     setShowList(true)
     setShowForm(false)
@@ -114,7 +106,7 @@ export default function TourReportSection({
     setShowList(false)
   }
 
-  const handleDeleteReport = (reportId: string) => {
+  const handleDeleteReport = (_reportId: string) => {
     toast.success(t('reportDeleted'))
   }
 
@@ -138,9 +130,9 @@ export default function TourReportSection({
         )}
         <TourReportForm
           tourId={tourId}
-          productId={productId ?? undefined}
-          reportId={editingReport?.id ?? undefined}
-          initialData={editingReport ?? undefined}
+                  productId={productId ?? null}
+                  {...(editingReport?.id ? { reportId: editingReport.id } : {})}
+                  {...(editingReport ? { initialData: editingReport } : {})}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
           locale={locale}
@@ -155,8 +147,8 @@ export default function TourReportSection({
         <TourReportList
           tourId={tourId}
           showTourInfo={false}
-          onEdit={canEditReport ? handleEditReport : undefined}
-          onDelete={canDeleteReport ? handleDeleteReport : undefined}
+          {...(canEditReport ? { onEdit: handleEditReport } : {})}
+          {...(canDeleteReport ? { onDelete: handleDeleteReport } : {})}
           locale={locale}
         />
       </div>

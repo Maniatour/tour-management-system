@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, CreditCard, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2, CheckCircle, XCircle, Clock, DollarSign } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import {
@@ -10,7 +10,6 @@ import {
 } from '@/lib/cancelDepositRefundPaymentRecord'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentRecordForm from './PaymentRecordForm'
-import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
 
 interface PaymentRecord {
@@ -108,7 +107,13 @@ export default function PaymentRecordsList({
             user_email: pm.user_email,
             card_holder_name: pm.card_holder_name,
           },
-          team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+          team
+            ? {
+                nick_name: team.nick_name ?? null,
+                name_en: team.name_en ?? null,
+                name_ko: team.name_ko ?? null,
+              }
+            : undefined
         )
         methodMap[pm.id] = label
         methodMap[pm.method] = label
@@ -192,33 +197,6 @@ export default function PaymentRecordsList({
     }
   }
 
-  const handleStatusUpdate = async (recordId: string, newStatus: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
-
-      const response = await fetch(`/api/payment-records/${recordId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ payment_status: newStatus })
-      })
-
-      if (!response.ok) {
-        throw new Error('상태 업데이트에 실패했습니다.')
-      }
-
-      await fetchPaymentRecords()
-      onPaymentRecordsUpdated?.()
-    } catch (error) {
-      console.error('상태 업데이트 오류:', error)
-      alert(error instanceof Error ? error.message : '상태 업데이트 중 오류가 발생했습니다.')
-    }
-  }
 
   const getStatusIcon = (status: string) => {
     const normalizedStatus = status?.toLowerCase()

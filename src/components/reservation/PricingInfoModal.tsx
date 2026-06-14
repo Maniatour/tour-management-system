@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
@@ -26,6 +26,11 @@ import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBal
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
+import {
+  isCancelledReservationStatus,
+  isNoShowReservationStatus,
+  isNotIncludedExcludedReservationStatus,
+} from '@/lib/reservationStatus'
 
 interface PricingInfoModalProps {
   reservation: Reservation | null
@@ -385,7 +390,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           commission_percent: pricingInfo?.commission_percent || 0,
           commission_base_price: 0,
           channel_settlement_amount: roundUsd2(
-            (pricingInfo?.depositAmount || 0) - (Number(pricingInfo?.commission_amount) || 0)
+            (pricingInfo?.depositAmount || 0) -
+              (Number((pricingRow as { commission_amount?: unknown } | undefined)?.commission_amount) || 0)
           ),
           pricing_adults: reservation.adults ?? 0,
         }
@@ -396,7 +402,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       }
 
       // 쿠폰 할인이 양수로 저장되어 있다면 마이너스로 변환
-      if (data.coupon_discount > 0) {
+      if (data.coupon_discount != null && data.coupon_discount > 0) {
         data.coupon_discount = -data.coupon_discount
       }
 
@@ -444,9 +450,10 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         productPriceTotal: productPriceTotal,
       })
 
-      const pricingDataWithDefaults: PricingData = {
+      const pricingDataWithDefaults = {
         ...data,
-        id: (data as { id?: string }).id,
+        ...(typeof (data as { id?: string }).id === 'string' ? { id: (data as { id: string }).id } : {}),
+        is_private_tour: reservation.isPrivateTour || false,
         adult_product_price: adultPrice,
         child_product_price: childPrice,
         infant_product_price: infantPrice,
@@ -479,8 +486,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
             : null,
       })
       
-      setPricingData(pricingDataWithDefaults)
-      setEditData(pricingDataWithDefaults)
+      setPricingData(pricingDataWithDefaults as PricingData)
+      setEditData(pricingDataWithDefaults as PricingData)
     } catch (err) {
       console.error('가격 정보 로드 오류:', err)
       setError('가격 정보를 불러오는 중 오류가 발생했습니다.')
@@ -506,14 +513,31 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         .order('coupon_code')
 
       if (error) throw error
-      setCoupons(data || [])
+      setCoupons(
+        (data || [])
+          .filter((c): c is typeof c & { coupon_code: string } => c.coupon_code != null && c.coupon_code !== '')
+          .map((c) => ({
+            id: c.id,
+            coupon_code: c.coupon_code,
+            discount_type: c.discount_type ?? 'fixed',
+            percentage_value: c.percentage_value,
+            fixed_value: c.fixed_value,
+            status: c.status ?? 'active',
+            description: c.description,
+            start_date: c.start_date,
+            end_date: c.end_date,
+            channel_id: c.channel_id,
+            product_id: c.product_id,
+          }))
+      )
       
       // 기존 가격 데이터에 쿠폰이 있으면 해당 쿠폰을 선택
       // reservation_pricing.coupon_code는 coupons.coupon_code와 조인됨 (대소문자 구분 없이)
       if (pricingData?.coupon_code && data) {
+        const code = pricingData.coupon_code.trim()
         const matchingCoupon = data.find(c => 
           c.coupon_code && 
-          c.coupon_code.trim().toLowerCase() === pricingData.coupon_code.trim().toLowerCase()
+          c.coupon_code.trim().toLowerCase() === code.toLowerCase()
         )
         if (matchingCoupon) {
           setSelectedCoupon(matchingCoupon.id)
@@ -672,17 +696,17 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       }
 
       // reservation_pricing에는 is_private_tour·예약 id·통계용 매출 컬럼은 이 모달에서 갱신하지 않음
-      const row = { ...(editData as Record<string, unknown>) } as Record<string, unknown>
+      const row = { ...(editData as unknown as Record<string, unknown>) } as Record<string, unknown>
       delete row.is_private_tour
       delete row.reservation_id
       delete row.company_total_revenue
       delete row.operating_profit
-      const rowForDb = row as PricingData
+      const rowForDb = row as unknown as PricingData
 
       const reservationId = String(reservation.id)
 
       if (pricingData?.id) {
-        const { error } = await supabase.from('reservation_pricing').update(rowForDb).eq('id', pricingData.id)
+        const { error } = await supabase.from('reservation_pricing').update(rowForDb as never).eq('id', pricingData.id)
 
         if (error) throw error
         setPricingData(editData)
@@ -705,10 +729,10 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       } else {
         const newId = crypto.randomUUID()
         const { error } = await supabase.from('reservation_pricing').insert({
-          ...rowForDb,
+          ...row,
           id: newId,
           reservation_id: reservationId,
-        })
+        } as never)
 
         if (error) throw error
         const merged = { ...editData, id: newId }
@@ -915,7 +939,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const pricingAdultsVal = useMemo(() => {
     if (!editData || !reservation) return reservation?.adults ?? 0
     const pa = editData.pricing_adults
-    if (pa != null && pa !== '' && Number.isFinite(Number(pa))) {
+    if (pa != null && Number.isFinite(Number(pa))) {
       return Math.max(0, Math.floor(Number(pa)))
     }
     return reservation.adults ?? 0
@@ -944,8 +968,10 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     [reservationOptionsRows]
   )
 
-  const isReservationCancelled =
-    reservation?.status === 'cancelled' || reservation?.status === 'canceled'
+  const isReservationCancelled = isCancelledReservationStatus(reservation?.status)
+  const isReservationNoShow = isNoShowReservationStatus(reservation?.status)
+  const isOtaNotIncludedExcludedSettle =
+    !!isOTAChannel && (isReservationCancelled || isReservationNoShow)
 
   const displayCustomerGross = useMemo(() => {
     if (!editData || !reservation) return 0
@@ -987,7 +1013,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     }
     const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
     const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
-    const cancelledOtaSettle = isReservationCancelled && isOTAChannel
+    const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal
 
@@ -1028,7 +1054,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     if (!stored) return 0
     const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
     const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
-    const cancelledOtaSettle = isReservationCancelled && isOTAChannel
+    const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal
     return deriveCommissionGrossForSettlement(stored, {
@@ -1090,6 +1116,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       customerPaymentNetForOtaOmitCheck: displayCustomerNet,
       commissionAmount: editData.commission_amount || 0,
       channelPaymentNet: editData.commission_base_price || 0,
+      reservationStatus: reservation.status ?? null,
     }
   }, [
     editData,
@@ -1553,7 +1580,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span>+${reservationOptionsTotalUsd.toFixed(2)}</span>
                         </div>
                       )}
-                      {!isReservationCancelled && notIncludedBreakdownModal.totalUsd > 0 && (
+                      {!isNotIncludedExcludedReservationStatus(reservation?.status) &&
+                        notIncludedBreakdownModal.totalUsd > 0 && (
                         <>
                           {notIncludedBreakdownModal.baseUsd > 0 && (
                             <div className="flex justify-between">

@@ -1,9 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
 
 interface TourEditModalProps {
   isOpen: boolean
@@ -36,7 +35,6 @@ export default function TourEditModal({
   onClose,
   onSave
 }: TourEditModalProps) {
-  const t = useTranslations('tours')
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProductId, setSelectedProductId] = useState<string>(tour.product_id)
   const [loading, setLoading] = useState(false)
@@ -60,7 +58,14 @@ export default function TourEditModal({
         .order('name_ko', { ascending: true })
 
       if (error) throw error
-      setProducts(data || [])
+      setProducts(
+        (data || []).map((p) => ({
+          id: p.id,
+          name_ko: p.name_ko,
+          name_en: p.name_en,
+          status: p.status ?? 'active',
+        }))
+      )
     } catch (error) {
       console.error('상품 로드 오류:', error)
     } finally {

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning, RefreshCw } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
-import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
+import { aggregateReservationOptionSumsByReservationId, type ReservationOptionSumRow } from '@/lib/syncReservationPricingAggregates'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import {
   ReservationActionRequiredTable,
@@ -358,7 +358,7 @@ export default function ReservationActionRequiredModal({
         }
         return next
       })
-      const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+      const chunkSums = aggregateReservationOptionSumsByReservationId((optRows ?? []) as ReservationOptionSumRow[])
       setReservationOptionSumByReservationId((prev) => {
         const n = new Map(prev)
         const sumsByNorm = new Map<string, number>()
@@ -420,7 +420,7 @@ export default function ReservationActionRequiredModal({
           ])
           if (cancelled) return
           if (data) {
-            data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
+            data.forEach((row: { reservation_id: string; payment_status: string | null; amount: number | null }) => {
               const rid = normalizeReservationIdForPayments(row.reservation_id)
               if (!rid) return
               set.add(rid)
@@ -433,7 +433,7 @@ export default function ReservationActionRequiredModal({
               byRes.set(rid, arr)
             })
           }
-          const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+          const chunkSums = aggregateReservationOptionSumsByReservationId((optRows ?? []) as ReservationOptionSumRow[])
           for (const [rid, v] of chunkSums) {
             const k = normalizeReservationIdForPayments(rid)
             if (!k) continue
@@ -472,7 +472,7 @@ export default function ReservationActionRequiredModal({
           next.set(reservationId, has)
           return next
         })
-        const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+        const chunkSums = aggregateReservationOptionSumsByReservationId((optRows ?? []) as ReservationOptionSumRow[])
         const sum = chunkSums.get(reservationId) ?? 0
         setReservationOptionSumByReservationId((prev) => {
           const next = new Map(prev)
@@ -554,7 +554,7 @@ export default function ReservationActionRequiredModal({
           reservationOptionSumByReservationId
         )
     )
-    const pricingList = [...new Map([...noPricing.map(r => [r.id, r]), ...pricingMismatch.map(r => [r.id, r])]).values()]
+    const pricingList = [...new Map([...noPricing.map(r => [r.id, r] as const), ...pricingMismatch.map(r => [r.id, r] as const)]).values()] as Reservation[]
     /** 입금 탭: 취소 제외. 입금·투어 없음은 Mania Tour/Service만(예약 대행 상품은 투어 불필요) */
     const depositNoTour = list.filter(
       (r) =>
@@ -570,7 +570,7 @@ export default function ReservationActionRequiredModal({
         !hasPayment(r) &&
         !reservationExemptFromDepositRequirement(r, products)
     )
-    const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
+    const depositList = [...new Map([...depositNoTour.map(r => [r.id, r] as const), ...confirmedNoDeposit.map(r => [r.id, r] as const)]).values()] as Reservation[]
 
     const cancelFinancialList = list.filter((r) =>
       reservationNeedsCancelFinancialCleanup(
@@ -627,7 +627,7 @@ export default function ReservationActionRequiredModal({
         ...balanceUnpaidList.map((r) => [r.id, r] as const),
         ...balanceCalcWrongList.map((r) => [r.id, r] as const)
       ]).values()
-    ]
+    ] as Reservation[]
 
     return {
       status: statusList,
@@ -1242,7 +1242,13 @@ export default function ReservationActionRequiredModal({
                       reservation={reservation}
                       customers={customers}
                       products={products}
-                      channels={channels}
+                      channels={channels.map((c) => ({
+                        id: c.id,
+                        name: c.name,
+                        ...(c.favicon_url != null && c.favicon_url !== ''
+                          ? { favicon_url: c.favicon_url }
+                          : {}),
+                      }))}
                       pickupHotels={pickupHotels}
                       productOptions={productOptions}
                       optionChoices={optionChoices}
@@ -1264,7 +1270,7 @@ export default function ReservationActionRequiredModal({
                       onEditClick={onEditClick}
                       onCustomerClick={onCustomerClick}
                       onRefreshReservations={onRefreshReservations}
-                      onStatusChange={onStatusChange}
+                      {...(onStatusChange ? { onStatusChange } : {})}
                       generatePriceCalculation={generatePriceCalculation}
                       getGroupColorClasses={getGroupColorClasses}
                       getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
@@ -1273,7 +1279,7 @@ export default function ReservationActionRequiredModal({
                       reservationOptionsPresenceByReservationId={reservationOptionsPresenceByReservationId}
                       onReservationOptionsMutated={handleReservationOptionsMutated}
                       reshowPickupSummaryRequest={reshowPickupSummaryRequest}
-                      onReshowPickupSummaryConsumed={onReshowPickupSummaryConsumed}
+                      {...(onReshowPickupSummaryConsumed ? { onReshowPickupSummaryConsumed } : {})}
                     />
                   ))}
                 </div>
@@ -1291,7 +1297,13 @@ export default function ReservationActionRequiredModal({
                   reservationOptionSumByReservationId={reservationOptionSumByReservationId}
                   customers={customers}
                   products={products}
-                  channels={channels}
+                  channels={channels.map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    ...(c.favicon_url != null && c.favicon_url !== ''
+                      ? { favicon_url: c.favicon_url }
+                      : {}),
+                  }))}
                   pickupHotels={pickupHotels}
                   productOptions={productOptions}
                   optionChoices={optionChoices}
@@ -1311,15 +1323,15 @@ export default function ReservationActionRequiredModal({
                   onEmailDropdownToggle={onEmailDropdownToggle}
                   onEditClick={onEditClick}
                   onCustomerClick={onCustomerClick}
-                  onStatusChange={onStatusChange}
+                  {...(onStatusChange ? { onStatusChange } : {})}
                   getGroupColorClasses={getGroupColorClasses}
                   getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
                   choicesCacheRef={choicesCacheRef}
                   onRefreshReservations={onRefreshReservations}
-                  onRefreshReservationPricing={onRefreshReservationPricing}
-                  balanceReservationsForApply={
-                    activeTab === 'balance' || activeTab === 'cancel' ? currentList : undefined
-                  }
+                  {...(onRefreshReservationPricing ? { onRefreshReservationPricing } : {})}
+                  {...(activeTab === 'balance' || activeTab === 'cancel'
+                    ? { balanceReservationsForApply: currentList }
+                    : {})}
                   showPartnerCancelRefundAction={activeTab === 'cancel'}
                   onRefreshPaymentAggregates={mergePaymentAndOptionAggregates}
                 />

@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, RefreshCw, Trash2, Calendar, Users, User, Car } from 'lucide-react'
+import { MessageCircle, Plus, Pin, Search, RefreshCw, Users, User, Car } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
 
 interface TeamChatRoom {
@@ -75,7 +74,7 @@ interface TourChatRoom {
     message: string
     sender_name: string
     created_at: string
-  }
+  } | null
   unread_count: number
 }
 
@@ -217,7 +216,7 @@ export default function GuideChatPage() {
   })
 
   // 투어 채팅방 데이터 로딩
-  const { data: tourChatRoomsData, loading: tourChatLoading, refetch: refetchTourChatRooms } = useOptimizedData<TourChatRoom[]>({
+  const { data: tourChatRoomsData, loading: tourChatLoading } = useOptimizedData<TourChatRoom[]>({
     fetchFn: async () => {
       try {
         const supabaseClient = createClientSupabase()
@@ -244,7 +243,7 @@ export default function GuideChatPage() {
         }
 
         // 상품 정보 가져오기
-        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => id != null))]
         let productMap = new Map()
         let productEnMap = new Map()
         
@@ -259,8 +258,8 @@ export default function GuideChatPage() {
         }
 
         // 팀원 정보 가져오기
-        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
-        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((id): id is string => id != null))]
+        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((id): id is string => id != null))]
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
@@ -276,7 +275,7 @@ export default function GuideChatPage() {
         }
 
         // 차량 정보 가져오기
-        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => id != null))]
         
         let vehicleMap = new Map()
         if (vehicleIds.length > 0) {
@@ -520,9 +519,10 @@ export default function GuideChatPage() {
 
   // 필터링된 채팅방 목록
   const filteredRooms = (activeTab === 'team' ? teamChatRooms : tourChatRooms).filter(room => {
-    const matchesSearch = room.room_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         room.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (activeTab === 'tour' && 'tour_name' in room && room.tour_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+    const matchesSearch = activeTab === 'team'
+      ? ((room as TeamChatRoom).room_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         (room as TeamChatRoom).description?.toLowerCase().includes(searchTerm.toLowerCase()))
+      : ((room as TourChatRoom).tour_name?.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesType = filterType === 'all' || (activeTab === 'team' && 'room_type' in room && room.room_type === filterType)
     return matchesSearch && matchesType
   })

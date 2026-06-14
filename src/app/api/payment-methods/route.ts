@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
 import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
 
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
     let referenceCountAvailable = false
     if (supabaseAdmin) {
       const { data: countRows, error: countError } = await supabaseAdmin.rpc(
-        'payment_method_reference_counts'
+        'payment_method_reference_counts' as never
       )
       if (countError) {
         console.warn('payment_method_reference_counts RPC:', countError.message)
@@ -130,17 +131,17 @@ export async function GET(request: NextRequest) {
     const faIds = [
       ...new Set(
         paymentMethods
-          .map((pm: { financial_account_id?: string | null }) => pm.financial_account_id)
+          .map((pm) => (pm as { financial_account_id?: string | null }).financial_account_id)
           .filter((id: string | null | undefined): id is string => Boolean(id))
       ),
     ]
     let financialAccountMap: Record<string, { id: string; name: string }> = {}
     if (faIds.length > 0) {
-      const { data: faRows } = await authSb
-        .from('financial_accounts')
+      const { data: faRows } = await fromUntypedTable(authSb, 'financial_accounts')
         .select('id, name')
         .in('id', faIds)
-      faRows?.forEach((fa: { id: string; name: string }) => {
+      const rows = (faRows ?? []) as { id: string; name: string }[]
+      rows.forEach((fa) => {
         financialAccountMap[fa.id] = { id: fa.id, name: fa.name }
       })
     }
@@ -260,8 +261,8 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         created_by: created_by || null,
         display_name: displayName,
-        deduct_card_fee_for_tips: !!deduct_card_fee_for_tips
-      })
+        deduct_card_fee_for_tips: !!deduct_card_fee_for_tips,
+      } as never)
       .select()
       .maybeSingle()
 

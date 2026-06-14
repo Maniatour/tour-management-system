@@ -41,6 +41,14 @@ import {
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
 import { simplifyChoiceLabel } from '@/utils/choiceLabels'
+import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+
+function getReservationCommunicationChannel(reservation: Reservation): string | null {
+  const r = reservation as Record<string, unknown>
+  const v = r.customer_communication_channel ?? r.customerCommunicationChannel
+  return typeof v === 'string' ? v : null
+}
 
 interface Reservation {
   id: string
@@ -159,6 +167,10 @@ interface ReservationCardProps {
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   /** 예약 상품의 product_code (거주 상태 UI 표시용) */
   productCode?: string | null
+  onCommunicationChannelChange?: (
+    reservationId: string,
+    channel: CustomerCommunicationChannel
+  ) => void | Promise<void>
 }
 
 export const ReservationCard: React.FC<ReservationCardProps> = ({
@@ -182,7 +194,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   safeJsonParse,
   pickupHotels = [],
   onRefresh,
-  productCode = null
+  productCode = null,
+  onCommunicationChannelChange,
 }) => {
   const tCard = useTranslations('reservations.card')
   const locale = useLocale()
@@ -924,6 +937,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         return 'bg-blue-100 text-blue-800'
       case 'cancelled':
         return 'bg-red-100 text-red-800'
+      case 'no_show':
+        return 'bg-orange-100 text-orange-800'
       case 'completed':
         return 'bg-gray-100 text-gray-800'
       case 'pending':
@@ -944,6 +959,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         return <Circle className="w-4 h-4 text-blue-600" />
       case 'cancelled':
         return <XCircle className="w-4 h-4 text-red-600" />
+      case 'no_show':
+        return <XCircle className="w-4 h-4 text-orange-600" />
       case 'completed':
         return <CheckCircle2 className="w-4 h-4 text-gray-600" />
       case 'pending':
@@ -961,6 +978,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         return '모집 중'
       case 'cancelled':
         return '취소됨'
+      case 'no_show':
+        return '노쇼'
       case 'completed':
         return '완료됨'
       case 'pending':
@@ -1597,6 +1616,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           >
             {customerName}
           </p>
+
+          {onCommunicationChannelChange ? (
+            <CustomerCommunicationChannelPicker
+              compact
+              align="right"
+              value={getReservationCommunicationChannel(reservation)}
+              channelId={reservation.channel_id}
+              channelName={channelInfo?.name}
+              onChange={(channel) => onCommunicationChannelChange(reservation.id, channel)}
+            />
+          ) : null}
           
           {/* 총 인원수 뱃지 - 숫자만 표시 */}
           <div className="flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
@@ -1659,6 +1689,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                       { value: 'pending', label: '대기 중', icon: <AlertCircle className="w-3.5 h-3.5 text-yellow-600" /> },
                       { value: 'completed', label: '완료됨', icon: <CheckCircle2 className="w-3.5 h-3.5 text-gray-600" /> },
                       { value: 'cancelled', label: '취소됨', icon: <XCircle className="w-3.5 h-3.5 text-red-600" /> },
+                      { value: 'no_show', label: '노쇼', icon: <XCircle className="w-3.5 h-3.5 text-orange-600" /> },
                     ].map((option) => (
                       <button
                         key={option.value}

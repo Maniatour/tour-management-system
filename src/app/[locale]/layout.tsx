@@ -8,72 +8,11 @@ import StripeErrorHandler from "@/components/StripeErrorHandler";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
-// duplicate import removed
-import { createServerSupabase } from '@/lib/supabase-server';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
-
-// Use generateMetadata instead of static metadata to inject dynamic favicon
+import { getLocaleLayoutMetadata } from '@/lib/channelFaviconMetadata';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const fallbackMetadata: Metadata = {
-    manifest: '/manifest.json',
-    icons: {
-      icon: [{ url: '/company-logo.png' }],
-      shortcut: [{ url: '/company-logo.png' }],
-      apple: [{ url: '/company-logo.png' }]
-    },
-  };
-
-  try {
-    const supabase = await createServerSupabase();
-    // 1) 홈페이지 채널 아이콘(M00001 또는 이름에 홈페이지/homepage)을 최우선으로 조회
-    const { data: homepageChannel } = await supabase
-      .from('channels' as any)
-      .select('id, name, favicon_url, type')
-      .or('id.eq.M00001,name.ilike.%homepage%,name.ilike.%홈페이지%')
-      .not('favicon_url', 'is', null)
-      .limit(1)
-      .maybeSingle();
-
-    // 2) 없으면 self 채널 아이콘 조회
-    let faviconUrl = homepageChannel?.favicon_url as string | undefined;
-    if (!faviconUrl) {
-      const { data: selfChannel } = await supabase
-        .from('channels' as any)
-        .select('favicon_url')
-        .eq('type', 'self')
-        .not('favicon_url', 'is', null)
-        .limit(1)
-        .maybeSingle();
-      faviconUrl = selfChannel?.favicon_url as string | undefined;
-    }
-
-    // 3) 그래도 없으면 아무 채널 아이콘 1개
-    if (!faviconUrl) {
-      const { data: anyChannel } = await supabase
-        .from('channels' as any)
-        .select('favicon_url')
-        .not('favicon_url', 'is', null)
-        .limit(1)
-        .maybeSingle();
-      faviconUrl = anyChannel?.favicon_url as string | undefined;
-    }
-
-    if (!faviconUrl) {
-      return fallbackMetadata;
-    }
-
-    return {
-      manifest: '/manifest.json',
-      icons: {
-        icon: [{ url: faviconUrl }],
-        shortcut: [{ url: faviconUrl }],
-        apple: [{ url: faviconUrl }]
-      },
-    };
-  } catch {
-    return fallbackMetadata;
-  }
+  return getLocaleLayoutMetadata();
 }
 
 export default async function LocaleLayout({
@@ -102,11 +41,6 @@ export default async function LocaleLayout({
     pathname.includes('/guide') || headersList.get('x-is-guide-route') === '1';
   const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
   const isAuthPage = /\/auth(\/|$)/.test(pathname);
-  const isCustomerPage = pathname.includes('/dashboard') || 
-                         pathname.includes('/products') || 
-                         pathname.includes('/off-schedule') ||
-                         pathname === `/${locale}` ||
-                         pathname === `/${locale}/`;
 
   // Admin, Embed, Photos, Auth(콜백): 기본 레이아웃만 (사이드바/네비 없음)
   if (isAdminPage || isEmbedPage || isPhotosPage || isAuthPage) {

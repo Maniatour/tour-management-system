@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
 
 // UUID 생성 함수
@@ -14,7 +15,6 @@ function generateUUID(): string {
 import { 
   Plus, 
   Search, 
-  Filter, 
   Star, 
   StarOff, 
   Eye, 
@@ -24,22 +24,14 @@ import {
   Copy, 
   MessageCircle,
   HelpCircle,
-  Calendar,
-  DollarSign,
-  Map,
   FileText,
-  Users,
   BarChart3,
   Settings,
-  ChevronDown,
-  ChevronRight,
   Tag,
-  Globe,
   Clock,
   Workflow,
   Play,
   Pause,
-  Square,
   ArrowRight,
   CheckCircle,
   XCircle,
@@ -49,16 +41,15 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
-import WorkflowDiagram from '@/components/WorkflowDiagram'
-import WorkflowTemplateModal from '@/components/WorkflowTemplateModal'
-import type { 
-  ConsultationCategory, 
-  ConsultationTemplateWithRelations, 
-  ConsultationLogWithRelations,
+import type {
+  ConsultationCategory,
+  ConsultationTemplateWithRelations,
   TemplateType,
-  Language
 } from '@/types/consultation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+
+const WorkflowDiagram = dynamic(() => import('@/components/WorkflowDiagram'), { ssr: false, loading: () => null })
+const WorkflowTemplateModal = dynamic(() => import('@/components/WorkflowTemplateModal'), { ssr: false, loading: () => null })
 
 const CONSULTATION_LIST_UI_DEFAULT = {
   activeTab: 'templates' as 'templates' | 'workflows' | 'logs' | 'stats',
@@ -104,7 +95,7 @@ export default function ConsultationManagementPage() {
   const [selectedWorkflowForDiagram, setSelectedWorkflowForDiagram] = useState<any>(null)
   const [workflowDiagramMode, setWorkflowDiagramMode] = useState<'diagram' | 'manual' | 'edit'>('manual')
   const [isWorkflowModalFullscreen, setIsWorkflowModalFullscreen] = useState(false)
-  const [savedWorkflowSettings, setSavedWorkflowSettings] = useState<{[workflowId: string]: {
+  const [, setSavedWorkflowSettings] = useState<{[workflowId: string]: {
     zoom: number
     backgroundSize: { width: number; height: number }
     nodeSize: { width: number; height: number }
@@ -112,7 +103,7 @@ export default function ConsultationManagementPage() {
   }}>({})
 
   // 데이터 로딩
-  const { data: categories, loading: categoriesLoading, refetch: refetchCategories, invalidateCache: invalidateCategoriesCache } = useOptimizedData<ConsultationCategory>({
+  const { data: categories } = useOptimizedData<ConsultationCategory[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('consultation_categories')
@@ -127,7 +118,7 @@ export default function ConsultationManagementPage() {
     dependencies: []
   })
 
-  const { data: templates, loading: templatesLoading, refetch: refetchTemplates, invalidateCache: invalidateTemplatesCache } = useOptimizedData<ConsultationTemplateWithRelations>({
+  const { data: templates, refetch: refetchTemplates, invalidateCache: invalidateTemplatesCache } = useOptimizedData<ConsultationTemplateWithRelations[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('consultation_templates')
@@ -142,7 +133,7 @@ export default function ConsultationManagementPage() {
         .order('priority', { ascending: false })
       
       if (error) throw error
-      return data || []
+      return (data || []) as ConsultationTemplateWithRelations[]
     },
     cacheKey: 'consultation_templates',
     dependencies: []
@@ -182,7 +173,7 @@ export default function ConsultationManagementPage() {
   })
 
   // Workflow data loading (temporarily disabled)
-  const { data: workflows, loading: workflowsLoading, refetch: refetchWorkflows, invalidateCache: invalidateWorkflowsCache } = useOptimizedData({
+  const { data: workflows, refetch: refetchWorkflows, invalidateCache: invalidateWorkflowsCache } = useOptimizedData<any[]>({
     fetchFn: async () => {
       // Return empty array if table doesn't exist
       try {
@@ -214,7 +205,7 @@ export default function ConsultationManagementPage() {
   })
 
   // Workflow step data loading (temporarily disabled)
-  const { data: workflowSteps, loading: workflowStepsLoading, refetch: refetchWorkflowSteps, invalidateCache: invalidateWorkflowStepsCache } = useOptimizedData({
+  const { data: workflowSteps, refetch: refetchWorkflowSteps, invalidateCache: invalidateWorkflowStepsCache } = useOptimizedData<any[]>({
     fetchFn: async () => {
       // Return empty array if table doesn't exist
       try {
@@ -273,7 +264,7 @@ export default function ConsultationManagementPage() {
   }, {} as Record<string, any[]>) || {}
 
   // 필터링된 템플릿
-  const filteredTemplates = templates?.filter(template => {
+  const filteredTemplates = (templates ?? []).filter((template: ConsultationTemplateWithRelations) => {
     if (!showInactive && !template.is_active) return false
     if (showFavoritesOnly && !template.is_favorite) return false
     if (selectedCategory !== 'all' && template.category_id !== selectedCategory) return false
@@ -299,8 +290,8 @@ export default function ConsultationManagementPage() {
            questionEn.includes(searchLower) ||
            answerKo.includes(searchLower) ||
            answerEn.includes(searchLower) ||
-           template.tags?.some(tag => tag.toLowerCase().includes(searchLower))
-  }) || []
+           template.tags?.some((tag: string) => tag.toLowerCase().includes(searchLower))
+  })
 
   // Template copy function (Korean version)
   const copyTemplateKo = useCallback(async (template: ConsultationTemplateWithRelations) => {
@@ -476,7 +467,7 @@ export default function ConsultationManagementPage() {
             alternative_step_id: step.alternative_step_id,
             group_id: step.group_id,
             position: step.position
-          })
+          } as never)
 
         if (error) {
           console.error('Failed to save workflow step:', error)
@@ -542,10 +533,10 @@ export default function ConsultationManagementPage() {
           name_en: newWorkflow.name_en,
           description_ko: newWorkflow.description_ko,
           description_en: newWorkflow.description_en,
-          category_id: newWorkflow.category_id,
+          category_id: newWorkflow.category_id ?? null,
           is_active: newWorkflow.is_active,
           is_default: newWorkflow.is_default,
-        }])
+        } as never])
         .select()
         .single()
 
@@ -614,13 +605,15 @@ export default function ConsultationManagementPage() {
   }, [workflowToDelete, refetchWorkflows])
 
   // Workflow step grouping function
-  const groupedWorkflowSteps = workflowSteps?.reduce((acc, step) => {
-    if (!acc[step.workflow_id]) {
-      acc[step.workflow_id] = []
+  const groupedWorkflowSteps = (workflowSteps ?? []).reduce((acc, step) => {
+    const workflowId = step.workflow_id
+    if (!workflowId) return acc
+    if (!acc[workflowId]) {
+      acc[workflowId] = []
     }
-    acc[step.workflow_id].push(step)
+    acc[workflowId].push(step)
     return acc
-  }, {} as Record<string, any[]>) || {}
+  }, {} as Record<string, any[]>)
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -741,13 +734,13 @@ export default function ConsultationManagementPage() {
                            : 'text-gray-700 hover:shadow-sm'
                        }`}
                        style={{
-                         backgroundColor: selectedCategory === category.id ? category.color : '#f3f4f6',
-                         borderColor: selectedCategory === category.id ? category.color : 'transparent'
+                         backgroundColor: selectedCategory === category.id ? (category.color ?? undefined) : '#f3f4f6',
+                         borderColor: selectedCategory === category.id ? (category.color ?? undefined) : 'transparent'
                        }}
                      >
                        <div 
                          className="w-2 h-2 rounded-full"
-                         style={{ backgroundColor: selectedCategory === category.id ? 'white' : category.color }}
+                         style={{ backgroundColor: selectedCategory === category.id ? 'white' : (category.color ?? undefined) }}
                        />
                        {locale === 'ko' ? category.name_ko : category.name_en}
                      </button>
@@ -1030,7 +1023,7 @@ export default function ConsultationManagementPage() {
                     {template.category && (
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                        style={{ backgroundColor: template.category.color }}
+                        style={{ backgroundColor: template.category.color ?? undefined }}
                       >
                         <HelpCircle size={16} />
                       </div>
@@ -1227,7 +1220,7 @@ export default function ConsultationManagementPage() {
                       {workflow.category && (
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                          style={{ backgroundColor: workflow.category.color }}
+                          style={{ backgroundColor: workflow.category.color ?? undefined }}
                         >
                           <Workflow size={16} />
                         </div>
@@ -1366,7 +1359,7 @@ export default function ConsultationManagementPage() {
                         {locale === 'ko' ? '워크플로우 단계' : 'Workflow Steps'}
                       </h4>
                       <div className="flex flex-wrap gap-2">
-                        {steps.map((step, index) => (
+                        {steps.map((step: { id: string; step_order: number; step_name_ko: string; step_name_en: string; step_type: string }, index: number) => (
                           <div
                             key={step.id}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-sm"
@@ -1394,7 +1387,7 @@ export default function ConsultationManagementPage() {
                     <div className="flex items-center gap-2 mt-3">
                       <Tag size={14} className="text-gray-400" />
                       <div className="flex gap-1">
-                        {workflow.tags.map(tag => (
+                        {workflow.tags.map((tag: string) => (
                           <span
                             key={tag}
                             className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full"
@@ -1537,7 +1530,7 @@ export default function ConsultationManagementPage() {
             setEditingWorkflow(null)
             setIsWorkflowModalFullscreen(false)
           }}
-          locale={locale}
+          locale={locale as string}
         />
       )}
 
@@ -1545,6 +1538,7 @@ export default function ConsultationManagementPage() {
       {showWorkflowDeleteModal && workflowToDelete && (
         <WorkflowDeleteModal
           workflow={workflowToDelete}
+          locale={locale as string}
           onClose={() => {
             setShowWorkflowDeleteModal(false)
             setWorkflowToDelete(null)
@@ -1632,7 +1626,7 @@ function TemplateModal({
         answer_ko: formData.answer_ko,
         answer_en: formData.answer_en,
         template_type: formData.template_type,
-        tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
+        tags: formData.tags ? formData.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [],
         is_active: formData.is_active,
         is_favorite: formData.is_favorite
       }
@@ -1719,13 +1713,13 @@ function TemplateModal({
                          : 'text-gray-700 hover:shadow-sm'
                      }`}
                      style={{
-                       backgroundColor: formData.category_id === category.id ? category.color : '#f3f4f6',
-                       borderColor: formData.category_id === category.id ? category.color : 'transparent'
+                       backgroundColor: formData.category_id === category.id ? (category.color ?? undefined) : '#f3f4f6',
+                       borderColor: formData.category_id === category.id ? (category.color ?? undefined) : 'transparent'
                      }}
                    >
                      <div 
                        className="w-1.5 h-1.5 rounded-full"
-                       style={{ backgroundColor: formData.category_id === category.id ? 'white' : category.color }}
+                       style={{ backgroundColor: formData.category_id === category.id ? 'white' : (category.color ?? undefined) }}
                      />
                      {locale === 'ko' ? category.name_ko : category.name_en}
                    </button>
@@ -2147,9 +2141,9 @@ function WorkflowModal({
   categories, 
   products, 
   channels, 
-  templates,
-  isFullscreen,
-  onToggleFullscreen,
+  templates: _templates,
+  isFullscreen: _isFullscreen,
+  onToggleFullscreen: _onToggleFullscreen,
   onClose, 
   onSave,
   locale
@@ -2162,7 +2156,7 @@ function WorkflowModal({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onClose: () => void
-  onSave: (data: any) => Promise<void>
+  onSave: () => Promise<void>
   locale: string
 }) {
   const [formData, setFormData] = useState({
@@ -2245,7 +2239,7 @@ function WorkflowModal({
         channel_id: formData.channel_id || null,
         is_active: formData.is_active,
         is_default: formData.is_default,
-        tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+        tags: formData.tags ? formData.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : []
       }
 
       let workflowId: string
@@ -2708,10 +2702,12 @@ function WorkflowModal({
 // Workflow Delete Confirmation Modal Component
 function WorkflowDeleteModal({ 
   workflow, 
+  locale,
   onClose, 
   onConfirm 
 }: {
   workflow: any
+  locale: string
   onClose: () => void
   onConfirm: () => void
 }) {

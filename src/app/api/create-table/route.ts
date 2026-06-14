@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 export async function POST() {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createClient(supabaseUrl!, supabaseServiceKey!)
 
     // 먼저 테이블이 존재하는지 확인
     const { data: existingTable, error: checkError } = await supabase

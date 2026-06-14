@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Paperclip, ImageOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -388,12 +388,12 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
       
       // 수정 날짜와 시간 순으로 정렬 (최신순)
       const sortedHistory = (data || []).sort((a, b) => {
-        const dateA = new Date(a.changed_at).getTime();
-        const dateB = new Date(b.changed_at).getTime();
+        const dateA = a.changed_at ? new Date(a.changed_at).getTime() : 0;
+        const dateB = b.changed_at ? new Date(b.changed_at).getTime() : 0;
         return dateB - dateA; // 내림차순 (최신순)
       });
       
-      setHistory(sortedHistory);
+      setHistory(sortedHistory as BookingHistoryItem[]);
 
       // changed_by 이메일로 team 테이블에서 name_ko 조회
       const changedByEmails = [...new Set(
@@ -451,57 +451,6 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
       case 'confirmed': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const formatChanges = (oldValues: any, newValues: any) => {
-    if (!oldValues || !newValues) return [];
-
-    const changes: Array<{ field: string; oldValue: any; newValue: any }> = [];
-    const allKeys = new Set([...Object.keys(oldValues), ...Object.keys(newValues)]);
-
-    allKeys.forEach(key => {
-      if (oldValues[key] !== newValues[key]) {
-        changes.push({
-          field: key,
-          oldValue: oldValues[key],
-          newValue: newValues[key]
-        });
-      }
-    });
-
-    return changes;
-  };
-
-  const getFieldDisplayName = (field: string) => {
-    const fieldNames: { [key: string]: string } = {
-      category: '카테고리',
-      submitted_by: '제출자',
-      check_in_date: '체크인 날짜',
-      time: '시간',
-      company: '공급업체',
-      ea: '수량',
-      expense: '비용',
-      income: '수입',
-      payment_method: '결제 방법',
-      rn_number: 'RN#',
-      tour_id: '투어 ID',
-      note: '메모',
-      status: '상태',
-      season: '시즌',
-      event_date: '이벤트 날짜',
-      check_out_date: '체크아웃 날짜',
-      reservation_name: '예약명',
-      cc: 'CC',
-      rooms: '객실 수',
-      city: '도시',
-      hotel: '호텔명',
-      room_type: '객실 타입',
-      unit_price: '단가',
-      total_price: '총 가격',
-      website: '웹사이트'
-    };
-
-    return fieldNames[field] || field;
   };
 
   const formatValue = (value: any) => {

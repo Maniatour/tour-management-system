@@ -69,16 +69,6 @@ export type TicketBookingReservationDetailRow = {
   deletion_requested_at?: string | null | undefined
 }
 
-function getProductName(
-  locale: string,
-  product: { name?: string; name_en?: string; name_ko?: string } | undefined,
-  tourFallback: string
-) {
-  if (!product) return tourFallback
-  if (locale === 'en' && product.name_en) return product.name_en
-  return product.name || tourFallback
-}
-
 function getCCStatusText(cc: string) {
   switch (cc) {
     case 'sent':
@@ -604,7 +594,6 @@ export default function TicketBookingReservationDetailModal({
                                               tours={booking.tours}
                                               tourFallback={tourFallback}
                                               headlineClassName="font-medium text-green-800 text-[11px]"
-                                              detailClassName="text-[10px]"
                                             />
                                           ) : (
                                             <span className="text-red-600">{locale === 'en' ? 'Unlinked' : '미연결'}</span>
@@ -636,7 +625,11 @@ export default function TicketBookingReservationDetailModal({
                                               !!booking.deletion_requested_at) ||
                                             (onHardDelete &&
                                               canHardDeleteBooking &&
-                                              isTicketBookingOffsetOrCancelRow(booking) &&
+                                              isTicketBookingOffsetOrCancelRow({
+                                                ea: booking.ea ?? null,
+                                                status: booking.status ?? null,
+                                                booking_status: booking.booking_status ?? null,
+                                              }) &&
                                               !booking.deletion_requested_at)) ? (
                                             <div className="flex flex-col items-stretch gap-1">
                                               {onEdit ? (
@@ -696,7 +689,11 @@ export default function TicketBookingReservationDetailModal({
                                               ) : null}
                                               {onHardDelete &&
                                               canHardDeleteBooking &&
-                                              isTicketBookingOffsetOrCancelRow(booking) &&
+                                              isTicketBookingOffsetOrCancelRow({
+                                                ea: booking.ea ?? null,
+                                                status: booking.status ?? null,
+                                                booking_status: booking.booking_status ?? null,
+                                              }) &&
                                               !booking.deletion_requested_at ? (
                                                 <button
                                                   type="button"
@@ -737,12 +734,12 @@ export default function TicketBookingReservationDetailModal({
                                                   booking={{
                                                     id: booking.id,
                                                     status: booking.status ?? null,
-                                                    booking_status: booking.booking_status,
-                                                    vendor_status: booking.vendor_status,
-                                                    change_status: booking.change_status,
-                                                    payment_status: booking.payment_status,
-                                                    refund_status: booking.refund_status,
-                                                    operation_status: booking.operation_status,
+                                                    booking_status: booking.booking_status ?? null,
+                                                    vendor_status: booking.vendor_status ?? null,
+                                                    change_status: booking.change_status ?? null,
+                                                    payment_status: booking.payment_status ?? null,
+                                                    refund_status: booking.refund_status ?? null,
+                                                    operation_status: booking.operation_status ?? null,
                                                   }}
                                                   instanceKey={`ticket-detail-modal-${booking.id}`}
                                                   disabled={false}

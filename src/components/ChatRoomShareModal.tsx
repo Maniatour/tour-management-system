@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar, Download } from 'lucide-react'
+import { X, Copy, Share2, QrCode, MessageCircle, Calendar, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoomShareModalProps {
@@ -25,11 +25,9 @@ export default function ChatRoomShareModal({
   isPublicView = false,
   language = 'ko',
   roomId,
-  customerEmail
 }: ChatRoomShareModalProps) {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
-  const [roomIdFromCode, setRoomIdFromCode] = useState<string | undefined>(roomId)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [showInstallButton, setShowInstallButton] = useState(false)
 
@@ -47,7 +45,7 @@ export default function ChatRoomShareModal({
         const b = data as { room?: { id?: string } } | null
         const id = b?.room?.id
         if (id) {
-          setRoomIdFromCode(id)
+          console.debug('[ChatRoomShareModal] resolved room id:', id)
         }
       }
       void findRoomId()

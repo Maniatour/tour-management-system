@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, ChangeEvent } from 'react'
+import { useState, ChangeEvent } from 'react'
 import { Plus, Trash2, Settings, Save, Upload, ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'

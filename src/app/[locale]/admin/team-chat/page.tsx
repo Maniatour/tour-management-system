@@ -52,17 +52,17 @@ interface TeamChatMessage {
   created_at: string
   read_by: Array<{
     reader_email: string
-    read_at: string
+    read_at: string | null
   }>
 }
 
 interface TeamMember {
   email: string
   name_ko: string
-  name_en?: string
-  position: string
-  avatar_url?: string
-  is_active: boolean
+  name_en?: string | null
+  position: string | null
+  avatar_url?: string | null
+  is_active: boolean | null
 }
 
 const TEAM_CHAT_LIST_UI = {

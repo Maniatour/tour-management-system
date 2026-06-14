@@ -2,12 +2,11 @@ import { supabase, supabaseAdmin } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
 import { highPerformanceCache, databaseOptimizer } from './performanceOptimizer'
 import { SYNC_TABLES_REQUIRE_SHEET_ROW_ID } from './syncSheetPrimaryKey'
+import { fromUntypedTable } from './supabaseUntypedTable'
 
 // 최적화된 동기화 서비스
 export class OptimizedSyncService {
   private static instance: OptimizedSyncService
-  private cache = new Map<string, { data: any, timestamp: number }>()
-  private readonly CACHE_DURATION = 2 * 60 * 60 * 1000 // 2시간
 
   static getInstance(): OptimizedSyncService {
     if (!OptimizedSyncService.instance) {
@@ -66,7 +65,7 @@ export class OptimizedSyncService {
     
     // 각 청크를 병렬로 처리
     chunks.forEach((chunk, index) => {
-      const transformedChunk = chunk.map((row, rowIndex) => {
+      const transformedChunk = chunk.map((row) => {
         const transformed: Record<string, unknown> = {}
         
         // 컬럼 매핑 적용
@@ -478,8 +477,7 @@ export class OptimizedSyncService {
       const client = supabaseAdmin ?? supabase
 
       // 서비스/익명 클라이언트로 upsert 실행
-      const { error } = await client
-        .from(tableName)
+      const { error } = await fromUntypedTable(client, tableName)
         .upsert(batch, { 
           onConflict: conflictColumn,
           ignoreDuplicates: false
@@ -508,7 +506,7 @@ export class OptimizedSyncService {
   private async fallbackIndividualUpsert(
     tableName: string,
     batch: Record<string, unknown>[],
-    tableColumns: Set<string>
+    _tableColumns: Set<string>
   ): Promise<{ error: any }> {
     try {
       // 대용량 데이터의 경우 미니 배치로 처리 (개별 처리 대신)
@@ -526,8 +524,7 @@ export class OptimizedSyncService {
         const miniBatch = batch.slice(i, i + miniBatchSize)
         
         try {
-          const { error } = await client
-            .from(tableName)
+          const { error } = await fromUntypedTable(client, tableName)
             .upsert(miniBatch, { 
               onConflict: conflictColumn,
               ignoreDuplicates: false

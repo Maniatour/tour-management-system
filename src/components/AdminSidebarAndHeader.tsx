@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import {
   LogOut,
   Menu,
@@ -42,11 +43,23 @@ import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useAdminNavAccessFlags } from '@/hooks/useAdminNavAccessFlags'
 import { useAdminTourChatUnreadCount } from '@/hooks/useAdminTourChatUnreadCount'
 import { useTranslations } from 'next-intl'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import {
+  readAdminHeaderBadgeCache,
+  writeAdminHeaderBadgeCache,
+} from '@/lib/adminHeaderBadgeCache'
 import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
-import AdminWeatherWidget from './AdminWeatherWidget'
-import AdminTourChatNotificationListener from './admin/AdminTourChatNotificationListener'
-import AdminWeatherReminderModal from './admin/AdminWeatherReminderModal'
+
+const AdminWeatherWidget = dynamic(() => import('./AdminWeatherWidget'), { ssr: false, loading: () => null })
+const AdminTourChatNotificationListener = dynamic(
+  () => import('./admin/AdminTourChatNotificationListener'),
+  { ssr: false, loading: () => null }
+)
+const AdminWeatherReminderModal = dynamic(
+  () => import('./admin/AdminWeatherReminderModal'),
+  { ssr: false, loading: () => null }
+)
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -343,15 +356,36 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   }, [authUser?.email])
 
   useEffect(() => {
-    fetchTeamBoardCount()
-    fetchExpiringDocumentsCount()
+    if (!authUser?.email) return
+
+    const cached = readAdminHeaderBadgeCache(authUser.email)
+    if (cached) {
+      setTeamBoardCount(cached.teamBoardCount)
+      setExpiringDocumentsCount(cached.expiringDocumentsCount)
+    }
+
+    const refreshBadges = () => {
+      void fetchTeamBoardCount()
+      void fetchExpiringDocumentsCount()
+    }
+
+    const cancelDeferred = scheduleDeferredWork(refreshBadges)
+
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-      fetchTeamBoardCount()
-      fetchExpiringDocumentsCount()
+      refreshBadges()
     }, 120_000)
-    return () => clearInterval(interval)
-  }, [fetchTeamBoardCount, fetchExpiringDocumentsCount])
+
+    return () => {
+      cancelDeferred()
+      clearInterval(interval)
+    }
+  }, [authUser?.email, fetchTeamBoardCount, fetchExpiringDocumentsCount])
+
+  useEffect(() => {
+    if (!authUser?.email) return
+    writeAdminHeaderBadgeCache(authUser.email, teamBoardCount, expiringDocumentsCount)
+  }, [authUser?.email, teamBoardCount, expiringDocumentsCount])
 
   useEffect(() => {
     try {
@@ -959,6 +993,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <Link
                   key={item.id}
                   href={item.href}
+                  prefetch={true}
                   title={sidebarCollapsed ? item.name : undefined}
                   className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
                     sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-4 py-2'

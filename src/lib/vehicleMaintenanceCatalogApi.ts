@@ -1,4 +1,3 @@
-import { CATALOG_GROUP_ORDER } from '@/lib/vehicleMaintenanceCatalog'
 
 export const CATALOG_INTERVAL_KINDS = ['mileage', 'months', 'both', 'inspection'] as const
 

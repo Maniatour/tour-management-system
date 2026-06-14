@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { X, Mail, Eye, Loader2, Send, Copy, Check, Printer } from 'lucide-react'
 import ProductDetailFieldEditModal from '@/components/reservation/ProductDetailFieldEditModal'

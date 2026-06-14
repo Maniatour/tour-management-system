@@ -129,7 +129,7 @@ function buildInitialFormData(
     ...empty,
     ...booking,
     tour_id: booking.tour_id ?? tourId ?? empty.tour_id,
-    event_date: booking.event_date ?? empty.event_date,
+    event_date: booking.event_date ?? null,
     check_in_date: booking.check_in_date ?? empty.check_in_date,
     check_out_date: booking.check_out_date ?? empty.check_out_date,
     reservation_name: booking.reservation_name ?? empty.reservation_name,
@@ -147,7 +147,7 @@ function buildInitialFormData(
     status: booking.status ?? empty.status,
     uploaded_file_urls: booking.uploaded_file_urls ?? empty.uploaded_file_urls,
     uploaded_files: [],
-  };
+  } as TourHotelBooking;
 }
 
 interface TourHotelBookingFormProps {
@@ -508,13 +508,13 @@ export default function TourHotelBookingForm({
       if (booking?.id) {
         const { error: updateError } = await supabase
           .from('tour_hotel_bookings')
-          .update(rowPayload)
+          .update(rowPayload as never)
           .eq('id', booking.id);
         error = updateError;
       } else {
         const { error: insertError } = await supabase
           .from('tour_hotel_bookings')
-          .insert(rowPayload);
+          .insert(rowPayload as never);
         error = insertError;
       }
 

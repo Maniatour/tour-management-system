@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fromUntypedTable } from './supabaseUntypedTable'
 
 // 고성능 캐싱 시스템
 export class HighPerformanceCache {
@@ -38,7 +39,7 @@ export class HighPerformanceCache {
   }
 
   // 캐시에 데이터 저장
-  set<T>(key: string, data: T, ttl?: number): void {
+  set<T>(key: string, data: T, _ttl?: number): void {
     // 캐시 크기 제한 확인
     if (this.cache.size >= this.MAX_CACHE_SIZE) {
       this.evictLeastUsed()
@@ -148,8 +149,7 @@ export class DatabaseOptimizer {
     try {
       console.log(`🔍 테이블 컬럼 조회 시작: ${tableName}`)
       
-      const { data: sampleData, error } = await supabase
-        .from(tableName)
+      const { data: sampleData, error } = await fromUntypedTable(supabase, tableName)
         .select('*')
         .limit(1)
 
@@ -190,7 +190,7 @@ export class DatabaseOptimizer {
       
       const result = await response.json()
       if (result.success && result.columns) {
-        const columns = new Set(result.columns.map((col: any) => col.name))
+        const columns = new Set<string>(result.columns.map((col: { name: string }) => col.name))
         console.log(`✅ 폴백 컬럼 정보 조회 완료 (${tableName}):`, Array.from(columns))
         return columns
       }
@@ -253,12 +253,11 @@ export class DatabaseOptimizer {
         const fieldValues = valid.map(row => row[field]).filter(Boolean)
         if (fieldValues.length === 0) return new Set()
 
-        const { data: existingValues } = await supabase
-          .from(table)
+        const { data: existingValues } = await fromUntypedTable(supabase, table)
           .select('id')
-          .in('id', fieldValues)
+          .in('id', fieldValues as string[])
 
-        return new Set(existingValues?.map(item => item.id) || [])
+        return new Set<string>(existingValues?.map((item: { id: string }) => item.id) || [])
       })
 
       const validKeySets = await Promise.all(foreignKeyPromises)

@@ -25,6 +25,7 @@ import {
   getStatusLabel,
   getStatusColor,
 } from '@/utils/reservationUtils'
+import { RESERVATION_STATUS_I18N_OPTIONS } from '@/lib/reservationStatus'
 import { supabase } from '@/lib/supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import {
@@ -51,7 +52,6 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import {
   buildReservationPricingMismatchFormulaPatch,
   computeBalanceChannelMetrics,
-  findChannelRowForBalance,
 } from '@/utils/balanceChannelRevenue'
 
 function fmtUsd(v: number | undefined | null): string {
@@ -579,13 +579,7 @@ function StatusDropdown({
     return () => document.removeEventListener('mousedown', close)
   }, [open])
 
-  const statusOptions = [
-    { value: 'inquiry', labelKey: 'status.inquiry' },
-    { value: 'pending', labelKey: 'status.pending' },
-    { value: 'confirmed', labelKey: 'status.confirmed' },
-    { value: 'completed', labelKey: 'status.completed' },
-    { value: 'cancelled', labelKey: 'status.cancelled' },
-  ] as const
+  const statusOptions = RESERVATION_STATUS_I18N_OPTIONS
 
   const handleSelect = async (newStatus: string) => {
     if (!onStatusChange || newStatus === (reservation.status as string)?.toLowerCase?.()) {
@@ -909,16 +903,18 @@ function BalanceRow(props: BalanceRowProps) {
   function pricingInline(
     columnKey: string,
     buildPatch: (n: number) => Record<string, number>
-  ): DbFormulaInlineEdit | undefined {
-    if (!onInlinePricingCommit || !p || inlineEditBlocked) return undefined
+  ): { inlineEdit: DbFormulaInlineEdit } | Record<string, never> {
+    if (!onInlinePricingCommit || !p || inlineEditBlocked) return {}
     return {
-      reservationId: reservation.id,
-      columnKey,
-      buildPatch,
-      canEdit: true,
-      inlineBusyKey: inlineEditBusyKey ?? null,
-      onCommit: onInlinePricingCommit,
-      editTitle: inlineEditHint,
+      inlineEdit: {
+        reservationId: reservation.id,
+        columnKey,
+        buildPatch,
+        canEdit: true,
+        inlineBusyKey: inlineEditBusyKey ?? null,
+        onCommit: onInlinePricingCommit,
+        editTitle: inlineEditHint,
+      },
     }
   }
 
@@ -1035,7 +1031,7 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={rawProductStored}
           computedVal={effectiveProduct}
-          inlineEdit={pricingInline('product_price_total', (n) => ({ product_price_total: n }))}
+          {...pricingInline('product_price_total', (n) => ({ product_price_total: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={t('actionRequired.balanceTable.cols.flowAfterDiscountHint')}>
@@ -1053,7 +1049,7 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={notInclTotal}
           computedVal={notInclTotal}
-          inlineEdit={pricingInline('not_included_price', (n) => ({
+          {...pricingInline('not_included_price', (n) => ({
             not_included_price: round2(n / Math.max(1, totalBillingPax(reservation))),
           }))}
         />
@@ -1063,56 +1059,56 @@ function BalanceRow(props: BalanceRowProps) {
           dbVal={couponN}
           computedVal={couponN}
           format="coupon"
-          inlineEdit={pricingInline('coupon_discount', (n) => ({ coupon_discount: n }))}
+          {...pricingInline('coupon_discount', (n) => ({ coupon_discount: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_discount')}>
         <DbFormulaMoneyCell
           dbVal={addDiscN}
           computedVal={addDiscN}
-          inlineEdit={pricingInline('additional_discount', (n) => ({ additional_discount: n }))}
+          {...pricingInline('additional_discount', (n) => ({ additional_discount: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_cost')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.additional_cost)}
           computedVal={pricingFieldToNumber(p?.additional_cost)}
-          inlineEdit={pricingInline('additional_cost', (n) => ({ additional_cost: n }))}
+          {...pricingInline('additional_cost', (n) => ({ additional_cost: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('tax')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.tax)}
           computedVal={pricingFieldToNumber(p?.tax)}
-          inlineEdit={pricingInline('tax', (n) => ({ tax: n }))}
+          {...pricingInline('tax', (n) => ({ tax: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('card_fee')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.card_fee)}
           computedVal={pricingFieldToNumber(p?.card_fee)}
-          inlineEdit={pricingInline('card_fee', (n) => ({ card_fee: n }))}
+          {...pricingInline('card_fee', (n) => ({ card_fee: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_cost')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.prepayment_cost)}
           computedVal={pricingFieldToNumber(p?.prepayment_cost)}
-          inlineEdit={pricingInline('prepayment_cost', (n) => ({ prepayment_cost: n }))}
+          {...pricingInline('prepayment_cost', (n) => ({ prepayment_cost: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_tip')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.prepayment_tip)}
           computedVal={pricingFieldToNumber(p?.prepayment_tip)}
-          inlineEdit={pricingInline('prepayment_tip', (n) => ({ prepayment_tip: n }))}
+          {...pricingInline('prepayment_tip', (n) => ({ prepayment_tip: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-gray-50/50" title={rpCol('private_tour_additional_cost')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.private_tour_additional_cost)}
           computedVal={pricingFieldToNumber(p?.private_tour_additional_cost)}
-          inlineEdit={pricingInline('private_tour_additional_cost', (n) => ({
+          {...pricingInline('private_tour_additional_cost', (n) => ({
             private_tour_additional_cost: n,
           }))}
         />
@@ -1121,14 +1117,14 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.refund_amount)}
           computedVal={pricingFieldToNumber(p?.refund_amount)}
-          inlineEdit={pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
+          {...pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
         />
       </td>
       <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('required_option_total')}>
         <DbFormulaMoneyCell
           dbVal={pricingFieldToNumber(p?.required_option_total)}
           computedVal={pricingFieldToNumber(p?.required_option_total)}
-          inlineEdit={pricingInline('required_option_total', (n) => ({ required_option_total: n }))}
+          {...pricingInline('required_option_total', (n) => ({ required_option_total: n }))}
         />
       </td>
       <td
@@ -1147,7 +1143,7 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={optDbOnly}
           computedVal={optLineMerged}
-          inlineEdit={pricingInline('option_total', (n) => ({ option_total: n }))}
+          {...pricingInline('option_total', (n) => ({ option_total: n }))}
         />
       </td>
       <td
@@ -1184,7 +1180,7 @@ function BalanceRow(props: BalanceRowProps) {
           <DbFormulaMoneyCell
             dbVal={storedGross}
             computedVal={computedGross}
-            inlineEdit={pricingInline('total_price', (n) => ({ total_price: n }))}
+            {...pricingInline('total_price', (n) => ({ total_price: n }))}
           />
         </div>
         {formulaExpression ? (
@@ -1209,7 +1205,7 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={depositDb}
           computedVal={depositComputedCompare}
-          inlineEdit={pricingInline('deposit_amount', (n) => ({ deposit_amount: n }))}
+          {...pricingInline('deposit_amount', (n) => ({ deposit_amount: n }))}
         />
       </td>
       <td
@@ -1254,7 +1250,7 @@ function BalanceRow(props: BalanceRowProps) {
             dbVal={refundAmountDb}
             computedVal={customerRefundComputedVal}
             stackComputedFirst={stackPaymentRefundLine}
-            inlineEdit={pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
+            {...pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
           />
         </div>
         {showPartnerCancelRefundAction && isCancelledRsv ? (
@@ -1291,7 +1287,7 @@ function BalanceRow(props: BalanceRowProps) {
           <DbFormulaMoneyCell
             dbVal={balanceDb}
             computedVal={balanceComputedOutstanding}
-            inlineEdit={pricingInline('balance_amount', (n) => ({ balance_amount: n }))}
+            {...pricingInline('balance_amount', (n) => ({ balance_amount: n }))}
           />
         </div>
       </td>
@@ -1336,7 +1332,7 @@ function BalanceRow(props: BalanceRowProps) {
           <DbFormulaMoneyCell
             dbVal={channelMetrics?.channelPaymentDb ?? null}
             computedVal={channelMetrics != null ? channelMetrics.channelPaymentFromFormula : null}
-            inlineEdit={pricingInline('commission_base_price', (n) => ({ commission_base_price: n }))}
+            {...pricingInline('commission_base_price', (n) => ({ commission_base_price: n }))}
           />
         </div>
       </td>
@@ -1351,7 +1347,7 @@ function BalanceRow(props: BalanceRowProps) {
           format="percent"
           dbVal={channelMetrics?.commissionPercentDb ?? null}
           computedVal={channelMetrics?.commissionPercentFromChannel ?? null}
-          inlineEdit={pricingInline('commission_percent', (n) => ({ commission_percent: n }))}
+          {...pricingInline('commission_percent', (n) => ({ commission_percent: n }))}
         />
       </td>
       <td
@@ -1364,7 +1360,7 @@ function BalanceRow(props: BalanceRowProps) {
         <DbFormulaMoneyCell
           dbVal={channelMetrics?.commissionAmountDb ?? null}
           computedVal={channelMetrics != null ? channelMetrics.commissionAmountFromFormula : null}
-          inlineEdit={pricingInline('commission_amount', (n) => ({ commission_amount: n }))}
+          {...pricingInline('commission_amount', (n) => ({ commission_amount: n }))}
         />
       </td>
       <td
@@ -1389,7 +1385,7 @@ function BalanceRow(props: BalanceRowProps) {
           <DbFormulaMoneyCell
             dbVal={dbChannelSettlement}
             computedVal={channelSettlementFormula}
-            inlineEdit={pricingInline('channel_settlement_amount', (n) => ({
+            {...pricingInline('channel_settlement_amount', (n) => ({
               channel_settlement_amount: n,
             }))}
           />
@@ -1653,7 +1649,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           channels
         )
         if (!patch) return
-        const { error } = await supabase.from('reservation_pricing').update(patch).eq('reservation_id', r.id)
+        const { error } = await supabase.from('reservation_pricing').update(patch as never).eq('reservation_id', r.id)
         if (error) {
           console.error('apply row patch', mode, reservationId, error)
           return
@@ -1694,7 +1690,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
       try {
         const { error } = await supabase
           .from('reservation_pricing')
-          .update(patch)
+          .update(patch as never)
           .eq('reservation_id', r.id)
         if (error) {
           console.error('inline reservation_pricing', columnKey, reservationId, error)
@@ -1744,7 +1740,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           )
           if (!patch) continue
 
-          const { error } = await supabase.from('reservation_pricing').update(patch).eq('reservation_id', r.id)
+          const { error } = await supabase.from('reservation_pricing').update(patch as never).eq('reservation_id', r.id)
           if (error) {
             console.error('apply pricing patch', mode, r.id, error)
             continue

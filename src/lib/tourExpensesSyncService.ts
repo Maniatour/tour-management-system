@@ -45,8 +45,8 @@ async function validateForeignKeys(data: TourExpenseData[]): Promise<ValidationR
   const warnings: string[] = []
   
   // Extract unique tour_ids and product_ids from the data
-  const tourIds = new Set(data.map(d => d.tour_id).filter(Boolean))
-  const productIds = new Set(data.map(d => d.product_id).filter(Boolean))
+  const tourIds = new Set(data.map((d) => d.tour_id).filter((id): id is string => Boolean(id)))
+  const productIds = new Set(data.map((d) => d.product_id).filter((id): id is string => Boolean(id)))
   
   // Check if tour_ids exist in tours table
   let validTourIds = new Set<string>()
@@ -99,17 +99,17 @@ async function validateForeignKeys(data: TourExpenseData[]): Promise<ValidationR
 function cleanTourExpensesData(data: any[]): TourExpenseData[] {
   return data.map((row, index) => {
     const cleaned: TourExpenseData = {
-      id: row.id || undefined,
-      tour_id: row.tour_id || undefined,
-      product_id: row.product_id || undefined,
-      submit_on: row.submit_on ? new Date(row.submit_on).toISOString() : undefined,
-      paid_to: row.paid_to || null,
       paid_for: row.paid_for || '',
       amount: parseFloat(row.amount) || 0,
-      payment_method: row.payment_method || null,
-      note: row.note || null,
       tour_date: row.tour_date || '',
       submitted_by: row.submitted_by || '',
+      ...(row.id ? { id: row.id } : {}),
+      ...(row.tour_id ? { tour_id: row.tour_id } : {}),
+      ...(row.product_id ? { product_id: row.product_id } : {}),
+      ...(row.submit_on ? { submit_on: new Date(row.submit_on).toISOString() } : {}),
+      paid_to: row.paid_to || null,
+      payment_method: row.payment_method || null,
+      note: row.note || null,
       image_url: row.image_url || null,
       file_path: row.file_path || null,
       audited_by: row.audited_by || null,

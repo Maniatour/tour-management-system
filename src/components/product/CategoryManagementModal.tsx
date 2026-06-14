@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Plus, Edit2, Trash2, Save } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Plus, Edit2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface CategoryItem {
@@ -16,15 +16,15 @@ interface SubCategoryItem {
   label: string
   count: number
   id?: string
-  categoryId?: string
+  categoryId?: string | undefined
 }
 
 interface CategoryManagementModalProps {
   isOpen: boolean
   onClose: () => void
   categories: CategoryItem[]
-  subCategories: CategoryItem[]
-  onCategoriesUpdate: (categories: CategoryItem[], subCategories: CategoryItem[]) => void
+  subCategories: SubCategoryItem[]
+  onCategoriesUpdate: (categories: CategoryItem[], subCategories: SubCategoryItem[]) => void
 }
 
 export default function CategoryManagementModal({
@@ -79,7 +79,7 @@ export default function CategoryManagementModal({
 
     try {
       // product_categories 테이블에 새 카테고리 추가
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('product_categories')
         .insert([{
           name: trimmedName,
@@ -136,6 +136,11 @@ export default function CategoryManagementModal({
       return
     }
 
+    if (!selectedCategory?.id) {
+      setMessage('선택된 카테고리 ID가 없습니다.')
+      return
+    }
+
     // 같은 카테고리 내에서 중복 확인
     if (subCategories.some(sub => sub.categoryId === selectedCategory.id && sub.value.toLowerCase() === trimmedName.toLowerCase())) {
       setMessage('이미 존재하는 서브카테고리입니다.')
@@ -147,7 +152,7 @@ export default function CategoryManagementModal({
 
     try {
       // product_sub_categories 테이블에 새 서브카테고리 추가
-      const { data, error } = await supabase
+      const { data: insertedSub, error } = await supabase
         .from('product_sub_categories')
         .insert([{
           category_id: selectedCategory.id,
@@ -169,7 +174,7 @@ export default function CategoryManagementModal({
         value: trimmedName,
         label: trimmedName,
         count: 0,
-        id: data.id,
+        id: insertedSub.id,
         categoryId: selectedCategory.id
       }
 
@@ -194,13 +199,15 @@ export default function CategoryManagementModal({
   }
 
   // 서브카테고리 편집 시작
-  const startEditSubCategory = (subCategory: CategoryItem) => {
+  const startEditSubCategory = (subCategory: SubCategoryItem) => {
     setEditingSubCategory(subCategory.value)
     setEditSubCategoryName(subCategory.label)
   }
 
   // 카테고리 편집 저장
   const handleSaveCategoryEdit = async () => {
+    if (!editingCategory) return
+
     if (!editCategoryName.trim()) {
       setMessage('카테고리명을 입력해주세요.')
       return
@@ -236,10 +243,10 @@ export default function CategoryManagementModal({
       // products 테이블의 해당 카테고리도 업데이트
       const { error: productError } = await supabase
         .from('products')
-        .update({ 
+        .update({
           category: trimmedName,
           updated_at: new Date().toISOString()
-        })
+        } as never)
         .eq('category', editingCategory)
 
       if (productError) {
@@ -293,6 +300,11 @@ export default function CategoryManagementModal({
       return
     }
 
+    if (!editingSub.id) {
+      setMessage('편집 중인 서브카테고리 ID가 없습니다.')
+      return
+    }
+
     setSaving(true)
     setMessage('')
 
@@ -315,11 +327,11 @@ export default function CategoryManagementModal({
       // products 테이블의 해당 서브카테고리도 업데이트
       const { error: productError } = await supabase
         .from('products')
-        .update({ 
+        .update({
           sub_category: trimmedName,
           updated_at: new Date().toISOString()
-        })
-        .eq('sub_category', editingSubCategory)
+        } as never)
+        .eq('sub_category', editingSubCategory ?? '')
 
       if (productError) {
         console.error('상품 서브카테고리 업데이트 오류:', productError)

@@ -1,13 +1,6 @@
 import { supabase } from './supabase'
 
 /**
- * 특정 투어의 사진 저장 경로 생성 (폴더 구조)
- */
-function getTourPhotoPath(tourId: string): string {
-  return `${tourId}/`
-}
-
-/**
  * 특정 투어의 사진 버켓을 확인하는 함수
  * bucket 생성은 Supabase SQL Editor에서 수동으로 수행 (RLS 정책 때문)
  */
@@ -78,7 +71,6 @@ export async function checkTourPhotosBucket(): Promise<boolean> {
       console.error('Error details:', {
         message: error.message,
         status: error.status,
-        statusText: error.statusText
       })
       return false
     }

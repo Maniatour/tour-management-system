@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest, { params }: { params: RoutePar
 
     const { data, error } = await supabase
       .from('company_expense_paid_for_labels')
-      .update(patch)
+      .update(patch as never)
       .eq('id', id)
       .select('id, code, label_ko, label_en, links_vehicle_maintenance, sort_order, is_active')
       .single()

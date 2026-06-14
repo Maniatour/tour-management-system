@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
+const optionsTable = () => fromUntypedTable(supabase, 'reservation_options')
 export async function POST() {
   try {
     console.log('예약 데이터 정리 시작...')
@@ -39,15 +41,14 @@ export async function POST() {
           mdgcSunriseXUpdated++
           
           // Antelope X Canyon 옵션 추가
-          const { error: optionError } = await supabase
-            .from('reservation_options')
+          const { error: optionError } = await optionsTable()
             .upsert({
               reservation_id: reservation.id,
               option_name: 'Antelope X Canyon',
               option_value: 'Antelope X Canyon',
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
+              updated_at: new Date().toISOString(),
+            } as never)
 
           if (optionError) {
             console.error(`예약 ${reservation.id} 옵션 추가 오류:`, optionError)
@@ -90,15 +91,14 @@ export async function POST() {
           mdgc1DXUpdated++
           
           // Antelope X Canyon 옵션 추가
-          const { error: optionError } = await supabase
-            .from('reservation_options')
+          const { error: optionError } = await optionsTable()
             .upsert({
               reservation_id: reservation.id,
               option_name: 'Antelope X Canyon',
               option_value: 'Antelope X Canyon',
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
+              updated_at: new Date().toISOString(),
+            } as never)
 
           if (optionError) {
             console.error(`예약 ${reservation.id} 옵션 추가 오류:`, optionError)
@@ -127,23 +127,21 @@ export async function POST() {
 
       for (const reservation of mdgcSunriseReservations) {
         // 이미 옵션이 있는지 확인
-        const { data: existingOptions } = await supabase
-          .from('reservation_options')
+        const { data: existingOptions } = await optionsTable()
           .select('id')
           .eq('reservation_id', reservation.id)
           .eq('option_name', 'Lower Antelope Canyon')
 
         if (!existingOptions || existingOptions.length === 0) {
           // Lower Antelope Canyon 옵션 추가
-          const { error: optionError } = await supabase
-            .from('reservation_options')
+          const { error: optionError } = await optionsTable()
             .upsert({
               reservation_id: reservation.id,
               option_name: 'Lower Antelope Canyon',
               option_value: 'Lower Antelope Canyon',
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
+              updated_at: new Date().toISOString(),
+            } as never)
 
           if (optionError) {
             console.error(`예약 ${reservation.id} 옵션 추가 오류:`, optionError)
@@ -174,23 +172,21 @@ export async function POST() {
 
       for (const reservation of mdgc1DReservations) {
         // 이미 옵션이 있는지 확인
-        const { data: existingOptions } = await supabase
-          .from('reservation_options')
+        const { data: existingOptions } = await optionsTable()
           .select('id')
           .eq('reservation_id', reservation.id)
           .eq('option_name', 'Lower Antelope Canyon')
 
         if (!existingOptions || existingOptions.length === 0) {
           // Lower Antelope Canyon 옵션 추가
-          const { error: optionError } = await supabase
-            .from('reservation_options')
+          const { error: optionError } = await optionsTable()
             .upsert({
               reservation_id: reservation.id,
               option_name: 'Lower Antelope Canyon',
               option_value: 'Lower Antelope Canyon',
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
+              updated_at: new Date().toISOString(),
+            } as never)
 
           if (optionError) {
             console.error(`예약 ${reservation.id} 옵션 추가 오류:`, optionError)

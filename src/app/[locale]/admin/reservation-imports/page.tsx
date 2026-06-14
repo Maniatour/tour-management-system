@@ -1100,7 +1100,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       <ReservationCancellationImportModal
         importId={cancellationModalId}
         locale={locale}
-        products={productsList}
+        products={productsList ?? []}
         onClose={() => setCancellationModalId(null)}
         onResolved={loadList}
       />

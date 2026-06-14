@@ -24,12 +24,14 @@ import {
   computeRefundAmountForCompanyRevenueBlock,
   computeStoredCompanyRevenueFields,
 } from '@/utils/storedCompanyRevenue'
+import { isNoShowReservationStatus } from '@/lib/reservationStatus'
 import {
   CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
   fetchReservationDepositAmountUsd,
   insertCancelDepositRefundPaymentRecord,
   reservationHasPartnerReturnedRefundLine,
 } from '@/lib/cancelDepositRefundPaymentRecord'
+import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -633,6 +635,12 @@ export async function updateReservation(
           }
         }
       }
+    }
+
+    const becameNoShow =
+      isNoShowReservationStatus(newStatus) && !isNoShowReservationStatus(oldStatus)
+    if (becameNoShow) {
+      await applyNoShowReservationSideEffects(reservationId)
     }
 
     return { success: true }

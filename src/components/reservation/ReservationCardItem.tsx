@@ -1329,7 +1329,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           {(() => {
             const pricing = reservationPricingMap.get(reservation.id)
             if (!pricing || !pricing.total_price) {
-              const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, (products || []) as any, optionChoices || [])
+              const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(
+                reservation,
+                (products || []) as import('@/types/reservation').Product[],
+                (optionChoices || []) as import('@/types/reservation').ProductOptionChoice[]
+              )
               return (
                 <div className="text-xs text-gray-700">
                   <div className="text-gray-600 break-words font-medium">

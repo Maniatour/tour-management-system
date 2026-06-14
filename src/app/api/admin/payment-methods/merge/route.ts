@@ -142,12 +142,26 @@ export async function POST(request: NextRequest) {
 
     for (const sourceId of sourceIds) {
       for (const table of PAYMENT_METHOD_REF_TABLES) {
-        const { error, count } = await supabaseAdmin
+        const { count: matchCount, error } = await supabaseAdmin
           .from(table)
-          .update({ payment_method: targetId })
-          .eq('payment_method', sourceId)
           .select('*', { count: 'exact', head: true })
+          .eq('payment_method', sourceId)
 
+        const { error: updateError } = await supabaseAdmin
+          .from(table)
+          .update({ payment_method: targetId } as never)
+          .eq('payment_method', sourceId)
+
+        if (updateError) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: `${table} 업데이트 실패: ${updateError.message}`,
+              partialUpdates: updatesByTable,
+            },
+            { status: 500 }
+          )
+        }
         if (error) {
           return NextResponse.json(
             {
@@ -158,7 +172,7 @@ export async function POST(request: NextRequest) {
             { status: 500 }
           )
         }
-        updatesByTable[table] += count ?? 0
+        updatesByTable[table] += matchCount ?? 0
       }
     }
 

@@ -66,10 +66,10 @@ export function TicketBookingStatementReconCell({
     <div className={`flex min-w-0 gap-2 ${compact ? 'flex-col items-center' : 'flex-row items-start'}`}>
       <ExpenseStatementReconIcon
         matched={matched}
-        disabled={disabled}
+        {...(disabled !== undefined ? { disabled } : {})}
         titleMatched={titleMatched}
         titleUnmatched={titleUnmatched}
-        titleDisabled={titleDisabled}
+        {...(titleDisabled !== undefined ? { titleDisabled } : {})}
         onClick={onOpenPicker}
       />
       <div

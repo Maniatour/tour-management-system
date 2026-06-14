@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, History, Calendar, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
+import { X, History, Calendar, TrendingUp, TrendingDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface PricingHistoryModalProps {
@@ -166,8 +166,8 @@ export default function PricingHistoryModal({
     }
   }
 
-  const getPriceChange = (current: number | null, previous: number | null) => {
-    if (current === null || previous === null) return null
+  const getPriceChange = (current: number | null | undefined, previous: number | null | undefined) => {
+    if (current == null || previous == null) return null
     const change = current - previous
     if (change === 0) return null
     return change

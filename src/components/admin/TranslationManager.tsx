@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -22,7 +22,7 @@ interface TranslationManagerProps {
   locale: string
 }
 
-export default function TranslationManager({ locale }: TranslationManagerProps) {
+export default function TranslationManager({ locale: _locale }: TranslationManagerProps) {
   const t = useTranslations('tagTranslations')
   const [translations, setTranslations] = useState<Translation[]>([])
   const [loading, setLoading] = useState(true)

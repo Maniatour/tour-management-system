@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+type RouteParams = { params: Promise<{ id: string }> }
+
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  { params }: RouteParams
 ) {
   try {
+    const { id } = await params
     const { data, error } = await supabase
       .from('tour_reports')
       .select(`
@@ -20,7 +23,7 @@ export async function GET(
           )
         )
       `)
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (error) {
@@ -37,29 +40,28 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
+    const { id } = await params
     const body = await request.json()
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user owns the report or is admin
     const { data: existingReport, error: fetchError } = await supabase
       .from('tour_reports')
       .select('user_email')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (fetchError) {
       return NextResponse.json({ error: 'Tour report not found' }, { status: 404 })
     }
 
-    // Check if user is admin
     const { data: teamMember } = await supabase
       .from('team')
       .select('position')
@@ -79,7 +81,7 @@ export async function PUT(
         ...body,
         updated_at: new Date().toISOString()
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single()
 
@@ -96,17 +98,17 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  { params }: RouteParams
 ) {
   try {
+    const { id } = await params
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is admin
     const { data: teamMember } = await supabase
       .from('team')
       .select('position')
@@ -120,14 +122,14 @@ export async function DELETE(
     const { error } = await supabase
       .from('tour_reports')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) {
       console.error('Error deleting tour report:', error)
       return NextResponse.json({ error: 'Failed to delete tour report' }, { status: 500 })
     }
 
-    return NextResponse.json({ message: 'Tour report deleted successfully' })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in tour report DELETE:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

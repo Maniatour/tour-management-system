@@ -29,6 +29,11 @@ export interface UpdateReservationOptionData extends CreateReservationOptionData
   id: string
 }
 
+/** product_options.id 등 UUID 컬럼 조회용 — option_id가 옵션명·코드 문자열인 경우 제외 */
+export function isOptionIdUuidLike(id: string | null | undefined): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id ?? '').trim())
+}
+
 /**
  * 예약 옵션 금액 합계(가격 계산·잔액 표시 등)에 포함할 행인지.
  * 취소·환불 행은 제외 — `aggregateReservationOptionSumsByReservationId` 와 동일 규칙.

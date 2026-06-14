@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { CreditCard, CheckCircle, AlertCircle, Loader, Shield, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -117,8 +117,8 @@ export default function PaymentProcessor({
 
       const finalResult: PaymentResult = {
         success: true,
-        transactionId: paymentResult.transactionId,
-        reservationId: reservationResult.reservationId
+        ...(paymentResult.transactionId ? { transactionId: paymentResult.transactionId } : {}),
+        ...(reservationResult.reservationId ? { reservationId: reservationResult.reservationId } : {}),
       }
 
       setResult(finalResult)
@@ -147,6 +147,7 @@ export default function PaymentProcessor({
         const reservationData = {
           id: generateReservationId(),
           product_id: item.productId,
+          channel_id: item.channelId ?? 'direct',
           customer_name: customerInfo.name,
           customer_email: customerInfo.email,
           customer_phone: customerInfo.phone,
@@ -160,12 +161,12 @@ export default function PaymentProcessor({
           special_requests: customerInfo.specialRequests || '',
           nationality: customerInfo.nationality || '',
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         }
 
         const { data, error } = await supabase
           .from('reservations')
-          .insert(reservationData)
+          .insert(reservationData as never)
           .select('id')
           .single()
 
@@ -191,7 +192,7 @@ export default function PaymentProcessor({
     }
   }
 
-  const processPayment = async (method: string, paymentData: PaymentData, cardDetails?: any) => {
+  const processPayment = async (method: string, _paymentData: PaymentData, cardDetails?: any) => {
     // 실제 결제 처리 로직 (결제 게이트웨이 연동)
     // 여기서는 시뮬레이션으로 처리
     

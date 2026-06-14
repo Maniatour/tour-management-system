@@ -8,6 +8,11 @@ import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
   shouldOmitOtaExtrasFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
+import {
+  isCancelledReservationStatus,
+  isNoShowReservationStatus,
+  isNotIncludedExcludedReservationStatus,
+} from '@/lib/reservationStatus'
 
 export function computeRefundAmountForCompanyRevenueBlock(inp: {
   refundedFromRecords: number
@@ -87,7 +92,8 @@ export function computeStoredCompanyRevenueFields(
   inp: StoredCompanyRevenueComputeInput
 ): { company_total_revenue: number; operating_profit: number } {
   const st = String(inp.reservationStatus || '').toLowerCase().trim()
-  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
+  const isReservationCancelled = isCancelledReservationStatus(st)
+  const isReservationNoShow = isNoShowReservationStatus(st)
   const prepTip = Number(inp.prepaymentTip) || 0
   /** 예약 지출(위약금 등) — UI ④와 동일하게 모든 분기에서 차감(부호 그대로) */
   const rex = Number(inp.reservationExpensesTotal) || 0
@@ -124,9 +130,19 @@ export function computeStoredCompanyRevenueFields(
     }
   }
 
+  if (isReservationNoShow) {
+    const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
+    const tr = roundUsd2(ch - rex)
+    return {
+      company_total_revenue: tr,
+      operating_profit: roundUsd2(tr - prepTip),
+    }
+  }
+
   const cpn = inp.customerPaymentNetForRevenueBase
   if (
     !isReservationCancelled &&
+    !isReservationNoShow &&
     !inp.isOTAChannel &&
     cpn != null &&
     Number.isFinite(Number(cpn))
@@ -166,7 +182,7 @@ export function computeStoredCompanyRevenueFields(
   }
 
   /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
-  if (!isReservationCancelled) {
+  if (!isNotIncludedExcludedReservationStatus(inp.reservationStatus)) {
     const { baseUsd, residentFeesUsd } = splitNotIncludedForDisplay(
       inp.choiceNotIncludedTotal ?? 0,
       inp.choiceNotIncludedBaseTotal ?? 0,

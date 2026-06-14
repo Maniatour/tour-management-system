@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Star, Plus, Edit, Trash2, MessageSquare, Image as ImageIcon, Upload, X as XIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -91,7 +91,14 @@ export default function ReviewManagementSection({ reservationId, compact = false
         return
       }
 
-      setReviews(data || [])
+      setReviews(
+        (data || []).map((r) => ({
+          ...r,
+          has_photo: r.has_photo ?? false,
+          created_at: r.created_at ?? '',
+          updated_at: r.updated_at ?? '',
+        }))
+      )
     } catch (error) {
       console.error('후기 조회 오류:', error)
     } finally {

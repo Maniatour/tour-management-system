@@ -6,7 +6,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const productId = searchParams.get('productId')
     const channelId = searchParams.get('channelId')
-    const channelType = searchParams.get('channelType')
+    const channelTypeParam = searchParams.get('channelType')
+    void channelTypeParam
 
     if (!productId) {
       return NextResponse.json(
@@ -75,19 +76,20 @@ export async function GET(request: NextRequest) {
 
     // 채널별 최근 가격
     pricingData?.forEach(item => {
-      const channelId = item.channel_id
+      const channelIdKey = item.channel_id
+      if (channelIdKey == null) return
       const channelName = item.channels?.name || 'Unknown'
       
-      if (!result.byChannel[channelId]) {
-        result.byChannel[channelId] = {
-          channelId,
+      if (!result.byChannel[channelIdKey]) {
+        result.byChannel[channelIdKey] = {
+          channelId: channelIdKey,
           channelName,
           channelType: item.channels?.type || 'Unknown',
           latestPricing: item,
           allPricing: []
         }
       }
-      result.byChannel[channelId].allPricing.push(item)
+      result.byChannel[channelIdKey].allPricing.push(item)
     })
 
     // 채널 타입별 최근 가격

@@ -11,9 +11,8 @@ import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname, useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
+import { Calendar, MessageSquare, FileText, BookOpen, Home } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import Link from 'next/link'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
 import TourReportModal from '@/components/TourReportModal'
@@ -33,15 +32,13 @@ interface GuideLayoutProps {
   params: Promise<{ locale: string }>
 }
 
-export default function GuideLayout({ children, params }: GuideLayoutProps) {
+export default function GuideLayout({ children, params: _params }: GuideLayoutProps) {
   const {
     user,
     userRole,
     loading: isLoading,
     simulatedUser,
     isSimulating,
-    signOut,
-    stopSimulation,
     isInitialized,
     recoverAuthSession,
   } = useAuth()
@@ -57,22 +54,14 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const [showDocumentUploadModal, setShowDocumentUploadModal] = useState(false)
   const [documentUploadType, setDocumentUploadType] = useState<'medical' | 'cpr'>('medical')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
-  const [uncompletedReportCount, setUncompletedReportCount] = useState(0)
-  const [isInitializing, setIsInitializing] = useState(true)
+  const [, setUncompletedReportCount] = useState(0)
 
-  // 초기 로딩 시간 추가 (시뮬레이션 상태 복원 대기)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsInitializing(false)
-    }, 500) // 500ms 대기
-    
-    return () => clearTimeout(timer)
-  }, [])
+  const isSimulationRestoring = isSimulating && !simulatedUser
 
-  // 모바일 SPA 이동 직후 Supabase 컨텍스트와 React 상태가 잠깐 어긋나면 복구
+  // 가이드 레이아웃 최초 진입 시에만 세션 복구 (페이지 이동마다 호출하지 않음)
   useEffect(() => {
     void recoverAuthSession()
-  }, [pathname, recoverAuthSession])
+  }, [recoverAuthSession])
 
   // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 저장 (루트 `/` + manifest start_url이 `/`일 때 대비)
   useEffect(() => {
@@ -97,7 +86,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
   // 팀 멤버(가이드): 프로필 첫 언어와 URL 로케일이 다르면 `/(ko|en)/guide/...`로 맞춤
   useEffect(() => {
-    if (isInitializing || !isInitialized || isLoading) return
+    if (!isInitialized || isLoading || isSimulationRestoring) return
     if (userRole !== 'team_member') return
 
     const currentUser = isSimulating && simulatedUser ? simulatedUser : user
@@ -131,7 +120,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     user,
     userRole,
     isLoading,
-    isInitializing,
+    isSimulationRestoring,
     isInitialized,
     isSimulating,
     simulatedUser,
@@ -171,29 +160,16 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       isLoading,
       isSimulating,
       simulatedUser: !!simulatedUser,
-      isInitializing
+      isSimulationRestoring
     })
     
-    // 초기화 중이면 기다림
-    if (isInitializing) {
-      console.log('GuideLayout: Initializing, waiting for simulation state...')
-      return
-    }
-
     if (!isInitialized) {
       console.log('GuideLayout: Waiting for auth initialization...')
       return
     }
     
-    // 시뮬레이션 상태가 복원되는 동안 충분히 기다림
-    if (isLoading) {
+    if (isLoading || isSimulationRestoring) {
       console.log('GuideLayout: Still loading, waiting...')
-      return
-    }
-    
-    // 시뮬레이션 상태가 복원 중이면 더 오래 기다림
-    if (isSimulating && !simulatedUser) {
-      console.log('GuideLayout: Simulation in progress but no simulatedUser yet, waiting longer...')
       return
     }
     
@@ -261,10 +237,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     
     // 미작성 리포트 카운트 로드
     loadUncompletedReportCount()
-    
-     // 메디컬 리포트 상태 확인 (비활성화)
-     // checkMedicalReportStatus()
-   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isInitializing, isInitialized])
+   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isSimulationRestoring, isInitialized])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
   useEffect(() => {
@@ -281,7 +254,6 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const loadUnreadMessageCount = async () => {
     try {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-      const currentUser = isSimulating && simulatedUser ? simulatedUser : user
       const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
 
       if (!currentUserEmail) return
@@ -352,7 +324,6 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const loadUncompletedReportCount = async () => {
     try {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-      const currentUser = isSimulating && simulatedUser ? simulatedUser : user
       const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
 
       console.log('미작성 리포트 카운트 로드 시작:', user?.email)
@@ -417,7 +388,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         .from('tour_reports')
         .select('tour_id')
         .in('tour_id', tourIds)
-        .eq('user_email', user.email)
+        .eq('user_email', currentUserEmail)
 
       if (reportsError) {
         console.error('리포트 데이터 로드 오류:', reportsError)
@@ -437,74 +408,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     }
   }
 
-  // 메디컬 리포트 상태 확인
-  const checkMedicalReportStatus = async () => {
-    try {
-      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-      const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
-
-      if (!currentUserEmail) {
-        console.log('사용자 이메일이 없음')
-        return
-      }
-
-      const supabaseClient = createClientSupabase()
-      
-      // 먼저 메디컬 리포트 카테고리 ID를 가져옴
-      const { data: categoryData, error: categoryError } = await supabaseClient
-        .from('document_categories')
-        .select('id')
-        .eq('name_ko', '메디컬 리포트')
-        .single()
-
-      if (categoryError || !categoryData) {
-        console.error('메디컬 리포트 카테고리를 찾을 수 없습니다:', categoryError)
-        return
-      }
-
-      // 최신 메디컬 리포트 확인
-      const { data: medicalReports, error } = await supabaseClient
-        .from('documents')
-        .select('*')
-        .eq('guide_email', currentUserEmail)
-        .eq('category_id', categoryData.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      if (error) {
-        console.error('메디컬 리포트 상태 확인 오류:', error)
-        return
-      }
-
-      const latestReport = medicalReports?.[0]
-      
-      // 메디컬 리포트가 없거나 만료된 경우 경고 표시
-      if (!latestReport) {
-        console.log('메디컬 리포트가 없음 - 경고 표시')
-        setShowMedicalReportWarning(true)
-        return
-      }
-
-      // 만료일 확인
-      if (latestReport.expiry_date) {
-        const now = new Date()
-        const expiryDate = new Date(latestReport.expiry_date)
-        const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-        
-        const isExpired = expiryDate < now
-        const expiresInOneMonth = expiryDate <= oneMonthFromNow && expiryDate > now
-        
-        if (isExpired || expiresInOneMonth) {
-          console.log('메디컬 리포트 만료 또는 만료 예정 - 경고 표시', { isExpired, expiresInOneMonth })
-          setShowMedicalReportWarning(true)
-        }
-      }
-    } catch (error) {
-      console.error('메디컬 리포트 상태 확인 오류:', error)
-    }
-  }
-
-  if (isLoading || isInitializing || !isInitialized) {
+  if (isLoading || !isInitialized || isSimulationRestoring) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="flex flex-1 items-center justify-center">
@@ -710,7 +614,11 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
       {/* 가이드 배정 투어 채팅 실시간 알림 모달 */}
       <GuideTourChatNotificationModal
-        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+        {...(isSimulating && simulatedUser
+          ? { userEmail: simulatedUser.email }
+          : user?.email
+            ? { userEmail: user.email }
+            : {})}
         locale={locale === 'en' ? 'en' : 'ko'}
       />
 

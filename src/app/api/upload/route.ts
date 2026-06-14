@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       const fileName = `${bucketType}_${timestamp}_${randomString}.${fileExtension}`
       
       // Supabase Storage에 업로드
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from(bucketName)
         .upload(fileName, file, {
           cacheControl: '3600',

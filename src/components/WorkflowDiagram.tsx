@@ -774,40 +774,6 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
   //   }))
   // }, [])
 
-  // 연결 해제 기능
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const removeConnection = useCallback(() => {
-    if (selectedNodes.length !== 1) {
-      alert(`연결을 해제하려면 1개의 박스만 선택해주세요. (현재 선택된 박스: ${selectedNodes.length}개)`)
-      return
-    }
-    
-    const nodeId = selectedNodes[0]
-    const step = localSteps.find(s => s.id === nodeId)
-    if (!step) return
-    
-    const hasConnections = step.next_step_id || step.alternative_step_id || (step.connections && step.connections.length > 0)
-    if (!hasConnections) {
-      alert('이 박스에는 연결된 다른 박스가 없습니다.')
-      return
-    }
-    
-    if (confirm(`"${step.step_name_ko}" 박스의 모든 연결을 해제하시겠습니까?`)) {
-      setLocalSteps(prev => 
-        prev.map(s => {
-          if (s.id === nodeId) {
-            // 다중 연결과 기존 단일 연결 모두 제거
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { next_step_id: _next_step_id, alternative_step_id: _alternative_step_id, connections: _connections, ...rest } = s
-            return rest
-          }
-          return s
-        })
-      )
-      setSelectedNodes([])
-    }
-  }, [selectedNodes, localSteps])
-
   // 노드 추가 기능
   const addNewNode = useCallback(() => {
     const newNodeId = generateUUID()

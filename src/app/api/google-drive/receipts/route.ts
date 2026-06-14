@@ -10,6 +10,27 @@ export const maxDuration = 300
 // 구글 드라이브 API 스코프
 const SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
+type DriveFile = {
+  id?: string
+  name?: string
+  mimeType?: string
+  size?: string
+  modifiedTime?: string
+  webContentLink?: string
+  thumbnailLink?: string
+}
+
+type DriveFileListResponse = {
+  data: {
+    files?: DriveFile[]
+    nextPageToken?: string
+  }
+}
+
+type DriveFileGetResponse = {
+  data: DriveFile
+}
+
 // 서비스 역할 키를 사용한 Supabase 클라이언트 생성 (RLS 우회)
 const createClientSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -54,7 +75,7 @@ const getDriveClient = () => {
     scopes: SCOPES,
   })
 
-  return createDriveClient({ version: 'v3', auth })
+  return createDriveClient({ version: 'v3', auth: auth as never })
 }
 
 // 파일명에서 tour_expenses ID 추출 (ID.Image.xxxxxx.jpg 형식)
@@ -92,13 +113,14 @@ export async function GET(request: NextRequest) {
     let nextPageToken: string | undefined = undefined
     
     do {
-      const response = await drive.files.list({
+      const listParams = {
         q: `'${folderId}' in parents and trashed=false`,
         fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, webContentLink, thumbnailLink)',
         orderBy: 'modifiedTime desc',
-        pageSize: 1000, // 최대값
-        pageToken: nextPageToken,
-      })
+        pageSize: 1000,
+        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+      }
+      const response = (await drive.files.list(listParams)) as unknown as DriveFileListResponse
       
       if (response.data.files) {
         allFiles.push(...response.data.files)
@@ -149,7 +171,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { fileId, expenseId, submittedBy } = body
+    const { fileId, expenseId } = body
 
     if (!fileId) {
       return NextResponse.json(
@@ -162,14 +184,13 @@ export async function POST(request: NextRequest) {
     const supabase = createClientSupabase()
 
     // 1. 파일 정보 가져오기
-    const fileInfo = await drive.files.get({
+    const fileInfo = (await drive.files.get({
       fileId,
       fields: 'id, name, mimeType, size',
-    })
+    })) as DriveFileGetResponse
 
     const fileName = fileInfo.data.name || 'receipt.jpg'
     const mimeType = fileInfo.data.mimeType || 'image/jpeg'
-    const fileSize = parseInt(fileInfo.data.size || '0')
 
     // 파일명에서 expense ID 추출 (제공되지 않은 경우)
     let finalExpenseId = expenseId || extractExpenseIdFromFileName(fileName)
@@ -217,10 +238,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 구글 드라이브에서 파일 다운로드
-    const fileResponse = await drive.files.get(
+    const fileResponse = (await drive.files.get(
       { fileId, alt: 'media' },
       { responseType: 'arraybuffer' }
-    )
+    )) as unknown as { data: ArrayBuffer }
 
     const fileBuffer = Buffer.from(fileResponse.data as ArrayBuffer)
     const file = new File([fileBuffer], fileName, { type: mimeType })
@@ -312,7 +333,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { folderId, submittedBy, batchSize = 50, skip = 0 } = body
+    const { folderId, batchSize = 50, skip = 0 } = body
 
     if (!folderId) {
       return NextResponse.json(
@@ -329,12 +350,13 @@ export async function PUT(request: NextRequest) {
     let nextPageToken: string | undefined = undefined
     
     do {
-      const response = await drive.files.list({
+      const listParams = {
         q: `'${folderId}' in parents and trashed=false`,
         fields: 'nextPageToken, files(id, name, mimeType, size)',
-        pageSize: 1000, // 최대값
-        pageToken: nextPageToken,
-      })
+        pageSize: 1000,
+        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+      }
+      const response = (await drive.files.list(listParams)) as unknown as DriveFileListResponse
       
       if (response.data.files) {
         allFiles.push(...response.data.files)
@@ -398,10 +420,10 @@ export async function PUT(request: NextRequest) {
         }
 
         // 파일 다운로드
-        const fileResponse = await drive.files.get(
+        const fileResponse = (await drive.files.get(
           { fileId: file.id!, alt: 'media' },
           { responseType: 'arraybuffer' }
-        )
+        )) as unknown as { data: ArrayBuffer }
 
         const fileBuffer = Buffer.from(fileResponse.data as ArrayBuffer)
         const fileObj = new File([fileBuffer], file.name || 'receipt.jpg', {

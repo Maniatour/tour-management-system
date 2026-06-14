@@ -13,11 +13,11 @@ interface OffSchedule {
   id: string
   team_email: string
   off_date: string
-  reason: string
-  status: 'pending' | 'approved' | 'rejected'
-  approved_by?: string
-  approved_at?: string
-  created_at: string
+  reason: string | null
+  status: string
+  approved_by?: string | null
+  approved_at?: string | null
+  created_at: string | null
 }
 
 export default function OffSchedulePage() {
@@ -38,6 +38,8 @@ export default function OffSchedulePage() {
   }, [user, userLoading])
 
   const fetchOffData = async () => {
+    if (!user?.email) return
+
     try {
       setLoading(true)
       
@@ -45,7 +47,7 @@ export default function OffSchedulePage() {
       const { data: teamMember } = await supabase
         .from('team')
         .select('email')
-        .eq('email', user?.email)
+        .eq('email', user.email)
         .maybeSingle()
 
       if (!teamMember) {
@@ -78,12 +80,17 @@ export default function OffSchedulePage() {
       return
     }
 
+    if (!user?.email) {
+      alert('로그인이 필요합니다.')
+      return
+    }
+
     try {
       // Get user's email from team table
       const { data: teamMember } = await supabase
         .from('team')
         .select('email')
-        .eq('email', user?.email)
+        .eq('email', user.email)
         .maybeSingle()
 
       if (!teamMember) {
@@ -115,12 +122,17 @@ export default function OffSchedulePage() {
   const handleCancelRequest = async (requestId: string) => {
     if (!confirm('정말로 이 Off 신청을 취소하시겠습니까?')) return
 
+    if (!user?.email) {
+      alert('로그인이 필요합니다.')
+      return
+    }
+
     try {
       // Get user's email from team table
       const { data: teamMember } = await supabase
         .from('team')
         .select('email')
-        .eq('email', user?.email)
+        .eq('email', user.email)
         .maybeSingle()
 
       if (!teamMember) {

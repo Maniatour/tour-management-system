@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, DollarSign, Calendar, User, Save, RefreshCw } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, DollarSign, Calendar, Save, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
@@ -47,7 +47,13 @@ function formatTipsPaymentMethodLabel(
       user_email: pm.user_email ?? null,
       card_holder_name: pm.card_holder_name ?? null,
     },
-    team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+    team
+      ? {
+          nick_name: team.nick_name ?? null,
+          name_en: team.name_en ?? null,
+          name_ko: team.name_ko ?? null,
+        }
+      : undefined
   )
 }
 
@@ -125,7 +131,7 @@ interface TipShare {
   deduct_fee?: boolean // 수수료 차감 (5%) 적용 여부
 }
 
-export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId, onReservationClick, overlayClassName = 'z-50' }: TipsShareModalProps) {
+export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko', tourId, onReservationClick, overlayClassName = 'z-50' }: TipsShareModalProps) {
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [toursWithTips, setToursWithTips] = useState<TourWithTip[]>([])
@@ -991,7 +997,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
           op_amount: share.op_amount,
           total_tip: share.total_tip,
           deduct_fee: share.deduct_fee !== false
-        })))
+        })) as never)
         .select('id, tour_id')
 
       if (insertError) {

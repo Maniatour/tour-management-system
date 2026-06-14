@@ -12,7 +12,7 @@ async function resolveId(params: RouteParams): Promise<string | undefined> {
 
 // GET: 특정 예약 지출 조회
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: RouteParams }
 ) {
   try {
@@ -65,9 +65,9 @@ export async function GET(
         ...data,
         reservations: {
           ...data.reservations,
-          customers: customerData || { name: 'Unknown', email: '' }
-        }
-      }
+          customers: customerData || { name: 'Unknown', email: '' },
+        },
+      } as typeof data
     }
 
     return NextResponse.json({
@@ -179,7 +179,7 @@ export async function PUT(
 
 // DELETE: 특정 예약 지출 삭제
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: RouteParams }
 ) {
   try {

@@ -1,29 +1,27 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function TestRedirectPage() {
-  const { user, userRole, isLoading } = useAuth()
-  const router = useRouter()
+  const { user, userRole, loading: authLoading } = useAuth()
 
   useEffect(() => {
     console.log('TestRedirectPage: Component mounted')
-    console.log('TestRedirectPage: Auth state', { user: !!user, userRole, isLoading })
+    console.log('TestRedirectPage: Auth state', { user: !!user, userRole, authLoading })
     
     // 5초 후에 현재 상태를 로그로 출력
     const timer = setTimeout(() => {
       console.log('TestRedirectPage: After 5 seconds', { 
         user: !!user, 
         userRole, 
-        isLoading,
+        authLoading,
         currentPath: window.location.pathname
       })
     }, 5000)
 
     return () => clearTimeout(timer)
-  }, [user, userRole, isLoading])
+  }, [user, userRole, authLoading])
 
   return (
     <div className="max-w-4xl mx-auto p-8">
@@ -32,7 +30,7 @@ export default function TestRedirectPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-semibold mb-4">현재 상태</h2>
         <div className="space-y-2">
-          <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
+          <p><strong>Loading:</strong> {authLoading ? 'Yes' : 'No'}</p>
           <p><strong>사용자:</strong> {user ? user.email : '없음'}</p>
           <p><strong>사용자 역할:</strong> {userRole || '없음'}</p>
           <p><strong>현재 경로:</strong> {typeof window !== 'undefined' ? window.location.pathname : 'N/A'}</p>

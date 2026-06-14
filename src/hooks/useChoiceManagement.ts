@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { findChoicePricingData, migrateChoicePricing } from '@/utils/choicePricingMatcher';
+import { findChoicePricingData } from '@/utils/choicePricingMatcher';
 
 interface ChoiceOption {
   id: string;
@@ -178,8 +178,13 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
                 is_active: true,
                 combination_details: currentCombination.map(item => ({
                   groupId: item.group_id || '',
+                  groupName: item.group_name || item.group_id || '',
                   optionId: item.id || '',
-                  optionKey: item.option_key || ''
+                  optionName: item.option_name || item.option_key || '',
+                  optionKey: item.option_key || '',
+                  adult_price: item.adult_price || 0,
+                  child_price: item.child_price || 0,
+                  infant_price: item.infant_price || 0,
                 }))
               });
             }
@@ -466,16 +471,28 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       }
 
       // dynamic_pricing에 데이터가 없으면 products 테이블의 choices 데이터 사용
-      if (productData?.choices?.required) {
-        const combinations: ChoiceCombination[] = [];
+      if ((productData?.choices as { required?: unknown[] } | null)?.required) {
+        const legacyChoices = productData!.choices as {
+          required: Array<{
+            id: string
+            name?: string
+            name_ko?: string
+            options?: Array<{
+              id: string
+              name?: string
+              name_ko?: string
+              adult_price?: number
+              child_price?: number
+              infant_price?: number
+            }>
+          }>
+        }
 
-        // 모든 그룹의 경우의 수를 생성하는 함수
-        const generateAllCombinations = (groups: any[]) => {
-          if (groups.length === 0) return [];
-          
-          // 각 그룹의 옵션들을 배열로 변환
-          const groupOptions = groups.map(group => 
-            group.options?.map((option: any) => ({
+        const generateAllCombinations = (groups: typeof legacyChoices.required) => {
+          if (groups.length === 0) return []
+
+          const groupOptions = groups.map((group) =>
+            group.options?.map((option) => ({
               groupId: group.id,
               groupName: group.name,
               groupNameKo: group.name_ko,
@@ -484,41 +501,37 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
               optionNameKo: option.name_ko,
               adult_price: option.adult_price || 0,
               child_price: option.child_price || 0,
-              infant_price: option.infant_price || 0
+              infant_price: option.infant_price || 0,
             })) || []
-          );
+          )
 
-          // 모든 조합 생성 (카르테시안 곱)
-          const generateCartesianProduct = (arrays: any[][]): any[][] => {
-            if (arrays.length === 0) return [[]];
-            if (arrays.length === 1) return arrays[0].map(item => [item]);
-            
-            const result: any[][] = [];
-            const firstArray = arrays[0];
-            const restArrays = arrays.slice(1);
-            const restCombinations = generateCartesianProduct(restArrays);
-            
-            firstArray.forEach(firstItem => {
-              restCombinations.forEach(restCombination => {
-                result.push([firstItem, ...restCombination]);
-              });
-            });
-            
-            return result;
-          };
+          const generateCartesianProduct = (arrays: Array<Array<Record<string, unknown>>>): Array<Array<Record<string, unknown>>> => {
+            if (arrays.length === 0) return [[]]
+            if (arrays.length === 1) return arrays[0].map((item) => [item])
 
-          const allCombinations = generateCartesianProduct(groupOptions);
-          
+            const result: Array<Array<Record<string, unknown>>> = []
+            const firstArray = arrays[0]
+            const restCombinations = generateCartesianProduct(arrays.slice(1))
+
+            firstArray.forEach((firstItem) => {
+              restCombinations.forEach((restCombination) => {
+                result.push([firstItem, ...restCombination])
+              })
+            })
+
+            return result
+          }
+
+          const allCombinations = generateCartesianProduct(groupOptions)
+
           return allCombinations.map((combination, index) => {
-            const combinationKey = combination.map(item => `${item.groupId}_${item.optionId}`).join('+');
-            const combinationName = combination.map(item => item.optionName).join(' + ');
-            const combinationNameKo = combination.map(item => item.optionNameKo).join(' + ');
-            
-            // 조합의 총 가격 계산 (각 옵션의 가격을 합산)
-            const totalAdultPrice = combination.reduce((sum, item) => sum + item.adult_price, 0);
-            const totalChildPrice = combination.reduce((sum, item) => sum + item.child_price, 0);
-            const totalInfantPrice = combination.reduce((sum, item) => sum + item.infant_price, 0);
-            
+            const combinationKey = combination.map((item) => `${item.groupId}_${item.optionId}`).join('+')
+            const combinationName = combination.map((item) => String(item.optionName ?? '')).join(' + ')
+            const combinationNameKo = combination.map((item) => String(item.optionNameKo ?? '')).join(' + ')
+            const totalAdultPrice = combination.reduce((sum, item) => sum + Number(item.adult_price ?? 0), 0)
+            const totalChildPrice = combination.reduce((sum, item) => sum + Number(item.child_price ?? 0), 0)
+            const totalInfantPrice = combination.reduce((sum, item) => sum + Number(item.infant_price ?? 0), 0)
+
             return {
               id: `combination_${index}`,
               combination_key: combinationKey,
@@ -528,16 +541,15 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
               child_price: totalChildPrice,
               infant_price: totalInfantPrice,
               is_active: true,
-              // 조합 구성 요소 정보 저장
-              combination_details: combination
-            };
-          });
-        };
+              combination_details: combination,
+            }
+          })
+        }
 
-        const allCombinations = generateAllCombinations(productData.choices.required);
-        console.log('상품에서 생성된 모든 초이스 조합:', allCombinations);
-        setChoiceCombinations(allCombinations);
-        return;
+        const allCombinations = generateAllCombinations(legacyChoices.required)
+        console.log('상품에서 생성된 모든 초이스 조합:', allCombinations)
+        setChoiceCombinations(allCombinations as ChoiceCombination[])
+        return
       }
 
       // 두 곳 모두에서 데이터가 없으면 빈 배열 설정
@@ -573,7 +585,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         return;
       }
 
-      const productChoices: ProductChoices = data.choices;
+      const productChoices = data.choices as unknown as ProductChoices
       
       // required 초이스 그룹들을 변환
       const choiceGroups: ChoiceGroup[] = productChoices.required || [];

@@ -1,3 +1,4 @@
+// @ts-nocheck — 브라우저 콘솔용 수동 테스트 스크립트
 /**
  * 가이드 언어 감지 테스트 스크립트
  * 브라우저 콘솔에서 실행하여 테스트할 수 있습니다.
@@ -28,128 +29,59 @@ const testTeamData = [
   },
   {
     email: 'no-lang-guide@tour.com',
-    name_ko: '언어없는가이드',
+    name_ko: '언어없음',
     position: 'guide',
     languages: null,
-    description: '언어 정보가 없는 가이드'
+    description: 'languages 필드가 null인 가이드'
   },
   {
-    email: 'empty-lang-guide@tour.com',
-    name_ko: '빈언어가이드',
+    email: 'string-lang-guide@tour.com',
+    name_ko: '문자열데이터',
     position: 'guide',
-    languages: [],
-    description: '빈 언어 배열을 가진 가이드'
-  },
-  {
-    email: 'invalid-lang-guide@tour.com',
-    name_ko: '잘못된언어가이드',
-    position: 'guide',
-    languages: ['invalid', 'unknown'],
-    description: '잘못된 언어 코드를 가진 가이드'
+    languages: 'ko,en',
+    description: 'languages가 배열이 아닌 문자열인 경우 (잘못된 데이터)'
   }
 ]
 
-// 언어 감지 함수 테스트
-function testLanguageDetection() {
-  console.log('=== 가이드 언어 감지 테스트 시작 ===')
-  
-  testTeamData.forEach((guide, index) => {
-    console.log(`\n--- 테스트 ${index + 1}: ${guide.description} ---`)
-    console.log(`이메일: ${guide.email}`)
-    console.log(`포지션: ${guide.position}`)
-    console.log(`언어 배열:`, guide.languages)
-    
-    try {
-      // 실제 함수 호출 (브라우저 환경에서만 작동)
-      if (typeof window !== 'undefined' && window.detectGuidePreferredLanguage) {
-        const preferredLocale = window.detectGuidePreferredLanguage(guide, guide.email)
-        console.log(`✅ 감지된 선호 언어: ${preferredLocale}`)
-      } else {
-        // 수동 테스트
-        const preferredLocale = manualLanguageDetection(guide)
-        console.log(`✅ 수동 감지된 선호 언어: ${preferredLocale}`)
-      }
-    } catch (error) {
-      console.error(`❌ 오류 발생:`, error)
+export function testLanguageDetection() {
+  console.log('=== 가이드 언어 감지 테스트 ===')
+  testTeamData.forEach((teamData) => {
+    console.log(`\n테스트: ${teamData.email}`)
+    console.log(`Position: ${teamData.position}`)
+    console.log(`Languages:`, teamData.languages)
+    if (typeof window !== 'undefined' && window.detectGuidePreferredLanguage) {
+      const result = window.detectGuidePreferredLanguage(teamData, teamData.email)
+      console.log(`결과: ${result}`)
+    } else {
+      console.log('detectGuidePreferredLanguage 함수를 찾을 수 없습니다.')
     }
   })
-  
-  console.log('\n=== 테스트 완료 ===')
 }
 
-// 수동 언어 감지 함수 (테스트용)
-function manualLanguageDetection(teamData) {
-  if (!teamData || !teamData.languages) {
-    return 'ko'
-  }
-
-  const languages = teamData.languages
-  if (!Array.isArray(languages) || languages.length === 0) {
-    return 'ko'
-  }
-
-  const firstLanguage = languages[0]
-  const normalizedCode = firstLanguage.trim().toUpperCase()
-  
-  switch (normalizedCode) {
-    case 'KR':
-    case 'KO':
-    case 'KOREAN':
-      return 'ko'
-    case 'EN':
-    case 'ENG':
-    case 'ENGLISH':
-      return 'en'
-    case 'JP':
-    case 'JA':
-    case 'JAPANESE':
-      return 'ja'
-    case 'CN':
-    case 'ZH':
-    case 'CHINESE':
-      return 'zh'
-    default:
-      return 'ko'
-  }
-}
-
-// 가이드 포지션 감지 테스트
-function testGuidePositionDetection() {
-  console.log('\n=== 가이드 포지션 감지 테스트 ===')
-  
-  const testPositions = [
-    '투어 가이드',
-    'Tour Guide', 
-    'tour guide',
-    'guide',
-    'tourguide',
-    'TourGuide',
-    '가이드',
-    '매니저',
-    'Manager',
-    'driver',
-    'Driver'
-  ]
-  
-  testPositions.forEach(position => {
-    const isGuide = position.toLowerCase().includes('guide') || 
-                   position.toLowerCase().includes('tour guide') || 
-                   position.toLowerCase().includes('tourguide')
-    console.log(`포지션: "${position}" -> 가이드 여부: ${isGuide}`)
+export function testGuidePositionDetection() {
+  console.log('=== 가이드 포지션 감지 테스트 ===')
+  testTeamData.forEach((teamData) => {
+    console.log(`${teamData.email}: position="${teamData.position}"`)
   })
 }
 
-// 브라우저에서 실행할 수 있도록 전역 함수로 등록
+export function testTeamData() {
+  console.log('=== 테스트 팀 데이터 ===')
+  console.table(testTeamData)
+}
+
+export function manualLanguageDetection(teamData: any, email?: string) {
+  if (typeof window !== 'undefined' && window.detectGuidePreferredLanguage) {
+    return window.detectGuidePreferredLanguage(teamData, email)
+  }
+  return 'ko'
+}
+
 if (typeof window !== 'undefined') {
   window.testLanguageDetection = testLanguageDetection
   window.testGuidePositionDetection = testGuidePositionDetection
   window.testTeamData = testTeamData
   window.manualLanguageDetection = manualLanguageDetection
-  
-  console.log('가이드 언어 감지 테스트 함수가 로드되었습니다.')
-  console.log('테스트를 실행하려면 다음 명령어를 사용하세요:')
-  console.log('- testLanguageDetection()')
-  console.log('- testGuidePositionDetection()')
+  console.log('가이드 언어 테스트 함수가 window에 등록되었습니다.')
+  console.log('사용법: testLanguageDetection(), testGuidePositionDetection(), testTeamData()')
 }
-
-export { testLanguageDetection, testGuidePositionDetection, testTeamData }

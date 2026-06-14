@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Service role key를 사용한 Supabase 클라이언트 생성
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createClient(supabaseUrl!, supabaseServiceKey!)
 
     // SQL 실행
     const { data, error } = await supabase.rpc('exec_sql', { sql })

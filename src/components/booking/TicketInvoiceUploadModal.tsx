@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { FileUp, Loader2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
@@ -101,7 +101,7 @@ export default function TicketInvoiceUploadModal({
   const matchResults: MatchResult[] = useMemo(
     () =>
       matchInvoiceLinesToBookings(parsedEffective, bookings, {
-        company: companyFilter || undefined,
+        ...(companyFilter ? { company: companyFilter } : {}),
       }),
     [parsedEffective, bookings, companyFilter]
   );

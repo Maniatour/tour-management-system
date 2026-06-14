@@ -10,7 +10,7 @@ type PageResult<T> = { data: T[] | null; error: PostgrestError | null }
  * 정렬 컬럼은 호출 측에서 고정해 두어야 합니다(보통 submit_on + id).
  */
 export async function fetchAllSupabasePages<T>(
-  fetchPage: (from: number, to: number) => Promise<PageResult<T>>
+  fetchPage: (from: number, to: number) => PromiseLike<PageResult<T>>
 ): Promise<{ data: T[]; error: PostgrestError | null }> {
   const all: T[] = []
   let from = 0

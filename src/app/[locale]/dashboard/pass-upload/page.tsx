@@ -5,12 +5,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
-import { Upload, Image as ImageIcon, XCircle, CheckCircle, AlertCircle, FileText, Shield } from 'lucide-react'
+import { Upload, XCircle, CheckCircle, AlertCircle, Shield } from 'lucide-react'
 
 interface Customer {
   id: string
   name: string
-  email: string
+  email: string | null
   resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
   pass_photo_url: string | null
   id_photo_url: string | null
@@ -21,7 +21,6 @@ export default function PassUploadPage() {
   const params = useParams()
   const router = useRouter()
   const locale = params.locale as string || 'ko'
-  const t = useTranslations('common')
   const tPass = useTranslations('passUpload')
   
   const [customer, setCustomer] = useState<Customer | null>(null)
@@ -52,7 +51,7 @@ export default function PassUploadPage() {
         }
 
         if (data) {
-          setCustomer(data)
+          setCustomer(data as Customer)
           setPassPhotoUrl(data.pass_photo_url)
           setIdPhotoUrl(data.id_photo_url)
         }
@@ -159,7 +158,7 @@ export default function PassUploadPage() {
         .single()
 
       if (data) {
-        setCustomer(data)
+        setCustomer(data as Customer)
       }
     } catch (error) {
       console.error('Error saving:', error)

@@ -66,7 +66,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { maintenance: updateData, payment_method } = parseVehicleMaintenanceBody(body)
 
     if (updateData.vehicle_id !== undefined) {
-      updateData.vehicle_id = await normalizeVehicleMaintenanceVehicleId(supabase, updateData.vehicle_id)
+      updateData.vehicle_id =
+        (await normalizeVehicleMaintenanceVehicleId(supabase, updateData.vehicle_id)) ?? null
     }
 
     if (
@@ -104,14 +105,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         const standardCats = await fetchExpenseStandardCategoriesForMaintenance(supabase)
         const expenseUpdate = buildCompanyExpenseUpdateFromMaintenance(
           {
-            total_cost: updateData.total_cost as number | undefined,
-            service_provider: updateData.service_provider as string | null | undefined,
-            description: updateData.description as string | undefined,
-            category: updateData.category as string | undefined,
-            subcategory: updateData.subcategory as string | null | undefined,
-            maintenance_type: updateData.maintenance_type as string | undefined,
-            vehicle_id: updateData.vehicle_id as string | undefined,
-            maintenance_date: updateData.maintenance_date as string | undefined,
+            ...(updateData.total_cost !== undefined ? { total_cost: updateData.total_cost as number } : {}),
+            ...(updateData.service_provider !== undefined
+              ? { service_provider: updateData.service_provider as string | null }
+              : {}),
+            ...(updateData.description !== undefined
+              ? { description: updateData.description as string }
+              : {}),
+            ...(updateData.category !== undefined ? { category: updateData.category as string } : {}),
+            ...(updateData.subcategory !== undefined
+              ? { subcategory: updateData.subcategory as string | null }
+              : {}),
+            ...(updateData.maintenance_type !== undefined
+              ? { maintenance_type: updateData.maintenance_type as string }
+              : {}),
+            ...(updateData.vehicle_id !== undefined
+              ? { vehicle_id: updateData.vehicle_id as string }
+              : {}),
+            ...(updateData.maintenance_date !== undefined
+              ? { maintenance_date: updateData.maintenance_date as string }
+              : {}),
           },
           standardCats,
           {
@@ -123,7 +136,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         if (Object.keys(expenseUpdate).length > 0) {
           await supabase
             .from('company_expenses')
-            .update(expenseUpdate)
+            .update(expenseUpdate as never)
             .eq('id', existing.company_expense_id)
         }
 

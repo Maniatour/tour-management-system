@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 // 하이브리드 시스템 타입 정의
 interface ChoiceOption {

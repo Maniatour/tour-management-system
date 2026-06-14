@@ -39,7 +39,10 @@ function TourStaffBadgeRow({
   tours: TicketBookingTourEnrichment
   omitPeople?: boolean
 }) {
-  const badges = ticketBookingTourDetailBadges(tours, { omitPeople })
+  const badges = ticketBookingTourDetailBadges(
+    tours,
+    omitPeople === undefined ? {} : { omitPeople }
+  )
   if (badges.length === 0) return null
 
   return (
@@ -69,16 +72,19 @@ function TourStaffBadgeRow({
             </span>
           )
         }
-        return (
-          <span
-            key={`veh-${b.label}`}
-            className={`${badgeBase} bg-amber-100 text-amber-950 ring-1 ring-amber-200/80`}
-            title={b.label}
-          >
-            <Bus className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
-            <span className="truncate max-w-[4.5rem]">{b.label}</span>
-          </span>
-        )
+        if (b.kind === 'vehicle') {
+          return (
+            <span
+              key={`veh-${b.label}`}
+              className={`${badgeBase} bg-amber-100 text-amber-950 ring-1 ring-amber-200/80`}
+              title={b.label}
+            >
+              <Bus className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+              <span className="truncate max-w-[4.5rem]">{b.label}</span>
+            </span>
+          )
+        }
+        return null
       })}
     </div>
   )

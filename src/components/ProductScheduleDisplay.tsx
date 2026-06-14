@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Calendar, Clock, MapPin, Utensils, Car, Coffee, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -45,7 +45,7 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
         throw new Error(`데이터베이스 오류: ${error.message}`)
       }
 
-      setSchedules(data || [])
+      setSchedules((data || []) as unknown as ScheduleItem[])
       
       // 첫 번째 날짜를 기본으로 확장
       if (data && data.length > 0) {

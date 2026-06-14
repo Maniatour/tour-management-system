@@ -327,7 +327,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                     const actualPassCovered = calculateActualPassCovered(
                       residentStatusCounts.nonResidentWithPass,
                       newCount,
-                      residentStatusCounts.nonResident
+                      residentStatusCounts.nonResident,
+                      residentStatusCounts.nonResidentUnder16
                     )
                     setResidentStatusCounts(prev => ({ 
                       ...prev, 
@@ -416,7 +417,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                     const actualPassCovered = calculateActualPassCovered(
                       newPassCount,
                       residentStatusCounts.usResident,
-                      residentStatusCounts.nonResident
+                      residentStatusCounts.nonResident,
+                      residentStatusCounts.nonResidentUnder16
                     )
                     setResidentStatusCounts(prev => ({ 
                       ...prev, 

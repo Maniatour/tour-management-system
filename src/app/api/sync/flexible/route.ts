@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: result.message,
-        data: result.details,
+        data: 'details' in result ? result.details : undefined,
         count: result.count
       })
     } else {

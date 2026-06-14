@@ -14,6 +14,10 @@ export interface PendingOffSchedulesModalProps {
   approverEmail: string | null
   teamMemberNameLookup: Record<string, string>
   onAfterChange?: () => void
+  /** 진입 알림 등 상단 설명 (예: "대기 중인 신청이 N건 있습니다.") */
+  description?: string
+  /** 제공 시 푸터에 "나중에" 버튼 표시 (탭 세션 동안 다시 알리지 않음) */
+  onLater?: () => void
 }
 
 export function PendingOffSchedulesModal({
@@ -22,6 +26,8 @@ export function PendingOffSchedulesModal({
   approverEmail,
   teamMemberNameLookup,
   onAfterChange,
+  description,
+  onLater,
 }: PendingOffSchedulesModalProps) {
   const t = useTranslations('tours.calendar.offSchedule')
   const locale = useLocale()
@@ -156,18 +162,25 @@ export function PendingOffSchedulesModal({
         aria-modal="true"
         aria-labelledby="pending-off-modal-title"
       >
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 shrink-0">
-          <h2 id="pending-off-modal-title" className="text-lg font-semibold text-gray-900">
-            {t('pendingModalTitle')}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            aria-label={t('pendingClose')}
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="px-4 py-3 border-b border-gray-200 shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 id="pending-off-modal-title" className="text-lg font-semibold text-gray-900">
+                {t('pendingEntryNotifyTitle')}
+              </h2>
+              {description ? (
+                <p className="mt-1 text-sm text-gray-600">{description}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 shrink-0"
+              aria-label={t('pendingClose')}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 shrink-0">
@@ -258,13 +271,25 @@ export function PendingOffSchedulesModal({
           >
             {t('pendingApproveAll')} ({rows.length})
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200"
-          >
-            {t('pendingClose')}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {onLater ? (
+              <button
+                type="button"
+                disabled={bulkWorking}
+                onClick={onLater}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                {t('pendingEntryNotifyLater')}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200"
+            >
+              {t('pendingClose')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { googleSheets } from '@/lib/googleSheets'
 
+type GoogleSheetsWriter = {
+  spreadsheets: {
+    values: {
+      append: (params: Record<string, unknown>) => Promise<unknown>
+      clear: (params: Record<string, unknown>) => Promise<unknown>
+      update: (params: Record<string, unknown>) => Promise<unknown>
+    }
+  }
+}
+
+const sheetsWriter = googleSheets as unknown as GoogleSheetsWriter
+
 // 입금 내역을 구글 시트에 동기화
 export async function POST(request: NextRequest) {
   try {
@@ -64,7 +76,7 @@ export async function POST(request: NextRequest) {
     ]
 
     try {
-      await googleSheets.spreadsheets.values.append({
+      await sheetsWriter.spreadsheets.values.append({
         spreadsheetId: sheetId,
         range: `${sheetName}!A:L`,
         valueInputOption: 'RAW',
@@ -168,7 +180,7 @@ export async function PUT(request: NextRequest) {
     try {
       // 시트 초기화 (선택사항)
       if (clearSheet) {
-        await googleSheets.spreadsheets.values.clear({
+        await sheetsWriter.spreadsheets.values.clear({
           spreadsheetId: sheetId,
           range: `${sheetName}!A:L`
         })
@@ -177,7 +189,7 @@ export async function PUT(request: NextRequest) {
       // 헤더와 데이터를 함께 업데이트
       const allRows = [headerRow, ...dataRows]
       
-      await googleSheets.spreadsheets.values.update({
+      await sheetsWriter.spreadsheets.values.update({
         spreadsheetId: sheetId,
         range: `${sheetName}!A:L`,
         valueInputOption: 'RAW',

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 
 interface ChatRoomInfo {
   id: string // 유니크 식별자

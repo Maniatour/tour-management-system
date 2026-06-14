@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { TrendingUp, DollarSign, PieChart } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { TrendingUp, PieChart } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ExpenseReportTabProps {

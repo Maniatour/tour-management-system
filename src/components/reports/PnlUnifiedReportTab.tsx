@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
-import { PieChart, Save, BookOpen, Settings } from 'lucide-react'
+import { PieChart, Save, BookOpen, Settings, Printer, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import {
@@ -25,7 +25,9 @@ import PnlUnifiedExpenseDetailDialog, {
 } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PnlTaxReadinessSection from '@/components/reports/PnlTaxReadinessSection'
-import PnlUnifiedDepositSection from '@/components/reports/PnlUnifiedDepositSection'
+import PnlUnifiedDepositSection, {
+  type PnlDepositExportSnapshot,
+} from '@/components/reports/PnlUnifiedDepositSection'
 import PnlExcludedFromReportSection from '@/components/reports/PnlExcludedFromReportSection'
 import PnlStatementInflowDetailDialog, {
   type PnlStatementInflowDrillState,
@@ -65,6 +67,15 @@ import {
   PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL,
   tourHotelBookingAmountForPnl,
 } from '@/lib/pnlReportDataFetch'
+import { buildPnlDepositTableRows } from '@/lib/pnlPaymentRecords'
+import {
+  buildPnlTaxReportDepositRows,
+  buildPnlTaxReportExpenseRows,
+  computePnlTaxReadinessStats,
+  downloadPnlTaxReportPdf,
+  printPnlTaxReport,
+  type PnlTaxReportExportData,
+} from '@/utils/pnlTaxReportPdf'
 
 interface PnlUnifiedReportTabProps {
   dateRange: { start: string; end: string }
@@ -166,6 +177,10 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   const [cashDeposit, setCashDeposit] = useState<PnlCashBucketTotals | null>(null)
   const [cashRefund, setCashRefund] = useState<PnlCashBucketTotals | null>(null)
   const openCashPaymentDetailRef = useRef<((drill: PnlCashPaymentDrill) => void) | null>(null)
+  const [depositExportSnapshot, setDepositExportSnapshot] = useState<PnlDepositExportSnapshot | null>(
+    null
+  )
+  const [exportingPdf, setExportingPdf] = useState(false)
 
   const { rows: pnlTableRows, groups: unifiedStandardGroups } = useMemo(
     () => buildPnlStandardCategoryTableRows(standardCategoryRows, locale),
@@ -817,13 +832,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         hotel: string | null
         reservation_name: string | null
         payment_method: string | null
+        status: string | null
         check_in_date?: string | null
         submit_on: string | null
         created_at: string | null
       }
       const amt = tourHotelBookingAmountForPnl(r)
       if (!r.submit_on || amt === 0) continue
-      const orig = mappingOriginalForExpense('tour_hotel_bookings', r)
+      const orig = mappingOriginalForExpense('tour_hotel_bookings', {})
       const resolvedLeafId = mapToLeaf.get(`${orig}::tour_hotel_bookings`) ?? null
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
       if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
@@ -857,13 +873,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         hotel: string | null
         reservation_name: string | null
         payment_method: string | null
+        status: string | null
         check_in_date?: string | null
         submit_on: string | null
         created_at: string | null
       }
       const amt = tourHotelBookingAmountForPnl(r)
       if (amt === 0) continue
-      const orig = mappingOriginalForExpense('tour_hotel_bookings', r)
+      const orig = mappingOriginalForExpense('tour_hotel_bookings', {})
       const resolvedLeafId = mapToLeaf.get(`${orig}::tour_hotel_bookings`) ?? null
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
       if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
@@ -1128,6 +1145,93 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     return { rowTotals, colTotals, grandTotal }
   }, [monthlyCells, months])
 
+  const taxReportExportData = useMemo((): PnlTaxReportExportData | null => {
+    if (!depositExportSnapshot || depositLoading || !depositNet || !cashDeposit || !cashRefund) {
+      return null
+    }
+    const profitByMonth: Record<string, number> = {}
+    const refProfitByMonth: Record<string, number> = {}
+    for (const ym of months) {
+      profitByMonth[ym] = (depositNet.netColTotals[ym] ?? 0) - (colTotals[ym] ?? 0)
+      const cashNet = (cashDeposit.monthly[ym] ?? 0) + (cashRefund.monthly[ym] ?? 0)
+      refProfitByMonth[ym] =
+        (depositExportSnapshot.statementInflowMonthly[ym] ?? 0) + cashNet - (colTotals[ym] ?? 0)
+    }
+    const cashNetTotal = (cashDeposit.total ?? 0) + (cashRefund.total ?? 0)
+    const depositTableRows = buildPnlDepositTableRows(locale)
+    return {
+      dateRange,
+      ledgerBaseDate: ledgerBase,
+      months,
+      formatMonthLabel,
+      taxReadiness: computePnlTaxReadinessStats(pnlDetailLines, dismissedDuplicateKeys),
+      expenseRows: buildPnlTaxReportExpenseRows(pnlTableRows, monthlyCells, rowTotals),
+      expenseColTotals: colTotals,
+      expenseGrandTotal: grandTotal,
+      depositRows: buildPnlTaxReportDepositRows(
+        depositTableRows,
+        depositExportSnapshot.monthlyCells,
+        depositExportSnapshot.rowTotals
+      ),
+      depositNetColTotals: depositExportSnapshot.netColTotals,
+      depositNetTotal: depositExportSnapshot.netTotal,
+      statementInflowMonthly: depositExportSnapshot.statementInflowMonthly,
+      statementInflowTotal: depositExportSnapshot.statementInflowTotal,
+      profitByMonth,
+      profitTotal: depositNet.netTotal - grandTotal,
+      refProfitByMonth,
+      refProfitTotal:
+        depositExportSnapshot.statementInflowTotal + cashNetTotal - grandTotal,
+      excludedExpenseTotal: excludedExpenseStats.total,
+      excludedExpenseCount: excludedExpenseStats.count,
+      excludedInflowTotal: excludedInflowStats.total,
+      excludedInflowCount: excludedInflowStats.count,
+    }
+  }, [
+    depositExportSnapshot,
+    depositLoading,
+    depositNet,
+    cashDeposit,
+    cashRefund,
+    months,
+    dateRange,
+    ledgerBase,
+    pnlDetailLines,
+    dismissedDuplicateKeys,
+    pnlTableRows,
+    monthlyCells,
+    rowTotals,
+    colTotals,
+    grandTotal,
+    locale,
+    excludedExpenseStats,
+    excludedInflowStats,
+  ])
+
+  const handlePrintTaxReport = () => {
+    if (!taxReportExportData) {
+      toast.message('입금·지출 데이터를 불러오는 중입니다. 잠시 후 다시 시도하세요.')
+      return
+    }
+    printPnlTaxReport(taxReportExportData)
+  }
+
+  const handleDownloadTaxReportPdf = async () => {
+    if (!taxReportExportData) {
+      toast.message('입금·지출 데이터를 불러오는 중입니다. 잠시 후 다시 시도하세요.')
+      return
+    }
+    setExportingPdf(true)
+    try {
+      await downloadPnlTaxReportPdf(taxReportExportData)
+    } catch (err) {
+      console.error('통합 PNL PDF 생성 오류:', err)
+      toast.error('PDF 생성 중 오류가 발생했습니다.')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
+
   const expenseDetailDialogs = (
     <>
       <PnlUnifiedExpenseDetailDialog
@@ -1179,6 +1283,41 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
 
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0">
+      <div className="rounded-lg border border-violet-200 bg-gradient-to-r from-violet-50 to-white p-3 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-sm sm:text-base font-semibold text-violet-950">
+            <AccountingTerm termKey="세금보고">세금 보고용</AccountingTerm> 출력
+          </h2>
+          <p className="text-xs text-violet-900/80 mt-1 leading-relaxed">
+            기간 {dateRange.start} ~ {dateRange.end} · 입금·지출·순수익·명세 대조 준비도를 한 PDF로 저장하거나 인쇄할 수
+            있습니다.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-violet-300 text-violet-900 hover:bg-violet-50"
+            onClick={handlePrintTaxReport}
+            disabled={!taxReportExportData}
+          >
+            <Printer className="h-4 w-4 mr-1.5" aria-hidden />
+            인쇄
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="bg-violet-700 hover:bg-violet-800"
+            onClick={() => void handleDownloadTaxReportPdf()}
+            disabled={!taxReportExportData || exportingPdf}
+          >
+            <Download className="h-4 w-4 mr-1.5" aria-hidden />
+            {exportingPdf ? 'PDF 생성 중…' : 'PDF 다운로드'}
+          </Button>
+        </div>
+      </div>
+
       <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 sm:p-5 text-xs sm:text-sm text-slate-800 space-y-4">
         <div className="flex items-start gap-2">
           <BookOpen className="h-5 w-5 shrink-0 text-slate-600 mt-0.5" />
@@ -1322,6 +1461,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         onRegisterOpenCashPaymentDetail={(fn) => {
           openCashPaymentDetailRef.current = fn
         }}
+        onExportSnapshotReady={setDepositExportSnapshot}
       />
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">

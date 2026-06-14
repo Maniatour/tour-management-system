@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { X, Image as ImageIcon, Loader2 } from 'lucide-react'
 
 interface ImageUploadProps {
   imageUrl?: string

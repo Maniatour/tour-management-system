@@ -1,15 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { MapPin, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-
-// Google Maps 타입 정의
-declare global {
-  interface Window {
-    google: typeof google
-  }
-}
 
 interface LocationPickerModalProps {
   currentLat?: number
@@ -58,9 +51,9 @@ export default function LocationPickerModal({
     if (!window.google) return
 
     const geocoder = new window.google.maps.Geocoder()
-    geocoder.geocode({ location: { lat, lng } }, (results: google.maps.GeocoderResult[], status: string) => {
-      if (status === 'OK' && results[0]) {
-        setAddress(results[0].formatted_address)
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === 'OK' && results?.[0]) {
+        setAddress(results[0].formatted_address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
       } else {
         setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
       }
@@ -122,7 +115,7 @@ export default function LocationPickerModal({
         newMarker = new window.google.maps.marker.AdvancedMarkerElement({
           position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
           map: newMap,
-          draggable: true,
+          gmpDraggable: true,
           title: '선택된 위치'
         })
         console.log('✅ AdvancedMarkerElement 생성 성공 (Map ID:', mapId, ')')
@@ -152,12 +145,13 @@ export default function LocationPickerModal({
     }
 
     // 지도 클릭 이벤트
-    newMap.addListener('click', (event: google.maps.MapMouseEvent) => {
+    newMap.addListener('click', (event) => {
+      if (!event.latLng) return
       const lat = event.latLng.lat()
       const lng = event.latLng.lng()
-      if ('setPosition' in newMarker) {
+      if (newMarker instanceof window.google.maps.Marker) {
         newMarker.setPosition({ lat, lng })
-      } else if ('position' in newMarker) {
+      } else {
         newMarker.position = { lat, lng }
       }
       setSelectedLat(lat)
@@ -166,10 +160,9 @@ export default function LocationPickerModal({
     })
 
     // 마커 드래그 이벤트
-    if ('addListener' in newMarker) {
-      // 기본 Marker의 경우
+    if (newMarker instanceof window.google.maps.Marker) {
       newMarker.addListener('dragend', () => {
-        const position = (newMarker as google.maps.Marker).getPosition()
+        const position = newMarker.getPosition()
         if (position) {
           const lat = position.lat()
           const lng = position.lng()
@@ -179,9 +172,8 @@ export default function LocationPickerModal({
         }
       })
     } else {
-      // AdvancedMarkerElement의 경우
-      newMarker.addEventListener('dragend', (event: any) => {
-        const position = (newMarker as google.maps.marker.AdvancedMarkerElement).position
+      newMarker.addEventListener('dragend', () => {
+        const position = newMarker.position
         if (position) {
           const lat = typeof position.lat === 'function' ? position.lat() : position.lat
           const lng = typeof position.lng === 'function' ? position.lng() : position.lng
@@ -269,9 +261,9 @@ export default function LocationPickerModal({
       const newPosition = { lat: currentLat, lng: currentLng }
       map.setCenter(newPosition)
       // Marker 타입에 따라 다른 메서드 사용
-      if ('setPosition' in marker) {
+      if (marker instanceof window.google.maps.Marker) {
         marker.setPosition(newPosition)
-      } else if ('position' in marker) {
+      } else {
         marker.position = newPosition
       }
       setSelectedLat(currentLat)
@@ -303,19 +295,22 @@ export default function LocationPickerModal({
 
       service.textSearch(request, (results: google.maps.places.PlaceResult[] | null, status: google.maps.places.PlacesServiceStatus) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-          const suggestions: Suggestion[] = results.slice(0, 8).map((place) => ({
-            placeId: place.place_id || '',
-            name: place.name || '',
-            address: place.formatted_address || '',
-            latitude: place.geometry?.location?.lat() || null,
-            longitude: place.geometry?.location?.lng() || null,
-            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-            rating: place.rating || null,
-            userRatingsTotal: place.user_ratings_total || null,
-            types: place.types || []
-          })).filter((suggestion): suggestion is Suggestion => 
-            suggestion.latitude !== null && suggestion.longitude !== null
-          )
+          const suggestions: Suggestion[] = results.slice(0, 8).flatMap((place) => {
+            const latitude = place.geometry?.location?.lat() ?? null
+            const longitude = place.geometry?.location?.lng() ?? null
+            if (latitude === null || longitude === null) return []
+            return [{
+              placeId: place.place_id || '',
+              name: place.name || '',
+              address: place.formatted_address || '',
+              latitude,
+              longitude,
+              googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+              rating: place.rating ?? null,
+              userRatingsTotal: place.user_ratings_total ?? null,
+              types: place.types || [],
+            }]
+          })
 
           if (suggestions.length > 0) {
             setSuggestions(suggestions)
@@ -515,9 +510,9 @@ export default function LocationPickerModal({
         }
       })
 
-      const placeDetails = (await Promise.all(placeDetailsPromises)).filter((place): place is Suggestion => 
-        place !== null && place.latitude !== null && place.longitude !== null
-      )
+      const placeDetails = (await Promise.all(placeDetailsPromises)).filter(
+        (place) => place !== null && place.latitude !== null && place.longitude !== null
+      ) as Suggestion[]
       
       if (placeDetails.length > 0) {
         // 평점과 리뷰 수를 기반으로 정렬

@@ -26,10 +26,9 @@ interface TourPhotoUploadModalProps {
 
 export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPhotoUploadModalProps) {
   const supabase = createClientSupabase()
-  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole: _userRole, simulatedUser, isSimulating } = useAuth()
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [tours, setTours] = useState<ExtendedTour[]>([])
@@ -73,7 +72,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
       }
 
       // 상품 정보 가져오기
-      const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+      const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => !!id))]
       let productMap = new Map()
       let productEnMap = new Map()
       
@@ -88,8 +87,8 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
       }
 
       // 팀원 정보 가져오기
-      const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+      const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((id): id is string => !!id))]
+      const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((id): id is string => !!id))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
       
       let teamMap = new Map()
@@ -103,16 +102,16 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
       }
 
       // 차량 정보 가져오기
-      const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+      const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => !!id))]
       
       let vehicleMap = new Map()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number, nick')
+          .select('id, vehicle_number')
           .in('id', vehicleIds)
         
-        vehicleMap = new Map((vehiclesData || []).map((vehicle: { id: string; vehicle_number: string | null; nick?: string | null }) => [vehicle.id, (vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || null]))
+        vehicleMap = new Map((vehiclesData || []).map((vehicle) => [vehicle.id, vehicle.vehicle_number || null]))
       }
 
       // 예약 정보로 인원 계산

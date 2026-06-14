@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { X, Send, DollarSign, Package, Plus, Trash2, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
 import html2pdf from 'html2pdf.js'
-import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
 import { NewDynamicPricingService } from '@/lib/newDynamicPricingService'
 
@@ -108,6 +108,57 @@ interface ProductChoice {
 
 const formatUSD = (usd: number): string => {
   return `$${usd.toFixed(2)}`
+}
+
+function toNum(v: unknown): number {
+  if (v === null || v === undefined) return 0
+  if (typeof v === 'number' && !Number.isNaN(v)) return v
+  if (typeof v === 'string') return parseFloat(v) || 0
+  return Number(v) || 0
+}
+
+type ProductOptionRow = {
+  id: string
+  name: string
+  description: string | null
+  choice_name: string | null
+  choice_description: string | null
+  adult_price_adjustment: number | null
+  child_price_adjustment: number | null
+  infant_price_adjustment: number | null
+  is_required?: boolean | null
+  is_multiple?: boolean | null
+  is_default?: boolean | null
+  product_id?: string | null
+  linked_option_id?: string | null
+}
+
+function mapProductOptionRow(row: ProductOptionRow): ProductOption {
+  return {
+    id: row.id,
+    name: row.name,
+    ...(row.description != null ? { description: row.description } : {}),
+    ...(row.choice_name != null ? { choice_name: row.choice_name } : {}),
+    ...(row.choice_description != null ? { choice_description: row.choice_description } : {}),
+    adult_price_adjustment: row.adult_price_adjustment ?? 0,
+    child_price_adjustment: row.child_price_adjustment ?? 0,
+    infant_price_adjustment: row.infant_price_adjustment ?? 0,
+    ...(row.is_required != null ? { is_required: row.is_required } : {}),
+    ...(row.is_multiple != null ? { is_multiple: row.is_multiple } : {}),
+    ...(row.is_default != null ? { is_default: row.is_default } : {}),
+    ...(row.product_id != null ? { product_id: row.product_id } : {}),
+    ...(row.linked_option_id != null ? { linked_option_id: row.linked_option_id } : {}),
+  }
+}
+
+function toSelectorProduct(product: Product): ProductSelectorProduct {
+  return {
+    id: product.id,
+    name: product.name_ko || product.name_en || '',
+    name_ko: product.name_ko,
+    name_en: product.name_en,
+    ...(product.base_price != null ? { base_price: product.base_price } : {}),
+  }
 }
 
 const formatKRW = (krw: number): string => {
@@ -215,14 +266,11 @@ function dedupeIntegratedProductOptions(
 }
 
 export default function InvoiceModal({ customer, products, onClose, locale: initialLocale = 'ko', savedInvoiceId: initialSavedInvoiceId = null }: InvoiceModalProps) {
-  const t = useTranslations('customers.invoice')
-  
   const [locale, setLocale] = useState<'ko' | 'en'>(initialLocale as 'ko' | 'en')
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([])
   const [subtotal, setSubtotal] = useState(0)
   const [tax, setTax] = useState(0)
   const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [saving, setSaving] = useState(false)
   const [invoiceNumber, setInvoiceNumber] = useState('')
@@ -332,7 +380,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           .order('name', { ascending: true })
 
         if (error) throw error
-        setAllProductOptions(data || [])
+        setAllProductOptions((data as ProductOptionRow[] | null)?.map(mapProductOptionRow) || [])
       } catch (error) {
         console.error('모든 통합 옵션 로드 오류:', error)
         setAllProductOptions([])
@@ -377,8 +425,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const loadSavedInvoice = async (invoiceId: string) => {
     setLoadingInvoice(true)
     try {
-      const { data, error } = await supabase
-        .from('invoices')
+      const { data, error } = await fromUntypedTable(supabase, 'invoices')
         .select('*')
         .eq('id', invoiceId)
         .single()
@@ -386,15 +433,17 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       if (error) throw error
 
       if (data) {
-        // 기존 choiceId/choiceOptionId를 selectedChoices로 변환
-        const items = (data.items || []).map((item: any) => {
-          let normalized: InvoiceItem = { ...item }
-          if (!item.selectedChoices && item.choiceId && item.choiceOptionId) {
+        const row = data as Record<string, unknown>
+        const rawItems = row.items
+        const items: InvoiceItem[] = (Array.isArray(rawItems) ? rawItems : []).map((item: unknown) => {
+          const raw = item as Record<string, unknown>
+          let normalized: InvoiceItem = { ...(raw as unknown as InvoiceItem) }
+          if (!raw.selectedChoices && raw.choiceId && raw.choiceOptionId) {
             normalized = {
               ...normalized,
               selectedChoices: {
-                [item.choiceId]: item.choiceOptionId
-              }
+                [String(raw.choiceId)]: String(raw.choiceOptionId),
+              },
             }
           }
           if (!normalized.selectedChoices) {
@@ -405,29 +454,28 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           }
           return normalized
         })
-        
-        setInvoiceNumber(data.invoice_number)
-        setInvoiceDate(data.invoice_date)
-        // 저장된 due_date가 있으면 사용하고, 없으면 issue_date의 3일 뒤로 설정
-        setDueDate(data.due_date || getDueDateFromIssueDate(data.invoice_date))
-        setInvoiceItems(items)
-        setSubtotal(parseFloat(data.subtotal) || 0)
-        setTax(parseFloat(data.tax) || 0)
-        setTotal(parseFloat(data.total) || 0)
-        setApplyTax(data.apply_tax || false)
-        setTaxPercent(parseFloat(data.tax_percent) || 10)
-        setApplyDiscount(data.apply_discount || false)
-        setDiscountPercent(parseFloat(data.discount_percent) || 0)
-        setDiscountAmount(parseFloat(data.discount) || 0)
-        setDiscountReason(data.discount_reason || '')
-        setApplyProcessingFee(data.apply_processing_fee || false)
-        setExchangeRate(parseFloat(data.exchange_rate) || 1300)
-        setNotes(data.notes || '')
-        setSavedInvoiceId(data.id)
 
-        // 검색어 초기화
+        const invoiceDateStr = String(row.invoice_date || '')
+        setInvoiceNumber(String(row.invoice_number || ''))
+        setInvoiceDate(invoiceDateStr)
+        setDueDate(String(row.due_date || '') || getDueDateFromIssueDate(invoiceDateStr))
+        setInvoiceItems(items)
+        setSubtotal(toNum(row.subtotal))
+        setTax(toNum(row.tax))
+        setTotal(toNum(row.total))
+        setApplyTax(!!row.apply_tax)
+        setTaxPercent(toNum(row.tax_percent) || 10)
+        setApplyDiscount(!!row.apply_discount)
+        setDiscountPercent(toNum(row.discount_percent))
+        setDiscountAmount(toNum(row.discount))
+        setDiscountReason(String(row.discount_reason || ''))
+        setApplyProcessingFee(!!row.apply_processing_fee)
+        setExchangeRate(toNum(row.exchange_rate) || 1300)
+        setNotes(String(row.notes || ''))
+        setSavedInvoiceId(String(row.id || ''))
+
         const searchQueries: Record<string, string> = {}
-        items.forEach((item: any) => {
+        items.forEach((item) => {
           if (item.productName) {
             searchQueries[item.id] = item.productName
           }
@@ -435,8 +483,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         setItemSearchQueries(searchQueries)
         setUnitPriceDraftByItemId({})
 
-        // 상품 초이스 로드
-        const productIds = [...new Set(items.filter((item: any) => item.productId).map((item: any) => item.productId))]
+        const productIds = [...new Set(items.filter((item) => item.productId).map((item) => item.productId))]
         for (const productId of productIds) {
           await loadProductChoices(productId)
         }
@@ -494,6 +541,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         document.removeEventListener('mousedown', handleClickOutside)
       }
     }
+    return undefined
   }, [showAddMenu, itemDropdownOpen])
 
   // 상품 초이스 로드
@@ -567,10 +615,6 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     
     // 참가자 유형이 변경된 경우 가격 다시 계산
     if (!skipDynamicPricing && updates.participantType && updates.participantType !== item.participantType && item.productId && channelId && date) {
-      const adults = participantType === 'adult' ? 1 : 0
-      const children = participantType === 'child' ? 1 : 0
-      const infants = participantType === 'infant' ? 1 : 0
-
       try {
         // dynamic_pricing에서 기본 가격과 choices_pricing 직접 조회
         const { data: dynamicPricingData, error: pricingError } = await supabase
@@ -588,11 +632,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
           // 참가자 유형에 맞는 기본 가격 가져오기
           if (participantType === 'adult') {
-            basePrice = parseFloat(dynamicPricingData.adult_price || 0)
+            basePrice = toNum(dynamicPricingData.adult_price)
           } else if (participantType === 'child') {
-            basePrice = parseFloat(dynamicPricingData.child_price || 0)
+            basePrice = toNum(dynamicPricingData.child_price)
           } else {
-            basePrice = parseFloat(dynamicPricingData.infant_price || 0)
+            basePrice = toNum(dynamicPricingData.infant_price)
           }
 
           // choices_pricing에서 해당 초이스 옵션의 가격 직접 조회
@@ -604,11 +648,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             const choicePricing = choicesPricing[item.choiceOptionId]
             if (choicePricing) {
               if (participantType === 'adult') {
-                choicePrice = parseFloat(choicePricing.adult || choicePricing.adult_price || 0)
+                choicePrice = toNum(choicePricing.adult ?? choicePricing.adult_price)
               } else if (participantType === 'child') {
-                choicePrice = parseFloat(choicePricing.child || choicePricing.child_price || 0)
+                choicePrice = toNum(choicePricing.child ?? choicePricing.child_price)
               } else {
-                choicePrice = parseFloat(choicePricing.infant || choicePricing.infant_price || 0)
+                choicePrice = toNum(choicePricing.infant ?? choicePricing.infant_price)
               }
             }
           }
@@ -743,11 +787,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       unitPrice: basePrice,
       total: basePrice * quantity,
       participantType: participantType as 'adult' | 'child' | 'infant' | 'none',
-      choiceId: undefined,
-      choiceOptionId: undefined,
       selectedChoices: {},
-      choiceInfo: undefined,
-      selectedOptions: []
+      selectedOptions: [],
     })
 
     // 검색어 업데이트
@@ -799,11 +840,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         if (!pricingError && dynamicPricingData) {
           // 참가자 유형에 맞는 기본 가격 가져오기
           if (participantType === 'adult') {
-            basePrice = parseFloat(dynamicPricingData.adult_price || 0)
+            basePrice = toNum(dynamicPricingData.adult_price)
           } else if (participantType === 'child') {
-            basePrice = parseFloat(dynamicPricingData.child_price || 0)
+            basePrice = toNum(dynamicPricingData.child_price)
           } else {
-            basePrice = parseFloat(dynamicPricingData.infant_price || 0)
+            basePrice = toNum(dynamicPricingData.infant_price)
           }
 
           // 모든 선택된 초이스의 가격을 계산하기 위해 calculateDynamicPrice 사용
@@ -926,71 +967,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
     handleUpdateInvoiceItem(itemId, {
       selectedChoices: updatedSelectedChoices,
-      choiceInfo,
+      ...(choiceInfo !== undefined ? { choiceInfo } : {}),
       unitPrice: totalPrice,
-      total: totalPrice * item.quantity
-    })
-  }
-
-  // 통합 옵션 선택
-  const handleItemOptionSelect = async (itemId: string, optionId: string) => {
-    const item = invoiceItems.find(i => i.id === itemId)
-    if (!item) return
-
-    const channelId = defaultChannelId || customer.channel_id || ''
-    const participantType = item.participantType || 'adult'
-    const adults = participantType === 'adult' ? 1 : 0
-    const children = participantType === 'child' ? 1 : 0
-    const infants = participantType === 'infant' ? 1 : 0
-    const selectedChoices = item.choiceOptionId ? [item.choiceOptionId] : []
-    const selectedOptions = item.selectedOptions || []
-    const isSelected = selectedOptions.includes(optionId)
-    const newOptions = isSelected 
-      ? selectedOptions.filter(id => id !== optionId)
-      : [...selectedOptions, optionId]
-
-    let totalPrice = item.unitPrice
-    if (channelId && item.date && item.productId) {
-      try {
-        const pricing = await NewDynamicPricingService.calculateDynamicPrice(
-          item.productId,
-          channelId,
-          item.date,
-          adults,
-          children,
-          infants,
-          selectedChoices,
-          newOptions
-        )
-        totalPrice = pricing.totalPrice
-      } catch (error) {
-        console.error('동적 가격 조회 실패:', error)
-      }
-    } else if (item.itemType === 'option') {
-      // 통합 옵션만 선택된 경우
-      const selectedOption = allProductOptions.find(opt => opt.id === optionId)
-      if (selectedOption) {
-        let adjustment = 0
-        if (participantType === 'adult') {
-          adjustment = selectedOption.adult_price_adjustment
-        } else if (participantType === 'child') {
-          adjustment = selectedOption.child_price_adjustment
-        } else if (participantType === 'infant') {
-          adjustment = selectedOption.infant_price_adjustment
-        }
-        
-        if (isSelected) {
-          totalPrice = item.unitPrice + adjustment
-        } else {
-          totalPrice = item.unitPrice - adjustment
-        }
-      }
-    }
-
-    handleUpdateInvoiceItem(itemId, {
-      selectedOptions: newOptions,
-      unitPrice: totalPrice,
-      total: totalPrice * item.quantity
+      total: totalPrice * item.quantity,
     })
   }
 
@@ -1014,27 +993,6 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     setInvoiceItems(prev => [...prev, newItem])
   }
 
-  // 통합 옵션 항목 추가 (상품에 연결된 경우)
-  const handleAddOptionItem = (productItem: InvoiceItem) => {
-    const newOptionItem: InvoiceItem = {
-      id: `item-${Date.now()}`,
-      productId: productItem.productId || '',
-      productName: '',
-      date: productItem.date || new Date().toISOString().split('T')[0],
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-      total: 0,
-      editable: true,
-      participantType: productItem.participantType || 'adult',
-      itemType: 'option',
-      optionId: undefined,
-      selectedChoices: {},
-      discountApplies: true,
-    }
-    setInvoiceItems(prev => [...prev, newOptionItem])
-  }
-
   // 통합 옵션만 추가 (상품 없이)
   const handleAddStandaloneOptionItem = () => {
     const lastItem = invoiceItems[invoiceItems.length - 1]
@@ -1050,7 +1008,6 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       editable: true,
       participantType: lastItem?.participantType || 'adult',
       itemType: 'option',
-      optionId: undefined,
       discountApplies: true,
     }
     setInvoiceItems(prev => [...prev, newOptionItem])
@@ -1382,7 +1339,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       const safeName =
         (invoiceNumber || 'invoice').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 80) || 'invoice'
       const opt = {
-        margin: [8, 8, 8, 8],
+        margin: [8, 8, 8, 8] as [number, number, number, number],
         filename: `${safeName}.pdf`,
         image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: {
@@ -1456,7 +1413,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         // 업데이트
         response = await supabase
           .from('invoices')
-          .update(invoiceData)
+          .update(invoiceData as never)
           .eq('id', savedInvoiceId)
           .select()
           .single()
@@ -1464,7 +1421,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         // 새로 생성
         response = await supabase
           .from('invoices')
-          .insert(invoiceData)
+          .insert(invoiceData as never)
           .select()
           .single()
       }
@@ -1552,13 +1509,13 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           // 업데이트
           await supabase
             .from('invoices')
-            .update(invoiceData)
+            .update(invoiceData as never)
             .eq('id', savedInvoiceId)
         } else {
           // 새로 생성
           const { data: savedData, error: saveError } = await supabase
             .from('invoices')
-            .insert(invoiceData)
+            .insert(invoiceData as never)
             .select()
             .single()
           
@@ -1710,10 +1667,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                 </tr>
               </thead>
               <tbody>
-                {invoiceItems.map((item, index) => {
+                {invoiceItems.map((item) => {
                   const choices = item.productId ? (productChoicesMap[item.productId] || []) : []
                   const productOptions = getProductOptions(item.productId)
-                  const hasOptions = productOptions.length > 0
 
                   return (
                     <tr
@@ -1929,10 +1885,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                         handleUpdateInvoiceItem(item.id, {
                                           productName: query,
                                           description: item.description || query,
-                                          productId: '', // 텍스트 입력 시 productId는 빈 문자열
-                                          choiceId: undefined,
-                                          choiceOptionId: undefined,
-                                          choiceInfo: undefined
+                                          productId: '',
                                         })
                                       }}
                                       onFocus={() => {
@@ -1986,7 +1939,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                             <button
                                               key={product.id}
                                               onClick={() => {
-                                                handleItemProductSelect(item.id, product)
+                                                handleItemProductSelect(item.id, toSelectorProduct(product))
                                                 setItemSearchQueries(prev => ({ ...prev, [item.id]: productName || '' }))
                                                 setItemDropdownOpen(prev => ({ ...prev, [item.id]: false }))
                                               }}
@@ -2541,8 +2494,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               </button>
             </div>
             <div className="p-4">
+              {(() => {
+                const selectedProductId = invoiceItems.find(i => i.id === showProductSelector)?.productId
+                return (
               <ProductSelector
-                selectedProductId={invoiceItems.find(i => i.id === showProductSelector)?.productId}
+                {...(selectedProductId ? { selectedProductId } : {})}
                 onProductSelect={(product) => {
                   if (product && showProductSelector) {
                     handleItemProductSelect(showProductSelector, product)
@@ -2551,6 +2507,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                 showChoices={false}
                 locale={locale}
               />
+                )
+              })()}
             </div>
           </div>
         </div>

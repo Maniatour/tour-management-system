@@ -152,7 +152,7 @@ export function getNoChoiceOtaAndNotIncluded(
       niRaw !== undefined && niRaw !== null && !Number.isNaN(Number(niRaw)) && Number(niRaw) > 0
         ? Number(niRaw)
         : undefined;
-    return { ota_sale_price: ota, not_included_price: ni };
+    return { ota_sale_price: ota, ...(ni !== undefined ? { not_included_price: ni } : {}) };
   }
   return undefined;
 }
@@ -189,7 +189,7 @@ export function getFallbackOtaAndNotIncluded(
         entry.not_included_price !== undefined && entry.not_included_price !== null
           ? Number(entry.not_included_price)
           : undefined;
-      pairRows.push({ ota: num, notIncluded: notIncluded ?? undefined });
+      pairRows.push({ ota: num, ...(notIncluded !== undefined ? { notIncluded } : {}) });
     }
     if (pairRows.length > 0) {
       const sumOta = pairRows.reduce((s, r) => s + r.ota, 0);
@@ -199,7 +199,7 @@ export function getFallbackOtaAndNotIncluded(
       }, 0);
       return {
         ota_sale_price: sumOta,
-        not_included_price: maxNi > 0 ? maxNi : undefined,
+        ...(maxNi > 0 ? { not_included_price: maxNi } : {}),
       };
     }
   }
@@ -226,7 +226,7 @@ export function getFallbackOtaAndNotIncluded(
       if (overlap > bestOverlap || (overlap === bestOverlap && num > bestOtaForOverlap)) {
         bestOverlap = overlap;
         bestOtaForOverlap = num;
-        bestSameStructure = { ota: num, notIncluded: notIncluded ?? undefined };
+        bestSameStructure = { ota: num, ...(notIncluded !== undefined ? { notIncluded } : {}) };
       }
     }
   }
@@ -236,7 +236,7 @@ export function getFallbackOtaAndNotIncluded(
   if (!best) return undefined;
   return {
     ota_sale_price: best.ota,
-    not_included_price: best.notIncluded
+    ...(best.notIncluded !== undefined ? { not_included_price: best.notIncluded } : {}),
   };
 }
 
@@ -312,10 +312,7 @@ export function migrateDynamicPricingChoices(
   // 가장 최근 업데이트된 가격 데이터 사용
   const latestPricing = pricingData
     .filter(p => p.choices_pricing)
-    .sort((a, b) => {
-      // updated_at이 있다면 그것으로 정렬, 없으면 첫 번째 사용
-      return 0;
-    })[0];
+    .sort(() => 0)[0];
 
   if (!latestPricing || !latestPricing.choices_pricing) {
     return {};

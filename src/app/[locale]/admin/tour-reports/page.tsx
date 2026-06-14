@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
 import { createClientSupabase } from '@/lib/supabase'
 import TourReportList from '@/components/TourReportList'
 import TourReportForm from '@/components/TourReportForm'
@@ -12,9 +11,6 @@ import {
   FileText, 
   Plus, 
   Calendar, 
-  MapPin, 
-  Users,
-  Search
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useLocale } from 'next-intl'
@@ -34,8 +30,7 @@ interface AdminTourReportsProps {
   params: Promise<{ locale: string }>
 }
 
-export default function AdminTourReports({ params }: AdminTourReportsProps) {
-  const { user } = useAuth()
+export default function AdminTourReports({}: AdminTourReportsProps) {
   const locale = useLocale()
   const [tours, setTours] = useState<Tour[]>([])
   const [selectedTourId, setSelectedTourId] = useState<string>('')
@@ -53,6 +48,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
         .from('tours')
         .select(`
           id,
+          product_id,
           tour_date,
           tour_status,
           products (
@@ -64,7 +60,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
         .limit(100)
 
       if (error) throw error
-      setTours(data || [])
+      setTours((data || []) as Tour[])
     } catch (error) {
       console.error('Error fetching tours:', error)
       toast.error('투어 목록을 불러오는 중 오류가 발생했습니다.')
@@ -91,12 +87,12 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
     setShowForm(false)
   }
 
-  const handleEditReport = (report: any) => {
+  const handleEditReport = (_report: unknown) => {
     // TODO: Implement edit functionality
     toast.info('편집 기능은 곧 추가될 예정입니다.')
   }
 
-  const handleDeleteReport = (reportId: string) => {
+  const handleDeleteReport = (_reportId: string) => {
     toast.success('리포트가 삭제되었습니다.')
   }
 
@@ -122,7 +118,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
         </div>
         <TourReportForm
           tourId={selectedTourId}
-          productId={tours.find((t) => t.id === selectedTourId)?.product_id ?? undefined}
+          productId={tours.find((t) => t.id === selectedTourId)?.product_id ?? null}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
           locale={locale}

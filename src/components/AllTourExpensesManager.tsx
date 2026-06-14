@@ -1,11 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Upload, X, Check, Eye, DollarSign, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Search, Calendar, Filter, Download, Wallet } from 'lucide-react'
+import { X, Eye, Receipt, Image as ImageIcon, Folder, Search, Wallet } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
-import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
@@ -70,8 +69,6 @@ export default function AllTourExpensesManager() {
   const tRes = useTranslations('reservations')
   const tStmt = useTranslations('expenses.statementRecon')
   const locale = useLocale()
-  const { user, simulatedUser, isSimulating } = useAuth()
-  const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   const { paymentMethodMap, paymentMethodOptions } = usePaymentMethodOptions()
 
   const employeeLinkedPaymentMethodIds = useMemo(() => {

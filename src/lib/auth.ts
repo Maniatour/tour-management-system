@@ -185,7 +185,7 @@ export async function getCurrentUser(): Promise<{ user: User | null; error: Auth
   const { data: { user }, error } = await supabase.auth.getUser()
 
   if (error) {
-    return { user: null, error: { message: error.message, status: error.status } }
+    return { user: null, error: { message: error.message, ...(error.status !== undefined ? { status: error.status } : {}) } }
   }
 
   return { user, error: null }

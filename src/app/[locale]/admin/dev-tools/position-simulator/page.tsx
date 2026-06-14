@@ -12,8 +12,8 @@ import { useRouter } from 'next/navigation'
 interface TeamMember {
   email: string
   name_ko: string
-  position: string
-  is_active: boolean
+  position: string | null
+  is_active: boolean | null
 }
 
 export default function PositionSimulatorPage() {
@@ -37,7 +37,7 @@ export default function PositionSimulatorPage() {
           return
         }
 
-        setTeamMembers(data || [])
+        setTeamMembers((data || []) as TeamMember[])
       } catch (err) {
         console.error('Error:', err)
       } finally {
@@ -64,7 +64,7 @@ export default function PositionSimulatorPage() {
   }
 
   const handleStartSimulation = (member: TeamMember) => {
-    const simulatedRole = getRoleFromPosition(member.position)
+    const simulatedRole = getRoleFromPosition(member.position ?? '')
     const simulatedUserData = {
       id: `simulated-${member.email}`,
       email: member.email,
@@ -72,7 +72,7 @@ export default function PositionSimulatorPage() {
       phone: null,
       language: 'ko',
       created_at: new Date().toISOString(),
-      position: member.position,
+      position: member.position ?? '',
       role: simulatedRole
     }
     
@@ -227,7 +227,7 @@ export default function PositionSimulatorPage() {
       {/* Position별 시뮬레이터 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {teamMembers.map((member) => {
-          const info = getPositionInfo(member.position)
+          const info = getPositionInfo(member.position ?? '')
           const IconComponent = info.icon
           const isCurrentlySimulating = simulatedUser?.email === member.email
 

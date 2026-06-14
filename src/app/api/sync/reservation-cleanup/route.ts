@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+function choiceOptionKey(
+  choiceOptions: { option_key?: string } | { option_key?: string }[] | null | undefined
+): string | undefined {
+  if (Array.isArray(choiceOptions)) return choiceOptions[0]?.option_key
+  return choiceOptions?.option_key
+}
+
 export async function POST() {
   try {
     // 환경 변수에서 Supabase 설정 가져오기
@@ -216,11 +223,11 @@ export async function POST() {
           
           // 통계 계산
           lowerAntelopeCount += finalReservationChoices.filter(rc => 
-            rc.choice_options?.option_key === 'lower_antelope'
+            rc.choice_options && choiceOptionKey(rc.choice_options) === 'lower_antelope'
           ).length
 
           antelopeXCount += finalReservationChoices.filter(rc => 
-            rc.choice_options?.option_key === 'antelope_x'
+            rc.choice_options && choiceOptionKey(rc.choice_options) === 'antelope_x'
           ).length
 
           batchChoicesFrom += batchChoicesPageSize
@@ -331,10 +338,10 @@ export async function GET() {
           reservationsWithChoices: reservationChoices?.length || 0,
           productsWithChoices: productChoices?.length || 0,
           lowerAntelopeCount: reservationChoices?.filter(rc => 
-            rc.choice_options?.option_key === 'lower_antelope'
+            rc.choice_options && choiceOptionKey(rc.choice_options) === 'lower_antelope'
           ).length || 0,
           antelopeXCount: reservationChoices?.filter(rc => 
-            rc.choice_options?.option_key === 'antelope_x'
+            rc.choice_options && choiceOptionKey(rc.choice_options) === 'antelope_x'
           ).length || 0
         }
       }

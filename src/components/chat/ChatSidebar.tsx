@@ -1,8 +1,7 @@
 'use client'
 
-import React from 'react'
 import { Users, User, X } from 'lucide-react'
-import type { ChatParticipant } from '@/types/chat'
+import type { Participant as ChatParticipant } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 
 interface ChatSidebarProps {

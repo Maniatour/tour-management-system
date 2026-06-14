@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   hotelAmountForSettlement,
   isHotelBookingActiveForReports,
@@ -124,8 +125,7 @@ export type PnlReservationExpenseRow = {
 
 export async function fetchTourExpensesForPnlReport(startISO: string, endISO: string) {
   return fetchAllSupabasePages<PnlTourExpenseRow>((from, to) =>
-    supabase
-      .from('tour_expenses')
+    fromUntypedTable(supabase, 'tour_expenses')
       .select(
         'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, tour_id, submit_on, created_at'
       )
@@ -141,8 +141,7 @@ export async function fetchTourExpensesForPnlReport(startISO: string, endISO: st
 /** 통합 PNL COGS 투어지출: tour_date 기준 */
 export async function fetchTourExpensesForPnlByTourDate(startYmd: string, endYmd: string) {
   return fetchAllSupabasePages<PnlTourExpenseRow>((from, to) =>
-    supabase
-      .from('tour_expenses')
+    fromUntypedTable(supabase, 'tour_expenses')
       .select(
         'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, tour_id, submit_on, created_at'
       )
@@ -157,8 +156,7 @@ export async function fetchTourExpensesForPnlByTourDate(startYmd: string, endYmd
 
 export async function fetchReservationExpensesForPnlReport(startISO: string, endISO: string) {
   return fetchAllSupabasePages<PnlReservationExpenseRow>((from, to) =>
-    supabase
-      .from('reservation_expenses')
+    fromUntypedTable(supabase, 'reservation_expenses')
       .select(
         'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, tour_id, submit_on, created_at'
       )
@@ -199,15 +197,14 @@ export async function fetchReservationExpensesForPnlByTourDate(startYmd: string,
   const rows: PnlReservationExpenseRow[] = []
   for (let i = 0; i < reservationIds.length; i += 200) {
     const chunk = reservationIds.slice(i, i + 200)
-    const { data, error } = await supabase
-      .from('reservation_expenses')
+    const { data, error } = await fromUntypedTable(supabase, 'reservation_expenses')
       .select(
         'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, tour_id, submit_on, created_at'
       )
       .is('deleted_at', null)
       .in('reservation_id', chunk)
     if (error) return { data: [] as PnlReservationExpenseRow[], error }
-    for (const row of data || []) {
+    for (const row of (data || []) as PnlReservationExpenseRow[]) {
       const rid = String(row.reservation_id ?? '')
       const tourYmd = tourDateByReservationId.get(rid)
       if (!tourYmd) continue
@@ -219,8 +216,7 @@ export async function fetchReservationExpensesForPnlByTourDate(startYmd: string,
 
 export async function fetchCompanyExpensesForPnlReport(startISO: string, endISO: string) {
   return fetchAllSupabasePages<PnlCompanyExpenseRow>((from, to) =>
-    supabase
-      .from('company_expenses')
+    fromUntypedTable(supabase, 'company_expenses')
       .select(
         'id, amount, paid_for, category, standard_paid_for, expense_type, paid_to, notes, description, payment_method, exclude_from_pnl, accounting_period, submit_on, created_at'
       )
@@ -236,8 +232,7 @@ export async function fetchCompanyExpensesForPnlReport(startISO: string, endISO:
 /** 통합 PNL COGS 회사지출 — accounting_period(YYYY-MM) 문자열 범위 */
 export async function fetchCompanyExpensesForPnlByAccountingPeriod(startYm: string, endYm: string) {
   return fetchAllSupabasePages<PnlCompanyExpenseRow>((from, to) =>
-    supabase
-      .from('company_expenses')
+    fromUntypedTable(supabase, 'company_expenses')
       .select(
         'id, amount, paid_for, category, standard_paid_for, expense_type, paid_to, notes, description, payment_method, exclude_from_pnl, accounting_period, submit_on, created_at'
       )
@@ -333,7 +328,11 @@ export async function fetchTourHotelBookingsForPnlByCheckIn(startYmd: string, en
 }
 
 export function tourHotelBookingAmountForPnl(row: PnlTourHotelBookingRow): number {
-  return hotelAmountForSettlement(row)
+  return hotelAmountForSettlement({
+    total_price: row.total_price as string | number | null,
+    unit_price: row.unit_price as string | number | null,
+    rooms: row.rooms as string | number | null,
+  })
 }
 
 export type PnlStatementInflowRow = {
@@ -375,8 +374,7 @@ function isPnlStatementInflowEligible(r: PnlStatementInflowRow): boolean {
 /** 통합 PNL 참고 — 기간 내 명세 수입(입금) 줄 (posted_date 기준) */
 export async function fetchStatementInflowsForPnlReport(startYmd: string, endYmd: string) {
   return fetchAllSupabasePages<PnlStatementInflowRow>((from, to) =>
-    supabase
-      .from('statement_lines')
+    fromUntypedTable(supabase, 'statement_lines')
       .select(
         'id, posted_date, amount, direction, description, merchant, matched_status, exclude_from_pnl, is_personal, statement_import_id'
       )
@@ -385,7 +383,7 @@ export async function fetchStatementInflowsForPnlReport(startYmd: string, endYmd
       .lte('posted_date', endYmd)
       .order('posted_date', { ascending: true })
       .order('id', { ascending: true })
-      .range(from, to)
+      .range(from, to) as PromiseLike<{ data: PnlStatementInflowRow[] | null; error: import('@supabase/supabase-js').PostgrestError | null }>
   )
 }
 
@@ -406,14 +404,14 @@ async function fetchFinancialAccountNameByImportId(
   const importToAccount = new Map<string, string>()
   for (let i = 0; i < uniq.length; i += 200) {
     const chunk = uniq.slice(i, i + 200)
-    const { data, error } = await supabase
-      .from('statement_imports')
+    const { data, error } = await fromUntypedTable(supabase, 'statement_imports')
       .select('id, financial_account_id')
       .in('id', chunk)
     if (error) throw error
     for (const row of data || []) {
-      const id = String((row as { id: string }).id ?? '').trim()
-      const fa = String((row as { financial_account_id: string | null }).financial_account_id ?? '').trim()
+      const typed = row as unknown as { id: string; financial_account_id: string | null }
+      const id = String(typed.id ?? '').trim()
+      const fa = String(typed.financial_account_id ?? '').trim()
       if (id && fa) importToAccount.set(id, fa)
     }
   }
@@ -422,11 +420,14 @@ async function fetchFinancialAccountNameByImportId(
   const accountNameById = new Map<string, string>()
   for (let i = 0; i < accountIds.length; i += 200) {
     const chunk = accountIds.slice(i, i + 200)
-    const { data, error } = await supabase.from('financial_accounts').select('id, name').in('id', chunk)
+    const { data, error } = await fromUntypedTable(supabase, 'financial_accounts')
+      .select('id, name')
+      .in('id', chunk)
     if (error) throw error
     for (const row of data || []) {
-      const id = String((row as { id: string }).id ?? '').trim()
-      const name = String((row as { name: string }).name ?? '').trim()
+      const typed = row as unknown as { id: string; name: string }
+      const id = String(typed.id ?? '').trim()
+      const name = String(typed.name ?? '').trim()
       if (id && name) accountNameById.set(id, name)
     }
   }

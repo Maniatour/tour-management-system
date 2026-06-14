@@ -72,7 +72,7 @@ interface ProductSelectionSectionProps {
 const ProductSelectionSection = memo(function ProductSelectionSection({
   formData,
   setFormData,
-  products,
+  products: _products,
   loadProductChoices,
   t
 }: ProductSelectionSectionProps) {
@@ -177,7 +177,14 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
             children={formData.child || 0}
             infants={formData.infant || 0}
             onSelectionChange={handleSelectionChange}
-            initialSelections={formData.selectedChoices || []}
+            initialSelections={(formData.selectedChoices || []) as Array<{
+              choice_id: string
+              option_id: string
+              option_key: string
+              option_name_ko: string
+              quantity: number
+              total_price: number
+            }>}
           />
         </div>
       )}

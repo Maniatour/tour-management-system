@@ -20,7 +20,8 @@ interface OptionsSectionProps {
     requiredOptions: Record<string, string>
     selectedOptionPrices: Record<string, number>
   }
-  setFormData: (data: { [key: string]: unknown }) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setFormData: (data: any) => void
   getRequiredOptionsForProduct: (productId: string) => Record<string, Option>
   t: (key: string) => string
 }
@@ -57,7 +58,7 @@ export default function OptionsSection({
                           name={`option_${optionId}`}
                           value={choice.id}
                           checked={formData.requiredOptions[optionId] === choice.id}
-                          onChange={(e) => setFormData(prev => ({
+                          onChange={(e) => setFormData((prev: any) => ({
                             ...prev,
                             requiredOptions: {
                               ...prev.requiredOptions,
@@ -79,7 +80,7 @@ export default function OptionsSection({
                             defaultValue={choice.adult_price_adjustment || 0}
                             onChange={(e) => {
                               const value = Number(e.target.value) || 0
-                              setFormData(prev => ({
+                              setFormData((prev: any) => ({
                                 ...prev,
                                 selectedOptionPrices: {
                                   ...prev.selectedOptionPrices,
@@ -98,7 +99,7 @@ export default function OptionsSection({
                             defaultValue={choice.child_price_adjustment || 0}
                             onChange={(e) => {
                               const value = Number(e.target.value) || 0
-                              setFormData(prev => ({
+                              setFormData((prev: any) => ({
                                 ...prev,
                                 selectedOptionPrices: {
                                   ...prev.selectedOptionPrices,
@@ -117,7 +118,7 @@ export default function OptionsSection({
                             defaultValue={choice.infant_price_adjustment || 0}
                             onChange={(e) => {
                               const value = Number(e.target.value) || 0
-                              setFormData(prev => ({
+                              setFormData((prev: any) => ({
                                 ...prev,
                                 selectedOptionPrices: {
                                   ...prev.selectedOptionPrices,

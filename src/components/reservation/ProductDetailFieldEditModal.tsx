@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import { createClientSupabase } from '@/lib/supabase'

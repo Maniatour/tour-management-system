@@ -74,24 +74,29 @@ export async function POST(request: NextRequest) {
 
     const sort_order = parseOptionalInt(body.sort_order) ?? 0
 
+    const labelEn = parseOptionalString(body.label_en)
+    const notesKo = parseOptionalString(body.notes_ko)
+    const notesEn = parseOptionalString(body.notes_en)
+    const legacySubcategory = parseOptionalString(body.legacy_subcategory)
+
     const row = {
       code,
       label_ko,
-      label_en: parseOptionalString(body.label_en),
+      ...(labelEn != null ? { label_en: labelEn } : {}),
       category_group,
       default_mileage_interval: parseOptionalInt(body.default_mileage_interval) ?? null,
       default_month_interval: parseOptionalInt(body.default_month_interval) ?? null,
       interval_kind,
-      legacy_subcategory: parseOptionalString(body.legacy_subcategory),
+      ...(legacySubcategory != null ? { legacy_subcategory: legacySubcategory } : {}),
       sort_order,
       is_active: body.is_active !== false,
-      notes_ko: parseOptionalString(body.notes_ko),
-      notes_en: parseOptionalString(body.notes_en),
+      ...(notesKo != null ? { notes_ko: notesKo } : {}),
+      ...(notesEn != null ? { notes_en: notesEn } : {}),
     }
 
     const { data, error } = await supabase
       .from('vehicle_maintenance_catalog')
-      .insert(row)
+      .insert(row as never)
       .select(CATALOG_SELECT_FIELDS)
       .single()
 

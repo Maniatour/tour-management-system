@@ -61,8 +61,8 @@ export const fetchOtherToursAssignedReservations = async (targetTour: { id: stri
 
     // 2) 현재 투어를 제외한 다른 투어들의 예약 ID 수집
     const otherTourReservationIds = (siblingTours || [])
-      .filter((tour: { id: string; reservation_ids?: string[] }) => tour.id !== targetTour.id)
-      .flatMap((tour: { id: string; reservation_ids?: string[] }) => tour.reservation_ids || [])
+      .filter((tour) => tour.id !== targetTour.id)
+      .flatMap((tour) => tour.reservation_ids ?? [])
 
     if (otherTourReservationIds.length === 0) return []
 

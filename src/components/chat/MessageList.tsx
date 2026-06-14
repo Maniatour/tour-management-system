@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Trash2, User, MapPin, Languages } from 'lucide-react'
+import { Trash2, User, MapPin } from 'lucide-react'
 import type { ChatMessage } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 
@@ -34,17 +34,17 @@ export default function MessageList({
   guideEmail,
   selectedAvatar,
   selectedLanguage,
-  translatedMessages,
-  needsTranslation,
-  getLanguageDisplayName,
+  translatedMessages: _translatedMessages,
+  needsTranslation: _needsTranslation,
+  getLanguageDisplayName: _getLanguageDisplayName,
   formatTime,
   canDeleteMessage,
   deleteMessage,
   messagesEndRef,
   showParticipantsList,
   isMobileMenuOpen,
-  translateMessage,
-  translating = {},
+  translateMessage: _translateMessage,
+  translating: _translating = {},
   getMessageSenderLabel
 }: MessageListProps) {
   return (
@@ -53,12 +53,6 @@ export default function MessageList({
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >
       {messages.map((message, index) => {
-        // 번역 기능 주석 처리
-        // const needsTrans = needsTranslation(message)
-        // const hasTranslation = translatedMessages[message.id]
-        const needsTrans = false
-        const hasTranslation = false
-        
         // 내 메시지인지 확인 (자신이 보낸 메시지) - 먼저 정의
         const isStaffBubble =
           message.sender_type === 'guide' || message.sender_type === 'admin'
@@ -115,16 +109,6 @@ export default function MessageList({
             
             {/* 메시지 박스와 번역 뱃지를 감싸는 컨테이너 */}
             {(() => {
-              // 번역 뱃지 표시 조건 (번역이 저장되어 있지 않을 때만 표시) - 주석 처리
-              // const showTranslateBadge = translateMessage && 
-              //                           !hasTranslation &&
-              //                           message.message_type === 'text' && 
-              //                           message.message && 
-              //                           typeof message.message === 'string' &&
-              //                           message.message.trim().length > 0 &&
-              //                           !message.message.startsWith('[EN] ')
-              const showTranslateBadge = false
-              
               return (
                 <div className={`flex items-end gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'}`}>
                   {/* 번역 뱃지 (메시지 박스 옆) - 번역이 저장되어 있지 않을 때만 표시 - 주석 처리 */}

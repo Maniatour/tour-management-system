@@ -1,16 +1,13 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useEffect } from 'react'
 import { 
   Bell, 
-  Mail, 
-  Calendar, 
-  AlertTriangle, 
-  CheckCircle, 
+  Calendar,
+  AlertTriangle,
+  CheckCircle,
   Clock,
   XCircle,
-  Eye,
   Send
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -44,7 +41,6 @@ interface DocumentReminderDashboardProps {
 }
 
 export default function DocumentReminderDashboard({ onClose }: DocumentReminderDashboardProps) {
-  const t = useTranslations('documents')
   const { user, userRole } = useAuth()
   
   const [reminders, setReminders] = useState<DocumentReminder[]>([])
@@ -76,13 +72,17 @@ export default function DocumentReminderDashboard({ onClose }: DocumentReminderD
 
       // 관리자가 아닌 경우 자신의 알림만 조회
       if (userRole !== 'admin') {
-        query = query.eq('sent_to_user_id', user?.id)
+        if (!user?.id) {
+          setReminders([])
+          return
+        }
+        query = query.eq('sent_to_user_id', user.id)
       }
 
       const { data, error } = await query
 
       if (error) throw error
-      setReminders(data || [])
+      setReminders((data || []) as DocumentReminder[])
     } catch (error) {
       console.error('알림 로드 오류:', error)
       toast.error('알림을 불러오는 중 오류가 발생했습니다.')
@@ -114,7 +114,7 @@ export default function DocumentReminderDashboard({ onClose }: DocumentReminderD
         .update({
           status: 'sent',
           sent_at: new Date().toISOString(),
-          sent_to_email: reminder.sent_to_email || user?.email
+          sent_to_email: (reminder.sent_to_email ?? user?.email) ?? null,
         })
         .eq('id', reminderId)
 

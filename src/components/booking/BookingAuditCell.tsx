@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { useTranslations } from 'next-intl';
 import type { BookingAuditFields } from '@/lib/bookingAudit';
 import { formatBookingAuditedByLabel } from '@/lib/bookingAudit';

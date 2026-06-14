@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   Sun, 
   Cloud, 
@@ -111,7 +110,6 @@ const checkForRainWarning = (forecast: LocationWeather[]): boolean => {
 }
 
 export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidgetProps) {
-  const t = useTranslations('weather')
   const [weatherData, setWeatherData] = useState<{
     grandCanyon: LocationWeather
     zionCanyon: LocationWeather
@@ -260,7 +258,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
         
         {/* 비 경고 아이콘 */}
         {hasRainWarning && (
-          <CloudRain className="w-4 h-4 text-red-500 animate-pulse" title="7일간 비 예보 있음" />
+          <CloudRain className="w-4 h-4 text-red-500 animate-pulse" aria-label="7일간 비 예보 있음" />
         )}
         
         {/* 위치명과 온도 */}

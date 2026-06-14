@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useEffect } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Calendar, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { DateRangeSelection, DAY_NAMES } from '@/lib/types/dynamic-pricing';
@@ -98,17 +98,6 @@ export const DateRangeSelector = memo(function DateRangeSelector({
       }
     }
   }, [isSelectingRange, startDate, selectedDays, onDateRangeSelect, disableDateSelection]);
-
-  // 입력 모드에서 날짜 변경 핸들러
-  const handleInputDateChange = useCallback(() => {
-    if (startDate && endDate && startDate <= endDate) {
-      onDateRangeSelect({
-        startDate,
-        endDate,
-        selectedDays
-      });
-    }
-  }, [startDate, endDate, selectedDays, onDateRangeSelect]);
 
   // 날짜 포맷팅 함수 (시간대 변환 없이)
   const formatDate = useCallback((dateString: string) => {

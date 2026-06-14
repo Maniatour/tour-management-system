@@ -19,17 +19,17 @@ interface TourStatusModalProps {
 
 export const TourStatusModal: React.FC<TourStatusModalProps> = ({
   isOpen,
-  tour,
+  tour: _tour,
   currentTourStatus,
   currentAssignmentStatus,
   locale,
   onClose,
   onUpdateTourStatus,
   onUpdateAssignmentStatus,
-  getStatusColor,
-  getStatusText,
-  getAssignmentStatusColor,
-  getAssignmentStatusText
+  getStatusColor: _getStatusColor,
+  getStatusText: _getStatusText,
+  getAssignmentStatusColor: _getAssignmentStatusColor,
+  getAssignmentStatusText: _getAssignmentStatusText
 }) => {
   const [selectedTourStatus, setSelectedTourStatus] = useState<string | null>(currentTourStatus)
   const [selectedAssignmentStatus, setSelectedAssignmentStatus] = useState<string | null>(currentAssignmentStatus)

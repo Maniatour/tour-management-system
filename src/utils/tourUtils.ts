@@ -320,10 +320,9 @@ export const getPendingReservations = (tour: any, reservations: any[]) => {
 }
 
 // 그룹별 색상 매핑 함수
-export const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
+export const getGroupColorClasses = (groupId: string, groupName?: string, _optionName?: string) => {
   // 그룹 이름이나 ID에 따라 색상 결정
   const groupNameStr = (groupName || groupId).toLowerCase()
-  const optionNameStr = (optionName || '').toLowerCase()
   
   // 특정 그룹에 대한 색상 매핑
   if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {

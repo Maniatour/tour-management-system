@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
-import { DollarSign, Download, Upload, BarChart3, Filter, Search } from 'lucide-react'
+import { DollarSign, Upload, BarChart3, Filter } from 'lucide-react'
 
 interface ReservationExpenseStats {
   total: number
@@ -20,7 +20,6 @@ export default function ReservationExpensesPage() {
     approved: 0,
     rejected: 0
   })
-  const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [showSyncForm, setShowSyncForm] = useState(false)
@@ -32,7 +31,6 @@ export default function ReservationExpensesPage() {
   // 통계 로드
   const loadStats = async () => {
     try {
-      setLoading(true)
       const response = await fetch('/api/reservation-expenses/sync')
       const result = await response.json()
       
@@ -41,8 +39,6 @@ export default function ReservationExpensesPage() {
       }
     } catch (error) {
       console.error('Error loading stats:', error)
-    } finally {
-      setLoading(false)
     }
   }
 

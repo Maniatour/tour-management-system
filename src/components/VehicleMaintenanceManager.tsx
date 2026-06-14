@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
@@ -244,7 +244,7 @@ export default function VehicleMaintenanceManager() {
       vehicle_number: vehicle.vehicle_number,
       vehicle_type: vehicle.vehicle_type,
       vin: vehicle.vin,
-      nick: vehicle.nick,
+      nick: (vehicle as Vehicle & { nick?: string | null }).nick ?? null,
       engine_oil_change_cycle: vehicle.engine_oil_change_cycle,
       maintenance_duty_preset: vehicle.maintenance_duty_preset,
       fuel_type: vehicle.fuel_type,

@@ -14,10 +14,9 @@ export type BalanceEnvelopeLine = {
   subtotal: number
 }
 
-const RESIDENT_LINE_LABELS: Record<
-  (typeof RESIDENT_FEE_SUM_KEYS)[number],
-  { ko: string; en: string }
-> = {
+const RESIDENT_LINE_LABELS: Record<ResidentLineKey, { ko: string; en: string }> = {
+  undecided: { ko: '미정', en: 'undecided' },
+  us_resident: { ko: '미국 거주자', en: 'US resident' },
   non_resident: { ko: '비 거주자', en: 'non-resident' },
   non_resident_under_16: { ko: '비 거주자 (미성년)', en: 'non-resident (under 16)' },
   non_resident_with_pass: { ko: '비 거주자 (패스보유)', en: 'non-resident (w/ pass)' },
@@ -96,7 +95,7 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
   } = input
 
   const amounts = residentAmountsFromCounts(residentCounts, residentStatusAmounts)
-  const { baseUsd, residentFeesUsd } = splitNotIncludedForDisplay(
+  const { baseUsd } = splitNotIncludedForDisplay(
     0,
     0,
     notIncludedPerPerson,

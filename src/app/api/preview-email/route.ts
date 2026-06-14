@@ -130,16 +130,14 @@ export async function POST(request: NextRequest) {
     // reservation 객체에 필요한 필드 추가 (generateEmailContent가 필요로 함)
     // 데이터베이스 스키마: adults, child, infant (단수형)
     // generateEmailContent 기대: adults, children, infants (복수형)
+    const reservationExtra = reservation as Record<string, unknown>
     const reservationForEmail = {
       ...reservation,
       customer_name: customer.name,
-      // 인원 필드 매핑 (child → children, infant → infants)
       adults: reservation.adults ?? 0,
-      children: reservation.child ?? reservation.children ?? 0,
-      infants: reservation.infant ?? reservation.infants ?? 0,
-      // total_price는 reservation_pricing 테이블에 있을 수 있으므로 일단 0으로 설정
-      // 실제로는 reservation_pricing에서 가져와야 할 수도 있음
-      total_price: reservation.total_price ?? 0
+      children: reservation.child ?? (reservationExtra.children as number | undefined) ?? 0,
+      infants: reservation.infant ?? (reservationExtra.infants as number | undefined) ?? 0,
+      total_price: (reservationExtra.total_price as number | undefined) ?? 0,
     }
 
     // 가격 정보 조회
@@ -153,8 +151,13 @@ export async function POST(request: NextRequest) {
 
     // 상품 상세 정보 (채널·언어·variant 일치 행 — 리뉴얼 필드 포함 전체 컬럼)
     const channelsLookupClient = supabaseAdmin ?? supabase
+    const productId = reservation.product_id
+    if (!productId) {
+      return NextResponse.json({ error: '상품 ID가 없습니다.' }, { status: 400 })
+    }
+
     const productDetails = await fetchProductDetailsForReservationEmail(emailRouteDb, {
-      productId: reservation.product_id,
+      productId,
       languageCode,
       channelId: reservation.channel_id ?? null,
       variantKey: (reservation as { variant_key?: string }).variant_key ?? 'default',
@@ -224,7 +227,7 @@ export async function POST(request: NextRequest) {
     const { data: schedulesData } = await emailRouteDb
       .from('product_schedules')
       .select('id, day_number, start_time, end_time, title_ko, title_en, description_ko, description_en, show_to_customers, order_index')
-      .eq('product_id', reservation.product_id)
+      .eq('product_id', productId)
       .eq('show_to_customers', true)
       .order('day_number', { ascending: true })
       .order('order_index', { ascending: true })
@@ -240,7 +243,7 @@ export async function POST(request: NextRequest) {
         .eq('id', reservation.tour_id)
         .maybeSingle()
       
-      tourStatus = tourData?.tour_status || tourData?.status || reservation.status
+      tourStatus = tourData?.tour_status || reservation.status
 
       // Tour Details 조회 (가이드, 어시스턴트, 차량 정보)
       if (tourData) {

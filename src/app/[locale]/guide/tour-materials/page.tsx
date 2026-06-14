@@ -68,7 +68,7 @@ export default function GuideTourMaterialsPage() {
         .order('created_at', { ascending: false })
 
       if (materialsError) throw materialsError
-      setMaterials(materialsData || [])
+      setMaterials((materialsData || []) as TourMaterial[])
 
     } catch (error) {
       console.error('데이터 로드 오류:', error)
@@ -199,7 +199,7 @@ export default function GuideTourMaterialsPage() {
                                   playTrack({
                                     src: getFileUrl(material.file_path),
                                     title: material.title,
-                                    duration: material.duration || undefined
+                                    ...(material.duration != null ? { duration: material.duration } : {}),
                                   })
                                 }}
                                 className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${

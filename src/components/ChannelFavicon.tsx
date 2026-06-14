@@ -1,7 +1,5 @@
 'use client'
 
-import React from 'react'
-
 interface ChannelFaviconProps {
   channelId: string
   channels: Array<{ id: string; name: string; favicon_url?: string }> | null

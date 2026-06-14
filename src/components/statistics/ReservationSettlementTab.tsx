@@ -1,15 +1,13 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import Link from 'next/link'
 import { 
   BarChart3, 
   TrendingUp, 
   DollarSign, 
-  Users, 
   Calendar,
   PieChart,
-  LineChart,
   Download,
   Eye,
   ChevronDown,
@@ -20,7 +18,7 @@ import {
 import { useReservationData } from '@/hooks/useReservationData'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import AdvancedCharts from './AdvancedCharts'
-import { generateTourStatisticsPDF, generateChartPDF } from '@/utils/pdfExport'
+import { generateChartPDF } from '@/utils/pdfExport'
 import { supabase } from '@/lib/supabase'
 import { isTicketBookingActiveForReports } from '@/lib/bookingSettlement'
 
@@ -32,6 +30,7 @@ interface ReservationSettlementData {
   averageProfitPerReservation: number
   reservationStats: Array<{
     reservationId: string
+    tourId: string
     reservationDate: string
     productName: string
     subCategory: string
@@ -125,7 +124,7 @@ async function getReservationFinancialStats(reservationId: string) {
     }
 
     // 예약 가격 정보 조회
-    const { data: pricing, error: pricingError } = await supabase
+    const { data: pricing } = await supabase
       .from('reservation_pricing')
       .select('total_price')
       .eq('reservation_id', reservationId)
@@ -146,7 +145,8 @@ async function getReservationFinancialStats(reservationId: string) {
     const totalRevenue = pricing?.total_price || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const netProfit = totalRevenue - totalExpenses
-    const totalPeople = reservation.adults + reservation.child + reservation.infant
+    const totalPeople =
+      (reservation.adults ?? 0) + (reservation.child ?? 0) + (reservation.infant ?? 0)
 
     const result = {
       reservationId,
@@ -180,8 +180,6 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
   const {
     reservations,
     products,
-    customers,
-    channels,
     loading
   } = useReservationData()
 
@@ -279,14 +277,14 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
       }
 
       // 예약 가격 정보 조회
-      const { data: pricing, error: pricingError } = await supabase
+      const { data: pricing } = await supabase
         .from('reservation_pricing')
         .select('*')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
       // 예약 지출 상세 조회
-      const { data: expenses, error: expensesError } = await supabase
+      const { data: expenses } = await supabase
         .from('reservation_expenses')
         .select('*')
         .eq('reservation_id', reservationId)
@@ -331,6 +329,8 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
       setIsCalculating(true)
 
       try {
+         const productList = products ?? []
+
          // 날짜 필터링된 예약들 (Mania Tour가 아닌 것만)
          const filteredReservations = reservations.filter(reservation => {
            const reservationDate = new Date(reservation.tourDate)
@@ -341,7 +341,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
            const isInDateRange = reservationDate >= startDate && reservationDate <= endDate
            
            // Mania Tour가 아닌 것만 필터링
-           const product = products.find(p => p.id === reservation.productId)
+           const product = productList.find(p => p.id === reservation.productId)
            const isNotManiaTour = product?.sub_category !== 'Mania Tour'
            
            return isInDateRange && isNotManiaTour
@@ -352,7 +352,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         // 각 예약별로 정산 통계 계산
         const reservationStatsPromises = filteredReservations.map(async (reservation) => {
           const financialStats = await getReservationFinancialStats(reservation.id)
-          const product = products.find(p => p.id === reservation.productId)
+          const product = productList.find(p => p.id === reservation.productId)
           
            return {
              reservationId: reservation.id,
@@ -374,24 +374,24 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
 
         // 투어별 티켓 비용 조회 후 예약 수만큼 배분하여 지출에 반영
         const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
-        const tourIds = [...new Set(resolvedReservationStats.map((r: { tourId?: string }) => r.tourId).filter(Boolean))] as string[]
+        const tourIds = [...new Set(resolvedReservationStats.map((r) => r.tourId).filter(Boolean))] as string[]
         const ticketCostByTour = new Map<string, number>()
         for (const tourId of tourIds) {
           const { data: tickets } = await supabase
             .from('ticket_bookings')
-            .select('expense, status, deleted_at, deletion_requested_at')
+            .select('expense, status, deletion_requested_at')
             .eq('tour_id', tourId)
             .in('status', TICKET_STATUSES)
           const sum = (tickets || [])
             .filter((t) => isTicketBookingActiveForReports(t))
-            .reduce((s: number, t: { expense?: number }) => s + (t.expense || 0), 0)
+            .reduce((s: number, t) => s + (t.expense ?? 0), 0)
           ticketCostByTour.set(tourId, sum)
         }
         const reservationCountByTour = tourIds.reduce((acc, tid) => {
-          acc[tid] = resolvedReservationStats.filter((r: { tourId?: string }) => r.tourId === tid).length
+          acc[tid] = resolvedReservationStats.filter((r) => r.tourId === tid).length
           return acc
         }, {} as Record<string, number>)
-        resolvedReservationStats = resolvedReservationStats.map((r: { tourId?: string; revenue: number; expenses: number; netProfit: number }) => {
+        resolvedReservationStats = resolvedReservationStats.map((r) => {
           const tourId = r.tourId || ''
           const ticketTotal = tourId ? ticketCostByTour.get(tourId) || 0 : 0
           const count = tourId ? reservationCountByTour[tourId] || 1 : 1
@@ -591,6 +591,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
               <AdvancedCharts
                 data={settlementData.reservationStats.map(reservation => ({
                   name: shortChartLabel(reservation.productName, reservation.reservationDate),
+                  value: reservation.netProfit,
                   revenue: reservation.revenue,
                   expenses: reservation.expenses,
                   profit: reservation.netProfit,
@@ -694,6 +695,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
               <AdvancedCharts
                 data={settlementData.subCategoryStats.map(subCategory => ({
                   name: subCategory.subCategory,
+                  value: subCategory.netProfit,
                   revenue: subCategory.totalRevenue,
                   expenses: subCategory.totalExpenses,
                   profit: subCategory.netProfit,
@@ -847,7 +849,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {settlementData.reservationStats.map((reservation, index) => (
-                <React.Fragment key={index}>
+                <Fragment key={index}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">
                       {formatDate(reservation.reservationDate)}
@@ -972,7 +974,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                       </td>
                     </tr>
                   )}
-                </React.Fragment>
+                </Fragment>
               ))}
             </tbody>
           </table>

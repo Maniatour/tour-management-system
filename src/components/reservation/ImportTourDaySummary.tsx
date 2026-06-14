@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Calendar, Bus, Loader2, Users, UserCircle2, AlertCircle, ExternalLink } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -211,7 +211,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
 
         if (cancelled) return
         setReservationInfoById(nextMap)
-        setTours(enriched)
+        setTours(enriched as TourRow[])
       } catch (e) {
         if (cancelled || isAbortLikeError(e)) return
         setError(e instanceof Error ? e.message : '투어 정보를 불러오지 못했습니다.')

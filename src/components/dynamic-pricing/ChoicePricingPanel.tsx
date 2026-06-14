@@ -1,5 +1,5 @@
-import React, { memo } from 'react';
-import { DollarSign, Percent, ToggleLeft, ToggleRight } from 'lucide-react';
+import { memo } from 'react';
+import { DollarSign, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface ChoiceCombination {
   id: string;

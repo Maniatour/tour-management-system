@@ -1,17 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocale } from 'next-intl'
-import { Upload, Folder, CheckCircle, X, AlertCircle, Loader2 } from 'lucide-react'
+import { Upload, Folder, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 
 interface GoogleDriveReceiptImporterProps {
   onImportComplete?: () => void
 }
 
 export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleDriveReceiptImporterProps) {
-  const supabase = createClientSupabase()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentLocale = useLocale()
   
@@ -20,7 +18,6 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
 
   const [folderId, setFolderId] = useState('')
-  const [loading, setLoading] = useState(false)
   const [loadingList, setLoadingList] = useState(false)
   const [receipts, setReceipts] = useState<any[]>([])
   const [importing, setImporting] = useState(false)
@@ -84,8 +81,8 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
         const errors = []
 
         for (const fileId of fileIds) {
+          const matchedFile = receipts.find(r => r.fileId === fileId)
           try {
-            const file = receipts.find(r => r.fileId === fileId)
             const res = await fetch('/api/google-drive/receipts', {
               method: 'POST',
               headers: {
@@ -93,7 +90,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
               },
               body: JSON.stringify({
                 fileId,
-                expenseId: file?.expenseId,
+                expenseId: matchedFile?.expenseId,
                 submittedBy: currentUserEmail,
               }),
             })
@@ -101,15 +98,15 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
             const data = await res.json()
 
             if (data.success) {
-              results.push({ fileName: file?.fileName, success: true })
+              results.push({ fileName: matchedFile?.fileName, success: true })
             } else {
-              errors.push({ fileName: file?.fileName, error: data.error })
+              errors.push({ fileName: matchedFile?.fileName, error: data.error })
             }
 
             // API 할당량 고려하여 약간의 지연
             await new Promise(resolve => setTimeout(resolve, 500))
           } catch (error: any) {
-            errors.push({ fileName: file?.fileName, error: error.message })
+            errors.push({ fileName: matchedFile?.fileName, error: error.message })
           }
         }
 
@@ -367,7 +364,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
 
           <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
             <div className="divide-y">
-              {receipts.map((receipt, index) => (
+              {receipts.map((receipt) => (
                 <div
                   key={receipt.fileId}
                   className="p-3 hover:bg-gray-50 flex items-center justify-between"

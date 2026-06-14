@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
-import { AlertTriangle, CheckCircle, RefreshCw, Search, Plus, X, ArrowRight } from 'lucide-react'
+import { AlertTriangle, CheckCircle, RefreshCw, Plus, X, ArrowRight } from 'lucide-react'
 
 type Reservation = Database['public']['Tables']['reservations']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -21,6 +21,13 @@ interface MappingRule {
   description: string
 }
 
+interface MigrationResultRow {
+  sourceProductId: string
+  targetProductId: string
+  updatedCount: number
+  optionsAdded?: number
+}
+
 export default function FlexibleProductMappingTool({ onDataUpdated }: FlexibleProductMappingToolProps) {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -33,7 +40,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
   const [mappingRules, setMappingRules] = useState<MappingRule[]>([])
   const [previewMode, setPreviewMode] = useState(true)
-  const [migrationResults, setMigrationResults] = useState<Record<string, unknown>[]>([])
+  const [migrationResults, setMigrationResults] = useState<MigrationResultRow[]>([])
   const [debugMode, setDebugMode] = useState(false)
   const [testMode, setTestMode] = useState(false)
 
@@ -143,8 +150,8 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   }
 
   // 고유한 상품 ID 목록 가져오기
-  const getUniqueProductIds = () => {
-    const productIds = [...new Set(reservations.map(r => r.product_id).filter(Boolean))]
+  const getUniqueProductIds = (): string[] => {
+    const productIds = [...new Set(reservations.map(r => r.product_id).filter((id): id is string => !!id))]
     return productIds.sort()
   }
 
@@ -279,7 +286,12 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
               // 각 배치를 개별 트랜잭션으로 처리
               for (const reservation of batch) {
                 try {
-                  const currentOptions = reservation.selected_options || {}
+                  const rawOptions = reservation.selected_options
+                  const currentOptions = (
+                    typeof rawOptions === 'object' && rawOptions !== null && !Array.isArray(rawOptions)
+                      ? rawOptions
+                      : {}
+                  ) as Record<string, string[]>
                   const newOptions = optionIds.reduce((acc, id) => {
                     // 실제 시스템과 동일한 방식: 옵션 ID를 키로 하고, 선택된 choice ID를 배열로 저장
                     // 선택된 옵션은 옵션 ID 자체를 choice ID로 사용
@@ -826,6 +838,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     }
                     
                     // 2. 데이터베이스에서 직접 조회하여 실제 상태 확인
+                    let dbWithOptionsCount = 0
                     const { data: dbMdgc, error } = await supabase
                       .from('reservations')
                       .select('id, selected_options')
@@ -838,7 +851,8 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                       const dbWithOptions = dbMdgc?.filter(r => 
                         r.selected_options && Object.keys(r.selected_options).length > 0
                       ) || []
-                      console.log(`데이터베이스에서 옵션이 있는 MDGCSUNRISE 예약: ${dbWithOptions.length}개`)
+                      dbWithOptionsCount = dbWithOptions.length
+                      console.log(`데이터베이스에서 옵션이 있는 MDGCSUNRISE 예약: ${dbWithOptionsCount}개`)
                       
                       if (dbWithOptions.length > 0) {
                         console.log('데이터베이스의 옵션이 있는 예약들:', dbWithOptions.slice(0, 3))
@@ -848,7 +862,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     // 3. 로드된 데이터와 데이터베이스 데이터 비교
                     console.log('=== 데이터 일치성 검사 ===')
                     console.log(`로드된 데이터: ${loadedWithOptions.length}개`)
-                    console.log(`데이터베이스: ${dbWithOptions?.length || 0}개`)
+                    console.log(`데이터베이스: ${dbWithOptionsCount}개`)
                   }}
                   className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
                 >
@@ -1058,7 +1072,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     {result.updatedCount}개 업데이트
                   </span>
                 </div>
-                {result.optionsAdded > 0 && (
+                {result.optionsAdded != null && result.optionsAdded > 0 && (
                   <div className="text-xs text-green-700 mt-1">
                     {result.optionsAdded}개 옵션 추가
                   </div>

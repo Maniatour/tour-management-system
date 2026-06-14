@@ -1,14 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { 
-  Plus, 
+  X, 
   Edit, 
   Trash2, 
   Save, 
-  X, 
-  Palette,
-  Tag
+  Plus
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -74,7 +72,21 @@ export default function CategoryManagementModal({
         .order('sort_order', { ascending: true })
 
       if (error) throw error
-      setCategories(data || [])
+      setCategories(
+        (data || []).map((row) => ({
+          id: row.id,
+          name_ko: row.name_ko,
+          name_en: row.name_en,
+          ...(row.description_ko != null ? { description_ko: row.description_ko } : {}),
+          ...(row.description_en != null ? { description_en: row.description_en } : {}),
+          color: row.color ?? '#3B82F6',
+          icon: row.icon ?? 'map-pin',
+          sort_order: row.sort_order ?? 0,
+          is_active: row.is_active ?? true,
+          created_at: row.created_at ?? '',
+          updated_at: row.updated_at ?? '',
+        }))
+      )
     } catch (error) {
       console.error('카테고리 로드 오류:', error)
     } finally {

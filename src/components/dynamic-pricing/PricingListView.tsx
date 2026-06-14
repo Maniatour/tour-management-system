@@ -1,7 +1,7 @@
-import React, { memo, useState, useEffect, useMemo } from 'react';
+import { memo, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { DollarSign, Calendar, Edit, Trash2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
+import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
 import { supabase } from '@/lib/supabase';
 
 interface ChoiceCombination {

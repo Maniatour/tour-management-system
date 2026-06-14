@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
 import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
 
@@ -9,7 +10,7 @@ function normalizedId(params: Promise<{ id: string }> | { id: string }): Promise
 
 // GET: 특정 결제 방법 조회
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
@@ -212,7 +213,7 @@ export async function PUT(
 
     const { data, error } = await supabase
       .from('payment_methods')
-      .update(updateData)
+      .update(updateData as never)
       .eq('id', id)
       .select()
       .maybeSingle()
@@ -381,8 +382,7 @@ export async function PATCH(
         raw === null || raw === undefined || raw === '' ? null : String(raw).trim()
 
       if (faId) {
-        const { data: fa, error: faErr } = await auth.supabase
-          .from('financial_accounts')
+        const { data: fa, error: faErr } = await fromUntypedTable(auth.supabase, 'financial_accounts')
           .select('id')
           .eq('id', faId)
           .maybeSingle()
@@ -403,7 +403,7 @@ export async function PATCH(
 
     const { data, error } = await auth.supabase
       .from('payment_methods')
-      .update(updateData)
+      .update(updateData as never)
       .eq('id', id)
       .select()
       .maybeSingle()
@@ -463,7 +463,7 @@ export async function PATCH(
 
 // DELETE: 특정 결제 방법 삭제
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {

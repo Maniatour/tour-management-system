@@ -16,7 +16,11 @@ export async function POST(request: NextRequest) {
     console.log(`Getting columns for sheet: ${sheetName}`)
     
     // 시트의 컬럼 정보 가져오기
-    const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheetName, 1)
+    const sampleResult = (await getSheetSampleData(spreadsheetId, sheetName, 1)) as {
+      columns?: string[]
+      sampleData?: string[][]
+    }
+    const { columns, sampleData } = sampleResult
     
     return NextResponse.json({
       success: true,

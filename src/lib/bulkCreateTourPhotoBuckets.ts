@@ -58,7 +58,7 @@ export async function bulkCreateFutureTourPhotoBuckets() {
         const folderPath = tour.id
         
         // 폴더가 존재하는지 확인
-        const { data: testFile, error: testError } = await supabase.storage
+        const { error: testError } = await supabase.storage
           .from('tour-photos')
           .list(folderPath, { limit: 1 })
         
@@ -160,7 +160,7 @@ export async function bulkCreateTourPhotoBuckets() {
         const folderPath = tour.id
         
         // 폴더가 존재하는지 확인
-        const { data: testFile, error: testError } = await supabase.storage
+        const { error: testError } = await supabase.storage
           .from('tour-photos')
           .list(folderPath, { limit: 1 })
         
@@ -252,7 +252,7 @@ export async function createIndividualTourBuckets() {
       try {
         const folderPath = tour.id
         
-        const { data: listData, error: listError } = await supabase.storage
+        const { error: listError } = await supabase.storage
           .from('tour-photos')
           .list(folderPath, { limit: 1 })
         

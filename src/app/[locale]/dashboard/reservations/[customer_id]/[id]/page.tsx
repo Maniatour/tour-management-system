@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, X, Car, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   choiceOptionIdsForSupabaseIn,
   UNDECIDED_OPTION_ID,
@@ -1409,8 +1410,7 @@ export default function CustomerReservations() {
 
       // 방법 2: customer_email로 조회
       if (reservationsData.length === 0 && simulatedUser.email) {
-        const { data: emailReservations, error: emailError } = await supabase
-          .from('reservations')
+        const { data: emailReservations, error: emailError } = await fromUntypedTable(supabase, 'reservations')
           .select('*')
           .eq('customer_email', simulatedUser.email)
           .order('tour_date', { ascending: false })
@@ -2139,6 +2139,7 @@ export default function CustomerReservations() {
       case 'confirmed': return t('confirmed')
       case 'completed': return t('completed')
       case 'cancelled': return t('cancelled')
+      case 'no_show': return t('no_show')
       default: return status
     }
   }
@@ -2151,6 +2152,7 @@ export default function CustomerReservations() {
       case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'completed': return 'bg-blue-100 text-blue-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
+      case 'no_show': return 'bg-orange-100 text-orange-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -2275,7 +2277,8 @@ export default function CustomerReservations() {
                 { value: 'pending', label: t('pending') },
                 { value: 'confirmed', label: t('confirmed') },
                 { value: 'completed', label: t('completed') },
-                { value: 'cancelled', label: t('cancelled') }
+                { value: 'cancelled', label: t('cancelled') },
+                { value: 'no_show', label: t('no_show') }
               ].map((option) => (
                 <button
                   key={option.value}

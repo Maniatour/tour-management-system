@@ -5,7 +5,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocale } from 'next-intl'
-import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera, Folder } from 'lucide-react'
+import { X, Receipt, Calendar, Users, User, Car, CheckCircle, Upload, Camera, Folder } from 'lucide-react'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
@@ -29,16 +29,15 @@ interface TourReceiptModalProps {
   locale: string
 }
 
-export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceiptModalProps) {
+export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: TourReceiptModalProps) {
   const supabase = createClientSupabase()
-  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole: _userRole, simulatedUser, isSimulating } = useAuth()
   const currentLocale = useLocale()
   
   // 번역 함수
   const getText = (ko: string, en: string) => currentLocale === 'en' ? en : ko
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [tours, setTours] = useState<ExtendedTour[]>([])
@@ -92,7 +91,6 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       thirtyDaysAgo.setDate(today.getDate() - 30)
       
       const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
-      const todayStr = today.toISOString().split('T')[0]
 
       // 1단계: 투어 기본 정보 가져오기
       const { data: toursData, error } = await supabase
@@ -114,7 +112,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       }
 
       // 2단계: 상품 정보 가져오기
-      const productIds = [...new Set(toursData.map(tour => tour.product_id).filter(Boolean))]
+      const productIds = [...new Set(toursData.map(tour => tour.product_id).filter((id): id is string => !!id))]
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, name_en')
@@ -125,8 +123,8 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       )
 
       // 3단계: 가이드와 어시스턴트 정보 가져오기
-      const guideEmails = [...new Set(toursData.map(tour => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set(toursData.map(tour => tour.assistant_id).filter(Boolean))]
+      const guideEmails = [...new Set(toursData.map(tour => tour.tour_guide_id).filter((id): id is string => !!id))]
+      const assistantEmails = [...new Set(toursData.map(tour => tour.assistant_id).filter((id): id is string => !!id))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
 
       const { data: teamMembers } = await supabase
@@ -159,7 +157,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       for (const batch of reservationBatches) {
         const { data: batchData } = await supabase
           .from('reservations')
-          .select('id, number_of_people')
+          .select('id, total_people')
           .in('id', batch)
         if (batchData) {
           allReservationsData.push(...batchData)
@@ -168,23 +166,23 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       const reservationsData = allReservationsData
 
       const reservationMap = new Map(
-        (reservationsData || []).map(reservation => [reservation.id, reservation.number_of_people || 0])
+        (reservationsData || []).map(reservation => [reservation.id, reservation.total_people ?? 0])
       )
 
       // 5단계: 차량 정보 가져오기
-      const vehicleIds = [...new Set(toursData.map(tour => tour.tour_car_id).filter(Boolean))]
+      const vehicleIds = [...new Set(toursData.map(tour => tour.tour_car_id).filter((id): id is string => !!id))]
       const { data: vehiclesData } = await supabase
         .from('vehicles')
-        .select('id, vehicle_number, nick')
+        .select('id, vehicle_number')
         .in('id', vehicleIds)
 
       const vehicleMap = new Map(
-        (vehiclesData || []).map((vehicle: { id: string; vehicle_number: string | null; nick?: string | null }) => [vehicle.id, (vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || null])
+        (vehiclesData || []).map((vehicle) => [vehicle.id, vehicle.vehicle_number || null])
       )
 
       // 데이터 변환
       const transformedTours = toursData.map(tour => {
-        const product = productMap.get(tour.product_id)
+        const product = tour.product_id ? productMap.get(tour.product_id) : undefined
         
         // assigned_people 계산
         let assignedPeople = 0
@@ -420,8 +418,8 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
           note: formData.note,
           image_url: formData.image_url,
           file_path: formData.file_path,
-          submitted_by: currentUserEmail
-        })
+          submitted_by: currentUserEmail ?? ''
+        } as never)
 
       if (error) {
         console.error('영수증 등록 오류:', error)

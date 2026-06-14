@@ -96,7 +96,6 @@ export class PaymentMethodsSyncService {
       }
 
       // 각 사용자마다 별도 레코드 생성
-      const methodSlug = data.Method.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase()
       const baseId = data.ID.trim()
       
       for (let i = 0; i < users.length; i++) {

@@ -36,7 +36,7 @@ export function isWithinGuidePickupShareWindow(
 }
 
 export function buildPickupCompleteChatMessages(
-  lang: 'ko' | 'en',
+  _lang: 'ko' | 'en',
   completed: { time: string; hotel: string; location: string },
   next: { time: string; hotel: string; location: string } | null
 ): { ko: string; en: string } {

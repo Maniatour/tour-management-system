@@ -1,9 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
-import PerformanceMonitor from '@/components/data-sync/PerformanceMonitor'
+
+const PerformanceMonitor = dynamic(() => import('@/components/data-sync/PerformanceMonitor'), {
+  ssr: false,
+  loading: () => null,
+})
 interface SheetInfo {
   name: string
   rowCount: number
@@ -252,7 +257,6 @@ export default function DataSyncPage() {
         'team_email': ['팀이메일', 'Team Email', '이메일', 'Email'],
         'off_date': ['휴가날짜', 'Off Date', '휴가 날짜', '날짜', 'Date'],
         'reason': ['사유', 'Reason', '휴가사유', '휴가 사유'],
-        'status': ['상태', 'Status'],
         'approved_by': ['승인자', 'Approved By', '승인한 사람'],
         'approved_at': ['승인일시', 'Approved At', '승인 날짜', '승인 시간'],
         // Payment Records 테이블 매핑

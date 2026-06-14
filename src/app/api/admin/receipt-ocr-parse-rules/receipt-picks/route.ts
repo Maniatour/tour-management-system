@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { createSupabaseClientWithToken, supabaseAdmin } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { Database } from '@/lib/database.types'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
 
@@ -74,9 +75,8 @@ async function mayUseServiceRoleForPicks(userEmail: string): Promise<boolean> {
   if (!supabaseAdmin) return false
 
   try {
-    const { data, error } = await supabaseAdmin
-      .from('team')
-      .select('id, is_active')
+    const { data, error } = await fromUntypedTable(supabaseAdmin, 'team')
+      .select('is_active')
       .ilike('email', userEmail.trim())
       .limit(1)
 
@@ -84,8 +84,8 @@ async function mayUseServiceRoleForPicks(userEmail: string): Promise<boolean> {
       console.error('[receipt-picks] team lookup error:', error.message, error.code)
       return false
     }
-    const row = data?.[0]
-    if (!row?.id) return false
+    const row = data?.[0] as { is_active?: boolean | null } | undefined
+    if (!row) return false
     return row.is_active !== false
   } catch (e) {
     console.error('[receipt-picks] team lookup exception:', e)

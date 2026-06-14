@@ -1,12 +1,24 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Landmark, BarChart3, XCircle } from 'lucide-react'
-import StatementReconciliationTab from '@/components/reports/StatementReconciliationTab'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+
+const StatementReconciliationTab = dynamic(
+  () => import('@/components/reports/StatementReconciliationTab'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-24">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      </div>
+    ),
+  }
+)
 
 const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
 

@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import html2pdf from 'html2pdf.js'
+import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 interface PickupScheduleEmailPreviewModalProps {
   isOpen: boolean
@@ -58,6 +60,9 @@ export default function PickupScheduleEmailPreviewModal({
     infants: number | null
     pickupHotel: string | null
     pickupLocation: string | null
+    communicationChannel: string | null
+    channelId: string | null
+    channelName: string | null
   }>>({})
   const [preparationInfoSource, setPreparationInfoSource] = useState<{
     productId: string
@@ -130,6 +135,9 @@ export default function PickupScheduleEmailPreviewModal({
         infants: number | null
         pickupHotel: string | null
         pickupLocation: string | null
+        communicationChannel: string | null
+        channelId: string | null
+        channelName: string | null
       }> = {}
 
       // 모든 예약 ID 수집
@@ -144,11 +152,13 @@ export default function PickupScheduleEmailPreviewModal({
           child: number | null
           infant: number | null
           pickup_hotel: string | null
+          customer_communication_channel: string | null
+          channel_id: string | null
         }
         
         const { data: reservationsData, error: reservationsError } = await supabase
           .from('reservations')
-          .select('id, customer_id, adults, child, infant, pickup_hotel')
+          .select('id, customer_id, adults, child, infant, pickup_hotel, customer_communication_channel, channel_id')
           .in('id', reservationIds)
 
         if (reservationsError) {
@@ -161,7 +171,10 @@ export default function PickupScheduleEmailPreviewModal({
               children: null,
               infants: null,
               pickupHotel: null,
-              pickupLocation: null
+              pickupLocation: null,
+              communicationChannel: null,
+              channelId: null,
+              channelName: null,
             }
           })
           setReservationDetails(details)
@@ -230,6 +243,30 @@ export default function PickupScheduleEmailPreviewModal({
           }
         }
 
+        const channelIds = [...new Set(
+          reservationsTyped
+            .map((r) => r.channel_id)
+            .filter((id): id is string => id !== null)
+        )]
+
+        let channelsMap: Record<string, string> = {}
+        if (channelIds.length > 0) {
+          const { data: channelsData } = await supabase
+            .from('channels')
+            .select('id, name')
+            .in('id', channelIds)
+
+          if (channelsData) {
+            channelsMap = (channelsData as { id: string; name: string }[]).reduce(
+              (acc, channel) => {
+                acc[channel.id] = channel.name
+                return acc
+              },
+              {} as Record<string, string>
+            )
+          }
+        }
+
         // 예약별로 상세 정보 구성
         reservationsTyped.forEach(reservation => {
           const customerName = reservation.customer_id 
@@ -246,7 +283,12 @@ export default function PickupScheduleEmailPreviewModal({
             children: reservation.child || null,
             infants: reservation.infant || null,
             pickupHotel: hotelInfo?.hotel || null,
-            pickupLocation: hotelInfo?.location || null
+            pickupLocation: hotelInfo?.location || null,
+            communicationChannel: reservation.customer_communication_channel || null,
+            channelId: reservation.channel_id || null,
+            channelName: reservation.channel_id
+              ? channelsMap[reservation.channel_id] || null
+              : null,
           }
         })
 
@@ -259,7 +301,10 @@ export default function PickupScheduleEmailPreviewModal({
               children: null,
               infants: null,
               pickupHotel: null,
-              pickupLocation: null
+              pickupLocation: null,
+              communicationChannel: null,
+              channelId: null,
+              channelName: null,
             }
           }
         })
@@ -275,7 +320,10 @@ export default function PickupScheduleEmailPreviewModal({
             children: null,
             infants: null,
             pickupHotel: null,
-            pickupLocation: null
+            pickupLocation: null,
+            communicationChannel: null,
+            channelId: null,
+            channelName: null,
           }
         })
         setReservationDetails(details)
@@ -285,6 +333,59 @@ export default function PickupScheduleEmailPreviewModal({
     fetchReservationDetails()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, reservationIds.join(',')])
+
+  const handleCommunicationChannelChange = useCallback(
+    async (reservationId: string, channel: CustomerCommunicationChannel) => {
+      let previous: string | null = null
+      setReservationDetails((prev) => {
+        previous = prev[reservationId]?.communicationChannel ?? null
+        return {
+          ...prev,
+          [reservationId]: {
+            ...(prev[reservationId] ?? {
+              customerName: 'Unknown',
+              adults: null,
+              children: null,
+              infants: null,
+              pickupHotel: null,
+              pickupLocation: null,
+              channelId: null,
+              channelName: null,
+              communicationChannel: null,
+            }),
+            communicationChannel: channel,
+          },
+        }
+      })
+
+      const { error } = await supabase
+        .from('reservations')
+        .update({ customer_communication_channel: channel })
+        .eq('id', reservationId)
+
+      if (error) {
+        setReservationDetails((prev) => ({
+          ...prev,
+          [reservationId]: {
+            ...(prev[reservationId] ?? {
+              customerName: 'Unknown',
+              adults: null,
+              children: null,
+              infants: null,
+              pickupHotel: null,
+              pickupLocation: null,
+              channelId: null,
+              channelName: null,
+              communicationChannel: null,
+            }),
+            communicationChannel: previous,
+          },
+        }))
+        throw error
+      }
+    },
+    []
+  )
 
   const selectedReservation = selectedReservationId 
     ? reservations.find(r => r.id === selectedReservationId)
@@ -888,9 +989,21 @@ export default function PickupScheduleEmailPreviewModal({
                         </div>
                       </div>
                       
-                      {/* 고객명 */}
-                      <div className="font-semibold text-gray-900 mb-2 truncate">
-                        {details?.customerName || 'Loading...'}
+                      {/* 고객명 + 소통 채널 */}
+                      <div className="flex items-center gap-1.5 mb-2 min-w-0">
+                        <div className="font-semibold text-gray-900 truncate flex-1 min-w-0">
+                          {details?.customerName || 'Loading...'}
+                        </div>
+                        <CustomerCommunicationChannelPicker
+                          compact
+                          align="right"
+                          value={details?.communicationChannel}
+                          channelId={details?.channelId}
+                          channelName={details?.channelName}
+                          onChange={(channel) =>
+                            handleCommunicationChannelChange(reservation.id, channel)
+                          }
+                        />
                       </div>
 
                       {/* 인원 정보 */}

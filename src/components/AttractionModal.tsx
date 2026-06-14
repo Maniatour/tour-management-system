@@ -1,16 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
-import { Database } from '@/lib/database.types'
-import { 
-  X, 
-  MapPin, 
-  Clock,
-  Tag,
-  Globe
-} from 'lucide-react'
+import { X } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface AttractionModalProps {
@@ -21,7 +13,6 @@ interface AttractionModalProps {
 }
 
 export default function AttractionModal({ isOpen, onClose, onSuccess, attractionId }: AttractionModalProps) {
-  const t = useTranslations('admin')
   const supabase = createClientSupabase()
   
   const [loading, setLoading] = useState(false)
@@ -137,7 +128,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
   }
 
   // 모달이 열릴 때 데이터 로드
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen && attractionId) {
       loadAttractionData()
     }

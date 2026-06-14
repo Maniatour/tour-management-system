@@ -1,90 +1,24 @@
 'use client'
 
-import React, { useState } from 'react'
-import Image from 'next/image'
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
+import { useState } from 'react'
+import {
+  Search,
+  Edit,
+  Trash2,
   MapPin,
-  Clock,
   Image as ImageIcon,
-  Globe,
   Settings,
-  Save,
   X,
   HelpCircle,
   BookOpen,
-  Folder,
-  FolderOpen,
-  ChevronRight,
-  ChevronDown,
-  GripVertical
 } from 'lucide-react'
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
-import LocationSearch from '@/components/LocationSearch'
 import LocationPickerModal from '@/components/LocationPickerModal'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
-
-// LocationData 타입 정의
-interface LocationData {
-  name: string
-  address: string
-  latitude: number
-  longitude: number
-  placeId: string
-  googleMapsUrl: string
-  rating?: number
-  userRatingsTotal?: number
-  types?: string[]
-}
-
-// 타입 정의 (계층적 구조로 업데이트)
-interface TourCourseRow {
-  id: string
-  product_id: string | null
-  parent_id: string | null
-  level: number
-  customer_name_ko: string | null
-  customer_name_en: string | null
-  customer_description_ko: string | null
-  customer_description_en: string | null
-  team_name_ko: string | null
-  team_name_en: string | null
-  team_description_ko: string | null
-  team_description_en: string | null
-  internal_note: string | null
-  name_ko: string
-  name_en: string
-  description_ko: string | null
-  description_en: string | null
-  category: string
-  category_id: string | null
-  point_name: string | null
-  location: string | null
-  start_latitude: number | null
-  start_longitude: number | null
-  end_latitude: number | null
-  end_longitude: number | null
-  duration_hours: number
-  difficulty_level: 'easy' | 'medium' | 'hard'
-  price_adult: number | null
-  price_child: number | null
-  price_infant: number | null
-  is_active: boolean
-  created_at: string
-  updated_at: string
-  photos?: TourCoursePhoto[]
-}
-
-interface TourCourse extends TourCourseRow {
-  children?: TourCourse[]
-  parent?: TourCourse
-}
 
 interface TourCoursePhoto {
   id: string
@@ -102,6 +36,45 @@ interface TourCoursePhoto {
   updated_at: string
 }
 
+interface TourCourse {
+  id: string
+  name_ko: string
+  name_en: string
+  team_name_ko?: string | null
+  team_name_en?: string | null
+  customer_name_ko?: string | null
+  customer_name_en?: string | null
+  team_description_ko?: string | null
+  team_description_en?: string | null
+  customer_description_ko?: string | null
+  customer_description_en?: string | null
+  internal_note?: string | null
+  location?: string | null
+  category?: string | null
+  category_id?: string | null
+  point_name?: string | null
+  start_latitude?: number | null
+  start_longitude?: number | null
+  end_latitude?: number | null
+  end_longitude?: number | null
+  duration_hours?: number | null
+  difficulty_level?: 'easy' | 'medium' | 'hard' | null
+  price_adult?: number | null
+  price_child?: number | null
+  price_infant?: number | null
+  is_active: boolean
+  parent_id?: string | null
+  children?: TourCourse[]
+  parent?: TourCourse
+  photos?: TourCoursePhoto[]
+  product_id?: string | null
+  level?: number
+  description_ko?: string | null
+  description_en?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 interface TourCourseCategory {
   id: string
   name_ko: string
@@ -117,6 +90,7 @@ interface TourCourseCategory {
 }
 
 export default function TourCoursesPage() {
+  const t = useTranslations('tourCourses')
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
@@ -124,44 +98,49 @@ export default function TourCoursesPage() {
   const [editingCourse, setEditingCourse] = useState<TourCourse | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showMapModal, setShowMapModal] = useState(false)
-  const [mapModalType, setMapModalType] = useState<'main' | 'start' | 'end'>('main')
   const [showHelpModal, setShowHelpModal] = useState(false)
-  
-  // 트리 관련 상태
+
   const [selectedCourse, setSelectedCourse] = useState<TourCourse | null>(null)
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
 
-  // 데이터 로드
-  const { 
-    data: tourCourses, 
-    loading, 
-    error, 
-    refetch: refetchCourses 
-  } = useOptimizedData<TourCourse>('tour_courses', {
-    select: '*',
-    order: { column: 'created_at', ascending: false }
+  const {
+    data: tourCourses,
+    loading,
+    error,
+    refetch: refetchCourses,
+  } = useOptimizedData<TourCourse[]>({
+    fetchFn: async () => {
+      const { data, error } = await fromUntypedTable(supabase, 'tour_courses')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as TourCourse[]
+    },
+    cacheKey: 'tour_courses',
   })
 
-  const { 
-    data: categories 
-  } = useOptimizedData<TourCourseCategory>('tour_course_categories', {
-    select: '*',
-    order: { column: 'sort_order', ascending: true }
+  const { data: categories } = useOptimizedData<TourCourseCategory[]>({
+    fetchFn: async () => {
+      const { data, error } = await fromUntypedTable(supabase, 'tour_course_categories')
+        .select('*')
+        .order('sort_order', { ascending: true })
+
+      if (error) throw error
+      return (data || []) as TourCourseCategory[]
+    },
+    cacheKey: 'tour_course_categories',
   })
 
-  // 편집 시작
   const startEdit = (course: TourCourse) => {
     setEditingCourse(course)
     setShowEditModal(true)
   }
 
-  // 투어 코스 삭제
   const deleteCourse = async (course: TourCourse) => {
     if (!confirm(`"${course.team_name_ko || course.name_ko}" 투어 코스를 삭제하시겠습니까?`)) return
 
     try {
-      const { error } = await supabase
-        .from('tour_courses')
+      const { error } = await fromUntypedTable(supabase, 'tour_courses')
         .delete()
         .eq('id', course.id)
 
@@ -177,50 +156,23 @@ export default function TourCoursesPage() {
     }
   }
 
-  // 카테고리 선택 콜백
-  const handleCategorySelect = (category: TourCourseCategory) => {
+  const handleCategorySelect = (_category: TourCourseCategory) => {
     // 카테고리 선택 로직 (필요시 구현)
   }
 
-  // 위치 검색 콜백 함수들
-  const handleMainLocationSelect = (location: LocationData) => {
-    // 위치 선택 로직 (필요시 구현)
-  }
-
-  const handleStartLocationSelect = (location: LocationData) => {
-    // 시작 위치 선택 로직 (필요시 구현)
-  }
-
-  const handleEndLocationSelect = (location: LocationData) => {
-    // 종료 위치 선택 로직 (필요시 구현)
-  }
-
-  // 지도 위치 선택 콜백
-  const handleMapLocationSelect = (lat: number, lng: number) => {
+  const handleMapLocationSelect = (_lat: number, _lng: number) => {
     // 지도 위치 선택 로직 (필요시 구현)
   }
 
-  // 트리 노드 토글
-  const toggleNode = (nodeId: string) => {
-    const newExpanded = new Set(expandedNodes)
-    if (newExpanded.has(nodeId)) {
-      newExpanded.delete(nodeId)
-    } else {
-      newExpanded.add(nodeId)
-    }
-    setExpandedNodes(newExpanded)
-  }
-
-  // 계층적 구조 빌드
   const buildHierarchy = (courses: TourCourse[]): TourCourse[] => {
     const courseMap = new Map<string, TourCourse>()
     const rootCourses: TourCourse[] = []
 
-    courses.forEach(course => {
+    courses.forEach((course) => {
       courseMap.set(course.id, { ...course, children: [] })
     })
 
-    courses.forEach(course => {
+    courses.forEach((course) => {
       const courseWithChildren = courseMap.get(course.id)!
       if (course.parent_id) {
         const parent = courseMap.get(course.parent_id)
@@ -236,21 +188,23 @@ export default function TourCoursesPage() {
     return rootCourses
   }
 
-  // 필터링된 코스 목록
-  const filteredCourses = tourCourses?.filter(course => {
-    const matchesSearch = !searchTerm || 
-      course.team_name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.team_name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.customer_name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.customer_name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.name_en.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredCourses =
+    tourCourses?.filter((course) => {
+      const matchesSearch =
+        !searchTerm ||
+        course.team_name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.team_name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.customer_name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.customer_name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        course.name_en.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesCategory = categoryFilter === 'all' || course.category === categoryFilter
-    const matchesDifficulty = difficultyFilter === 'all' || course.difficulty_level === difficultyFilter
+      const matchesCategory = categoryFilter === 'all' || course.category === categoryFilter
+      const matchesDifficulty =
+        difficultyFilter === 'all' || course.difficulty_level === difficultyFilter
 
-    return matchesSearch && matchesCategory && matchesDifficulty
-  }) || []
+      return matchesSearch && matchesCategory && matchesDifficulty
+    }) || []
 
   const hierarchicalCourses = buildHierarchy(filteredCourses)
 
@@ -292,7 +246,6 @@ export default function TourCoursesPage() {
         </div>
       </div>
 
-      {/* 검색 및 필터 */}
       <div className="mb-6 space-y-4">
         <div className="flex gap-4">
           <div className="flex-1">
@@ -333,7 +286,6 @@ export default function TourCoursesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 좌측 트리 패널 */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
@@ -352,9 +304,7 @@ export default function TourCoursesPage() {
                               {course.team_name_ko || course.name_ko}
                             </div>
                             {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                              <div className="text-sm text-gray-500">
-                                {course.team_name_en}
-                              </div>
+                              <div className="text-sm text-gray-500">{course.team_name_en}</div>
                             )}
                           </div>
                         </div>
@@ -388,7 +338,6 @@ export default function TourCoursesPage() {
           </div>
         </div>
 
-        {/* 우측 상세 패널 */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
@@ -402,9 +351,7 @@ export default function TourCoursesPage() {
                       {selectedCourse.team_name_ko || selectedCourse.name_ko}
                     </h3>
                     {selectedCourse.team_name_en && (
-                      <p className="text-sm text-gray-500">
-                        {selectedCourse.team_name_en}
-                      </p>
+                      <p className="text-sm text-gray-500">{selectedCourse.team_name_en}</p>
                     )}
                   </div>
                   {selectedCourse.location && (
@@ -439,7 +386,6 @@ export default function TourCoursesPage() {
         </div>
       </div>
 
-      {/* 편집 모달 */}
       <TourCourseEditModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -451,7 +397,6 @@ export default function TourCoursesPage() {
         }}
       />
 
-      {/* 카테고리 관리 모달 */}
       <CategoryManagementModal
         isOpen={showCategoryModal}
         onClose={() => setShowCategoryModal(false)}
@@ -459,17 +404,15 @@ export default function TourCoursesPage() {
         selectedCategoryId=""
       />
 
-      {/* 지도 선택 모달 */}
       {showMapModal && (
         <LocationPickerModal
-          currentLat={undefined}
-          currentLng={undefined}
+          currentLat={0}
+          currentLng={0}
           onLocationSelect={handleMapLocationSelect}
           onClose={() => setShowMapModal(false)}
         />
       )}
 
-      {/* 업데이트 가이드 모달 */}
       {showHelpModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">

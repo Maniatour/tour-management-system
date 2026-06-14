@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 /**
  * 기존 테이블의 payment_method 값들을 payment_methods 테이블로 마이그레이션
@@ -21,8 +22,7 @@ export class PaymentMethodMigration {
 
       for (const table of tables) {
         try {
-          const { data, error } = await supabase
-            .from(table)
+          const { data, error } = await fromUntypedTable(supabase, table)
             .select('payment_method')
             .not('payment_method', 'is', null)
 

@@ -1,12 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations } from 'next-intl'
-import { CheckCircle, Circle, AlertCircle, MessageSquare, Plus, X, Calendar, User, Clock } from 'lucide-react'
+import { CheckCircle, Circle, AlertCircle, MessageSquare, Plus, Calendar, User, Clock } from 'lucide-react'
 import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
 import { audiencesForTeamMember } from '@/lib/opTodoSchedule'
 
@@ -15,18 +15,15 @@ type Announcement = Database['public']['Tables']['team_announcements']['Row']
 type Issue = Database['public']['Tables']['issues']['Row']
 
 export default function GuideTeamBoard() {
-  const router = useRouter()
   const params = useParams()
   const locale = params.locale as string
   const supabase = createClientSupabase()
-  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('guide')
   
   // 번역 함수
   const getText = (ko: string, en: string) => locale === 'en' ? en : ko
   
-  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [todos, setTodos] = useState<Todo[]>([])
@@ -87,7 +84,10 @@ export default function GuideTeamBoard() {
         return
       }
 
-      setTeamMembers(data || [])
+      setTeamMembers((data || []).map((member) => ({
+        ...member,
+        is_active: member.is_active ?? true,
+      })))
     } catch (error) {
       console.error('Error loading team members:', error)
     }
@@ -615,7 +615,7 @@ export default function GuideTeamBoard() {
                             {issue.reported_by}
                             <span className="mx-2">•</span>
                             <Clock className="w-3 h-3 mr-1" />
-                            {new Date(issue.created_at).toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR')}
+                            {issue.created_at ? new Date(issue.created_at).toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR') : '-'}
                             <span className="mx-2">•</span>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               issue.status === 'open' ? 'bg-red-100 text-red-600' :

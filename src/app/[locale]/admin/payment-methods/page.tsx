@@ -2,23 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
 import PaymentMethodManager from '@/components/PaymentMethodManager'
 import { 
   CreditCard, 
-  Download, 
   Upload, 
   BarChart3, 
-  Filter, 
-  Search, 
   DollarSign,
-  Users,
   AlertTriangle,
   CheckCircle,
-  XCircle,
-  Clock,
-  TrendingUp,
-  PieChart
 } from 'lucide-react'
 
 interface PaymentMethodStats {
@@ -41,7 +32,6 @@ interface PaymentMethodStats {
 export default function PaymentMethodsPage() {
   const searchParams = useSearchParams()
   const filterUserEmail = searchParams.get('user_email')?.trim() || undefined
-  const t = useTranslations('paymentMethod')
   const [stats, setStats] = useState<PaymentMethodStats>({
     total: 0,
     active: 0,
@@ -52,7 +42,7 @@ export default function PaymentMethodsPage() {
     totalLimit: 0,
     totalUsage: 0
   })
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [showSyncForm, setShowSyncForm] = useState(false)
@@ -344,7 +334,7 @@ export default function PaymentMethodsPage() {
       {/* 결제 방법 관리 컴포넌트 */}
       <div className="bg-white rounded-lg shadow">
         <div className="p-3 sm:p-4 lg:p-6">
-          <PaymentMethodManager userEmail={filterUserEmail} />
+          <PaymentMethodManager {...(filterUserEmail ? { userEmail: filterUserEmail } : {})} />
         </div>
       </div>
     </div>

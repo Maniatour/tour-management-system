@@ -8,8 +8,8 @@ import dayjs from 'dayjs'
 interface TeamMember {
   email: string
   name_ko: string
-  position: string
-  is_active: boolean
+  position: string | null
+  is_active: boolean | null
 }
 
 interface OffDateItem {

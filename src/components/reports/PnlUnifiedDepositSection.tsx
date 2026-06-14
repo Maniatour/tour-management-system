@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { ArrowDownCircle } from 'lucide-react'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
@@ -37,6 +37,15 @@ import type {
   PnlStatementInflowTotals,
 } from '@/components/reports/PnlUnifiedNetProfitSection'
 
+export type PnlDepositExportSnapshot = {
+  monthlyCells: Record<string, Record<string, number>>
+  rowTotals: Record<string, number>
+  netColTotals: Record<string, number>
+  netTotal: number
+  statementInflowMonthly: Record<string, number>
+  statementInflowTotal: number
+}
+
 interface PnlUnifiedDepositSectionProps {
   dateRange: { start: string; end: string }
   onLoadingChange?: (loading: boolean) => void
@@ -47,6 +56,7 @@ interface PnlUnifiedDepositSectionProps {
   onCashDepositTotalsReady?: (totals: PnlCashBucketTotals) => void
   onCashRefundTotalsReady?: (totals: PnlCashBucketTotals) => void
   onRegisterOpenCashPaymentDetail?: (fn: (drill: PnlCashPaymentDrill) => void) => void
+  onExportSnapshotReady?: (snapshot: PnlDepositExportSnapshot) => void
 }
 
 function bucketKeysInGroup(tableRows: PnlDepositTableRow[], groupIndex: number): PnlDepositBucketKey[] {
@@ -69,6 +79,7 @@ export default function PnlUnifiedDepositSection({
   onCashDepositTotalsReady,
   onCashRefundTotalsReady,
   onRegisterOpenCashPaymentDetail,
+  onExportSnapshotReady,
 }: PnlUnifiedDepositSectionProps) {
   const locale = useLocale()
   const [loading, setLoading] = useState(true)
@@ -263,6 +274,27 @@ export default function PnlUnifiedDepositSection({
     if (loading) return
     onStatementInflowDetailLinesReady?.(statementInflowDetailLines)
   }, [loading, statementInflowDetailLines, onStatementInflowDetailLinesReady])
+
+  useEffect(() => {
+    if (loading || !onExportSnapshotReady) return
+    onExportSnapshotReady({
+      monthlyCells,
+      rowTotals,
+      netColTotals,
+      netTotal,
+      statementInflowMonthly,
+      statementInflowTotal,
+    })
+  }, [
+    loading,
+    monthlyCells,
+    rowTotals,
+    netColTotals,
+    netTotal,
+    statementInflowMonthly,
+    statementInflowTotal,
+    onExportSnapshotReady,
+  ])
 
   if (loading) {
     return (

@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { UtensilsCrossed, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useTranslations } from 'next-intl'
 import {
   lasVegasTodayYmd,
@@ -76,8 +77,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
 
   const loadMealsForDate = useCallback(
     async (d: string) => {
-      const { data, error: err } = await supabase
-        .from('office_meal_log')
+      const { data, error: err } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email')
         .eq('meal_date', d)
       if (err) {
@@ -102,8 +102,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     if (!from || !to) return
     setRangeLoading(true)
     try {
-      const { data, error: err } = await supabase
-        .from('office_meal_log')
+      const { data, error: err } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('meal_date, employee_email')
         .gte('meal_date', from)
         .lte('meal_date', to)
@@ -192,14 +191,12 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     setError(null)
     try {
       if (nextChecked) {
-        const { error: upErr } = await supabase
-          .from('office_meal_log')
+        const { error: upErr } = await fromUntypedTable(supabase, 'office_meal_log')
           .upsert({ meal_date: mealDate, employee_email: email }, { onConflict: 'meal_date,employee_email' })
         if (upErr) throw upErr
         setMealEmails((prev) => new Set(prev).add(email))
       } else {
-        const { error: delErr } = await supabase
-          .from('office_meal_log')
+        const { error: delErr } = await fromUntypedTable(supabase, 'office_meal_log')
           .delete()
           .eq('meal_date', mealDate)
           .eq('employee_email', email)

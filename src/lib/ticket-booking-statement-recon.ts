@@ -64,7 +64,7 @@ export async function fetchTicketBookingStatementReconDisplayByBookingId(
       .in('source_id', chunk)
     if (error) throw error
     for (const row of (data || []) as MatchRow[]) {
-      const mid = String(row.id ?? '').trim()
+      void String(row.id ?? '').trim()
       const sid = String(row.source_id ?? '').trim()
       const lid = String(row.statement_line_id ?? '').trim()
       if (sid && lid) matches.push(row)

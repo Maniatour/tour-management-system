@@ -59,10 +59,10 @@ export class NewDynamicPricingService {
       if (data && data.length > 0) {
         const result = data[0];
         return {
-          basePrice: parseFloat(result.base_price) || 0,
-          choicesPrice: parseFloat(result.choices_price) || 0,
-          additionalOptionsPrice: parseFloat(result.additional_options_price) || 0,
-          totalPrice: parseFloat(result.total_price) || 0,
+          basePrice: Number(result.base_price) || 0,
+          choicesPrice: Number(result.choices_price) || 0,
+          additionalOptionsPrice: Number(result.additional_options_price) || 0,
+          totalPrice: Number(result.total_price) || 0,
           calculationMethod: result.calculation_method || 'additive'
         };
       }
@@ -93,15 +93,17 @@ export class NewDynamicPricingService {
     infantPrice: number
   ): Promise<boolean> {
     try {
-      const { data, error } = await supabase.rpc('update_choice_pricing', {
+      const { data, error } = await (
+        supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => ReturnType<typeof supabase.rpc> }
+      ).rpc('update_choice_pricing', {
         p_product_id: productId,
         p_channel_id: channelId,
         p_date: date,
         p_choice_option_id: choiceOptionId,
         p_adult_price: adultPrice,
         p_child_price: childPrice,
-        p_infant_price: infantPrice
-      });
+        p_infant_price: infantPrice,
+      })
 
       if (error) {
         console.error('초이스 가격 업데이트 실패:', error);
@@ -222,7 +224,9 @@ export class NewDynamicPricingService {
       return { combinations: {} };
     }
 
-    const oldFormat = { combinations: {} };
+    const oldFormat: { combinations: Record<string, { adult_price: number; child_price: number; infant_price: number }> } = {
+      combinations: {},
+    };
     Object.entries(newFormat).forEach(([choiceId, choiceData]) => {
       oldFormat.combinations[choiceId] = {
         adult_price: choiceData.adult,

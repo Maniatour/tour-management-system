@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,18 +10,25 @@ import { useAuth } from '@/contexts/AuthContext'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import type { ExpenseStatementReconContext, SimilarStatementLineRow, SimilarStatementLinesMatchMode } from '@/lib/expense-reconciliation-similar-lines'
 import {
+  collectOffsetPairCounterpartLineIds,
   expenseReconciliationAmountTolerance,
   fetchLinkedStatementLineRowsForExpenseSource,
+  fetchSimilarStatementLineRowsByIds,
   fetchSimilarStatementLinesForExpenseRow,
+  fetchStatementLinePairCounterpartsByLineIds,
   fetchStatementLinesForTicketBookingDateProbe,
+  isSimilarStatementLineShownForUnmatchedFilter,
   mergeLinkedAndCandidateRows,
   replaceExpenseReconciliationMatch,
   resolveStatementLineConflictsBeforeLink,
   searchStatementLinesAcrossImports,
   sumMatchedAmountAllocatedToSource,
   unlinkExpenseReconciliationMatch,
-  type StatementLineConflictResolution
+  type StatementLineConflictResolution,
+  type StatementLinePairCounterpartInfo,
 } from '@/lib/expense-reconciliation-similar-lines'
+import { fetchStatementLinePairsForLineIds } from '@/lib/statement-line-pairs'
+import { ArrowLeftRight } from 'lucide-react'
 import {
   fetchLedgerMatchDetails,
   fetchLedgerMatchDetailsBatch,
@@ -34,9 +41,64 @@ import {
   formatTicketBookingTourHeadline,
   type TicketBookingTourEnrichment,
 } from '@/lib/ticket-booking-tour-display'
+import { cn } from '@/lib/utils'
 
 const ACCOUNT_TAB_ALL = '__all__'
 const UNKNOWN_ACCOUNT_TAB_ID = '__unknown_account__'
+
+type StatementStatusFilter = 'unmatched' | 'all'
+
+function rowPassesStatementStatusFilter(
+  r: SimilarStatementLineRow,
+  filter: StatementStatusFilter
+): boolean {
+  if (filter === 'all') return true
+  return isSimilarStatementLineShownForUnmatchedFilter(r)
+}
+
+/** 세그먼트 필터 — 선택·비선택 대비를 크게 */
+function FilterSegmentButton({
+  active,
+  onClick,
+  disabled,
+  children,
+  activeTone,
+}: {
+  active: boolean
+  onClick: () => void
+  disabled?: boolean
+  children: ReactNode
+  activeTone: 'slate' | 'emerald'
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'h-8 min-w-[4.5rem] px-3 text-xs font-semibold rounded-md transition-all border',
+        disabled && 'opacity-50 cursor-not-allowed',
+        active
+          ? activeTone === 'slate'
+            ? 'bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-400/50 ring-offset-1'
+            : 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400/60 ring-offset-1'
+          : activeTone === 'slate'
+            ? 'bg-white text-slate-600 border-transparent hover:bg-white hover:text-slate-900 hover:border-slate-200'
+            : 'bg-white/90 text-emerald-900/75 border-transparent hover:bg-white hover:text-emerald-950 hover:border-emerald-200'
+      )}
+    >
+      {active ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-white" aria-hidden />
+          {children}
+        </span>
+      ) : (
+        children
+      )}
+    </button>
+  )
+}
 
 function accountTabIdForRow(r: SimilarStatementLineRow): string {
   return r.financial_account_id?.trim() || UNKNOWN_ACCOUNT_TAB_ID
@@ -79,7 +141,7 @@ type LedgerMatchDetailLabelBundle = {
 }
 
 function StatementTableLinkedMatchCell({
-  match,
+  match: _match,
   detail,
   labels,
   paymentMethodMap,
@@ -358,6 +420,7 @@ export default function ExpenseStatementSimilarLinesModal({
   const [selectedIdsOrdered, setSelectedIdsOrdered] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [matchMode, setMatchMode] = useState<SimilarStatementLinesMatchMode>('dateProximity')
+  const [statementStatusFilter, setStatementStatusFilter] = useState<StatementStatusFilter>('unmatched')
   const [rowSearch, setRowSearch] = useState('')
   const [searchResultRows, setSearchResultRows] = useState<SimilarStatementLineRow[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -375,6 +438,12 @@ export default function ExpenseStatementSimilarLinesModal({
     () => new Map()
   )
   const [linkedMatchDetailsLoading, setLinkedMatchDetailsLoading] = useState(false)
+  const [showOffsetPairs, setShowOffsetPairs] = useState(false)
+  const [offsetPairsByLineId, setOffsetPairsByLineId] = useState<
+    Map<string, StatementLinePairCounterpartInfo[]>
+  >(() => new Map())
+  const [offsetInjectedRows, setOffsetInjectedRows] = useState<SimilarStatementLineRow[]>([])
+  const [offsetPairsLoading, setOffsetPairsLoading] = useState(false)
 
   const ticketDateProbe = context?.ticketBookingDateProbe
 
@@ -420,10 +489,10 @@ export default function ExpenseStatementSimilarLinesModal({
       })
       const candidatesPromise = probe
         ? fetchStatementLinesForTicketBookingDateProbe(supabase, {
-            submitYmd: probe.submitYmd,
-            checkInYmd: probe.checkInYmd,
-            dayWindow: probe.dayWindow,
-            financialAccountId: probe.financialAccountId,
+            submitYmd: probe.submitYmd ?? null,
+            checkInYmd: probe.checkInYmd ?? null,
+            ...(probe.dayWindow !== undefined ? { dayWindow: probe.dayWindow } : {}),
+            financialAccountId: probe.financialAccountId ?? null,
             ledgerAmount: ctx.amount,
             limit: 400,
           })
@@ -462,6 +531,7 @@ export default function ExpenseStatementSimilarLinesModal({
       setSelectedIdsOrdered([])
       setMessage(null)
       setMatchMode('dateProximity')
+      setStatementStatusFilter('unmatched')
       setRowSearch('')
       setSearchResultRows([])
       setSearchLoading(false)
@@ -472,6 +542,10 @@ export default function ExpenseStatementSimilarLinesModal({
       setSourceAllocatedSum(null)
       appendAmountUserEditedRef.current = false
       setActiveAccountTab(ACCOUNT_TAB_ALL)
+      setShowOffsetPairs(false)
+      setOffsetPairsByLineId(new Map())
+      setOffsetInjectedRows([])
+      setOffsetPairsLoading(false)
     }
   }, [open, contextLoadKey, runLoad])
 
@@ -507,14 +581,31 @@ export default function ExpenseStatementSimilarLinesModal({
   const searchQueryTrimmed = rowSearch.trim()
   const isSearchActive = searchQueryTrimmed.length > 0
 
-  const sourceRows = useMemo(() => {
+  const baseSourceRows = useMemo(() => {
     if (!isSearchActive) return rows
     return searchResultRows
   }, [rows, searchResultRows, isSearchActive])
 
+  const offsetInjectedLineIdSet = useMemo(
+    () => new Set(offsetInjectedRows.map((r) => r.id)),
+    [offsetInjectedRows]
+  )
+
+  const sourceRows = useMemo(() => {
+    if (!showOffsetPairs || offsetInjectedRows.length === 0) return baseSourceRows
+    const baseIds = new Set(baseSourceRows.map((r) => r.id))
+    const extra = offsetInjectedRows.filter((r) => !baseIds.has(r.id))
+    return [...baseSourceRows, ...extra]
+  }, [baseSourceRows, showOffsetPairs, offsetInjectedRows])
+
+  const statusFilteredSourceRows = useMemo(
+    () => sourceRows.filter((r) => rowPassesStatementStatusFilter(r, statementStatusFilter)),
+    [sourceRows, statementStatusFilter]
+  )
+
   const accountTabs = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>()
-    for (const r of sourceRows) {
+    for (const r of statusFilteredSourceRows) {
       const id = accountTabIdForRow(r)
       const name = r.financial_account_name?.trim() || '—'
       const cur = map.get(id)
@@ -524,19 +615,69 @@ export default function ExpenseStatementSimilarLinesModal({
     return [...map.entries()]
       .map(([id, { name, count }]) => ({ id, name, count }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-  }, [sourceRows])
+  }, [statusFilteredSourceRows])
 
   const visibleRows = useMemo(() => {
-    if (activeAccountTab === ACCOUNT_TAB_ALL) return sourceRows
-    return sourceRows.filter((r) => accountTabIdForRow(r) === activeAccountTab)
-  }, [sourceRows, activeAccountTab])
+    if (activeAccountTab === ACCOUNT_TAB_ALL) return statusFilteredSourceRows
+    return statusFilteredSourceRows.filter((r) => accountTabIdForRow(r) === activeAccountTab)
+  }, [statusFilteredSourceRows, activeAccountTab])
 
   const rowById = useMemo(() => {
     const m = new Map<string, SimilarStatementLineRow>()
     for (const r of rows) m.set(r.id, r)
     for (const r of searchResultRows) m.set(r.id, r)
+    for (const r of offsetInjectedRows) m.set(r.id, r)
     return m
-  }, [rows, searchResultRows])
+  }, [rows, searchResultRows, offsetInjectedRows])
+
+  useEffect(() => {
+    if (!open || !showOffsetPairs) {
+      setOffsetPairsByLineId(new Map())
+      setOffsetInjectedRows([])
+      setOffsetPairsLoading(false)
+      return
+    }
+    const lineIds = baseSourceRows.map((r) => r.id)
+    if (lineIds.length === 0) {
+      setOffsetPairsByLineId(new Map())
+      setOffsetInjectedRows([])
+      setOffsetPairsLoading(false)
+      return
+    }
+    let cancelled = false
+    setOffsetPairsLoading(true)
+    void (async () => {
+      try {
+        const [pairs, counterparts] = await Promise.all([
+          fetchStatementLinePairsForLineIds(supabase, lineIds),
+          fetchStatementLinePairCounterpartsByLineIds(supabase, lineIds),
+        ])
+        if (cancelled) return
+        setOffsetPairsByLineId(counterparts)
+        const injectIds = collectOffsetPairCounterpartLineIds(
+          pairs,
+          lineIds,
+          new Set(lineIds)
+        )
+        if (injectIds.length === 0) {
+          setOffsetInjectedRows([])
+          return
+        }
+        const injected = await fetchSimilarStatementLineRowsByIds(supabase, injectIds)
+        if (!cancelled) setOffsetInjectedRows(injected)
+      } catch {
+        if (!cancelled) {
+          setOffsetPairsByLineId(new Map())
+          setOffsetInjectedRows([])
+        }
+      } finally {
+        if (!cancelled) setOffsetPairsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, showOffsetPairs, baseSourceRows])
 
   useEffect(() => {
     if (!open || !context) return
@@ -1141,7 +1282,7 @@ export default function ExpenseStatementSimilarLinesModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        overlayClassName={nestedElevated ? 'z-[1300]' : undefined}
+        {...(nestedElevated ? { overlayClassName: 'z-[1300]' } : {})}
         className={`max-h-[88vh] w-full max-w-[min(98vw,88rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6${nestedElevated ? ' z-[1300]' : ''}`}
       >
         <DialogHeader className="shrink-0 pr-8">
@@ -1334,6 +1475,26 @@ export default function ExpenseStatementSimilarLinesModal({
                   : t('dateProximityModeHint')}
             </p>
             <p className="text-[11px] text-muted-foreground leading-snug">{t('searchGlobalHint')}</p>
+            <label className="flex items-start gap-2 rounded-md border border-violet-200/80 bg-violet-50/50 px-3 py-2 text-[11px] text-muted-foreground leading-snug cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0 accent-violet-600"
+                checked={showOffsetPairs}
+                onChange={(e) => setShowOffsetPairs(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-violet-950">{t('showOffsetPairsCheckbox')}</span>
+                <span className="block text-violet-900/85">{t('showOffsetPairsHint')}</span>
+              </span>
+            </label>
+            {showOffsetPairs && offsetPairsLoading ? (
+              <p className="text-[11px] text-violet-900/80">{t('offsetPairLoading')}</p>
+            ) : null}
+            {showOffsetPairs && !offsetPairsLoading && offsetInjectedRows.length > 0 ? (
+              <p className="text-[11px] text-violet-900/80 tabular-nums">
+                {t('offsetPairInjectedCount', { count: offsetInjectedRows.length })}
+              </p>
+            ) : null}
             {allowTicketMultiLink ? (
               <p className="text-[11px] text-muted-foreground leading-snug">{t('ticketBookingMultiLinkHint')}</p>
             ) : null}
@@ -1373,36 +1534,75 @@ export default function ExpenseStatementSimilarLinesModal({
         ) : null}
 
         <div className="shrink-0 z-10 bg-white border-b mb-2 space-y-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
               {!ticketDateProbe ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={matchMode === 'dateProximity' ? 'default' : 'outline'}
-                    disabled={loading || !context}
-                    onClick={() => {
-                      setMatchMode('dateProximity')
-                    }}
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 px-0.5">
+                    {t('matchModeGroupLabel')}
+                  </span>
+                  <div
+                    className="inline-flex flex-wrap gap-1 rounded-lg border-2 border-slate-200 bg-slate-100/90 p-1"
+                    role="group"
+                    aria-label={t('matchModeGroupLabel')}
                   >
-                    {t('matchModeDateProximity')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={matchMode === 'amountOnly' ? 'default' : 'outline'}
-                    disabled={loading || !context}
-                    onClick={() => {
-                      setMatchMode('amountOnly')
-                    }}
-                  >
-                    {t('matchModeAmountOnly')}
-                  </Button>
-                </>
+                    <FilterSegmentButton
+                      active={matchMode === 'dateProximity'}
+                      activeTone="slate"
+                      disabled={loading || !context}
+                      onClick={() => setMatchMode('dateProximity')}
+                    >
+                      {t('matchModeDateProximity')}
+                    </FilterSegmentButton>
+                    <FilterSegmentButton
+                      active={matchMode === 'amountOnly'}
+                      activeTone="slate"
+                      disabled={loading || !context}
+                      onClick={() => setMatchMode('amountOnly')}
+                    >
+                      {t('matchModeAmountOnly')}
+                    </FilterSegmentButton>
+                  </div>
+                </div>
               ) : null}
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800/80 px-0.5">
+                  {t('statementStatusGroupLabel')}
+                </span>
+                <div
+                  className="inline-flex flex-wrap gap-1 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-1"
+                  role="group"
+                  aria-label={t('statementStatusGroupLabel')}
+                >
+                  <FilterSegmentButton
+                    active={statementStatusFilter === 'unmatched'}
+                    activeTone="emerald"
+                    disabled={loading || !context}
+                    onClick={() => {
+                      setStatementStatusFilter('unmatched')
+                      setActiveAccountTab(ACCOUNT_TAB_ALL)
+                    }}
+                  >
+                    {t('statementStatusFilterUnmatched')}
+                  </FilterSegmentButton>
+                  <FilterSegmentButton
+                    active={statementStatusFilter === 'all'}
+                    activeTone="emerald"
+                    disabled={loading || !context}
+                    onClick={() => {
+                      setStatementStatusFilter('all')
+                      setActiveAccountTab(ACCOUNT_TAB_ALL)
+                    }}
+                  >
+                    {t('statementStatusFilterAll')}
+                  </FilterSegmentButton>
+                </div>
+                {statementStatusFilter === 'unmatched' ? (
+                  <p className="text-[11px] text-emerald-900/70 px-0.5 leading-snug">{t('statementStatusUnmatchedHint')}</p>
+                ) : null}
+              </div>
             </div>
-            <div className="w-full sm:flex-1 sm:min-w-[10rem] sm:max-w-md">
+            <div className="w-full lg:flex-1 lg:min-w-[10rem] lg:max-w-md">
               <Input
                 type="search"
                 value={rowSearch}
@@ -1430,7 +1630,7 @@ export default function ExpenseStatementSimilarLinesModal({
                     : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                {t('accountTabAll', { count: sourceRows.length })}
+                {t('accountTabAll', { count: statusFilteredSourceRows.length })}
               </button>
               {accountTabs.map((tab) => (
                 <button
@@ -1454,16 +1654,16 @@ export default function ExpenseStatementSimilarLinesModal({
           {!loading && !isSearchActive && rows.length > 0 ? (
             <p className="text-[11px] text-muted-foreground tabular-nums">
               {t('similarCandidatesCount', { count: visibleRows.length })}
-              {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
-                ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+              {activeAccountTab !== ACCOUNT_TAB_ALL && statusFilteredSourceRows.length !== visibleRows.length
+                ? ` · ${t('accountTabFilteredFrom', { total: statusFilteredSourceRows.length })}`
                 : ''}
             </p>
           ) : null}
           {isSearchActive && !searchLoading ? (
             <p className="text-[11px] text-muted-foreground tabular-nums">
               {t('searchResultsCount', { count: visibleRows.length })}
-              {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
-                ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+              {activeAccountTab !== ACCOUNT_TAB_ALL && statusFilteredSourceRows.length !== visibleRows.length
+                ? ` · ${t('accountTabFilteredFrom', { total: statusFilteredSourceRows.length })}`
                 : ''}
             </p>
           ) : null}
@@ -1565,6 +1765,10 @@ export default function ExpenseStatementSimilarLinesModal({
             <div className="p-6 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : !isSearchActive && rows.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{t('empty')}</div>
+          ) : statusFilteredSourceRows.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              {t('statusFilterEmptyUnmatched')}
+            </div>
           ) : visibleRows.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{isSearchActive ? t('noSearchResults') : t('accountTabEmpty')}</div>
           ) : (
@@ -1590,12 +1794,19 @@ export default function ExpenseStatementSimilarLinesModal({
                   <th className="text-right p-2 font-medium whitespace-nowrap">{t('colAllocatedSum')}</th>
                   <th className="text-left p-2 font-medium">{t('colDesc')}</th>
                   <th className="text-left p-2 font-medium">{t('colStatus')}</th>
+                  {showOffsetPairs ? (
+                    <th className="text-left p-2 font-medium min-w-[12rem] whitespace-nowrap">
+                      {t('colOffsetPair')}
+                    </th>
+                  ) : null}
                   <th className="text-left p-2 font-medium min-w-[20rem] w-[28rem]">{t('colLinked')}</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((r) => {
                   const isCurrentLink = linkedLineIdSet.has(r.id)
+                  const isOffsetInjected = offsetInjectedLineIdSet.has(r.id)
+                  const offsetPairs = offsetPairsByLineId.get(r.id) ?? []
                   const sourceAlloc = r.source_linked_amount ?? sourceAllocByLineId.get(r.id)
                   const rowKey = r.reconciliation_match_id || `${r.id}-${sourceAlloc}`
                   return (
@@ -1637,6 +1848,11 @@ export default function ExpenseStatementSimilarLinesModal({
                             >
                               {unlinkingLineId === unlinkRowKey(r) ? t('saving') : t('unlinkStatementMatch')}
                             </button>
+                          </span>
+                        ) : null}
+                        {isOffsetInjected ? (
+                          <span className="inline-flex w-fit rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900">
+                            {t('offsetPairBadge')}
                           </span>
                         ) : null}
                         <span className="truncate">{r.financial_account_name}</span>
@@ -1687,6 +1903,42 @@ export default function ExpenseStatementSimilarLinesModal({
                           ? t('statusPartial')
                           : t('statusMatched')}
                     </td>
+                    {showOffsetPairs ? (
+                      <td className="p-2 text-xs align-top min-w-[12rem]">
+                        {offsetPairsLoading ? (
+                          <span className="text-muted-foreground">{t('offsetPairLoading')}</span>
+                        ) : offsetPairs.length === 0 ? (
+                          <span className="text-muted-foreground">{t('offsetPairNone')}</span>
+                        ) : (
+                          <div className="space-y-1">
+                            {offsetPairs.map((pair) => {
+                              const isInflow =
+                                String(pair.counterpartDirection).toLowerCase() === 'inflow'
+                              return (
+                                <div
+                                  key={pair.pairId}
+                                  className="rounded border border-violet-200/90 bg-violet-50/90 px-2 py-1 text-[10px] leading-snug text-violet-950"
+                                  title={pair.counterpartDescription}
+                                >
+                                  <span className="inline-flex items-center gap-0.5 font-medium">
+                                    <ArrowLeftRight className="h-3 w-3 shrink-0" aria-hidden />
+                                    {isInflow ? t('dirIn') : t('dirOut')}
+                                  </span>
+                                  <span className="tabular-nums ml-1">
+                                    {pair.counterpartPostedDate} · $
+                                    {pair.counterpartAmount.toFixed(2)}
+                                  </span>
+                                  <p className="mt-0.5 text-violet-900/85 truncate">
+                                    {pair.counterpartFinancialAccountName}
+                                  </p>
+                                  <p className="text-violet-900/75 truncate">{pair.counterpartDescription}</p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="p-2 text-xs text-muted-foreground min-w-[20rem] w-[28rem] max-w-[32rem] align-top">
                       {r.existing_matches.length === 0 ? (
                         t('noLinks')

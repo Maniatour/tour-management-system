@@ -75,8 +75,8 @@ export interface TourCourseItem {
   tour_courses: {
     name_ko: string
     name_en: string
-    description_ko: string
-    description_en: string
+    description_ko: string | null
+    description_en: string | null
   }
 }
 
@@ -101,16 +101,18 @@ export async function getTourScheduleData(reservationId: string, language: 'ko' 
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError || !reservation?.product_id) {
       console.error('예약 정보 조회 실패:', reservationError)
       return null
     }
+
+    const productId = reservation.product_id
 
     // 상품의 스케줄 데이터 가져오기
     const { data: schedules, error: scheduleError } = await supabase
       .from('product_schedules')
       .select('*')
-      .eq('product_id', reservation.product_id)
+      .eq('product_id', productId)
       .order('day_number', { ascending: true })
       .order('order_index', { ascending: true })
 
@@ -212,16 +214,18 @@ export async function getTourScheduleHtmlData(reservationId: string, language: '
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError || !reservation?.product_id) {
       console.error('예약 정보 조회 실패:', reservationError)
       return null
     }
+
+    const productId = reservation.product_id
 
     // 상품의 스케줄 데이터 가져오기
     const { data: schedules, error: scheduleError } = await supabase
       .from('product_schedules')
       .select('*')
-      .eq('product_id', reservation.product_id)
+      .eq('product_id', productId)
       .order('day_number', { ascending: true })
       .order('order_index', { ascending: true })
 
@@ -337,7 +341,7 @@ export async function getChannelInclusionsExclusionsData(reservationId: string, 
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError || !reservation?.product_id || !reservation.channel_id) {
       console.error('예약 정보 조회 실패:', {
         error: reservationError,
         message: reservationError?.message || 'Unknown error',
@@ -347,13 +351,16 @@ export async function getChannelInclusionsExclusionsData(reservationId: string, 
       return null
     }
 
+    const productId = reservation.product_id
+    const channelId = reservation.channel_id
+
     // 채널별 포함/불포함 사항 가져오기 (dynamic_pricing 테이블에서)
     // 먼저 테이블 존재 여부 확인
     const { data: channelDataArray, error: channelError } = await supabase
       .from('dynamic_pricing')
       .select('inclusions_ko, exclusions_ko, inclusions_en, exclusions_en')
-      .eq('product_id', reservation.product_id)
-      .eq('channel_id', reservation.channel_id)
+      .eq('product_id', productId)
+      .eq('channel_id', channelId)
       .limit(1) // 여러 행이 반환될 수 있으므로 첫 번째 행만 가져오기
     
     const channelData = channelDataArray && channelDataArray.length > 0 ? channelDataArray[0] : null
@@ -416,10 +423,12 @@ export async function getTourCourseData(reservationId: string, language: 'ko' | 
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError || !reservation?.product_id) {
       console.error('예약 정보 조회 실패:', reservationError)
       return null
     }
+
+    const productId = reservation.product_id
 
     // 상품에 연결된 투어 코스 가져오기
     const { data: productTourCourses, error: coursesError } = await supabase
@@ -433,7 +442,7 @@ export async function getTourCourseData(reservationId: string, language: 'ko' | 
           description_en
         )
       `)
-      .eq('product_id', reservation.product_id)
+      .eq('product_id', productId)
 
     if (coursesError) {
       console.error('투어 코스 조회 실패:', coursesError)
@@ -445,7 +454,7 @@ export async function getTourCourseData(reservationId: string, language: 'ko' | 
     }
 
     // 투어 코스 정보 포맷팅
-    const courseInfo = productTourCourses.map((item: TourCourseItem) => {
+    const courseInfo = productTourCourses.map((item) => {
       const course = item.tour_courses
       const name = language === 'ko' ? course.name_ko : course.name_en
       const description = language === 'ko' ? course.description_ko : course.description_en
@@ -471,12 +480,14 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError || !reservation?.product_id) {
       console.error('예약 정보 조회 실패:', reservationError)
       return null
     }
 
-    console.log(`상품 세부정보 조회 시도: product_id=${reservation.product_id}, language=${language}`)
+    const productId = reservation.product_id
+
+    console.log(`상품 세부정보 조회 시도: product_id=${productId}, language=${language}`)
 
     // 상품의 다국어 세부정보 데이터 가져오기
     // channel_id가 NULL인 공통 정보를 우선적으로 가져오기
@@ -486,7 +497,7 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
     const { data: commonDetails, error: commonError } = await supabase
       .from('product_details_multilingual')
       .select('*')
-      .eq('product_id', reservation.product_id)
+      .eq('product_id', productId)
       .eq('language_code', language)
       .is('channel_id', null)
       .limit(1)
@@ -498,7 +509,7 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
       const { data: channelDetails, error: channelError } = await supabase
         .from('product_details_multilingual')
         .select('*')
-        .eq('product_id', reservation.product_id)
+        .eq('product_id', productId)
         .eq('language_code', language)
         .limit(1)
       
@@ -787,7 +798,7 @@ export async function generateTemplateContext(reservationId: string, language: '
       try {
         const { data: productData, error: productError } = await supabase
           .from('products')
-          .select('name, name_ko, name_en, display_name, category, sub_category, description, duration, base_price, max_participants, status, tags, created_at')
+          .select('id, name, name_ko, name_en, display_name, category, sub_category, description, duration, base_price, max_participants, status, tags, created_at')
           .eq('id', reservation.product_id)
           .single()
         
@@ -798,6 +809,7 @@ export async function generateTemplateContext(reservationId: string, language: '
           console.warn('상품 정보 조회 실패:', productError)
           // 기본 상품 데이터 제공
           product = {
+            id: reservation.product_id,
             name: 'tour-product',
             name_ko: '투어 상품',
             name_en: 'Tour Product',
@@ -994,6 +1006,7 @@ export async function generateTemplateContext(reservationId: string, language: '
     const pickupSchedule = await getPickupScheduleData(reservationId)
 
     // 템플릿 컨텍스트 구성
+    const reservationPricing = reservation as Record<string, number | string | null | undefined>
     const context = {
       reservation: {
         id: reservation.id,
@@ -1013,7 +1026,7 @@ export async function generateTemplateContext(reservationId: string, language: '
         language: customer?.language || 'ko'
       },
       product: {
-        id: product?.id || '',
+        id: ('id' in (product ?? {}) ? (product as { id?: string }).id : reservation.product_id) || '',
         name: product?.name || '',
         name_ko: product?.name_ko || '',
         name_en: product?.name_en || '',
@@ -1043,16 +1056,16 @@ export async function generateTemplateContext(reservationId: string, language: '
         description_en: pickup?.description_en || ''
       },
       pricing: {
-        total: reservation.total_price || 0,
-        total_locale: new Intl.NumberFormat('ko-KR').format(reservation.total_price || 0),
-        base_price: reservation.base_price || 0,
-        adult_price: reservation.adult_price || 0,
-        child_price: reservation.child_price || 0,
-        infant_price: reservation.infant_price || 0,
-        discount_amount: reservation.discount_amount || 0,
-        commission_amount: reservation.commission_amount || 0,
-        tax_amount: reservation.tax_amount || 0,
-        currency: reservation.currency || 'USD'
+        total: Number(reservationPricing.total_price) || 0,
+        total_locale: new Intl.NumberFormat('ko-KR').format(Number(reservationPricing.total_price) || 0),
+        base_price: Number(reservationPricing.base_price) || 0,
+        adult_price: Number(reservationPricing.adult_price) || 0,
+        child_price: Number(reservationPricing.child_price) || 0,
+        infant_price: Number(reservationPricing.infant_price) || 0,
+        discount_amount: Number(reservationPricing.discount_amount) || 0,
+        commission_amount: Number(reservationPricing.commission_amount) || 0,
+        tax_amount: Number(reservationPricing.tax_amount) || 0,
+        currency: String(reservationPricing.currency || 'USD'),
       },
       tour_schedule: tourSchedule || {},
       tour_schedule_html: tourScheduleHtml || {},

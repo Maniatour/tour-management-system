@@ -37,6 +37,11 @@ import {
   summarizePaymentRecordsForBalance,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
+import {
+  isCancelledReservationStatus,
+  isNoShowReservationStatus,
+  isNotIncludedExcludedReservationStatus,
+} from '@/lib/reservationStatus'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -733,13 +738,13 @@ export default function PricingSection({
 
   /** 상품·옵션·불포함·부가비용 기준 총액(Returned 차감 전) */
   const calculateTotalCustomerPaymentGross = useCallback(() => {
-    const cancelled =
-      (formData as { status?: string }).status != null &&
-      ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
+    const excludeNotIncluded = isNotIncludedExcludedReservationStatus(
+      (formData as { status?: string }).status
+    )
     const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
     /** 예약 옵션은 취소 후에도 ① 고객 결제 흐름·총액에 포함(③·④·예약 옵션 패널과 정합) */
     const optionsTotal = Math.max(0, Number(reservationOptionsTotalPrice) || 0)
-    const notIncludedPrice = cancelled ? 0 : notIncludedBreakdown.totalUsd
+    const notIncludedPrice = excludeNotIncluded ? 0 : notIncludedBreakdown.totalUsd
     const additionalCost = formData.additionalCost || 0
     const tax = formData.tax || 0
     const cardFee = formData.cardFee || 0
@@ -782,8 +787,11 @@ export default function PricingSection({
   /** 취소 건: DB/폼 `totalPrice`(total_price)를 고객 총 결제 표시·잔액에 사용 — 전액 환불 후 0 반영 */
   const effectiveTotalCustomerPayment = useCallback((): number => {
     const s = (formData as { status?: string }).status
-    if (s != null && ['cancelled', 'canceled'].includes(String(s).toLowerCase().trim())) {
+    if (isCancelledReservationStatus(s)) {
       return roundUsd2(Math.max(0, Number(formData.totalPrice) || 0))
+    }
+    if (isNoShowReservationStatus(s)) {
+      return calculateTotalCustomerPayment()
     }
     return calculateTotalCustomerPayment()
   }, [(formData as { status?: string }).status, formData.totalPrice, calculateTotalCustomerPayment])
@@ -809,10 +817,7 @@ export default function PricingSection({
 
   /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
   const displayedOnSiteBalance = useCallback(() => {
-    const cancelled =
-      (formData as { status?: string }).status != null &&
-      ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
-    if (cancelled) return 0
+    if (isNotIncludedExcludedReservationStatus((formData as { status?: string }).status)) return 0
     const totalCustomerPayment = effectiveTotalCustomerPayment()
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
     const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
@@ -1130,9 +1135,7 @@ export default function PricingSection({
         // OTA 채널: depositAmount = 고객 총 결제(불포함 제외)·잔액 반영 가능. 채널 결제 금액(③)=할인 후 상품가 기준 자동 설정.
         // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
-          const reservationCancelled =
-            formData.status != null &&
-            ['cancelled', 'canceled'].includes(String(formData.status).toLowerCase().trim())
+          const reservationCancelled = isCancelledReservationStatus(formData.status)
           /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산·DB 저장값·채널 정산 수동) */
           const skipOtaChannelPaymentAuto =
             reservationCancelled ||
@@ -1352,9 +1355,10 @@ export default function PricingSection({
     : 0
 
   const reservationStatusRaw = (formData as { status?: string }).status
-  const isReservationCancelled =
-    reservationStatusRaw != null &&
-    ['cancelled', 'canceled'].includes(String(reservationStatusRaw).toLowerCase().trim())
+  const isReservationCancelled = isCancelledReservationStatus(reservationStatusRaw)
+  const isReservationNoShow = isNoShowReservationStatus(reservationStatusRaw)
+  const isOtaNotIncludedExcludedSettle =
+    !!isOTAChannel && (isReservationCancelled || isReservationNoShow)
   /** 취소 후에도 OTA 부분 정산 시 `commission_amount` 그대로 반영 (미입력이면 0) */
   const effectiveCommissionAmount = Number(formData.commission_amount) || 0
   const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
@@ -1478,7 +1482,7 @@ export default function PricingSection({
       Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
     )
     const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
-    const cancelledOtaSettle = isReservationCancelled && !!isOTAChannel
+    const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal =
       cancelledOtaSettle ? 0 : (Number(formData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(formData.productPriceTotal) || 0) + notIncludedTotal
@@ -1671,7 +1675,7 @@ export default function PricingSection({
       Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
     )
     const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
-    const cancelledOtaSettle = isReservationCancelled && !!isOTAChannel
+    const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle
       ? 0
       : (Number(formData.not_included_price) || 0) * (billingPax || 1)
@@ -1729,6 +1733,8 @@ export default function PricingSection({
     formData.status,
     isOTAChannel,
     isReservationCancelled,
+    isReservationNoShow,
+    isOtaNotIncludedExcludedSettle,
     channelPaymentAmountAfterReturn,
   ])
 
@@ -1810,6 +1816,26 @@ export default function PricingSection({
       }
     }
 
+    if (isReservationNoShow) {
+      const ch = channelSettlementBeforePartnerReturn
+      const rex = Number(reservationExpensesTotal) || 0
+      lines.push({ sign: '+', labelKo: '채널 정산 금액', labelEn: 'Channel settlement', amount: ch })
+      if (Math.abs(rex) > 0.005) {
+        lines.push({
+          sign: rex >= 0 ? '-' : '+',
+          labelKo: '예약 지출 금액',
+          labelEn: 'Reservation expenses',
+          amount: Math.abs(rex),
+        })
+      }
+      const tr = roundUsd2(ch - rex)
+      return {
+        lines,
+        totalRevenue: tr,
+        operatingProfit: roundUsd2(tr - prepTip),
+      }
+    }
+
     const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
       isOTAChannel: !!isOTAChannel,
       isReservationCancelled,
@@ -1825,7 +1851,7 @@ export default function PricingSection({
       omitOtaExtras
 
     /** Self·직판: ① 고객 총 결제(넷) 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
-    if (!isReservationCancelled && !isOTAChannel) {
+    if (!isReservationCancelled && !isReservationNoShow && !isOTAChannel) {
       const selfBase = effectiveTotalCustomerPayment()
       let trSelf = selfBase
       const linesSelf: LedgerLine[] = [
@@ -1904,7 +1930,7 @@ export default function PricingSection({
     }
 
     /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
-    if (!isReservationCancelled) {
+    if (!isNotIncludedExcludedReservationStatus(reservationStatusRaw)) {
       const { baseUsd, residentFeesUsd } = notIncludedBreakdown
       if (baseUsd > 0.005) {
         lines.push({ sign: '+', labelKo: '불포함 (입장권)', labelEn: 'Not included (admission)', amount: baseUsd })
@@ -1999,6 +2025,8 @@ export default function PricingSection({
     }
   }, [
     isReservationCancelled,
+    isReservationNoShow,
+    reservationStatusRaw,
     isOTAChannel,
     isHomepageBooking,
     channelSettlementBeforePartnerReturn,

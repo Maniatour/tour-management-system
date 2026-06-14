@@ -12,7 +12,7 @@ export async function loadTourExpenseReceiptImageBytes(
   const url = params.imageUrl?.trim()
   if (url) {
     try {
-      const imgRes = await fetch(url, { mode: 'cors', cache: 'no-store', signal })
+      const imgRes = await fetch(url, { mode: 'cors', cache: 'no-store', ...(signal ? { signal } : {}) })
       if (imgRes.ok) {
         const mime = imgRes.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg'
         const buffer = await imgRes.arrayBuffer()

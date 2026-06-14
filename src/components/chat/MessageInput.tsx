@@ -6,7 +6,7 @@ import type { SupportedLanguage } from '@/lib/translation'
 
 interface MessageInputProps {
   newMessage: string
-  setNewMessage: (message: string) => void
+  setNewMessage: React.Dispatch<React.SetStateAction<string>>
   sending: boolean
   uploading: boolean
   gettingLocation: boolean

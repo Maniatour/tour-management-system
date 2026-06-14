@@ -486,9 +486,9 @@ export function buildSiteAccessTree(): SiteAccessNode {
     registryHeaderId: h.id,
     menuVisibility: h.visibility,
     crudByRole: crudForHeaderId(h.id),
-    children:
-      h.id === 'hq-reservations'
-        ? [
+    ...(h.id === 'hq-reservations'
+      ? {
+          children: [
             {
               id: 'hq-reservations-view',
               kind: 'tab',
@@ -528,8 +528,9 @@ export function buildSiteAccessTree(): SiteAccessNode {
               menuVisibility: { type: 'always' },
               crudByRole: inferCrudFromDoc({ readGate: 'canViewAdmin', manage: 'canManageReservations' }),
             },
-          ]
-        : undefined,
+          ],
+        }
+      : {}),
   }))
 
   const sidebarPages: SiteAccessNode[] = ADMIN_SIDEBAR_REGISTRY.map((s) => {

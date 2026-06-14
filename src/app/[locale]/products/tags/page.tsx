@@ -210,7 +210,7 @@ export default function ProductTagsPage() {
         
         // 각 상품의 대표사진 가져오기
         const productsWithImages = await Promise.all(
-          (data || []).map(async (product: Product) => {
+          ((data || []) as Product[]).map(async (product) => {
             try {
               // 1. product_media에서 대표사진 찾기
               const { data: mediaData } = await supabase
@@ -266,7 +266,7 @@ export default function ProductTagsPage() {
           }
         })
 
-        setTagCategories(categorizedTags)
+        setTagCategories(categorizedTags as TagCategory[])
       } catch (err) {
         console.error('Error fetching products:', err)
         setError('제품을 불러오는 중 오류가 발생했습니다.')

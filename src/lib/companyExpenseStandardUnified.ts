@@ -149,20 +149,6 @@ function searchBlobForLeaf(
     .toLowerCase()
 }
 
-function searchBlobForRootOnly(root: ExpenseStandardCategoryPickRow): string {
-  const parts = [
-    root.name,
-    root.name_ko,
-    root.id,
-    canonicalPaidForTextFromStandardCategory(root, { language: 'en' }),
-    canonicalPaidForTextFromStandardCategory(root, { language: 'ko' }),
-  ]
-  return parts
-    .filter((p): p is string => Boolean(p && String(p).trim()))
-    .join(' ')
-    .toLowerCase()
-}
-
 /** 부모 헤더 + 자식만 선택. 부모에 자식이 없으면 부모 한 줄만 선택 가능 */
 export function buildUnifiedStandardLeafGroups(
   cats: ExpenseStandardCategoryPickRow[],

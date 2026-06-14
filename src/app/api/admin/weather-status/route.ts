@@ -99,7 +99,10 @@ export async function GET() {
           .from('weather_data')
           .select('location_name, weather_main, temperature, updated_at, date')
           .in('date', windowDates)
-          .in('location_name', [...GOBLIN_LOCATIONS]),
+          .in('location_name', [...GOBLIN_LOCATIONS]) as unknown as Promise<{
+          data: WeatherRow[] | null
+          error: { message?: string } | null
+        }>,
         'weather_window'
       )
       windowRows = res.data as WeatherRow[] | null
@@ -150,7 +153,10 @@ export async function GET() {
           .select('updated_at')
           .order('updated_at', { ascending: false })
           .limit(1)
-          .maybeSingle(),
+          .maybeSingle() as unknown as Promise<{
+          data: { updated_at: string | null } | null
+          error: { message?: string } | null
+        }>,
         'weather_last'
       )
       lastRow = res.data

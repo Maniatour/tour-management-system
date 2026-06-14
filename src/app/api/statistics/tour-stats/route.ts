@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Database } from '@/lib/database.types'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   reservationExcludedFromTourSettlementAggregates,
   sumOperatingProfitForTourPricing,
@@ -103,9 +104,7 @@ export async function GET(request: NextRequest) {
     }
 
     const allTours = toursData || []
-    const validTours = allTours.filter(
-      (t: { tour_status?: string }) => VALID_TOUR_STATUSES.includes(t.tour_status || '')
-    )
+    const validTours = allTours.filter((t) => VALID_TOUR_STATUSES.includes(t.tour_status || ''))
     const rangeDayCount = inclusiveDayCountYmd(start, end)
 
     if (validTours.length === 0) {
@@ -127,18 +126,18 @@ export async function GET(request: NextRequest) {
     }
 
     const tourIds = validTours.map((t: { id: string }) => t.id)
-    const allReservationIds = validTours.flatMap(
-      (t: { reservation_ids?: string[] }) => Array.isArray(t.reservation_ids) ? t.reservation_ids : []
+    const allReservationIds = validTours.flatMap((t) =>
+      Array.isArray(t.reservation_ids) ? t.reservation_ids : []
     )
     const uniqueReservationIds = [...new Set(allReservationIds)].filter(Boolean)
 
     // 2) 예약 일괄 조회
     let reservations: {
       id: string
-      customer_id?: string
-      total_people?: number
-      channel_id?: string
-      status?: string | null
+      customer_id: string | null
+      total_people: number | null
+      channel_id: string
+      status: string | null
     }[] = []
     for (let i = 0; i < uniqueReservationIds.length; i += BATCH) {
       const batch = uniqueReservationIds.slice(i, i + BATCH)
@@ -170,8 +169,9 @@ export async function GET(request: NextRequest) {
         .is('deleted_at', null)
         .in('reservation_id', batch)
       if (data?.length) {
-        data.forEach((row: { reservation_id: string; amount?: number }) => {
+        data.forEach((row) => {
           const id = row.reservation_id
+          if (!id) return
           if (!reservationExpensesMap[id]) reservationExpensesMap[id] = 0
           reservationExpensesMap[id] += row.amount || 0
         })
@@ -187,8 +187,12 @@ export async function GET(request: NextRequest) {
         .select('id, commission_base_price_only')
         .in('id', channelIds)
       if (channels?.length) {
-        channels.forEach((c: { id: string; commission_base_price_only?: boolean }) => {
-          channelMap[c.id] = { commission_base_price_only: c.commission_base_price_only }
+        channels.forEach((c) => {
+          channelMap[c.id] = {
+            ...(c.commission_base_price_only != null
+              ? { commission_base_price_only: c.commission_base_price_only }
+              : {}),
+          }
         })
       }
     }
@@ -204,8 +208,7 @@ export async function GET(request: NextRequest) {
       .is('deleted_at', null)
       .in('tour_id', tourIds)
 
-    const { data: ticketBookingsAll } = await supabase
-      .from('ticket_bookings')
+    const { data: ticketBookingsAll } = await fromUntypedTable(supabase, 'ticket_bookings')
       .select('tour_id, expense, ea, status, deleted_at, deletion_requested_at')
       .in('tour_id', tourIds)
 
@@ -215,7 +218,9 @@ export async function GET(request: NextRequest) {
       .in('tour_id', tourIds)
 
     // 7) 상품명
-    const productIds = [...new Set(validTours.map((t: { product_id?: string }) => t.product_id).filter(Boolean))] as string[]
+    const productIds = [
+      ...new Set(validTours.map((t) => t.product_id).filter((id): id is string => Boolean(id))),
+    ]
     let productMap: Record<string, string> = {}
     if (productIds.length > 0) {
       const { data: products } = await supabase
@@ -223,14 +228,21 @@ export async function GET(request: NextRequest) {
         .select('id, name_ko, name_en, name')
         .in('id', productIds)
       if (products?.length) {
-        products.forEach((p: { id: string; name_ko?: string; name_en?: string; name?: string }) => {
+        products.forEach((p) => {
           productMap[p.id] = p.name_ko || p.name_en || p.name || 'Unknown'
         })
       }
     }
 
     // 8) 비거주자 옵션 비용 (reservation_options + options)
-    let reservationOptionsRows: { reservation_id: string; option_id: string; total_price?: number; ea?: number; price?: number; status?: string }[] = []
+    let reservationOptionsRows: {
+      reservation_id: string | null
+      option_id: string
+      total_price?: number | null
+      ea?: number | null
+      price?: number | null
+      status?: string | null
+    }[] = []
     for (let i = 0; i < uniqueReservationIds.length; i += BATCH) {
       const batch = uniqueReservationIds.slice(i, i + BATCH)
       const { data } = await supabase
@@ -239,7 +251,9 @@ export async function GET(request: NextRequest) {
         .in('reservation_id', batch)
       if (data?.length) reservationOptionsRows = reservationOptionsRows.concat(data)
     }
-    const validOptions = reservationOptionsRows.filter(r => !excludeStatus(r?.status || ''))
+    const validOptions = reservationOptionsRows.filter(
+      (r) => r.reservation_id && !excludeStatus(r?.status || '')
+    )
     const fromFixedId = validOptions
       .filter(r => String(r?.option_id || '').trim() === NON_RESIDENT_OPTION_ID)
       .reduce((sum, r) => sum + (Number(r.total_price) || (Number(r.ea ?? 1) * Number(r.price ?? 0))), 0)
@@ -252,7 +266,7 @@ export async function GET(request: NextRequest) {
           .select('id, name, category')
           .in('id', uniqueOptionIds)
         if (opts?.length) {
-          opts.forEach((o: { id: string; name?: string; category?: string }) => {
+          opts.forEach((o) => {
             const name = (o.name || '').toLowerCase()
             const cat = (o.category || '').toLowerCase()
             const isNr = name.includes('entrance') || name.includes('비거주자') || name.includes('입장료') || cat.includes('entrance') || cat.includes('fee')
@@ -271,7 +285,9 @@ export async function GET(request: NextRequest) {
 
     // 투어별 비거주자 옵션 비용 (클라이언트와 동일: 고정 ID 우선, 없으면 옵션명/카테고리 매칭)
     function getTourNotIncludedPrice(reservationIdsArray: string[], pricingList: ReservationPricingRow[]) {
-      const tourOptions = validOptions.filter(o => reservationIdsArray.includes(o.reservation_id))
+      const tourOptions = validOptions.filter(
+        (o) => o.reservation_id != null && reservationIdsArray.includes(o.reservation_id)
+      )
       const fromFixedId = tourOptions
         .filter(r => String(r?.option_id || '').trim() === NON_RESIDENT_OPTION_ID)
         .reduce((sum, r) => sum + (Number(r.total_price) || (Number(r.ea ?? 1) * Number(r.price ?? 0))), 0)
@@ -308,45 +324,32 @@ export async function GET(request: NextRequest) {
     }> = []
 
     const expensesByTour: Record<string, number> = {}
-    ;(tourExpensesAll || []).forEach((row: { tour_id: string; amount?: number }) => {
-      if (!expensesByTour[row.tour_id]) expensesByTour[row.tour_id] = 0
-      expensesByTour[row.tour_id] += row.amount || 0
+    ;(tourExpensesAll || []).forEach((row) => {
+      const tid = row.tour_id
+      if (!tid) return
+      if (!expensesByTour[tid]) expensesByTour[tid] = 0
+      expensesByTour[tid] += row.amount || 0
     })
     const ticketByTour: Record<string, { cost: number; ea: number }> = {}
-    ;(ticketBookingsAll || []).forEach(
-      (row: {
-        tour_id: string
-        expense?: number
-        ea?: number | string | null
-        status?: string
-        deleted_at?: string | null
-        deletion_requested_at?: string | null
-      }) => {
-        const tid = row.tour_id
-        if (!ticketByTour[tid]) ticketByTour[tid] = { cost: 0, ea: 0 }
-        if (isTicketBookingActiveForReports(row)) {
-          ticketByTour[tid].cost += ticketExpenseForSettlement(row)
-        }
-        if (isTicketBookingEaActiveForReports(row)) {
-          ticketByTour[tid].ea += ticketEaAsNumber(row.ea)
-        }
+    ;(ticketBookingsAll || []).forEach((row) => {
+      const tid = row.tour_id
+      if (!tid) return
+      if (!ticketByTour[tid]) ticketByTour[tid] = { cost: 0, ea: 0 }
+      if (isTicketBookingActiveForReports(row)) {
+        ticketByTour[tid].cost += ticketExpenseForSettlement(row)
       }
-    )
+      if (isTicketBookingEaActiveForReports(row)) {
+        ticketByTour[tid].ea += ticketEaAsNumber(row.ea)
+      }
+    })
     const hotelByTour: Record<string, number> = {}
-    ;(hotelBookingsAll || []).forEach(
-      (row: {
-        tour_id: string
-        total_price?: number
-        unit_price?: number
-        rooms?: number
-        status?: string
-        deletion_requested_at?: string | null
-      }) => {
-        if (!isHotelBookingActiveForReports(row)) return
-        if (!hotelByTour[row.tour_id]) hotelByTour[row.tour_id] = 0
-        hotelByTour[row.tour_id] += hotelAmountForSettlement(row)
-      }
-    )
+    ;(hotelBookingsAll || []).forEach((row) => {
+      if (!isHotelBookingActiveForReports(row)) return
+      const tid = row.tour_id
+      if (!tid) return
+      if (!hotelByTour[tid]) hotelByTour[tid] = 0
+      hotelByTour[tid] += hotelAmountForSettlement(row)
+    })
 
     const reservationStatusById = new Map(reservations.map((r) => [r.id, r.status]))
 
@@ -387,7 +390,7 @@ export async function GET(request: NextRequest) {
       tourStats.push({
         tourId: tid,
         tourDate: tour.tour_date,
-        productName: productMap[tour.product_id] || 'Unknown',
+        productName: productMap[tour.product_id ?? ''] || 'Unknown',
         totalPeople,
         revenue: totalOperatingProfit,
         expenses: totalExpensesWithFeesAndBookings,

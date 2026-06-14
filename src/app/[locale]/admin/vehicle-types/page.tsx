@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
-import { Plus, Edit, Trash2, Car, Users, Settings } from 'lucide-react'
+import { Plus, Edit, Trash2, Car, Users } from 'lucide-react'
 
 interface VehicleType {
   id: string
@@ -58,7 +58,7 @@ export default function VehicleTypesPage() {
         .order('created_at', { ascending: true })
 
       if (error) throw error
-      setVehicleTypes(data || [])
+      setVehicleTypes((data || []) as VehicleType[])
     } catch (error) {
       console.error('차종 목록 조회 오류:', error)
       alert('차종 목록을 불러오는데 실패했습니다.')
@@ -149,7 +149,7 @@ export default function VehicleTypesPage() {
 
         if (error) throw error
         
-        setVehicleTypes(prev => [data, ...prev])
+        setVehicleTypes(prev => [data as VehicleType, ...prev])
         alert('차종이 성공적으로 추가되었습니다.')
       }
       

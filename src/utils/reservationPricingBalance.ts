@@ -5,6 +5,8 @@
  * 라인 총액·옵션 소계: 초이스 판매액은 reservation_options/option_total 로 이전되므로 choices_total 은 합산하지 않음(이중 계산 방지).
  */
 
+import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
+
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
 }
@@ -647,10 +649,8 @@ export function getBalanceAmountForDisplay(
 ): number {
   if (!pricing) return 0
 
-  const st = opts?.reservationStatus
-  const cancelled =
-    st != null && ['cancelled', 'canceled'].includes(String(st).toLowerCase().trim())
-  if (cancelled) return 0
+  const excludeNotIncluded = isNotIncludedExcludedReservationStatus(opts?.reservationStatus)
+  if (excludeNotIncluded) return 0
 
   const optsOnly =
     optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined

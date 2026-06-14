@@ -108,7 +108,11 @@ export default function TicketBookingVendorPartialChangeConfirmModal({
                 <span>
                   <span className="font-medium text-red-700">{isKo ? '수량' : 'Quantity'}</span>
                   <span className="mt-0.5 block tabular-nums text-xs text-gray-600">
-                    {formatQtyArrow(booking)}
+                    {formatQtyArrow({
+                      ea: booking.ea ?? null,
+                      change_status: booking.change_status ?? null,
+                      pending_ea: booking.pending_ea ?? null,
+                    })}
                   </span>
                 </span>
               </label>

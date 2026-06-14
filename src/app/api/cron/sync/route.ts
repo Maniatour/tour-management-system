@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/syncService'
 
 // Vercel Cron Job을 위한 엔드포인트

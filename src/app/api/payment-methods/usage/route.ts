@@ -22,10 +22,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 사용량 업데이트 함수 호출
-    const { error } = await supabase.rpc('update_payment_method_usage', {
+    const { error } = await supabase.rpc('update_payment_method_usage' as never, {
       p_method_id: method_id,
-      p_amount: parseFloat(amount)
-    })
+      p_amount: parseFloat(amount),
+    } as never)
 
     if (error) {
       console.error('Error updating payment method usage:', error)
@@ -133,7 +133,7 @@ export async function PUT(request: NextRequest) {
       functionName = 'reset_daily_usage'
     }
 
-    const { error } = await supabase.rpc(functionName)
+    const { error } = await supabase.rpc(functionName as never)
 
     if (error) {
       console.error(`Error resetting ${reset_type} usage:`, error)

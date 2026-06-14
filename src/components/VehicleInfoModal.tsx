@@ -1,6 +1,5 @@
 'use client'
 
-import React from 'react'
 import { X, Car, Camera } from 'lucide-react'
 import type { SupportedLanguage } from '@/lib/translation'
 

@@ -1,20 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { Database } from '@/lib/database.types'
-import { 
-  X, 
-  Plus, 
-  MapPin, 
-  Globe, 
-  Tag,
-  HelpCircle,
-  AlertCircle,
-  CheckCircle,
-  Clock
-} from 'lucide-react'
+import { X, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 type TourAttraction = Database['public']['Tables']['tour_attractions']['Row']
@@ -27,7 +17,7 @@ interface QuizModalProps {
 }
 
 export default function GuideQuizModal({ isOpen, onClose, onSuccess, quizId }: QuizModalProps) {
-  const t = useTranslations('admin')
+  useTranslations('admin')
   const supabase = createClientSupabase()
   
   const [loading, setLoading] = useState(false)
@@ -222,7 +212,9 @@ export default function GuideQuizModal({ isOpen, onClose, onSuccess, quizId }: Q
         description: data.description || '',
         attraction_id: data.attraction_id || '',
         question: data.question,
-        options: Array.isArray(data.options) ? data.options : ['', '', '', ''],
+        options: Array.isArray(data.options)
+          ? data.options.map((opt) => String(opt ?? ''))
+          : ['', '', '', ''],
         correct_answer: data.correct_answer,
         explanation: data.explanation || '',
         difficulty: data.difficulty || 'medium',

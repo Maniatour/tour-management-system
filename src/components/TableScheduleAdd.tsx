@@ -8,6 +8,7 @@ import Image from 'next/image'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
 import LightRichEditor from './LightRichEditor'
 
@@ -151,14 +152,25 @@ export default function TableScheduleAdd({
     const loadTourCourses = async () => {
       setLoadingTourCourses(true)
       try {
-        const { data, error } = await supabase
-          .from('tour_courses')
+        const { data, error } = await fromUntypedTable(supabase, 'tour_courses')
           .select('id, name_ko, name_en, location, start_latitude, start_longitude, end_latitude, end_longitude, start_google_maps_url, end_google_maps_url, point_name')
           .eq('is_active', true)
           .order('name_ko', { ascending: true })
 
         if (error) throw error
-        setTourCourses(data || [])
+        setTourCourses((data || []) as Array<{
+          id: string
+          name_ko: string
+          name_en: string
+          location: string | null
+          start_latitude: number | null
+          start_longitude: number | null
+          end_latitude: number | null
+          end_longitude: number | null
+          start_google_maps_url: string | null
+          end_google_maps_url: string | null
+          point_name: string | null
+        }>)
       } catch (error) {
         console.error('투어 코스 로드 오류:', error)
       } finally {
@@ -1197,6 +1209,7 @@ export default function TableScheduleAdd({
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
+    return undefined
   }, [showMapModal])
 
   // 모달이 열릴 때 지도 초기화

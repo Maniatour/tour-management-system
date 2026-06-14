@@ -1,12 +1,20 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import { softDeleteExpenseRecord, type ExpenseSoftDeleteTable } from '@/lib/expense-soft-delete'
+import {
+  fetchStatementLinePairsForLineIds,
+  type StatementLinePairRow,
+} from '@/lib/statement-line-pairs'
 
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
 
 /** 입장권 부킹 상세 — 체크인·등록일 기준 명세 후보 조회 ±일 */
 export const TICKET_BOOKING_STATEMENT_DAY_WINDOW = 3
+
+/** 유사 명세·검색 후보 — PNL 제외 줄은 목록에 넣지 않음(이미 연결된 줄 조회는 별도) */
+const SIMILAR_STATEMENT_LINE_SELECT =
+  'id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status'
 
 export type ExpenseReconSourceTable =
   | 'payment_records'
@@ -97,6 +105,34 @@ export type SimilarStatementLineRow = {
   allocated_sum: number
 }
 
+/** 명세 줄에 추가 연결(분할 배정) 가능한 잔여 한도 */
+export function statementLineAllocationRoom(row: {
+  amount: number
+  allocated_sum?: number | null
+}): number {
+  const lineAbs = Math.abs(Number(row.amount ?? 0))
+  const allocated = Math.abs(Number(row.allocated_sum ?? 0))
+  return Math.max(0, lineAbs - allocated)
+}
+
+/**
+ * 유사 명세 «미대조만» 목록 — 완전 미연결 + 아직 배정 여유가 있는 부분 대조 줄.
+ * (한 명세에 여러 지출을 나누어 연결할 때 두 번째 지출도 같은 줄을 고를 수 있게 함)
+ */
+export function isSimilarStatementLineShownForUnmatchedFilter(row: {
+  matched_status: string | null | undefined
+  amount: number
+  allocated_sum?: number | null
+}): boolean {
+  const st = String(row.matched_status ?? '').toLowerCase()
+  if (st === 'unmatched') return true
+  const lineAbs = Math.abs(Number(row.amount ?? 0))
+  const tol = Math.max(0.5, lineAbs * 0.001)
+  const room = statementLineAllocationRoom(row)
+  if (room <= tol) return false
+  return st === 'partial' || st === 'matched'
+}
+
 /** 원장·명세 금액 차이 허용(반올림 등). 금액 동기화 체크박스는 이 범위 안에서만 허용 */
 export function expenseReconciliationAmountTolerance(absLedgerAmount: number): number {
   return Math.max(5, absLedgerAmount * 0.05)
@@ -140,13 +176,12 @@ export async function syncStatementLineMatchedStatus(supabase: SupabaseClient, l
   await supabase.from('statement_lines').update({ matched_status: status }).eq('id', lineId)
 }
 
-/** 명세 대조 «미대조만» 필터·후보: reconciliation_matches 없으면 미대조, 있으면 partial만 미대조 */
+/** 명세 대조 «미대조만» 필터: reconciliation_matches가 없을 때만 미대조(연결·부분대조 줄 제외) */
 export function isStatementLineShownAsUnmatched(
-  matchedStatus: string | null | undefined,
+  _matchedStatus: string | null | undefined,
   activeMatchCount: number
 ): boolean {
-  if (activeMatchCount <= 0) return true
-  return String(matchedStatus ?? '') === 'partial'
+  return activeMatchCount <= 0
 }
 
 /** 매칭은 없는데 matched/partial로 남은 명세 줄 id */
@@ -282,7 +317,6 @@ export async function fetchLinkedStatementLineRowsForExpenseSource(
 ): Promise<LinkedStatementLinesForSource> {
   const { sourceTable, sourceId, dateYmd, ledgerAmount } = params
   const absLedger = Math.abs(ledgerAmount)
-  const tol = amountTolerance(absLedger)
 
   type MatchRow = { id: string; statement_line_id: string; matched_amount: number | string | null }
   const matches: MatchRow[] = []
@@ -565,10 +599,11 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
     const chunk = importIds.slice(i, i + 80)
     let query = supabase
       .from('statement_lines')
-      .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+      .select(SIMILAR_STATEMENT_LINE_SELECT)
       .in('statement_import_id', chunk)
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)
+      .eq('exclude_from_pnl', false)
     if (directionFilter) query = query.eq('direction', directionFilter)
     const { data, error } = await query
     if (error) throw error
@@ -697,9 +732,10 @@ export async function fetchSimilarStatementLinesForExpenseRow(
       let error: { message?: string } | null = null
       const res = await supabase
         .from('statement_lines')
-        .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+        .select(SIMILAR_STATEMENT_LINE_SELECT)
         .in('statement_import_id', chunk)
         .eq('direction', direction)
+        .eq('exclude_from_pnl', false)
         .or(amountOr)
       data = (res.data || []) as Record<string, unknown>[]
       error = res.error
@@ -707,9 +743,10 @@ export async function fetchSimilarStatementLinesForExpenseRow(
       if (error) {
         const resWide = await supabase
           .from('statement_lines')
-          .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+          .select(SIMILAR_STATEMENT_LINE_SELECT)
           .in('statement_import_id', chunk)
           .eq('direction', direction)
+          .eq('exclude_from_pnl', false)
           .limit(4000)
         if (resWide.error) throw resWide.error
         data = ((resWide.data || []) as Record<string, unknown>[]).filter((line) => {
@@ -804,11 +841,12 @@ export async function fetchSimilarStatementLinesForExpenseRow(
     const chunk = importIds.slice(i, i + 80)
     const { data, error } = await supabase
       .from('statement_lines')
-      .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+      .select(SIMILAR_STATEMENT_LINE_SELECT)
       .in('statement_import_id', chunk)
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)
       .eq('direction', direction)
+      .eq('exclude_from_pnl', false)
     if (error) throw error
     rawLines.push(...((data || []) as Record<string, unknown>[]))
   }
@@ -939,8 +977,9 @@ export async function searchStatementLinesAcrossImports(
     const chunk = importIds.slice(i, i + STATEMENT_SEARCH_IMPORT_CHUNK)
     let query = supabase
       .from('statement_lines')
-      .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+      .select(SIMILAR_STATEMENT_LINE_SELECT)
       .in('statement_import_id', chunk)
+      .eq('exclude_from_pnl', false)
       .or(orClause)
     if (params.direction) query = query.eq('direction', params.direction)
     const { data, error } = await query
@@ -965,8 +1004,9 @@ export async function searchStatementLinesAcrossImports(
       const chunk = importIdsByAccountName.slice(i, i + STATEMENT_SEARCH_IMPORT_CHUNK)
       let accountQuery = supabase
         .from('statement_lines')
-        .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+        .select(SIMILAR_STATEMENT_LINE_SELECT)
         .in('statement_import_id', chunk)
+        .eq('exclude_from_pnl', false)
         .limit(120)
       if (params.direction) accountQuery = accountQuery.eq('direction', params.direction)
       const { data, error } = await accountQuery
@@ -1447,4 +1487,173 @@ export async function replaceExpenseReconciliationMatch(
       if (updErr) throw updErr
     }
   }
+}
+
+export type StatementLinePairCounterpartInfo = {
+  pairId: string
+  counterpartLineId: string
+  counterpartPostedDate: string
+  counterpartDirection: string
+  counterpartAmount: number
+  counterpartDescription: string
+  counterpartFinancialAccountName: string
+}
+
+/** 명세 줄 id → 상계(출금·입금 짝) 상대 줄 정보 */
+export async function fetchStatementLinePairCounterpartsByLineIds(
+  supabase: SupabaseClient,
+  lineIds: string[]
+): Promise<Map<string, StatementLinePairCounterpartInfo[]>> {
+  const ids = [...new Set(lineIds.filter(Boolean))]
+  const out = new Map<string, StatementLinePairCounterpartInfo[]>()
+  if (ids.length === 0) return out
+
+  const pairs = await fetchStatementLinePairsForLineIds(supabase, ids)
+  if (pairs.length === 0) return out
+
+  const counterpartIds = new Set<string>()
+  for (const p of pairs) {
+    for (const lid of ids) {
+      const otherId =
+        p.outflow_line_id === lid ? p.inflow_line_id : p.inflow_line_id === lid ? p.outflow_line_id : null
+      if (otherId) counterpartIds.add(otherId)
+    }
+  }
+
+  const counterpartRows = await fetchSimilarStatementLineRowsByIds(supabase, [...counterpartIds])
+  const counterpartById = new Map(counterpartRows.map((r) => [r.id, r]))
+
+  for (const p of pairs) {
+    for (const lid of [p.outflow_line_id, p.inflow_line_id]) {
+      if (!ids.includes(lid)) continue
+      const otherId = p.outflow_line_id === lid ? p.inflow_line_id : p.outflow_line_id
+      const other = counterpartById.get(otherId)
+      const info: StatementLinePairCounterpartInfo = {
+        pairId: p.id,
+        counterpartLineId: otherId,
+        counterpartPostedDate: other?.posted_date ?? '—',
+        counterpartDirection: other?.direction ?? '',
+        counterpartAmount: other ? Math.abs(Number(other.amount)) : 0,
+        counterpartDescription: other?.description ?? otherId.slice(0, 8) + '…',
+        counterpartFinancialAccountName: other?.financial_account_name ?? '—',
+      }
+      const arr = out.get(lid) ?? []
+      arr.push(info)
+      out.set(lid, arr)
+    }
+  }
+
+  return out
+}
+
+/** id 목록으로 명세 줄을 SimilarStatementLineRow 형태로 조회 */
+export async function fetchSimilarStatementLineRowsByIds(
+  supabase: SupabaseClient,
+  lineIds: string[]
+): Promise<SimilarStatementLineRow[]> {
+  const ids = [...new Set(lineIds.filter(Boolean))]
+  if (ids.length === 0) return []
+
+  type LineRow = {
+    id: string
+    statement_import_id: string | null
+    posted_date: string | null
+    amount: number | string | null
+    direction: string | null
+    description: string | null
+    merchant: string | null
+    matched_status: string | null
+  }
+  const lineById = new Map<string, LineRow>()
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('statement_lines')
+      .select(
+        'id, statement_import_id, posted_date, amount, direction, description, merchant, matched_status'
+      )
+      .in('id', chunk)
+      .eq('exclude_from_pnl', false)
+    if (error) throw error
+    for (const line of (data || []) as LineRow[]) {
+      if (line.id) lineById.set(line.id, line)
+    }
+  }
+
+  const importIds = [
+    ...new Set(
+      [...lineById.values()]
+        .map((l) => String(l.statement_import_id ?? '').trim())
+        .filter(Boolean)
+    ),
+  ]
+  const importToAccount = new Map<string, string>()
+  for (let i = 0; i < importIds.length; i += 80) {
+    const chunk = importIds.slice(i, i + 80)
+    const { data } = await supabase
+      .from('statement_imports')
+      .select('id, financial_account_id')
+      .in('id', chunk)
+    for (const im of (data || []) as { id: string; financial_account_id: string | null }[]) {
+      if (im.id && im.financial_account_id) {
+        importToAccount.set(im.id, String(im.financial_account_id))
+      }
+    }
+  }
+
+  const accountIds = [...new Set([...importToAccount.values()])]
+  const accountNameById = new Map<string, string>()
+  for (let i = 0; i < accountIds.length; i += 80) {
+    const chunk = accountIds.slice(i, i + 80)
+    const { data } = await supabase.from('financial_accounts').select('id, name').in('id', chunk)
+    for (const a of (data || []) as { id: string; name: string | null }[]) {
+      if (a.id) accountNameById.set(a.id, String(a.name ?? '').trim() || a.id)
+    }
+  }
+
+  const candidates: Omit<SimilarStatementLineRow, 'existing_matches' | 'allocated_sum'>[] = []
+  for (const id of ids) {
+    const line = lineById.get(id)
+    if (!line) continue
+    const lineAmount = Number(line.amount ?? 0)
+    const posted = String(line.posted_date ?? '').slice(0, 10)
+    const importId = String(line.statement_import_id ?? '')
+    const accountId = importToAccount.get(importId) || ''
+    candidates.push({
+      id: String(line.id),
+      financial_account_id: accountId,
+      financial_account_name: accountNameById.get(accountId) || accountId || '—',
+      posted_date: posted,
+      direction: String(line.direction ?? ''),
+      amount: lineAmount,
+      description: formatStatementLineDescription(
+        line.description == null ? null : String(line.description),
+        line.merchant == null ? null : String(line.merchant)
+      ),
+      matched_status: String(line.matched_status ?? ''),
+      amount_diff: 0,
+      day_diff: 0,
+      score: 0,
+    })
+  }
+
+  return attachExistingMatches(supabase, candidates)
+}
+
+/** 상계 짝으로 목록에 추가할 명세 줄 id (이미 목록에 있으면 제외) */
+export function collectOffsetPairCounterpartLineIds(
+  pairs: StatementLinePairRow[],
+  anchorLineIds: string[],
+  alreadyInList: Set<string>
+): string[] {
+  const anchorSet = new Set(anchorLineIds)
+  const out = new Set<string>()
+  for (const p of pairs) {
+    for (const lid of [p.outflow_line_id, p.inflow_line_id]) {
+      if (!anchorSet.has(lid)) continue
+      const otherId = p.outflow_line_id === lid ? p.inflow_line_id : p.outflow_line_id
+      if (!alreadyInList.has(otherId)) out.add(otherId)
+    }
+  }
+  return [...out]
 }

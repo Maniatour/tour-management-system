@@ -111,7 +111,7 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
       // Push 구독
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
       })
 
       // 구독 정보 추출
@@ -147,7 +147,6 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
             customer_email: customerEmail || null,
             p256dh_key: subscriptionData.keys.p256dh,
             auth_key: subscriptionData.keys.auth,
-            language: language || 'ko'
           })
           .eq('endpoint', subscriptionData.endpoint)
         error = updateError
@@ -161,7 +160,6 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
             endpoint: subscriptionData.endpoint,
             p256dh_key: subscriptionData.keys.p256dh,
             auth_key: subscriptionData.keys.auth,
-            language: language || 'ko'
           })
         error = insertError
       }

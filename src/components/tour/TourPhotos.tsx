@@ -30,9 +30,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
       try {
         const { data: files, error } = await supabase.storage
           .from('tour-photos')
-          .list(tour.id, {
-            sort: { column: 'created_at', order: 'desc' }
-          })
+          .list(tour.id)
 
         if (!error && files) {
           const photoFiles = files.filter((file: { name: string }) => 
@@ -232,9 +230,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                 try {
                   const { data: files, error } = await supabase.storage
                     .from('tour-photos')
-                    .list(tour.id, {
-                      sort: { column: 'created_at', order: 'desc' }
-                    })
+                    .list(tour.id)
 
                   if (!error && files) {
                     const photoFiles = files.filter((file: { name: string }) => 

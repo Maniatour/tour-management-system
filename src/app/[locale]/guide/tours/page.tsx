@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Search, Calendar, Grid, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useRouter, useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -17,49 +17,48 @@ import { chunkStrings } from '@/lib/supabaseInChunks'
 type Tour = Database['public']['Tables']['tours']['Row']
 
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
-  product_name?: string | null;
-  name_ko?: string | null;
-  name_en?: string | null;
+  product_name?: string | null | undefined;
+  name_ko?: string | null | undefined;
+  name_en?: string | null | undefined;
   assignment_status?: string | null | undefined;
-  customer_name_en?: string | null;
-  total_people?: number;
-  assigned_people?: number;
-  assigned_adults?: number;
-  assigned_children?: number;
-  assigned_infants?: number;
-  unassigned_people?: number;
-  guide_name?: string | null;
-  guide_name_en?: string | null;
-  assistant_name?: string | null;
-  assistant_name_en?: string | null;
-  status?: string | null;
-  tour_status?: string | null;
-  vehicle_number?: string | null;
+  customer_name_en?: string | null | undefined;
+  total_people?: number | undefined;
+  assigned_people?: number | undefined;
+  assigned_adults?: number | undefined;
+  assigned_children?: number | undefined;
+  assigned_infants?: number | undefined;
+  unassigned_people?: number | undefined;
+  guide_name?: string | null | undefined;
+  guide_name_en?: string | null | undefined;
+  assistant_name?: string | null | undefined;
+  assistant_name_en?: string | null | undefined;
+  status?: string | null | undefined;
+  tour_status?: string | null | undefined;
+  vehicle_number?: string | null | undefined;
 }
 
 type Employee = Database['public']['Tables']['team']['Row']
 type Product = Database['public']['Tables']['products']['Row']
 
+type ProductSlim = Pick<Product, 'id' | 'name' | 'name_ko' | 'name_en' | 'status'>
+
 interface GuideToursProps {
   params: Promise<{ locale: string }>
 }
 
-export default function GuideTours({ params }: GuideToursProps) {
+export default function GuideTours({}: GuideToursProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
-  const t = useTranslations('tours')
   const gt = useTranslations('tours.guideTours')
   const router = useRouter()
   const supabase = createClientSupabase()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
-  // 직원 데이터 (Supabase에서 가져옴)
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [, setProducts] = useState<Product[]>([])
+  const [, setEmployees] = useState<Employee[]>([])
+  const [, setProducts] = useState<ProductSlim[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
   const [offSchedules, setOffSchedules] = useState<any[]>([])
@@ -198,7 +197,7 @@ export default function GuideTours({ params }: GuideToursProps) {
   const processToursData = useCallback(async (toursData: Database['public']['Tables']['tours']['Row'][]) => {
     try {
       // 2. 상품 정보 가져오기 (status 포함) 및 비활성 상품 제외
-      const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+      const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter((id): id is string => id != null))]
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, name_ko, name_en, status')
@@ -223,8 +222,8 @@ export default function GuideTours({ params }: GuideToursProps) {
       )
 
       // 3. 가이드와 어시스턴트 정보 가져오기
-      const guideEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.assistant_id).filter(Boolean))]
+      const guideEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter((id): id is string => id != null))]
+      const assistantEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.assistant_id).filter((id): id is string => id != null))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
 
       const { data: teamMembers } = await supabase
@@ -235,7 +234,7 @@ export default function GuideTours({ params }: GuideToursProps) {
       const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; name_en?: string | null; nick_name?: string | null }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
-      const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
+      const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id): id is string => id != null))]
       let vehicleMap = new Map<string, string | null>()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
@@ -263,7 +262,7 @@ export default function GuideTours({ params }: GuideToursProps) {
 
       let reservationsData: Database['public']['Tables']['reservations']['Row'][] | null = []
       let reservationsError: unknown = null
-      const productIdsActive = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+      const productIdsActive = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.product_id).filter((id): id is string => id != null))]
 
       // 미리 모든 투어의 reservation_ids 수집 (배정 인원 계산 정확도 보장)
       const normalizeIds = (value: unknown): string[] => {
@@ -402,15 +401,15 @@ export default function GuideTours({ params }: GuideToursProps) {
         const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null
         const assistant = tour.assistant_id ? teamMap.get(tour.assistant_id) : null
 
-        const product = tour.product_id ? productsData.find(p => p.id === tour.product_id) : null
+        const product = tour.product_id ? (productsData ?? []).find(p => p.id === tour.product_id) : null
         
         return {
           ...tour,
-          product_name: tour.product_id ? productMap.get(tour.product_id) : null,
-          name_ko: product?.name_ko || null,
-          name_en: product?.name_en || null,
-          customer_name_ko: product?.customer_name_ko || null,
-          customer_name_en: product?.customer_name_en || null,
+          product_name: tour.product_id ? (productMap.get(tour.product_id) ?? null) : null,
+          name_ko: product?.name_ko ?? null,
+          name_en: product?.name_en ?? null,
+          customer_name_ko: (product as { customer_name_ko?: string | null } | null)?.customer_name_ko ?? null,
+          customer_name_en: (product as { customer_name_en?: string | null } | null)?.customer_name_en ?? null,
           total_people: totalPeople,
           assigned_people: assignedPeople,
           assigned_adults: assignedAdults,
@@ -432,7 +431,7 @@ export default function GuideTours({ params }: GuideToursProps) {
       const { data: offSchedulesData, error: offSchedulesError } = await supabase
         .from('off_schedules')
         .select('*')
-        .eq('team_email', currentUserEmail)
+        .eq('team_email', currentUserEmail ?? '')
         .order('off_date', { ascending: false })
 
       if (offSchedulesError) {
@@ -484,7 +483,7 @@ export default function GuideTours({ params }: GuideToursProps) {
         const { data: offSchedulesData, error: offSchedulesError } = await supabase
           .from('off_schedules')
           .select('*')
-          .eq('team_email', currentUserEmail)
+          .eq('team_email', currentUserEmail ?? '')
           .order('off_date', { ascending: false })
 
         if (offSchedulesError) {
@@ -628,7 +627,6 @@ export default function GuideTours({ params }: GuideToursProps) {
                     {tour.tour_date} {getTourDisplayName(tour, locale)} 
                     <span className="ml-1">
                       {(() => {
-                        const adults = tour.assigned_adults || 0
                         const children = tour.assigned_children || 0
                         const infants = tour.assigned_infants || 0
                         const total = tour.assigned_people || 0

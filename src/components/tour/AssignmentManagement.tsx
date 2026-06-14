@@ -4,11 +4,11 @@ import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, ChevronUp, Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
   getBalanceAmountForDisplay,
   withNormalizedBalanceAmountForDisplay,
   type PartySizeSource,
-  type PricingBalanceFields,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
@@ -83,6 +83,10 @@ interface AssignmentManagementProps {
   /** 같은 상품·날짜의 다른 투어 id (현재 투어 제외). 1개 이상이면 1번 섹션에서 다른 투어로 배정 가능 */
   sameDayPeerTourIds?: string[]
   onMoveAssignedReservationToTour?: (reservationId: string, targetTourId: string) => Promise<void>
+  onCommunicationChannelChange?: (
+    reservationId: string,
+    channel: CustomerCommunicationChannel
+  ) => void | Promise<void>
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
@@ -117,7 +121,8 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   onAutoAssignSuccess,
   allProducts = [],
   sameDayPeerTourIds = [],
-  onMoveAssignedReservationToTour
+  onMoveAssignedReservationToTour,
+  onCommunicationChannelChange,
 }) => {
   const getProductCodeForReservation = React.useCallback(
     (r: Reservation) => {
@@ -547,6 +552,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
+              {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
               headerBadges={
                 <span
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
@@ -579,6 +585,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
+              {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
             />
 
             {/* 3. 다른 투어에 배정된 예약 - 투어 ID별 그룹화 */}
@@ -712,6 +719,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            pickupHotels={pickupHotels}
                            {...(onRefresh && { onRefresh })}
                            getProductCodeForReservation={getProductCodeForReservation}
+                           {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
                          />
                        </div>
                      )
@@ -739,6 +747,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
+              {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
             />
           </div>
         )}

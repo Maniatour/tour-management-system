@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export async function GET() {
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = createClient(supabaseUrl!, supabaseAnonKey!)
 
     // product_schedules 테이블에 간단한 쿼리 시도
     const { data, error } = await supabase

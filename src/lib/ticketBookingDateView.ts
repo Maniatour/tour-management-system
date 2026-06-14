@@ -2,7 +2,6 @@
 
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display'
 import {
-  aggregateTourChoiceCounts,
   isCanyonTourChoiceKey,
   choiceLabelToTourCountKey,
   tourChoiceCountsDisplayKeys,

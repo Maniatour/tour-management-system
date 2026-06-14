@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, CreditCard, Calendar, Upload, X, History, Eye } from 'lucide-react'
+import { Plus, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, Upload, X, History } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PartnerFundTransaction {
@@ -64,7 +64,7 @@ export default function PartnerFundsManagement() {
   const [endDate, setEndDate] = useState('')
   
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false)
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null)
+  const [, setSelectedTransactionId] = useState<string | null>(null)
   const [transactionHistory, setTransactionHistory] = useState<any[]>([])
   
   // 폼 데이터
@@ -122,35 +122,6 @@ export default function PartnerFundsManagement() {
     }
   }, [transactions])
 
-  // 대출 총액 계산 (Erica 파트너의 거래로 계산)
-  const calculateLoanTotals = useCallback(() => {
-    // Erica 입금 = Joey/Chad가 Erica로부터 대출 받은 금액
-    // Erica 출금 = Joey/Chad가 Erica에게 상환한 금액
-    // Erica 밸런스 = Erica 입금 - Erica 출금 (Erica가 받아야 할 대출 잔액)
-    const ericaDeposits = transactions
-      .filter(t => t.partner === 'erica' && t.transaction_type === 'deposit')
-      .reduce((sum, t) => sum + t.amount, 0)
-    
-    const ericaWithdrawals = transactions
-      .filter(t => t.partner === 'erica' && t.transaction_type === 'withdrawal')
-      .reduce((sum, t) => sum + t.amount, 0)
-    
-    // Joey와 Chad가 Erica로부터 받은 대출 금액 계산
-    // Erica 입금 = Joey/Chad가 대출 받은 금액
-    // Erica 출금 = Joey/Chad가 상환한 금액
-    const totalLoanReceived = ericaDeposits
-    const totalLoanPaid = ericaWithdrawals
-    const totalLoanBalance = totalLoanReceived - totalLoanPaid
-    
-    // Joey와 Chad 각각의 Erica 대출 계산 (설명에 파트너 정보가 있다면, 아니면 50:50 분배)
-    // 일단 전체로만 계산
-    return {
-      partner1Total: 0, // Erica 파트너로 직접 관리하므로 0
-      partner2Total: 0, // Erica 파트너로 직접 관리하므로 0
-      total: totalLoanBalance
-    }
-  }, [transactions])
-
   // 거래 내역 로드
   const loadTransactions = useCallback(async () => {
     try {
@@ -161,7 +132,7 @@ export default function PartnerFundsManagement() {
         .order('transaction_date', { ascending: false })
       
       if (error) throw error
-      setTransactions(data || [])
+      setTransactions((data ?? []) as PartnerFundTransaction[])
     } catch (error: any) {
       console.error('거래 내역 로드 오류:', error)
       toast.error('거래 내역을 불러오는 중 오류가 발생했습니다.')
@@ -206,7 +177,7 @@ export default function PartnerFundsManagement() {
 
     // 유효성 검사
     const invalidRows = bulkTransactions.filter(
-      (t, index) => !t.partner || !t.transaction_type || !t.amount || !t.transaction_date
+      (t, _index) => !t.partner || !t.transaction_type || !t.amount || !t.transaction_date
     )
 
     if (invalidRows.length > 0) {
@@ -407,7 +378,6 @@ export default function PartnerFundsManagement() {
   })
 
   const balance = calculateBalance()
-  const loanTotals = calculateLoanTotals()
 
   return (
     <div className="space-y-6">
@@ -552,7 +522,6 @@ export default function PartnerFundsManagement() {
                             transaction_type: '',
                             amount: '',
                             description: '',
-                            notes: ''
                           }])
                         }}
                       >

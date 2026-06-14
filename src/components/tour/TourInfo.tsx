@@ -62,7 +62,6 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const t = useTranslations('tours.tourInfo')
   const tCommon = useTranslations('common')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
-  const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
 
   // 투어 시간 미입력 시 product.tour_departure_times 첫 번째 값 사용 (HH:mm 또는 HH:mm:ss → HH:mm)
   const getDefaultTimeString = (): string => {

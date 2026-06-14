@@ -21,11 +21,11 @@ export async function POST(request: NextRequest) {
     if (supabase instanceof NextResponse) return supabase
     const dbForCategories = supabaseAdmin ?? supabase
     const body = await request.json()
-    const rawIds = Array.isArray(body.expenseIds) ? body.expenseIds : []
-    const expenseIds = [...new Set(rawIds.filter((x: unknown) => typeof x === 'string' && String(x).trim()))].slice(
-      0,
-      MAX_IDS
-    )
+    const rawIds: unknown[] = Array.isArray(body.expenseIds) ? body.expenseIds : []
+    const expenseIds = rawIds
+      .filter((x): x is string => typeof x === 'string' && String(x).trim() !== '')
+      .map((x) => x.trim())
+    const uniqueExpenseIds = [...new Set(expenseIds)].slice(0, MAX_IDS)
     const standardLeafId = typeof body.standardLeafId === 'string' ? body.standardLeafId : ''
     const paidFor = typeof body.paidFor === 'string' ? body.paidFor : ''
     const previousLabelId =
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
         ? null
         : String(body.previousLabelId)
 
-    if (expenseIds.length === 0) {
+    if (uniqueExpenseIds.length === 0) {
       return NextResponse.json({ error: 'expenseIds 가 필요합니다.' }, { status: 400 })
     }
     if (!paidFor.trim() || !standardLeafId.trim()) {
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         tax_deductible: applied.tax_deductible,
         updated_at: new Date().toISOString(),
       })
-      .in('id', expenseIds)
+      .in('id', uniqueExpenseIds as readonly string[])
       .eq('paid_for', paidFor)
 
     if (previousLabelId === null) {

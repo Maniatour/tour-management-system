@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -15,7 +15,7 @@ interface OffSchedule {
   id: string
   team_email: string
   off_date: string
-  reason: string
+  reason: string | null
   status: 'pending' | 'approved' | 'rejected'
   approved_by?: string
   approved_at?: string
@@ -33,7 +33,7 @@ const OFF_SCHEDULE_UI_DEFAULT = {
 }
 
 export default function AdminOffSchedulePage() {
-  const { user, userRole, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [listUi, setListUi] = useRoutePersistedState('off-schedule', OFF_SCHEDULE_UI_DEFAULT)
@@ -42,25 +42,6 @@ export default function AdminOffSchedulePage() {
     setListUi((prev) => ({ ...prev, filter: v }))
   const setSelectedDate = (v: string) => setListUi((prev) => ({ ...prev, selectedDate: v }))
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-
-  console.log('AdminOffSchedulePage render:', { 
-    user: !!user, 
-    userEmail: user?.email,
-    authLoading, 
-    loading,
-    userRole 
-  })
-
-  useEffect(() => {
-    console.log('useEffect triggered:', { user: !!user, authLoading, filter, selectedDate })
-    // 임시로 인증 체크를 우회하여 테스트
-    if (!authLoading) {
-      console.log('Calling fetchOffData... (auth bypassed for testing)')
-      fetchOffData()
-    } else {
-      console.log('Not calling fetchOffData:', { user: !!user, authLoading })
-    }
-  }, [user, authLoading, filter, selectedDate, fetchOffData])
 
   const fetchOffData = useCallback(async () => {
     try {
@@ -106,7 +87,7 @@ export default function AdminOffSchedulePage() {
             ...schedule,
             team: teamData?.find(team => team.email === schedule.team_email)
           }))
-          setOffSchedules(schedulesWithTeam)
+          setOffSchedules(schedulesWithTeam as OffSchedule[])
           console.log('Off schedules with team data set:', schedulesWithTeam.length, 'items')
         }
       } else {
@@ -120,6 +101,12 @@ export default function AdminOffSchedulePage() {
     }
   }, [filter, selectedDate])
 
+  useEffect(() => {
+    if (!authLoading) {
+      fetchOffData()
+    }
+  }, [authLoading, fetchOffData])
+
   const handleApproveRequest = async (requestId: string) => {
     if (!confirm('이 Off 신청을 승인하시겠습니까?')) return
 
@@ -128,16 +115,16 @@ export default function AdminOffSchedulePage() {
       const { data: adminMember } = await supabase
         .from('team')
         .select('email')
-        .eq('email', user?.email)
+        .eq('email', user?.email ?? '')
         .single()
 
       const { error } = await supabase
         .from('off_schedules')
         .update({
           status: 'approved',
-          approved_by: adminMember?.email,
+          approved_by: adminMember?.email ?? null,
           approved_at: new Date().toISOString()
-        })
+        } as never)
         .eq('id', requestId)
 
       if (error) throw error
@@ -158,16 +145,16 @@ export default function AdminOffSchedulePage() {
       const { data: adminMember } = await supabase
         .from('team')
         .select('email')
-        .eq('email', user?.email)
+        .eq('email', user?.email ?? '')
         .single()
 
       const { error } = await supabase
         .from('off_schedules')
         .update({
           status: 'rejected',
-          approved_by: adminMember?.email,
+          approved_by: adminMember?.email ?? null,
           approved_at: new Date().toISOString()
-        })
+        } as never)
         .eq('id', requestId)
 
       if (error) throw error
@@ -430,7 +417,7 @@ export default function AdminOffSchedulePage() {
         onSuccess={() => {
           fetchOffData() // 데이터 새로고침
         }}
-        currentUserEmail={user?.email}
+        currentUserEmail={user?.email ?? ''}
       />
     </div>
   )

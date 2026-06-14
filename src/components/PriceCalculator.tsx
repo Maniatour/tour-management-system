@@ -1,11 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   Calculator, 
-  DollarSign, 
-  Calendar, 
-  Package, 
   Settings,
   Users,
   TrendingUp,
@@ -16,7 +13,6 @@ import {
   PriceCalculationResult,
   DynamicPricingRule,
   DAY_NAMES,
-  DAY_COLORS
 } from '@/lib/types/dynamic-pricing';
 
 interface PriceCalculatorProps {

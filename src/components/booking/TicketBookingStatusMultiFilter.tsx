@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import {
   TICKET_BOOKING_STATUS_FILTER_VENDOR_PENDING,

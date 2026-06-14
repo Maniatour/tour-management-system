@@ -4,7 +4,6 @@ import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, F
 import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
-// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 
 interface PickupScheduleProps {
@@ -46,7 +45,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   connectionStatus,
   onToggleSection,
   onAutoGenerate,
-  onBatchSendNotification,
+  onBatchSendNotification: _onBatchSendNotification,
   onPreviewEmail,
   getPickupHotelNameOnly,
   getCustomerName,
@@ -272,17 +271,17 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       const title = locale === 'ko' 
         ? `${tCommon('statusUsResident')}: ${status.usResident}명`
         : `${tCommon('statusUsResident')}: ${status.usResident}`
-      return <Home className="h-3 w-3 text-green-600" title={title} />
+      return <span title={title}><Home className="h-3 w-3 text-green-600" /></span>
     } else if (status.nonResident >= status.nonResidentWithPass) {
       const title = locale === 'ko'
         ? `${tCommon('statusNonResident')}: ${status.nonResident}명`
         : `${tCommon('statusNonResident')}: ${status.nonResident}`
-      return <Plane className="h-3 w-3 text-blue-600" title={title} />
+      return <span title={title}><Plane className="h-3 w-3 text-blue-600" /></span>
     } else {
       const title = locale === 'ko'
         ? `${tCommon('statusNonResidentWithPass')}: ${status.nonResidentWithPass}명`
         : `${tCommon('statusNonResidentWithPass')}: ${status.nonResidentWithPass}`
-      return <PlaneTakeoff className="h-3 w-3 text-purple-600" title={title} />
+      return <span title={title}><PlaneTakeoff className="h-3 w-3 text-purple-600" /></span>
     }
   }
 
@@ -537,9 +536,13 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <span>{totalPeople}</span>
               </span>
             </div>
-            {hotelInfo?.link && (
+            {(hotelInfo?.google_maps_link || (hotelInfo as { link?: string })?.link) && (
               <button
-                onClick={() => openGoogleMaps(hotelInfo.link || '')}
+                onClick={() =>
+                  openGoogleMaps(
+                    hotelInfo?.google_maps_link || (hotelInfo as { link?: string }).link || ''
+                  )
+                }
                 className="text-blue-600 hover:text-blue-800 transition-colors p-1"
                 title="구글 맵에서 보기"
               >

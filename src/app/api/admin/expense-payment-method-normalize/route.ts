@@ -44,7 +44,9 @@ async function loadStats(): Promise<
     throw new Error('서비스 롤 키가 설정되지 않았습니다.')
   }
 
-  const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('expense_payment_method_stats')
+  const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc(
+    'expense_payment_method_stats' as never
+  )
   if (!rpcError && rpcData && Array.isArray(rpcData)) {
     return rpcData as Array<{ source_table: string; payment_method: string; row_count: number }>
   }
@@ -178,16 +180,20 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const { error, count } = await supabaseAdmin
+      const { count: matchCount } = await supabaseAdmin
         .from(tbl)
-        .update({ payment_method: toStr })
-        .eq('payment_method', fromStr)
         .select('*', { count: 'exact', head: true })
+        .eq('payment_method', fromStr)
+
+      const { error } = await supabaseAdmin
+        .from(tbl)
+        .update({ payment_method: toStr } as never)
+        .eq('payment_method', fromStr)
 
       if (error) {
         results.push({ table: tbl, from: fromStr, to: toStr, updated: 0, error: error.message })
       } else {
-        results.push({ table: tbl, from: fromStr, to: toStr, updated: count ?? 0 })
+        results.push({ table: tbl, from: fromStr, to: toStr, updated: matchCount ?? 0 })
       }
     }
 

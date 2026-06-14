@@ -120,14 +120,14 @@ export const PricingCalendar = memo(function PricingCalendar({
   selectedDates,
   onMonthChange,
   onDateSelect,
-  onDateRangeSelect,
+  onDateRangeSelect: _onDateRangeSelect,
   choiceCombinations = [],
   selectedChannelId,
   selectedChannelType,
   channelInfo,
   productBasePrice = { adult: 0, child: 0, infant: 0 },
   selectedVariant = 'default',
-  productId,
+  productId: _productId,
   onDateClick,
   channelCoupons = []
 }: PricingCalendarProps) {
@@ -328,8 +328,10 @@ export const PricingCalendar = memo(function PricingCalendar({
     }
     
     // 3. OTA 채널 여부 확인
-    const isOTA = selectedChannelType === 'OTA' || 
-                  (channelInfo && (channelInfo as any).type?.toLowerCase() === 'ota');
+    const isOTA = Boolean(
+      selectedChannelType === 'OTA' ||
+        (channelInfo && (channelInfo as { type?: string }).type?.toLowerCase() === 'ota')
+    );
     
     // 4. 초이스 가격 정보 가져오기 (OTA 판매가·불포함 금액 모두 초이스별 설정에서 로드)
     // 기본 가격의 불포함 금액은 "초이스가 없는 상품"에서만 사용. 초이스가 있으면 반드시 초이스별 값을 사용.
@@ -421,7 +423,6 @@ export const PricingCalendar = memo(function PricingCalendar({
     // 8. Net Price 계산
     let netPrice = 0;
     const commissionPercent = rule.commission_percent || 0;
-    const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false;
 
     if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
       // OTA/홈페이지: OTA판매가 × (1 - 쿠폰%) × (1 - 수수료%) + 불포함
@@ -490,7 +491,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     return normalizedSelectedDates.has(normalizedSearchDate);
   };
 
-  const handleDateClick = (day: number, event: React.MouseEvent) => {
+  const handleDateClick = (day: number, _event: React.MouseEvent) => {
     const dateString = getDateString(day);
     
     // 날짜 클릭 시 히스토리 모달 열기 (onDateClick이 있는 경우)
@@ -502,8 +503,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     }
   };
 
-  const handleDateMouseDown = (day: number, index: number) => {
-    const dateString = getDateString(day);
+  const handleDateMouseDown = (_day: number, _index: number) => {
     // 범위 선택 로직은 부모 컴포넌트에서 처리
   };
 

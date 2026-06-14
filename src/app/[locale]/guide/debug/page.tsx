@@ -5,7 +5,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import { useState, useEffect } from 'react'
 
 export default function GuideDebugPage() {
-  const { user, userRole, isLoading, permissions } = useAuth()
+  const { user, userRole, loading: authLoading, permissions } = useAuth()
   const [teamData, setTeamData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -48,7 +48,7 @@ export default function GuideDebugPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">인증 상태</h2>
           <div className="space-y-2">
-            <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
+            <p><strong>Loading:</strong> {authLoading ? 'Yes' : 'No'}</p>
             <p><strong>사용자:</strong> {user ? user.email : '없음'}</p>
             <p><strong>사용자 역할:</strong> {userRole || '없음'}</p>
             <p><strong>권한:</strong> {permissions ? JSON.stringify(permissions, null, 2) : '없음'}</p>

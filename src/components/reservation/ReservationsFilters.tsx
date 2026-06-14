@@ -83,6 +83,7 @@ function ReservationsFilters({
             <option value="confirmed">{t('filters.confirmed')}</option>
             <option value="completed">{t('filters.completed')}</option>
             <option value="cancelled">{t('filters.cancelled')}</option>
+            <option value="no_show">{t('filters.no_show')}</option>
             <option value="deleted">{t('filters.deleted')}</option>
             <option value="recruiting">{t('filters.recruiting')}</option>
           </select>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { X, Calculator, ChevronDown, ChevronRight, Clock, DollarSign, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import Link from 'next/link'
 import {
   fetchEmployeeHourlyRatePeriods,
@@ -58,9 +59,9 @@ function normalizeTourReservationIds(raw: unknown): string[] {
 interface EmployeeData {
   email: string
   name: string
-  name_en: string
-  position: string
-  language: string[]
+  name_en: string | null
+  position: string | null
+  language: string[] | null
   /** team.is_active */
   is_active: boolean
   attendancePay: number
@@ -74,7 +75,7 @@ interface EmployeeData {
     date: string
     check_in_time: string | null
     check_out_time: string | null
-    work_hours: number
+    work_hours: number | null
     status: string
   }>
   tourFees: Array<{
@@ -213,8 +214,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         return
       }
 
-      const { data: mealRows, error: mealError } = await supabase
-        .from('office_meal_log')
+      const { data: mealRows, error: mealError } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email, meal_date')
         .gte('meal_date', startDate)
         .lte('meal_date', endDate)
@@ -458,12 +458,16 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
           const useDbRates = employeeHasHourlyPeriods(ratePeriods, employee.email)
           const empMeals = mealMap.get(employee.email) || new Set<string>()
-          const sortedAtt = sortAttendanceRecordsForMealPolicy(employeeAttendanceRecords)
+          const attendanceForPolicy = employeeAttendanceRecords.map(record => ({
+            ...record,
+            work_hours: record.work_hours ?? 0,
+          }))
+          const sortedAtt = sortAttendanceRecordsForMealPolicy(attendanceForPolicy)
 
           // 적용 정산: 3월말까지 8h 자동, 4/1~ 사무실 식사 기록 (DB 시급 구간 또는 $15)
           let attendancePay = 0
           let actualTotalHours = 0
-          for (const record of employeeAttendanceRecords) {
+          for (const record of attendanceForPolicy) {
             const workHours = adjustedWorkHoursForPay(record, sortedAtt, empMeals, 'applied')
             const dayStr =
               lasVegasDateFromCheckIn(record.check_in_time) ||
@@ -481,8 +485,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
             tour.tour_guide_id === employee.email || tour.assistant_id === employee.email
           ) || []
           
-          const staffNamesForTour = (t: typeof tour) =>
-            [t.tour_guide_id, t.assistant_id]
+          const staffNamesForTour = (tourItem: NonNullable<typeof filteredTours>[number]) =>
+            [tourItem.tour_guide_id, tourItem.assistant_id]
               .filter((id): id is string => !!id)
               .filter(id => id !== employee.email)
               .map(id => teamNameMap[id] || id)
@@ -503,7 +507,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
               return {
                 id: tour.id,
                 tour_id: tour.id,
-                tour_name: getTourNameForEmployee(tour, employee.languages),
+                tour_name: getTourNameForEmployee(tour, employee.languages ?? []),
                 date: tour.tour_date,
                 team_type: tour.team_type || '',
                 staff_names: staffNamesForTour(tour),
@@ -532,8 +536,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           // company_expenses에서 해당 직원의 가장 최근 가이드비/웨이지 지불일·금액 조회
           let lastPaid: { date: string; amount: number } | null = null
           try {
-            const { data: rows } = await supabase
-              .from('company_expenses')
+            const { data: rows } = await fromUntypedTable(supabase, 'company_expenses')
               .select('paid_on, submit_on, amount')
               .eq('paid_to_employee_email', employee.email)
               .or('paid_for.ilike.%guide fee%,paid_for.ilike.%wage%,paid_for.ilike.%wages%')
@@ -571,8 +574,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
               date: record.date,
               check_in_time: record.check_in_time,
               check_out_time: record.check_out_time,
-              work_hours: record.work_hours || 0,
-              status: record.status
+              work_hours: record.work_hours ?? 0,
+              status: record.status ?? ''
             })),
             tourFees: employeeTourFees
           }
@@ -697,7 +700,6 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     const numValue = typeof value === 'number' ? value : 0
     const tt = tourItem.team_type
     const isGuide = tourItem.is_guide
-    const isAssistant = tourItem.is_assistant
     let newTotalTip = 0
     let guideAmount = 0
     let assistantAmount = 0
@@ -775,8 +777,6 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     const printWindow = window.open('', '_blank', 'width=800,height=600')
     
     if (printWindow) {
-      const isEnglish = getEmployeePrimaryLanguage(employee.language) === 'EN'
-      
       // 프린트용 헬퍼 함수들
       const formatTourDateForPrint = (dateString: string) => {
         // 날짜 문자열을 직접 파싱하여 시간대 변환 방지
@@ -948,7 +948,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                     <td>${getDateFromCheckInTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
-                    <td>${formatWorkHours(record.work_hours)}</td>
+                    <td>${formatWorkHours(record.work_hours ?? 0)}</td>
                     <td>${record.status === 'present' ? t.normal : record.status === 'late' ? t.late : t.absent}</td>
                   </tr>
                 `).join('')}
@@ -1088,19 +1088,6 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     })
     
     return `${year}-${month}-${day} (${weekdayStr})`
-  }
-
-  // 날짜 포맷팅 함수 (출퇴근 기록용)
-  const formatDate = (dateString: string) => {
-    const [year, month, day] = dateString.split('-')
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
-    
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      weekday: 'short'
-    })
   }
 
   // 투어 날짜를 YYYY.MM.DD (Mon) 형식으로 포맷하는 함수
@@ -1590,7 +1577,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                 <div key={index} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-white rounded p-2">
                                   <span>{getDateFromCheckInTime(record.check_in_time)}</span>
                                   <span>{formatTime(record.check_in_time)} ~ {formatTime(record.check_out_time)}</span>
-                                  <span>{formatWorkHours(record.work_hours)}</span>
+                                  <span>{formatWorkHours(record.work_hours ?? 0)}</span>
                                   <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
                                     record.status === 'present' ? 'bg-green-100 text-green-800' :
                                     record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
@@ -1787,7 +1774,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                 {formatTime(record.check_out_time)}
                                               </td>
                                               <td className="px-2 py-1 text-gray-900">
-                                                {formatWorkHours(record.work_hours)}
+                                                {formatWorkHours(record.work_hours ?? 0)}
                                               </td>
                                               <td className="px-2 py-1">
                                                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${

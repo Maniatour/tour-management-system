@@ -35,7 +35,7 @@ type HotelRow = Pick<
   | 'status'
 >
 
-type TourHotelBookingRow = Tables<'tour_hotel_bookings'>['Row']
+type TourHotelBookingRow = Tables<'tour_hotel_bookings'>
 
 function formatUsd(amount: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
@@ -531,9 +531,9 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
                     status: formInitialRow.status ?? 'pending',
                     event_date: formInitialRow.event_date,
                     uploaded_file_urls: formInitialRow.uploaded_file_urls ?? []
-                  } as ComponentProps<typeof TourHotelBookingForm>['booking']
+                  } as NonNullable<ComponentProps<typeof TourHotelBookingForm>['booking']>
                 }
-                tourId={formInitialRow.tour_id || undefined}
+                {...(formInitialRow.tour_id ? { tourId: formInitialRow.tour_id } : {})}
                 onSave={() => {
                   setFormOpen(false)
                   setFormInitialRow(null)

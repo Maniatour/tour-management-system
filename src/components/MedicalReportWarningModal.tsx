@@ -42,6 +42,8 @@ export default function MedicalReportWarningModal({
   }, [isOpen, user?.email])
 
   const checkMedicalReportStatus = async () => {
+    if (!user?.email) return
+
     try {
       setLoading(true)
       
@@ -61,7 +63,7 @@ export default function MedicalReportWarningModal({
       const { data, error } = await supabase
         .from('documents')
         .select('*')
-        .eq('guide_email', user?.email)
+        .eq('guide_email', user.email)
         .eq('category_id', categoryData.id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -89,13 +91,19 @@ export default function MedicalReportWarningModal({
         hasReport: !!latestReport,
         isExpired,
         expiresInOneMonth,
-        latestReport: latestReport ? {
-          id: latestReport.id,
-          title: latestReport.title,
-          file_name: latestReport.file_name,
-          created_at: latestReport.created_at,
-          expiry_date: latestReport.expiry_date
-        } : undefined
+        ...(latestReport
+          ? {
+              latestReport: {
+                id: latestReport.id,
+                title: latestReport.title,
+                file_name: latestReport.file_name,
+                created_at: latestReport.created_at ?? '',
+                ...(latestReport.expiry_date != null
+                  ? { expiry_date: latestReport.expiry_date }
+                  : {}),
+              },
+            }
+          : {}),
       })
     } catch (error) {
       console.error('메디컬 리포트 상태 확인 오류:', error)

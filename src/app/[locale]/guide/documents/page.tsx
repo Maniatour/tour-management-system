@@ -5,23 +5,23 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { Upload, FileText, Shield, Check, X, Download, Trash2 } from 'lucide-react'
+import { Upload, FileText, Shield, X, Download, Trash2 } from 'lucide-react'
 
 interface Document {
   id: string
   title: string
-  description?: string
-  category_id: string
+  description?: string | null
+  category_id: string | null
   file_name: string
   file_path: string
   file_size: number
   file_type: string
   mime_type: string
-  issue_date?: string
-  expiry_date?: string
-  guide_email?: string
-  created_at: string
-  updated_at: string
+  issue_date?: string | null
+  expiry_date?: string | null
+  guide_email?: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export default function DocumentsPage() {
@@ -46,6 +46,8 @@ export default function DocumentsPage() {
   }, [user, userRole, documentType])
   
   const loadDocuments = async () => {
+    if (!user?.email) return
+
     try {
       setLoading(true)
       
@@ -66,7 +68,7 @@ export default function DocumentsPage() {
       const { data, error } = await supabase
         .from('documents')
         .select('*')
-        .eq('guide_email', user?.email)
+        .eq('guide_email', user.email)
         .eq('category_id', categoryData.id)
         .order('created_at', { ascending: false })
       
@@ -145,7 +147,7 @@ export default function DocumentsPage() {
       const { error: insertError } = await supabase
         .from('documents')
         .insert({
-          title: file.name.split('.')[0], // 파일명에서 확장자 제거
+          title: file.name.split('.')[0],
           description: `${categoryName} 업로드`,
           category_id: categoryData.id,
           file_name: file.name,
@@ -154,12 +156,12 @@ export default function DocumentsPage() {
           file_type: fileExt || '',
           mime_type: file.type,
           issue_date: new Date().toISOString().split('T')[0],
-          expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1년 후 만료
-          guide_email: user?.email,
+          expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          ...(user?.email ? { guide_email: user.email } : {}),
           auto_calculate_expiry: true,
           validity_period_months: 12,
           status: 'active'
-        })
+        } as never)
       
       if (insertError) {
         throw insertError
@@ -328,7 +330,7 @@ export default function DocumentsPage() {
                     <div>
                       <p className="font-medium text-gray-900">{doc.title}</p>
                       <p className="text-sm text-gray-500">
-                        업로드일: {new Date(doc.created_at).toLocaleDateString('ko-KR')}
+                        업로드일: {doc.created_at ? new Date(doc.created_at).toLocaleDateString('ko-KR') : '-'}
                       </p>
                       {doc.expiry_date && (
                         <p className="text-sm text-orange-600">

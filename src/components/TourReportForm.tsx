@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -133,6 +132,8 @@ export default function TourReportForm({
       customerCount: getText('고객 수', 'Customer Count'),
       weather: getText('날씨', 'Weather'),
       mainStopsVisited: getText('주요 방문지', 'Main Stops Visited'),
+      mainStopsLoading: getText('주요 방문지 불러오는 중…', 'Loading main stops…'),
+      mainStopsFromCourseEmpty: getText('연결된 코스 방문지가 없습니다.', 'No linked course stops found.'),
       activitiesCompleted: getText('완료된 활동', 'Activities Completed'),
       overallMood: getText('전체 분위기', 'Overall Mood'),
       guestComments: getText('고객 코멘트', 'Guest Comments'),
@@ -323,7 +324,10 @@ export default function TourReportForm({
 
         const mergeCourseRows = (rows: Record<string, unknown>[] | null | undefined) => {
           for (const row of rows || []) {
-            byId.set(row.id as string, row as CourseForMainStops)
+            byId.set(row.id as string, {
+              ...row,
+              tour_course_categories: (row as { tour_course_categories?: CourseForMainStops['tour_course_categories'] }).tour_course_categories ?? null,
+            } as CourseForMainStops)
           }
         }
 
@@ -334,7 +338,10 @@ export default function TourReportForm({
           if (error) {
             const r = await supabase.from('tour_courses').select(baseCourseSelect).in('id', expanded)
             if (r.error) throw error
-            data = r.data
+            data = (r.data ?? []).map(row => ({
+              ...row,
+              tour_course_categories: null,
+            }))
           }
           mergeCourseRows(data as Record<string, unknown>[])
         }
@@ -355,7 +362,7 @@ export default function TourReportForm({
               .eq('product_id', cand)
               .order('order', { ascending: true })
             if (!r.error) {
-              ptcRows = r.data
+              ptcRows = r.data as typeof ptcRows
               eEmbed = null
             }
           }
@@ -371,7 +378,10 @@ export default function TourReportForm({
             const tc = row.tour_courses
             const course = Array.isArray(tc) ? tc[0] : tc
             if (course && typeof course === 'object' && course.id) {
-              byId.set(course.id, course)
+              byId.set(course.id, {
+                ...course,
+                tour_course_categories: (course as CourseForMainStops).tour_course_categories ?? null,
+              })
             }
           }
           selectedIds = [...new Set(ids)]
@@ -431,7 +441,7 @@ export default function TourReportForm({
             if (eAll) {
               const r = await supabase.from('tour_courses').select(baseCourseSelect).eq('product_id', cand)
               if (r.error) throw eAll
-              allRows = r.data
+              allRows = (r.data ?? []).map(row => ({ ...row, tour_course_categories: null }))
             }
             mergeCourseRows(allRows as Record<string, unknown>[])
             if (byId.size > 0) break
@@ -483,12 +493,15 @@ export default function TourReportForm({
           if (eDesc) {
             const r = await supabase.from('tour_courses').select(baseCourseSelect).in('parent_id', parentKeys)
             if (r.error) throw eDesc
-            children = r.data
+            children = (r.data ?? []).map(row => ({ ...row, tour_course_categories: null }))
           }
           const next: string[] = []
           for (const row of children || []) {
             if (!byId.has(row.id)) {
-              byId.set(row.id, row as CourseForMainStops)
+              byId.set(row.id, {
+                ...row,
+                tour_course_categories: (row as CourseForMainStops).tour_course_categories ?? null,
+              })
               next.push(row.id)
             }
             selectedScope.add(row.id)
@@ -513,10 +526,13 @@ export default function TourReportForm({
           if (e2) {
             const r = await supabase.from('tour_courses').select(baseCourseSelect).in('parent_id', parentKeys)
             if (r.error) throw e2
-            sibs = r.data
+            sibs = (r.data ?? []).map(row => ({ ...row, tour_course_categories: null }))
           }
           for (const row of sibs || []) {
-            byId.set(row.id, row as CourseForMainStops)
+            byId.set(row.id, {
+              ...row,
+              tour_course_categories: (row as CourseForMainStops).tour_course_categories ?? null,
+            })
             if (row.parent_id && siblingParents.has(row.parent_id) && isTourPointCategory(row as CourseForMainStops)) {
               selectedScope.add(row.id)
             }
@@ -676,12 +692,12 @@ export default function TourReportForm({
       }
 
       const { error } = reportId
-        ? await supabase.from('tour_reports').update(payload).eq('id', reportId)
+        ? await supabase.from('tour_reports').update(payload as never).eq('id', reportId)
         : await supabase.from('tour_reports').insert({
             tour_id: tourId,
             user_email: user.email,
             ...payload,
-          })
+          } as never)
 
       if (error) throw error
 

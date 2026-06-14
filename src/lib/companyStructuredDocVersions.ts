@@ -80,7 +80,7 @@ export async function insertStructuredDocVersion(
     .maybeSingle()
   if (!withFf.error) {
     const id = withFf.data?.id
-    return { error: null, insertedId: typeof id === 'string' ? id : undefined }
+    return typeof id === 'string' ? { error: null, insertedId: id } : { error: null }
   }
   if (isMissingFreeformColumnError(withFf.error.message)) {
     const { version_number, title, body_md, body_structure, published_by } = payload
@@ -97,7 +97,7 @@ export async function insertStructuredDocVersion(
       .maybeSingle()
     if (!noFf.error) {
       const id = noFf.data?.id
-      return { error: null, insertedId: typeof id === 'string' ? id : undefined }
+      return typeof id === 'string' ? { error: null, insertedId: id } : { error: null }
     }
     return { error: new Error(noFf.error.message) }
   }

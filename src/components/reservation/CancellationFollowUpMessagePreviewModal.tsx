@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { X, Eye, Loader2, Copy, Check, Pencil, RotateCcw, Mail, MessageSquare } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import {

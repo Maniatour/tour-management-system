@@ -443,8 +443,13 @@ export function tourExpenseDuplicatePairHasDifferentLinkedTours(a: DuplicatePair
   return expenseDuplicatePairHasDifferentLinkedTours(a, b)
 }
 
+type LedgerRowBeforeDisplay = Omit<
+  UnifiedLedgerDuplicateExpenseRow,
+  'display_payment_method' | 'display_statement_status' | 'display_financial_account' | 'tour_reference'
+>
+
 function applyLedgerDisplayFields(
-  row: Omit<UnifiedLedgerDuplicateExpenseRow, 'display_payment_method' | 'display_statement_status' | 'display_financial_account'>,
+  row: LedgerRowBeforeDisplay,
   pmLabels: Map<string, string>,
   lineAccountNames: Map<string, string>
 ): UnifiedLedgerDuplicateExpenseRow {
@@ -461,9 +466,10 @@ function applyLedgerDisplayFields(
   }
   return {
     ...row,
+    tour_reference: null,
     display_payment_method: displayPm,
     display_statement_status: displayStmt,
-    display_financial_account: displayFa
+    display_financial_account: displayFa,
   }
 }
 

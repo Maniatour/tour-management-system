@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -131,8 +131,8 @@ export default function PaymentMethodFinancialAccountLinkModal({
       let token = getStoredAccessToken() || (await getSessionToken())
       const fetchAccounts = (accessToken: string | null) =>
         fetch('/api/financial/accounts', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
           credentials: 'same-origin',
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
         })
 
       let res = await fetchAccounts(token)
@@ -206,8 +206,8 @@ export default function PaymentMethodFinancialAccountLinkModal({
       let token = getStoredAccessToken() || (await getSessionToken())
       const fetchPm = (accessToken: string | null) =>
         fetch('/api/payment-methods?limit=5000', {
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
           credentials: 'same-origin',
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
         })
       let res = await fetchPm(token)
       if (res.status === 401) {

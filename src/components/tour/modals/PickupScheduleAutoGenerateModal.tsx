@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, MapPin, Clock, Navigation, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Clock, ChevronUp, ChevronDown } from 'lucide-react'
 import { getSunriseSunsetData } from '@/lib/weatherApi'
 
 interface PickupHotel {
@@ -303,7 +303,7 @@ export default function PickupScheduleAutoGenerateModal({
               const geocoder = new window.google.maps.Geocoder()
               const result = await Promise.race([
                 new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-                  geocoder.geocode({ address: hotel.address }, (results, status) => {
+                  geocoder.geocode({ address: hotel.address! }, (results, status) => {
                     if (status === 'OK' && results) {
                       resolve(results)
                     } else {
@@ -454,7 +454,8 @@ export default function PickupScheduleAutoGenerateModal({
     }
 
     // 두 번째 호텔부터 그리디 알고리즘으로 최적 경로 구성
-    while (remainingHotels.length > 0) {
+    while (remainingHotels.length > 0 && currentPosition) {
+      const position = currentPosition
       // 현재 위치에서 각 호텔까지의 거리와 이동 시간 계산
       const hotelDistances = await Promise.all(
         remainingHotels.map(async (hotel) => {
@@ -464,11 +465,11 @@ export default function PickupScheduleAutoGenerateModal({
 
           // 직선 거리 계산 (Haversine 공식)
           const R = 6371 // 지구 반지름 (km)
-          const dLat = (hotel.position.lat() - currentPosition.lat()) * Math.PI / 180
-          const dLon = (hotel.position.lng() - currentPosition.lng()) * Math.PI / 180
+          const dLat = (hotel.position.lat() - position.lat()) * Math.PI / 180
+          const dLon = (hotel.position.lng() - position.lng()) * Math.PI / 180
           const a = 
             Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(currentPosition.lat() * Math.PI / 180) * Math.cos(hotel.position.lat() * Math.PI / 180) *
+            Math.cos(position.lat() * Math.PI / 180) * Math.cos(hotel.position.lat() * Math.PI / 180) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2)
           const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
           const distance = R * c // km
@@ -481,8 +482,8 @@ export default function PickupScheduleAutoGenerateModal({
                 const service = new window.google.maps.DirectionsService()
                 service.route(
                   {
-                    origin: currentPosition,
-                    destination: hotel.position,
+                    origin: position,
+                    destination: hotel.position!,
                     travelMode: window.google.maps.TravelMode.DRIVING
                   },
                   (result, status) => {
@@ -679,10 +680,11 @@ export default function PickupScheduleAutoGenerateModal({
         } else {
           // travelTimes가 없거나 0이면 기존 값 유지 (중요!)
           // 기존 스케줄에서 travelTimeFromPrevious와 rawTravelTime 유지
-          if (prevSchedule[i]?.travelTimeFromPrevious) {
-            roundedTime = prevSchedule[i].travelTimeFromPrevious
-            updatedSchedule[i].travelTimeFromPrevious = prevSchedule[i].travelTimeFromPrevious
-            updatedSchedule[i].rawTravelTime = prevSchedule[i].rawTravelTime || 0
+          if (prevSchedule[i]?.travelTimeFromPrevious != null) {
+            const prevTravel = prevSchedule[i].travelTimeFromPrevious!
+            roundedTime = prevTravel
+            updatedSchedule[i].travelTimeFromPrevious = prevTravel
+            updatedSchedule[i].rawTravelTime = prevSchedule[i].rawTravelTime ?? 0
           } else {
             // 기존 값도 없으면 기본값 10분 사용 (하지만 이 경우는 거의 없어야 함)
             roundedTime = 10
@@ -898,13 +900,15 @@ export default function PickupScheduleAutoGenerateModal({
         }
         return null
       })
-      .filter((wp): wp is google.maps.DirectionsWaypoint => wp !== null)
+      .filter((wp): wp is NonNullable<typeof wp> => wp !== null) as google.maps.DirectionsWaypoint[]
 
     if (waypoints.length === 0) return
 
     // 시작 위치를 지정된 주소로 설정
     const origin = startPointInfo.address
-    const destination = waypoints[waypoints.length - 1].location
+    const lastWaypoint = waypoints[waypoints.length - 1]
+    if (!lastWaypoint) return
+    const destination = lastWaypoint.location
     const intermediateWaypoints = waypoints // 모든 호텔을 경유지로 설정
 
     // 경로 계산 요청 정보를 문자열로 변환하는 헬퍼 함수
@@ -935,16 +939,18 @@ export default function PickupScheduleAutoGenerateModal({
 
     directionsService.route(
       {
-        origin: origin instanceof google.maps.LatLng 
-          ? origin 
-          : typeof origin === 'string' 
-            ? origin 
-            : { lat: 36.1699, lng: -115.1398 },
-        destination: destination instanceof google.maps.LatLng
-          ? destination
-          : typeof destination === 'string'
+        origin,
+        destination:
+          typeof destination === 'string'
             ? destination
-            : { lat: 36.1699, lng: -115.1398 },
+            : typeof destination === 'object' &&
+                destination !== null &&
+                'lat' in destination &&
+                typeof (destination as google.maps.LatLng).lat === 'function'
+              ? destination
+              : typeof destination === 'object' && destination !== null && 'lat' in destination
+                ? destination
+                : { lat: 36.1699, lng: -115.1398 },
         waypoints: intermediateWaypoints,
         optimizeWaypoints: false, // group_number 순서 유지
         travelMode: window.google.maps.TravelMode.DRIVING
@@ -1126,7 +1132,7 @@ export default function PickupScheduleAutoGenerateModal({
             }
             
             // 경유지 좌표 문제 확인
-            waypointsInfo.forEach((wp, idx) => {
+            waypointsInfo.forEach((wp) => {
               if (wp.hasPin && wp.location.includes(',')) {
                 const coords = wp.location.split(',')
                 if (coords.length >= 2) {

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -53,7 +53,7 @@ function sumPartySizesOnTour(
 
 interface Tour {
   id: string
-  product_id: string
+  product_id: string | null
   tour_date: string
   tour_guide_id?: string
   assistant_id?: string
@@ -254,7 +254,7 @@ export default function TourConnectionSection({
             }
           }
           setReservationPartyById(nextParty)
-          setTours(toursWithGuides)
+          setTours(toursWithGuides as unknown as Tour[])
         } else {
           setReservationPartyById(new Map())
           setTours([])
@@ -353,7 +353,7 @@ export default function TourConnectionSection({
               }
             }
             setReservationPartyById(nextParty)
-            setTours(toursWithGuides)
+            setTours(toursWithGuides as unknown as Tour[])
           } else {
             setReservationPartyById(new Map())
             setTours([])

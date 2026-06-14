@@ -27,7 +27,7 @@ interface UseVoiceCallProps {
   targetUserName?: string
 }
 
-export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUserId, targetUserName }: UseVoiceCallProps) {
+export function useVoiceCall({ roomId, userId, userName, isPublicView: _isPublicView, targetUserId, targetUserName }: UseVoiceCallProps) {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [callError, setCallError] = useState<string | null>(null)
   const [remoteAudio, setRemoteAudio] = useState<HTMLAudioElement | null>(null)
@@ -321,7 +321,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
   const startCall = useCallback(async (overrideTargetUserId?: string, overrideTargetUserName?: string) => {
     try {
       const finalTargetUserId = overrideTargetUserId || targetUserId
-      const finalTargetUserName = overrideTargetUserName || targetUserName
+      void (overrideTargetUserName || targetUserName)
       
       if (!finalTargetUserId) {
         console.error('통화할 사용자가 선택되지 않았습니다.')

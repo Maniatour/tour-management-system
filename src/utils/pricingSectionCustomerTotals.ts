@@ -1,4 +1,5 @@
 import { roundUsd2 } from '@/utils/pricingSectionDisplay'
+import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
 
 /** PricingSection `calculateTotalCustomerPaymentGross` 와 동일한 스냅샷 산식 */
 export function computePricingSectionCustomerPaymentGrossLike(params: {
@@ -14,14 +15,12 @@ export function computePricingSectionCustomerPaymentGrossLike(params: {
   prepaymentCost: number
   prepaymentTip: number
 }): number {
-  const cancelled =
-    params.status != null &&
-    ['cancelled', 'canceled'].includes(String(params.status).toLowerCase().trim())
+  const excludeNotIncluded = isNotIncludedExcludedReservationStatus(params.status)
   const discountedProductPrice =
     params.productPriceTotal - params.couponDiscount - params.additionalDiscount
   /** 예약 옵션(예: PGG 등)은 취소 후에도 ①·③·④ 정합을 위해 합산(줄별 환불은 옵션 상태·④에서 반영) */
   const optionsTotal = Math.max(0, Number(params.reservationOptionsTotalUsd) || 0)
-  const notIncludedPrice = cancelled ? 0 : params.notIncludedTotalUsd || 0
+  const notIncludedPrice = excludeNotIncluded ? 0 : params.notIncludedTotalUsd || 0
   return roundUsd2(
     discountedProductPrice +
       optionsTotal +

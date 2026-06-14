@@ -154,7 +154,7 @@ export default function GuideDocumentUploadModal({
           mime_type: selectedFile.type,
           issue_date: issueDate,
           expiry_date: expiryDate,
-          guide_email: user?.email,
+          guide_email: user?.email ?? null,
           auto_calculate_expiry: false,
           validity_period_months: Math.ceil((new Date(expiryDate).getTime() - new Date(issueDate).getTime()) / (1000 * 60 * 60 * 24 * 30)),
           status: 'active'

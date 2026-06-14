@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { signOut } from '@/lib/auth'
 import { getRoleDisplayName } from '@/lib/roles'
-import { User, LogOut, Settings, ChevronDown, Shield, Home, UserCheck, FileText } from 'lucide-react'
+import { User, LogOut, ChevronDown, Shield, Home, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'

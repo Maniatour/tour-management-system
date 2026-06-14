@@ -101,10 +101,11 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'id가 필요합니다.' }, { status: 400 })
     }
     const referenceKeys = await resolveReferenceKeys(methodId)
+    const admin = supabaseAdmin
 
     const results = await Promise.all(
       PAYMENT_METHOD_REF_TABLES.map(async (table) => {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await admin
           .from(table)
           .select(tableSelect(table))
           .in('payment_method', referenceKeys)

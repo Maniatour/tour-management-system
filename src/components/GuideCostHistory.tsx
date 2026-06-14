@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, History, Calendar, User, DollarSign } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, History, Calendar, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface GuideCostHistoryRecord {
@@ -58,7 +58,7 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
         return
       }
 
-      setHistory(data || [])
+      setHistory((data ?? []) as GuideCostHistoryRecord[])
     } catch (error) {
       console.error('변경 이력 조회 오류:', error)
       // 감사 로그에서 대체 조회 시도
@@ -84,23 +84,29 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
       }
 
       // 감사 로그 데이터를 GuideCostHistoryRecord 형식으로 변환
-      const convertedHistory = data?.map(log => ({
-        id: log.id,
-        action: log.action as 'created' | 'updated' | 'deactivated',
-        old_guide_fee: log.old_values?.guide_fee,
-        new_guide_fee: log.new_values?.guide_fee,
-        old_assistant_fee: log.old_values?.assistant_fee,
-        new_assistant_fee: log.new_values?.assistant_fee,
-        old_driver_fee: log.old_values?.driver_fee,
-        new_driver_fee: log.new_values?.driver_fee,
-        old_effective_from: log.old_values?.effective_from,
-        new_effective_from: log.new_values?.effective_from,
-        old_effective_to: log.old_values?.effective_to,
-        new_effective_to: log.new_values?.effective_to,
-        changed_at: log.created_at
-      })) || []
+      const convertedHistory = (data ?? []).map(log => {
+        const oldValues = (log.old_values ?? {}) as Record<string, unknown>
+        const newValues = (log.new_values ?? {}) as Record<string, unknown>
+        const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
+        const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+        return {
+          id: log.id,
+          action: log.action as GuideCostHistoryRecord['action'],
+          ...(num(oldValues.guide_fee) != null ? { old_guide_fee: num(oldValues.guide_fee) } : {}),
+          ...(num(newValues.guide_fee) != null ? { new_guide_fee: num(newValues.guide_fee) } : {}),
+          ...(num(oldValues.assistant_fee) != null ? { old_assistant_fee: num(oldValues.assistant_fee) } : {}),
+          ...(num(newValues.assistant_fee) != null ? { new_assistant_fee: num(newValues.assistant_fee) } : {}),
+          ...(num(oldValues.driver_fee) != null ? { old_driver_fee: num(oldValues.driver_fee) } : {}),
+          ...(num(newValues.driver_fee) != null ? { new_driver_fee: num(newValues.driver_fee) } : {}),
+          ...(str(oldValues.effective_from) != null ? { old_effective_from: str(oldValues.effective_from) } : {}),
+          ...(str(newValues.effective_from) != null ? { new_effective_from: str(newValues.effective_from) } : {}),
+          ...(str(oldValues.effective_to) != null ? { old_effective_to: str(oldValues.effective_to) } : {}),
+          ...(str(newValues.effective_to) != null ? { new_effective_to: str(newValues.effective_to) } : {}),
+          changed_at: log.created_at ?? '',
+        }
+      })
 
-      setHistory(convertedHistory)
+      setHistory(convertedHistory as GuideCostHistoryRecord[])
     } catch (error) {
       console.error('감사 로그 조회 오류:', error)
     }
@@ -174,7 +180,7 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
             </div>
           ) : (
             <div className="space-y-4">
-              {history.map((record, index) => (
+              {history.map((record) => (
                 <div key={record.id} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-3">

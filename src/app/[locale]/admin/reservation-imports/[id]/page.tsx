@@ -260,7 +260,7 @@ export default function ReservationImportDetailPage() {
   useEffect(() => {
     const raw = form.pickup_hotel
     if (!raw || !pickupHotelsList?.length) return
-    const isAlreadyId = pickupHotelsList.some((h: PickupHotel) => h.id === raw)
+    const isAlreadyId = pickupHotelsList.some((h) => h.id === raw)
     if (isAlreadyId) return
     const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }>)
     if (matchedId) setForm((f) => (f.pickup_hotel === matchedId ? f : { ...f, pickup_hotel: matchedId }))
@@ -283,6 +283,17 @@ export default function ReservationImportDetailPage() {
   const resolvedImportChannelId =
     form.channel_id ||
     (row && isManiatourHomepageBookingEmail(row.source_email, row.subject) ? 'M00001' : '')
+
+  const importInitialViatorNetRate = isViatorEmailImport
+    ? ext?.viator_net_rate_usd ??
+      extractViatorNetRateFromEmailBodyForImport(row?.raw_body_text) ??
+      extractViatorNetRateFromEmailBodyForImport(row?.raw_body_html ?? null)
+    : undefined
+  const importInitialAmount =
+    ext?.amount ??
+    extractPriceFromEmailBodyForImport(row?.raw_body_text) ??
+    extractPriceFromEmailBodyForImport(row?.raw_body_html ?? null)
+  const importInitialVariantKey = resolvedImportVariantKey ?? ext?.channel_variant_key
 
   // product_id: 이메일 파서에서 직접 설정된 값(제목 S코드 매핑) 우선, 없으면 상품명으로 매칭
   useEffect(() => {
@@ -790,29 +801,21 @@ export default function ReservationImportDetailPage() {
         layout="page"
         isNewReservation
         initialDataFromImport={{
-          customer_name: (normalizeCustomerNameFromImport(ext?.customer_name ?? form.customer_name) || (ext?.customer_name ?? form.customer_name)) || undefined,
-          customer_email: (ext?.customer_email ?? form.customer_email) || undefined,
-          customer_phone: (ext?.customer_phone ?? form.customer_phone) || undefined,
-          emergency_contact: ext?.emergency_contact || undefined,
-          customer_language: ext?.language || undefined,
+          ...(normalizeCustomerNameFromImport(ext?.customer_name ?? form.customer_name) || ext?.customer_name || form.customer_name
+            ? { customer_name: normalizeCustomerNameFromImport(ext?.customer_name ?? form.customer_name) || ext?.customer_name || form.customer_name }
+            : {}),
+          ...((ext?.customer_email ?? form.customer_email) ? { customer_email: ext?.customer_email ?? form.customer_email } : {}),
+          ...((ext?.customer_phone ?? form.customer_phone) ? { customer_phone: ext?.customer_phone ?? form.customer_phone } : {}),
+          ...(ext?.emergency_contact ? { emergency_contact: ext.emergency_contact } : {}),
+          ...(ext?.language ? { customer_language: ext.language } : {}),
         }}
         initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name || form.customer_name)}
-        initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
-        initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
-        initialViatorNetRateFromImport={
-          isViatorEmailImport
-            ? ext?.viator_net_rate_usd ??
-              extractViatorNetRateFromEmailBodyForImport(row?.raw_body_text) ??
-              extractViatorNetRateFromEmailBodyForImport(row?.raw_body_html ?? null)
-            : undefined
-        }
-        initialChannelVariantLabelFromImport={ext?.channel_variant_label}
-        initialVariantKeyFromImport={resolvedImportVariantKey ?? ext?.channel_variant_key}
-        initialAmountFromImport={
-          ext?.amount ??
-          extractPriceFromEmailBodyForImport(row?.raw_body_text) ??
-          extractPriceFromEmailBodyForImport(row?.raw_body_html ?? null)
-        }
+        {...(ext?.import_choice_option_names ? { initialChoiceOptionNamesFromImport: ext.import_choice_option_names } : {})}
+        {...(ext?.import_choice_undecided_groups ? { initialChoiceUndecidedGroupNamesFromImport: ext.import_choice_undecided_groups } : {})}
+        {...(importInitialViatorNetRate != null ? { initialViatorNetRateFromImport: importInitialViatorNetRate } : {})}
+        {...(ext?.channel_variant_label ? { initialChannelVariantLabelFromImport: ext.channel_variant_label } : {})}
+        {...(importInitialVariantKey ? { initialVariantKeyFromImport: importInitialVariantKey } : {})}
+        {...(importInitialAmount ? { initialAmountFromImport: importInitialAmount } : {})}
         importSubmitDisabled={isImportProcessed}
         useServerCustomerInsert
       />

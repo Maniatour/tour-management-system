@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Car, Calendar, Clock, User, Check, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Car, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { getVehicleStatusLabelKo } from '@/lib/vehicleStatus'
@@ -13,7 +13,7 @@ interface Vehicle {
   vehicle_type: string
   capacity: number
   status: string
-  current_mileage: number
+  current_mileage: number | null
   vehicle_category: string
   rental_company?: string
   daily_rate?: number
@@ -46,7 +46,7 @@ export default function VehicleAssignmentModal({
   const [endTime, setEndTime] = useState<string>('')
   const [driverName, setDriverName] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
-  const [selectedRentalReservation, setSelectedRentalReservation] = useState<string>('')
+  const [_selectedRentalReservation, setSelectedRentalReservation] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [tourData, setTourData] = useState<any>(null)
@@ -67,7 +67,7 @@ export default function VehicleAssignmentModal({
         .order('vehicle_number', { ascending: true })
 
       if (error) throw error
-      setVehicles(data || [])
+      setVehicles((data ?? []) as Vehicle[])
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
     } finally {
@@ -86,12 +86,18 @@ export default function VehicleAssignmentModal({
       if (error) throw error
       
       if (data) {
-        setTourData(data)
-        setSelectedVehicle(data.tour_car_id || '')
-        setStartTime(data.car_start_time || '')
-        setEndTime(data.car_end_time || '')
-        setDriverName(data.car_driver_name || '')
-        setNotes(data.car_notes || '')
+        const tourRow = data as typeof data & {
+          car_start_time?: string | null
+          car_end_time?: string | null
+          car_driver_name?: string | null
+          car_notes?: string | null
+        }
+        setTourData(tourRow)
+        setSelectedVehicle(tourRow.tour_car_id || '')
+        setStartTime(tourRow.car_start_time || '')
+        setEndTime(tourRow.car_end_time || '')
+        setDriverName(tourRow.car_driver_name || '')
+        setNotes(tourRow.car_notes || '')
       }
     } catch (error) {
       console.error('투어 데이터를 불러오는 중 오류가 발생했습니다:', error)
@@ -116,7 +122,7 @@ export default function VehicleAssignmentModal({
           car_end_time: endTime,
           car_driver_name: driverName,
           car_notes: notes
-        })
+        } as never)
         .eq('id', tourId)
 
       if (error) throw error

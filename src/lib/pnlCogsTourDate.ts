@@ -215,7 +215,7 @@ export function pnlDetailTourDateYmd(
     return normalizePnlTourDateYmd(
       companyExpenseTourAnchorYmd({
         submit_on: row.submit_on ?? null,
-        accounting_period: row.accounting_period,
+        accounting_period: row.accounting_period ?? null,
       })
     )
   }

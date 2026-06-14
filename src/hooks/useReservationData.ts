@@ -1,18 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
-import { logSupabaseStatus } from '@/lib/supabaseHealthCheck'
 import { throttledSupabaseRequest } from '@/lib/requestThrottle'
 import { getCachedOrFetch, cacheKeys } from '@/lib/dataCache'
 import { useOptimizedData } from './useOptimizedData'
-import type { Database } from '@/lib/supabase'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 import type { 
   Customer, 
   Product, 
-  Channel, 
-  ProductOption, 
-  ProductOptionChoice, 
-  Option, 
-  PickupHotel, 
   Reservation 
 } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
@@ -92,11 +86,21 @@ export type UseReservationDataOptions = {
    * 예약 관리(서버 페이지네이션)와 함께 쓸 것.
    */
   customersByReservationIds?: boolean
+  /** true이면 폼 전용 카탈로그(쿠폰 등) 로드를 idle 이후로 미룸 */
+  deferFormCatalogs?: boolean
 }
 
 export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const disableReservationsAutoLoad = hookOptions?.disableReservationsAutoLoad === true
   const customersByReservationIds = hookOptions?.customersByReservationIds === true
+  const deferFormCatalogs = hookOptions?.deferFormCatalogs === true
+
+  const [formCatalogsEnabled, setFormCatalogsEnabled] = useState(!deferFormCatalogs)
+
+  useEffect(() => {
+    if (!deferFormCatalogs) return
+    return scheduleDeferredWork(() => setFormCatalogsEnabled(true), 1500)
+  }, [deferFormCatalogs])
 
   const fetchAllCustomers = useCallback(async () => {
     const allCustomers: Customer[] = []
@@ -347,8 +351,6 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         infant_price_adjustment: item.infant_price_adjustment,
         is_default: item.is_default,
         product_option_id: item.id,
-        created_at: item.created_at,
-        updated_at: item.updated_at
       }))
       
       return transformedChoices
@@ -411,7 +413,8 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return data || []
     },
     cacheKey: 'reservation-coupons',
-    cacheTime: 15 * 60 * 1000 // 15분 캐시 — SWR 로 자동 갱신
+    cacheTime: 15 * 60 * 1000, // 15분 캐시 — SWR 로 자동 갱신
+    enabled: formCatalogsEnabled,
   })
 
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -459,11 +462,11 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     productMap: Map<string, string>,
     tourMap: Map<string, boolean>
   ): Reservation[] =>
-    raw.map((item: Record<string, unknown>) => {
+    raw.map((item: Record<string, unknown>): Reservation => {
       const subCategory = productMap.get((item.product_id as string) || '')
       const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
       const hasExistingTour = isManiaTour ? tourMap.has(`${item.product_id}-${item.tour_date}`) : false
-      return {
+      const base: Reservation = {
         id: item.id as string,
         customerId: (item.customer_id as string) || '',
         productId: (item.product_id as string) || '',
@@ -483,7 +486,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         addedBy: (item.added_by as string) || '',
         addedTime: (item.created_at as string) || '',
         tourId: (item.tour_id as string) || '',
-        status: ((item.status as string) as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+        status: ((item.status as string) || 'pending') as Reservation['status'],
         updated_at: (item.updated_at as string | null) ?? null,
         amount_audited: !!item.amount_audited,
         amount_audited_at: (item.amount_audited_at as string | null) ?? null,
@@ -494,10 +497,13 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         selectedOptionPrices: (typeof item.selected_option_prices === 'string'
           ? (() => { try { return JSON.parse(item.selected_option_prices as string) } catch { return {} } })()
           : (item.selected_option_prices as { [k: string]: number }) || {}),
-        choices: (item.choices as Reservation['choices']) || null,
         hasExistingTour,
         customerCommunicationChannel: (item.customer_communication_channel as string | null) ?? null,
       }
+      if (item.choices != null && typeof item.choices === 'object') {
+        return { ...base, choices: item.choices as Record<string, unknown> }
+      }
+      return base
     })
 
   const fetchPricingMap = async (reservationIds: string[]) => {
@@ -533,47 +539,51 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       }
 
       if (data) {
-        data.forEach((p: Record<string, unknown>) => {
-          map.set(p.reservation_id as string, {
-            id: p.id != null ? String(p.id) : undefined,
-            total_price: toNumber(p.total_price),
-            balance_amount: toNumber(p.balance_amount),
-            adult_product_price: toNumber(p.adult_product_price),
-            child_product_price: toNumber(p.child_product_price),
-            infant_product_price: toNumber(p.infant_product_price),
-            product_price_total: toNumber(p.product_price_total),
-            required_option_total: toNumber(p.required_option_total),
-            subtotal: toNumber(p.subtotal),
+        const pricingRows = data as unknown as Record<string, unknown>[]
+        pricingRows.forEach((p) => {
+          const commissionPercent =
+            p.commission_percent === null || p.commission_percent === undefined
+              ? undefined
+              : toNumber(p.commission_percent as number | null | undefined)
+          const companyTotalRevenue =
+            p.company_total_revenue === null || p.company_total_revenue === undefined
+              ? undefined
+              : toNumber(p.company_total_revenue as number | null | undefined)
+          const operatingProfit =
+            p.operating_profit === null || p.operating_profit === undefined
+              ? undefined
+              : toNumber(p.operating_profit as number | null | undefined)
+          map.set(String(p.reservation_id), {
+            ...(p.id != null ? { id: String(p.id) } : {}),
+            total_price: toNumber(p.total_price as number | null | undefined),
+            balance_amount: toNumber(p.balance_amount as number | null | undefined),
+            adult_product_price: toNumber(p.adult_product_price as number | null | undefined),
+            child_product_price: toNumber(p.child_product_price as number | null | undefined),
+            infant_product_price: toNumber(p.infant_product_price as number | null | undefined),
+            product_price_total: toNumber(p.product_price_total as number | null | undefined),
+            required_option_total: toNumber(p.required_option_total as number | null | undefined),
+            subtotal: toNumber(p.subtotal as number | null | undefined),
             coupon_code: p.coupon_code != null ? String(p.coupon_code) : null,
-            coupon_discount: toNumber(p.coupon_discount),
-            additional_discount: toNumber(p.additional_discount),
-            additional_cost: toNumber(p.additional_cost),
-            card_fee: toNumber(p.card_fee),
-            tax: toNumber(p.tax),
-            prepayment_cost: toNumber(p.prepayment_cost),
-            prepayment_tip: toNumber(p.prepayment_tip),
-            option_total: toNumber(p.option_total),
-            choices_total: toNumber(p.choices_total),
-            not_included_price: toNumber(p.not_included_price),
-            private_tour_additional_cost: toNumber(p.private_tour_additional_cost),
-            refund_amount: toNumber(p.refund_amount),
-            commission_percent:
-              p.commission_percent === null || p.commission_percent === undefined
-                ? undefined
-                : toNumber(p.commission_percent),
-            commission_amount: toNumber(p.commission_amount),
-            commission_base_price: toNumber(p.commission_base_price),
-            channel_settlement_amount: toNumber(p.channel_settlement_amount),
-            deposit_amount: toNumber(p.deposit_amount),
-            company_total_revenue:
-              p.company_total_revenue === null || p.company_total_revenue === undefined
-                ? undefined
-                : toNumber(p.company_total_revenue),
-            operating_profit:
-              p.operating_profit === null || p.operating_profit === undefined
-                ? undefined
-                : toNumber(p.operating_profit),
-            currency: 'USD'
+            coupon_discount: toNumber(p.coupon_discount as number | null | undefined),
+            additional_discount: toNumber(p.additional_discount as number | null | undefined),
+            additional_cost: toNumber(p.additional_cost as number | null | undefined),
+            card_fee: toNumber(p.card_fee as number | null | undefined),
+            tax: toNumber(p.tax as number | null | undefined),
+            prepayment_cost: toNumber(p.prepayment_cost as number | null | undefined),
+            prepayment_tip: toNumber(p.prepayment_tip as number | null | undefined),
+            option_total: toNumber(p.option_total as number | null | undefined),
+            choices_total: toNumber(p.choices_total as number | null | undefined),
+            not_included_price: toNumber(p.not_included_price as number | null | undefined),
+            private_tour_additional_cost: toNumber(p.private_tour_additional_cost as number | null | undefined),
+            refund_amount: toNumber(p.refund_amount as number | null | undefined),
+            ...(commissionPercent !== undefined ? { commission_percent: commissionPercent } : {}),
+            commission_amount: toNumber(p.commission_amount as number | null | undefined),
+            commission_base_price: toNumber(p.commission_base_price as number | null | undefined),
+            channel_settlement_amount: toNumber(p.channel_settlement_amount as number | null | undefined),
+            deposit_amount: toNumber(p.deposit_amount as number | null | undefined),
+            ...(companyTotalRevenue !== undefined ? { company_total_revenue: companyTotalRevenue } : {}),
+            ...(operatingProfit !== undefined ? { operating_profit: operatingProfit } : {}),
+            currency: 'USD',
           })
         })
       }
@@ -608,7 +618,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         continue
       }
       const withRows = new Set(
-        (data || []).map((r: { reservation_id: string }) => r.reservation_id).filter(Boolean)
+        (data || [])
+          .map((r) => r.reservation_id)
+          .filter((id): id is string => Boolean(id))
       )
       for (const id of chunk) {
         map.set(id, withRows.has(id))
@@ -705,7 +717,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         return
       }
 
-      const firstBatch = (firstBatchRaw || []) as Record<string, unknown>[]
+      const firstBatch = (firstBatchRaw || []) as unknown as Record<string, unknown>[]
       if (firstBatch.length === 0) {
         setReservations([])
         setReservationsLoading(false)
@@ -771,7 +783,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
           .order('created_at', { ascending: false })
           .range(from, from + PAGE_SIZE - 1)
         if (error) break
-        const list = (page || []) as Record<string, unknown>[]
+        const list = (page || []) as unknown as Record<string, unknown>[]
         if (list.length === 0) break
         restRaw = restRaw.concat(list)
         setLoadingProgress(prev => ({ ...prev, current: firstMapped.length + restRaw.length }))
@@ -797,10 +809,13 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       })
       const allToursExistence = await getCachedOrFetch(
         cacheKeys.tours(allProductIds, allTourDates),
-        () =>
-          maniaIdsFull.length === 0
-            ? Promise.resolve([])
-            : supabase.from('tours').select('product_id, tour_date').in('product_id', maniaIdsFull).in('tour_date', allTourDates).then(({ data }) => data || []),
+        async () => {
+          if (maniaIdsFull.length === 0) return []
+          const { data } = await throttledSupabaseRequest(() =>
+            supabase.from('tours').select('product_id, tour_date').in('product_id', maniaIdsFull).in('tour_date', allTourDates)
+          )
+          return data || []
+        },
         5 * 60 * 1000
       )
       const tourMapFull = new Map((allToursExistence as { product_id: string; tour_date: string }[]).map(t => [`${t.product_id}-${t.tour_date}`, true]))

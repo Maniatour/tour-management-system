@@ -218,7 +218,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   onEndMileageChange,
   onSave,
   onLoadTeamMembersFallback,
-  onFetchVehicles,
+  onFetchVehicles: _onFetchVehicles,
   getTeamMemberName,
   getVehicleName
 }) => {
@@ -277,11 +277,6 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
     // nick_name 우선, 없으면 name_ko, 없으면 이메일 표시
     return member.nick_name || member.name_ko || member.email
   }
-
-  const guideDriverCount = teamMembers.filter((m) => {
-    if (!isMemberActive(m)) return false
-    return positionFilter(m)
-  }).length
 
   const formatRentalDateShort = (dateStr?: string | null) => {
     if (!dateStr) return ''

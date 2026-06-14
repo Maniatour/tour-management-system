@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState } from 'react'
 import { 
   Search, 
   Filter, 
@@ -54,7 +53,6 @@ export default function DocumentFilters({
   viewMode,
   setViewMode
 }: DocumentFiltersProps) {
-  const t = useTranslations('documents')
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filterContent = (

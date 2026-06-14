@@ -45,7 +45,7 @@ const DEFAULT_CHUNK_SIZE = 500
 const MAX_RETRIES = 1  // 재시도 횟수 축소 (3 → 1)
 const BASE_DELAY = 500 // 재시도 대기 시간 축소 (1000ms → 500ms)
 const MAX_DELAY = 3000 // 최대 대기 시간 축소 (10000ms → 3000ms)
-const API_TIMEOUT = 15000 // API 타임아웃 (15초)
+const SHEETS_READ_TIMEOUT_MS = 120_000
 
 // 서비스 계정 인증을 위한 설정
 const getAuthClient = () => {
@@ -84,6 +84,14 @@ const getAuthClient = () => {
   })
 
   return auth
+}
+
+function createSheetsApi(auth: JWT, timeoutMs = SHEETS_READ_TIMEOUT_MS) {
+  return createSheetsClient({
+    version: 'v4',
+    auth: auth as never,
+    ...(timeoutMs > 0 ? { timeout: timeoutMs } : {}),
+  })
 }
 
 // 재시도 로직을 위한 헬퍼 함수
@@ -284,11 +292,7 @@ const readGoogleSheetInChunks = async (
 export const readGoogleSheet = async (spreadsheetId: string, range: string, chunkSize?: number) => {
   try {
     const auth = getAuthClient()
-    const sheets = createSheetsClient({ 
-      version: 'v4', 
-      auth,
-      timeout: 120000, // 120초로 증가 (대용량 시트 및 느린 네트워크 지원)
-    })
+    const sheets = createSheetsApi(auth)
 
     // 청크 단위 처리 여부 확인
     if (chunkSize && range.includes(':')) {
@@ -417,11 +421,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     }
 
     const auth = getAuthClient()
-    const sheets = createSheetsClient({ 
-      version: 'v4', 
-      auth,
-      timeout: 20000 // 20초로 축소 (빠른 응답 우선)
-    })
+    const sheets = createSheetsApi(auth, 20_000)
 
     // 타임아웃 설정 (20초로 축소)
     let timeoutId: NodeJS.Timeout | null = null
@@ -595,7 +595,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
 export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string) => {
   try {
     const auth = getAuthClient()
-    const sheets = createSheetsClient({ version: 'v4', auth })
+    const sheets = createSheetsApi(auth, 0)
 
     // 실제 사용된 범위를 정확히 파악하기 위해 시트 메타데이터 조회
     const response = await retryWithBackoff(async () => {
@@ -667,32 +667,6 @@ export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string
   }
 }
 
-// 빠른 컬럼 수 파악 함수 (캐시 우선, 빠른 실패)
-const getQuickColumnCount = async (spreadsheetId: string, sheetName: string): Promise<number> => {
-  const cacheKey = `columnCount_${spreadsheetId}_${sheetName}`
-  const cached = sheetInfoCache.get(cacheKey)
-  
-  // 캐시가 있으면 즉시 반환 (API 호출 완전 스킵)
-  if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-    return cached.data as number
-  }
-  
-  // 캐시가 없어도 기본값 26을 먼저 캐시에 저장하고 반환
-  // API 호출은 백그라운드에서 시도하거나 건너뜀
-  // 이렇게 하면 첫 번째 호출도 즉시 반환됨
-  const defaultColumnCount = 26
-  
-  // 캐시에 기본값 저장 (동기화 시작 시 지연 방지)
-  sheetInfoCache.set(cacheKey, {
-    data: defaultColumnCount,
-    timestamp: Date.now()
-  })
-  
-  // 동기화 성능을 위해 API 호출 건너뜀 - 기본값 26개면 대부분의 시트에 충분
-  // 실제 컬럼 수 파악은 readGoogleSheetInChunks에서 자동으로 처리됨
-  return defaultColumnCount
-}
-
 // 동적으로 시트의 실제 사용된 범위로 데이터 읽기 (청크 단위 처리 지원) - 최적화된 버전
 export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: string) => {
   try {
@@ -755,11 +729,7 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
     console.log(`📊 Reading sheet sample: ${sheetName}`)
     
     const auth = getAuthClient()
-    const sheets = createSheetsClient({
-      version: 'v4',
-      auth,
-      timeout: 30000
-    })
+    const sheets = createSheetsApi(auth, 30_000)
     
     let timeoutId: NodeJS.Timeout | null = null
     const timeoutPromise = new Promise<never>((_, reject) => {

@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { X, Save, Calendar, DollarSign, Users, Printer, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
 import { useTranslations, useLocale } from 'next-intl'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
@@ -203,8 +204,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         return
       }
 
-      const { data: officeTipsData } = await supabase
-        .from('tour_office_tips')
+      const { data: officeTipsData } = await fromUntypedTable(supabase, 'tour_office_tips')
         .select('tour_id, office_tip_amount, note, settled_at')
         .in('tour_id', toursData.map((t: { id: string }) => t.id))
 
@@ -337,8 +337,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         }
       }
 
-      const { data: mealRows, error: mealErr } = await supabase
-        .from('office_meal_log')
+      const { data: mealRows, error: mealErr } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email, meal_date')
         .in('employee_email', selectedStaffEmails)
 
@@ -547,8 +546,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         note: tour.note || null,
         settled_at: settledAt ?? tour.settled_at ?? null
       }
-      const { data: existing, error: fetchError } = await supabase
-        .from('tour_office_tips')
+      const { data: existing, error: fetchError } = await fromUntypedTable(supabase, 'tour_office_tips')
         .select('id')
         .eq('tour_id', tour.id)
         .maybeSingle()
@@ -556,12 +554,12 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         throw new Error(`투어 팁 조회 실패: ${fetchError.message}`)
       }
       if (existing) {
-        const { error: updateError } = await supabase.from('tour_office_tips').update(payload).eq('tour_id', tour.id)
+        const { error: updateError } = await fromUntypedTable(supabase, 'tour_office_tips').update(payload).eq('tour_id', tour.id)
         if (updateError) {
           throw new Error(`저장 실패 (투어 ${tour.tour_date}): ${updateError.message}`)
         }
       } else {
-        const { error: insertError } = await supabase.from('tour_office_tips').insert(payload)
+        const { error: insertError } = await fromUntypedTable(supabase, 'tour_office_tips').insert(payload)
         if (insertError) {
           throw new Error(`저장 실패 (투어 ${tour.tour_date}): ${insertError.message}`)
         }

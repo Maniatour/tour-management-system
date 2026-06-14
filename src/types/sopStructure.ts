@@ -229,15 +229,18 @@ export function prefillSortOrders(doc: SopDocument): SopDocument {
       title_ko: s.title_ko ?? '',
       title_en: s.title_en ?? '',
       sort_order: i,
-      categories: s.categories.map((c, j) => ({
-        ...c,
-        title_ko: c.title_ko ?? '',
-        title_en: c.title_en ?? '',
-        content_ko: c.content_ko ?? '',
-        content_en: c.content_en ?? '',
-        sort_order: j,
-        checklist_items: sanitizeChecklistItems(c.checklist_items),
-      })),
+      categories: s.categories.map((c, j) => {
+        const checklist_items = sanitizeChecklistItems(c.checklist_items)
+        return {
+          ...c,
+          title_ko: c.title_ko ?? '',
+          title_en: c.title_en ?? '',
+          content_ko: c.content_ko ?? '',
+          content_en: c.content_en ?? '',
+          sort_order: j,
+          ...(checklist_items !== undefined ? { checklist_items } : {}),
+        }
+      }),
     })),
   }
 }
@@ -308,7 +311,7 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
     content_ko: typeof o.content_ko === 'string' ? o.content_ko : legacyContent,
     content_en: typeof o.content_en === 'string' ? o.content_en : '',
     sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
-    checklist_items,
+    ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }
 
@@ -891,13 +894,14 @@ function mergeChecklistItemsForLocale(
 }
 
 function mergeCategoryForLocale(ec: SopCategory, bc: SopCategory | undefined, loc: SopEditLocale): SopCategory {
+  const checklist_items = mergeChecklistItemsForLocale(ec.checklist_items, bc?.checklist_items, loc)
   return {
     ...ec,
     title_ko: loc === 'ko' ? ec.title_ko : (bc?.title_ko ?? ec.title_ko),
     title_en: loc === 'en' ? ec.title_en : (bc?.title_en ?? ec.title_en),
     content_ko: loc === 'ko' ? ec.content_ko : (bc?.content_ko ?? ec.content_ko),
     content_en: loc === 'en' ? ec.content_en : (bc?.content_en ?? ec.content_en),
-    checklist_items: mergeChecklistItemsForLocale(ec.checklist_items, bc?.checklist_items, loc),
+    ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }
 
@@ -953,7 +957,7 @@ export function mergeLatestSectionSnapshotsIntoDoc(
     sections: doc.sections.map((s) => {
       const snap = snapshotsBySectionId.get(s.id)
       if (!snap) return s
-      const merged = parseSopSectionJson(sopDocumentToJson(snap) as unknown)
+      const merged = parseSopSectionJson(JSON.parse(JSON.stringify(snap)) as unknown)
       if (!merged) return s
       return { ...merged, id: s.id }
     }),

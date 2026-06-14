@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { User, Mail, Phone, MapPin, Globe, Save, ArrowLeft, Upload, XCircle, Image as ImageIcon, AlertCircle, Shield } from 'lucide-react'
+import { User, Mail, Phone, MapPin, Globe, Save, ArrowLeft, Upload, XCircle, AlertCircle, Shield } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 interface Customer {
   id: string
   name: string
-  email: string
+  email: string | null
   phone: string | null
   language: string | null
   resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
@@ -20,7 +21,7 @@ interface Customer {
 }
 
 export default function CustomerProfile() {
-  const { user, userRole, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const { user, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
@@ -136,12 +137,12 @@ export default function CustomerProfile() {
       }
 
       if (customerData) {
-        setCustomer(customerData)
+        setCustomer(customerData as unknown as Customer)
         setFormData({
           name: customerData.name || '',
           phone: customerData.phone || '',
           language: customerData.language || 'ko',
-          resident_status: customerData.resident_status || null
+          resident_status: (customerData.resident_status as Customer['resident_status']) ?? null
         })
         setPassPhotoUrl(customerData.pass_photo_url || null)
         setIdPhotoUrl(customerData.id_photo_url || null)
@@ -179,16 +180,17 @@ export default function CustomerProfile() {
           code: error?.code || 'No code',
           details: error?.details || 'No details',
           hint: error?.hint || 'No hint',
-          status: error?.status || 'No status',
+          status: error?.code || 'No status',
           email: authUser.email
         })
         // 406 오류나 다른 권한 오류의 경우 새 고객으로 처리
-        if (error.code === 'PGRST116' || error.code === 'PGRST301' || error.status === 406) {
+        if (error.code === 'PGRST116' || error.code === 'PGRST301') {
           setCustomer(null)
           setFormData({
             name: authUser.name || authUser.email?.split('@')[0] || '',
             phone: '',
-            language: 'ko'
+            language: 'ko',
+            resident_status: null
           })
           setLoading(false)
           return
@@ -198,12 +200,12 @@ export default function CustomerProfile() {
       }
 
       if (customerData) {
-        setCustomer(customerData)
+        setCustomer(customerData as unknown as Customer)
         setFormData({
           name: customerData.name || '',
           phone: customerData.phone || '',
           language: customerData.language || 'ko',
-          resident_status: customerData.resident_status || null
+          resident_status: (customerData.resident_status as Customer['resident_status']) ?? null
         })
         setPassPhotoUrl(customerData.pass_photo_url || null)
         setIdPhotoUrl(customerData.id_photo_url || null)
@@ -225,7 +227,8 @@ export default function CustomerProfile() {
       setFormData({
         name: authUser.name || authUser.email?.split('@')[0] || '',
         phone: '',
-        language: 'ko'
+        language: 'ko',
+        resident_status: null
       })
     } finally {
       setLoading(false)
@@ -406,8 +409,7 @@ export default function CustomerProfile() {
           }
         } else {
           // 새 고객 정보 생성
-          const { error } = await supabase
-            .from('customers')
+          const { error } = await fromUntypedTable(supabase, 'customers')
             .insert({
               name: formData.name,
               email: authUser.email,
@@ -416,7 +418,7 @@ export default function CustomerProfile() {
               resident_status: formData.resident_status,
               pass_photo_url: passPhotoUrl,
               id_photo_url: idPhotoUrl
-            })
+            } as never)
 
           if (error) {
             console.error('고객 정보 생성 오류:', error)

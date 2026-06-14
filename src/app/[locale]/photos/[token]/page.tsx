@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Download, Share2, Calendar, User, Image as ImageIcon, Upload, X } from 'lucide-react'
+import { Download, Share2, Calendar, User, Image as ImageIcon, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -17,7 +17,7 @@ interface TourPhoto {
   file_path: string
   file_size: number
   mime_type: string
-  description?: string
+  description?: string | null
   created_at: string
   uploaded_by: string
   tour_id: string
@@ -36,7 +36,7 @@ interface Product {
 
 interface TourInfo {
   id: string
-  product_id: string
+  product_id: string | null
   tour_date: string
   tour_status: string
   products?: Product | null
@@ -78,7 +78,6 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
 
       // 먼저 share_token으로 조회 시도
       let photosData = null
-      let photosError = null
 
       // share_token으로 조회
       const { data: tokenData, error: tokenError } = await supabase
@@ -141,8 +140,8 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         return
       }
 
-      setPhotos(photosData)
-      setTourInfo(photosData[0].tours)
+      setPhotos(photosData as TourPhoto[])
+      setTourInfo(photosData[0].tours as TourInfo)
       // tour_id 저장 (업로드에 사용)
       setTourId(photosData[0].tour_id)
     } catch (error) {

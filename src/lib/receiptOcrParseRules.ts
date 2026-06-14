@@ -111,7 +111,7 @@ function normalizeSkip(r: unknown): ReceiptOcrPaidToSkipPatternStored | null {
   const plain_phrase =
     typeof o.plain_phrase === 'string' && o.plain_phrase.trim() ? o.plain_phrase.trim() : undefined
   if (!id || !pattern.trim()) return null
-  return { id, pattern, flags, enabled, ...(plain_phrase ? { plain_phrase } : {}) }
+  return { id, pattern, enabled, ...(plain_phrase ? { plain_phrase } : {}), ...(flags ? { flags } : {}) }
 }
 
 function normalizeAmountHint(r: unknown): ReceiptOcrAmountLineHintStored | null {
@@ -124,7 +124,7 @@ function normalizeAmountHint(r: unknown): ReceiptOcrAmountLineHintStored | null 
   const plain_phrase =
     typeof o.plain_phrase === 'string' && o.plain_phrase.trim() ? o.plain_phrase.trim() : undefined
   if (!id || !line_pattern.trim()) return null
-  return { id, line_pattern, flags, enabled, ...(plain_phrase ? { plain_phrase } : {}) }
+  return { id, line_pattern, enabled, ...(plain_phrase ? { plain_phrase } : {}), ...(flags ? { flags } : {}) }
 }
 
 export const MAX_BODY_MATCH_PHRASE = 120
@@ -297,8 +297,8 @@ export function serializeReceiptOcrRulesForSave(
       .map((r) => ({
         id: r.id,
         pattern: r.pattern.trim().slice(0, MAX_REGEX_PATTERN_LEN),
-        flags: r.flags?.trim() || undefined,
         enabled: r.enabled !== false,
+        ...(r.flags?.trim() ? { flags: r.flags.trim() } : {}),
         ...(r.plain_phrase?.trim() ? { plain_phrase: r.plain_phrase.trim().slice(0, 200) } : {}),
       }))
       .filter((r) => r.pattern.length > 0),
@@ -306,8 +306,8 @@ export function serializeReceiptOcrRulesForSave(
       .map((r) => ({
         id: r.id,
         line_pattern: r.line_pattern.trim().slice(0, MAX_REGEX_PATTERN_LEN),
-        flags: r.flags?.trim() || undefined,
         enabled: r.enabled !== false,
+        ...(r.flags?.trim() ? { flags: r.flags.trim() } : {}),
         ...(r.plain_phrase?.trim() ? { plain_phrase: r.plain_phrase.trim().slice(0, 200) } : {}),
       }))
       .filter((r) => r.line_pattern.length > 0),
