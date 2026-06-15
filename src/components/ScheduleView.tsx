@@ -92,6 +92,21 @@ import {
   isScheduleAirportSendingRowKey,
   normalizeScheduleSelectedProducts,
 } from '@/lib/scheduleAirportPickDropGroup'
+import {
+  SCHEDULE_MISC_TOUR_DISPLAY_NAME,
+  SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY,
+  expandMiscTourStoredProductIds,
+  applyMiscTourToSelectedProducts,
+  buildMiscTourDayProductBreakdown,
+  expandScheduleRowProductIdsWithMisc,
+  getMiscTourStoredItemLabel,
+  getScheduleMiscTourDisplayName,
+  getScheduleRowMemberIdSet,
+  isScheduleAggregatedRowKey,
+  isScheduleMiscTourRowKey,
+  isMiscTourSelectableProduct,
+  normalizeMiscTourProductIds,
+} from '@/lib/scheduleMiscTourGroup'
 import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
 import {
   TicketBookingBookingStatusIcon,
@@ -709,6 +724,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   )
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
+  const [showMiscTourModal, setShowMiscTourModal] = useState(false)
+  const [miscTourProductIds, setMiscTourProductIds] = useState<string[]>([])
+  const [miscTourModalDraft, setMiscTourModalDraft] = useState<string[]>([])
   const [showTeamModal, setShowTeamModal] = useState(false)
   const [teamModalTab, setTeamModalTab] = useState<'active' | 'inactive'>('active')
   const [teamModalSearchQuery, setTeamModalSearchQuery] = useState('')
@@ -1254,7 +1272,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const { data: sharedSettings, error: sharedError } = await supabase
         .from('shared_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors', 'schedule_vehicle_row_order'])
+        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors', 'schedule_vehicle_row_order', SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY])
 
       if (sharedError) {
         console.warn('Error loading shared settings from database:', sharedError)
@@ -1343,6 +1361,25 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           console.warn('Error parsing saved vehicle row order:', parseError)
         }
       }
+
+      const sharedMiscTourProducts = sharedSettingsMap.get(SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY)
+        || (() => {
+          const cached = localStorage.getItem(`shared_${SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY}`)
+          return cached ? JSON.parse(cached) : null
+        })()
+      const savedMiscTourProducts =
+        sharedMiscTourProducts || localStorage.getItem(SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY)
+      if (savedMiscTourProducts) {
+        try {
+          const parsed =
+            typeof savedMiscTourProducts === 'string'
+              ? JSON.parse(savedMiscTourProducts)
+              : savedMiscTourProducts
+          setMiscTourProductIds(Array.isArray(parsed) ? parsed : [])
+        } catch (parseError) {
+          console.warn('Error parsing saved misc tour products:', parseError)
+        }
+      }
     } catch (error) {
       console.warn('Error in loadUserSettings, using localStorage fallback:', error)
       // localStorage에서 직접 로드
@@ -1387,6 +1424,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           console.warn('Error parsing saved vehicle row order from localStorage:', parseError)
         }
       }
+
+      const savedMiscTourProducts =
+        localStorage.getItem(`shared_${SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY}`) ||
+        localStorage.getItem(SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY)
+      if (savedMiscTourProducts) {
+        try {
+          setMiscTourProductIds(JSON.parse(savedMiscTourProducts))
+        } catch (parseError) {
+          console.warn('Error parsing saved misc tour products from localStorage:', parseError)
+        }
+      }
     }
   }, [currentDate])
 
@@ -1414,6 +1462,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           key.startsWith('schedule_selected') ||
           key === 'schedule_product_colors' ||
           key === 'schedule_vehicle_row_order' ||
+          key === SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY ||
           key === 'schedule_pending_draft'
         ) {
           keysToRemove.push(key)
@@ -1433,9 +1482,39 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 기본 색상(프리셋 id) - 상품 순서별 폴백
   const defaultPresetIds = useMemo(() => SCHEDULE_COLOR_PRESETS.map(p => p.id), [])
 
-  const scheduleProductPickerItems = useMemo(
-    () => buildScheduleProductPickerItems(products),
-    [products],
+  const scheduleProductPickerItems = useMemo(() => {
+    const miscSet = new Set(miscTourProductIds)
+    return buildScheduleProductPickerItems(products).filter((item) => !miscSet.has(item.id))
+  }, [products, miscTourProductIds])
+
+  const miscTourSelectableProducts = useMemo(() => {
+    const pickupHidden = new Set(getScheduleAirportPickupMemberProductIds(products))
+    const sendingMemberIds = getScheduleAirportSendingMemberProductIds(products)
+    const sendingHidden = new Set(sendingMemberIds)
+    const items: Array<{ id: string; name: string }> = []
+
+    const hasSelectableSending = products.some(
+      (p) => sendingHidden.has(p.id) && isMiscTourSelectableProduct(p),
+    )
+    if (hasSelectableSending) {
+      items.push({
+        id: getScheduleAirportSendingRowKey(products),
+        name: getScheduleAirportSendingDisplayName(products),
+      })
+    }
+
+    for (const p of products) {
+      if (pickupHidden.has(p.id) || sendingHidden.has(p.id)) continue
+      if (!isMiscTourSelectableProduct(p)) continue
+      items.push({ id: p.id, name: getScheduleProductLabel(p) || p.name })
+    }
+
+    return items.sort((a, b) => a.name.localeCompare(b.name, locale === 'ko' ? 'ko' : 'en'))
+  }, [products, locale])
+
+  const miscTourDayProductBreakdown = useMemo(
+    () => buildMiscTourDayProductBreakdown(miscTourProductIds, products, reservations),
+    [miscTourProductIds, products, reservations],
   )
 
   const scheduleAirportHintPayload = useMemo(() => {
@@ -1471,7 +1550,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   useEffect(() => {
     if (!products.length) return
     setSelectedProducts((prev) => {
-      const normalized = normalizeScheduleSelectedProducts(prev, products)
+      const withMisc = applyMiscTourToSelectedProducts(prev, miscTourProductIds, products)
+      const normalized = normalizeScheduleSelectedProducts(withMisc, products)
       if (
         normalized.length === prev.length &&
         normalized.every((id, i) => id === prev[i])
@@ -1515,7 +1595,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
       return changed ? next : prev
     })
-  }, [products])
+  }, [products, miscTourProductIds])
 
   // 상품 색상 변경 (관리자는 항상 공유 설정 DB 저장 → 모든 사용자 동일 적용)
   const changeProductColor = async (productId: string, colorClass: string) => {
@@ -2789,11 +2869,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const productCellReservationList = useMemo(() => {
     if (!productCellReservationsModal) return [] as Reservation[]
     const { productId, dateString } = productCellReservationsModal
-    const productIdSet = getScheduleAirportMemberIdSetForRowKey(
+    const productIdSet = getScheduleRowMemberIdSet(
       productId,
       products,
       airportPickupMemberIdSet,
       airportSendingMemberIdSet,
+      miscTourProductIds,
     )
     return (reservations as Reservation[])
       .filter((r) => {
@@ -2812,7 +2893,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const cb = String(b.created_at || '')
         return cb.localeCompare(ca)
       })
-  }, [productCellReservationsModal, reservations, customers, locale, products, airportPickupMemberIdSet, airportSendingMemberIdSet])
+  }, [productCellReservationsModal, reservations, customers, locale, products, airportPickupMemberIdSet, airportSendingMemberIdSet, miscTourProductIds])
 
   const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
     try {
@@ -2853,7 +2934,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     setProductCellCreateTourLoading(true)
     try {
-      const groupedRow = isScheduleAirportGroupedRowKey(rowKey)
+      const groupedRow = isScheduleAggregatedRowKey(rowKey)
       if (groupedRow) {
         for (const r of eligible) {
           const actualProductId = String(r.product_id || '')
@@ -3527,7 +3608,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     selectedProducts.forEach((rowKey) => {
       const memberProductIds = isScheduleAirportGroupedRowKey(rowKey)
         ? [...getScheduleAirportMemberIdSetForRowKey(rowKey, products, airportPickupMemberIdSet, airportSendingMemberIdSet)]
-        : expandScheduleRowProductIds(rowKey, products)
+        : isScheduleMiscTourRowKey(rowKey)
+          ? expandMiscTourStoredProductIds(miscTourProductIds, products)
+          : expandScheduleRowProductIds(rowKey, products)
       if (memberProductIds.length === 0) return
 
       const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
@@ -3535,7 +3618,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         ? { id: rowKey, name: getScheduleAirportPickupDisplayName(products, rowKey) }
         : isScheduleAirportSendingRowKey(rowKey)
           ? { id: rowKey, name: getScheduleAirportSendingDisplayName(products, rowKey) }
-          : products.find((p) => p.id === rowKey)
+          : isScheduleMiscTourRowKey(rowKey)
+            ? { id: rowKey, name: getScheduleMiscTourDisplayName() }
+            : products.find((p) => p.id === rowKey)
       if (!product) return
 
       const productTours = tours.filter((tour) =>
@@ -3802,6 +3887,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     tourCoversScheduleDate,
     airportPickupMemberIdSet,
     airportSendingMemberIdSet,
+    miscTourProductIds,
   ])
 
   // 가이드별 스케줄 데이터 계산
@@ -4049,7 +4135,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const toggled = selectedProducts.includes(productId)
       ? selectedProducts.filter((id) => id !== productId)
       : [...selectedProducts, productId]
-    const newSelection = normalizeScheduleSelectedProducts(toggled, products)
+    const newSelection = normalizeScheduleSelectedProducts(
+      applyMiscTourToSelectedProducts(toggled, miscTourProductIds, products),
+      products,
+    )
     setSelectedProducts(newSelection)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
     if (canManageSharedSchedule) {
@@ -5088,16 +5177,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const capacityOverflowVehicleModalTours = useMemo(() => {
     if (!capacityOverflowVehicleModal) return [] as Tour[]
     const { productId, dateString } = capacityOverflowVehicleModal
-    const memberProductIds = isScheduleAirportGroupedRowKey(productId)
-      ? [
-          ...getScheduleAirportMemberIdSetForRowKey(
-            productId,
-            products,
-            airportPickupMemberIdSet,
-            airportSendingMemberIdSet,
-          ),
-        ]
-      : expandScheduleRowProductIds(productId, products)
+    const memberProductIds = isScheduleAggregatedRowKey(productId)
+      ? [...getScheduleRowMemberIdSet(
+          productId,
+          products,
+          airportPickupMemberIdSet,
+          airportSendingMemberIdSet,
+          miscTourProductIds,
+        )]
+      : expandScheduleRowProductIdsWithMisc(productId, products, miscTourProductIds)
     const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
     return tours
       .filter(
@@ -5113,6 +5201,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     products,
     airportPickupMemberIdSet,
     airportSendingMemberIdSet,
+    miscTourProductIds,
   ])
 
   const capacityOverflowVehicleModalBreakdown = useMemo(() => {
@@ -6222,6 +6311,28 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 )}
               </button>
 
+              {/* 기타 투어 그룹 설정 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMiscTourModalDraft([...miscTourProductIds])
+                  setShowMiscTourModal(true)
+                }}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors relative"
+                title={
+                  locale === 'ko'
+                    ? `기타 (${miscTourProductIds.length}개 상품)`
+                    : `Other (${miscTourProductIds.length} products)`
+                }
+              >
+                <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
+                {miscTourProductIds.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                    {miscTourProductIds.length}
+                  </span>
+                )}
+              </button>
+
               {/* 팀원 선택 버튼 */}
               <button
                 onClick={() => {
@@ -6646,6 +6757,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           </button>
                         </div>
                         {product.product_name}
+                        {isScheduleMiscTourRowKey(productId) && (
+                          <button
+                            type="button"
+                            draggable={false}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setMiscTourModalDraft([...miscTourProductIds])
+                              setShowMiscTourModal(true)
+                            }}
+                            className="shrink-0 p-0.5 text-violet-700 hover:text-violet-900 rounded hover:bg-violet-100/80"
+                            title={locale === 'ko' ? '포함 상품 설정' : 'Configure grouped products'}
+                          >
+                            <Layers className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     {monthDays.map(({ dateString }) => {
@@ -6783,6 +6909,44 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                   <div
                                     className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left opacity-0 transition-none group-hover:opacity-100 group-focus-within:opacity-100"
                                   >
+                                    {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
+                                      <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
+                                        <div className="text-sm font-bold text-violet-200 tracking-tight">
+                                          {locale === 'ko' ? '포함 상품' : 'Grouped products'}
+                                        </div>
+                                        {(() => {
+                                          const dayBreakdown = miscTourDayProductBreakdown[dateString]
+                                          const activeEntries = dayBreakdown
+                                            ? Object.entries(dayBreakdown).filter(
+                                                ([, v]) => v.total > 0 || v.waiting > 0,
+                                              )
+                                            : []
+                                          if (activeEntries.length > 0) {
+                                            return activeEntries.map(([canon, v]) => (
+                                              <div
+                                                key={canon}
+                                                className="text-sm font-semibold leading-snug"
+                                              >
+                                                <span className="text-yellow-300">{v.name}</span>
+                                                <span className="tabular-nums font-bold text-white">
+                                                  {': '}
+                                                  {v.total}
+                                                  {v.waiting > 0 ? ` (+${v.waiting})` : ''}
+                                                </span>
+                                              </div>
+                                            ))
+                                          }
+                                          return miscTourProductIds.map((pid) => (
+                                            <div
+                                              key={pid}
+                                              className="text-sm font-semibold text-yellow-300 leading-snug"
+                                            >
+                                              {getMiscTourStoredItemLabel(pid, products)}
+                                            </div>
+                                          ))
+                                        })()}
+                                      </div>
+                                    )}
                                     <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
                                       <span className="inline-flex items-center gap-1 shrink-0">
                                         <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
@@ -9037,7 +9201,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 </button>
                 <button
                   onClick={async () => {
-                    const productsToSave = normalizeScheduleSelectedProducts(selectedProducts, products)
+                    const productsToSave = normalizeScheduleSelectedProducts(
+                      applyMiscTourToSelectedProducts(selectedProducts, miscTourProductIds, products),
+                      products,
+                    )
                     setSelectedProducts(productsToSave)
                     localStorage.setItem('schedule_product_colors', JSON.stringify(productColors))
                     if (canManageSharedSchedule && productsToSave.length > 0) {
@@ -9054,6 +9221,139 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
                 >
                   확인
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 기타 투어 포함 상품 설정 모달 */}
+      {showMiscTourModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center">
+                <Layers className="w-5 h-5 mr-2 text-violet-600" />
+                {locale === 'ko' ? '기타 포함 상품' : 'Other grouped products'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowMiscTourModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-3">
+              {locale === 'ko'
+                ? `선택한 상품은 스케줄에서 「${SCHEDULE_MISC_TOUR_DISPLAY_NAME}」 한 줄로 합쳐집니다. 날짜 칸에 마우스를 올리면 상품별 인원을 볼 수 있습니다. (${miscTourModalDraft.length}개 선택)`
+                : `Selected products are shown as one "${SCHEDULE_MISC_TOUR_DISPLAY_NAME}" row. Hover a date cell to see per-product counts. (${miscTourModalDraft.length} selected)`}
+            </p>
+
+            <div className="space-y-2 max-h-[55vh] overflow-y-auto mb-4">
+              {miscTourSelectableProducts.length > 0 ? (
+                miscTourSelectableProducts.map((item) => {
+                  const isSelected = miscTourModalDraft.includes(item.id)
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setMiscTourModalDraft((prev) =>
+                          prev.includes(item.id)
+                            ? prev.filter((id) => id !== item.id)
+                            : [...prev, item.id],
+                        )
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors border ${
+                        isSelected
+                          ? 'bg-violet-500 text-white border-violet-600'
+                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  )
+                })
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  {locale === 'ko' ? '선택 가능한 상품이 없습니다.' : 'No products available.'}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col space-y-3">
+              {canManageSharedSchedule && (
+                <div className="flex items-center space-x-2 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                  <span className="text-sm text-violet-900">
+                    {locale === 'ko'
+                      ? '기타 설정이 모든 사용자에게 동일하게 적용됩니다.'
+                      : 'Other settings apply to all users.'}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setMiscTourModalDraft([])}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  {locale === 'ko' ? '전체 해제' : 'Clear all'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMiscTourModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  {locale === 'ko' ? '취소' : 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const normalized = normalizeMiscTourProductIds(miscTourModalDraft, products)
+                    setMiscTourProductIds(normalized)
+                    const newSelection = normalizeScheduleSelectedProducts(
+                      applyMiscTourToSelectedProducts(selectedProducts, normalized, products),
+                      products,
+                    )
+                    setSelectedProducts(newSelection)
+                    localStorage.setItem(
+                      SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY,
+                      JSON.stringify(normalized),
+                    )
+                    localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
+                    if (canManageSharedSchedule) {
+                      await saveSharedSetting(SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY, normalized)
+                      localStorage.setItem(
+                        `shared_${SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY}`,
+                        JSON.stringify(normalized),
+                      )
+                      if (newSelection.length > 0) {
+                        await saveSharedSetting('schedule_selected_products', newSelection)
+                        localStorage.setItem(
+                          'shared_schedule_selected_products',
+                          JSON.stringify(newSelection),
+                        )
+                      } else {
+                        await (supabase as any)
+                          .from('shared_settings')
+                          .delete()
+                          .eq('setting_key', 'schedule_selected_products')
+                        localStorage.removeItem('shared_schedule_selected_products')
+                      }
+                    } else {
+                      await saveUserSetting(SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY, normalized)
+                      if (newSelection.length > 0) {
+                        await saveUserSetting('schedule_selected_products', newSelection)
+                      }
+                    }
+                    setShowMiscTourModal(false)
+                  }}
+                  className="px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600"
+                >
+                  {locale === 'ko' ? '확인' : 'Confirm'}
                 </button>
               </div>
             </div>
@@ -9903,7 +10203,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 const normalizedSt = st.trim().toLowerCase()
                 const subProductLabel =
                   productCellReservationsModal &&
-                  isScheduleAirportGroupedRowKey(productCellReservationsModal.productId)
+                  isScheduleAggregatedRowKey(productCellReservationsModal.productId)
                     ? products.find((p) => p.id === res.product_id)?.name
                     : null
                 const quickSet = productCellQuickStatusValues as readonly string[]

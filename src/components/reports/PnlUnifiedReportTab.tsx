@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { PieChart, Save, BookOpen, Settings, Printer, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import { fetchCashLedgerMatchedExpenseIdsBatched } from '@/lib/expense-cash-ledger-match'
 import {
   fetchDismissedDuplicateKeys,
   fetchDismissedDuplicateBatchInfo,
@@ -965,18 +966,37 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     ]
     const tourRefsPromise = fetchTourReferenceMap(tourIdsForRef)
 
-    const [teRe, reRe, ceRe, tbRe, thRe, dismissedKeys, dismissedUndo, tourDateByReservationId, tourRefs] =
-      await Promise.all([
-        fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
-        fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
-        fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
-        fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
-        fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
-        fetchDismissedDuplicateKeys(),
-        fetchDismissedDuplicateBatchInfo(),
-        tourDateByReservationIdPromise,
-        tourRefsPromise,
-      ])
+    const [
+      teRe,
+      reRe,
+      ceRe,
+      tbRe,
+      thRe,
+      teCashRe,
+      reCashRe,
+      ceCashRe,
+      tbCashRe,
+      thCashRe,
+      dismissedKeys,
+      dismissedUndo,
+      tourDateByReservationId,
+      tourRefs,
+    ] = await Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
+      fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
+      fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
+      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
+      fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
+      fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'tour_expenses', teIds),
+      fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'reservation_expenses', reIds),
+      fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'company_expenses', ceIds),
+      fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'ticket_bookings', tbIds),
+      fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'tour_hotel_bookings', thIds),
+      fetchDismissedDuplicateKeys(),
+      fetchDismissedDuplicateBatchInfo(),
+      tourDateByReservationIdPromise,
+      tourRefsPromise,
+    ])
 
     const tourDateLookup = buildPnlTourDateLookup(
       [
@@ -1000,11 +1020,11 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           detailLines.map((l) => ({
             ...l,
             statementReconciled:
-              (l.source === 'tour_expenses' && teRe.has(l.id)) ||
-              (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
-              (l.source === 'company_expenses' && ceRe.has(l.id)) ||
-              (l.source === 'ticket_bookings' && tbRe.has(l.id)) ||
-              (l.source === 'tour_hotel_bookings' && thRe.has(l.id)),
+              (l.source === 'tour_expenses' && (teRe.has(l.id) || teCashRe.has(l.id))) ||
+              (l.source === 'reservation_expenses' && (reRe.has(l.id) || reCashRe.has(l.id))) ||
+              (l.source === 'company_expenses' && (ceRe.has(l.id) || ceCashRe.has(l.id))) ||
+              (l.source === 'ticket_bookings' && (tbRe.has(l.id) || tbCashRe.has(l.id))) ||
+              (l.source === 'tour_hotel_bookings' && (thRe.has(l.id) || thCashRe.has(l.id))),
           })),
           tourDateLookup
         ),
@@ -1024,9 +1044,9 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           excludedDetailLines.map((l) => ({
             ...l,
             statementReconciled:
-              (l.source === 'tour_expenses' && teRe.has(l.id)) ||
-              (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
-              (l.source === 'company_expenses' && ceRe.has(l.id)),
+              (l.source === 'tour_expenses' && (teRe.has(l.id) || teCashRe.has(l.id))) ||
+              (l.source === 'reservation_expenses' && (reRe.has(l.id) || reCashRe.has(l.id))) ||
+              (l.source === 'company_expenses' && (ceRe.has(l.id) || ceCashRe.has(l.id))),
           })),
           tourDateLookup
         ),

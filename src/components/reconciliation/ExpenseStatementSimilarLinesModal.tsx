@@ -27,6 +27,14 @@ import {
   type StatementLineConflictResolution,
   type StatementLinePairCounterpartInfo,
 } from '@/lib/expense-reconciliation-similar-lines'
+import {
+  expenseSourceSupportsCashLedgerLink,
+  fetchLinkedCashTransactionsForExpense,
+  fetchSimilarCashTransactionsForExpense,
+  replaceExpenseCashLedgerMatch,
+  unlinkExpenseCashLedgerMatches,
+  type SimilarCashTransactionRow,
+} from '@/lib/expense-cash-ledger-match'
 import { fetchStatementLinePairsForLineIds } from '@/lib/statement-line-pairs'
 import { ArrowLeftRight } from 'lucide-react'
 import {
@@ -444,8 +452,18 @@ export default function ExpenseStatementSimilarLinesModal({
   >(() => new Map())
   const [offsetInjectedRows, setOffsetInjectedRows] = useState<SimilarStatementLineRow[]>([])
   const [offsetPairsLoading, setOffsetPairsLoading] = useState(false)
+  const [cashRows, setCashRows] = useState<SimilarCashTransactionRow[]>([])
+  const [linkedCashRows, setLinkedCashRows] = useState<SimilarCashTransactionRow[]>([])
+  const [selectedCashId, setSelectedCashId] = useState<string | null>(null)
+  const [cashLoading, setCashLoading] = useState(false)
+  const [cashSaving, setCashSaving] = useState(false)
+  const [unlinkingCashId, setUnlinkingCashId] = useState<string | null>(null)
 
   const ticketDateProbe = context?.ticketBookingDateProbe
+  const showCashLedgerSection =
+    Boolean(context) &&
+    context!.direction === 'outflow' &&
+    expenseSourceSupportsCashLedgerLink(context!.sourceTable)
 
   const contextRef = useRef(context)
   const matchModeRef = useRef(matchMode)
@@ -509,6 +527,45 @@ export default function ExpenseStatementSimilarLinesModal({
       setSourceAllocByLineId(linkedPack.allocatedByLineId)
       setMatchIdByLineId(linkedPack.matchIdByLineId)
       setRows(mergeLinkedAndCandidateRows(linkedPack.rows, list))
+
+      if (
+        ctx.direction === 'outflow' &&
+        expenseSourceSupportsCashLedgerLink(ctx.sourceTable)
+      ) {
+        setCashLoading(true)
+        try {
+          const linkedCash = await fetchLinkedCashTransactionsForExpense(supabase, {
+            sourceTable: ctx.sourceTable,
+            sourceId: ctx.sourceId,
+          })
+          setLinkedCashRows(linkedCash)
+          const linkedIds = new Set(linkedCash.map((r) => r.id))
+          const similarCash = await fetchSimilarCashTransactionsForExpense(supabase, {
+            dateYmd: ctx.dateYmd,
+            amount: ctx.amount,
+            linkedCashIds: linkedIds,
+          })
+          const mergedCash = [...linkedCash]
+          for (const row of similarCash) {
+            if (!mergedCash.some((x) => x.id === row.id)) mergedCash.push(row)
+          }
+          setCashRows(mergedCash)
+          if (!opts?.preserveSelection) {
+            setSelectedCashId(linkedCash[0]?.id ?? null)
+          }
+        } catch (cashErr) {
+          console.error(cashErr)
+          setLinkedCashRows([])
+          setCashRows([])
+          if (!opts?.preserveSelection) setSelectedCashId(null)
+        } finally {
+          setCashLoading(false)
+        }
+      } else {
+        setLinkedCashRows([])
+        setCashRows([])
+        if (!opts?.preserveSelection) setSelectedCashId(null)
+      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : tRef.current('loadError'))
       setLinkedRows([])
@@ -546,6 +603,12 @@ export default function ExpenseStatementSimilarLinesModal({
       setOffsetPairsByLineId(new Map())
       setOffsetInjectedRows([])
       setOffsetPairsLoading(false)
+      setCashRows([])
+      setLinkedCashRows([])
+      setSelectedCashId(null)
+      setCashLoading(false)
+      setCashSaving(false)
+      setUnlinkingCashId(null)
     }
   }, [open, contextLoadKey, runLoad])
 
@@ -1197,6 +1260,50 @@ export default function ExpenseStatementSimilarLinesModal({
     }
   }
 
+  const applyCashLink = async () => {
+    if (!context || !user?.email || !selectedCashId) {
+      setMessage(t('cashNeedSelect'))
+      return
+    }
+    const row = cashRows.find((r) => r.id === selectedCashId)
+    if (!row) {
+      setMessage(t('saveError'))
+      return
+    }
+    setCashSaving(true)
+    setMessage(null)
+    try {
+      await replaceExpenseCashLedgerMatch(supabase, {
+        actorEmail: user.email,
+        expenseSourceTable: context.sourceTable,
+        expenseSourceId: context.sourceId,
+        cashTransactionId: row.id,
+        matchedAmount: Math.min(Math.abs(context.amount), row.amount),
+      })
+      onApplied?.()
+      onOpenChange(false)
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : t('saveError'))
+    } finally {
+      setCashSaving(false)
+    }
+  }
+
+  const unlinkCash = async (cashId: string) => {
+    if (!context || !user?.email) return
+    setUnlinkingCashId(cashId)
+    setMessage(null)
+    try {
+      await unlinkExpenseCashLedgerMatches(supabase, context.sourceTable, context.sourceId)
+      await runLoad({ preserveSelection: true })
+      onApplied?.()
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : t('cashUnlinkError'))
+    } finally {
+      setUnlinkingCashId(null)
+    }
+  }
+
   const formatMatchLabel = (m: { source_table: string; source_id: string }) => {
     const k = sourceTableLabelKey(m.source_table)
     const typeName = t(`sourceTypes.${k}`)
@@ -1277,7 +1384,9 @@ export default function ExpenseStatementSimilarLinesModal({
   }, [sourceSummary?.linkedTour?.tour_date])
 
   const showCurrentLinksPanel =
-    linkedRows.length > 0 || (isTicketBookingSource && sourceSummary != null)
+    linkedRows.length > 0 ||
+    linkedCashRows.length > 0 ||
+    (isTicketBookingSource && sourceSummary != null)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1457,6 +1566,50 @@ export default function ExpenseStatementSimilarLinesModal({
                   </>
                 ) : isTicketBookingSource ? (
                   <p className="text-[11px] text-emerald-900/85 leading-snug">{t('currentLinksEmpty')}</p>
+                ) : null}
+                {linkedCashRows.length > 0 ? (
+                  <>
+                    <p className="text-xs font-semibold text-amber-950 pt-1">
+                      {t('currentCashLinksTitle')} · {t('currentLinksCount', { count: linkedCashRows.length })}
+                    </p>
+                    <p className="text-[11px] text-amber-900/85 leading-snug">{t('currentCashLinksHint')}</p>
+                    <ul className="space-y-1.5">
+                      {linkedCashRows.map((r) => (
+                        <li
+                          key={r.id}
+                          className="rounded border border-amber-200/90 bg-white/95 px-2.5 py-2 text-[11px] leading-snug text-gray-900"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums">
+                              <span className="text-amber-900">{t('sourceTypes.cashTransactions')}</span>
+                              <span className="text-muted-foreground">·</span>
+                              <span>{r.transaction_date}</span>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-rose-800">${r.amount.toFixed(2)}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2 text-[10px] text-red-700 hover:bg-red-50 hover:text-red-800"
+                              disabled={unlinkingCashId === r.id || cashSaving || saving}
+                              title={t('cashUnlink')}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void unlinkCash(r.id)
+                              }}
+                            >
+                              {unlinkingCashId === r.id ? t('saving') : t('cashUnlink')}
+                            </Button>
+                          </div>
+                          <p className="mt-1 text-muted-foreground break-words">{r.description || '—'}</p>
+                          {r.category ? (
+                            <p className="text-[10px] text-muted-foreground/90">{r.category}</p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 ) : null}
               </div>
             ) : null}
@@ -1975,6 +2128,82 @@ export default function ExpenseStatementSimilarLinesModal({
             </table>
           )}
         </div>
+
+        {showCashLedgerSection ? (
+          <div className="shrink-0 border-t border-amber-200/80 mt-2 pt-3 space-y-2 max-h-[min(34vh,15rem)] overflow-y-auto bg-amber-50/30 px-1 -mx-1 rounded-md">
+            <div>
+              <h3 className="text-sm font-semibold text-amber-950">{t('cashSectionTitle')}</h3>
+              <p className="text-[11px] text-amber-900/85 leading-snug mt-0.5">{t('cashSectionHint')}</p>
+            </div>
+            {cashLoading ? (
+              <p className="text-xs text-muted-foreground py-2">{t('loading')}</p>
+            ) : cashRows.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">{t('cashEmpty')}</p>
+            ) : (
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-amber-200/80 text-left text-[10px] uppercase tracking-wide text-amber-900/80">
+                    <th className="p-2 w-8" />
+                    <th className="p-2">{t('cashColDate')}</th>
+                    <th className="p-2 text-right">{t('cashColAmount')}</th>
+                    <th className="p-2">{t('cashColDesc')}</th>
+                    <th className="p-2">{t('cashColCategory')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashRows.map((r) => {
+                    const selected = selectedCashId === r.id
+                    return (
+                      <tr
+                        key={r.id}
+                        className={`border-b border-amber-100/90 cursor-pointer ${
+                          selected ? 'bg-amber-100/80' : 'hover:bg-amber-50/80'
+                        } ${r.linked_to_this_expense ? 'ring-1 ring-inset ring-emerald-400/50' : ''}`}
+                        onClick={() => setSelectedCashId(r.id)}
+                      >
+                        <td className="p-2 align-middle">
+                          <input
+                            type="radio"
+                            name="cash-transaction-pick"
+                            checked={selected}
+                            onChange={() => setSelectedCashId(r.id)}
+                            aria-label={r.description}
+                          />
+                        </td>
+                        <td className="p-2 tabular-nums whitespace-nowrap">{r.transaction_date}</td>
+                        <td className="p-2 text-right tabular-nums font-medium text-rose-800">
+                          ${r.amount.toFixed(2)}
+                        </td>
+                        <td className="p-2 min-w-[8rem] max-w-[16rem] truncate" title={r.description}>
+                          {r.description}
+                          {r.linked_to_this_expense ? (
+                            <span className="ml-1 text-[10px] text-emerald-800 font-medium">
+                              ({t('currentLinkBadge')})
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="p-2 text-muted-foreground truncate max-w-[10rem]" title={r.category ?? undefined}>
+                          {r.category || '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            <div className="flex justify-end pb-1">
+              <Button
+                type="button"
+                variant="secondary"
+                className="border-amber-300 bg-amber-100/80 hover:bg-amber-200/80 text-amber-950"
+                disabled={!selectedCashId || cashSaving || saving || cashLoading}
+                onClick={() => void applyCashLink()}
+              >
+                {cashSaving ? t('saving') : t('cashConnect')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 border-t mt-2">
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:mr-auto">

@@ -311,7 +311,7 @@ export default function PnlTaxReadinessSection({
       <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-md px-3 py-2">
         <strong>세금 보고 권장 흐름</strong> — ① 미대조 금액을 <AccountingTerm termKey="명세대조">명세 대조</AccountingTerm>{' '}
         탭에서 연결해 실제 은행·카드 거래와 맞추고, ② 중복 의심 건은 정리(삭제 보관함)한 뒤, ③ 커버리지가 충분히 높아진 상태의
-        합계로 보고하세요. 명세에 잡히지 않는 현금 지출은 미대조로 남을 수 있으니 따로 확인이 필요합니다.
+        합계로 보고하세요. 명세에 잡히지 않는 현금 지출은 모달 하단 «유사 현금 지출»에서 현금 관리 출금과 연결할 수 있습니다.
       </p>
     </div>
   )
