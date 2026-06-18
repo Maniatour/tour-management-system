@@ -5,6 +5,7 @@ import {
   fetchStatementLinePairsForLineIds,
   type StatementLinePairRow,
 } from '@/lib/statement-line-pairs'
+import { parseStatementSearchDateQuery } from '@/lib/statement-search-date'
 
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
@@ -950,8 +951,9 @@ export async function searchStatementLinesAcrossImports(
 
   const innerQuoted = q.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   const orParts = [`description.ilike."%${innerQuoted}%"`, `merchant.ilike."%${innerQuoted}%"`]
-  if (/^\d{4}-\d{2}-\d{2}$/.test(q)) {
-    orParts.push(`posted_date.eq.${q}`)
+  const dateRange = parseStatementSearchDateQuery(params.query)
+  if (dateRange) {
+    orParts.push(`and(posted_date.gte.${dateRange.startYmd},posted_date.lte.${dateRange.endYmd})`)
   }
   // 금액 검색: "$1,234.56" / "1234.56" / "1234" 형태를 금액(양수·음수 모두)으로 매칭
   const amountToken = String(params.query ?? '').trim().replace(/[$,\s]/g, '')

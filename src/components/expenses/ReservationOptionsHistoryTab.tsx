@@ -106,6 +106,7 @@ export default function ReservationOptionsHistoryTab() {
   const [optionMap, setOptionMap] = useState<Map<string, OptionLite>>(() => new Map())
 
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -299,6 +300,10 @@ export default function ReservationOptionsHistoryTab() {
   useEffect(() => {
     setUiPage(1)
   }, [searchTerm, filterStatus, dateFrom, dateTo, tourDateFrom, tourDateTo, filterChannel, filterOptions, filterCategory])
+
+  const applySearch = useCallback(() => {
+    setSearchTerm(searchInput.trim())
+  }, [searchInput])
 
   const customerLabel = useCallback(
     (rid: string) => {
@@ -605,6 +610,7 @@ export default function ReservationOptionsHistoryTab() {
   }
 
   const resetFilters = () => {
+    setSearchInput('')
     setSearchTerm('')
     setFilterStatus('all')
     setDateFrom('')
@@ -648,15 +654,31 @@ export default function ReservationOptionsHistoryTab() {
         <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 border border-gray-100">
           <div className="flex flex-col gap-2 lg:gap-3">
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-end">
-              <div className="flex-1 min-w-0 relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={t('searchPlaceholder')}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+              <div className="flex flex-1 min-w-0 gap-2">
+                <div className="flex-1 min-w-0 relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        applySearch()
+                      }
+                    }}
+                    placeholder={t('searchPlaceholder')}
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={applySearch}
+                  className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Search className="w-4 h-4" />
+                  {t('search')}
+                </button>
               </div>
               <div className="w-full sm:w-auto sm:min-w-[16rem] md:min-w-[20rem] lg:min-w-[24rem] shrink-0">
                 <StringMultiSelectFilter

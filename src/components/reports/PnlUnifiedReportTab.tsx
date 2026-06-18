@@ -6,6 +6,7 @@ import { PieChart, Save, BookOpen, Settings, Printer, Download } from 'lucide-re
 import { supabase } from '@/lib/supabase'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import { fetchCashLedgerMatchedExpenseIdsBatched } from '@/lib/expense-cash-ledger-match'
+import { fetchReconciliationExemptSourceIdsBatched } from '@/lib/expense-reconciliation-exemptions'
 import {
   fetchDismissedDuplicateKeys,
   fetchDismissedDuplicateBatchInfo,
@@ -23,7 +24,9 @@ import PnlUnifiedExpenseDetailDialog, {
   type PnlDetailLine,
   type PnlDrillState,
   type PnlExpenseSource,
+  type PnlLineReconExemptPatch,
 } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
+import { pnlDetailLineKey } from '@/lib/pnl-expense-detail-duplicates'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PnlTaxReadinessSection from '@/components/reports/PnlTaxReadinessSection'
 import PnlUnifiedDepositSection, {
@@ -977,6 +980,11 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       ceCashRe,
       tbCashRe,
       thCashRe,
+      teEx,
+      reEx,
+      ceEx,
+      tbEx,
+      thEx,
       dismissedKeys,
       dismissedUndo,
       tourDateByReservationId,
@@ -992,6 +1000,11 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'company_expenses', ceIds),
       fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'ticket_bookings', tbIds),
       fetchCashLedgerMatchedExpenseIdsBatched(supabase, 'tour_hotel_bookings', thIds),
+      fetchReconciliationExemptSourceIdsBatched(supabase, 'tour_expenses', teIds),
+      fetchReconciliationExemptSourceIdsBatched(supabase, 'reservation_expenses', reIds),
+      fetchReconciliationExemptSourceIdsBatched(supabase, 'company_expenses', ceIds),
+      fetchReconciliationExemptSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
+      fetchReconciliationExemptSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
       fetchDismissedDuplicateKeys(),
       fetchDismissedDuplicateBatchInfo(),
       tourDateByReservationIdPromise,
@@ -1025,6 +1038,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               (l.source === 'company_expenses' && (ceRe.has(l.id) || ceCashRe.has(l.id))) ||
               (l.source === 'ticket_bookings' && (tbRe.has(l.id) || tbCashRe.has(l.id))) ||
               (l.source === 'tour_hotel_bookings' && (thRe.has(l.id) || thCashRe.has(l.id))),
+            statementReconExempt:
+              (l.source === 'tour_expenses' && teEx.has(l.id)) ||
+              (l.source === 'reservation_expenses' && reEx.has(l.id)) ||
+              (l.source === 'company_expenses' && ceEx.has(l.id)) ||
+              (l.source === 'ticket_bookings' && tbEx.has(l.id)) ||
+              (l.source === 'tour_hotel_bookings' && thEx.has(l.id)),
           })),
           tourDateLookup
         ),
@@ -1047,6 +1066,10 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               (l.source === 'tour_expenses' && (teRe.has(l.id) || teCashRe.has(l.id))) ||
               (l.source === 'reservation_expenses' && (reRe.has(l.id) || reCashRe.has(l.id))) ||
               (l.source === 'company_expenses' && (ceRe.has(l.id) || ceCashRe.has(l.id))),
+            statementReconExempt:
+              (l.source === 'tour_expenses' && teEx.has(l.id)) ||
+              (l.source === 'reservation_expenses' && reEx.has(l.id)) ||
+              (l.source === 'company_expenses' && ceEx.has(l.id)),
           })),
           tourDateLookup
         ),
@@ -1114,6 +1137,18 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   }, [])
 
   const refreshPnlFromDetailDialog = useCallback(() => loadPnl({ silent: true }), [loadPnl])
+
+  const patchPnlLineReconExempt = useCallback((patches: PnlLineReconExemptPatch[]) => {
+    if (patches.length === 0) return
+    const exemptByKey = new Map(patches.map((p) => [pnlDetailLineKey(p), p.exempt]))
+    const patchLine = (line: PnlDetailLine): PnlDetailLine => {
+      const exempt = exemptByKey.get(pnlDetailLineKey(line))
+      if (exempt === undefined) return line
+      return { ...line, statementReconExempt: exempt }
+    }
+    setPnlDetailLines((prev) => prev.map(patchLine))
+    setPnlExcludedExpenseLines((prev) => prev.map(patchLine))
+  }, [])
 
   useEffect(() => {
     loadPnl()
@@ -1267,6 +1302,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         onClearAllDismissedDuplicates={clearAllDismissedDuplicateKeysHandler}
         formatMonthLabel={formatMonthLabel}
         onSaved={refreshPnlFromDetailDialog}
+        onReconExemptChanged={patchPnlLineReconExempt}
         expenseStandardCategories={standardCategoryRows}
         unifiedStandardGroups={unifiedStandardGroups}
         locale={locale}
@@ -1283,6 +1319,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         onClearAllDismissedDuplicates={clearAllDismissedDuplicateKeysHandler}
         formatMonthLabel={formatMonthLabel}
         onSaved={refreshPnlFromDetailDialog}
+        onReconExemptChanged={patchPnlLineReconExempt}
         expenseStandardCategories={standardCategoryRows}
         unifiedStandardGroups={unifiedStandardGroups}
         locale={locale}

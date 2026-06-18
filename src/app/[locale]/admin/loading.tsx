@@ -1,13 +1,14 @@
+import AdminPageContentSkeleton from '@/components/admin/AdminPageContentSkeleton'
+
 export default function AdminLoading() {
   return (
-    <div className="flex min-h-[40vh] items-center justify-center bg-gray-50 px-4">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <div
-          className="h-9 w-9 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"
-          role="status"
-          aria-label="관리자 페이지 불러오는 중"
-        />
-        <p className="text-sm text-gray-500">관리자 페이지를 불러오는 중...</p>
+    <div className="max-w-[1920px] mx-auto px-3 sm:px-4 py-4">
+      <div className="mb-4 animate-pulse space-y-2">
+        <div className="h-8 w-48 rounded bg-gray-200" />
+        <div className="h-4 w-72 max-w-full rounded bg-gray-100" />
+      </div>
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <AdminPageContentSkeleton rows={8} />
       </div>
     </div>
   )

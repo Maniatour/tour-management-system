@@ -1,23 +1,34 @@
 'use client'
 
-import { Landmark } from 'lucide-react'
+import { Ban, Landmark } from 'lucide-react'
 
 export function ExpenseStatementReconIcon({
   matched,
+  exempt,
   disabled,
   titleMatched,
   titleUnmatched,
+  titleExempt,
   titleDisabled,
   onClick
 }: {
   matched: boolean
+  exempt?: boolean
   disabled?: boolean
   titleMatched: string
   titleUnmatched: string
+  titleExempt?: string
   titleDisabled?: string
   onClick?: () => void
 }) {
-  const title = disabled ? (titleDisabled ?? titleUnmatched) : matched ? titleMatched : titleUnmatched
+  const title = disabled
+    ? (titleDisabled ?? titleUnmatched)
+    : exempt
+      ? (titleExempt ?? titleMatched)
+      : matched
+        ? titleMatched
+        : titleUnmatched
+  const done = matched || exempt
   return (
     <button
       type="button"
@@ -34,7 +45,14 @@ export function ExpenseStatementReconIcon({
       title={title}
       aria-label={title}
     >
-      <Landmark className={`h-4 w-4 shrink-0 ${matched && !disabled ? 'text-emerald-600' : 'text-slate-400'}`} aria-hidden />
+      {exempt && !disabled ? (
+        <span className="relative inline-flex">
+          <Landmark className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+          <Ban className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 text-slate-600 bg-white rounded-full" aria-hidden />
+        </span>
+      ) : (
+        <Landmark className={`h-4 w-4 shrink-0 ${done && !disabled ? 'text-emerald-600' : 'text-slate-400'}`} aria-hidden />
+      )}
     </button>
   )
 }

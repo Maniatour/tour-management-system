@@ -144,6 +144,43 @@ export function browserLocalCalendarMonthWindow(monthOffset: number): BrowserLoc
 }
 
 /**
+ * 예약 달력 UI 42칸(6주)에 보이는 날짜 범위 — 해당 월 그리드에 이웃 달 일자 포함.
+ * monthOffset 0 = 이번 달, -1 = 지난 달.
+ */
+export function browserLocalCalendarViewWindow(monthOffset: number): BrowserLocalWeekRange {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const anchor = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
+  const firstOfMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+  firstOfMonth.setHours(0, 0, 0, 0)
+  const lastOfMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+  lastOfMonth.setHours(23, 59, 59, 999)
+
+  const gridStart = new Date(firstOfMonth)
+  gridStart.setDate(firstOfMonth.getDate() - firstOfMonth.getDay())
+  gridStart.setHours(0, 0, 0, 0)
+
+  const gridEnd = new Date(lastOfMonth)
+  gridEnd.setDate(lastOfMonth.getDate() + (6 - lastOfMonth.getDay()))
+  gridEnd.setHours(23, 59, 59, 999)
+
+  return {
+    startYmd: ymdFromDate(gridStart),
+    endYmd: ymdFromDate(gridEnd),
+    rangeStartIso: new Date(
+      gridStart.getFullYear(),
+      gridStart.getMonth(),
+      gridStart.getDate(),
+      0,
+      0,
+      0,
+      0
+    ).toISOString(),
+    rangeEndIso: gridEnd.toISOString(),
+  }
+}
+
+/**
  * 달력 한 연도(1/1~12/31). yearOffset 0 = 올해, -1 = 작년.
  */
 export function browserLocalCalendarYearWindow(yearOffset: number): BrowserLocalWeekRange {

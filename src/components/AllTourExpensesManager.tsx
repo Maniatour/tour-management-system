@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Eye, Receipt, Image as ImageIcon, Folder, Search, Wallet } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -9,10 +9,14 @@ import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import { fetchReconciliationExemptSourceIds } from '@/lib/expense-reconciliation-exemptions'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
+import ExpenseListReconBulkToolbar from '@/components/reconciliation/ExpenseListReconBulkToolbar'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
-import { matchesAmountSearch } from '@/lib/amountSearch'
+import { Checkbox } from '@/components/ui/checkbox'
+import { buildTourExpenseSearchOrClause } from '@/lib/tourExpenseSearch'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import ReservationExpenseTabPager, {
@@ -68,8 +72,9 @@ export default function AllTourExpensesManager() {
   const t = useTranslations('tours.tourExpense')
   const tRes = useTranslations('reservations')
   const tStmt = useTranslations('expenses.statementRecon')
+  const tStmtBulk = useTranslations('expenses.statementRecon.reconExempt.bulk')
   const locale = useLocale()
-  const { paymentMethodMap, paymentMethodOptions } = usePaymentMethodOptions()
+  const { paymentMethodOptions } = usePaymentMethodOptions()
 
   const employeeLinkedPaymentMethodIds = useMemo(() => {
     const set = new Set<string>()
@@ -116,6 +121,8 @@ export default function AllTourExpensesManager() {
   
   // 필터링 상태
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const loadExpensesGenRef = useRef(0)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -131,6 +138,8 @@ export default function AllTourExpensesManager() {
   })
   const [reimburseSaving, setReimburseSaving] = useState(false)
   const [reconciledTourExpenseIds, setReconciledTourExpenseIds] = useState<Set<string>>(() => new Set())
+  const [exemptTourExpenseIds, setExemptTourExpenseIds] = useState<Set<string>>(() => new Set())
+  const [listSelectedIds, setListSelectedIds] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [tourTableSortKey, setTourTableSortKey] = useState<string>('tour_date')
@@ -160,6 +169,7 @@ export default function AllTourExpensesManager() {
 
   // 모든 투어 지출 목록 로드
   const loadExpenses = useCallback(async () => {
+    const gen = ++loadExpensesGenRef.current
     try {
       setLoading(true)
       
@@ -183,7 +193,17 @@ export default function AllTourExpensesManager() {
         query = query.eq('tour_id', tourIdFilter)
       }
 
+      const searchRaw = searchTerm.trim()
+      if (searchRaw) {
+        const searchOr = await buildTourExpenseSearchOrClause(supabase, searchRaw)
+        if (gen !== loadExpensesGenRef.current) return
+        if (searchOr) {
+          query = query.or(searchOr)
+        }
+      }
+
       const { data, error } = await query
+      if (gen !== loadExpensesGenRef.current) return
 
       if (error) throw error
       
@@ -262,37 +282,20 @@ export default function AllTourExpensesManager() {
       if (isAbortLikeError(error)) return
       console.error('Error loading expenses:', error)
     } finally {
-      setLoading(false)
+      if (gen === loadExpensesGenRef.current) {
+        setLoading(false)
+      }
     }
-  }, [statusFilter, dateFrom, dateTo, tourIdFilter])
+  }, [statusFilter, dateFrom, dateTo, tourIdFilter, searchTerm])
 
   useEffect(() => {
     loadExpenses()
     loadTeamMembers()
   }, [loadExpenses])
 
-  // 검색 필터 적용 (결제방법: 저장 ID + 결제 방법 관리 표시명, 금액, 지출 ID)
-  const searchFilteredExpenses = expenses.filter((expense) => {
-    const q = searchTerm.trim()
-    if (!q) return true
-
-    const searchLower = q.toLowerCase()
-    const pmId = expense.payment_method?.trim() || ''
-    const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
-    return (
-      expense.id.toLowerCase().includes(searchLower) ||
-      expense.paid_for?.toLowerCase().includes(searchLower) ||
-      expense.paid_to?.toLowerCase().includes(searchLower) ||
-      expense.tour_id?.toLowerCase().includes(searchLower) ||
-      expense.products?.name?.toLowerCase().includes(searchLower) ||
-      expense.products?.name_en?.toLowerCase().includes(searchLower) ||
-      expense.products?.name_ko?.toLowerCase().includes(searchLower) ||
-      expense.note?.toLowerCase().includes(searchLower) ||
-      (pmId && pmId.toLowerCase().includes(searchLower)) ||
-      (pmLabel && pmLabel.toLowerCase().includes(searchLower)) ||
-      matchesAmountSearch(expense.amount, q)
-    )
-  })
+  const applySearch = useCallback(() => {
+    setSearchTerm(searchInput.trim())
+  }, [searchInput])
 
   const paidToOptions = useMemo(() => {
     const set = new Set<string>()
@@ -324,7 +327,8 @@ export default function AllTourExpensesManager() {
     }
   }, [paidForFilter, paidForOptions])
 
-  const filteredExpenses = searchFilteredExpenses.filter((e) => {
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((e) => {
     if (paidToFilter !== 'all' && (e.paid_to || '').trim() !== paidToFilter) return false
     if (paidForFilter !== 'all' && (e.paid_for || '').trim() !== paidForFilter) return false
     if (reimbursementFilter === 'employee_card') {
@@ -336,7 +340,8 @@ export default function AllTourExpensesManager() {
       if (reimbursementOutstanding(e.amount, e.reimbursed_amount) <= 0.009) return false
     }
     return true
-  })
+    })
+  }, [expenses, paidToFilter, paidForFilter, reimbursementFilter, employeeLinkedPaymentMethodIds])
 
   const handleTourTableSort = useCallback(
     (key: string) => {
@@ -447,16 +452,73 @@ export default function AllTourExpensesManager() {
   useEffect(() => {
     if (tourReconIds.length === 0) {
       setReconciledTourExpenseIds(new Set())
+      setExemptTourExpenseIds(new Set())
       return
     }
     let cancelled = false
-    void fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', tourReconIds).then((s) => {
-      if (!cancelled) setReconciledTourExpenseIds(s)
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', tourReconIds),
+      fetchReconciliationExemptSourceIds(supabase, 'tour_expenses', tourReconIds),
+    ]).then(([stmt, exempt]) => {
+      if (!cancelled) {
+        setReconciledTourExpenseIds(stmt)
+        setExemptTourExpenseIds(exempt)
+      }
     })
     return () => {
       cancelled = true
     }
   }, [tourReconIdKey])
+
+  const refreshTourReconFlags = useCallback(() => {
+    if (tourReconIds.length === 0) return
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', tourReconIds),
+      fetchReconciliationExemptSourceIds(supabase, 'tour_expenses', tourReconIds),
+    ]).then(([stmt, exempt]) => {
+      setReconciledTourExpenseIds(stmt)
+      setExemptTourExpenseIds(exempt)
+    })
+  }, [tourReconIds])
+
+  const listPageIds = useMemo(() => pagedSortedFilteredExpenses.map((e) => e.id), [pagedSortedFilteredExpenses])
+  const listAllPageSelected =
+    listPageIds.length > 0 && listPageIds.every((id) => listSelectedIds.has(id))
+  const listSomePageSelected = listPageIds.some((id) => listSelectedIds.has(id))
+
+  useEffect(() => {
+    const allowed = new Set(filteredExpenses.map((e) => e.id))
+    setListSelectedIds((prev) => {
+      let removed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id)
+        else removed = true
+      }
+      if (!removed && next.size === prev.size) return prev
+      return next
+    })
+  }, [filteredExpenses])
+
+  const toggleListExpenseSelect = useCallback((id: string, selected: boolean) => {
+    setListSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
+  const toggleListSelectAllPage = useCallback(() => {
+    setListSelectedIds((prev) => {
+      const ids = listPageIds
+      const allOn = ids.length > 0 && ids.every((id) => prev.has(id))
+      const next = new Set(prev)
+      if (allOn) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }, [listPageIds])
 
   const openTourStmtRecon = (expense: TourExpense) => {
     const raw = expense.submit_on || expense.tour_date
@@ -576,11 +638,25 @@ export default function AllTourExpensesManager() {
             <input
               type="text"
               placeholder={t('searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  applySearch()
+                }
+              }}
               className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+          <button
+            type="button"
+            onClick={applySearch}
+            className="shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 text-sm"
+          >
+            <Search className="w-4 h-4" />
+            {t('search')}
+          </button>
           <button
             onClick={() => setShowDriveImporter(!showDriveImporter)}
             className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 sm:gap-2 text-sm"
@@ -730,17 +806,44 @@ export default function AllTourExpensesManager() {
         </div>
       ) : sortedFilteredExpenses.length > 0 ? (
         <>
+          <ExpenseListReconBulkToolbar
+            sourceTable="tour_expenses"
+            selectedIds={listSelectedIds}
+            pageIds={listPageIds}
+            onToggleSelectAllPage={toggleListSelectAllPage}
+            onClearSelection={() => setListSelectedIds(new Set())}
+            onExemptApplied={() => {
+              refreshTourReconFlags()
+              setListSelectedIds(new Set())
+            }}
+          />
           {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
           <div className="md:hidden space-y-3">
             {pagedSortedFilteredExpenses.map((expense) => (
               <div key={expense.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                 <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="shrink-0 pt-0.5">
+                    <Checkbox
+                      checked={listSelectedIds.has(expense.id)}
+                      onCheckedChange={(c) => toggleListExpenseSelect(expense.id, c === true)}
+                      aria-label={tStmtBulk('selectRowAria')}
+                    />
+                  </div>
                   <div className="flex items-start gap-1 min-w-0 flex-1">
                     <ExpenseStatementReconIcon
-                      matched={reconciledTourExpenseIds.has(expense.id)}
+                      matched={reconciledTourExpenseIds.has(expense.id) || exemptTourExpenseIds.has(expense.id)}
+                      exempt={exemptTourExpenseIds.has(expense.id)}
                       titleMatched={tStmt('matchedTitle')}
                       titleUnmatched={tStmt('unmatchedTitle')}
+                      titleExempt={tStmt('exemptTitle')}
                       onClick={() => openTourStmtRecon(expense)}
+                    />
+                    <ExpenseReconciliationExemptToggle
+                      compact
+                      sourceTable="tour_expenses"
+                      sourceId={expense.id}
+                      exempt={exemptTourExpenseIds.has(expense.id)}
+                      onChanged={() => refreshTourReconFlags()}
                     />
                     <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
                   </div>
@@ -821,6 +924,14 @@ export default function AllTourExpensesManager() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-center w-10">
+                  <Checkbox
+                    checked={listAllPageSelected ? true : listSomePageSelected ? 'indeterminate' : false}
+                    onCheckedChange={() => toggleListSelectAllPage()}
+                    aria-label={tStmtBulk('selectAllPageAria')}
+                    className="h-3.5 w-3.5"
+                  />
+                </th>
                 <th
                   className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"
                   title={tStmt('unmatchedTitle')}
@@ -916,12 +1027,31 @@ export default function AllTourExpensesManager() {
               {pagedSortedFilteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-center align-middle">
-                    <ExpenseStatementReconIcon
-                      matched={reconciledTourExpenseIds.has(expense.id)}
-                      titleMatched={tStmt('matchedTitle')}
-                      titleUnmatched={tStmt('unmatchedTitle')}
-                      onClick={() => openTourStmtRecon(expense)}
+                    <Checkbox
+                      checked={listSelectedIds.has(expense.id)}
+                      onCheckedChange={(c) => toggleListExpenseSelect(expense.id, c === true)}
+                      aria-label={tStmtBulk('selectRowAria')}
+                      className="h-3.5 w-3.5"
                     />
+                  </td>
+                  <td className="px-4 py-3 text-center align-middle">
+                    <div className="flex items-center justify-center gap-0.5">
+                      <ExpenseStatementReconIcon
+                        matched={reconciledTourExpenseIds.has(expense.id) || exemptTourExpenseIds.has(expense.id)}
+                        exempt={exemptTourExpenseIds.has(expense.id)}
+                        titleMatched={tStmt('matchedTitle')}
+                        titleUnmatched={tStmt('unmatchedTitle')}
+                        titleExempt={tStmt('exemptTitle')}
+                        onClick={() => openTourStmtRecon(expense)}
+                      />
+                      <ExpenseReconciliationExemptToggle
+                        compact
+                        sourceTable="tour_expenses"
+                        sourceId={expense.id}
+                        exempt={exemptTourExpenseIds.has(expense.id)}
+                        onChanged={() => refreshTourReconFlags()}
+                      />
+                    </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                     {expense.tour_date}

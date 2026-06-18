@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Wrench } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
 import { Database } from '@/lib/database.types'
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
@@ -15,6 +16,9 @@ type Props = {
   expenses: CompanyExpense[]
   handleEdit: (e: CompanyExpense) => void
   reconciledExpenseIds: Set<string>
+  cashLedgerMatchedExpenseIds: Set<string>
+  exemptExpenseIds: Set<string>
+  onExemptChanged: () => void
   onOpenStatementRecon: (e: CompanyExpense) => void
   paymentMethodMap: Record<string, string>
   getStatusBadge: (s: string | null) => ReactNode
@@ -40,6 +44,9 @@ export function CompanyExpenseListDesktopTableBody({
   expenses,
   handleEdit,
   reconciledExpenseIds,
+  cashLedgerMatchedExpenseIds,
+  exemptExpenseIds,
+  onExemptChanged,
   onOpenStatementRecon,
   paymentMethodMap,
   getStatusBadge,
@@ -71,12 +78,23 @@ export function CompanyExpenseListDesktopTableBody({
             />
           </TableCell>
           <TableCell className="text-center px-0.5 py-1" onClick={(e) => e.stopPropagation()}>
-            <span className="inline-flex scale-90 origin-center">
+            <span className="inline-flex items-center gap-0.5 scale-90 origin-center">
               <ExpenseStatementReconIcon
-                matched={reconciledExpenseIds.has(expense.id)}
+                matched={
+                  reconciledExpenseIds.has(expense.id) || cashLedgerMatchedExpenseIds.has(expense.id)
+                }
+                exempt={exemptExpenseIds.has(expense.id)}
                 titleMatched={tStmt('matchedTitle')}
                 titleUnmatched={tStmt('unmatchedTitle')}
+                titleExempt={tStmt('exemptTitle')}
                 onClick={() => onOpenStatementRecon(expense)}
+              />
+              <ExpenseReconciliationExemptToggle
+                compact
+                sourceTable="company_expenses"
+                sourceId={expense.id}
+                exempt={exemptExpenseIds.has(expense.id)}
+                onChanged={() => onExemptChanged()}
               />
             </span>
           </TableCell>

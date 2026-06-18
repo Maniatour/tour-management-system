@@ -110,6 +110,11 @@ import {
 } from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
+  isYmdWithinInclusiveRange,
+  parseStatementSearchDateQuery,
+  statementSearchReferenceYearFromMonthFilter,
+} from '@/lib/statement-search-date'
+import {
   filterParentLinesRemovingNestedChildDuplicates,
   resolveNestedStatementChildAccountId
 } from '@/lib/statement-nested-account-dedupe'
@@ -3039,13 +3044,21 @@ export default function StatementReconciliationTab() {
 
   const reconciliationTableLines = useMemo(() => {
     let rows = reconciliationLinesBeforeSearch
-    const q = reconciliationSearchQuery.trim().toLowerCase()
+    const qRaw = reconciliationSearchQuery.trim()
+    const q = qRaw.toLowerCase()
     if (!q) return rows
+    const refYear = statementSearchReferenceYearFromMonthFilter(selectedMonth)
+    const dateRange = parseStatementSearchDateQuery(qRaw, refYear != null ? { referenceYear: refYear } : undefined)
     return rows.filter((line) => {
       const shown = formatStatementLineDescription(line.description, line.merchant).toLowerCase()
       const desc = (line.description ?? '').toLowerCase()
       const merchant = (line.merchant ?? '').toLowerCase()
       const posted = (line.posted_date ?? '').toLowerCase()
+      const postedYmd = statementLinePostedYmd(line)
+      const dateHit =
+        dateRange != null &&
+        postedYmd !== '' &&
+        isYmdWithinInclusiveRange(postedYmd, dateRange.startYmd, dateRange.endYmd)
       const amt = Number(line.amount)
       const amtNorm = Number.isFinite(amt) ? amt.toFixed(2) : ''
       const amtRaw = String(line.amount ?? '').toLowerCase()
@@ -3066,6 +3079,7 @@ export default function StatementReconciliationTab() {
         Boolean(amtNorm && qAmt !== '' && amtNorm.includes(qAmt)) || amtRaw.includes(q)
       const accountName = accountNameForStatementLine(line).toLowerCase()
       return (
+        dateHit ||
         shown.includes(q) ||
         desc.includes(q) ||
         merchant.includes(q) ||
@@ -3079,7 +3093,12 @@ export default function StatementReconciliationTab() {
         statusKo.toLowerCase().includes(q)
       )
     })
-  }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery, accountNameForStatementLine])
+  }, [
+    reconciliationLinesBeforeSearch,
+    reconciliationSearchQuery,
+    accountNameForStatementLine,
+    selectedMonth,
+  ])
 
   const isStatementLineBulkSelectable = useCallback(
     (line: StatementLine) => {
@@ -8107,8 +8126,8 @@ export default function StatementReconciliationTab() {
                   autoComplete="off"
                   placeholder={
                     isAllAccountsFilter
-                      ? '전체 계정 — 설명·금액·계정명…'
-                      : '설명·금액·일자…'
+                      ? '전체 계정 — 설명·금액·일자(6/14)…'
+                      : '설명·금액·일자(6/14)…'
                   }
                   aria-label="명세 대조 표 검색"
                 />

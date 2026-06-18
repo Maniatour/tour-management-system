@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
-import jsPDF from 'jspdf'
+import { loadJsPDF } from '@/lib/lazyPdfLibs'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -204,6 +204,7 @@ export default function CompanyStructuredDocSignClient({
     try {
       const c = canvasRef.current!
       const sigDataUrl = c.toDataURL('image/png')
+      const jsPDF = await loadJsPDF()
       const doc = new jsPDF({ unit: 'pt', format: 'a4' })
       const margin = 40
       const pageW = doc.internal.pageSize.getWidth()

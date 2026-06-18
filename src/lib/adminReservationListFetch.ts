@@ -20,6 +20,9 @@ function eqQuoted(val: string): string {
  */
 export const ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE = 500
 
+/** 달력 뷰(`calendar`): 한 번에 가져오는 행 수 — PostgREST 1000 상한을 피하기 위해 청크 병합 */
+export const ADMIN_RESERVATION_CALENDAR_CHUNK_SIZE = 500
+
 /** 투어일이 이 값 이하(포함)인 예약은 주간 카드 전량 로드 시 나중 단계에서 조회 */
 export const ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD = '2024-12-31'
 
@@ -73,6 +76,8 @@ export type FetchAdminReservationListArgs = {
   calendarCreatedEndIso?: string
   /** `card-week` 다청크 로드 시 진행률(예: 로딩 문구). */
   onCardWeekFetchProgress?: (info: { loaded: number; total: number | null }) => void
+  /** `calendar` 다청크 로드 시 진행률 */
+  onCalendarFetchProgress?: (info: { loaded: number; total: number | null }) => void
   /**
    * `card-week` 전용: 활동 구간 내 목록을 단계별로 나눔(검색어 없을 때 예약 관리 페이지에서 사용).
    * - tier1: 최근 등록일(로컬 달력 N일) + 투어일 null 또는 cutoff 초과
@@ -376,20 +381,26 @@ export async function fetchAdminReservationList(
   try {
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
 
-    if (args.mode === 'card-week') {
-      const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
+    if (args.mode === 'card-week' || args.mode === 'calendar') {
+      const chunk =
+        args.mode === 'calendar'
+          ? ADMIN_RESERVATION_CALENDAR_CHUNK_SIZE
+          : ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
       const merged: Record<string, unknown>[] = []
       let totalCount: number | null = null
       let offset = 0
       let chunkIndex = 0
       const maxChunks = 400
+      const modeLabel = args.mode
 
       for (;;) {
         if (chunkIndex >= maxChunks) {
           return {
             data: null,
             count: null,
-            error: new Error(`[admin reservations] card-week chunk limit exceeded (${maxChunks * chunk} rows)`),
+            error: new Error(
+              `[admin reservations] ${modeLabel} chunk limit exceeded (${maxChunks * chunk} rows)`
+            ),
           }
         }
         chunkIndex += 1
@@ -406,7 +417,11 @@ export async function fetchAdminReservationList(
           totalCount = count ?? null
         }
         merged.push(...batch)
-        args.onCardWeekFetchProgress?.({ loaded: merged.length, total: totalCount })
+        if (args.mode === 'calendar') {
+          args.onCalendarFetchProgress?.({ loaded: merged.length, total: totalCount })
+        } else {
+          args.onCardWeekFetchProgress?.({ loaded: merged.length, total: totalCount })
+        }
 
         if (batch.length < chunk) {
           break

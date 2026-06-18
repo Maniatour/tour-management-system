@@ -1,14 +1,25 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import dynamic from 'next/dynamic'
 import { useLocale } from 'next-intl'
 import { Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, FileText, MapPin, User, Star } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
-import EstimateModal from '@/components/tour-cost-calculator/EstimateModal'
-import DaySelectModal from '@/components/tour-cost-calculator/DaySelectModal'
-import EntranceFeeDetailModal from '@/components/tour-cost-calculator/EntranceFeeDetailModal'
+
+const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const DaySelectModal = dynamic(() => import('@/components/tour-cost-calculator/DaySelectModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const EntranceFeeDetailModal = dynamic(
+  () => import('@/components/tour-cost-calculator/EntranceFeeDetailModal'),
+  { ssr: false, loading: () => null }
+)
 import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
 import { markdownToHtml } from '@/components/LightRichEditor'
 

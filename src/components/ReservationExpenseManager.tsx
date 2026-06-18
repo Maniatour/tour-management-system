@@ -1,8 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { createPortal } from 'react-dom'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon, ListOrdered, Link2 } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { ReservationStatusIcon } from '@/components/reservation/ReservationStatusIcon'
+import { getStatusLabel } from '@/utils/reservationUtils'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -10,13 +14,16 @@ import { Button } from '@/components/ui/button'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
-import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import { fetchReconciliationExemptSourceIds } from '@/lib/expense-reconciliation-exemptions'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
+import ExpenseListReconBulkToolbar from '@/components/reconciliation/ExpenseListReconBulkToolbar'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
+import { Checkbox } from '@/components/ui/checkbox'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import ReservationExpenseTabPager, {
@@ -24,9 +31,57 @@ import ReservationExpenseTabPager, {
   reservationExpenseTotalPages
 } from '@/components/expenses/ReservationExpenseTabPager'
 
+const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), {
+  ssr: false,
+  loading: () => null,
+})
+const ReservationFormAny = ReservationForm as React.ComponentType<any>
+
 /** Radix Dialog가 body에 pointer-events:none을 둘 때도 영수증 오버레이가 동작하도록 body 포털 + 명시적 hit-target */
 const RESERVATION_RECEIPT_VIEW_PORTAL_CLASS =
   'fixed inset-0 z-[12000] pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4'
+
+type ReservationProductEmbed = {
+  name?: string | null
+  name_ko?: string | null
+  name_en?: string | null
+}
+
+function parseReservationProductEmbed(
+  products: ReservationProductEmbed | ReservationProductEmbed[] | null | undefined
+): ReservationProductEmbed | null {
+  if (products == null) return null
+  return Array.isArray(products) ? products[0] ?? null : products
+}
+
+function reservationProductNameFromEmbed(
+  reservation: {
+    product_id?: string | null
+    products?: ReservationProductEmbed | ReservationProductEmbed[] | null
+  },
+  locale: string
+): string {
+  const p = parseReservationProductEmbed(reservation.products)
+  if (p) {
+    if (locale === 'en' && p.name_en?.trim()) return p.name_en.trim()
+    if (p.name_ko?.trim()) return p.name_ko.trim()
+    if (p.name?.trim()) return p.name.trim()
+    if (p.name_en?.trim()) return p.name_en.trim()
+  }
+  const pid = reservation.product_id?.trim()
+  return pid || '—'
+}
+
+function reservationPeopleTotal(reservation: {
+  adults?: number | null
+  child?: number | null
+  infant?: number | null
+  total_people?: number | null
+}): number {
+  const tp = reservation.total_people
+  if (typeof tp === 'number' && Number.isFinite(tp) && tp >= 0) return tp
+  return Math.max(0, (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))
+}
 
 interface ReservationExpense {
   id: string
@@ -57,6 +112,13 @@ interface ReservationExpense {
     customer_name?: string
     customer_email?: string
     product_id: string
+    status?: string | null
+    tour_date?: string | null
+    adults?: number | null
+    child?: number | null
+    infant?: number | null
+    total_people?: number | null
+    products?: ReservationProductEmbed | ReservationProductEmbed[] | null
     customers?: { name?: string; email?: string }
   } | null
 }
@@ -184,7 +246,10 @@ export default function ReservationExpenseManager({
   const t = useTranslations('reservationExpense')
   const tExpensesSub = useTranslations('expenses.reservationSubTabs')
   const tTour = useTranslations('tours.tourExpense')
+  const tRes = useTranslations('reservations')
   const locale = useLocale()
+  const { userPosition } = useAuth()
+  const isSuper = userPosition === 'super'
   const adminList = !reservationId
   const [expenses, setExpenses] = useState<ReservationExpense[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
@@ -208,7 +273,9 @@ export default function ReservationExpenseManager({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const searchActive = Boolean(searchTerm.trim())
+  const loadExpensesAbortRef = useRef<AbortController | null>(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -225,7 +292,10 @@ export default function ReservationExpenseManager({
     setReceiptViewPortalReady(true)
   }, [])
   const tStmtRecon = useTranslations('expenses.statementRecon')
+  const tStmtBulk = useTranslations('expenses.statementRecon.reconExempt.bulk')
   const [reconciledReservationIds, setReconciledReservationIds] = useState<Set<string>>(() => new Set())
+  const [exemptReservationIds, setExemptReservationIds] = useState<Set<string>>(() => new Set())
+  const [listSelectedIds, setListSelectedIds] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
@@ -234,6 +304,18 @@ export default function ReservationExpenseManager({
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc')
   const [adminListPage, setAdminListPage] = useState(1)
   const [adminListPageSize, setAdminListPageSize] = useState(25)
+  const [reservationIdForEdit, setReservationIdForEdit] = useState<string | null>(null)
+  const [loadingReservationForEdit, setLoadingReservationForEdit] = useState(false)
+  const [editingReservation, setEditingReservation] = useState<any>(null)
+  const [reservationFormData, setReservationFormData] = useState<{
+    customers: any[]
+    products: any[]
+    channels: any[]
+    productOptions: any[]
+    options: any[]
+    pickupHotels: any[]
+    coupons: any[]
+  } | null>(null)
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -253,6 +335,10 @@ export default function ReservationExpenseManager({
   })
 
   const loadExpenses = useCallback(async () => {
+    loadExpensesAbortRef.current?.abort()
+    const abortController = new AbortController()
+    loadExpensesAbortRef.current = abortController
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -265,6 +351,7 @@ export default function ReservationExpenseManager({
         if (dateFrom) params.append('date_from', dateFrom)
         if (dateTo) params.append('date_to', dateTo)
         if (statusFilter !== 'all') params.append('status', statusFilter)
+        if (searchTerm.trim()) params.append('search', searchTerm.trim())
       }
       // 예약 상세에서는 PricingSection·매출 산식과 동일하게 이 예약에 연결된 지출 전체를 불러온다.
       // submittedBy는 신규 등록 시 submitted_by 기본값에만 쓰고, 목록 GET에는 넣지 않는다.
@@ -272,18 +359,23 @@ export default function ReservationExpenseManager({
       if (statementMatchFilter === 'unmatched' && !searchActive) {
         params.append('statement_match', 'unmatched')
       }
-      const response = await fetch(`/api/reservation-expenses?${params}`)
+      const response = await fetch(`/api/reservation-expenses?${params}`, {
+        signal: abortController.signal,
+      })
+      if (abortController.signal.aborted) return
+
       const result = await response.json()
 
       if (result.success) {
         setExpenses(result.data)
       }
     } catch (error) {
-      if (!isAbortLikeError(error)) {
-        console.error('Error loading expenses:', error)
-      }
+      if (isAbortLikeError(error)) return
+      console.error('Error loading expenses:', error)
     } finally {
-      setLoading(false)
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [
     reservationId,
@@ -294,6 +386,7 @@ export default function ReservationExpenseManager({
     dateTo,
     statusFilter,
     searchActive,
+    searchTerm,
   ])
 
   // 데이터 로드
@@ -540,8 +633,8 @@ export default function ReservationExpenseManager({
     if (!editingExpense) return
 
     const amountNum = parseFloat(formData.amount)
-    if (!Number.isFinite(amountNum) || amountNum === 0) {
-      alert(t('invalidAmountNonZero'))
+    if (!Number.isFinite(amountNum)) {
+      alert(t('invalidAmountFinite'))
       return
     }
     const reimb = reimbursementSectionOpen
@@ -758,6 +851,10 @@ export default function ReservationExpenseManager({
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const isLine = itemVariant === 'line'
 
+  const applySearch = useCallback(() => {
+    setSearchTerm(searchInput.trim())
+  }, [searchInput])
+
   const filteredExpenses = useMemo(() => {
     if (!adminList) return expenses
     return expenses.filter((e) => {
@@ -769,41 +866,9 @@ export default function ReservationExpenseManager({
         if ((e.amount || 0) <= 0) return false
         if (reimbursementOutstanding(e.amount, e.reimbursed_amount) <= 0.009) return false
       }
-      if (searchTerm.trim()) {
-        const qRaw = searchTerm.trim()
-        if (matchesAmountSearch(e.amount, qRaw)) return true
-        if (matchesAmountSearch(e.reservation_payments_total, qRaw)) return true
-        if (isAmountSearchQuery(qRaw)) return false
-        const q = qRaw.toLowerCase()
-        const pmId = e.payment_method?.trim() || ''
-        const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
-        const blob = [
-          e.paid_for,
-          e.paid_to,
-          e.note,
-          e.reservation_id,
-          e.submitted_by,
-          pmId,
-          pmLabel,
-          e.reservations?.product_id,
-          e.reservations?.customer_name ?? e.reservations?.customers?.name,
-          e.reservations?.customer_email,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        if (!blob.includes(q)) return false
-      }
       return true
     })
-  }, [
-    adminList,
-    expenses,
-    searchTerm,
-    paymentMethodMap,
-    reimbursementFilter,
-    employeeLinkedPaymentMethodIds,
-  ])
+  }, [adminList, expenses, reimbursementFilter, employeeLinkedPaymentMethodIds])
 
   const totalFiltered = useMemo(
     () => filteredExpenses.reduce((s, e) => s + e.amount, 0),
@@ -847,6 +912,234 @@ export default function ReservationExpenseManager({
     return name ? `${name} · ${r.product_id}` : r.product_id ?? null
   }, [])
 
+  const reservationPeopleLabel = useCallback(
+    (reservation: NonNullable<ReservationExpense['reservations']>) => {
+      const total = reservationPeopleTotal(reservation)
+      return `${total}${tRes('card.peopleShort')}`
+    },
+    [tRes]
+  )
+
+  const reservationPeopleDetail = useCallback(
+    (reservation: NonNullable<ReservationExpense['reservations']>) => {
+      const adults = reservation.adults || 0
+      const child = reservation.child || 0
+      const infant = reservation.infant || 0
+      const total = reservationPeopleTotal(reservation)
+      if (locale === 'en') {
+        return `Adults ${adults}, Child ${child}, Infant ${infant}, Total ${total}`
+      }
+      return `성인 ${adults} · 아동 ${child} · 유아 ${infant} · 총 ${total}명`
+    },
+    [locale]
+  )
+
+  const reservationTourDateYmd = useCallback((reservation: NonNullable<ReservationExpense['reservations']>) => {
+    const raw = reservation.tour_date
+    if (!raw || !String(raw).trim()) return null
+    return String(raw).slice(0, 10)
+  }, [])
+
+  const reservationSummaryLabel = useCallback(
+    (expense: ReservationExpense) => {
+      const r = expense.reservations
+      if (!r) return null
+      const productName = reservationProductNameFromEmbed(r, locale)
+      const tourDate = reservationTourDateYmd(r)
+      const people = reservationPeopleLabel(r)
+      return [productName, tourDate, people].filter(Boolean).join(' · ')
+    },
+    [locale, reservationPeopleLabel, reservationTourDateYmd]
+  )
+
+  const expenseReservationId = useCallback((expense: ReservationExpense) => {
+    const rid = expense.reservation_id || expense.reservations?.id
+    return rid && String(rid).trim() ? String(rid).trim() : null
+  }, [])
+
+  const expenseReservationStatus = useCallback((expense: ReservationExpense) => {
+    return expense.reservations?.status ?? null
+  }, [])
+
+  const reservationCellTitle = useCallback(
+    (expense: ReservationExpense) => {
+      const rid = expenseReservationId(expense)
+      if (!rid) return undefined
+      const r = expense.reservations
+      const status = expenseReservationStatus(expense)
+      const statusText = status ? getStatusLabel(status, tRes) : ''
+      const customer = reservationCustomerLabel(expense)
+      const peopleDetail = r ? reservationPeopleDetail(r) : ''
+      const tourDate = r ? reservationTourDateYmd(r) : null
+      return [statusText, customer, tourDate, peopleDetail, rid].filter(Boolean).join(' · ')
+    },
+    [
+      expenseReservationId,
+      expenseReservationStatus,
+      reservationCustomerLabel,
+      reservationPeopleDetail,
+      reservationTourDateYmd,
+      tRes,
+    ]
+  )
+
+  const convertReservationToFormType = useCallback((reservation: any): any => {
+    return {
+      id: reservation.id,
+      customerId: reservation.customer_id || '',
+      productId: reservation.product_id || '',
+      tourDate: reservation.tour_date || '',
+      tourTime: reservation.tour_time || '',
+      eventNote: reservation.event_note || '',
+      pickUpHotel: reservation.pickup_hotel || '',
+      pickUpTime: reservation.pickup_time || '',
+      adults: reservation.adults || 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+      totalPeople: reservation.total_people || 0,
+      channelId: reservation.channel_id || '',
+      channelRN: reservation.channel_rn || '',
+      addedBy: reservation.added_by || '',
+      addedTime: reservation.created_at || '',
+      tourId: reservation.tour_id || '',
+      status: reservation.status || 'pending',
+      selectedOptions:
+        typeof reservation.selected_options === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(reservation.selected_options)
+              } catch {
+                return {}
+              }
+            })()
+          : (reservation.selected_options as { [optionId: string]: string[] }) || {},
+      selectedOptionPrices:
+        typeof reservation.selected_option_prices === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(reservation.selected_option_prices)
+              } catch {
+                return {}
+              }
+            })()
+          : (reservation.selected_option_prices as { [key: string]: number }) || {},
+      isPrivateTour: reservation.is_private_tour || false,
+    }
+  }, [])
+
+  const openReservationEditModal = useCallback((reservationIdToOpen: string) => {
+    const rid = String(reservationIdToOpen || '').trim()
+    if (!rid) return
+    setReservationIdForEdit(rid)
+  }, [])
+
+  const handleCloseReservationEditModal = useCallback(() => {
+    setEditingReservation(null)
+    setReservationFormData(null)
+  }, [])
+
+  useEffect(() => {
+    if (!reservationIdForEdit) return
+    let cancelled = false
+    setLoadingReservationForEdit(true)
+    ;(async () => {
+      try {
+        const { data: reservation, error: resError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('id', reservationIdForEdit)
+          .maybeSingle()
+        if (resError || !reservation || cancelled) {
+          setLoadingReservationForEdit(false)
+          setReservationIdForEdit(null)
+          return
+        }
+        const [customersRes, productsRes, channelsRes, productOptionsRes, optionsRes, pickupHotelsRes, couponsRes] =
+          await Promise.all([
+            supabase.from('customers').select('*').order('created_at', { ascending: false }).limit(2000),
+            supabase.from('products').select('*').order('name', { ascending: true }).limit(2000),
+            supabase
+              .from('channels')
+              .select(
+                'id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission'
+              )
+              .order('name', { ascending: true }),
+            supabase.from('product_options').select('*').order('name', { ascending: true }),
+            supabase.from('options').select('*').order('name', { ascending: true }),
+            supabase
+              .from('pickup_hotels')
+              .select('*')
+              .eq('use_for_pickup', true)
+              .or('is_active.is.null,is_active.eq.true')
+              .order('hotel', { ascending: true }),
+            supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code', { ascending: true }),
+          ])
+        if (cancelled) return
+        setReservationFormData({
+          customers: customersRes.data || [],
+          products: productsRes.data || [],
+          channels: channelsRes.data || [],
+          productOptions: productOptionsRes.data || [],
+          options: optionsRes.data || [],
+          pickupHotels: pickupHotelsRes.data || [],
+          coupons: couponsRes.data || [],
+        })
+        setEditingReservation(convertReservationToFormType(reservation))
+      } catch (e) {
+        if (!isAbortLikeError(e)) console.error('예약/폼 데이터 로드 오류:', e)
+      } finally {
+        if (!cancelled) setLoadingReservationForEdit(false)
+        setReservationIdForEdit(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [reservationIdForEdit, convertReservationToFormType])
+
+  const renderReservationIdCell = useCallback(
+    (expense: ReservationExpense) => {
+      const rid = expenseReservationId(expense)
+      const r = expense.reservations
+      if (!rid || !r) return <span className="text-gray-400">—</span>
+      const status = expenseReservationStatus(expense)
+      const statusTitle = status ? getStatusLabel(status, tRes) : undefined
+      const cellTitle = reservationCellTitle(expense)
+      const productName = reservationProductNameFromEmbed(r, locale)
+      const tourDate = reservationTourDateYmd(r)
+      const peopleLabel = reservationPeopleLabel(r)
+      return (
+        <button
+          type="button"
+          onClick={() => openReservationEditModal(rid)}
+          className="inline-flex items-start gap-1.5 max-w-full min-w-0 text-left text-blue-600 hover:text-blue-800 hover:underline"
+          title={cellTitle}
+        >
+          <ReservationStatusIcon status={status} {...(statusTitle ? { title: statusTitle } : {})} />
+          <span className="text-xs min-w-0 leading-snug">
+            <span className="block font-medium break-words">{productName}</span>
+            <span className="block text-gray-600 tabular-nums">
+              {[tourDate, peopleLabel].filter(Boolean).join(' · ')}
+            </span>
+            <span className="block text-[10px] text-gray-500 font-mono truncate" title={rid}>
+              {rid}
+            </span>
+          </span>
+        </button>
+      )
+    },
+    [
+      expenseReservationId,
+      expenseReservationStatus,
+      locale,
+      openReservationEditModal,
+      reservationCellTitle,
+      reservationPeopleLabel,
+      reservationTourDateYmd,
+      tRes,
+    ]
+  )
+
   const handleReservationTableSort = useCallback(
     (key: string) => {
       if (tableSortKey === key) {
@@ -880,8 +1173,8 @@ export default function ReservationExpenseManager({
           vb = b.paid_to
           break
         case 'reservation':
-          va = reservationCustomerLabel(a) ?? ''
-          vb = reservationCustomerLabel(b) ?? ''
+          va = reservationSummaryLabel(a) ?? ''
+          vb = reservationSummaryLabel(b) ?? ''
           break
         case 'payment_method': {
           const pmA = a.payment_method?.trim() || ''
@@ -917,7 +1210,7 @@ export default function ReservationExpenseManager({
       return compareSortValues(va, vb, tableSortDir, sortLocale)
     })
     return rows
-  }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel, paymentMethodMap])
+  }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel, paymentMethodMap, reservationSummaryLabel])
 
   const adminListTotalPages = useMemo(
     () => reservationExpenseTotalPages(sortedDisplayExpenses.length, adminListPageSize),
@@ -955,16 +1248,74 @@ export default function ReservationExpenseManager({
   useEffect(() => {
     if (reconcilableReservationIds.length === 0) {
       setReconciledReservationIds(new Set())
+      setExemptReservationIds(new Set())
       return
     }
     let cancelled = false
-    void fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reconcilableReservationIds).then((s) => {
-      if (!cancelled) setReconciledReservationIds(s)
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reconcilableReservationIds),
+      fetchReconciliationExemptSourceIds(supabase, 'reservation_expenses', reconcilableReservationIds),
+    ]).then(([stmt, exempt]) => {
+      if (!cancelled) {
+        setReconciledReservationIds(stmt)
+        setExemptReservationIds(exempt)
+      }
     })
     return () => {
       cancelled = true
     }
   }, [reconciledReservationIdKey])
+
+  const refreshReservationReconFlags = useCallback(() => {
+    if (reconcilableReservationIds.length === 0) return
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reconcilableReservationIds),
+      fetchReconciliationExemptSourceIds(supabase, 'reservation_expenses', reconcilableReservationIds),
+    ]).then(([stmt, exempt]) => {
+      setReconciledReservationIds(stmt)
+      setExemptReservationIds(exempt)
+    })
+  }, [reconcilableReservationIds])
+
+  const adminListPageIds = useMemo(() => expensesForList.map((e) => e.id), [expensesForList])
+  const adminListAllPageSelected =
+    adminListPageIds.length > 0 && adminListPageIds.every((id) => listSelectedIds.has(id))
+  const adminListSomePageSelected = adminListPageIds.some((id) => listSelectedIds.has(id))
+
+  useEffect(() => {
+    if (!adminList) return
+    const allowed = new Set(filteredExpenses.map((e) => e.id))
+    setListSelectedIds((prev) => {
+      let removed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id)
+        else removed = true
+      }
+      if (!removed && next.size === prev.size) return prev
+      return next
+    })
+  }, [adminList, filteredExpenses])
+
+  const toggleListExpenseSelect = useCallback((id: string, selected: boolean) => {
+    setListSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
+  const toggleAdminListSelectAllPage = useCallback(() => {
+    setListSelectedIds((prev) => {
+      const ids = adminListPageIds
+      const allOn = ids.length > 0 && ids.every((id) => prev.has(id))
+      const next = new Set(prev)
+      if (allOn) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }, [adminListPageIds])
 
   const openReservationStmtRecon = useCallback((expense: ReservationExpense) => {
     const ymd = expense.submit_on ? expense.submit_on.slice(0, 10) : ''
@@ -1023,11 +1374,25 @@ export default function ReservationExpenseManager({
                 <input
                   type="text"
                   placeholder={t('searchPlaceholder')}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      applySearch()
+                    }
+                  }}
                   className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                 />
               </div>
+              <Button
+                type="button"
+                className="shrink-0 text-sm py-1.5 sm:py-2 px-3 flex items-center gap-1.5"
+                onClick={applySearch}
+              >
+                <Search className="w-4 h-4" />
+                {t('search')}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -1589,6 +1954,17 @@ export default function ReservationExpenseManager({
       ) : sortedDisplayExpenses.length > 0 ? (
         adminList ? (
           <>
+            <ExpenseListReconBulkToolbar
+              sourceTable="reservation_expenses"
+              selectedIds={listSelectedIds}
+              pageIds={adminListPageIds}
+              onToggleSelectAllPage={toggleAdminListSelectAllPage}
+              onClearSelection={() => setListSelectedIds(new Set())}
+              onExemptApplied={() => {
+                refreshReservationReconFlags()
+                setListSelectedIds(new Set())
+              }}
+            />
             <div className="md:hidden space-y-3">
               {expensesForList.map((expense) => (
                 <div
@@ -1596,12 +1972,28 @@ export default function ReservationExpenseManager({
                   className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="shrink-0 pt-0.5">
+                      <Checkbox
+                        checked={listSelectedIds.has(expense.id)}
+                        onCheckedChange={(c) => toggleListExpenseSelect(expense.id, c === true)}
+                        aria-label={tStmtBulk('selectRowAria')}
+                      />
+                    </div>
                     <div className="flex items-start gap-1 min-w-0 flex-1">
                       <ExpenseStatementReconIcon
-                        matched={reconciledReservationIds.has(expense.id)}
+                        matched={reconciledReservationIds.has(expense.id) || exemptReservationIds.has(expense.id)}
+                        exempt={exemptReservationIds.has(expense.id)}
                         titleMatched={tStmtRecon('matchedTitle')}
                         titleUnmatched={tStmtRecon('unmatchedTitle')}
+                        titleExempt={tStmtRecon('exemptTitle')}
                         onClick={() => openReservationStmtRecon(expense)}
+                      />
+                      <ExpenseReconciliationExemptToggle
+                        compact
+                        sourceTable="reservation_expenses"
+                        sourceId={expense.id}
+                        exempt={exemptReservationIds.has(expense.id)}
+                        onChanged={() => refreshReservationReconFlags()}
                       />
                       <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
                     </div>
@@ -1620,10 +2012,10 @@ export default function ReservationExpenseManager({
                         {getStatusText(expense.status)}
                       </span>
                     </span>
-                    {expense.reservations && reservationCustomerLabel(expense) && (
+                    {expense.reservations && expenseReservationId(expense) && (
                       <>
                         <span className="text-gray-400">{t('form.reservationId')}</span>
-                        <span className="truncate">{reservationCustomerLabel(expense)}</span>
+                        <span className="min-w-0">{renderReservationIdCell(expense)}</span>
                       </>
                     )}
                     <span className="text-gray-400">{t('form.paymentMethod')}</span>
@@ -1658,6 +2050,14 @@ export default function ReservationExpenseManager({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-4 py-3 text-center w-10">
+                      <Checkbox
+                        checked={adminListAllPageSelected ? true : adminListSomePageSelected ? 'indeterminate' : false}
+                        onCheckedChange={() => toggleAdminListSelectAllPage()}
+                        aria-label={tStmtBulk('selectAllPageAria')}
+                        className="h-3.5 w-3.5"
+                      />
+                    </th>
                     <th
                       className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"
                       title={tStmtRecon('unmatchedTitle')}
@@ -1688,7 +2088,7 @@ export default function ReservationExpenseManager({
                         onClick={() => handleReservationTableSort('paid_to')}
                       />
                     </th>
-                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom min-w-[18rem] w-[18rem]">
                       <TableSortHeaderButton
                         label={t('form.reservationId')}
                         active={tableSortKey === 'reservation'}
@@ -1738,21 +2138,40 @@ export default function ReservationExpenseManager({
                 <tbody className="bg-white divide-y divide-gray-200">
                   {expensesForList.map((expense) => (
                     <tr key={expense.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
-                        <ExpenseStatementReconIcon
-                          matched={reconciledReservationIds.has(expense.id)}
-                          titleMatched={tStmtRecon('matchedTitle')}
-                          titleUnmatched={tStmtRecon('unmatchedTitle')}
-                          onClick={() => openReservationStmtRecon(expense)}
+                      <td className="px-4 py-3 text-center align-middle">
+                        <Checkbox
+                          checked={listSelectedIds.has(expense.id)}
+                          onCheckedChange={(c) => toggleListExpenseSelect(expense.id, c === true)}
+                          aria-label={tStmtBulk('selectRowAria')}
+                          className="h-3.5 w-3.5"
                         />
+                      </td>
+                      <td className="px-4 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-0.5">
+                          <ExpenseStatementReconIcon
+                            matched={reconciledReservationIds.has(expense.id) || exemptReservationIds.has(expense.id)}
+                            exempt={exemptReservationIds.has(expense.id)}
+                            titleMatched={tStmtRecon('matchedTitle')}
+                            titleUnmatched={tStmtRecon('unmatchedTitle')}
+                            titleExempt={tStmtRecon('exemptTitle')}
+                            onClick={() => openReservationStmtRecon(expense)}
+                          />
+                          <ExpenseReconciliationExemptToggle
+                            compact
+                            sourceTable="reservation_expenses"
+                            sourceId={expense.id}
+                            exempt={exemptReservationIds.has(expense.id)}
+                            onChanged={() => refreshReservationReconFlags()}
+                          />
+                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                         {expense.submit_on ? expense.submit_on.slice(0, 10) : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 max-w-[200px] truncate">{expense.paid_for}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{expense.paid_to}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">
-                        {reservationCustomerLabel(expense) ?? '—'}
+                      <td className="px-4 py-3 text-sm text-gray-600 min-w-[18rem] w-[18rem] max-w-[22rem] align-top">
+                        {renderReservationIdCell(expense)}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 max-w-[160px] truncate">
                         {paymentMethodLabel(expense.payment_method)}
@@ -2186,6 +2605,104 @@ export default function ReservationExpenseManager({
         onOpenChange={setVendorManagerOpen}
         onUpdated={() => void loadVendors()}
       />
+
+      {loadingReservationForEdit && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
+          <div className="text-white font-medium">{tRes('loadingReservationData')}</div>
+        </div>
+      )}
+      {editingReservation && reservationFormData && (
+        <div className="fixed inset-0 z-[60]">
+          <ReservationFormAny
+            reservation={editingReservation}
+            customers={reservationFormData.customers}
+            products={reservationFormData.products}
+            channels={reservationFormData.channels}
+            productOptions={reservationFormData.productOptions}
+            options={reservationFormData.options}
+            pickupHotels={reservationFormData.pickupHotels}
+            coupons={reservationFormData.coupons}
+            layout="modal"
+            allowPastDateEdit={isSuper}
+            useServerCustomerInsert
+            onSubmit={async (reservationData: any) => {
+              try {
+                const dbReservationData = {
+                  customer_id: reservationData.customerId,
+                  product_id: reservationData.productId,
+                  tour_date: reservationData.tourDate,
+                  tour_time: reservationData.tourTime || null,
+                  event_note: reservationData.eventNote,
+                  pickup_hotel: reservationData.pickUpHotel,
+                  pickup_time: reservationData.pickUpTime || null,
+                  adults: reservationData.adults,
+                  child: reservationData.child,
+                  infant: reservationData.infant,
+                  total_people: reservationData.totalPeople,
+                  channel_id: reservationData.channelId,
+                  channel_rn: reservationData.channelRN,
+                  added_by: reservationData.addedBy,
+                  tour_id: reservationData.tourId || editingReservation.tourId || null,
+                  status: reservationData.status,
+                  selected_options: reservationData.selectedOptions,
+                  selected_option_prices: reservationData.selectedOptionPrices,
+                  is_private_tour: reservationData.isPrivateTour || false,
+                  choices: reservationData.choices,
+                }
+                const { error } = await supabase
+                  .from('reservations')
+                  .update(dbReservationData)
+                  .eq('id', editingReservation.id)
+                if (error) {
+                  alert(`${tRes('messages.reservationUpdateError')} ${error.message}`)
+                  return
+                }
+                if (reservationData.choices?.required && Array.isArray(reservationData.choices.required)) {
+                  await supabase.from('reservation_choices').delete().eq('reservation_id', editingReservation.id)
+                  const validChoices = reservationData.choices.required
+                    .filter((c: any) => c.option_id)
+                    .map((c: any) => ({
+                      reservation_id: editingReservation.id,
+                      choice_id: c.choice_id,
+                      option_id: c.option_id,
+                      quantity: c.quantity || 1,
+                      total_price: c.total_price || 0,
+                    }))
+                  if (validChoices.length > 0) {
+                    await (supabase as any).from('reservation_choices').insert(validChoices)
+                  }
+                }
+                handleCloseReservationEditModal()
+                void loadExpenses()
+                alert(tRes('messages.reservationUpdated'))
+              } catch (e) {
+                console.error('예약 수정 오류:', e)
+                alert(tRes('messages.reservationUpdateError'))
+              }
+            }}
+            onCancel={handleCloseReservationEditModal}
+            onRefreshCustomers={async () => {}}
+            onDelete={async () => {
+              if (!confirm(tRes('messages.reservationDeleteConfirmSoft'))) return
+              try {
+                const { error } = await supabase
+                  .from('reservations')
+                  .update({ status: 'deleted' })
+                  .eq('id', editingReservation.id)
+                if (error) {
+                  alert(`${tRes('messages.reservationDeleteError')} ${error.message}`)
+                  return
+                }
+                handleCloseReservationEditModal()
+                void loadExpenses()
+                alert(tRes('messages.reservationDeleted'))
+              } catch (e) {
+                console.error('예약 삭제 처리 오류:', e)
+              }
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

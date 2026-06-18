@@ -1,20 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
-import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
+import { buildReservationExpenseSearchOrClause } from '@/lib/reservationExpenseSearch'
 import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 
 const db = supabaseAdmin ?? supabase
 
 type ExpenseListRow = {
   reservation_id?: string | null
-  reservations?: { id?: string; customer_id?: string | null } | null
+  reservations?: {
+    id?: string
+    customer_id?: string | null
+    product_id?: string | null
+    status?: string | null
+    tour_date?: string | null
+    adults?: number | null
+    child?: number | null
+    infant?: number | null
+    total_people?: number | null
+    customers?: { id?: string; name?: string; email?: string }
+    products?: { name?: string; name_ko?: string; name_en?: string } | null
+  } | null
   [key: string]: unknown
+}
+
+type ProductLite = {
+  id: string
+  name?: string | null
+  name_ko?: string | null
+  name_en?: string | null
+}
+
+async function attachProductsToExpenseRows(rows: ExpenseListRow[]): Promise<ExpenseListRow[]> {
+  const productIds = [
+    ...new Set(
+      rows
+        .map((e) => e.reservations?.product_id)
+        .filter((id): id is string => Boolean(id && String(id).trim()))
+        .map((id) => String(id).trim())
+    ),
+  ]
+  if (productIds.length === 0) return rows
+
+  const productById = new Map<string, ProductLite>()
+  const chunkSize = 100
+  for (let i = 0; i < productIds.length; i += chunkSize) {
+    const chunk = productIds.slice(i, i + chunkSize)
+    const { data: products, error } = await db
+      .from('products')
+      .select('id, name, name_ko, name_en')
+      .in('id', chunk)
+    if (error) {
+      console.error('Error fetching products for reservation expenses:', error)
+      break
+    }
+    for (const p of (products || []) as ProductLite[]) {
+      if (p.id) productById.set(String(p.id), p)
+    }
+  }
+
+  return rows.map((expense) => {
+    const reservations = expense.reservations
+    if (!reservations?.product_id) return expense
+    const pid = String(reservations.product_id).trim()
+    const product = productById.get(pid)
+    if (!product) return expense
+    return {
+      ...expense,
+      reservations: {
+        ...reservations,
+        products: product,
+      },
+    }
+  })
 }
 
 const ADMIN_LIST_MAX = 5000
 const RESERVATION_DETAIL_MAX = 500
-const AMOUNT_SEARCH_SCAN_LIMIT = 10_000
 
 // GET: 예약 지출 목록 조회
 export async function GET(request: NextRequest) {
@@ -38,9 +100,12 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * limit
     const to = from + limit - 1
 
+    const searchTrimmed = (search ?? '').trim()
+    const searchActive = searchTrimmed.length > 0
+
     /** 검색어가 있으면 «미대조만» 뷰를 쓰지 않음 — 이미 명세에 연결된 지출도 찾을 수 있게 */
     const tableName =
-      search?.trim() || statementMatch !== 'unmatched'
+      searchActive || statementMatch !== 'unmatched'
         ? 'reservation_expenses'
         : 'reservation_expenses_no_statement_match'
     const useBaseTable = tableName === 'reservation_expenses'
@@ -78,71 +143,24 @@ export async function GET(request: NextRequest) {
         reservations (
           id,
           customer_id,
-          product_id
+          product_id,
+          status,
+          tour_date,
+          adults,
+          child,
+          infant,
+          total_people
         )
       `,
-        { count: 'exact' }
+        { count: searchActive ? 'planned' : 'exact' }
       )
     )
 
-    if (search && search.trim()) {
-      const raw = search.trim()
-      const like = `%${raw}%`
-      const orParts = [
-        `paid_to.ilike.${like}`,
-        `paid_for.ilike.${like}`,
-        `note.ilike.${like}`,
-        `payment_method.ilike.${like}`,
-        `submitted_by.ilike.${like}`,
-        `reservation_id.ilike.${like}`,
-        `event_id.ilike.${like}`,
-        `id.ilike.${like}`,
-      ]
-
-      const { data: pmRows } = await db
-        .from('payment_methods')
-        .select('id')
-        .or(`method.ilike.${like},display_name.ilike.${like},id.ilike.${like}`)
-      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id))].slice(0, 200)
-      if (pmIds.length > 0) {
-        orParts.push(`payment_method.in.(${pmIds.join(',')})`)
+    if (searchActive) {
+      const searchOr = await buildReservationExpenseSearchOrClause(db, searchTrimmed)
+      if (searchOr) {
+        query = query.or(searchOr)
       }
-
-      const { data: customerRows } = await db
-        .from('customers')
-        .select('id')
-        .or(`name.ilike.${like},email.ilike.${like}`)
-        .limit(100)
-      const customerIds = (customerRows || []).map((r: { id: string }) => r.id).filter(Boolean)
-      if (customerIds.length > 0) {
-        const { data: reservationRows } = await db
-          .from('reservations')
-          .select('id')
-          .in('customer_id', customerIds)
-          .limit(200)
-        const reservationIdsFromCustomers = (reservationRows || [])
-          .map((r: { id: string }) => r.id)
-          .filter(Boolean)
-        if (reservationIdsFromCustomers.length > 0) {
-          orParts.push(`reservation_id.in.(${reservationIdsFromCustomers.join(',')})`)
-        }
-      }
-
-      if (isAmountSearchQuery(raw)) {
-        const scanQ = applyListFilters(fromUntypedTable(db, tableName).select('id, amount'))
-        const { data: scanRows } = await scanQ.limit(AMOUNT_SEARCH_SCAN_LIMIT)
-        const amountIds = (scanRows || [])
-          .filter((r: { id: string; amount: unknown }) =>
-            matchesAmountSearch(Number(r.amount), raw)
-          )
-          .map((r: { id: string }) => r.id)
-          .slice(0, 200)
-        if (amountIds.length > 0) {
-          orParts.push(`id.in.(${amountIds.join(',')})`)
-        }
-      }
-
-      query = query.or(orParts.join(','))
     }
 
     query = query.order('submit_on', { ascending: false }).range(from, to)
@@ -178,10 +196,12 @@ export async function GET(request: NextRequest) {
       return expense
     }))
 
+    const expensesWithProducts = await attachProductsToExpenseRows(expensesWithCustomers as ExpenseListRow[])
+
     /** 예약별 payment_records 금액 합계 (입금 내역) */
     const reservationIds = [
       ...new Set(
-        (expensesWithCustomers as ExpenseListRow[])
+        (expensesWithProducts as ExpenseListRow[])
           .map((e) => {
             const rid = e.reservation_id || e.reservations?.id
             return rid && String(rid).trim() ? String(rid).trim() : null
@@ -214,7 +234,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const dataWithPayments = (expensesWithCustomers as ExpenseListRow[]).map((e) => {
+    const dataWithPayments = (expensesWithProducts as ExpenseListRow[]).map((e) => {
         const rid = e.reservation_id || e.reservations?.id
         const key = rid && String(rid).trim() ? String(rid).trim() : null
         const reservation_payments_total =
@@ -365,7 +385,7 @@ export async function PUT(request: NextRequest) {
 
     if (updateData.amount !== undefined && updateData.amount !== null) {
       const n = typeof updateData.amount === 'number' ? updateData.amount : parseFloat(String(updateData.amount))
-      if (!Number.isFinite(n) || n === 0) {
+      if (!Number.isFinite(n)) {
         return NextResponse.json(
           { success: false, message: 'Invalid amount' },
           { status: 400 }

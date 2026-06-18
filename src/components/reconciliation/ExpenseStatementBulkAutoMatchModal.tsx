@@ -6,16 +6,18 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import {
   applyExpenseStatementAutoMatchProposals,
-  EXPENSE_STATEMENT_AUTO_MATCH_DAY_WINDOW,
-  EXPENSE_STATEMENT_AGGREGATE_MAX_DAY_SPAN,
+  EXPENSE_STATEMENT_AUTO_MATCH_HIGH_CONFIDENCE_SCORE,
   pickDefaultExpenseAutoMatchSelections,
+  pickHighConfidenceExpenseAutoMatchSelections,
   prepareExpenseStatementAutoMatchProposals,
   type ExpenseAutoMatchInputRow,
   type ExpenseStatementAutoMatchProposal,
 } from '@/lib/expense-statement-auto-match'
 import type { ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
+import { sourceTableLabelKey } from '@/lib/expense-ledger-match-display'
 
 const PREVIEW_PAGE_SIZE = 25
 
@@ -45,7 +47,9 @@ export default function ExpenseStatementBulkAutoMatchModal({
   onApplied,
 }: Props) {
   const t = useTranslations('expenses.statementRecon.bulkAutoMatch')
+  const tRecon = useTranslations('expenses.statementRecon')
   const { user } = useAuth()
+  const { paymentMethodMap } = usePaymentMethodOptions()
   const [preparing, setPreparing] = useState(false)
   const [applying, setApplying] = useState(false)
   const [proposals, setProposals] = useState<ExpenseStatementAutoMatchProposal[]>([])
@@ -56,14 +60,30 @@ export default function ExpenseStatementBulkAutoMatchModal({
   const selectAllRef = useRef<HTMLInputElement>(null)
   const expenseById = useMemo(() => new Map(expenses.map((e) => [e.id, e])), [expenses])
 
+  const sourceTableLabel = useCallback(
+    (expenseId: string) => {
+      const table =
+        expenseById.get(expenseId)?.sourceTable ?? sourceTable ?? 'reservation_expenses'
+      return tRecon(`sourceTypes.${sourceTableLabelKey(table)}`)
+    },
+    [expenseById, sourceTable, tRecon]
+  )
+
+  const paymentMethodLabel = useCallback(
+    (expenseId: string) => {
+      const raw = String(expenseById.get(expenseId)?.payment_method ?? '').trim()
+      if (!raw) return '—'
+      return paymentMethodMap[raw] || raw
+    },
+    [expenseById, paymentMethodMap]
+  )
+
   const unmatchedTargets = useMemo(
     () =>
       expenses.filter(
         (e) =>
           e.id &&
           !reconciledExpenseIds.has(e.id) &&
-          e.submit_on &&
-          e.submit_on.length >= 10 &&
           Math.abs(Number(e.amount ?? 0)) > AMOUNT_EQUAL_EPS
       ),
     [expenses, reconciledExpenseIds]
@@ -78,10 +98,8 @@ export default function ExpenseStatementBulkAutoMatchModal({
     setPreparing(true)
     setHint(null)
     try {
-      const { proposals: next, poolSize, skippedNoDate } = await prepareExpenseStatementAutoMatchProposals(
-        supabase,
-        unmatchedTargets
-      )
+      const { proposals: next, poolSize, statementPoolSize, cashPoolSize, skippedNoDate } =
+        await prepareExpenseStatementAutoMatchProposals(supabase, unmatchedTargets)
       if (next.length === 0) {
         setProposals([])
         setSelectedIds(new Set())
@@ -90,7 +108,8 @@ export default function ExpenseStatementBulkAutoMatchModal({
           t('noCandidates', {
             expenseCount: unmatchedTargets.length,
             poolSize,
-            dayWindow: EXPENSE_STATEMENT_AUTO_MATCH_DAY_WINDOW,
+            statementPoolSize,
+            cashPoolSize,
           })
         )
         return
@@ -106,8 +125,8 @@ export default function ExpenseStatementBulkAutoMatchModal({
           proposalCount: next.length,
           targetCount: unmatchedTargets.length,
           poolSize,
-          dayWindow: EXPENSE_STATEMENT_AUTO_MATCH_DAY_WINDOW,
-          aggregateSpan: EXPENSE_STATEMENT_AGGREGATE_MAX_DAY_SPAN,
+          statementPoolSize,
+          cashPoolSize,
           skipped: Math.max(0, skipped),
         })
       )
@@ -199,6 +218,18 @@ export default function ExpenseStatementBulkAutoMatchModal({
 
   const selectedCount = proposals.filter((p) => selectedIds.has(p.expense_id)).length
 
+  const highConfidenceCount = useMemo(() => {
+    return pickHighConfidenceExpenseAutoMatchSelections(proposals).selectedExpenseIds.size
+  }, [proposals])
+
+  const selectHighConfidence = useCallback(() => {
+    const { selectedExpenseIds, candidateKeyByExpenseId } =
+      pickHighConfidenceExpenseAutoMatchSelections(proposals)
+    setSelectedIds(selectedExpenseIds)
+    setCandidatePick((prev) => ({ ...prev, ...candidateKeyByExpenseId }))
+    setPreviewPage(1)
+  }, [proposals])
+
   return (
     <Dialog
       open={open}
@@ -228,12 +259,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
           ) : hint ? (
             <span>{hint}</span>
           ) : (
-            <span>
-              {t('ruleLine', {
-                dayWindow: EXPENSE_STATEMENT_AUTO_MATCH_DAY_WINDOW,
-                aggregateSpan: EXPENSE_STATEMENT_AGGREGATE_MAX_DAY_SPAN,
-              })}
-            </span>
+            <span>{t('ruleLine')}</span>
           )}
         </div>
 
@@ -291,6 +317,9 @@ export default function ExpenseStatementBulkAutoMatchModal({
                         />
                       </td>
                       <td className="px-2 py-2 min-w-[10rem]">
+                        <div className="text-[10px] font-medium text-indigo-700 mb-0.5">
+                          {sourceTableLabel(p.expense_id)}
+                        </div>
                         <div className="font-medium text-slate-900 tabular-nums">
                           {p.submit_on} · ${p.amount.toFixed(2)}
                         </div>
@@ -299,6 +328,12 @@ export default function ExpenseStatementBulkAutoMatchModal({
                         </div>
                         <div className="text-slate-500 truncate max-w-[14rem]" title={p.paid_to}>
                           {p.paid_to || '—'}
+                        </div>
+                        <div
+                          className="text-teal-800 truncate max-w-[14rem]"
+                          title={paymentMethodLabel(p.expense_id)}
+                        >
+                          {tRecon('sourcePaymentMethod')}: {paymentMethodLabel(p.expense_id)}
                         </div>
                       </td>
                       <td className="px-2 py-2">
@@ -315,7 +350,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
                           >
                             {p.candidates.map((c) => (
                               <option key={c.key} value={c.key}>
-                                {c.kind === 'aggregate' ? `〔합산〕 ` : ''}
+                                {c.kind === 'aggregate' ? `〔합산〕 ` : c.match_source === 'cash' ? `〔현금〕 ` : ''}
                                 {c.label}
                               </option>
                             ))}
@@ -372,7 +407,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
           </div>
         ) : null}
 
-        <DialogFooter className="px-4 py-3 shrink-0 gap-2 sm:gap-2">
+        <DialogFooter className="px-4 py-3 shrink-0 gap-2 sm:gap-2 flex-wrap">
           <Button
             type="button"
             variant="outline"
@@ -388,6 +423,17 @@ export default function ExpenseStatementBulkAutoMatchModal({
             onClick={() => void prepare()}
           >
             {t('refresh')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={applying || preparing || highConfidenceCount === 0}
+            title={t('selectHighConfidenceTitle', {
+              score: EXPENSE_STATEMENT_AUTO_MATCH_HIGH_CONFIDENCE_SCORE,
+            })}
+            onClick={selectHighConfidence}
+          >
+            {t('selectHighConfidence', { count: highConfidenceCount })}
           </Button>
           <Button
             type="button"

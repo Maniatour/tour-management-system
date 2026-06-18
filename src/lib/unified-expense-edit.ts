@@ -50,7 +50,10 @@ export async function saveUnifiedExpenseEdit(
   draft: UnifiedExpenseEditDraft
 ): Promise<void> {
   const amt = parseFloat(String(draft.amount).replace(/,/g, ''))
-  if (!Number.isFinite(amt) || amt === 0) {
+  if (!Number.isFinite(amt)) {
+    throw new Error('금액을 확인하세요.')
+  }
+  if (amt === 0 && source !== 'reservation_expenses') {
     throw new Error('금액을 확인하세요.')
   }
   if (!draft.submitDate || !/^\d{4}-\d{2}-\d{2}$/.test(draft.submitDate)) {

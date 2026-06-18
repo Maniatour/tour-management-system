@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 
 interface PopularProduct {
   id: string
@@ -174,7 +175,9 @@ export default function HomePage() {
       }
     }
 
-    fetchPopularTours()
+    return scheduleDeferredWork(() => {
+      void fetchPopularTours()
+    })
   }, [locale])
 
   // 즐겨찾기 상품 순서 변경 함수

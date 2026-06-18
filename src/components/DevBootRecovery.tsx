@@ -27,6 +27,7 @@ export default function DevBootRecovery() {
     }
 
     const onError = (event: ErrorEvent) => {
+      if (document.visibilityState !== 'visible') return
       const message = event.message ?? event.error?.message ?? ''
       if (!isChunkLoadFailure(String(message))) return
       try {
@@ -39,6 +40,7 @@ export default function DevBootRecovery() {
     }
 
     const onRejection = (event: PromiseRejectionEvent) => {
+      if (document.visibilityState !== 'visible') return
       const reason = event.reason
       const message =
         typeof reason === 'string'

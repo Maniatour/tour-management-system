@@ -140,7 +140,7 @@ export default function ChannelInvoicePreviewModal({
   }
 
   const handleDownloadPDF = () => {
-    generateChannelInvoicePDF({
+    void generateChannelInvoicePDF({
       channelName,
       dateRange,
       items,

@@ -30,11 +30,23 @@ import {
 import {
   expenseSourceSupportsCashLedgerLink,
   fetchLinkedCashTransactionsForExpense,
+  fetchLinkedExpensesForCashTransaction,
   fetchSimilarCashTransactionsForExpense,
-  replaceExpenseCashLedgerMatch,
+  fetchSimilarExpensesForCashTransaction,
+  parseExpenseCashLinkRowKey,
+  expenseCashLinkRowKey,
+  searchCashTransactions,
+  searchExpensesForCashTransaction,
+  attachExternalLinksToExpenseForCashRows,
+  expenseForCashHasStatementLink,
+  expenseForCashHasOtherCashLink,
+  linkExpensesToCashTransaction,
   unlinkExpenseCashLedgerMatches,
+  unlinkExpenseCashLedgerMatchesForCash,
   type SimilarCashTransactionRow,
+  type SimilarExpenseForCashRow,
 } from '@/lib/expense-cash-ledger-match'
+import CashTransactionPickerModal from '@/components/reconciliation/CashTransactionPickerModal'
 import { fetchStatementLinePairsForLineIds } from '@/lib/statement-line-pairs'
 import { ArrowLeftRight } from 'lucide-react'
 import {
@@ -85,7 +97,7 @@ function FilterSegmentButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'h-8 min-w-[4.5rem] px-3 text-xs font-semibold rounded-md transition-all border',
+        'h-9 sm:h-8 min-w-0 sm:min-w-[4.5rem] flex-1 sm:flex-none px-2 sm:px-3 text-[11px] sm:text-xs font-semibold rounded-md transition-all border',
         disabled && 'opacity-50 cursor-not-allowed',
         active
           ? activeTone === 'slate'
@@ -105,6 +117,82 @@ function FilterSegmentButton({
         children
       )}
     </button>
+  )
+}
+
+function MobileKvRow({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('flex gap-2 text-xs leading-snug min-w-0', className)}>
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground w-[4.5rem]">
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 break-words">{children}</span>
+    </div>
+  )
+}
+
+const RECON_MODAL_SHELL_CLASS = cn(
+  '!flex !flex-col gap-0 overflow-hidden p-0 lg:p-6',
+  'max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--header-height,4rem)] max-lg:bottom-[calc(var(--footer-height,4rem)+env(safe-area-inset-bottom,0px))] max-lg:translate-x-0 max-lg:translate-y-0 max-lg:h-auto max-lg:max-h-none max-lg:w-full max-lg:max-w-none max-lg:rounded-none max-lg:border-0 max-lg:shadow-none',
+  'lg:top-[50%] lg:left-[50%] lg:translate-x-[-50%] lg:translate-y-[-50%] lg:max-h-[88vh] lg:h-auto lg:w-full lg:max-w-[min(98vw,88rem)] lg:rounded-lg lg:border lg:shadow-lg'
+)
+
+function ReconModalSection({
+  title,
+  badge,
+  tone = 'neutral',
+  fill = false,
+  className,
+  children,
+}: {
+  title: string
+  badge?: ReactNode
+  tone?: 'neutral' | 'source' | 'candidates' | 'cash' | 'sky'
+  fill?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  const shell = {
+    neutral: 'border-slate-200 bg-white',
+    source: 'border-slate-200 bg-slate-50/90',
+    candidates: 'border-emerald-300/70 bg-white',
+    cash: 'border-amber-300/70 bg-white',
+    sky: 'border-sky-300/70 bg-white',
+  }
+  const header = {
+    neutral: 'border-slate-200 bg-slate-100/90 text-slate-800',
+    source: 'border-slate-200 bg-white text-slate-800',
+    candidates: 'border-emerald-200/80 bg-emerald-100/70 text-emerald-950',
+    cash: 'border-amber-200/80 bg-amber-100/70 text-amber-950',
+    sky: 'border-sky-200/80 bg-sky-100/70 text-sky-950',
+  }
+  return (
+    <section
+      className={cn(
+        'rounded-xl border shadow-sm overflow-hidden',
+        shell[tone],
+        fill && 'flex min-h-0 flex-1 flex-col',
+        className
+      )}
+    >
+      <div className={cn('flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2', header[tone])}>
+        <h3 className="text-[11px] font-bold uppercase tracking-wide">{title}</h3>
+        {badge != null ? (
+          <span className="shrink-0 rounded-full border border-current/15 bg-white/90 px-2 py-0.5 text-[10px] font-semibold tabular-nums">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <div className={cn(fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'p-3')}>{children}</div>
+    </section>
   )
 }
 
@@ -137,6 +225,7 @@ type LedgerMatchDetailLabelBundle = {
   paidTo: string
   paidFor: string
   submitDate: string
+  submitBy: string
   checkInDate: string
   tourDate: string
   linkedTour: string
@@ -148,6 +237,15 @@ type LedgerMatchDetailLabelBundle = {
   notFound: string
 }
 
+function formatSubmitterDisplay(
+  email: string | null | undefined,
+  teamLabels: Map<string, string>
+): string {
+  const e = String(email ?? '').trim()
+  if (!e) return '—'
+  return teamLabels.get(e.toLowerCase()) || e
+}
+
 function StatementTableLinkedMatchCell({
   match: _match,
   detail,
@@ -156,6 +254,7 @@ function StatementTableLinkedMatchCell({
   paymentMethodFinancialAccountNameByPmId,
   fallbackLabel,
   sourceTypeLabel,
+  formatSubmitter,
 }: {
   match: LedgerMatchRef
   detail: LedgerMatchDetail | undefined
@@ -164,6 +263,7 @@ function StatementTableLinkedMatchCell({
   paymentMethodFinancialAccountNameByPmId: Record<string, string>
   fallbackLabel: string
   sourceTypeLabel: (table: string) => string
+  formatSubmitter: (email: string) => string
 }) {
   if (!detail) {
     return <div className="truncate text-muted-foreground">{fallbackLabel}</div>
@@ -176,7 +276,8 @@ function StatementTableLinkedMatchCell({
   const { headline, rows } = formatLedgerMatchDetailLines(
     detail,
     { ...labels, sourceType: typeName },
-    pmLabel
+    pmLabel,
+    { formatSubmitter }
   )
   return (
     <div className="rounded border border-slate-200/90 bg-slate-50/90 px-2.5 py-1.5 mb-1.5 last:mb-0 min-w-[16rem]">
@@ -227,6 +328,7 @@ type SourceSummaryInfo = {
   paymentMethod: string | null
   primaryDetail: string | null
   secondaryDetail: string | null
+  submitterEmail?: string | null
   rnNumber?: string | null
   /** 투어 호텔 부킹 등 — YYYY-MM-DD 표시용 */
   checkInDate?: string | null
@@ -251,40 +353,43 @@ async function fetchSourceSummaryInfo(context: ExpenseStatementReconContext): Pr
     case 'company_expenses': {
       const { data } = await supabase
         .from('company_expenses')
-        .select('payment_method, paid_for, paid_to, description')
+        .select('payment_method, paid_for, paid_to, description, submit_by')
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.paid_for ?? data.description ?? null,
-        secondaryDetail: data.paid_to ?? null
+        secondaryDetail: data.paid_to ?? null,
+        submitterEmail: data.submit_by ?? null,
       }
     }
     case 'reservation_expenses': {
       const { data } = await supabase
         .from('reservation_expenses')
-        .select('payment_method, paid_for, paid_to, note')
+        .select('payment_method, paid_for, paid_to, note, submitted_by')
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.paid_for ?? data.note ?? null,
-        secondaryDetail: data.paid_to ?? null
+        secondaryDetail: data.paid_to ?? null,
+        submitterEmail: data.submitted_by ?? null,
       }
     }
     case 'tour_expenses': {
       const { data } = await supabase
         .from('tour_expenses')
-        .select('payment_method, paid_for, paid_to, note')
+        .select('payment_method, paid_for, paid_to, note, submitted_by')
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.paid_for ?? data.note ?? null,
-        secondaryDetail: data.paid_to ?? null
+        secondaryDetail: data.paid_to ?? null,
+        submitterEmail: data.submitted_by ?? null,
       }
     }
     case 'ticket_bookings': {
@@ -430,8 +535,10 @@ export default function ExpenseStatementSimilarLinesModal({
   const [matchMode, setMatchMode] = useState<SimilarStatementLinesMatchMode>('dateProximity')
   const [statementStatusFilter, setStatementStatusFilter] = useState<StatementStatusFilter>('unmatched')
   const [rowSearch, setRowSearch] = useState('')
+  const [rowSearchInput, setRowSearchInput] = useState('')
   const [searchResultRows, setSearchResultRows] = useState<SimilarStatementLineRow[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const statementSearchGenRef = useRef(0)
   const [sourceSummary, setSourceSummary] = useState<SourceSummaryInfo | null>(null)
   const [syncAmountToStatement, setSyncAmountToStatement] = useState(false)
   const [appendLink, setAppendLink] = useState(false)
@@ -439,6 +546,7 @@ export default function ExpenseStatementSimilarLinesModal({
   const [sourceAllocatedSum, setSourceAllocatedSum] = useState<number | null>(null)
   const appendAmountUserEditedRef = useRef(false)
   const headerSelectAllRef = useRef<HTMLInputElement>(null)
+  const headerSelectAllMobileRef = useRef<HTMLInputElement>(null)
   const [activeAccountTab, setActiveAccountTab] = useState(ACCOUNT_TAB_ALL)
   const [conflictDetails, setConflictDetails] = useState<LedgerMatchDetail[]>([])
   const [conflictDetailsLoading, setConflictDetailsLoading] = useState(false)
@@ -458,8 +566,32 @@ export default function ExpenseStatementSimilarLinesModal({
   const [cashLoading, setCashLoading] = useState(false)
   const [cashSaving, setCashSaving] = useState(false)
   const [unlinkingCashId, setUnlinkingCashId] = useState<string | null>(null)
+  const [cashSearch, setCashSearch] = useState('')
+  const [cashSearchResultRows, setCashSearchResultRows] = useState<SimilarCashTransactionRow[]>([])
+  const [cashSearchLoading, setCashSearchLoading] = useState(false)
+  const [expenseForCashRows, setExpenseForCashRows] = useState<SimilarExpenseForCashRow[]>([])
+  const [linkedExpenseForCashRows, setLinkedExpenseForCashRows] = useState<SimilarExpenseForCashRow[]>([])
+  const [selectedExpenseForCashKeys, setSelectedExpenseForCashKeys] = useState<string[]>([])
+  const [expenseForCashLoading, setExpenseForCashLoading] = useState(false)
+  const [expenseForCashSaving, setExpenseForCashSaving] = useState(false)
+  const [unlinkingExpenseForCashKey, setUnlinkingExpenseForCashKey] = useState<string | null>(null)
+  const [expenseForCashSearch, setExpenseForCashSearch] = useState('')
+  const [expenseForCashSearchInput, setExpenseForCashSearchInput] = useState('')
+  const [expenseForCashSearchRows, setExpenseForCashSearchRows] = useState<SimilarExpenseForCashRow[]>([])
+  const [expenseForCashSearchLoading, setExpenseForCashSearchLoading] = useState(false)
+  const expenseForCashSearchGenRef = useRef(0)
+  const [cashSectionExpenseRows, setCashSectionExpenseRows] = useState<SimilarExpenseForCashRow[]>([])
+  const [linkedCashSectionExpenseRows, setLinkedCashSectionExpenseRows] = useState<SimilarExpenseForCashRow[]>([])
+  const [selectedCashLinkExpenseKeys, setSelectedCashLinkExpenseKeys] = useState<string[]>([])
+  const [cashSectionExpenseLoading, setCashSectionExpenseLoading] = useState(false)
+  const [cashPickerOpen, setCashPickerOpen] = useState(false)
+  const [teamMemberLabels, setTeamMemberLabels] = useState<Map<string, string>>(() => new Map())
 
   const ticketDateProbe = context?.ticketBookingDateProbe
+  const isCashAnchorMode =
+    Boolean(context) &&
+    context!.sourceTable === 'cash_transactions' &&
+    context!.direction === 'outflow'
   const showCashLedgerSection =
     Boolean(context) &&
     context!.direction === 'outflow' &&
@@ -471,6 +603,37 @@ export default function ExpenseStatementSimilarLinesModal({
   contextRef.current = context
   matchModeRef.current = matchMode
   tRef.current = t
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data, error } = await supabase.from('team').select('email, display_name, name_ko')
+        if (error) throw error
+        if (cancelled) return
+        const memberMap = new Map<string, string>()
+        for (const member of data ?? []) {
+          const email = String(member.email || '').trim()
+          if (!email) continue
+          const dn = member.display_name != null ? String(member.display_name).trim() : ''
+          const ko = member.name_ko != null ? String(member.name_ko).trim() : ''
+          memberMap.set(email.toLowerCase(), dn || ko || email)
+        }
+        setTeamMemberLabels(memberMap)
+      } catch {
+        if (!cancelled) setTeamMemberLabels(new Map())
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  const formatSubmitter = useCallback(
+    (email: string) => formatSubmitterDisplay(email, teamMemberLabels),
+    [teamMemberLabels]
+  )
 
   /** context·matchMode 객체 참조 변경만으로 load가 반복되지 않도록 원시값 키 사용 */
   const contextLoadKey = useMemo(() => {
@@ -499,6 +662,60 @@ export default function ExpenseStatementSimilarLinesModal({
     setMessage(null)
     if (!opts?.preserveSelection) setSelectedIdsOrdered([])
     try {
+      if (ctx.sourceTable === 'cash_transactions' && ctx.direction === 'outflow') {
+        setLinkedRows([])
+        setSourceAllocByLineId(new Map())
+        setMatchIdByLineId(new Map())
+        setRows([])
+        setLinkedCashRows([])
+        setCashRows([])
+        if (!opts?.preserveSelection) {
+          setSelectedCashId(null)
+          setSelectedIdsOrdered([])
+        }
+
+        setExpenseForCashLoading(true)
+        try {
+          const linkedExpenses = await fetchLinkedExpensesForCashTransaction(supabase, ctx.sourceId)
+          setLinkedExpenseForCashRows(linkedExpenses)
+          const linkedKeys = new Set(linkedExpenses.map((r) => r.key))
+          const similarExpenses = await fetchSimilarExpensesForCashTransaction(supabase, {
+            cashTransactionId: ctx.sourceId,
+            dateYmd: ctx.dateYmd,
+            amount: ctx.amount,
+            matchMode: mode,
+            linkedExpenseKeys: linkedKeys,
+          })
+          const mergedExpenses = [...linkedExpenses]
+          for (const row of similarExpenses) {
+            if (!mergedExpenses.some((x) => x.key === row.key)) mergedExpenses.push(row)
+          }
+          const mergedWithLinks = await attachExternalLinksToExpenseForCashRows(
+            supabase,
+            mergedExpenses,
+            ctx.sourceId
+          )
+          setExpenseForCashRows(mergedWithLinks)
+          setLinkedExpenseForCashRows(mergedWithLinks.filter((r) => linkedKeys.has(r.key)))
+          if (!opts?.preserveSelection) {
+            setSelectedExpenseForCashKeys([])
+          }
+        } catch (expErr) {
+          console.error(expErr)
+          setLinkedExpenseForCashRows([])
+          setExpenseForCashRows([])
+          if (!opts?.preserveSelection) setSelectedExpenseForCashKeys([])
+          setMessage(expErr instanceof Error ? expErr.message : tRef.current('loadError'))
+        } finally {
+          setExpenseForCashLoading(false)
+        }
+        return
+      }
+
+      setLinkedExpenseForCashRows([])
+      setExpenseForCashRows([])
+      if (!opts?.preserveSelection) setSelectedExpenseForCashKeys([])
+
       const linkedPromise = fetchLinkedStatementLineRowsForExpenseSource(supabase, {
         sourceTable: ctx.sourceTable,
         sourceId: ctx.sourceId,
@@ -590,6 +807,7 @@ export default function ExpenseStatementSimilarLinesModal({
       setMatchMode('dateProximity')
       setStatementStatusFilter('unmatched')
       setRowSearch('')
+      setRowSearchInput('')
       setSearchResultRows([])
       setSearchLoading(false)
       setSourceSummary(null)
@@ -609,6 +827,24 @@ export default function ExpenseStatementSimilarLinesModal({
       setCashLoading(false)
       setCashSaving(false)
       setUnlinkingCashId(null)
+      setCashSearch('')
+      setCashSearchResultRows([])
+      setCashSearchLoading(false)
+      setExpenseForCashRows([])
+      setLinkedExpenseForCashRows([])
+      setSelectedExpenseForCashKeys([])
+      setCashSectionExpenseRows([])
+      setLinkedCashSectionExpenseRows([])
+      setSelectedCashLinkExpenseKeys([])
+      setCashSectionExpenseLoading(false)
+      setCashPickerOpen(false)
+      setExpenseForCashLoading(false)
+      setExpenseForCashSaving(false)
+      setUnlinkingExpenseForCashKey(null)
+      setExpenseForCashSearch('')
+      setExpenseForCashSearchInput('')
+      setExpenseForCashSearchRows([])
+      setExpenseForCashSearchLoading(false)
     }
   }, [open, contextLoadKey, runLoad])
 
@@ -643,6 +879,244 @@ export default function ExpenseStatementSimilarLinesModal({
 
   const searchQueryTrimmed = rowSearch.trim()
   const isSearchActive = searchQueryTrimmed.length > 0
+  const cashSearchTrimmed = cashSearch.trim()
+  const isCashSearchActive = cashSearchTrimmed.length > 0
+  const expenseForCashSearchTrimmed = expenseForCashSearch.trim()
+  const isExpenseForCashSearchActive = expenseForCashSearchTrimmed.length > 0
+
+  const visibleCashRows = useMemo(() => {
+    if (!isCashSearchActive) return cashRows
+    const merged = [...linkedCashRows]
+    for (const row of cashSearchResultRows) {
+      if (!merged.some((x) => x.id === row.id)) merged.push(row)
+    }
+    return merged
+  }, [cashRows, linkedCashRows, cashSearchResultRows, isCashSearchActive])
+
+  const linkedCashRowIds = useMemo(
+    () => new Set(linkedCashRows.map((r) => r.id)),
+    [linkedCashRows]
+  )
+
+  useEffect(() => {
+    if (!open || !context || !showCashLedgerSection) return
+    if (!isCashSearchActive) {
+      setCashSearchResultRows([])
+      setCashSearchLoading(false)
+      return
+    }
+    setCashSearchLoading(true)
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void searchCashTransactions(supabase, {
+        query: cashSearchTrimmed,
+        limit: 150,
+        linkedCashIds: linkedCashRowIds,
+        dateYmd: context.dateYmd,
+        ledgerAmount: context.amount,
+      })
+        .then((list) => {
+          if (!cancelled) setCashSearchResultRows(list)
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setMessage(e instanceof Error ? e.message : t('loadError'))
+            setCashSearchResultRows([])
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setCashSearchLoading(false)
+        })
+    }, 320)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [
+    cashSearch,
+    open,
+    context,
+    showCashLedgerSection,
+    isCashSearchActive,
+    cashSearchTrimmed,
+    linkedCashRowIds,
+    t,
+  ])
+
+  const visibleExpenseForCashRows = useMemo(() => {
+    if (!isExpenseForCashSearchActive) return expenseForCashRows
+    const merged = [...linkedExpenseForCashRows]
+    for (const row of expenseForCashSearchRows) {
+      if (!merged.some((x) => x.key === row.key)) merged.push(row)
+    }
+    return merged
+  }, [expenseForCashRows, linkedExpenseForCashRows, expenseForCashSearchRows, isExpenseForCashSearchActive])
+
+  useEffect(() => {
+    if (!open || !context || !isCashAnchorMode) return
+    if (!isExpenseForCashSearchActive) {
+      setExpenseForCashSearchRows([])
+      setExpenseForCashSearchLoading(false)
+      return
+    }
+    const gen = ++expenseForCashSearchGenRef.current
+    setExpenseForCashSearchLoading(true)
+    void searchExpensesForCashTransaction(supabase, {
+      query: expenseForCashSearchTrimmed,
+      cashTransactionId: context.sourceId,
+      limit: 150,
+      linkedExpenseKeys: new Set(linkedExpenseForCashRows.map((r) => r.key)),
+      dateYmd: context.dateYmd,
+      cashAmount: context.amount,
+    })
+      .then(async (list) => {
+        if (gen !== expenseForCashSearchGenRef.current) return
+        const withLinks = await attachExternalLinksToExpenseForCashRows(
+          supabase,
+          list,
+          context.sourceId
+        )
+        if (gen !== expenseForCashSearchGenRef.current) return
+        setExpenseForCashSearchRows(withLinks)
+      })
+      .catch((e) => {
+        if (gen !== expenseForCashSearchGenRef.current) return
+        setMessage(e instanceof Error ? e.message : t('loadError'))
+        setExpenseForCashSearchRows([])
+      })
+      .finally(() => {
+        if (gen === expenseForCashSearchGenRef.current) setExpenseForCashSearchLoading(false)
+      })
+  }, [
+    expenseForCashSearch,
+    open,
+    context,
+    isCashAnchorMode,
+    isExpenseForCashSearchActive,
+    expenseForCashSearchTrimmed,
+    linkedExpenseForCashRows,
+    t,
+  ])
+
+  const visibleCashSectionExpenseRows = useMemo(() => cashSectionExpenseRows, [cashSectionExpenseRows])
+
+  const contextExpenseKey = useMemo(
+    () => (context ? expenseCashLinkRowKey(context.sourceTable, context.sourceId) : null),
+    [context]
+  )
+
+  const toggleExpenseForCashKey = useCallback((key: string) => {
+    setSelectedExpenseForCashKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    )
+  }, [])
+
+  const toggleCashLinkExpenseKey = useCallback((key: string) => {
+    setSelectedCashLinkExpenseKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    )
+  }, [])
+
+  const selectableExpenseForCashRows = useMemo(
+    () => visibleExpenseForCashRows.filter((r) => !r.linked_to_this_cash),
+    [visibleExpenseForCashRows]
+  )
+
+  const allSelectableExpenseForCashSelected =
+    selectableExpenseForCashRows.length > 0 &&
+    selectableExpenseForCashRows.every((r) => selectedExpenseForCashKeys.includes(r.key))
+
+  const selectableCashSectionExpenseRows = useMemo(
+    () => visibleCashSectionExpenseRows.filter((r) => !r.linked_to_this_cash),
+    [visibleCashSectionExpenseRows]
+  )
+
+  const allSelectableCashSectionExpensesSelected =
+    selectableCashSectionExpenseRows.length > 0 &&
+    selectableCashSectionExpenseRows.every((r) => selectedCashLinkExpenseKeys.includes(r.key))
+
+  useEffect(() => {
+    if (!open || !context || isCashAnchorMode || !showCashLedgerSection || !selectedCashId) {
+      setCashSectionExpenseRows([])
+      setLinkedCashSectionExpenseRows([])
+      if (!selectedCashId) setSelectedCashLinkExpenseKeys([])
+      setCashSectionExpenseLoading(false)
+      return
+    }
+    const cashRow = visibleCashRows.find((r) => r.id === selectedCashId)
+    if (!cashRow) return
+
+    let cancelled = false
+    setCashSectionExpenseLoading(true)
+    void (async () => {
+      try {
+        const linkedExpenses = await fetchLinkedExpensesForCashTransaction(supabase, selectedCashId)
+        const linkedKeys = new Set(linkedExpenses.map((r) => r.key))
+        const similarExpenses = await fetchSimilarExpensesForCashTransaction(supabase, {
+          cashTransactionId: selectedCashId,
+          dateYmd: cashRow.transaction_date,
+          amount: cashRow.amount,
+          matchMode,
+          linkedExpenseKeys: linkedKeys,
+        })
+        const mergedExpenses = [...linkedExpenses]
+        for (const row of similarExpenses) {
+          if (!mergedExpenses.some((x) => x.key === row.key)) mergedExpenses.push(row)
+        }
+        const ctxKey = expenseCashLinkRowKey(context.sourceTable, context.sourceId)
+        if (!mergedExpenses.some((x) => x.key === ctxKey)) {
+          mergedExpenses.unshift({
+            key: ctxKey,
+            source_table: context.sourceTable as SimilarExpenseForCashRow['source_table'],
+            source_id: context.sourceId,
+            submit_date: context.dateYmd,
+            amount: Math.abs(context.amount),
+            paid_to: sourceSummary?.primaryDetail ?? null,
+            paid_for: sourceSummary?.secondaryDetail ?? null,
+            detail: null,
+            submitter_email: sourceSummary?.submitterEmail ?? null,
+            amount_diff: Math.abs(Math.abs(context.amount) - cashRow.amount),
+            day_diff: 0,
+            score: 2000,
+            linked_to_this_cash: linkedKeys.has(ctxKey),
+            external_links: [],
+          })
+        }
+        const mergedWithLinks = await attachExternalLinksToExpenseForCashRows(
+          supabase,
+          mergedExpenses,
+          selectedCashId
+        )
+        if (cancelled) return
+        setCashSectionExpenseRows(mergedWithLinks)
+        setLinkedCashSectionExpenseRows(mergedWithLinks.filter((r) => linkedKeys.has(r.key)))
+        const ctxLinked = linkedKeys.has(ctxKey)
+        setSelectedCashLinkExpenseKeys(ctxLinked ? [] : [ctxKey])
+      } catch (e) {
+        if (!cancelled) {
+          setCashSectionExpenseRows([])
+          setLinkedCashSectionExpenseRows([])
+          setSelectedCashLinkExpenseKeys([])
+          setMessage(e instanceof Error ? e.message : t('loadError'))
+        }
+      } finally {
+        if (!cancelled) setCashSectionExpenseLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    open,
+    context,
+    isCashAnchorMode,
+    showCashLedgerSection,
+    selectedCashId,
+    visibleCashRows,
+    matchMode,
+    sourceSummary,
+    t,
+  ])
 
   const baseSourceRows = useMemo(() => {
     if (!isSearchActive) return rows
@@ -742,6 +1216,14 @@ export default function ExpenseStatementSimilarLinesModal({
     }
   }, [open, showOffsetPairs, baseSourceRows])
 
+  const applyRowSearch = useCallback(() => {
+    setRowSearch(rowSearchInput.trim())
+  }, [rowSearchInput])
+
+  const applyExpenseForCashSearch = useCallback(() => {
+    setExpenseForCashSearch(expenseForCashSearchInput.trim())
+  }, [expenseForCashSearchInput])
+
   useEffect(() => {
     if (!open || !context) return
     if (!isSearchActive) {
@@ -749,34 +1231,26 @@ export default function ExpenseStatementSimilarLinesModal({
       setSearchLoading(false)
       return
     }
+    const gen = ++statementSearchGenRef.current
     setSearchLoading(true)
-    let cancelled = false
-    const timer = setTimeout(() => {
-      void searchStatementLinesAcrossImports(supabase, {
-        query: searchQueryTrimmed,
-        direction: ticketDateProbe ? null : context.direction,
-        limit: 250
+    void searchStatementLinesAcrossImports(supabase, {
+      query: searchQueryTrimmed,
+      direction: ticketDateProbe ? null : context.direction,
+      limit: 250,
+    })
+      .then((list) => {
+        if (gen !== statementSearchGenRef.current) return
+        setSearchResultRows(list)
+        setMessage(null)
       })
-        .then((list) => {
-          if (!cancelled) {
-            setSearchResultRows(list)
-            setMessage(null)
-          }
-        })
-        .catch((e) => {
-          if (!cancelled) {
-            setMessage(e instanceof Error ? e.message : t('loadError'))
-            setSearchResultRows([])
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setSearchLoading(false)
-        })
-    }, 320)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
+      .catch((e) => {
+        if (gen !== statementSearchGenRef.current) return
+        setMessage(e instanceof Error ? e.message : t('loadError'))
+        setSearchResultRows([])
+      })
+      .finally(() => {
+        if (gen === statementSearchGenRef.current) setSearchLoading(false)
+      })
   }, [rowSearch, open, context, t, ticketDateProbe, isSearchActive, searchQueryTrimmed])
 
   useEffect(() => {
@@ -832,8 +1306,10 @@ export default function ExpenseStatementSimilarLinesModal({
   const someVisibleSelected = visibleRows.some((r) => selectedIdsOrdered.includes(r.id))
 
   useEffect(() => {
-    const el = headerSelectAllRef.current
-    if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected
+    const indeterminate = someVisibleSelected && !allVisibleSelected
+    for (const el of [headerSelectAllRef.current, headerSelectAllMobileRef.current]) {
+      if (el) el.indeterminate = indeterminate
+    }
   }, [someVisibleSelected, allVisibleSelected])
 
   const toggleAllVisible = useCallback(() => {
@@ -957,6 +1433,7 @@ export default function ExpenseStatementSimilarLinesModal({
     paidTo: t('lineConflictDetailPaidTo'),
     paidFor: t('lineConflictDetailPaidFor'),
     submitDate: t('sourceSubmitOn'),
+    submitBy: t('expenseFromCashColSubmitter'),
     checkInDate: t('lineConflictDetailCheckIn'),
     tourDate: t('lineConflictDetailTourDate'),
     linkedTour: t('sourceLinkedTour'),
@@ -1025,24 +1502,36 @@ export default function ExpenseStatementSimilarLinesModal({
     selectedAmountDiff > 0.009 &&
     selectedAmountDiff <= syncTol
 
-  const apply = async (conflictResolution?: StatementLineConflictResolution) => {
+  const appendConnectDisabled =
+    selectedIdsOrdered.length === 0 ||
+    saving ||
+    (!anySelectedInflow && remainingOnLedger != null && remainingOnLedger < 0.01)
+
+  const appendConnectLabel =
+    selectedLineCount > 1 ? t('connectAppendN', { n: selectedLineCount }) : t('connectAppend')
+
+  const apply = async (
+    conflictResolution?: StatementLineConflictResolution,
+    forceMode?: 'replace' | 'append'
+  ) => {
     if (!context || !user?.email) {
       setMessage(t('needLogin'))
       return
     }
+    const appendMode = forceMode === 'append' ? true : forceMode === 'replace' ? false : appendLink
     let ordered = dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered)
-    if (appendLink) {
+    if (appendMode) {
       ordered = ordered.filter((id) => !linkedLineIdSet.has(id))
     }
     if (ordered.length === 0) {
       setMessage(t('needSelectLine'))
       return
     }
-    if (!appendLink && ordered.length > 1 && !allowTicketMultiLink) {
+    if (!appendMode && ordered.length > 1 && !allowTicketMultiLink) {
       setMessage(t('replaceSelectSingleOnly'))
       return
     }
-    if (hasLineConflict && !conflictResolution) {
+    if (hasLineConflict && !conflictResolution && !appendMode) {
       setMessage(t('lineConflictNeedChoice'))
       return
     }
@@ -1053,7 +1542,7 @@ export default function ExpenseStatementSimilarLinesModal({
       const ledgerCap = Math.abs(context.amount)
       const email = user.email
 
-      if (!appendLink && allowTicketMultiLink && ordered.length > 1) {
+      if (!appendMode && allowTicketMultiLink && ordered.length > 1) {
         const linePlans: { lineId: string; row: SimilarStatementLineRow; amount: number }[] = []
         for (const lineId of ordered) {
           const row = rowById.get(lineId)
@@ -1086,7 +1575,7 @@ export default function ExpenseStatementSimilarLinesModal({
         return
       }
 
-      if (!appendLink) {
+      if (!appendMode) {
         const row = rowById.get(ordered[0]!)
         if (!row) {
           setMessage(t('saveError'))
@@ -1260,28 +1749,84 @@ export default function ExpenseStatementSimilarLinesModal({
     }
   }
 
+  const handleCashPicked = useCallback(
+    (row: SimilarCashTransactionRow) => {
+      setSelectedCashId(row.id)
+      setCashRows((prev) => {
+        if (prev.some((x) => x.id === row.id)) {
+          return prev.map((x) =>
+            x.id === row.id
+              ? { ...row, linked_to_this_expense: linkedCashRows.some((l) => l.id === row.id) }
+              : x
+          )
+        }
+        return [
+          { ...row, linked_to_this_expense: linkedCashRows.some((l) => l.id === row.id) },
+          ...prev,
+        ]
+      })
+    },
+    [linkedCashRows]
+  )
+
+  const selectedCashRow = useMemo(() => {
+    if (!selectedCashId) return null
+    return (
+      visibleCashRows.find((r) => r.id === selectedCashId) ??
+      linkedCashRows.find((r) => r.id === selectedCashId) ??
+      cashRows.find((r) => r.id === selectedCashId) ??
+      null
+    )
+  }, [selectedCashId, visibleCashRows, linkedCashRows, cashRows])
+
   const applyCashLink = async () => {
     if (!context || !user?.email || !selectedCashId) {
       setMessage(t('cashNeedSelect'))
       return
     }
-    const row = cashRows.find((r) => r.id === selectedCashId)
-    if (!row) {
+    const cashRow = visibleCashRows.find((r) => r.id === selectedCashId)
+    if (!cashRow) {
       setMessage(t('saveError'))
+      return
+    }
+    const ctxKey = expenseCashLinkRowKey(context.sourceTable, context.sourceId)
+    const keysToLink =
+      selectedCashLinkExpenseKeys.length > 0
+        ? [...new Set(selectedCashLinkExpenseKeys)]
+        : [ctxKey]
+    const rowByKey = new Map(cashSectionExpenseRows.map((r) => [r.key, r]))
+    const items = keysToLink
+      .map((key) => {
+        const parsed = parseExpenseCashLinkRowKey(key)
+        const row = rowByKey.get(key)
+        if (!parsed || !row) return null
+        return {
+          expenseSourceTable: parsed.sourceTable,
+          expenseSourceId: parsed.sourceId,
+          expenseAmount: row.amount,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+    if (items.length === 0) {
+      setMessage(t('cashNeedSelectExpenses'))
       return
     }
     setCashSaving(true)
     setMessage(null)
     try {
-      await replaceExpenseCashLedgerMatch(supabase, {
+      const { linked, skippedAlreadyLinked } = await linkExpensesToCashTransaction(supabase, {
         actorEmail: user.email,
-        expenseSourceTable: context.sourceTable,
-        expenseSourceId: context.sourceId,
-        cashTransactionId: row.id,
-        matchedAmount: Math.min(Math.abs(context.amount), row.amount),
+        cashTransactionId: cashRow.id,
+        cashAmount: cashRow.amount,
+        items,
       })
-      onApplied?.()
-      onOpenChange(false)
+      if (linked === 0 && skippedAlreadyLinked > 0) {
+        setMessage(t('cashAllSelectedAlreadyLinked'))
+      } else if (linked > 0) {
+        onApplied?.()
+        await runLoad({ preserveSelection: true })
+        setSelectedCashLinkExpenseKeys([])
+      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : t('saveError'))
     } finally {
@@ -1301,6 +1846,73 @@ export default function ExpenseStatementSimilarLinesModal({
       setMessage(e instanceof Error ? e.message : t('cashUnlinkError'))
     } finally {
       setUnlinkingCashId(null)
+    }
+  }
+
+  const applyExpenseLinkFromCash = async () => {
+    if (!context || !user?.email || selectedExpenseForCashKeys.length === 0) {
+      setMessage(t('expenseFromCashNeedSelect'))
+      return
+    }
+    const rowByKey = new Map(visibleExpenseForCashRows.map((r) => [r.key, r]))
+    const items = [...new Set(selectedExpenseForCashKeys)]
+      .map((key) => {
+        const parsed = parseExpenseCashLinkRowKey(key)
+        const row = rowByKey.get(key)
+        if (!parsed || !row || row.linked_to_this_cash) return null
+        return {
+          expenseSourceTable: parsed.sourceTable,
+          expenseSourceId: parsed.sourceId,
+          expenseAmount: row.amount,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+    if (items.length === 0) {
+      setMessage(t('expenseFromCashNeedSelect'))
+      return
+    }
+    setExpenseForCashSaving(true)
+    setMessage(null)
+    try {
+      const { linked, skippedAlreadyLinked } = await linkExpensesToCashTransaction(supabase, {
+        actorEmail: user.email,
+        cashTransactionId: context.sourceId,
+        cashAmount: Math.abs(context.amount),
+        items,
+      })
+      if (linked === 0 && skippedAlreadyLinked > 0) {
+        setMessage(t('expenseFromCashAllSelectedAlreadyLinked'))
+      } else if (linked > 0) {
+        onApplied?.()
+        await runLoad({ preserveSelection: true })
+        setSelectedExpenseForCashKeys([])
+      }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : t('saveError'))
+    } finally {
+      setExpenseForCashSaving(false)
+    }
+  }
+
+  const unlinkExpenseFromCash = async (expenseKey: string) => {
+    if (!context) return
+    const parsed = parseExpenseCashLinkRowKey(expenseKey)
+    if (!parsed) return
+    setUnlinkingExpenseForCashKey(expenseKey)
+    setMessage(null)
+    try {
+      await unlinkExpenseCashLedgerMatchesForCash(
+        supabase,
+        context.sourceId,
+        parsed.sourceTable,
+        parsed.sourceId
+      )
+      await runLoad({ preserveSelection: true })
+      onApplied?.()
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : t('expenseFromCashUnlinkError'))
+    } finally {
+      setUnlinkingExpenseForCashKey(null)
     }
   }
 
@@ -1386,23 +1998,56 @@ export default function ExpenseStatementSimilarLinesModal({
   const showCurrentLinksPanel =
     linkedRows.length > 0 ||
     linkedCashRows.length > 0 ||
+    linkedExpenseForCashRows.length > 0 ||
     (isTicketBookingSource && sourceSummary != null)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         {...(nestedElevated ? { overlayClassName: 'z-[1300]' } : {})}
-        className={`max-h-[88vh] w-full max-w-[min(98vw,88rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6${nestedElevated ? ' z-[1300]' : ''}`}
+        className={cn(RECON_MODAL_SHELL_CLASS, nestedElevated && 'z-[1300]')}
       >
-        <DialogHeader className="shrink-0 pr-8">
-          <DialogTitle>{t('modalTitle')}</DialogTitle>
-          <p className="text-sm text-muted-foreground pt-1">{t('modalHint')}</p>
-          <p className="text-xs text-muted-foreground pt-0.5">{t('modalSplitHint')}</p>
-          <p className="text-xs text-muted-foreground pt-0.5">{t('modalMultiLineHint')}</p>
+        <DialogHeader className="shrink-0 border-b bg-white px-3 py-2.5 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:pr-8">
+          <DialogTitle className="text-base lg:text-lg leading-snug text-left">
+            {isCashAnchorMode ? t('expenseFromCashModalTitle') : t('modalTitle')}
+          </DialogTitle>
+          <p className="hidden lg:block text-sm text-muted-foreground pt-1 text-left">
+            {isCashAnchorMode ? t('expenseFromCashModalHint') : t('modalHint')}
+          </p>
+          {!isCashAnchorMode ? (
+            <div className="hidden lg:block space-y-0.5 text-left">
+              <p className="text-xs text-muted-foreground pt-0.5">{t('modalSplitHint')}</p>
+              <p className="text-xs text-muted-foreground">{t('modalMultiLineHint')}</p>
+            </div>
+          ) : (
+            <p className="hidden lg:block text-xs text-muted-foreground pt-0.5 text-left">{t('expenseFromCashModalSplitHint')}</p>
+          )}
         </DialogHeader>
 
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden gap-2 px-3 py-2 lg:gap-3 lg:px-0 lg:py-0">
         {context ? (
-          <div className="shrink-0 max-h-[min(42vh,16rem)] overflow-y-auto space-y-1.5 border-b pb-2 mb-2">
+          <>
+            <div className="lg:hidden shrink-0 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-3 py-2.5 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t('sourceSectionTitle')}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900 leading-snug">{tableName}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                {context.dateYmd} · ${context.amount.toFixed(2)} · {dirLabel}
+              </p>
+              {(linkedRows.length > 0 || linkedCashRows.length > 0 || linkedExpenseForCashRows.length > 0) ? (
+                <p className="mt-1.5 text-[10px] font-medium text-emerald-800 tabular-nums">
+                  {t('currentLinksTitle')} ·{' '}
+                  {t('currentLinksCount', {
+                    count: linkedRows.length + linkedCashRows.length + linkedExpenseForCashRows.length,
+                  })}
+                </p>
+              ) : null}
+            </div>
+            <ReconModalSection
+              title={t('sourceSectionTitle')}
+              tone="source"
+              className="hidden lg:block shrink-0 max-h-[min(42vh,16rem)] overflow-y-auto"
+            >
+          <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground tabular-nums">
               {t('ledgerSummary', {
                 table: tableName,
@@ -1412,12 +2057,12 @@ export default function ExpenseStatementSimilarLinesModal({
               })}
             </p>
             {!isTicketBookingSource && sourceSummary?.primaryDetail ? (
-              <p className="text-[11px] text-muted-foreground leading-snug truncate" title={sourceSummary.primaryDetail}>
+              <p className="text-[11px] text-muted-foreground leading-snug break-words" title={sourceSummary.primaryDetail}>
                 {t('sourcePrimaryDetail')}: {sourceSummary.primaryDetail}
               </p>
             ) : null}
             {!isTicketBookingSource && sourceSummary?.secondaryDetail ? (
-              <p className="text-[11px] text-muted-foreground leading-snug truncate" title={sourceSummary.secondaryDetail}>
+              <p className="text-[11px] text-muted-foreground leading-snug break-words" title={sourceSummary.secondaryDetail}>
                 {t('sourceSecondaryDetail')}: {sourceSummary.secondaryDetail}
               </p>
             ) : null}
@@ -1611,10 +2256,67 @@ export default function ExpenseStatementSimilarLinesModal({
                     </ul>
                   </>
                 ) : null}
+                {linkedExpenseForCashRows.length > 0 ? (
+                  <>
+                    <p className="text-xs font-semibold text-sky-950 pt-1">
+                      {t('currentExpenseFromCashLinksTitle')} ·{' '}
+                      {t('currentLinksCount', { count: linkedExpenseForCashRows.length })}
+                    </p>
+                    <p className="text-[11px] text-sky-900/85 leading-snug">{t('currentExpenseFromCashLinksHint')}</p>
+                    <ul className="space-y-1.5">
+                      {linkedExpenseForCashRows.map((r) => (
+                        <li
+                          key={r.key}
+                          className="rounded border border-sky-200/90 bg-white/95 px-2.5 py-2 text-[11px] leading-snug text-gray-900"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums">
+                              <span className="text-sky-900">
+                                {t(`sourceTypes.${sourceTableLabelKey(r.source_table)}`)}
+                              </span>
+                              <span className="text-muted-foreground">·</span>
+                              <span>{r.submit_date}</span>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-rose-800">${r.amount.toFixed(2)}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2 text-[10px] text-red-700 hover:bg-red-50 hover:text-red-800"
+                              disabled={unlinkingExpenseForCashKey === r.key || expenseForCashSaving || saving}
+                              title={t('expenseFromCashUnlink')}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void unlinkExpenseFromCash(r.key)
+                              }}
+                            >
+                              {unlinkingExpenseForCashKey === r.key ? t('saving') : t('expenseFromCashUnlink')}
+                            </Button>
+                          </div>
+                          <p className="mt-1 text-muted-foreground break-words">
+                            {[r.paid_to, r.paid_for, r.detail].filter(Boolean).join(' · ') || '—'}
+                          </p>
+                          {r.external_links.some((l) => l.kind === 'statement') ? (
+                            <p className="mt-1 text-[10px] text-violet-800 font-medium">
+                              {t('expenseFromCashLinkedStatementCount', {
+                                count: r.external_links.filter((l) => l.kind === 'statement').length,
+                              })}
+                            </p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
               </div>
             ) : null}
             <p className="text-[11px] text-muted-foreground leading-snug">
-              {ticketDateProbe
+              {isCashAnchorMode
+                ? matchMode === 'amountOnly'
+                  ? t('expenseFromCashAmountOnlyModeHint')
+                  : t('expenseFromCashDateProximityModeHint')
+                : ticketDateProbe
                 ? t('ticketBookingDateProbeHint', {
                     window: ticketDateProbe.dayWindow ?? 3,
                     submit: ticketDateProbe.submitYmd || '—',
@@ -1627,7 +2329,10 @@ export default function ExpenseStatementSimilarLinesModal({
                   ? t('amountOnlyModeHint')
                   : t('dateProximityModeHint')}
             </p>
-            <p className="text-[11px] text-muted-foreground leading-snug">{t('searchGlobalHint')}</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              {isCashAnchorMode ? t('expenseFromCashSearchHint') : t('searchGlobalHint')}
+            </p>
+            {!isCashAnchorMode ? (
             <label className="flex items-start gap-2 rounded-md border border-violet-200/80 bg-violet-50/50 px-3 py-2 text-[11px] text-muted-foreground leading-snug cursor-pointer">
               <input
                 type="checkbox"
@@ -1640,10 +2345,11 @@ export default function ExpenseStatementSimilarLinesModal({
                 <span className="block text-violet-900/85">{t('showOffsetPairsHint')}</span>
               </span>
             </label>
-            {showOffsetPairs && offsetPairsLoading ? (
+            ) : null}
+            {!isCashAnchorMode && showOffsetPairs && offsetPairsLoading ? (
               <p className="text-[11px] text-violet-900/80">{t('offsetPairLoading')}</p>
             ) : null}
-            {showOffsetPairs && !offsetPairsLoading && offsetInjectedRows.length > 0 ? (
+            {!isCashAnchorMode && showOffsetPairs && !offsetPairsLoading && offsetInjectedRows.length > 0 ? (
               <p className="text-[11px] text-violet-900/80 tabular-nums">
                 {t('offsetPairInjectedCount', { count: offsetInjectedRows.length })}
               </p>
@@ -1684,9 +2390,375 @@ export default function ExpenseStatementSimilarLinesModal({
               </div>
             ) : null}
           </div>
+            </ReconModalSection>
+          </>
         ) : null}
 
-        <div className="shrink-0 z-10 bg-white border-b mb-2 space-y-2">
+        {isCashAnchorMode ? (
+          <>
+            <ReconModalSection title={t('filtersSectionTitle')} tone="neutral" className="shrink-0">
+              <div className="space-y-3">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 px-0.5">
+                    {t('matchModeGroupLabel')}
+                  </span>
+                  <div
+                    className="grid grid-cols-2 gap-1 rounded-lg border-2 border-slate-200 bg-slate-100/90 p-1 sm:inline-flex sm:flex-wrap"
+                    role="group"
+                    aria-label={t('matchModeGroupLabel')}
+                  >
+                    <FilterSegmentButton
+                      active={matchMode === 'dateProximity'}
+                      activeTone="slate"
+                      disabled={expenseForCashLoading || !context}
+                      onClick={() => setMatchMode('dateProximity')}
+                    >
+                      {t('matchModeDateProximity')}
+                    </FilterSegmentButton>
+                    <FilterSegmentButton
+                      active={matchMode === 'amountOnly'}
+                      activeTone="slate"
+                      disabled={expenseForCashLoading || !context}
+                      onClick={() => setMatchMode('amountOnly')}
+                    >
+                      {t('matchModeAmountOnly')}
+                    </FilterSegmentButton>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row w-full lg:flex-1 lg:min-w-[10rem] lg:max-w-md gap-2">
+                  <Input
+                    type="search"
+                    value={expenseForCashSearchInput}
+                    onChange={(e) => setExpenseForCashSearchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        applyExpenseForCashSearch()
+                      }
+                    }}
+                    placeholder={t('expenseFromCashSearchPlaceholder')}
+                    className="h-9 text-sm flex-1 min-w-0"
+                    disabled={!context || expenseForCashLoading}
+                  />
+                  <Button
+                    type="button"
+                    className="h-9 w-full sm:w-auto shrink-0 px-3 text-sm"
+                    disabled={!context || expenseForCashLoading}
+                    onClick={applyExpenseForCashSearch}
+                  >
+                    {t('searchButton')}
+                  </Button>
+                </div>
+              </div>
+              <p className="hidden lg:block text-[11px] text-muted-foreground leading-snug">{t('expenseFromCashExternalLinksHint')}</p>
+              {selectableExpenseForCashRows.length > 0 ? (
+                <p className="text-[11px] text-muted-foreground tabular-nums lg:hidden">
+                  {t('expenseFromCashSelectedCount', { n: selectedExpenseForCashKeys.length })}
+                </p>
+              ) : null}
+              </div>
+            </ReconModalSection>
+
+            <ReconModalSection
+              title={t('candidatesSectionTitle')}
+              badge={
+                isExpenseForCashSearchActive && !expenseForCashSearchLoading
+                  ? t('searchResultsCount', { count: visibleExpenseForCashRows.length })
+                  : t('similarCandidatesCount', { count: visibleExpenseForCashRows.length })
+              }
+              tone="sky"
+              fill
+              className="min-h-[min(44vh,18rem)] flex-1"
+            >
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {message ? <div className="shrink-0 border-b px-3 py-2 text-sm text-red-600">{message}</div> : null}
+              <div className="min-h-[min(36vh,14rem)] flex-1 overflow-y-auto overscroll-y-contain mobile-scroll">
+              {expenseForCashLoading || (isExpenseForCashSearchActive && expenseForCashSearchLoading) ? (
+                <p className="text-xs text-muted-foreground py-6 text-center">{t('loading')}</p>
+              ) : visibleExpenseForCashRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-6 text-center">
+                  {isExpenseForCashSearchActive ? t('expenseFromCashSearchEmpty') : t('expenseFromCashEmpty')}
+                </p>
+              ) : (
+                <>
+                  <div className="md:hidden divide-y">
+                    <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        className="accent-sky-600"
+                        checked={allSelectableExpenseForCashSelected}
+                        disabled={selectableExpenseForCashRows.length === 0}
+                        aria-label={t('expenseFromCashSelectAll')}
+                        onChange={() => {
+                          if (allSelectableExpenseForCashSelected) {
+                            setSelectedExpenseForCashKeys([])
+                          } else {
+                            setSelectedExpenseForCashKeys(selectableExpenseForCashRows.map((r) => r.key))
+                          }
+                        }}
+                      />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-900/80">
+                        {t('expenseFromCashSelectAll')}
+                      </span>
+                    </div>
+                    {visibleExpenseForCashRows.map((r) => {
+                      const selected = selectedExpenseForCashKeys.includes(r.key)
+                      const hasStmtLink = expenseForCashHasStatementLink(r)
+                      const hasOtherCash = expenseForCashHasOtherCashLink(r)
+                      const linked = r.linked_to_this_cash
+                      return (
+                        <div
+                          key={r.key}
+                          className={`p-3 ${linked ? '' : 'cursor-pointer active:bg-sky-50/80'} ${
+                            selected ? 'bg-sky-100/80' : linked ? '' : ''
+                          } ${linked ? 'ring-1 ring-inset ring-emerald-400/50' : ''} ${
+                            hasStmtLink ? 'ring-1 ring-inset ring-violet-400/45' : ''
+                          } ${!hasStmtLink && hasOtherCash ? 'ring-1 ring-inset ring-amber-400/45' : ''}`}
+                          onClick={() => {
+                            if (!linked) toggleExpenseForCashKey(r.key)
+                          }}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 accent-sky-600 shrink-0"
+                              checked={selected}
+                              disabled={linked}
+                              onChange={() => toggleExpenseForCashKey(r.key)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`${r.paid_to ?? ''} ${r.paid_for ?? ''}`}
+                            />
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className="text-xs font-semibold text-sky-950">
+                                  {t(`sourceTypes.${sourceTableLabelKey(r.source_table)}`)}
+                                </span>
+                                {r.linked_to_this_cash ? (
+                                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                                    {t('currentLinkBadge')}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <MobileKvRow label={t('expenseFromCashColDate')}>
+                                <span className="tabular-nums">{r.submit_date}</span>
+                              </MobileKvRow>
+                              <MobileKvRow label={t('expenseFromCashColAmount')}>
+                                <span className="tabular-nums font-medium text-rose-800">${r.amount.toFixed(2)}</span>
+                              </MobileKvRow>
+                              <MobileKvRow label={t('expenseFromCashColPaidTo')}>{r.paid_to || '—'}</MobileKvRow>
+                              <MobileKvRow label={t('expenseFromCashColPaidFor')}>{r.paid_for || '—'}</MobileKvRow>
+                              <MobileKvRow label={t('expenseFromCashColSubmitter')}>
+                                <span title={r.submitter_email ?? undefined}>
+                                  {formatSubmitterDisplay(r.submitter_email, teamMemberLabels)}
+                                </span>
+                              </MobileKvRow>
+                              {r.detail ? (
+                                <MobileKvRow label={t('expenseFromCashColDetail')}>{r.detail}</MobileKvRow>
+                              ) : null}
+                              {r.external_links.length > 0 ? (
+                                <div className="space-y-1 pt-0.5">
+                                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    {t('expenseFromCashColLinks')}
+                                  </p>
+                                  {r.external_links.map((link) => {
+                                    const isStmt = link.kind === 'statement'
+                                    const tone = isStmt
+                                      ? 'bg-violet-50/95 text-violet-950 border-violet-200/85'
+                                      : link.is_current_cash
+                                        ? 'bg-emerald-50/95 text-emerald-950 border-emerald-200/85'
+                                        : 'bg-amber-50/95 text-amber-950 border-amber-200/85'
+                                    return (
+                                      <div
+                                        key={`${link.kind}-${link.ref_id}`}
+                                        className={`rounded border px-2 py-1 text-[10px] leading-snug ${tone}`}
+                                      >
+                                        <span className="font-semibold">
+                                          {isStmt
+                                            ? t('expenseFromCashLinkStatement')
+                                            : t('expenseFromCashLinkCash')}
+                                          {link.is_current_cash ? ` (${t('currentLinkBadge')})` : ''}
+                                        </span>
+                                        <span className="tabular-nums">
+                                          {' '}
+                                          · {link.date} · ${link.amount.toFixed(2)}
+                                        </span>
+                                        {link.account_name ? (
+                                          <p className="break-words text-violet-900/85">{link.account_name}</p>
+                                        ) : null}
+                                        <p className="break-words opacity-90">{link.label}</p>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead className="sticky top-0 bg-white z-[1]">
+                    <tr className="border-b text-left text-[10px] uppercase tracking-wide text-sky-900/80">
+                      <th className="p-2 w-8">
+                        <input
+                          type="checkbox"
+                          className="accent-sky-600"
+                          checked={allSelectableExpenseForCashSelected}
+                          disabled={selectableExpenseForCashRows.length === 0}
+                          aria-label={t('expenseFromCashSelectAll')}
+                          onChange={() => {
+                            if (allSelectableExpenseForCashSelected) {
+                              setSelectedExpenseForCashKeys([])
+                            } else {
+                              setSelectedExpenseForCashKeys(selectableExpenseForCashRows.map((r) => r.key))
+                            }
+                          }}
+                        />
+                      </th>
+                      <th className="p-2">{t('expenseFromCashColType')}</th>
+                      <th className="p-2">{t('expenseFromCashColDate')}</th>
+                      <th className="p-2 text-right">{t('expenseFromCashColAmount')}</th>
+                      <th className="p-2">{t('expenseFromCashColPaidTo')}</th>
+                      <th className="p-2">{t('expenseFromCashColPaidFor')}</th>
+                      <th className="p-2">{t('expenseFromCashColSubmitter')}</th>
+                      <th className="p-2">{t('expenseFromCashColDetail')}</th>
+                      <th className="p-2 min-w-[14rem]">{t('expenseFromCashColLinks')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleExpenseForCashRows.map((r) => {
+                      const selected = selectedExpenseForCashKeys.includes(r.key)
+                      const hasStmtLink = expenseForCashHasStatementLink(r)
+                      const hasOtherCash = expenseForCashHasOtherCashLink(r)
+                      const linked = r.linked_to_this_cash
+                      return (
+                        <tr
+                          key={r.key}
+                          className={`border-b ${linked ? '' : 'cursor-pointer'} ${
+                            selected ? 'bg-sky-100/80' : linked ? '' : 'hover:bg-sky-50/80'
+                          } ${linked ? 'ring-1 ring-inset ring-emerald-400/50' : ''} ${
+                            hasStmtLink ? 'ring-1 ring-inset ring-violet-400/45' : ''
+                          } ${!hasStmtLink && hasOtherCash ? 'ring-1 ring-inset ring-amber-400/45' : ''}`}
+                          onClick={() => {
+                            if (!linked) toggleExpenseForCashKey(r.key)
+                          }}
+                        >
+                          <td className="p-2 align-middle">
+                            <input
+                              type="checkbox"
+                              className="accent-sky-600"
+                              checked={selected}
+                              disabled={linked}
+                              onChange={() => toggleExpenseForCashKey(r.key)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`${r.paid_to ?? ''} ${r.paid_for ?? ''}`}
+                            />
+                          </td>
+                          <td className="p-2 whitespace-nowrap">
+                            {t(`sourceTypes.${sourceTableLabelKey(r.source_table)}`)}
+                            {r.linked_to_this_cash ? (
+                              <span className="ml-1 text-[10px] text-emerald-800 font-medium">
+                                ({t('currentLinkBadge')})
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="p-2 tabular-nums whitespace-nowrap">{r.submit_date}</td>
+                          <td className="p-2 text-right tabular-nums font-medium text-rose-800">
+                            ${r.amount.toFixed(2)}
+                          </td>
+                          <td className="p-2 max-w-[10rem] truncate" title={r.paid_to ?? undefined}>
+                            {r.paid_to || '—'}
+                          </td>
+                          <td className="p-2 max-w-[10rem] truncate" title={r.paid_for ?? undefined}>
+                            {r.paid_for || '—'}
+                          </td>
+                          <td
+                            className="p-2 max-w-[8rem] truncate"
+                            title={r.submitter_email ?? undefined}
+                          >
+                            {formatSubmitterDisplay(r.submitter_email, teamMemberLabels)}
+                          </td>
+                          <td className="p-2 max-w-[14rem] truncate" title={r.detail ?? undefined}>
+                            {r.detail || '—'}
+                          </td>
+                          <td className="p-2 align-top min-w-[14rem] max-w-[20rem]">
+                            {r.external_links.length === 0 ? (
+                              <span className="text-muted-foreground">{t('noLinks')}</span>
+                            ) : (
+                              <div className="space-y-1">
+                                {r.external_links.map((link) => {
+                                  const isStmt = link.kind === 'statement'
+                                  const tone = isStmt
+                                    ? 'bg-violet-50/95 text-violet-950 border-violet-200/85'
+                                    : link.is_current_cash
+                                      ? 'bg-emerald-50/95 text-emerald-950 border-emerald-200/85'
+                                      : 'bg-amber-50/95 text-amber-950 border-amber-200/85'
+                                  return (
+                                    <div
+                                      key={`${link.kind}-${link.ref_id}`}
+                                      className={`rounded border px-1.5 py-1 text-[10px] leading-snug ${tone}`}
+                                      title={link.label}
+                                    >
+                                      <span className="font-semibold">
+                                        {isStmt
+                                          ? t('expenseFromCashLinkStatement')
+                                          : t('expenseFromCashLinkCash')}
+                                        {link.is_current_cash ? ` (${t('currentLinkBadge')})` : ''}
+                                      </span>
+                                      <span className="tabular-nums">
+                                        {' '}
+                                        · {link.date} · ${link.amount.toFixed(2)}
+                                      </span>
+                                      {link.account_name ? (
+                                        <p className="truncate text-violet-900/85">{link.account_name}</p>
+                                      ) : null}
+                                      <p className="truncate opacity-90">{link.label}</p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                  </div>
+                </>
+              )}
+              </div>
+            </div>
+            </ReconModalSection>
+            <div className="shrink-0 pt-1">
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full sm:w-auto border-sky-300 bg-sky-100/80 hover:bg-sky-200/80 text-sky-950"
+                disabled={
+                  selectedExpenseForCashKeys.length === 0 ||
+                  expenseForCashSaving ||
+                  saving ||
+                  expenseForCashLoading ||
+                  expenseForCashSearchLoading
+                }
+                onClick={() => void applyExpenseLinkFromCash()}
+              >
+                {expenseForCashSaving
+                  ? t('saving')
+                  : selectedExpenseForCashKeys.length > 1
+                    ? t('expenseFromCashConnectMultiple', { n: selectedExpenseForCashKeys.length })
+                    : t('expenseFromCashConnect')}
+              </Button>
+            </div>
+          </>
+        ) : (
+        <>
+        <ReconModalSection title={t('filtersSectionTitle')} tone="neutral" className="shrink-0">
+          <div className="space-y-3">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
               {!ticketDateProbe ? (
@@ -1695,7 +2767,7 @@ export default function ExpenseStatementSimilarLinesModal({
                     {t('matchModeGroupLabel')}
                   </span>
                   <div
-                    className="inline-flex flex-wrap gap-1 rounded-lg border-2 border-slate-200 bg-slate-100/90 p-1"
+                    className="grid grid-cols-2 gap-1 rounded-lg border-2 border-slate-200 bg-slate-100/90 p-1 sm:inline-flex sm:flex-wrap"
                     role="group"
                     aria-label={t('matchModeGroupLabel')}
                   >
@@ -1723,7 +2795,7 @@ export default function ExpenseStatementSimilarLinesModal({
                   {t('statementStatusGroupLabel')}
                 </span>
                 <div
-                  className="inline-flex flex-wrap gap-1 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-1"
+                  className="grid grid-cols-2 gap-1 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-1 sm:inline-flex sm:flex-wrap"
                   role="group"
                   aria-label={t('statementStatusGroupLabel')}
                 >
@@ -1751,85 +2823,52 @@ export default function ExpenseStatementSimilarLinesModal({
                   </FilterSegmentButton>
                 </div>
                 {statementStatusFilter === 'unmatched' ? (
-                  <p className="text-[11px] text-emerald-900/70 px-0.5 leading-snug">{t('statementStatusUnmatchedHint')}</p>
+                  <p className="hidden lg:block text-[11px] text-emerald-900/70 px-0.5 leading-snug">{t('statementStatusUnmatchedHint')}</p>
                 ) : null}
               </div>
             </div>
-            <div className="w-full lg:flex-1 lg:min-w-[10rem] lg:max-w-md">
+            <div className="w-full lg:flex-1 lg:min-w-[10rem] lg:max-w-md flex flex-col sm:flex-row gap-2">
               <Input
                 type="search"
-                value={rowSearch}
-                onChange={(e) => setRowSearch(e.target.value)}
+                value={rowSearchInput}
+                onChange={(e) => setRowSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    applyRowSearch()
+                  }
+                }}
                 placeholder={t('searchRowsPlaceholder')}
-                className="h-9 text-sm"
+                className="h-9 text-sm flex-1 min-w-0"
                 disabled={!context}
               />
+              <Button
+                type="button"
+                className="h-9 w-full sm:w-auto shrink-0 px-3 text-sm"
+                disabled={!context || loading}
+                onClick={applyRowSearch}
+              >
+                {t('searchButton')}
+              </Button>
             </div>
           </div>
-          {showAccountTabs ? (
-            <div
-              className="flex gap-1 overflow-x-auto overscroll-x-contain border-b border-gray-200 pb-px -mx-0.5 px-0.5"
-              role="tablist"
-              aria-label={t('accountTabsLabel')}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeAccountTab === ACCOUNT_TAB_ALL}
-                onClick={() => setActiveAccountTab(ACCOUNT_TAB_ALL)}
-                className={`shrink-0 rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeAccountTab === ACCOUNT_TAB_ALL
-                    ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px z-[1]'
-                    : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                {t('accountTabAll', { count: statusFilteredSourceRows.length })}
-              </button>
-              {accountTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeAccountTab === tab.id}
-                  onClick={() => setActiveAccountTab(tab.id)}
-                  className={`shrink-0 max-w-[14rem] truncate rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    activeAccountTab === tab.id
-                      ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px z-[1]'
-                      : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                  title={tab.name}
-                >
-                  {t('accountTabNamed', { name: tab.name, count: tab.count })}
-                </button>
-              ))}
-            </div>
+          {!isCashAnchorMode ? (
+            <label className="flex lg:hidden items-center gap-2 rounded-lg border border-violet-200/80 bg-violet-50/50 px-3 py-2 text-[11px] cursor-pointer">
+              <input
+                type="checkbox"
+                className="shrink-0 accent-violet-600"
+                checked={showOffsetPairs}
+                onChange={(e) => setShowOffsetPairs(e.target.checked)}
+              />
+              <span className="font-medium text-violet-950">{t('showOffsetPairsCheckbox')}</span>
+            </label>
           ) : null}
-          {!loading && !isSearchActive && rows.length > 0 ? (
-            <p className="text-[11px] text-muted-foreground tabular-nums">
-              {t('similarCandidatesCount', { count: visibleRows.length })}
-              {activeAccountTab !== ACCOUNT_TAB_ALL && statusFilteredSourceRows.length !== visibleRows.length
-                ? ` · ${t('accountTabFilteredFrom', { total: statusFilteredSourceRows.length })}`
-                : ''}
-            </p>
-          ) : null}
-          {isSearchActive && !searchLoading ? (
-            <p className="text-[11px] text-muted-foreground tabular-nums">
-              {t('searchResultsCount', { count: visibleRows.length })}
-              {activeAccountTab !== ACCOUNT_TAB_ALL && statusFilteredSourceRows.length !== visibleRows.length
-                ? ` · ${t('accountTabFilteredFrom', { total: statusFilteredSourceRows.length })}`
-                : ''}
-            </p>
-          ) : null}
-        </div>
+          </div>
+        </ReconModalSection>
 
-        <div className="shrink-0 space-y-2 mb-2 max-h-[min(24vh,10rem)] overflow-y-auto">
+        {(message || selectedIdsOrdered.length > 0 || canSyncAmount || hasLineConflict) ? (
+        <div className="shrink-0 space-y-2 max-h-[min(22vh,9rem)] lg:max-h-[min(24vh,10rem)] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-2">
         {message ? <div className="text-sm text-red-600">{message}</div> : null}
-
-        {selectedIdsOrdered.length > 0 ? (
-          <p className="text-[11px] text-muted-foreground tabular-nums">
-            {t('selectedLinesCount', { n: selectedIdsOrdered.length })}
-          </p>
-        ) : null}
 
         {canSyncAmount ? (
           <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -1888,7 +2927,8 @@ export default function ExpenseStatementSimilarLinesModal({
                 const { headline, rows } = formatLedgerMatchDetailLines(
                   d,
                   { ...detailLabelBundle, sourceType: typeName },
-                  pmLabel
+                  pmLabel,
+                  { formatSubmitter }
                 )
                 return (
                   <div
@@ -1908,12 +2948,68 @@ export default function ExpenseStatementSimilarLinesModal({
                 )
               })}
             </div>
-            <p className="text-[11px] leading-snug text-red-900/90">{t('lineConflictHint')}</p>
+            <p className="text-[11px] leading-snug text-red-900/90 hidden lg:block">{t('lineConflictHint')}</p>
           </div>
         ) : null}
         </div>
+        ) : null}
 
-        <div className="flex-1 min-h-[10rem] overflow-auto rounded-md border">
+        <ReconModalSection
+          title={t('candidatesSectionTitle')}
+          badge={
+            isSearchActive && !searchLoading
+              ? t('searchResultsCount', { count: visibleRows.length })
+              : t('similarCandidatesCount', { count: visibleRows.length })
+          }
+          tone="candidates"
+          fill
+          className="min-h-[min(44vh,18rem)] flex-1"
+        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {showAccountTabs ? (
+            <div
+              className="shrink-0 flex gap-1 overflow-x-auto overscroll-x-contain border-b border-emerald-200/80 bg-emerald-50/30 px-2 py-1.5"
+              role="tablist"
+              aria-label={t('accountTabsLabel')}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeAccountTab === ACCOUNT_TAB_ALL}
+                onClick={() => setActiveAccountTab(ACCOUNT_TAB_ALL)}
+                className={`shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  activeAccountTab === ACCOUNT_TAB_ALL
+                    ? 'border-emerald-300 bg-white text-emerald-800 shadow-sm'
+                    : 'border-transparent bg-transparent text-emerald-900/70 hover:bg-white/70'
+                }`}
+              >
+                {t('accountTabAll', { count: statusFilteredSourceRows.length })}
+              </button>
+              {accountTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeAccountTab === tab.id}
+                  onClick={() => setActiveAccountTab(tab.id)}
+                  className={`shrink-0 max-w-[10rem] truncate rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    activeAccountTab === tab.id
+                      ? 'border-emerald-300 bg-white text-emerald-800 shadow-sm'
+                      : 'border-transparent bg-transparent text-emerald-900/70 hover:bg-white/70'
+                  }`}
+                  title={tab.name}
+                >
+                  {t('accountTabNamed', { name: tab.name, count: tab.count })}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {selectedIdsOrdered.length > 0 ? (
+            <div className="shrink-0 border-b border-emerald-200/60 bg-emerald-50/40 px-3 py-1.5 text-[11px] text-emerald-900 tabular-nums font-medium">
+              {t('selectedLinesCount', { n: selectedIdsOrdered.length })}
+            </div>
+          ) : null}
+          <div className="min-h-[min(36vh,14rem)] flex-1 overflow-y-auto overscroll-y-contain mobile-scroll">
           {loading || (isSearchActive && searchLoading) ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : !isSearchActive && rows.length === 0 ? (
@@ -1925,6 +3021,196 @@ export default function ExpenseStatementSimilarLinesModal({
           ) : visibleRows.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{isSearchActive ? t('noSearchResults') : t('accountTabEmpty')}</div>
           ) : (
+            <>
+              <div className="md:hidden divide-y">
+                <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 sticky top-0 z-[1]">
+                  <input
+                    ref={headerSelectAllMobileRef}
+                    type="checkbox"
+                    className="accent-emerald-600"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    aria-label={t('selectAllVisible')}
+                  />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('selectAllVisible')}
+                  </span>
+                </div>
+                {visibleRows.map((r) => {
+                  const isCurrentLink = linkedLineIdSet.has(r.id)
+                  const isOffsetInjected = offsetInjectedLineIdSet.has(r.id)
+                  const offsetPairs = offsetPairsByLineId.get(r.id) ?? []
+                  const sourceAlloc = r.source_linked_amount ?? sourceAllocByLineId.get(r.id)
+                  const rowKey = r.reconciliation_match_id || `${r.id}-${sourceAlloc}`
+                  return (
+                    <div
+                      key={rowKey}
+                      className={`p-3 cursor-pointer active:bg-muted/50 ${
+                        selectedIdsOrdered.includes(r.id)
+                          ? 'bg-emerald-50'
+                          : isCurrentLink
+                            ? 'bg-emerald-50/60'
+                            : ''
+                      }`}
+                      onClick={() => toggleLineId(r.id)}
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 accent-emerald-600 shrink-0"
+                          checked={selectedIdsOrdered.includes(r.id)}
+                          onChange={() => toggleLineId(r.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {isCurrentLink ? (
+                              <>
+                                <span className="inline-flex rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                                  {t('currentLinkBadge')}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="text-[10px] font-medium text-red-700 underline decoration-red-300 hover:text-red-900 disabled:opacity-50"
+                                  disabled={unlinkingLineId === unlinkRowKey(r) || saving}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    void unlinkCurrentLink(r)
+                                  }}
+                                >
+                                  {unlinkingLineId === unlinkRowKey(r) ? t('saving') : t('unlinkStatementMatch')}
+                                </button>
+                              </>
+                            ) : null}
+                            {isOffsetInjected ? (
+                              <span className="inline-flex rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900">
+                                {t('offsetPairBadge')}
+                              </span>
+                            ) : null}
+                          </div>
+                          <MobileKvRow label={t('colAccount')}>{r.financial_account_name}</MobileKvRow>
+                          <MobileKvRow label={t('colDate')}>
+                            <span className="tabular-nums">{r.posted_date}</span>
+                          </MobileKvRow>
+                          {ticketDateProbe ? (
+                            <MobileKvRow label={t('colDirection')}>
+                              <span
+                                className={
+                                  String(r.direction).toLowerCase() === 'inflow'
+                                    ? 'text-emerald-700 font-medium'
+                                    : 'text-rose-800 font-medium'
+                                }
+                              >
+                                {String(r.direction).toLowerCase() === 'inflow' ? t('dirIn') : t('dirOut')}
+                              </span>
+                            </MobileKvRow>
+                          ) : null}
+                          <MobileKvRow label={t('colAmount')}>
+                            <span
+                              className={`tabular-nums font-medium ${
+                                String(r.direction).toLowerCase() === 'inflow' ? 'text-emerald-700' : ''
+                              }`}
+                            >
+                              {statementLineSignedAmountLabel(r)}
+                            </span>
+                          </MobileKvRow>
+                          <MobileKvRow label={t('colAllocatedSum')}>
+                            {r.existing_matches.length > 0 ? (
+                              <span className="tabular-nums text-muted-foreground">
+                                ${r.allocated_sum.toFixed(2)} / ${Math.abs(r.amount).toFixed(2)}
+                                {isCurrentLink && sourceAlloc != null ? (
+                                  <span className="block text-[10px] text-emerald-800 font-medium">
+                                    {t('currentLinkAllocated')}: ${sourceAlloc.toFixed(2)}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : (
+                              t('noLinks')
+                            )}
+                          </MobileKvRow>
+                          {r.description ? (
+                            <MobileKvRow label={t('colDesc')}>{r.description}</MobileKvRow>
+                          ) : null}
+                          <MobileKvRow label={t('colStatus')}>
+                            {r.matched_status === 'unmatched'
+                              ? t('statusUnmatched')
+                              : r.matched_status === 'partial'
+                                ? t('statusPartial')
+                                : t('statusMatched')}
+                          </MobileKvRow>
+                          {showOffsetPairs ? (
+                            <div className="space-y-1 pt-0.5">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {t('colOffsetPair')}
+                              </p>
+                              {offsetPairsLoading ? (
+                                <span className="text-xs text-muted-foreground">{t('offsetPairLoading')}</span>
+                              ) : offsetPairs.length === 0 ? (
+                                <span className="text-xs text-muted-foreground">{t('offsetPairNone')}</span>
+                              ) : (
+                                offsetPairs.map((pair) => {
+                                  const isInflow =
+                                    String(pair.counterpartDirection).toLowerCase() === 'inflow'
+                                  return (
+                                    <div
+                                      key={pair.pairId}
+                                      className="rounded border border-violet-200/90 bg-violet-50/90 px-2 py-1 text-[10px] leading-snug text-violet-950"
+                                    >
+                                      <span className="inline-flex items-center gap-0.5 font-medium">
+                                        <ArrowLeftRight className="h-3 w-3 shrink-0" aria-hidden />
+                                        {isInflow ? t('dirIn') : t('dirOut')}
+                                      </span>
+                                      <span className="tabular-nums ml-1">
+                                        {pair.counterpartPostedDate} · ${pair.counterpartAmount.toFixed(2)}
+                                      </span>
+                                      <p className="mt-0.5 break-words text-violet-900/85">
+                                        {pair.counterpartFinancialAccountName}
+                                      </p>
+                                      <p className="break-words text-violet-900/75">{pair.counterpartDescription}</p>
+                                    </div>
+                                  )
+                                })
+                              )}
+                            </div>
+                          ) : null}
+                          {r.existing_matches.length > 0 ? (
+                            <div className="space-y-1 pt-0.5">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {t('colLinked')}
+                              </p>
+                              {linkedMatchDetailsLoading &&
+                              r.existing_matches.some(
+                                (m) => !linkedMatchDetailsByKey.has(`${m.source_table}:${m.source_id}`)
+                              ) ? (
+                                <p className="text-[10px] text-muted-foreground">{t('colLinkedDetailLoading')}</p>
+                              ) : (
+                                r.existing_matches.map((m, i) => (
+                                  <StatementTableLinkedMatchCell
+                                    key={`${m.source_table}-${m.source_id}-${i}`}
+                                    match={m}
+                                    detail={linkedMatchDetailsByKey.get(`${m.source_table}:${m.source_id}`)}
+                                    labels={detailLabelBundle}
+                                    paymentMethodMap={paymentMethodMap}
+                                    paymentMethodFinancialAccountNameByPmId={
+                                      paymentMethodFinancialAccountNameByPmId
+                                    }
+                                    fallbackLabel={formatMatchLabel(m)}
+                                    sourceTypeLabel={(table) =>
+                                      t(`sourceTypes.${sourceTableLabelKey(table)}`)
+                                    }
+                                    formatSubmitter={formatSubmitter}
+                                  />
+                                ))
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-muted sticky top-0 z-[1]">
                 <tr>
@@ -2116,6 +3402,7 @@ export default function ExpenseStatementSimilarLinesModal({
                               sourceTypeLabel={(table) =>
                                 t(`sourceTypes.${sourceTableLabelKey(table)}`)
                               }
+                              formatSubmitter={formatSubmitter}
                             />
                           ))}
                         </div>
@@ -2126,106 +3413,341 @@ export default function ExpenseStatementSimilarLinesModal({
                 })}
               </tbody>
             </table>
+              </div>
+            </>
           )}
+          </div>
         </div>
+        </ReconModalSection>
+        </>
+        )}
 
-        {showCashLedgerSection ? (
-          <div className="shrink-0 border-t border-amber-200/80 mt-2 pt-3 space-y-2 max-h-[min(34vh,15rem)] overflow-y-auto bg-amber-50/30 px-1 -mx-1 rounded-md">
-            <div>
-              <h3 className="text-sm font-semibold text-amber-950">{t('cashSectionTitle')}</h3>
-              <p className="text-[11px] text-amber-900/85 leading-snug mt-0.5">{t('cashSectionHint')}</p>
+        {showCashLedgerSection && !isCashAnchorMode ? (
+          <ReconModalSection title={t('cashSectionTitle')} tone="cash" className="shrink-0 max-lg:max-h-[34vh] max-lg:overflow-y-auto">
+            <div className="space-y-2">
+              <p className="hidden lg:block text-[11px] text-amber-900/85 leading-snug">{t('cashSectionHint')}</p>
+              <p className="hidden lg:block text-[11px] text-amber-900/85 leading-snug">{t('cashSectionMultiExpenseHint')}</p>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 w-full sm:w-auto border-amber-300 bg-white hover:bg-amber-50 text-amber-950"
+                disabled={!context || cashLoading}
+                onClick={() => setCashPickerOpen(true)}
+              >
+                {t('cashSectionBrowseButton')}
+              </Button>
+              {!cashLoading && cashRows.length > 0 ? (
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {t('cashSectionSimilarCount', { count: cashRows.length })}
+                </span>
+              ) : null}
             </div>
-            {cashLoading ? (
-              <p className="text-xs text-muted-foreground py-2">{t('loading')}</p>
-            ) : cashRows.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">{t('cashEmpty')}</p>
+            {selectedCashRow ? (
+              <div className="rounded-md border border-amber-300/90 bg-white/95 px-3 py-2 text-[11px] leading-snug">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-900/80 mb-1">
+                  {t('cashSectionSelectedTitle')}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums text-gray-900">
+                  <span>{selectedCashRow.transaction_date}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-rose-800">${selectedCashRow.amount.toFixed(2)}</span>
+                  {selectedCashRow.linked_to_this_expense ? (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-emerald-800">{t('currentLinkBadge')}</span>
+                    </>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-muted-foreground break-words">{selectedCashRow.description || '—'}</p>
+                {selectedCashRow.category ? (
+                  <p className="text-[10px] text-muted-foreground/90">{selectedCashRow.category}</p>
+                ) : null}
+              </div>
             ) : (
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-amber-200/80 text-left text-[10px] uppercase tracking-wide text-amber-900/80">
-                    <th className="p-2 w-8" />
-                    <th className="p-2">{t('cashColDate')}</th>
-                    <th className="p-2 text-right">{t('cashColAmount')}</th>
-                    <th className="p-2">{t('cashColDesc')}</th>
-                    <th className="p-2">{t('cashColCategory')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashRows.map((r) => {
-                    const selected = selectedCashId === r.id
-                    return (
-                      <tr
-                        key={r.id}
-                        className={`border-b border-amber-100/90 cursor-pointer ${
-                          selected ? 'bg-amber-100/80' : 'hover:bg-amber-50/80'
-                        } ${r.linked_to_this_expense ? 'ring-1 ring-inset ring-emerald-400/50' : ''}`}
-                        onClick={() => setSelectedCashId(r.id)}
-                      >
-                        <td className="p-2 align-middle">
-                          <input
-                            type="radio"
-                            name="cash-transaction-pick"
-                            checked={selected}
-                            onChange={() => setSelectedCashId(r.id)}
-                            aria-label={r.description}
-                          />
-                        </td>
-                        <td className="p-2 tabular-nums whitespace-nowrap">{r.transaction_date}</td>
-                        <td className="p-2 text-right tabular-nums font-medium text-rose-800">
-                          ${r.amount.toFixed(2)}
-                        </td>
-                        <td className="p-2 min-w-[8rem] max-w-[16rem] truncate" title={r.description}>
-                          {r.description}
-                          {r.linked_to_this_expense ? (
-                            <span className="ml-1 text-[10px] text-emerald-800 font-medium">
-                              ({t('currentLinkBadge')})
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="p-2 text-muted-foreground truncate max-w-[10rem]" title={r.category ?? undefined}>
-                          {r.category || '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <p className="text-xs text-muted-foreground py-1">{t('cashSectionNoSelection')}</p>
             )}
+            {!selectedCashId && !cashLoading && visibleCashRows.length > 0 ? (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-amber-900/85">{t('cashSectionQuickPicksTitle')}</p>
+                <ul className="space-y-1 max-h-[8rem] overflow-y-auto">
+                  {visibleCashRows.slice(0, 8).map((r) => (
+                    <li key={r.id}>
+                      <button
+                        type="button"
+                        className="w-full text-left rounded border border-amber-200/80 bg-white/90 px-2.5 py-1.5 text-[11px] hover:bg-amber-50/90 transition-colors"
+                        onClick={() => handleCashPicked(r)}
+                      >
+                        <span className="font-medium tabular-nums">
+                          {r.transaction_date} · ${r.amount.toFixed(2)}
+                        </span>
+                        <span className="block truncate text-muted-foreground">{r.description}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {cashLoading ? <p className="text-xs text-muted-foreground py-2">{t('loading')}</p> : null}
+            {selectedCashId && !isCashAnchorMode ? (
+              <div className="space-y-2 border-t border-amber-200/80 pt-2">
+                <div>
+                  <h4 className="text-xs font-semibold text-amber-950">{t('cashSectionExpensesToLinkTitle')}</h4>
+                  {linkedCashSectionExpenseRows.length > 0 ? (
+                    <p className="text-[10px] text-emerald-900/85 tabular-nums">
+                      {t('cashSectionAlreadyLinkedCount', { count: linkedCashSectionExpenseRows.length })}
+                    </p>
+                  ) : null}
+                  {selectableCashSectionExpenseRows.length > 0 ? (
+                    <p className="text-[10px] text-amber-900/75 tabular-nums">
+                      {t('expenseFromCashSelectedCount', { n: selectedCashLinkExpenseKeys.length })}
+                    </p>
+                  ) : null}
+                </div>
+                {cashSectionExpenseLoading ? (
+                  <p className="text-xs text-muted-foreground py-2">{t('loading')}</p>
+                ) : visibleCashSectionExpenseRows.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">{t('expenseFromCashEmpty')}</p>
+                ) : (
+                  <>
+                    <div className="md:hidden divide-y border border-amber-200/80 rounded-md overflow-hidden">
+                      <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-3 py-2">
+                        <input
+                          type="checkbox"
+                          className="accent-amber-600"
+                          checked={allSelectableCashSectionExpensesSelected}
+                          disabled={selectableCashSectionExpenseRows.length === 0}
+                          aria-label={t('expenseFromCashSelectAll')}
+                          onChange={() => {
+                            if (allSelectableCashSectionExpensesSelected) {
+                              setSelectedCashLinkExpenseKeys([])
+                            } else {
+                              setSelectedCashLinkExpenseKeys(
+                                selectableCashSectionExpenseRows.map((r) => r.key)
+                              )
+                            }
+                          }}
+                        />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-900/80">
+                          {t('expenseFromCashSelectAll')}
+                        </span>
+                      </div>
+                      {visibleCashSectionExpenseRows.map((r) => {
+                        const selected = selectedCashLinkExpenseKeys.includes(r.key)
+                        const linked = r.linked_to_this_cash
+                        const isContextRow = r.key === contextExpenseKey
+                        return (
+                          <div
+                            key={r.key}
+                            className={`p-3 ${linked ? '' : 'cursor-pointer active:bg-amber-50/80'} ${
+                              selected ? 'bg-amber-100/80' : linked ? '' : ''
+                            } ${linked ? 'ring-1 ring-inset ring-emerald-400/50' : ''}`}
+                            onClick={() => {
+                              if (!linked) toggleCashLinkExpenseKey(r.key)
+                            }}
+                          >
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 accent-amber-600 shrink-0"
+                                checked={selected}
+                                disabled={linked}
+                                onChange={() => toggleCashLinkExpenseKey(r.key)}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`${r.paid_to ?? ''} ${r.paid_for ?? ''}`}
+                              />
+                              <div className="min-w-0 flex-1 space-y-1.5">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="text-xs font-semibold text-amber-950">
+                                    {t(`sourceTypes.${sourceTableLabelKey(r.source_table)}`)}
+                                  </span>
+                                  {linked ? (
+                                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                                      {t('currentLinkBadge')}
+                                    </span>
+                                  ) : isContextRow ? (
+                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+                                      {t('cashSectionCurrentExpenseBadge')}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <MobileKvRow label={t('expenseFromCashColDate')}>
+                                  <span className="tabular-nums">{r.submit_date}</span>
+                                </MobileKvRow>
+                                <MobileKvRow label={t('expenseFromCashColAmount')}>
+                                  <span className="tabular-nums font-medium text-rose-800">${r.amount.toFixed(2)}</span>
+                                </MobileKvRow>
+                                <MobileKvRow label={t('expenseFromCashColPaidTo')}>{r.paid_to || '—'}</MobileKvRow>
+                                <MobileKvRow label={t('expenseFromCashColPaidFor')}>{r.paid_for || '—'}</MobileKvRow>
+                                <MobileKvRow label={t('expenseFromCashColSubmitter')}>
+                                  <span title={r.submitter_email ?? undefined}>
+                                    {formatSubmitterDisplay(r.submitter_email, teamMemberLabels)}
+                                  </span>
+                                </MobileKvRow>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-amber-200/80 text-left text-[10px] uppercase tracking-wide text-amber-900/80">
+                        <th className="p-2 w-8">
+                          <input
+                            type="checkbox"
+                            className="accent-amber-600"
+                            checked={allSelectableCashSectionExpensesSelected}
+                            disabled={selectableCashSectionExpenseRows.length === 0}
+                            aria-label={t('expenseFromCashSelectAll')}
+                            onChange={() => {
+                              if (allSelectableCashSectionExpensesSelected) {
+                                setSelectedCashLinkExpenseKeys([])
+                              } else {
+                                setSelectedCashLinkExpenseKeys(
+                                  selectableCashSectionExpenseRows.map((r) => r.key)
+                                )
+                              }
+                            }}
+                          />
+                        </th>
+                        <th className="p-2">{t('expenseFromCashColType')}</th>
+                        <th className="p-2">{t('expenseFromCashColDate')}</th>
+                        <th className="p-2 text-right">{t('expenseFromCashColAmount')}</th>
+                        <th className="p-2">{t('expenseFromCashColPaidTo')}</th>
+                        <th className="p-2">{t('expenseFromCashColPaidFor')}</th>
+                        <th className="p-2">{t('expenseFromCashColSubmitter')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleCashSectionExpenseRows.map((r) => {
+                        const selected = selectedCashLinkExpenseKeys.includes(r.key)
+                        const linked = r.linked_to_this_cash
+                        const isContextRow = r.key === contextExpenseKey
+                        return (
+                          <tr
+                            key={r.key}
+                            className={`border-b border-amber-100/90 ${linked ? '' : 'cursor-pointer'} ${
+                              selected ? 'bg-amber-100/80' : linked ? '' : 'hover:bg-amber-50/80'
+                            } ${linked ? 'ring-1 ring-inset ring-emerald-400/50' : ''}`}
+                            onClick={() => {
+                              if (!linked) toggleCashLinkExpenseKey(r.key)
+                            }}
+                          >
+                            <td className="p-2 align-middle">
+                              <input
+                                type="checkbox"
+                                className="accent-amber-600"
+                                checked={selected}
+                                disabled={linked}
+                                onChange={() => toggleCashLinkExpenseKey(r.key)}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`${r.paid_to ?? ''} ${r.paid_for ?? ''}`}
+                              />
+                            </td>
+                            <td className="p-2 whitespace-nowrap">
+                              {t(`sourceTypes.${sourceTableLabelKey(r.source_table)}`)}
+                              {linked ? (
+                                <span className="ml-1 text-[10px] text-emerald-800 font-medium">
+                                  ({t('currentLinkBadge')})
+                                </span>
+                              ) : isContextRow ? (
+                                <span className="ml-1 text-[10px] text-amber-900 font-medium">
+                                  ({t('cashSectionCurrentExpenseBadge')})
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="p-2 tabular-nums whitespace-nowrap">{r.submit_date}</td>
+                            <td className="p-2 text-right tabular-nums font-medium text-rose-800">
+                              ${r.amount.toFixed(2)}
+                            </td>
+                            <td className="p-2 max-w-[10rem] truncate" title={r.paid_to ?? undefined}>
+                              {r.paid_to || '—'}
+                            </td>
+                            <td className="p-2 max-w-[10rem] truncate" title={r.paid_for ?? undefined}>
+                              {r.paid_for || '—'}
+                            </td>
+                            <td
+                              className="p-2 max-w-[8rem] truncate"
+                              title={r.submitter_email ?? undefined}
+                            >
+                              {formatSubmitterDisplay(r.submitter_email, teamMemberLabels)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
             <div className="flex justify-end pb-1">
               <Button
                 type="button"
                 variant="secondary"
-                className="border-amber-300 bg-amber-100/80 hover:bg-amber-200/80 text-amber-950"
-                disabled={!selectedCashId || cashSaving || saving || cashLoading}
+                className="w-full sm:w-auto border-amber-300 bg-amber-100/80 hover:bg-amber-200/80 text-amber-950"
+                disabled={
+                  !selectedCashId ||
+                  cashSaving ||
+                  saving ||
+                  cashLoading ||
+                  cashSearchLoading ||
+                  cashSectionExpenseLoading
+                }
                 onClick={() => void applyCashLink()}
               >
-                {cashSaving ? t('saving') : t('cashConnect')}
+                {cashSaving
+                  ? t('saving')
+                  : selectedCashLinkExpenseKeys.length > 1
+                    ? t('cashConnectMultiple', { n: selectedCashLinkExpenseKeys.length })
+                    : t('cashConnect')}
               </Button>
             </div>
-          </div>
+            </div>
+          </ReconModalSection>
         ) : null}
 
-        <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 border-t mt-2">
+        </div>
+
+        <DialogFooter className="shrink-0 flex-col gap-2 lg:gap-3 lg:flex-row lg:items-center lg:justify-between border-t bg-white px-3 py-2.5 lg:px-0 lg:py-0 lg:pt-2 lg:mt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:pb-0">
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:mr-auto">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>
               {t('close')}
             </Button>
-            <label className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug cursor-pointer sm:max-w-[28rem]">
-              <input
-                type="checkbox"
-                className="mt-0.5 shrink-0 accent-emerald-600"
-                checked={appendLink}
-                onChange={(e) => setAppendLink(e.target.checked)}
-              />
-              <span>{t('appendLinkCheckbox')}</span>
-            </label>
+            {!isCashAnchorMode ? (
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:max-w-none">
+              <label className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug cursor-pointer sm:max-w-[28rem]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 shrink-0 accent-emerald-600"
+                  checked={appendLink}
+                  onChange={(e) => setAppendLink(e.target.checked)}
+                />
+                <span>{t('appendLinkCheckbox')}</span>
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full sm:w-auto shrink-0 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-950"
+                disabled={appendConnectDisabled}
+                onClick={() => void apply(undefined, 'append')}
+              >
+                {saving ? t('saving') : appendConnectLabel}
+              </Button>
+            </div>
+            ) : null}
           </div>
-          <div className="flex w-full flex-wrap justify-end gap-2">
+          {!isCashAnchorMode ? (
+          <div className="flex w-full flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
           {hasLineConflict ? (
             <>
               <Button
                 type="button"
                 variant="secondary"
+                className="w-full sm:w-auto"
                 disabled={selectedIdsOrdered.length === 0 || saving}
                 onClick={() => void apply('unlinkOthers')}
               >
@@ -2234,6 +3756,7 @@ export default function ExpenseStatementSimilarLinesModal({
               <Button
                 type="button"
                 variant="destructive"
+                className="w-full sm:w-auto"
                 disabled={selectedIdsOrdered.length === 0 || saving}
                 onClick={() => void apply('unlinkAndDeleteOthers')}
               >
@@ -2243,31 +3766,33 @@ export default function ExpenseStatementSimilarLinesModal({
           ) : (
             <Button
               type="button"
-              disabled={
-                selectedIdsOrdered.length === 0 ||
-                saving ||
-                (appendLink &&
-                  !anySelectedInflow &&
-                  remainingOnLedger != null &&
-                  remainingOnLedger < 0.01)
-              }
-              onClick={() => void apply()}
+              className="w-full sm:w-auto"
+              disabled={selectedIdsOrdered.length === 0 || saving}
+              onClick={() => void apply(undefined, 'replace')}
             >
               {saving
                 ? t('saving')
                 : allowTicketMultiLink && selectedLineCount > 1
                   ? t('connectTicketMultiN', { n: selectedLineCount })
-                  : appendLink && selectedIdsOrdered.length > 1
-                    ? t('connectAppendN', {
-                        n: dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length
-                      })
-                    : appendLink
-                      ? t('connectAppend')
-                      : t('connect')}
+                  : t('connect')}
             </Button>
           )}
           </div>
+          ) : null}
         </DialogFooter>
+
+        {showCashLedgerSection && !isCashAnchorMode && context ? (
+          <CashTransactionPickerModal
+            open={cashPickerOpen}
+            onOpenChange={setCashPickerOpen}
+            selectedId={selectedCashId}
+            onConfirm={handleCashPicked}
+            ledgerDateYmd={context.dateYmd}
+            ledgerAmount={context.amount}
+            linkedCashIds={linkedCashRowIds}
+            nestedElevated={nestedElevated}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )

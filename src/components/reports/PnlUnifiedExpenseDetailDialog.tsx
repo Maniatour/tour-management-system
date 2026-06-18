@@ -10,7 +10,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Link2,
+  ExternalLink,
   Search,
+  Ban,
   User,
   Users,
   X,
@@ -67,14 +69,25 @@ import { PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL } from '@/lib/pnlReportDataFetc
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import {
+  bulkSetExpenseReconciliationExempt,
+  expenseReconExemptSourceSupported,
+} from '@/lib/expense-reconciliation-exemptions'
 import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import type { ExpenseStatementReconContext, ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
 import {
   buildTicketBookingStatementReconContextResolved,
   isTicketBookingStatementReconDisabled,
 } from '@/lib/ticket-booking-statement-recon'
+
+/** 지출 상세(z-1200)·명세 모달(z-1300) 위에 투어/예약 상세를 포털로 띄울 때 */
+const PNL_NESTED_DETAIL_OVERLAY_CLASS = 'z-[1500] pointer-events-auto'
+const PNL_NESTED_DETAIL_CONTENT_CLASS =
+  'z-[1500] w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg'
 
 export type PnlExpenseSource =
   | 'tour_expenses'
@@ -122,6 +135,8 @@ export type PnlDetailLine = {
   payment_method: string | null
   /** reconciliation_matches 에 명세 줄과 연결됨 */
   statementReconciled: boolean
+  /** expense_reconciliation_exemptions — 명세·현금 대조 불필요 표시 */
+  statementReconExempt?: boolean
   category: string | null
   company: string | null
   note: string | null
@@ -143,6 +158,26 @@ export type PnlDrillState =
   | { mode: 'excluded' }
   | { mode: 'unmatched' }
   | { mode: 'duplicates' }
+
+export type PnlLineReconExemptPatch = {
+  source: PnlExpenseSource
+  id: string
+  exempt: boolean
+}
+
+function pnlDrillResetKey(drill: PnlDrillState | null): string {
+  if (!drill) return ''
+  switch (drill.mode) {
+    case 'cell':
+      return `cell:${drill.rowId}:${drill.month}`
+    case 'row':
+      return `row:${drill.rowId}`
+    case 'col':
+      return `col:${drill.month}`
+    default:
+      return drill.mode
+  }
+}
 
 function isoToYmd(iso: string | null): string {
   if (!iso) return ''
@@ -172,6 +207,11 @@ function isPnlLineStmtReconDisabled(line: PnlDetailLine): boolean {
   return !submitYmd || Math.abs(line.amount) <= 0
 }
 
+/** 명세 연결 또는 «대조 불필요» — 세금 보고 커버리지·미대조 목록에서 제외 */
+export function isPnlLineStatementReconCovered(line: PnlDetailLine): boolean {
+  return line.statementReconciled || line.statementReconExempt === true
+}
+
 const PNL_AUTO_MATCH_SOURCES = new Set<PnlExpenseSource>([
   'tour_expenses',
   'reservation_expenses',
@@ -182,7 +222,7 @@ const PNL_AUTO_MATCH_SOURCES = new Set<PnlExpenseSource>([
 
 function pnlLineToAutoMatchRow(line: PnlDetailLine): ExpenseAutoMatchInputRow | null {
   if (!PNL_AUTO_MATCH_SOURCES.has(line.source)) return null
-  if (line.statementReconciled || isPnlLineStmtReconDisabled(line)) return null
+  if (line.statementReconciled || line.statementReconExempt || isPnlLineStmtReconDisabled(line)) return null
   const submitYmd = isoToYmd(line.submit_on)
   if (!submitYmd) return null
   return {
@@ -287,14 +327,6 @@ function shortId(id: string | null | undefined, head = 8): string {
   return s.length <= head + 3 ? s : `${s.slice(0, head)}…`
 }
 
-function openAdminTour(locale: string, tourId: string) {
-  window.open(`/${locale}/admin/tours/${encodeURIComponent(tourId)}`, '_blank', 'noopener,noreferrer')
-}
-
-function openAdminReservation(locale: string, reservationId: string) {
-  window.open(`/${locale}/admin/reservations/${encodeURIComponent(reservationId)}`, '_blank', 'noopener,noreferrer')
-}
-
 function PnlDetailTourReferenceCell({ tourRef }: { tourRef: TourReferenceSnapshot | null }) {
   if (!tourRef) return <span className="text-muted-foreground">—</span>
   const tourName = tourRef.tourName?.trim() || '—'
@@ -388,7 +420,7 @@ function pnlDetailLineSearchHaystack(
     classificationText(line),
     descriptionText(line),
     line.mappingOriginalValue,
-    line.statementReconciled ? '연결됨 명세대조' : '미연결',
+    line.statementReconExempt ? '대조불필요' : line.statementReconciled ? '연결됨 명세대조' : '미연결',
     String(line.amount),
     line.amount.toFixed(2),
   ]
@@ -439,7 +471,7 @@ function filterLines(lines: PnlDetailLine[], drill: PnlDrillState | null): PnlDe
     case 'excluded':
       return lines.filter((l) => l.exclude_from_pnl)
     case 'unmatched':
-      return lines.filter((l) => !l.statementReconciled)
+      return lines.filter((l) => !isPnlLineStatementReconCovered(l))
     case 'duplicates': {
       const groups = findPnlDetailDuplicateGroups(lines)
       const dupKeys = new Set<string>(groups.flat())
@@ -692,6 +724,8 @@ type PnlUnifiedExpenseDetailDialogProps = {
   onClearAllDismissedDuplicates?: () => void | Promise<void>
   formatMonthLabel: (ym: string) => string
   onSaved: () => void | Promise<void>
+  /** 대조 불필요 표시만 바뀐 경우 — 전체 PNL 재로드 없이 라인만 갱신 */
+  onReconExemptChanged?: (patches: PnlLineReconExemptPatch[]) => void
   expenseStandardCategories: ExpenseStandardCategoryPickRow[]
   unifiedStandardGroups: UnifiedStandardLeafGroup[]
   locale?: string
@@ -785,6 +819,7 @@ export default function PnlUnifiedExpenseDetailDialog({
   onClearAllDismissedDuplicates,
   formatMonthLabel,
   onSaved,
+  onReconExemptChanged,
   expenseStandardCategories,
   unifiedStandardGroups,
   locale = 'ko',
@@ -793,6 +828,7 @@ export default function PnlUnifiedExpenseDetailDialog({
   const deletedByEmail = user?.email ?? null
   const { paymentMethodMap } = usePaymentMethodOptions()
   const tStmtRecon = useTranslations('expenses.statementRecon')
+  const tStmtExemptBulk = useTranslations('expenses.statementRecon.reconExempt.bulk')
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -802,6 +838,7 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [deleteConfirmKeys, setDeleteConfirmKeys] = useState<string[] | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [dismissing, setDismissing] = useState(false)
+  const [markingExempt, setMarkingExempt] = useState(false)
   /** 중복 그룹 뱃지 클릭 시 해당 그룹 행만 표시 (null = 필터 없음) */
   const [focusedDuplicateGroupIndex, setFocusedDuplicateGroupIndex] = useState<number | null>(null)
   const [sortKey, setSortKey] = useState<PnlDetailSortKey>('submit_on')
@@ -816,8 +853,44 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [excludeOverride, setExcludeOverride] = useState<Record<string, boolean>>({})
   const [excludeSavingKey, setExcludeSavingKey] = useState<string | null>(null)
   const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
+  const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
+  const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
+
+  const nestedOverlayOpen =
+    tourDetailModalId != null ||
+    reservationDetailModalId != null ||
+    stmtReconOpen ||
+    bulkAutoMatchOpen
+
+  useEffect(() => {
+    if (!tourDetailModalId && !reservationDetailModalId) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      if (reservationDetailModalId) {
+        setReservationDetailModalId(null)
+        return
+      }
+      setTourDetailModalId(null)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [tourDetailModalId, reservationDetailModalId])
 
   const isUnmatchedDrill = drill?.mode === 'unmatched'
+  const drillResetKey = useMemo(() => pnlDrillResetKey(drill), [drill])
+
+  const applyReconExemptPatches = useCallback(
+    (patches: PnlLineReconExemptPatch[]) => {
+      if (patches.length === 0) return
+      if (onReconExemptChanged) {
+        onReconExemptChanged(patches)
+        return
+      }
+      void onSaved()
+    },
+    [onReconExemptChanged, onSaved]
+  )
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
   const sourcesInVisible = useMemo(() => {
@@ -923,6 +996,59 @@ export default function PnlUnifiedExpenseDetailDialog({
     () => selectedLines.reduce((s, l) => s + l.amount, 0),
     [selectedLines]
   )
+  const selectedExemptEligibleLines = useMemo(
+    () =>
+      selectedLines.filter(
+        (l) => expenseReconExemptSourceSupported(l.source) && l.statementReconExempt !== true
+      ),
+    [selectedLines]
+  )
+
+  const markSelectedReconExempt = useCallback(async () => {
+    if (selectedExemptEligibleLines.length === 0) {
+      toast.error(tStmtExemptBulk('noSelection'))
+      return
+    }
+    setMarkingExempt(true)
+    try {
+      const bySource = new Map<ExpenseReconSourceTable, string[]>()
+      for (const line of selectedExemptEligibleLines) {
+        const table = line.source as ExpenseReconSourceTable
+        const ids = bySource.get(table) ?? []
+        ids.push(line.id)
+        bySource.set(table, ids)
+      }
+      let updated = 0
+      const requested = selectedExemptEligibleLines.length
+      for (const [sourceTable, sourceIds] of bySource) {
+        const result = await bulkSetExpenseReconciliationExempt(supabase, {
+          sourceTable,
+          sourceIds,
+          exempt: true,
+          actorEmail: deletedByEmail,
+        })
+        updated += result.updated
+      }
+      if (updated < requested) {
+        toast.message(tStmtExemptBulk('partial', { updated, requested }))
+      } else {
+        toast.success(tStmtExemptBulk('successSet', { count: updated }))
+      }
+      setSelectedKeys(new Set())
+      applyReconExemptPatches(
+        selectedExemptEligibleLines.map((line) => ({
+          source: line.source,
+          id: line.id,
+          exempt: true,
+        }))
+      )
+    } catch (err) {
+      console.error(err)
+      toast.error(tStmtExemptBulk('error'))
+    } finally {
+      setMarkingExempt(false)
+    }
+  }, [selectedExemptEligibleLines, deletedByEmail, applyReconExemptPatches, tStmtExemptBulk])
 
   const categoryById = useMemo(
     () => new Map(expenseStandardCategories.map((c) => [c.id, c])),
@@ -961,6 +1087,7 @@ export default function PnlUnifiedExpenseDetailDialog({
       setFocusedDuplicateGroupIndex(null)
       setStmtReconOpen(false)
       setStmtReconCtx(null)
+      setMarkingExempt(false)
       setPage(1)
       setPageSize(PNL_DETAIL_DEFAULT_PAGE_SIZE)
     }
@@ -975,7 +1102,7 @@ export default function PnlUnifiedExpenseDetailDialog({
     setSortDir('asc')
     setFocusedDuplicateGroupIndex(null)
     setPage(1)
-  }, [drill, visible.length])
+  }, [drillResetKey])
 
   useEffect(() => {
     setPage(1)
@@ -1126,7 +1253,11 @@ export default function PnlUnifiedExpenseDetailDialog({
     async (line: PnlDetailLine) => {
       if (!draft) return
       const amt = parseFloat(String(draft.amount).replace(/,/g, ''))
-      if (!Number.isFinite(amt) || amt === 0) {
+      if (!Number.isFinite(amt)) {
+        toast.error('금액을 확인하세요.')
+        return
+      }
+      if (amt === 0 && line.source !== 'reservation_expenses') {
         toast.error('금액을 확인하세요.')
         return
       }
@@ -1305,9 +1436,22 @@ export default function PnlUnifiedExpenseDetailDialog({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          if (!v && nestedOverlayOpen) return
+          onOpenChange(v)
+        }}
+      >
       <DialogContent
+        overlayClassName="z-[1200]"
         className="flex flex-col p-0 gap-0 z-[1200] w-[min(100vw-0.5rem,120rem)] max-w-[min(100vw-0.5rem,120rem)] max-h-[min(96vh,1040px)]"
+        onPointerDownOutside={(e) => {
+          if (nestedOverlayOpen) e.preventDefault()
+        }}
+        onEscapeKeyDown={(e) => {
+          if (nestedOverlayOpen) e.preventDefault()
+        }}
       >
         <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b shrink-0">
           <DialogTitle className="text-base leading-snug">지출 상세 — {title}</DialogTitle>
@@ -1315,9 +1459,9 @@ export default function PnlUnifiedExpenseDetailDialog({
             {isUnmatchedDrill ? (
               <>
                 아래 목록은 은행·카드 명세와 아직 연결되지 않은 지출입니다.{' '}
-                <strong>명세 자동 매칭</strong>으로 일괄 연결하거나,{' '}
-                <strong>명세 대조</strong> 열의 은행 아이콘을 눌러 건별로 유사 명세 줄을 찾을 수 있습니다. 개별 지출은
-                금액·결제내용을 수정할 수 있습니다.
+                <strong>명세 자동 매칭</strong>으로 일괄 연결하거나, 행을 선택해{' '}
+                <strong>대조 불필요 표시</strong>를 할 수 있습니다. 건별로는 <strong>명세 대조</strong> 열의
+                은행 아이콘·대조 불필요 버튼을 사용하세요.
               </>
             ) : (
               <>
@@ -1482,7 +1626,25 @@ export default function PnlUnifiedExpenseDetailDialog({
                 >
                   {allVisibleSelected ? '선택 해제' : '전체 선택'}
                 </Button>
-                {focusedDuplicateGroupIndex != null ? (
+                {isUnmatchedDrill ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs border-slate-400 text-slate-800 hover:bg-slate-50"
+                    disabled={
+                      deleting || dismissing || markingExempt || selectedExemptEligibleLines.length === 0
+                    }
+                    title={tStmtExemptBulk('markExemptTitle')}
+                    onClick={() => void markSelectedReconExempt()}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1 shrink-0" aria-hidden />
+                    {markingExempt
+                      ? tStmtExemptBulk('applying')
+                      : tStmtExemptBulk('markExempt', { count: selectedExemptEligibleLines.length })}
+                  </Button>
+                ) : null}
+                {!isUnmatchedDrill && focusedDuplicateGroupIndex != null ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1494,7 +1656,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                     그룹 필터 해제
                   </Button>
                 ) : null}
-                {duplicateExtraKeys.length > 0 ? (
+                {!isUnmatchedDrill && duplicateExtraKeys.length > 0 ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1507,7 +1669,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                     중복 의심 {duplicateExtraKeys.length}건 선택
                   </Button>
                 ) : null}
-                {dismissedVisibleKeys.length > 0 ? (
+                {!isUnmatchedDrill && dismissedVisibleKeys.length > 0 ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1520,7 +1682,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                     중복 아님 해제 {dismissedVisibleKeys.length}건
                   </Button>
                 ) : null}
-                {dismissedUndoInfo && dismissedUndoInfo.batchCount > 0 && onUndoLastDismissedDuplicates ? (
+                {!isUnmatchedDrill && dismissedUndoInfo && dismissedUndoInfo.batchCount > 0 && onUndoLastDismissedDuplicates ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1533,7 +1695,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                     마지막 작업 되돌리기 ({dismissedUndoInfo.lastBatchSize}건)
                   </Button>
                 ) : null}
-                {dismissedDuplicateKeys && dismissedDuplicateKeys.size > 0 && onClearAllDismissedDuplicates ? (
+                {!isUnmatchedDrill && dismissedDuplicateKeys && dismissedDuplicateKeys.size > 0 && onClearAllDismissedDuplicates ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1546,31 +1708,35 @@ export default function PnlUnifiedExpenseDetailDialog({
                     중복 아님 전체 되돌리기 ({dismissedDuplicateKeys.size}건)
                   </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-                  disabled={deleting || dismissing || !someSelected}
-                  onClick={markSelectedNotDuplicate}
-                  title="선택한 건을 중복 의심에서 제외합니다(삭제하지 않음). 합계는 그대로 유지됩니다."
-                >
-                  중복 아님 처리
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="h-8 text-xs gap-1"
-                  disabled={deleting || dismissing || !someSelected}
-                  onClick={() => setDeleteConfirmKeys([...selectedKeys])}
-                >
-                  <Archive className="h-3.5 w-3.5" aria-hidden />
-                  삭제 보관함으로
-                </Button>
+                {!isUnmatchedDrill ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                      disabled={deleting || dismissing || markingExempt || !someSelected}
+                      onClick={markSelectedNotDuplicate}
+                      title="선택한 건을 중복 의심에서 제외합니다(삭제하지 않음). 합계는 그대로 유지됩니다."
+                    >
+                      중복 아님 처리
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-8 text-xs gap-1"
+                      disabled={deleting || dismissing || markingExempt || !someSelected}
+                      onClick={() => setDeleteConfirmKeys([...selectedKeys])}
+                    >
+                      <Archive className="h-3.5 w-3.5" aria-hidden />
+                      삭제 보관함으로
+                    </Button>
+                  </>
+                ) : null}
               </div>
             </div>
-            {duplicateGroups.length > 0 ? (
+            {!isUnmatchedDrill && duplicateGroups.length > 0 ? (
               <div className="rounded-md border border-slate-200 bg-white/80 px-2 py-1.5">
                 <p className="text-[10px] text-slate-500 mb-1">
                   중복 그룹을 누르면 해당 건만 표에 표시됩니다. tour_id·상품·가이드·연결 ID를 비교해 판단하세요.
@@ -1750,7 +1916,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                                 type="button"
                                 className="text-left font-mono hover:text-foreground underline-offset-2 hover:underline"
                                 title={line.tour_id}
-                                onClick={() => openAdminTour(locale, line.tour_id!)}
+                                onClick={() => setTourDetailModalId(line.tour_id!)}
                               >
                                 tour {shortId(line.tour_id, 10)}
                               </button>
@@ -1760,7 +1926,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                                 type="button"
                                 className="text-left font-mono hover:text-foreground underline-offset-2 hover:underline"
                                 title={line.reservation_id}
-                                onClick={() => openAdminReservation(locale, line.reservation_id!)}
+                                onClick={() => setReservationDetailModalId(line.reservation_id!)}
                               >
                                 res {shortId(line.reservation_id, 10)}
                               </button>
@@ -1793,14 +1959,37 @@ export default function PnlUnifiedExpenseDetailDialog({
                         <td className="py-2 pr-2 whitespace-nowrap align-middle" onClick={(e) => e.stopPropagation()}>
                           <span className="inline-flex items-center gap-0.5">
                             <ExpenseStatementReconIcon
-                              matched={line.statementReconciled}
-                              disabled={isPnlLineStmtReconDisabled(line) || deleting}
+                              matched={isPnlLineStatementReconCovered(line)}
+                              exempt={line.statementReconExempt === true}
+                              disabled={isPnlLineStmtReconDisabled(line) || deleting || markingExempt}
                               titleMatched={tStmtRecon('matchedTitle')}
                               titleUnmatched={tStmtRecon('unmatchedTitle')}
+                              titleExempt={tStmtRecon('exemptTitle')}
                               titleDisabled={tStmtRecon('disabledTitle')}
                               onClick={() => void openStmtReconForLine(line)}
                             />
-                            {line.statementReconciled ? (
+                            {expenseReconExemptSourceSupported(line.source) ? (
+                              <ExpenseReconciliationExemptToggle
+                                compact
+                                sourceTable={line.source as ExpenseReconSourceTable}
+                                sourceId={line.id}
+                                exempt={line.statementReconExempt === true}
+                                disabled={deleting || markingExempt}
+                                onChanged={(exempt) =>
+                                  applyReconExemptPatches([
+                                    { source: line.source, id: line.id, exempt },
+                                  ])
+                                }
+                              />
+                            ) : null}
+                            {line.statementReconExempt ? (
+                              <span
+                                className="hidden sm:inline text-slate-700 text-[11px]"
+                                title={tStmtRecon('exemptTitle')}
+                              >
+                                대조 불필요
+                              </span>
+                            ) : line.statementReconciled ? (
                               <span
                                 className="inline-flex items-center gap-1 text-emerald-800 text-[11px] sm:text-xs"
                                 title="명세 대조에 연결됨"
@@ -1964,27 +2153,46 @@ export default function PnlUnifiedExpenseDetailDialog({
                   선택 {selectedKeys.size}건 · {formatMoney(selectedSum)}
                 </span>
               ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-                disabled={deleting || dismissing || !someSelected}
-                onClick={markSelectedNotDuplicate}
-                title="선택한 건을 중복 의심에서 제외합니다(삭제하지 않음)."
-              >
-                중복 아님 처리
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-8"
-                disabled={deleting || dismissing || !someSelected}
-                onClick={() => setDeleteConfirmKeys([...selectedKeys])}
-              >
-                삭제 보관함으로
-              </Button>
+              {isUnmatchedDrill ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-slate-400 text-slate-800 hover:bg-slate-50"
+                  disabled={deleting || dismissing || markingExempt || selectedExemptEligibleLines.length === 0}
+                  title={tStmtExemptBulk('markExemptTitle')}
+                  onClick={() => void markSelectedReconExempt()}
+                >
+                  <Ban className="h-3.5 w-3.5 mr-1 shrink-0" aria-hidden />
+                  {markingExempt
+                    ? tStmtExemptBulk('applying')
+                    : tStmtExemptBulk('markExempt', { count: selectedExemptEligibleLines.length })}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                    disabled={deleting || dismissing || markingExempt || !someSelected}
+                    onClick={markSelectedNotDuplicate}
+                    title="선택한 건을 중복 의심에서 제외합니다(삭제하지 않음)."
+                  >
+                    중복 아님 처리
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-8"
+                    disabled={deleting || dismissing || markingExempt || !someSelected}
+                    onClick={() => setDeleteConfirmKeys([...selectedKeys])}
+                  >
+                    삭제 보관함으로
+                  </Button>
+                </>
+              )}
             </div>
           </DialogFooter>
         ) : null}
@@ -2176,9 +2384,77 @@ export default function PnlUnifiedExpenseDetailDialog({
           reconciledExpenseIds={new Set()}
           nestedElevated
           title="명세 미대조 지출 — 자동 매칭"
-          description="현재 목록(검색·출처 필터 반영) 중 명세와 연결 가능한 지출을 은행 명세 출금 줄과 맞춥니다. 미리보기에서 확인한 뒤 저장하세요."
+          description="현재 목록(검색·출처 필터 반영) 중 명세와 연결 가능한 지출을 전체 은행 명세·현금 출금과 금액으로 맞춥니다. 미리보기에서 확인한 뒤 저장하세요."
           onApplied={() => void onSaved()}
         />
+      ) : null}
+
+      {tourDetailModalId ? (
+        <Dialog
+          modal={false}
+          open
+          onOpenChange={(v) => {
+            if (!v) setTourDetailModalId(null)
+          }}
+        >
+          <DialogContent
+            overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
+            className={PNL_NESTED_DETAIL_CONTENT_CLASS}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+              <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">투어 상세</DialogTitle>
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModalId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col bg-white">
+              <TourDetailModalContent tourId={tourDetailModalId} />
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {reservationDetailModalId ? (
+        <Dialog
+          modal={false}
+          open
+          onOpenChange={(v) => {
+            if (!v) setReservationDetailModalId(null)
+          }}
+        >
+          <DialogContent
+            overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
+            className={PNL_NESTED_DETAIL_CONTENT_CLASS}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+              <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">예약 상세</DialogTitle>
+              <a
+                href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <iframe
+                src={`/${locale}/admin/reservations/${reservationDetailModalId}`}
+                className="h-full w-full min-h-0 flex-1 border-0"
+                title="예약 상세"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </>
   )

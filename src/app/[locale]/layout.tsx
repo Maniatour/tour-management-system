@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Navigation from "@/components/Navigation";
-import Sidebar from "@/components/Sidebar";
-import UserFooter from "@/components/UserFooter";
+import LazyNavigation from "@/components/layout/LazyNavigation";
+import LazySidebar from "@/components/layout/LazySidebar";
+import LazyUserFooter from "@/components/layout/LazyUserFooter";
 import { FloatingChatProvider } from "@/contexts/FloatingChatContext";
-import FloatingChatContainer from "@/components/FloatingChatContainer";
-import StripeErrorHandler from "@/components/StripeErrorHandler";
+import LazyFloatingChatContainer from "@/components/layout/LazyFloatingChatContainer";
+import LazyStripeErrorHandler from "@/components/layout/LazyStripeErrorHandler";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -47,10 +47,10 @@ export default async function LocaleLayout({
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
-          <StripeErrorHandler />
+          <LazyStripeErrorHandler />
           <div className="min-h-screen bg-gray-50">
             {children}
-            <FloatingChatContainer />
+            <LazyFloatingChatContainer />
           </div>
         </FloatingChatProvider>
       </NextIntlClientProvider>
@@ -62,11 +62,11 @@ export default async function LocaleLayout({
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
-          <StripeErrorHandler />
+          <LazyStripeErrorHandler />
           <div className="min-h-screen bg-gray-50">
-            <Navigation />
+            <LazyNavigation />
             {children}
-            <FloatingChatContainer />
+            <LazyFloatingChatContainer />
           </div>
         </FloatingChatProvider>
       </NextIntlClientProvider>
@@ -77,18 +77,18 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
       <FloatingChatProvider>
-        <StripeErrorHandler />
+        <LazyStripeErrorHandler />
         <CartProviderWrapper>
           <div className="min-h-screen bg-gray-50">
-            <Navigation />
+            <LazyNavigation />
             <div className="flex flex-col lg:flex-row">
-              <Sidebar />
+              <LazySidebar />
               <main className="flex-1 px-2 pt-4 lg:px-6 lg:pt-6 main-safe-area">
                 {children}
               </main>
             </div>
-            <UserFooter locale={locale} />
-            <FloatingChatContainer />
+            <LazyUserFooter locale={locale} />
+            <LazyFloatingChatContainer />
           </div>
         </CartProviderWrapper>
       </FloatingChatProvider>

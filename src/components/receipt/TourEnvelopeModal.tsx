@@ -621,11 +621,6 @@ export default function TourEnvelopeModal({
                                     )}
                                   </div>
                                 ))}
-                                <div style={{ marginTop: '0.08em', fontWeight: 600 }}>
-                                  {useEnvelopeEnglish(row.customerLanguage)
-                                    ? `total balance : ${formatMoney(row.balanceAmount, row.currency)}`
-                                    : `잔액 합계 : ${formatMoney(row.balanceAmount, row.currency)}`}
-                                </div>
                               </div>
                             )}
                           </div>

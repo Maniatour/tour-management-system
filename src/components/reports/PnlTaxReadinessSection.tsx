@@ -5,6 +5,7 @@ import { ShieldCheck, AlertTriangle, Link2, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import type { PnlDetailLine, PnlDrillState } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
+import { isPnlLineStatementReconCovered } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import {
   duplicateExtraKeysToSelect,
   findPnlDetailDuplicateGroups,
@@ -62,7 +63,7 @@ export default function PnlTaxReadinessSection({
     for (const l of lines) {
       const amt = Number(l.amount) || 0
       totalAmount += amt
-      if (l.statementReconciled) {
+      if (isPnlLineStatementReconCovered(l)) {
         reconciledAmount += amt
         reconciledCount += 1
       }

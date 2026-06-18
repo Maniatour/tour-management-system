@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,15 +14,31 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import { fetchCashLedgerMatchedCashTransactionIds, fetchCashLedgerMatchedExpenseIds } from '@/lib/expense-cash-ledger-match'
+import {
+  fetchReconciliationExemptKeysForSources,
+} from '@/lib/expense-reconciliation-exemptions'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
 import type { ExpenseReconSourceTable, ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import CashTransactionBulkAutoMatchModal, {
+  AMOUNT_EQUAL_EPS,
+} from '@/components/reconciliation/CashTransactionBulkAutoMatchModal'
+import type { CashAutoMatchInputRow } from '@/lib/cash-transaction-auto-match'
+import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
+import {
+  buildCashTransactionsSearchOr,
+  buildPaymentRecordsNoteSearchOr,
+  buildCashCompanyExpenseSearchOr,
+  buildCashReservationExpenseSearchOr,
+} from '@/lib/cashTransactionSearch'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 const DEFAULT_CASH_PERIOD_START = '2025-01-01'
@@ -101,6 +117,47 @@ function cashTransactionDateYmd(tx: CashTransaction): string {
   return d.toISOString().slice(0, 10)
 }
 
+function isCashRowReconciled(
+  tx: CashTransaction,
+  reconciledKeys: Set<string>,
+  exemptKeys: Set<string>
+): boolean {
+  const r = reconSourceFromCashTransaction(tx)
+  if (r) {
+    const key = `${r.sourceTable}:${r.sourceId}`
+    if (exemptKeys.has(key)) return true
+    if (reconciledKeys.has(key)) return true
+  }
+  if (
+    tx.source === 'cash_transactions' &&
+    tx.reference_type === 'payment_record' &&
+    tx.reference_id
+  ) {
+    return true
+  }
+  return false
+}
+
+function cashReconKey(tx: CashTransaction): string | null {
+  const r = reconSourceFromCashTransaction(tx)
+  return r ? `${r.sourceTable}:${r.sourceId}` : null
+}
+
+function isCashRowExempt(tx: CashTransaction, exemptKeys: Set<string>): boolean {
+  const key = cashReconKey(tx)
+  return key ? exemptKeys.has(key) : false
+}
+
+function isCashRowStmtMatched(tx: CashTransaction, reconciledKeys: Set<string>): boolean {
+  const key = cashReconKey(tx)
+  if (key && reconciledKeys.has(key)) return true
+  return (
+    tx.source === 'cash_transactions' &&
+    tx.reference_type === 'payment_record' &&
+    Boolean(tx.reference_id)
+  )
+}
+
 export default function CashManagement() {
   useTranslations('cashManagement')
   let locale = 'ko'
@@ -111,9 +168,12 @@ export default function CashManagement() {
   }
   const { user } = useAuth()
   const tStmt = useTranslations('expenses.statementRecon')
+  const tBulkAutoMatch = useTranslations('expenses.statementRecon.cashBulkAutoMatch')
   const [reconciledCashRowKeys, setReconciledCashRowKeys] = useState<Set<string>>(() => new Set())
+  const [exemptCashRowKeys, setExemptCashRowKeys] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
   const [balance, setBalance] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -121,6 +181,8 @@ export default function CashManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<CashTransaction | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const loadTransactionsGenRef = useRef(0)
   const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal' | 'bank_deposit'>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [startDate, setStartDate] = useState(DEFAULT_CASH_PERIOD_START)
@@ -215,9 +277,16 @@ export default function CashManagement() {
   }, [teamDisplayLabel, toast])
 
   const loadTransactions = useCallback(async () => {
+    const gen = ++loadTransactionsGenRef.current
     try {
       setLoading(true)
       const cashPaymentMethods = await getCashPaymentMethodFilterValues()
+      if (gen !== loadTransactionsGenRef.current) return
+
+      const searchOrCash = searchTerm ? buildCashTransactionsSearchOr(searchTerm) : null
+      const searchOrPayment = searchTerm ? buildPaymentRecordsNoteSearchOr(searchTerm) : null
+      const searchOrCompany = searchTerm ? buildCashCompanyExpenseSearchOr(searchTerm) : null
+      const searchOrReservation = searchTerm ? buildCashReservationExpenseSearchOr(searchTerm) : null
 
       // 1. cash_transactions 테이블에서 데이터 가져오기
       let cashTransactionsQuery = supabase
@@ -226,8 +295,8 @@ export default function CashManagement() {
         .order('transaction_date', { ascending: false })
         .order('created_at', { ascending: false })
 
-      if (searchTerm) {
-        cashTransactionsQuery = cashTransactionsQuery.or(`description.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%`)
+      if (searchOrCash) {
+        cashTransactionsQuery = cashTransactionsQuery.or(searchOrCash)
       }
 
       if (typeFilter !== 'all' && typeFilter !== 'bank_deposit') {
@@ -261,8 +330,8 @@ export default function CashManagement() {
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
-      if (searchTerm) {
-        paymentRecordsQuery = paymentRecordsQuery.or(`note.ilike.%${searchTerm}%`)
+      if (searchOrPayment) {
+        paymentRecordsQuery = paymentRecordsQuery.or(searchOrPayment)
       }
 
       if (startDate) {
@@ -293,8 +362,8 @@ export default function CashManagement() {
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
-      if (searchTerm) {
-        companyExpensesQuery = companyExpensesQuery.or(`description.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%,paid_for.ilike.%${searchTerm}%,paid_to.ilike.%${searchTerm}%`)
+      if (searchOrCompany) {
+        companyExpensesQuery = companyExpensesQuery.or(searchOrCompany)
       }
 
       if (categoryFilter !== 'all') {
@@ -325,8 +394,8 @@ export default function CashManagement() {
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
-      if (searchTerm) {
-        reservationExpensesQuery = reservationExpensesQuery.or(`note.ilike.%${searchTerm}%,paid_for.ilike.%${searchTerm}%,paid_to.ilike.%${searchTerm}%`)
+      if (searchOrReservation) {
+        reservationExpensesQuery = reservationExpensesQuery.or(searchOrReservation)
       }
 
       if (categoryFilter !== 'all') {
@@ -465,12 +534,19 @@ export default function CashManagement() {
       
       setBalance(calculatedBalance)
     } catch (error) {
+      if (gen !== loadTransactionsGenRef.current) return
       console.error('현금 거래 내역 로드 오류:', error)
       toast.error('현금 거래 내역을 불러오는 중 오류가 발생했습니다.')
     } finally {
-      setLoading(false)
+      if (gen === loadTransactionsGenRef.current) {
+        setLoading(false)
+      }
     }
   }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamDisplayLabel])
+
+  const applySearch = useCallback(() => {
+    setSearchTerm(searchInput.trim())
+  }, [searchInput])
 
   useEffect(() => {
     loadTeamMembers()
@@ -938,6 +1014,47 @@ export default function CashManagement() {
   const endIndex = startIndex + itemsPerPage
   const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex)
 
+  const autoMatchCashTargets = useMemo((): CashAutoMatchInputRow[] => {
+    const out: CashAutoMatchInputRow[] = []
+    for (const tx of sortedTransactions) {
+      if (tx.source !== 'cash_transactions') continue
+      if (isCashRowReconciled(tx, reconciledCashRowKeys, exemptCashRowKeys)) continue
+      const isBankDeposit =
+        tx.description?.includes('은행 Deposit') || tx.description === '은행 Deposit'
+      if (isBankDeposit) continue
+      out.push({
+        id: tx.id,
+        transaction_date: tx.transaction_date,
+        amount: Math.abs(Number(tx.amount ?? 0)),
+        transaction_type: tx.transaction_type === 'deposit' ? 'deposit' : 'withdrawal',
+        description: tx.description ?? '',
+        category: tx.category,
+        linked_payment_record_id:
+          tx.reference_type === 'payment_record' ? tx.reference_id : null,
+      })
+    }
+    return out.filter((r) => r.amount > AMOUNT_EQUAL_EPS)
+  }, [sortedTransactions, reconciledCashRowKeys, exemptCashRowKeys])
+
+  const autoMatchLedgerTargets = useMemo((): ExpenseAutoMatchInputRow[] => {
+    const out: ExpenseAutoMatchInputRow[] = []
+    for (const tx of sortedTransactions) {
+      if (isCashRowReconciled(tx, reconciledCashRowKeys, exemptCashRowKeys)) continue
+      const r = reconSourceFromCashTransaction(tx)
+      if (!r || r.sourceTable === 'cash_transactions') continue
+      out.push({
+        id: r.sourceId,
+        submit_on: tx.transaction_date,
+        amount: Math.abs(Number(tx.amount ?? 0)),
+        paid_to: tx.description ?? '',
+        paid_for: tx.category ?? '',
+        payment_method: null,
+        sourceTable: r.sourceTable,
+      })
+    }
+    return out.filter((e) => Math.abs(Number(e.amount ?? 0)) > AMOUNT_EQUAL_EPS)
+  }, [sortedTransactions, reconciledCashRowKeys, exemptCashRowKeys])
+
   const cashReconPageKey = useMemo(
     () =>
       paginatedTransactions
@@ -949,9 +1066,12 @@ export default function CashManagement() {
     [paginatedTransactions]
   )
 
-  useEffect(() => {
+  const paginatedTransactionsRef = useRef(paginatedTransactions)
+  paginatedTransactionsRef.current = paginatedTransactions
+
+  const loadCashReconKeys = useCallback(async () => {
     const byTable = new Map<string, string[]>()
-    for (const tx of paginatedTransactions) {
+    for (const tx of paginatedTransactionsRef.current) {
       const r = reconSourceFromCashTransaction(tx)
       if (!r) continue
       const arr = byTable.get(r.sourceTable) ?? []
@@ -960,29 +1080,41 @@ export default function CashManagement() {
     }
     if (byTable.size === 0) {
       setReconciledCashRowKeys(new Set())
+      setExemptCashRowKeys(new Set())
       return
     }
-    let cancelled = false
-    ;(async () => {
-      const keys = new Set<string>()
-      for (const [table, ids] of byTable) {
-        const unique = [...new Set(ids)]
-        if (unique.length === 0) continue
-        try {
-          const matched = await fetchReconciledSourceIds(supabase, table, unique)
-          for (const id of matched) {
-            keys.add(`${table}:${id}`)
-          }
-        } catch {
-          /* ignore row errors */
+    const keys = new Set<string>()
+    const exemptKeys = await fetchReconciliationExemptKeysForSources(supabase, byTable)
+    for (const [table, ids] of byTable) {
+      const unique = [...new Set(ids)]
+      if (unique.length === 0) continue
+      try {
+        if (table === 'cash_transactions') {
+          const [cashMatched, stmtMatched] = await Promise.all([
+            fetchCashLedgerMatchedCashTransactionIds(supabase, unique),
+            fetchReconciledSourceIds(supabase, table, unique),
+          ])
+          for (const id of cashMatched) keys.add(`${table}:${id}`)
+          for (const id of stmtMatched) keys.add(`${table}:${id}`)
+        } else {
+          const [stmtMatched, cashLedgerMatched] = await Promise.all([
+            fetchReconciledSourceIds(supabase, table, unique),
+            fetchCashLedgerMatchedExpenseIds(supabase, table, unique),
+          ])
+          for (const id of stmtMatched) keys.add(`${table}:${id}`)
+          for (const id of cashLedgerMatched) keys.add(`${table}:${id}`)
         }
+      } catch {
+        /* ignore row errors */
       }
-      if (!cancelled) setReconciledCashRowKeys(keys)
-    })()
-    return () => {
-      cancelled = true
     }
-  }, [cashReconPageKey])
+    setReconciledCashRowKeys(keys)
+    setExemptCashRowKeys(exemptKeys)
+  }, [])
+
+  useEffect(() => {
+    void loadCashReconKeys()
+  }, [cashReconPageKey, loadCashReconKeys])
 
   const openCashStmtRecon = useCallback((tx: CashTransaction) => {
     const src = reconSourceFromCashTransaction(tx)
@@ -1153,6 +1285,19 @@ export default function CashManagement() {
         <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle className="text-base sm:text-lg">현금 거래 내역</CardTitle>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto text-sm"
+                title={tBulkAutoMatch('buttonTitle')}
+                onClick={() => setBulkAutoMatchOpen(true)}
+              >
+                <Wand2 className="w-4 h-4 mr-1.5 sm:mr-2" />
+                <span className="hidden sm:inline">{tBulkAutoMatch('button')}</span>
+                <span className="sm:hidden">{tBulkAutoMatch('buttonShort')}</span>
+              </Button>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto text-sm bg-blue-600 hover:bg-blue-700 text-white border-0">
@@ -1296,22 +1441,37 @@ export default function CashManagement() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-3 sm:p-4 lg:p-6">
           <div className="space-y-3 sm:space-y-4">
             {/* 필터 - 모바일 컴팩트 */}
             <div className="flex flex-wrap gap-2 sm:gap-4">
-              <div className="flex-1 min-w-0 sm:min-w-[200px]">
-                <div className="relative">
+              <div className="flex flex-1 min-w-0 sm:min-w-[200px] gap-2">
+                <div className="relative flex-1 min-w-0">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
                     placeholder="검색..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        applySearch()
+                      }
+                    }}
                     className="pl-8 h-8 sm:h-10 text-sm"
                   />
                 </div>
+                <Button
+                  type="button"
+                  className="shrink-0 h-8 sm:h-10 text-sm px-3"
+                  onClick={applySearch}
+                >
+                  <Search className="w-4 h-4 mr-1" />
+                  검색
+                </Button>
               </div>
               <Select value={typeFilter} onValueChange={(value: 'all' | 'deposit' | 'withdrawal' | 'bank_deposit') => setTypeFilter(value)}>
                 <SelectTrigger className="w-full sm:w-[150px] h-8 sm:h-10 text-sm">
@@ -1354,21 +1514,32 @@ export default function CashManagement() {
                     const date = new Date(transaction.transaction_date)
                     const dateStr = `${date.getFullYear()}. ${String(date.getMonth() + 1).padStart(2, '0')}. ${String(date.getDate()).padStart(2, '0')}.`
                     const sourceLabel = transaction.source === 'payment_records' ? '예약 결제' : transaction.source === 'company_expenses' ? '회사 지출' : transaction.source === 'reservation_expenses' ? '예약 지출' : '현금 관리'
+                    const reconSrc = reconSourceFromCashTransaction(transaction)
+                    const rowExempt = isCashRowExempt(transaction, exemptCashRowKeys)
+                    const rowMatched = isCashRowStmtMatched(transaction, reconciledCashRowKeys)
                     return (
                       <div key={transaction.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-1">
                             <ExpenseStatementReconIcon
-                              matched={(() => {
-                                const r = reconSourceFromCashTransaction(transaction)
-                                return r ? reconciledCashRowKeys.has(`${r.sourceTable}:${r.sourceId}`) : false
-                              })()}
-                              disabled={!reconSourceFromCashTransaction(transaction)}
+                              matched={rowMatched}
+                              exempt={rowExempt}
+                              disabled={!reconSrc}
                               titleMatched={tStmt('matchedTitle')}
                               titleUnmatched={tStmt('unmatchedTitle')}
+                              titleExempt={tStmt('exemptTitle')}
                               titleDisabled={tStmt('disabledTitle')}
                               onClick={() => openCashStmtRecon(transaction)}
                             />
+                            {reconSrc ? (
+                              <ExpenseReconciliationExemptToggle
+                                compact
+                                sourceTable={reconSrc.sourceTable}
+                                sourceId={reconSrc.sourceId}
+                                exempt={rowExempt}
+                                onChanged={() => void loadCashReconKeys()}
+                              />
+                            ) : null}
                             <div>
                               <p className="text-xs text-gray-500">{dateStr}</p>
                               <Badge variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'} className="text-xs mt-1">
@@ -1516,21 +1687,34 @@ export default function CashManagement() {
                         transaction.source === 'company_expenses' ? '회사 지출' :
                         transaction.source === 'reservation_expenses' ? '예약 지출' :
                         '현금 관리'
+                      const reconSrc = reconSourceFromCashTransaction(transaction)
+                      const rowExempt = isCashRowExempt(transaction, exemptCashRowKeys)
+                      const rowMatched = isCashRowStmtMatched(transaction, reconciledCashRowKeys)
                       
                       return (
                         <TableRow key={transaction.id} className="h-10">
                           <TableCell className="py-1 w-12 text-center align-middle">
-                            <ExpenseStatementReconIcon
-                              matched={(() => {
-                                const r = reconSourceFromCashTransaction(transaction)
-                                return r ? reconciledCashRowKeys.has(`${r.sourceTable}:${r.sourceId}`) : false
-                              })()}
-                              disabled={!reconSourceFromCashTransaction(transaction)}
-                              titleMatched={tStmt('matchedTitle')}
-                              titleUnmatched={tStmt('unmatchedTitle')}
-                              titleDisabled={tStmt('disabledTitle')}
-                              onClick={() => openCashStmtRecon(transaction)}
-                            />
+                            <div className="inline-flex items-center gap-0.5">
+                              <ExpenseStatementReconIcon
+                                matched={rowMatched}
+                                exempt={rowExempt}
+                                disabled={!reconSrc}
+                                titleMatched={tStmt('matchedTitle')}
+                                titleUnmatched={tStmt('unmatchedTitle')}
+                                titleExempt={tStmt('exemptTitle')}
+                                titleDisabled={tStmt('disabledTitle')}
+                                onClick={() => openCashStmtRecon(transaction)}
+                              />
+                              {reconSrc ? (
+                                <ExpenseReconciliationExemptToggle
+                                  compact
+                                  sourceTable={reconSrc.sourceTable}
+                                  sourceId={reconSrc.sourceId}
+                                  exempt={rowExempt}
+                                  onChanged={() => void loadCashReconKeys()}
+                                />
+                              ) : null}
+                            </div>
                           </TableCell>
                           <TableCell className="py-1 w-52 whitespace-nowrap">
                             {(() => {
@@ -2097,6 +2281,12 @@ export default function CashManagement() {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
               try {
+                const amountRaw = formData.get('amount') as string
+                const amountParsed = parseFloat(amountRaw)
+                if (amountRaw === '' || !Number.isFinite(amountParsed)) {
+                  toast.error('금액을 확인하세요.')
+                  return
+                }
                 const oldValues = {
                   amount: editingReservationExpense.amount,
                   submit_on: editingReservationExpense.submit_on,
@@ -2105,7 +2295,7 @@ export default function CashManagement() {
                   paid_to: editingReservationExpense.paid_to
                 }
                 const newValues = {
-                  amount: parseFloat(formData.get('amount') as string),
+                  amount: amountParsed,
                   submit_on: new Date(formData.get('submit_on') as string).toISOString(),
                   note: (formData.get('note') as string) || null,
                   paid_for: (formData.get('paid_for') as string) || null,
@@ -2142,7 +2332,6 @@ export default function CashManagement() {
                     name="amount"
                     type="number"
                     step="0.01"
-                    min="0"
                     defaultValue={editingReservationExpense.amount}
                     required
                   />
@@ -2231,6 +2420,14 @@ export default function CashManagement() {
           if (!o) setStmtReconCtx(null)
         }}
         context={stmtReconCtx}
+        onApplied={() => void loadTransactions()}
+      />
+
+      <CashTransactionBulkAutoMatchModal
+        open={bulkAutoMatchOpen}
+        onOpenChange={setBulkAutoMatchOpen}
+        cashTargets={autoMatchCashTargets}
+        ledgerTargets={autoMatchLedgerTargets}
         onApplied={() => void loadTransactions()}
       />
     </div>

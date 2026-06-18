@@ -85,6 +85,7 @@ import {
   browserLocalWeekRangeFromOffset,
   formatBrowserLocalYmdRangeDisplay,
   browserLocalCalendarMonthWindow,
+  browserLocalCalendarViewWindow,
   browserLocalCalendarYearWindow,
   browserLocalCalendarYearMonthKeys,
   browserLocalCreatedAtGteIsoForRecentCalendarDays,
@@ -196,6 +197,8 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   regCancelGranularity: 'week' as 'week' | 'month' | 'year',
   regCancelMonthOffset: 0,
   regCancelYearOffset: 0,
+  /** 예약 달력 뷰: 오늘 기준 달 오프셋(0=이번 달) */
+  calendarMonthOffset: 0,
 }
 
 function localWeekdayIndexFromYmd(ymd: string): number {
@@ -709,6 +712,7 @@ export default function AdminReservations() {
     regCancelGranularity: regCancelGranularityStored,
     regCancelMonthOffset: regCancelMonthOffsetStored,
     regCancelYearOffset: regCancelYearOffsetStored,
+    calendarMonthOffset: calendarMonthOffsetStored,
   } = reservationListUi as typeof RESERVATIONS_LIST_UI_DEFAULT & { currentWeek?: number }
   const statisticsWeekOffset =
     statisticsWeekOffsetStored ?? (reservationListUi as { currentWeek?: number }).currentWeek ?? 0
@@ -717,6 +721,7 @@ export default function AdminReservations() {
   const regCancelGranularity = regCancelGranularityStored ?? 'week'
   const regCancelMonthOffset = regCancelMonthOffsetStored ?? 0
   const regCancelYearOffset = regCancelYearOffsetStored ?? 0
+  const calendarMonthOffset = calendarMonthOffsetStored ?? 0
 
   // setReservationListUi 는 useState setter라 안정 참조 — 모든 setter를 useCallback 으로 감싸
   // memoized 자식 컴포넌트(ReservationsHeader/ReservationsFilters/...)의 props 안정성을 보장한다.
@@ -730,6 +735,10 @@ export default function AdminReservations() {
   )
   const setViewMode = useCallback(
     (m: 'card' | 'calendar' | 'list') => setReservationListUi((u) => ({ ...u, viewMode: m })),
+    [setReservationListUi]
+  )
+  const setCalendarMonthOffset = useCallback(
+    (offset: number) => setReservationListUi((u) => ({ ...u, calendarMonthOffset: offset })),
     [setReservationListUi]
   )
   const setCardLayout = useCallback(
@@ -1934,14 +1943,7 @@ export default function AdminReservations() {
       }
 
       if (viewMode === 'calendar') {
-        const calStart = new Date()
-        calStart.setMonth(calStart.getMonth() - 6)
-        calStart.setHours(0, 0, 0, 0)
-        const calEnd = new Date()
-        calEnd.setMonth(calEnd.getMonth() + 6)
-        calEnd.setHours(23, 59, 59, 999)
-        const fmt = (d: Date) =>
-          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const calWindow = browserLocalCalendarViewWindow(calendarMonthOffset)
         const { data, count, error } = await fetchAdminReservationList(supabase, {
           mode: 'calendar',
           page: 1,
@@ -1953,12 +1955,18 @@ export default function AdminReservations() {
           debouncedSearchTerm,
           sortBy,
           sortOrder,
-          calendarTourDateStart: fmt(calStart),
-          calendarTourDateEnd: fmt(calEnd),
-          calendarCreatedStartIso: calStart.toISOString(),
-          calendarCreatedEndIso: calEnd.toISOString(),
+          calendarTourDateStart: calWindow.startYmd,
+          calendarTourDateEnd: calWindow.endYmd,
+          calendarCreatedStartIso: calWindow.rangeStartIso,
+          calendarCreatedEndIso: calWindow.rangeEndIso,
+          onCalendarFetchProgress: ({ loaded, total }) => {
+            if (fetchGen === adminCardWeekFetchGenRef.current) {
+              setAdminListChunkProgress({ loaded, total })
+            }
+          },
         })
         if (error) throw error
+        if (fetchGen !== adminCardWeekFetchGenRef.current) return
         await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
         setServerListTotal(count ?? 0)
@@ -2173,6 +2181,7 @@ export default function AdminReservations() {
     regCancelGranularity,
     regCancelMonthOffset,
     regCancelYearOffset,
+    calendarMonthOffset,
     applyReservationListSideDataPrefetch,
     mergeReservationListSideDataPrefetch,
   ])
@@ -4346,8 +4355,9 @@ export default function AdminReservations() {
   const reservationFormCatalogOptions: Option[] = (catalogOptions || []) as Option[]
 
   /** 헤더·필터는 유지하고, 스토리지 복원·카탈로그·목록 구간은 본문만 로딩 */
+  const calendarListLoading = serverListLoading || !!adminListChunkProgress
   const showMainBodyLoading =
-    !reservationListUiHydrated || loading || serverListLoading
+    !reservationListUiHydrated || loading || (serverListLoading && viewMode !== 'calendar')
   const mainBodyLoadingHeadline =
     !reservationListUiHydrated || loading
       ? t('loadingReservationData')
@@ -4673,6 +4683,10 @@ export default function AdminReservations() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           reservations={calendarReservations as any} 
           onReservationClick={handleCalendarReservationClick}
+          viewMonthOffset={calendarMonthOffset}
+          onViewMonthOffsetChange={setCalendarMonthOffset}
+          isLoading={calendarListLoading}
+          loadingProgress={reservationsPageLoadingProgress}
         />
       ) : (
           /* ????*/

@@ -12,8 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import TipsShareModal from '@/components/TipsShareModal'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import {
   fetchEmployeeHourlyRatePeriods,
   getHourlyRateForEmployeeOnDate,
@@ -1718,6 +1717,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
   // PDF 생성 및 업로드
   const generateAndUploadPDF = async (): Promise<string | null> => {
+    const html2canvas = await loadHtml2Canvas()
+    const jsPDF = await loadJsPDF()
     if (!selectedEmployee || !startDate || !endDate) {
       alert('직원과 날짜를 선택해주세요.')
       return null

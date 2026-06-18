@@ -1,13 +1,13 @@
 'use client'
 
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
+import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import {
   duplicateExtraKeysToSelect,
   findPnlDetailDuplicateGroups,
   pnlDetailLineKey,
 } from '@/lib/pnl-expense-detail-duplicates'
 import type { PnlDetailLine } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
+import { isPnlLineStatementReconCovered } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import type { PnlTableRow } from '@/lib/pnlStandardCategoryTable'
 import type { PnlDepositTableRow } from '@/lib/pnlPaymentRecords'
 import {
@@ -88,7 +88,7 @@ export function computePnlTaxReadinessStats(
   for (const l of lines) {
     const amt = Number(l.amount) || 0
     totalAmount += amt
-    if (l.statementReconciled) {
+    if (isPnlLineStatementReconCovered(l)) {
       reconciledAmount += amt
       reconciledCount += 1
     }
@@ -554,6 +554,8 @@ export async function downloadPnlTaxReportPdf(data: PnlTaxReportExportData): Pro
   document.body.appendChild(container)
 
   try {
+    const html2canvas = await loadHtml2Canvas()
+    const jsPDF = await loadJsPDF()
     const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,

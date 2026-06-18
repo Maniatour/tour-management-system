@@ -101,7 +101,7 @@ export async function PUT(
 
     if (body.amount !== undefined && body.amount !== null) {
       const n = typeof body.amount === 'number' ? body.amount : parseFloat(String(body.amount))
-      if (!Number.isFinite(n) || n === 0) {
+      if (!Number.isFinite(n)) {
         return NextResponse.json(
           { success: false, message: 'Invalid amount' },
           { status: 400 }

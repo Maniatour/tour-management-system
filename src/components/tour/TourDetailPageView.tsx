@@ -3,6 +3,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -39,7 +40,6 @@ import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
 import BookingModal from '@/components/tour/modals/BookingModal'
 import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupScheduleAutoGenerateModal'
-import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import TourPrintModal from '@/components/tour/modals/TourPrintModal'
@@ -85,6 +85,11 @@ import {
   X,
   Printer
 } from 'lucide-react'
+
+const PickupScheduleEmailPreviewModal = dynamic(
+  () => import('@/components/tour/modals/PickupScheduleEmailPreviewModal'),
+  { ssr: false, loading: () => null }
+)
 
 // setTour 콜백용 투어 타입
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -1748,21 +1753,8 @@ export function TourDetailPageView({
     }
   }, [ticketBookings, showTicketBookingDetails])
 
-  // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-  
-  // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
-  if (!tourData.isStaff) {
-    return null
-  }
-
-  if (tourData.pageLoading) {
+  // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
+  if (loading || tourData.pageLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* 헤더 스켈레톤 */}
@@ -1840,6 +1832,11 @@ export function TourDetailPageView({
         </div>
       </div>
     )
+  }
+
+  // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
+  if (!tourData.isStaff) {
+    return null
   }
 
   if (!tourData.tour) {

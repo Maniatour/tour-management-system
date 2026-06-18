@@ -18,7 +18,7 @@ import {
   type ResidentInquiryEmailTourKind,
 } from '@/lib/residentInquiryTourKind'
 import { supabase } from '@/lib/supabase'
-import ResidentInquiryEmailBodyRichEditor from '@/components/reservation/ResidentInquiryEmailBodyRichEditor'
+import LazyResidentInquiryEmailBodyRichEditor from '@/components/reservation/LazyResidentInquiryEmailBodyRichEditor'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 
 export interface ResidentInquiryEmailPreviewModalProps {
@@ -410,7 +410,7 @@ export default function ResidentInquiryEmailPreviewModal({
                     <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
                   </div>
                 ) : (
-                  <ResidentInquiryEmailBodyRichEditor
+                  <LazyResidentInquiryEmailBodyRichEditor
                     key={templateEditorNonce}
                     value={bodyHtml}
                     onChange={setBodyHtml}

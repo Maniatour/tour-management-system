@@ -6,9 +6,7 @@ import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as Im
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
-import html2pdf from 'html2pdf.js'
+import { loadHtml2Canvas, loadHtml2Pdf, loadJsPDF } from '@/lib/lazyPdfLibs'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
@@ -739,6 +737,7 @@ export default function PickupScheduleEmailPreviewModal({
 
     setDownloading(true)
     try {
+      const html2canvas = await loadHtml2Canvas()
       const canvas = await html2canvas(emailPreviewRef.current, {
         backgroundColor: '#ffffff',
         scale: 1.5, // scale을 낮춰서 용량 감소
@@ -772,6 +771,7 @@ export default function PickupScheduleEmailPreviewModal({
 
     setDownloading(true)
     try {
+      const html2pdf = await loadHtml2Pdf()
       const customerName = emailContent.customer?.name || 'customer'
       // 영문 파일명으로 생성 (한글 제거 및 영문 변환)
       const sanitizedCustomerName = customerName
@@ -808,6 +808,8 @@ export default function PickupScheduleEmailPreviewModal({
       console.error('PDF 다운로드 오류:', error)
       // 폴백: 기존 방식으로 시도
       try {
+        const html2canvas = await loadHtml2Canvas()
+        const jsPDF = await loadJsPDF()
         const canvas = await html2canvas(emailPreviewRef.current, {
           backgroundColor: '#ffffff',
           scale: 2,

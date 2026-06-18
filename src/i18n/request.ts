@@ -1,6 +1,7 @@
 import { getRequestConfig } from 'next-intl/server'
 import { headers } from 'next/headers'
-import { loadLocaleMessages } from './loadLocaleMessages'
+import { loadLocaleMessages, loadLocaleMessagesForRoute } from './loadLocaleMessages'
+import { shouldLoadFullLocaleMessages } from './messageNamespaces'
 
 const SUPPORTED_LOCALES = ['ko', 'en'] as const
 
@@ -28,16 +29,25 @@ async function resolveLocaleWithCookie(locale: string | undefined): Promise<stri
   return 'ko'
 }
 
+async function resolveRequestPathname(): Promise<string> {
+  const headersList = await headers()
+  return headersList.get('x-pathname') ?? ''
+}
+
 export default getRequestConfig(async ({ locale }) => {
   const resolvedLocale = await resolveLocaleWithCookie(locale)
+  const pathname = await resolveRequestPathname()
+  const loadMessages = shouldLoadFullLocaleMessages()
+    ? loadLocaleMessages
+    : (loc: string) => loadLocaleMessagesForRoute(loc, pathname)
 
   try {
-    const messages = await loadLocaleMessages(resolvedLocale)
+    const messages = await loadMessages(resolvedLocale)
     return { locale: resolvedLocale, messages }
   } catch (error) {
     console.error(`Failed to load messages for locale: ${resolvedLocale}`, error)
     const fallbackLocale = resolveLocale('ko')
-    const fallbackMessages = await loadLocaleMessages(fallbackLocale)
+    const fallbackMessages = await loadMessages(fallbackLocale)
     return {
       locale: fallbackLocale,
       messages: fallbackMessages,

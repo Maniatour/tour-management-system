@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Send, DollarSign, Users, Calendar, MapPin, Route, Plus, Save, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import type { Database } from '@/lib/database.types'
 
 // Google Maps 타입 정의 - 다른 파일의 타입 선언과 충돌을 피하기 위해 any 사용
@@ -1088,6 +1087,8 @@ export default function EstimateModal({
 
     setSaving(true)
     try {
+      const html2canvas = await loadHtml2Canvas()
+      const jsPDF = await loadJsPDF()
       // 고객 ID 찾기
       let customerId: string | null = null
       if (customer?.id) {

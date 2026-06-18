@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Send, DollarSign, Package, Plus, Trash2, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
-import html2pdf from 'html2pdf.js'
+import { loadHtml2Pdf } from '@/lib/lazyPdfLibs'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
@@ -1372,6 +1372,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         },
         pagebreak: { mode: 'avoid-all' as const },
       }
+      const html2pdf = await loadHtml2Pdf()
       await html2pdf().set(opt).from(bodyEl).save()
     } catch (error) {
       console.error('인보이스 PDF 저장 오류:', error)

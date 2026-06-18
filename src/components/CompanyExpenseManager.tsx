@@ -49,6 +49,10 @@ import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import { fetchCashLedgerMatchedExpenseIds } from '@/lib/expense-cash-ledger-match'
+import { fetchReconciliationExemptSourceIds } from '@/lib/expense-reconciliation-exemptions'
+import ExpenseReconciliationExemptToggle from '@/components/reconciliation/ExpenseReconciliationExemptToggle'
+import ExpenseReconciliationBulkExemptActions from '@/components/reconciliation/ExpenseReconciliationBulkExemptActions'
 import { toast } from 'sonner'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
@@ -199,6 +203,7 @@ export default function CompanyExpenseManager({
   const urlInitSets = setsFromFilterArrays(urlInit)
   const filterStorageBootRef = useRef(false)
   const prevFilterKeyRef = useRef<string | null>(null)
+  const loadExpensesAbortRef = useRef<AbortController | null>(null)
 
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
@@ -211,6 +216,8 @@ export default function CompanyExpenseManager({
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<CompanyExpense | null>(null)
   const [searchTerm, setSearchTerm] = useState(urlInit.searchTerm)
+  /** 입력창 값 — 검색 버튼·Enter 시에만 searchTerm(조회)에 반영 */
+  const [searchInput, setSearchInput] = useState(urlInit.searchTerm)
   const [statusFilters, setStatusFilters] = useState<Set<string>>(() => new Set(urlInitSets.statusFilters))
   const [vehicleFilters, setVehicleFilters] = useState<Set<string>>(() => new Set(urlInitSets.vehicleFilters))
   const [paidToFilters, setPaidToFilters] = useState<Set<string>>(() => new Set(urlInitSets.paidToFilters))
@@ -260,6 +267,10 @@ export default function CompanyExpenseManager({
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
   /** reconciliation_matches에 연결된 회사 지출 id */
   const [reconciledExpenseIds, setReconciledExpenseIds] = useState<Set<string>>(() => new Set())
+  /** expense_cash_ledger_matches에 연결된 회사 지출 id */
+  const [cashLedgerMatchedExpenseIds, setCashLedgerMatchedExpenseIds] = useState<Set<string>>(() => new Set())
+  /** 명세·현금 대조 불필요로 표시된 id */
+  const [exemptExpenseIds, setExemptExpenseIds] = useState<Set<string>>(() => new Set())
   const [vehicleMaintenanceOpen, setVehicleMaintenanceOpen] = useState(false)
   const [vehicleMaintenanceForId, setVehicleMaintenanceForId] = useState<string | null>(null)
   const [vehicleMaintenanceRows, setVehicleMaintenanceRows] = useState<VehicleMaintenanceIntegrationRow[]>([])
@@ -418,6 +429,10 @@ export default function CompanyExpenseManager({
   }, [filterUrlState])
 
   const loadExpenses = useCallback(async () => {
+    loadExpensesAbortRef.current?.abort()
+    const abortController = new AbortController()
+    loadExpensesAbortRef.current = abortController
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -444,12 +459,15 @@ export default function CompanyExpenseManager({
       }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
-      
+
       const response = await fetch(`/api/company-expenses?${params.toString()}`, {
         headers: apiBearerAuthHeaders(),
+        signal: abortController.signal,
       })
+      if (abortController.signal.aborted) return
+
       const result = await response.json()
-      
+
       if (response.ok) {
         setExpenses(result.data || [])
         setPagination(result.pagination || { page: 1, limit: pageLimit, total: 0, totalPages: 1 })
@@ -461,7 +479,9 @@ export default function CompanyExpenseManager({
       console.error('지출 목록 로드 오류:', error)
       toast.error('지출 목록을 불러오는 중 오류가 발생했습니다.')
     } finally {
-      setLoading(false)
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [
     searchTerm,
@@ -484,15 +504,39 @@ export default function CompanyExpenseManager({
     const ids = expenses.map((e) => e.id)
     if (ids.length === 0) {
       setReconciledExpenseIds(new Set())
+      setCashLedgerMatchedExpenseIds(new Set())
+      setExemptExpenseIds(new Set())
       return
     }
     let cancelled = false
-    void fetchReconciledSourceIds(supabase, 'company_expenses', ids).then((set) => {
-      if (!cancelled) setReconciledExpenseIds(set)
+    void Promise.all([
+      fetchReconciledSourceIds(supabase, 'company_expenses', ids),
+      fetchCashLedgerMatchedExpenseIds(supabase, 'company_expenses', ids),
+      fetchReconciliationExemptSourceIds(supabase, 'company_expenses', ids),
+    ]).then(([stmt, cash, exempt]) => {
+      if (!cancelled) {
+        setReconciledExpenseIds(stmt)
+        setCashLedgerMatchedExpenseIds(cash)
+        setExemptExpenseIds(exempt)
+      }
     })
     return () => {
       cancelled = true
     }
+  }, [expenses])
+
+  const refreshExpenseReconFlags = useCallback(() => {
+    const ids = expenses.map((e) => e.id)
+    if (ids.length === 0) return
+    void Promise.all([
+      fetchReconciledSourceIds(supabase, 'company_expenses', ids),
+      fetchCashLedgerMatchedExpenseIds(supabase, 'company_expenses', ids),
+      fetchReconciliationExemptSourceIds(supabase, 'company_expenses', ids),
+    ]).then(([stmt, cash, exempt]) => {
+      setReconciledExpenseIds(stmt)
+      setCashLedgerMatchedExpenseIds(cash)
+      setExemptExpenseIds(exempt)
+    })
   }, [expenses])
 
   const loadVehicles = useCallback(async () => {
@@ -1543,7 +1587,12 @@ export default function CompanyExpenseManager({
     [expenses]
   )
 
+  const applySearch = useCallback(() => {
+    setSearchTerm(searchInput.trim())
+  }, [searchInput])
+
   const resetFilters = () => {
+    setSearchInput('')
     setSearchTerm('')
     setStatusFilters(new Set())
     setVehicleFilters(new Set())
@@ -2015,11 +2064,26 @@ export default function CompanyExpenseManager({
               <input
                 type="text"
                 placeholder={t('filters.searchPlaceholder')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    applySearch()
+                  }
+                }}
                 className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
+            <Button
+              type="button"
+              variant="default"
+              className="shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 flex items-center gap-1.5"
+              onClick={applySearch}
+            >
+              <Search className="w-4 h-4" />
+              {t('filters.search')}
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -3043,6 +3107,12 @@ export default function CompanyExpenseManager({
                 <Trash2 className="h-4 w-4 mr-1.5 shrink-0" aria-hidden />
                 {listBatchDeleting ? t('listBatchDelete.deleting') : t('listBatchDelete.deleteButton')}
               </Button>
+              <ExpenseReconciliationBulkExemptActions
+                sourceTable="company_expenses"
+                selectedIds={listSelectedIds}
+                disabled={listBatchApplying || listBatchDeleting}
+                onApplied={refreshExpenseReconFlags}
+              />
               <AlertDialog open={listBatchDeleteConfirmOpen} onOpenChange={setListBatchDeleteConfirmOpen}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -3105,10 +3175,22 @@ export default function CompanyExpenseManager({
                       <div className="font-semibold text-gray-900 text-sm flex-1 flex flex-col gap-1 min-w-0">
                         <p className="flex items-center gap-1.5 min-w-0">
                           <ExpenseStatementReconIcon
-                            matched={reconciledExpenseIds.has(expense.id)}
+                            matched={
+                              reconciledExpenseIds.has(expense.id) ||
+                              cashLedgerMatchedExpenseIds.has(expense.id)
+                            }
+                            exempt={exemptExpenseIds.has(expense.id)}
                             titleMatched={tStmtRecon('matchedTitle')}
                             titleUnmatched={tStmtRecon('unmatchedTitle')}
+                            titleExempt={tStmtRecon('exemptTitle')}
                             onClick={() => openStmtReconForExpense(expense)}
+                          />
+                          <ExpenseReconciliationExemptToggle
+                            compact
+                            sourceTable="company_expenses"
+                            sourceId={expense.id}
+                            exempt={exemptExpenseIds.has(expense.id)}
+                            onChanged={() => refreshExpenseReconFlags()}
                           />
                           <span className="truncate">{expense.paid_to || '—'}</span>
                         </p>
@@ -3311,6 +3393,9 @@ export default function CompanyExpenseManager({
                   expenses={sortedExpenses}
                   handleEdit={handleEdit}
                   reconciledExpenseIds={reconciledExpenseIds}
+                  cashLedgerMatchedExpenseIds={cashLedgerMatchedExpenseIds}
+                  exemptExpenseIds={exemptExpenseIds}
+                  onExemptChanged={refreshExpenseReconFlags}
                   onOpenStatementRecon={openStmtReconForExpense}
                   paymentMethodMap={paymentMethodMap}
                   getStatusBadge={getStatusBadge}
@@ -3655,6 +3740,7 @@ export default function CompanyExpenseManager({
         context={stmtReconCtx}
         onApplied={() => {
           void loadExpenses()
+          refreshExpenseReconFlags()
         }}
       />
 

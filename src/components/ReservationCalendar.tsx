@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, memo, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter, Loader2 } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import type { Database } from '@/lib/supabase'
 
@@ -24,6 +24,12 @@ interface ReservationCalendarProps {
   reservations: CalendarReservation[]
   onReservationClick: (reservation: Reservation) => void
   onLoadComplete?: () => void
+  /** 오늘 기준 달 오프셋(0=이번 달). 지정 시 월 이동이 부모와 동기화된다. */
+  viewMonthOffset?: number
+  onViewMonthOffsetChange?: (offset: number) => void
+  /** 월·필터 변경 등 목록 재조회 중 — 달력은 유지하고 그리드 위에 표시 */
+  isLoading?: boolean
+  loadingProgress?: { current: number; total: number }
 }
 
 const MONTH_NAMES = [
@@ -202,12 +208,23 @@ const ReservationCalendar = memo(function ReservationCalendar({
   reservations,
   onReservationClick,
   onLoadComplete,
+  viewMonthOffset: viewMonthOffsetProp,
+  onViewMonthOffsetChange,
+  isLoading = false,
+  loadingProgress,
 }: ReservationCalendarProps) {
   // 사용 안 하는 t — 번역 키가 추가되면 활용
   useTranslations('reservations')
   const locale = useLocale()
-  const [currentDate, setCurrentDate] = useState(() => new Date())
+  const [internalMonthOffset, setInternalMonthOffset] = useState(0)
+  const viewMonthOffset = viewMonthOffsetProp ?? internalMonthOffset
+  const setViewMonthOffset = onViewMonthOffsetChange ?? setInternalMonthOffset
   const [dateFilter, setDateFilter] = useState<'created_at' | 'tour_date'>('created_at')
+
+  const currentDate = useMemo(() => {
+    const today = new Date()
+    return new Date(today.getFullYear(), today.getMonth() + viewMonthOffset, 1)
+  }, [viewMonthOffset])
 
   useEffect(() => {
     if (onLoadComplete) {
@@ -265,12 +282,12 @@ const ReservationCalendar = memo(function ReservationCalendar({
   )
 
   const goToPreviousMonth = useCallback(() => {
-    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-  }, [])
+    setViewMonthOffset(viewMonthOffset - 1)
+  }, [setViewMonthOffset, viewMonthOffset])
 
   const goToNextMonth = useCallback(() => {
-    setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-  }, [])
+    setViewMonthOffset(viewMonthOffset + 1)
+  }, [setViewMonthOffset, viewMonthOffset])
 
   const isToday = useCallback((date: Date) => {
     const today = new Date()
@@ -308,8 +325,11 @@ const ReservationCalendar = memo(function ReservationCalendar({
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="text-lg font-medium text-gray-900">
+          <span className="text-lg font-medium text-gray-900 flex items-center gap-2">
             {currentDate.getFullYear()}년 {MONTH_NAMES[currentDate.getMonth()]}
+            {isLoading && (
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" aria-hidden />
+            )}
           </span>
           <button
             onClick={goToNextMonth}
@@ -320,38 +340,55 @@ const ReservationCalendar = memo(function ReservationCalendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-2">
-        {DAY_NAMES.map((day, index) => (
+      <div className="relative">
+        {isLoading && (
           <div
-            key={day}
-            className={`p-2 text-center text-sm font-medium ${
-              index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
-            }`}
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-md bg-white/60 backdrop-blur-[1px]"
+            aria-live="polite"
+            aria-busy="true"
           >
-            {day}
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            {loadingProgress && loadingProgress.total > 0 && (
+              <p className="mt-2 text-sm text-gray-600">
+                {loadingProgress.current} / {loadingProgress.total}
+              </p>
+            )}
           </div>
-        ))}
-      </div>
+        )}
 
-      <div className="grid grid-cols-7 gap-1">
-        {calendarDays.map((date, index) => {
-          const dayReservations = getReservationsForDate(date)
-          const isCurrentMonthDay = isCurrentMonth(date)
-          const isTodayDate = isToday(date)
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {DAY_NAMES.map((day, index) => (
+            <div
+              key={day}
+              className={`p-2 text-center text-sm font-medium ${
+                index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
+              }`}
+            >
+              {day}
+            </div>
+          ))}
+        </div>
 
-          return (
-            <CalendarDayCell
-              key={`${date.getTime()}-${index}`}
-              date={date}
-              dayReservations={dayReservations}
-              isCurrentMonthDay={isCurrentMonthDay}
-              isTodayDate={isTodayDate}
-              dateFilter={dateFilter}
-              locale={locale}
-              onReservationClick={onReservationClick}
-            />
-          )
-        })}
+        <div className={`grid grid-cols-7 gap-1 ${isLoading ? 'pointer-events-none opacity-70' : ''}`}>
+          {calendarDays.map((date, index) => {
+            const dayReservations = getReservationsForDate(date)
+            const isCurrentMonthDay = isCurrentMonth(date)
+            const isTodayDate = isToday(date)
+
+            return (
+              <CalendarDayCell
+                key={`${date.getTime()}-${index}`}
+                date={date}
+                dayReservations={dayReservations}
+                isCurrentMonthDay={isCurrentMonthDay}
+                isTodayDate={isTodayDate}
+                dateFilter={dateFilter}
+                locale={locale}
+                onReservationClick={onReservationClick}
+              />
+            )
+          })}
+        </div>
       </div>
 
       <div className="mt-6 pt-4 border-t border-gray-200">

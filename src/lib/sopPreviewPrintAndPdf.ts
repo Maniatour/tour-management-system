@@ -1,7 +1,6 @@
 'use client'
 
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 
 function escapeHtmlTitle(title: string): string {
   return title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
@@ -72,6 +71,8 @@ export function printDomCloneWithStyles(root: HTMLElement, documentTitle: string
 
 /** A4 미리보기 루트를 캡처해 PDF 저장(여러 페이지 자동 분할) */
 export async function downloadDomAsA4Pdf(root: HTMLElement, fileBaseName: string): Promise<void> {
+  const html2canvas = await loadHtml2Canvas()
+  const jsPDF = await loadJsPDF()
   const canvas = await html2canvas(root, {
     scale: 2,
     useCORS: true,

@@ -15,7 +15,7 @@ import {
 } from '@/lib/cancellationFollowUpMessage'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import { supabase } from '@/lib/supabase'
-import ResidentInquiryEmailBodyRichEditor from '@/components/reservation/ResidentInquiryEmailBodyRichEditor'
+import LazyResidentInquiryEmailBodyRichEditor from '@/components/reservation/LazyResidentInquiryEmailBodyRichEditor'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 
 export interface CancellationFollowUpMessagePreviewModalProps {
@@ -455,7 +455,7 @@ export default function CancellationFollowUpMessagePreviewModal({
                     <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
                   </div>
                 ) : channel === 'email' ? (
-                  <ResidentInquiryEmailBodyRichEditor
+                  <LazyResidentInquiryEmailBodyRichEditor
                     key={templateEditorNonce}
                     value={bodyTpl}
                     onChange={setBodyTpl}

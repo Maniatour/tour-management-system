@@ -10,6 +10,10 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { formatStatementLineDescription } from '@/lib/statement-display'
+import {
+  isYmdWithinInclusiveRange,
+  parseStatementSearchDateQuery,
+} from '@/lib/statement-search-date'
 
 export type CoverageMonthStatementLine = {
   id: string
@@ -65,10 +69,18 @@ export default function CoverageMonthDetailDialog({
   }, [open])
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const qRaw = search.trim()
+    const q = qRaw.toLowerCase()
     if (!q) return lines
+    const dateRange = parseStatementSearchDateQuery(qRaw, { referenceYear: year })
     const terms = q.split(/\s+/).filter(Boolean)
     return lines.filter((l) => {
+      const postedYmd = String(l.posted_date ?? '').trim().slice(0, 10)
+      const dateHit =
+        dateRange != null &&
+        postedYmd.length >= 10 &&
+        isYmdWithinInclusiveRange(postedYmd, dateRange.startYmd, dateRange.endYmd)
+      if (dateHit) return true
       const desc = formatStatementLineDescription(l.description, l.merchant)
       const haystack = [
         l.posted_date,
@@ -81,7 +93,7 @@ export default function CoverageMonthDetailDialog({
         .toLowerCase()
       return terms.every((t) => haystack.includes(t))
     })
-  }, [lines, search])
+  }, [lines, search, year])
 
   const reconciledInView = filtered.filter((l) => isReconciledStatus(l.matched_status)).length
   const outflowTotal = filtered

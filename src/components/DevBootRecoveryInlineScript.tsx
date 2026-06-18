@@ -11,6 +11,7 @@ export const DEV_BOOT_RECOVERY_INLINE_SCRIPT = `
   }
   function reloadOnce() {
     try {
+      if (document.visibilityState !== 'visible') return;
       if (sessionStorage.getItem(CHUNK_KEY)) return;
       sessionStorage.setItem(CHUNK_KEY, '1');
     } catch (e) {}
@@ -18,14 +19,17 @@ export const DEV_BOOT_RECOVERY_INLINE_SCRIPT = `
   }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function (regs) {
+      if (!regs.length) return;
       regs.forEach(function (r) { r.unregister(); });
     }).catch(function () {});
   }
   if (typeof caches !== 'undefined') {
     caches.keys().then(function (keys) {
-      keys.forEach(function (k) {
-        if (/workbox|serwist|precache/i.test(k)) caches.delete(k);
+      var stale = keys.filter(function (k) {
+        return /workbox|serwist|precache/i.test(k);
       });
+      if (!stale.length) return;
+      stale.forEach(function (k) { caches.delete(k); });
     }).catch(function () {});
   }
   window.addEventListener('error', function (e) {

@@ -26,6 +26,8 @@ export type LedgerMatchDetail = {
   ea?: number | null
   /** 입장권 — 연결 투어 요약(날짜·상품명) */
   linked_tour_label?: string | null
+  /** submit_by / submitted_by (이메일) */
+  submitter_email?: string | null
 }
 
 function ymdFromIso(raw: string | null | undefined): string {
@@ -76,11 +78,12 @@ async function fetchCompanyExpenseDetails(
   if (ids.length === 0) return []
   const { data } = await supabase
     .from('company_expenses')
-    .select('id,amount,submit_on,paid_to,paid_for,description,payment_method')
+    .select('id,amount,submit_on,paid_to,paid_for,description,payment_method,submit_by')
     .in('id', ids)
   return ((data || []) as Record<string, unknown>[]).map((r) => {
     const id = String(r.id)
     const key = `company_expenses:${id}`
+    const submitter = r.submit_by == null ? null : String(r.submit_by).trim() || null
     return {
       source_table: 'company_expenses',
       source_id: id,
@@ -95,6 +98,7 @@ async function fetchCompanyExpenseDetails(
       rn_number: null,
       check_in_date_ymd: null,
       tour_date_ymd: null,
+      submitter_email: submitter,
     }
   })
 }
@@ -107,13 +111,14 @@ async function fetchTourExpenseDetails(
   if (ids.length === 0) return []
   const { data } = await supabase
     .from('tour_expenses')
-    .select('id,amount,submit_on,paid_to,paid_for,note,tour_date,payment_method')
+    .select('id,amount,submit_on,paid_to,paid_for,note,tour_date,payment_method,submitted_by')
     .in('id', ids)
   return ((data || []) as Record<string, unknown>[]).map((r) => {
     const id = String(r.id)
     const key = `tour_expenses:${id}`
     const submitYmd = ymdFromIso(String(r.submit_on ?? ''))
     const tourYmd = ymdFromIso(String(r.tour_date ?? ''))
+    const submitter = r.submitted_by == null ? null : String(r.submitted_by).trim() || null
     return {
       source_table: 'tour_expenses',
       source_id: id,
@@ -128,6 +133,7 @@ async function fetchTourExpenseDetails(
       rn_number: null,
       check_in_date_ymd: null,
       tour_date_ymd: tourYmd || null,
+      submitter_email: submitter,
     }
   })
 }
@@ -140,11 +146,12 @@ async function fetchReservationExpenseDetails(
   if (ids.length === 0) return []
   const { data } = await supabase
     .from('reservation_expenses')
-    .select('id,amount,submit_on,paid_to,paid_for,note,payment_method')
+    .select('id,amount,submit_on,paid_to,paid_for,note,payment_method,submitted_by')
     .in('id', ids)
   return ((data || []) as Record<string, unknown>[]).map((r) => {
     const id = String(r.id)
     const key = `reservation_expenses:${id}`
+    const submitter = r.submitted_by == null ? null : String(r.submitted_by).trim() || null
     return {
       source_table: 'reservation_expenses',
       source_id: id,
@@ -159,6 +166,7 @@ async function fetchReservationExpenseDetails(
       rn_number: null,
       check_in_date_ymd: null,
       tour_date_ymd: null,
+      submitter_email: submitter,
     }
   })
 }
@@ -190,7 +198,7 @@ async function fetchTicketBookingDetails(
   const { data } = await supabase
     .from('ticket_bookings')
     .select(
-      'id,expense,submit_on,check_in_date,category,company,rn_number,note,payment_method,ea,tour_id'
+      'id,expense,submit_on,check_in_date,category,company,rn_number,note,payment_method,ea,tour_id,submitted_by'
     )
     .in('id', ids)
   const rows = (data || []) as Record<string, unknown>[]
@@ -240,6 +248,7 @@ async function fetchTicketBookingDetails(
     const tourMeta = tourId ? tourMetaById.get(tourId) : undefined
     const eaRaw = Number(r.ea ?? 0)
     const ea = Number.isFinite(eaRaw) ? eaRaw : null
+    const submitter = r.submitted_by == null ? null : String(r.submitted_by).trim() || null
     return {
       source_table: 'ticket_bookings',
       source_id: id,
@@ -257,6 +266,7 @@ async function fetchTicketBookingDetails(
       submit_on_ymd: submitYmd || null,
       ea,
       linked_tour_label: tourMeta?.linked_tour_label ?? null,
+      submitter_email: submitter,
     }
   })
 }
@@ -270,13 +280,14 @@ async function fetchTourHotelBookingDetails(
   const { data } = await supabase
     .from('tour_hotel_bookings')
     .select(
-      'id,total_price,submit_on,check_in_date,check_out_date,hotel,reservation_name,note,payment_method'
+      'id,total_price,submit_on,check_in_date,check_out_date,hotel,reservation_name,note,payment_method,submitted_by'
     )
     .in('id', ids)
   return ((data || []) as Record<string, unknown>[]).map((r) => {
     const id = String(r.id)
     const key = `tour_hotel_bookings:${id}`
     const checkIn = ymdFromIso(String(r.check_in_date ?? ''))
+    const submitter = r.submitted_by == null ? null : String(r.submitted_by).trim() || null
     return {
       source_table: 'tour_hotel_bookings',
       source_id: id,
@@ -291,6 +302,7 @@ async function fetchTourHotelBookingDetails(
       rn_number: null,
       check_in_date_ymd: checkIn || null,
       tour_date_ymd: null,
+      submitter_email: submitter,
     }
   })
 }
@@ -479,6 +491,7 @@ export function formatLedgerMatchDetailLines(
     paidTo: string
     paidFor: string
     submitDate: string
+    submitBy: string
     checkInDate: string
     tourDate: string
     linkedTour: string
@@ -489,7 +502,8 @@ export function formatLedgerMatchDetailLines(
     recordId: string
     notFound: string
   },
-  paymentMethodLabel: string | null
+  paymentMethodLabel: string | null,
+  options?: { formatSubmitter?: (email: string) => string }
 ): { headline: string; rows: { label: string; value: string }[] } {
   const alloc =
     d.matched_amount != null && Number.isFinite(d.matched_amount)
@@ -501,6 +515,14 @@ export function formatLedgerMatchDetailLines(
     { label: labels.paidTo, value: d.paid_to },
     { label: labels.paidFor, value: d.paid_for },
   ]
+
+  const submitterRaw = d.submitter_email == null ? '' : String(d.submitter_email).trim()
+  if (submitterRaw) {
+    rows.push({
+      label: labels.submitBy,
+      value: options?.formatSubmitter?.(submitterRaw) ?? submitterRaw,
+    })
+  }
 
   if (d.submit_on_ymd) {
     rows.push({ label: labels.submitDate, value: d.submit_on_ymd })

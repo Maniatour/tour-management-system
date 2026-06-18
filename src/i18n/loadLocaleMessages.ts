@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { resolveMessageNamespaces, shouldLoadFullLocaleMessages } from './messageNamespaces'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -187,6 +188,28 @@ function writeCachedMessages(locale: string, messages: MessagesRecord, ttlMs: nu
 
 async function loadFileMessages(locale: string): Promise<MessagesRecord> {
   return (await import(`./locales/${locale}.json`)).default as MessagesRecord
+}
+
+export function pickMessageNamespaces(
+  messages: MessagesRecord,
+  namespaces: readonly string[]
+): MessagesRecord {
+  const picked: MessagesRecord = {}
+  for (const ns of namespaces) {
+    if (ns in messages) {
+      picked[ns] = messages[ns]
+    }
+  }
+  return picked
+}
+
+export async function loadLocaleMessagesForRoute(
+  locale: string,
+  pathname: string
+): Promise<MessagesRecord> {
+  const allMessages = await loadLocaleMessages(locale)
+  const namespaces = resolveMessageNamespaces(pathname)
+  return pickMessageNamespaces(allMessages, namespaces)
 }
 
 export async function loadLocaleMessages(locale: string): Promise<MessagesRecord> {

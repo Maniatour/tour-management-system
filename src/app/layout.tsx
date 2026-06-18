@@ -4,7 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
 import AppToaster from "@/components/AppToaster";
-import SopComplianceGate from "@/components/sop/SopComplianceGate";
+import LazySopComplianceGate from "@/components/layout/LazySopComplianceGate";
 import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 import DevBootRecovery from "@/components/DevBootRecovery";
 import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineScript";
@@ -46,12 +46,16 @@ export default function RootLayout({
       <body className={inter.className}>
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
-        <DevServiceWorkerCleanup />
-        <DevBootRecovery />
+        {process.env.NODE_ENV === "development" ? (
+          <>
+            <DevServiceWorkerCleanup />
+            <DevBootRecovery />
+          </>
+        ) : null}
         <AuthProvider>
           <RouteTransitionProgress />
           <AppToaster />
-          <SopComplianceGate />
+          <LazySopComplianceGate />
           {children}
         </AuthProvider>
       </body>

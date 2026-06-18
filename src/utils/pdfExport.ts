@@ -1,7 +1,6 @@
 'use client'
 
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
+import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 
 interface TourStatisticsData {
   totalTours: number
@@ -44,7 +43,8 @@ interface PDFExportProps {
   chartElementId?: string
 }
 
-export function generateTourStatisticsPDF({ data, dateRange }: PDFExportProps) {
+export async function generateTourStatisticsPDF({ data, dateRange }: PDFExportProps) {
+  const jsPDF = await loadJsPDF()
   const doc = new jsPDF()
   
   // 페이지 설정
@@ -251,18 +251,21 @@ export function generateTourStatisticsPDF({ data, dateRange }: PDFExportProps) {
   doc.save(fileName)
 }
 
-export function generateChartPDF(chartElementId: string, fileName: string = 'chart.pdf') {
+export async function generateChartPDF(chartElementId: string, fileName: string = 'chart.pdf') {
   const element = document.getElementById(chartElementId)
   if (!element) {
     console.error('Chart element not found')
     return
   }
 
-  html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    allowTaint: true
-  }).then((canvas) => {
+  try {
+    const html2canvas = await loadHtml2Canvas()
+    const jsPDF = await loadJsPDF()
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+    })
     const imgData = canvas.toDataURL('image/png')
     const doc = new jsPDF()
     const imgWidth = doc.internal.pageSize.getWidth()
@@ -270,9 +273,9 @@ export function generateChartPDF(chartElementId: string, fileName: string = 'cha
 
     doc.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
     doc.save(fileName)
-  }).catch((error) => {
+  } catch (error) {
     console.error('Error generating chart PDF:', error)
-  })
+  }
 }
 
 // --- 채널 인보이스 PDF (KK DAY Invoice 스타일) ---
@@ -324,7 +327,8 @@ export interface ChannelInvoiceOptions {
   toAddress?: string
 }
 
-export function generateChannelInvoicePDF({ channelName, dateRange, items, company = DEFAULT_COMPANY, payment = DEFAULT_PAYMENT, toAddress = '' }: ChannelInvoiceOptions) {
+export async function generateChannelInvoicePDF({ channelName, dateRange, items, company = DEFAULT_COMPANY, payment = DEFAULT_PAYMENT, toAddress = '' }: ChannelInvoiceOptions) {
+  const jsPDF = await loadJsPDF()
   const doc = new jsPDF()
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()

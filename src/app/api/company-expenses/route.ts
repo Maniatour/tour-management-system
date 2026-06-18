@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
-import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
+import { buildCompanyExpenseSearchOrClause } from '@/lib/companyExpenseSearch'
 import { buildCompanyExpenseStandardLeafOrClause } from '@/lib/companyExpenseStandardLeafFilter'
 import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
@@ -12,8 +12,6 @@ import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMi
 import { parseMultiQueryValues } from '@/lib/multiQueryParam'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
-
-const AMOUNT_SEARCH_SCAN_LIMIT = 10_000
 
 type CompanyExpenseListFilterParams = {
   categories: string[]
@@ -148,9 +146,12 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * limit
     const to = from + limit - 1
 
+    const searchTrimmed = (search ?? '').trim()
+    const searchActive = searchTrimmed.length > 0
+
     /** 검색어가 있으면 «미대조만» 뷰를 쓰지 않음 — 이미 명세에 연결된 지출도 찾을 수 있게 */
     const expenseTable =
-      search?.trim() || statementMatch !== 'unmatched'
+      searchActive || statementMatch !== 'unmatched'
         ? 'company_expenses'
         : 'company_expenses_no_statement_match'
 
@@ -173,8 +174,9 @@ export async function GET(request: NextRequest) {
       standardLeafId,
     }
 
+    /** 검색 시 OR·ilike·exact count가 무거워 planned 카운트로 첫 응답 지연 완화 */
     let query = fromUntypedTable(supabase, expenseTable)
-      .select('*', { count: 'exact' })
+      .select('*', { count: searchActive ? 'planned' : 'exact' })
       .is('deleted_at', null)
 
     try {
@@ -191,55 +193,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '표준 카테고리 필터를 적용할 수 없습니다.' }, { status: 500 })
     }
 
-    query = query.order('submit_on', { ascending: false }).range(from, to)
-
-    // 검색: 텍스트 + 금액(숫자 검색어일 때 amount 부분일치·동일 금액)
-    if (search && search.trim()) {
-      const raw = search.trim()
-      const like = `%${raw}%`
-      const orParts = [
-        `paid_to.ilike.${like}`,
-        `paid_for.ilike.${like}`,
-        `description.ilike.${like}`,
-        `notes.ilike.${like}`,
-        `category.ilike.${like}`,
-        `subcategory.ilike.${like}`,
-        `payment_method.ilike.${like}`,
-        `submit_by.ilike.${like}`,
-        `id.ilike.${like}`,
-      ]
-      const { data: pmRows } = await supabase
-        .from('payment_methods')
-        .select('id')
-        .or(`method.ilike.${like},display_name.ilike.${like},id.ilike.${like}`)
-      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id))].slice(0, 200)
-      if (pmIds.length > 0) {
-        orParts.push(`payment_method.in.(${pmIds.join(',')})`)
+    if (searchActive) {
+      const searchOr = await buildCompanyExpenseSearchOrClause(supabase, searchTrimmed)
+      if (searchOr) {
+        query = query.or(searchOr)
       }
-
-      if (isAmountSearchQuery(raw)) {
-        let scanQ = fromUntypedTable(supabase, expenseTable).select('id, amount').is('deleted_at', null)
-        try {
-          const scanFiltered = await applyCompanyExpenseListFilters(supabase, scanQ, listFilterParams)
-          if (!scanFiltered.empty) {
-            const { data: scanRows } = await scanFiltered.query.limit(AMOUNT_SEARCH_SCAN_LIMIT)
-            const amountIds = (scanRows || [])
-              .filter((r: { id: string; amount: unknown }) =>
-                matchesAmountSearch(Number(r.amount), raw)
-              )
-              .map((r: { id: string }) => r.id)
-              .slice(0, 200)
-            if (amountIds.length > 0) {
-              orParts.push(`id.in.(${amountIds.join(',')})`)
-            }
-          }
-        } catch (scanErr) {
-          console.error('금액 검색 스캔 오류:', scanErr)
-        }
-      }
-
-      query = query.or(orParts.join(','))
     }
+
+    query = query.order('submit_on', { ascending: false }).range(from, to)
 
     const { data, error, count } = await query
     
