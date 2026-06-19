@@ -76,6 +76,7 @@ import {
   expenseReconExemptSourceSupported,
 } from '@/lib/expense-reconciliation-exemptions'
 import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
+import { ReservationDetailModalContent } from '@/components/reservation/ReservationDetailModalContent'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import type { ExpenseStatementReconContext, ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
@@ -88,6 +89,11 @@ import {
 const PNL_NESTED_DETAIL_OVERLAY_CLASS = 'z-[1500] pointer-events-auto'
 const PNL_NESTED_DETAIL_CONTENT_CLASS =
   'z-[1500] w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg'
+
+/** iframe·임베드 모달 — 포커스가 Dialog DOM 밖으로 나가면 Radix가 닫지 않게 */
+function preventNestedDetailDialogDismiss(e: Event) {
+  e.preventDefault()
+}
 
 export type PnlExpenseSource =
   | 'tour_expenses'
@@ -1449,6 +1455,12 @@ export default function PnlUnifiedExpenseDetailDialog({
         onPointerDownOutside={(e) => {
           if (nestedOverlayOpen) e.preventDefault()
         }}
+        onFocusOutside={(e) => {
+          if (nestedOverlayOpen) e.preventDefault()
+        }}
+        onInteractOutside={(e) => {
+          if (nestedOverlayOpen) e.preventDefault()
+        }}
         onEscapeKeyDown={(e) => {
           if (nestedOverlayOpen) e.preventDefault()
         }}
@@ -2401,6 +2413,9 @@ export default function PnlUnifiedExpenseDetailDialog({
             overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
             className={PNL_NESTED_DETAIL_CONTENT_CLASS}
             onOpenAutoFocus={(e) => e.preventDefault()}
+            onPointerDownOutside={preventNestedDetailDialogDismiss}
+            onFocusOutside={preventNestedDetailDialogDismiss}
+            onInteractOutside={preventNestedDetailDialogDismiss}
           >
             <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
               <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">투어 상세</DialogTitle>
@@ -2433,6 +2448,9 @@ export default function PnlUnifiedExpenseDetailDialog({
             overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
             className={PNL_NESTED_DETAIL_CONTENT_CLASS}
             onOpenAutoFocus={(e) => e.preventDefault()}
+            onPointerDownOutside={preventNestedDetailDialogDismiss}
+            onFocusOutside={preventNestedDetailDialogDismiss}
+            onInteractOutside={preventNestedDetailDialogDismiss}
           >
             <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
               <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">예약 상세</DialogTitle>
@@ -2446,12 +2464,8 @@ export default function PnlUnifiedExpenseDetailDialog({
                 <ExternalLink size={14} aria-hidden />
               </a>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              <iframe
-                src={`/${locale}/admin/reservations/${reservationDetailModalId}`}
-                className="h-full w-full min-h-0 flex-1 border-0"
-                title="예약 상세"
-              />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+              <ReservationDetailModalContent reservationId={reservationDetailModalId} />
             </div>
           </DialogContent>
         </Dialog>

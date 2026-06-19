@@ -16,7 +16,14 @@ import {
   getVehicleStatusBadgeClass,
   getVehicleStatusLabelKo,
   VEHICLE_STATUS_SELECT_OPTIONS,
+  type VehicleStatusCode,
 } from '@/lib/vehicleStatus'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
@@ -188,6 +195,7 @@ export default function VehiclesPage() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+  const [statusModalVehicleId, setStatusModalVehicleId] = useState<string | null>(null)
   const [isVehicleTypeModalOpen, setIsVehicleTypeModalOpen] = useState(false)
   const [vehicleModalPrefill, setVehicleModalPrefill] = useState<Partial<Vehicle> | null>(null)
   // 렌터카 관리 모달 상태 제거
@@ -557,8 +565,13 @@ export default function VehiclesPage() {
     })
   }, [vehicles, searchTerm, activeTab])
 
+  const statusModalVehicle = useMemo(
+    () => (statusModalVehicleId ? vehicles.find((v) => v.id === statusModalVehicleId) ?? null : null),
+    [statusModalVehicleId, vehicles]
+  )
+
   // 상태 변경 함수 (useCallback으로 메모이제이션)
-  const handleStatusChange = useCallback(async (vehicleId: string, newStatus: string) => {
+  const handleStatusChange = useCallback(async (vehicleId: string, newStatus: string): Promise<boolean> => {
     try {
       setUpdatingStatus(vehicleId)
       
@@ -568,24 +581,19 @@ export default function VehiclesPage() {
 
       if (error) throw error
       
-      // 로컬 상태 업데이트
-      setVehicles(vehicles.map(v => 
-        v.id === vehicleId ? { ...v, status: newStatus } : v
-      ))
+      setVehicles((prev) =>
+        prev.map((v) => (v.id === vehicleId ? { ...v, status: newStatus } : v))
+      )
       
-      console.log('차량 상태가 업데이트되었습니다:', newStatus)
+      return true
     } catch (error) {
       console.error('차량 상태 변경 중 오류가 발생했습니다:', error)
       alert('차량 상태 변경 중 오류가 발생했습니다.')
+      return false
     } finally {
       setUpdatingStatus(null)
     }
-  }, [vehicles])
-
-  // 렌터카 상태 변경 (동일한 status 컬럼 사용)
-  const handleRentalStatusChange = useCallback((vehicleId: string, newStatus: string) => {
-    handleStatusChange(vehicleId, newStatus)
-  }, [handleStatusChange])
+  }, [])
 
   const handleSaveVehicle = useCallback(async (vehicleData: Partial<Vehicle>) => {
     try {
@@ -861,41 +869,25 @@ export default function VehiclesPage() {
                         {vehicle.nick ? `${vehicle.nick} (${vehicle.vehicle_number})` : vehicle.vehicle_number}
                       </h3>
                   <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getVehicleStatusBadgeClass(vehicle.status || 'available')}`}>
+                    <button
+                      type="button"
+                      onClick={() => setStatusModalVehicleId(vehicle.id)}
+                      disabled={updatingStatus === vehicle.id}
+                      title="클릭하여 상태 변경"
+                      className={`px-2 py-1 text-xs font-medium rounded-full cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed ${getVehicleStatusBadgeClass(vehicle.status || 'available')}`}
+                    >
                       {getVehicleStatusLabelKo(vehicle.status || 'available')}
-                    </span>
-                    {activeTab === 'company' ? (
-                      <select
-                        value={vehicle.status || 'available'}
-                        onChange={(e) => handleStatusChange(vehicle.id, e.target.value)}
-                        disabled={updatingStatus === vehicle.id}
-                        className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                      >
-                        {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : activeTab === 'rental_active' ? (
-                      <select
-                        value={vehicle.status || 'available'}
-                        onChange={(e) => handleRentalStatusChange(vehicle.id, e.target.value)}
-                        disabled={updatingStatus === vehicle.id}
-                        className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                      >
-                        {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
-                        {getVehicleStatusLabelKo(vehicle.status || 'returned')}
-                      </span>
-                    )}
+                    </button>
                   </div>
                 </div>
                 
                 <div className="mt-2 space-y-1 text-xs text-gray-600">
-                  <p><span className="font-medium">ID:</span> <span className="text-gray-500 font-mono">{vehicle.id}</span></p>
+                  <p>
+                    <span className="font-medium">VIN:</span>{' '}
+                    <span className="text-gray-500 font-mono break-all">
+                      {(vehicle.vin && vehicle.vin.trim()) || '—'}
+                    </span>
+                  </p>
                   <p><span className="font-medium">차종:</span> {vehicle.vehicle_type}</p>
                   <p><span className="font-medium">연식:</span> {vehicle.year}년식</p>
                   <p><span className="font-medium">탑승인원:</span> {vehicle.capacity}인승</p>
@@ -916,12 +908,6 @@ export default function VehiclesPage() {
                           </span>
                         </p>
                       </div>
-                      <p>
-                        <span className="font-medium">RN:</span>{' '}
-                        <span className="font-mono text-gray-700 break-all">
-                          {(vehicle.vin && vehicle.vin.trim()) || 'N/A'}
-                        </span>
-                      </p>
                       <p>
                         <span className="font-medium">Rental Agreement #:</span>{' '}
                         <span className="font-mono text-gray-700 break-all">
@@ -1067,7 +1053,58 @@ export default function VehiclesPage() {
         }}
       />
 
-      {/* 렌터카 관리 모달 제거됨 */}
+      {/* 차량 상태 변경 모달 */}
+      <Dialog
+        open={!!statusModalVehicleId}
+        onOpenChange={(open) => {
+          if (!open) setStatusModalVehicleId(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          {statusModalVehicle && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">차량 상태 변경</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-gray-600 mb-3 -mt-1">
+                <span className="font-medium text-gray-900">
+                  {statusModalVehicle.nick
+                    ? `${statusModalVehicle.nick} (${statusModalVehicle.vehicle_number})`
+                    : statusModalVehicle.vehicle_number}
+                </span>
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => {
+                  const currentStatus = (statusModalVehicle.status || 'available').trim()
+                  const isCurrent = opt.value === currentStatus
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={updatingStatus === statusModalVehicle.id}
+                      onClick={async () => {
+                        if (isCurrent) {
+                          setStatusModalVehicleId(null)
+                          return
+                        }
+                        const ok = await handleStatusChange(statusModalVehicle.id, opt.value)
+                        if (ok) setStatusModalVehicleId(null)
+                      }}
+                      className={`px-2 py-2.5 rounded-lg text-xs font-medium text-center transition-colors border ${
+                        isCurrent
+                          ? `${getVehicleStatusBadgeClass(opt.value as VehicleStatusCode)} ring-2 ring-blue-500 ring-offset-1 shadow-sm border-transparent`
+                          : 'bg-gray-50 hover:bg-gray-100 text-gray-900 border-gray-200'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

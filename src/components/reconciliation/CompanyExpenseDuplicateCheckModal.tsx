@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertTriangle, Archive, Car, ExternalLink, User, Users } from 'lucide-react'
 import DeletedUnifiedExpensesModal from '@/components/reconciliation/DeletedUnifiedExpensesModal'
+import { ReservationDetailModalContent } from '@/components/reservation/ReservationDetailModalContent'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import { UnifiedExpenseInlineEditForm } from '@/components/reconciliation/UnifiedExpenseInlineEditForm'
 import {
@@ -1230,12 +1231,8 @@ export default function CompanyExpenseDuplicateCheckModal({
             ) : null}
           </DialogHeader>
           {reservationDetailModalId ? (
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              <iframe
-                src={`/${locale}/admin/reservations/${reservationDetailModalId}`}
-                className="w-full h-full min-h-0 flex-1 border-0"
-                title="예약 상세"
-              />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+              <ReservationDetailModalContent reservationId={reservationDetailModalId} />
             </div>
           ) : null}
         </DialogContent>

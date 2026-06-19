@@ -442,7 +442,7 @@ function ScheduleTotalColumnWithTooltip({
   return (
     <div className="group relative overflow-visible cursor-default">
       <div className={valueClassName}>{total}</div>
-      <div className="absolute z-[1020] right-0 top-full mt-1 min-w-[200px] w-max max-w-[min(90vw,320px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left opacity-0 transition-none group-hover:opacity-100">
+      <div className="absolute z-[1020] right-0 top-full mt-1 min-w-[200px] w-max max-w-[min(90vw,320px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block">
         <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
           <span className="inline-flex items-center gap-1 shrink-0">
             <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
@@ -6689,7 +6689,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           <div
             ref={productScheduleBodyScrollRef}
             onScroll={onProductScheduleBodyScroll}
-            className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible"
+            className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-clip"
             style={{
               scrollbarWidth: 'none',
               msOverflowStyle: 'none',
@@ -6907,7 +6907,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                 )}
                                 {dayData && (
                                   <div
-                                    className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left opacity-0 transition-none group-hover:opacity-100 group-focus-within:opacity-100"
+                                    className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block group-focus-within:block"
                                   >
                                     {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
                                       <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
