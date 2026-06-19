@@ -40,10 +40,6 @@ const EmailScheduleModal = dynamic(() => import('@/components/reports/EmailSched
   loading: () => null,
 })
 
-interface AdminReportsProps {
-  params: Promise<{ locale: string }>
-}
-
 type ReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 type ReportTab =
   | 'comprehensive'
@@ -55,7 +51,7 @@ type ReportTab =
   | 'cash'
   | 'pnl'
 
-export default function AdminReports({ }: AdminReportsProps) {
+export default function AdminReports() {
   const { authUser } = useAuth()
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)

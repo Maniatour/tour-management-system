@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { resolveMessageNamespaces, shouldLoadFullLocaleMessages } from './messageNamespaces'
+import { resolveMessageNamespaces } from './messageNamespaces'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!

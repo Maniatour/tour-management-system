@@ -19,7 +19,7 @@ type ExpenseListRow = {
     infant?: number | null
     total_people?: number | null
     customers?: { id?: string; name?: string; email?: string }
-    products?: { name?: string; name_ko?: string; name_en?: string } | null
+    products?: Pick<ProductLite, 'name' | 'name_ko' | 'name_en'> | null
   } | null
   [key: string]: unknown
 }

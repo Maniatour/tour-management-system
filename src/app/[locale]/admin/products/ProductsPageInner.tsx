@@ -22,11 +22,7 @@ const PRODUCTS_LIST_UI_DEFAULT = {
   allCardsCollapsed: false,
 }
 
-interface AdminProductsProps {
-  params: Promise<{ locale: string }>
-}
-
-export default function AdminProducts({ params: _params }: AdminProductsProps) {
+export default function AdminProducts() {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('products')
