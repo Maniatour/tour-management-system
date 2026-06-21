@@ -86,10 +86,12 @@ function authUserFromStoredAccessToken(): AuthUser | null {
 }
 
 /** 모바일에서 GoTrue getSession이 무한 대기하는 경우 방지 */
-const AUTH_SESSION_BUDGET_MS = 10_000
-const AUTH_SESSION_RETRY_MS = 8_000
-const AUTH_BOOTSTRAP_FAILSAFE_MS = 18_000
+const AUTH_SESSION_BUDGET_MS = 20_000
+const AUTH_SESSION_RETRY_MS = 12_000
+const AUTH_BOOTSTRAP_FAILSAFE_MS = 45_000
 const ROLE_CHECK_DEDUPE_WAIT_MS = 12_000
+const TEAM_QUERY_TIMEOUT_MS = 15_000
+const INITIAL_AUTH_DELAY_MS = 2_000
 
 type TeamRoleRow = {
   name_ko: string | null
@@ -495,7 +497,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           try {
-            const TEAM_QUERY_TIMEOUT_MS = 5000
             const MAX_TEAM_ATTEMPTS = 3
 
             let teamData: {
@@ -1020,7 +1021,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!skipHeavyBootstrap) {
       bootstrapFailsafe = setTimeout(() => {
         if (isInitializedRef.current) return
-        console.warn('AuthContext: bootstrap failsafe — forcing guest init (mobile/slow network)')
+
+        const storedEmail =
+          userRef.current?.email?.trim() || authUserFromStoredAccessToken()?.email?.trim()
+        const hasValidToken = !!getStoredAccessTokenIfValid(0)
+
+        if (hasValidToken && storedEmail) {
+          console.warn(
+            'AuthContext: bootstrap failsafe — slow network, retrying team role check for:',
+            storedEmail
+          )
+          void checkUserRole(storedEmail).catch((error) => {
+            console.error('AuthContext: Role check retry failed on bootstrap failsafe:', error)
+          })
+          return
+        }
+
+        console.warn('AuthContext: bootstrap failsafe — forcing guest init (no valid session)')
         setUserRole((role) => role ?? 'customer')
         setUserPosition((pos) => pos ?? null)
         setPermissions((perms) => perms ?? null)
@@ -1290,7 +1307,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
-      }, 350) // INITIAL_SESSION·스토리지 반영 여유 (짧을수록 미인증 판정까지 대기 시간 감소)
+      }, INITIAL_AUTH_DELAY_MS)
     }
     
     if (!skipHeavyBootstrap) {
@@ -1558,6 +1575,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (user?.email && userRole !== null) {
+      // 로그인 토큰이 있는데 team 조회 지연으로 customer 가 된 경우 스냅샷에 저장하지 않음
+      if (userRole === 'customer' && getStoredAccessTokenIfValid(0)) {
+        return
+      }
       writeAuthSnapshot({
         user,
         authUser: authUser ?? user,

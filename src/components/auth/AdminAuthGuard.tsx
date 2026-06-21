@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthOptional } from '@/contexts/AuthContext'
 
-const AUTH_GUARD_FAILSAFE_MS = 20_000
+const AUTH_GUARD_FAILSAFE_MS = 45_000
 
 interface AdminAuthGuardProps {
   children: React.ReactNode

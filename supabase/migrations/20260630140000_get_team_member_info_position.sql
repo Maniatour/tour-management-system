@@ -1,13 +1,16 @@
 -- AuthContext 역할 확인: team RLS·JWT 타이밍으로 SELECT 가 빈 경우 DEFINER RPC 로 position 포함 조회
+-- position 은 PostgreSQL 예약어이므로 RETURNS TABLE·SELECT 에서 반드시 따옴표 처리
 
 begin;
+
+drop function if exists public.get_team_member_info(text);
 
 create or replace function public.get_team_member_info(p_email text)
 returns table(
   email text,
   name_ko text,
   name_en text,
-  position text,
+  "position" text,
   is_active boolean
 )
 language sql
@@ -20,7 +23,7 @@ as $$
     t.email,
     t.name_ko,
     t.name_en,
-    t.position::text,
+    t.position::text as "position",
     coalesce(t.is_active, true)
   from public.team t
   where lower(trim(coalesce(t.email, ''))) = lower(trim(coalesce(p_email, '')))
