@@ -507,14 +507,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } | null = null
             let error: { message?: string; code?: string } | null = null
 
-            const isTeamAuthError = (code?: string, message?: string) =>
-              code === '42501' ||
-              code === 'PGRST301' ||
-              (message != null &&
-                (message.includes('JWT') ||
-                  message.includes('permission denied') ||
-                  message.toLowerCase().includes('not authenticated')))
-
             for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
               try {
                 if (attempt > 0) {
@@ -534,17 +526,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 teamData = (await Promise.race([queryPromise, timeoutPromise])) as typeof teamData
                 error = null
-
-                if (
-                  !teamData &&
-                  isTeamAuthError(error?.code, error?.message) &&
-                  attempt < MAX_TEAM_ATTEMPTS - 1
-                ) {
-                  console.warn(
-                    `AuthContext: Team query auth error (attempt ${attempt + 1}), retrying after session sync`
-                  )
-                  continue
-                }
                 break
               } catch (attemptErr) {
                 console.warn(
