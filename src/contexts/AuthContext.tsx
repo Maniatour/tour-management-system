@@ -91,6 +91,64 @@ const AUTH_SESSION_RETRY_MS = 8_000
 const AUTH_BOOTSTRAP_FAILSAFE_MS = 18_000
 const ROLE_CHECK_DEDUPE_WAIT_MS = 12_000
 
+type TeamRoleRow = {
+  name_ko: string | null
+  email: string
+  position: string | null
+  is_active: boolean | null
+}
+
+/** team SELECT 실패(RLS·JWT 지연) 시 DEFINER RPC 로 역할 확인 */
+async function fetchTeamRoleRow(normalizedEmail: string): Promise<TeamRoleRow | null> {
+  if (!supabase) return null
+
+  const { data: directData, error: directError } = await supabase
+    .from('team')
+    .select('name_ko, email, position, is_active')
+    .ilike('email', normalizedEmail)
+    .or('is_active.is.null,is_active.eq.true')
+    .maybeSingle()
+
+  if (directData && !directError) {
+    return directData as TeamRoleRow
+  }
+
+  try {
+    const { data: rpcRows, error: rpcError } = await supabase.rpc('get_team_member_info', {
+      p_email: normalizedEmail,
+    })
+    const row = (rpcRows as Record<string, unknown>[] | null)?.[0]
+    if (!rpcError && row) {
+      return {
+        email: String(row.email ?? normalizedEmail),
+        name_ko: (row.name_ko as string | null) ?? null,
+        position: (row.position as string | null) ?? null,
+        is_active: (row.is_active as boolean | null) ?? true,
+      }
+    }
+  } catch (rpcErr) {
+    console.warn('AuthContext: get_team_member_info RPC failed:', rpcErr)
+  }
+
+  try {
+    const { data: isMember, error: memberError } = await supabase.rpc('is_team_member', {
+      p_email: normalizedEmail,
+    })
+    if (!memberError && isMember === true) {
+      return {
+        email: normalizedEmail,
+        name_ko: null,
+        position: 'op',
+        is_active: true,
+      }
+    }
+  } catch (memberErr) {
+    console.warn('AuthContext: is_team_member RPC failed:', memberErr)
+  }
+
+  return null
+}
+
 async function getSupabaseSessionBounded(budgetMs: number): Promise<Session | null> {
   if (!supabase) return null
   try {
@@ -467,23 +525,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   }
                 }
 
-                const queryPromise = supabase
-                  .from('team')
-                  .select('name_ko, email, position, is_active')
-                  .ilike('email', normalizedEmail)
-                  .or('is_active.is.null,is_active.eq.true')
-                  .maybeSingle()
+                const queryPromise = fetchTeamRoleRow(normalizedEmail)
 
                 const timeoutPromise = new Promise<never>((_, toReject) =>
                   setTimeout(() => toReject(new Error('Query timeout')), TEAM_QUERY_TIMEOUT_MS)
                 )
 
-                const result = (await Promise.race([queryPromise, timeoutPromise])) as {
-                  data: typeof teamData
-                  error: { message?: string; code?: string } | null
-                }
-                teamData = result.data
-                error = result.error
+                teamData = (await Promise.race([queryPromise, timeoutPromise])) as typeof teamData
+                error = null
 
                 if (
                   !teamData &&
@@ -1247,6 +1296,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!skipHeavyBootstrap) {
       checkStoredTokens().catch(error => {
         console.error('AuthContext: Error in checkStoredTokens:', error)
+      })
+    } else if (initialAuth.userRole === 'customer' && initialAuth.user?.email) {
+      console.log(
+        'AuthContext: Snapshot had customer role — revalidating team membership for:',
+        initialAuth.user.email
+      )
+      void checkUserRole(initialAuth.user.email).catch((error) => {
+        console.error('AuthContext: Team membership revalidation failed after snapshot:', error)
       })
     }
     

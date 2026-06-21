@@ -44,7 +44,6 @@ import {
 import {
   buildVehicleMaintenanceStandardGroups,
   parseVehicleMaintenanceSubcategories,
-  resolveVehicleMaintenanceCategoryDisplay,
   resolveVehicleMaintenanceWorkSubcategoryLabels,
   isVehicleMaintenanceWorkSubcategoryKey,
   vehicleMaintenanceCategoryFilterOptions,
@@ -494,12 +493,6 @@ export default function VehicleMaintenanceManager() {
 
   const standardCategoryFilterOptions = useMemo(
     () => vehicleMaintenanceCategoryFilterOptions(expenseStandardCategories, locale),
-    [expenseStandardCategories, locale]
-  )
-
-  const formatCategoryLabel = useCallback(
-    (categoryValue: string) =>
-      resolveVehicleMaintenanceCategoryDisplay(categoryValue, expenseStandardCategories, locale),
     [expenseStandardCategories, locale]
   )
 
@@ -999,11 +992,10 @@ export default function VehicleMaintenanceManager() {
                     <TableHead className="whitespace-nowrap">{t('list.maintenanceDate')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.mileage')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.maintenanceType')}</TableHead>
-                    <TableHead className="min-w-[10rem] whitespace-nowrap">{t('list.standardCategory')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.workSubcategory')}</TableHead>
-                    <TableHead className="min-w-[8rem]">{t('list.description')}</TableHead>
+                    <TableHead className="min-w-[20rem]">{t('list.description')}</TableHead>
                     <TableHead className="whitespace-nowrap text-right">{t('list.totalCost')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{t('list.serviceProvider')}</TableHead>
+                    <TableHead className="w-[7rem] max-w-[7rem] whitespace-nowrap">{t('list.serviceProvider')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.companyExpense')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.status')}</TableHead>
                     <TableHead className="whitespace-nowrap">{t('list.actions')}</TableHead>
@@ -1031,14 +1023,6 @@ export default function VehicleMaintenanceManager() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm align-top">
-                        <span
-                          className="line-clamp-2 font-medium"
-                          title={formatCategoryLabel(maintenance.category)}
-                        >
-                          {formatCategoryLabel(maintenance.category)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm align-top">
                         {(() => {
                           const workLabels = formatWorkSubcategoryLabelsForRow(
                             maintenance.category,
@@ -1056,13 +1040,18 @@ export default function VehicleMaintenanceManager() {
                           )
                         })()}
                       </TableCell>
-                      <TableCell className="max-w-md whitespace-pre-wrap break-words align-top text-sm">
+                      <TableCell className="min-w-[20rem] max-w-2xl whitespace-pre-wrap break-words align-top text-sm">
                         {maintenance.description}
                       </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(parseFloat(maintenance.total_cost.toString()))}
                       </TableCell>
-                      <TableCell>{maintenance.service_provider || '-'}</TableCell>
+                      <TableCell
+                        className="max-w-[7rem] truncate text-sm align-top"
+                        title={maintenance.service_provider || '-'}
+                      >
+                        {maintenance.service_provider || '-'}
+                      </TableCell>
                       <TableCell>
                         {maintenance.company_expense_id ? (
                           linkedExpensePaymentMethod(row) ? (

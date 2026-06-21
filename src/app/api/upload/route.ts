@@ -88,7 +88,10 @@ export async function POST(request: Request) {
 
       if (error) {
         console.error('파일 업로드 오류:', error)
-        return NextResponse.json({ error: `파일 업로드 실패: ${file.name}` }, { status: 500 })
+        return NextResponse.json(
+          { error: `파일 업로드 실패: ${file.name}`, detail: error.message },
+          { status: 500 }
+        )
       }
 
       // 공개 URL 생성

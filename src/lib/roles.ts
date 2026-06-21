@@ -82,53 +82,62 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
   },
 }
 
+/** DB·RLS helpers 와 동일한 사무/예약 직책 문자열 */
+const OFFICE_STAFF_POSITIONS = new Set([
+  'office',
+  'office staff',
+  'office_staff',
+  '사무',
+  '사무실',
+  '예약',
+  '예약실',
+  'reservation',
+  'cs',
+  'counter',
+  'desk',
+  'reception',
+  'admin',
+])
+
 export function getUserRole(
   email: string,
   teamData?: { position?: string; is_active?: boolean | null }
 ): UserRole {
-  console.log('getUserRole called with:', { email, teamData })
-  console.log('SUPER_ADMIN_EMAILS:', SUPER_ADMIN_EMAILS)
-
   // 슈퍼관리자 이메일은 team 데이터와 무관하게 무조건 관리자
   const normalizedEmail = (email || '').toLowerCase()
-  console.log('normalizedEmail:', normalizedEmail)
-  console.log('isSuperAdmin:', normalizedEmail && SUPER_ADMIN_EMAILS.includes(normalizedEmail))
-  
+
   if (normalizedEmail && SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
-    console.log('Returning admin role for super admin email')
     return 'admin'
   }
-  
+
   // 팀 데이터가 있고 비활성(is_active === false)이 아닌 경우
   // DB RLS·is_staff()는 coalesce(is_active, true)와 동일하게 null 을 활성으로 본다.
   if (teamData && teamData.is_active !== false) {
     const position = teamData.position?.toLowerCase().trim() || ''
-    
-    console.log('Team data found, position:', position)
-    
+
     // position 기반으로 역할 결정 (대소문자 구별 없음)
     if (position === 'super') {
-      return 'admin'  // Super는 최고 관리자
+      return 'admin'
     }
     if (position === 'office manager' || position === 'office_manager' || position === 'manager' || position === '매니저') {
-      return 'manager'  // Office Manager는 매니저
+      return 'manager'
     }
-    // OP는 관리자 권한으로 분류 (admin 페이지로 리다이렉트)
     if (position === 'op') {
-      return 'admin'  // OP는 관리자 권한
+      return 'admin'
     }
-    // 투어 가이드와 드라이버는 team_member로 분류 (guide 페이지로 리다이렉트)
     if (position === 'tour guide' || position === 'tourguide' || position === 'guide' || position === 'driver') {
-      return 'team_member'  // 투어 가이드와 드라이버는 team_member
+      return 'team_member'
     }
-    
+    if (OFFICE_STAFF_POSITIONS.has(position)) {
+      return 'admin'
+    }
+
     // position이 있지만 특정 키워드가 없는 경우 관리자 권한으로 처리
     if (position) {
       return 'admin'
     }
   }
-  
-  console.log('No team data or inactive user, returning customer')
+
   // 기본적으로 일반 고객으로 처리
   return 'customer'
 }

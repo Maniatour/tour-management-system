@@ -389,8 +389,14 @@ export default function VehicleMaintenanceFormDialog({
             uploadedFileUrls = uploadResult.urls
             toast.success(`${uploadedFileUrls.length}개 파일이 업로드되었습니다.`)
           } else {
-            console.error('파일 업로드 실패')
-            toast.error('파일 업로드에 실패했습니다.')
+            const uploadError = await uploadResponse.json().catch(() => ({}))
+            console.error('파일 업로드 실패', uploadError)
+            toast.error(
+              typeof uploadError?.detail === 'string'
+                ? uploadError.detail
+                : uploadError?.error || '파일 업로드에 실패했습니다.'
+            )
+            return
           }
         } finally {
           setIsUploading(false)
