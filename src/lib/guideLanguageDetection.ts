@@ -91,6 +91,12 @@ export function detectGuidePreferredLanguage(
   }
 }
 
+export function isKoreanLanguageCode(languageCode: string | null | undefined): boolean {
+  if (!languageCode || typeof languageCode !== 'string') return false
+  const normalized = languageCode.trim().toUpperCase()
+  return normalized === 'KR' || normalized === 'KO' || normalized === 'KOREAN'
+}
+
 /**
  * 가이드가 특정 언어를 지원하는지 확인하는 함수
  * @param teamData 팀 테이블 데이터
@@ -111,9 +117,11 @@ export function doesGuideSupportLanguage(
       return false
     }
 
-    // 각 언어 코드를 locale로 변환하여 비교
-    return languages.some(lang => {
-      const convertedLocale = convertLanguageCodeToLocale(lang)
+    return languages.some((lang) => {
+      if (targetLocale === 'ko') {
+        return isKoreanLanguageCode(String(lang))
+      }
+      const convertedLocale = convertLanguageCodeToLocale(String(lang))
       return convertedLocale === targetLocale
     })
   } catch (error) {

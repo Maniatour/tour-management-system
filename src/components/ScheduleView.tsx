@@ -64,7 +64,8 @@ import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { autoCreateOrUpdateTour, createAdditionalActiveTourForReservations } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { generateTourId } from '@/lib/entityIds'
-import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
+import { upsertReservationCancellationReason, fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReason'
+import { doesGuideSupportLanguage } from '@/lib/guideLanguageDetection'
 import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
@@ -130,6 +131,11 @@ import {
 } from '@/lib/guideAssignmentSchedule'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const TeamMemberEditModal = dynamic(() => import('@/components/team/TeamMemberEditModal'), {
   ssr: false,
   loading: () => null,
 })
@@ -658,6 +664,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
+  const tResCard = useTranslations('reservations.card')
   const tTourCal = useTranslations('tours.calendar')
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
   const { user, userRole, userPosition, hasPermission } = useAuth()
@@ -701,6 +708,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       userRole === 'manager' ||
       (userPosition || '').toLowerCase().trim() === 'op',
     [isSuperAdmin, userRole, userPosition]
+  )
+
+  /** 가이드 스케줄 표에서 이름 → 팀원 정보 수정 모달 */
+  const canEditTeamFromSchedule = useMemo(
+    () => hasPermission('canManageTeam'),
+    [hasPermission]
   )
 
   /** 입장권 폼: 실제 삭제·삭제 요청 권한 (SUPER / OP·매니저) */
@@ -805,8 +818,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
   
-  // 행 드래그앤드롭 상태 (가이드/상품)
-  const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
+  // 행 드래그앤드롭 상태 (상품/차량)
   const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
   const [draggedProductRow, setDraggedProductRow] = useState<string | null>(null)
   const [vehicleRowOrderForMonth, setVehicleRowOrderForMonth] = useState<string[] | null>(null)
@@ -839,7 +851,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     draggedTour ||
       draggedUnassignedTour ||
       draggedVehicleRowId ||
-      draggedGuideRow ||
       draggedProductRow
   )
 
@@ -910,6 +921,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [vehicleEditModalVehicle, setVehicleEditModalVehicle] = useState<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [vehicleEditModalPrefill, setVehicleEditModalPrefill] = useState<any>(null)
+  const [teamEditModalMember, setTeamEditModalMember] = useState<Team | null>(null)
   // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
   const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
 
@@ -1044,6 +1056,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     dateString: string
     productName: string
   } | null>(null)
+  const [productCellCancellationReasons, setProductCellCancellationReasons] = useState<Record<string, string>>({})
   const [reservationIdForScheduleEdit, setReservationIdForScheduleEdit] = useState<string | null>(null)
   const [scheduleEditingReservation, setScheduleEditingReservation] = useState<Record<string, unknown> | null>(null)
   const [scheduleReservationFormData, setScheduleReservationFormData] = useState<{
@@ -2851,6 +2864,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }
         if (cancellationReasonForSave) {
           await upsertReservationCancellationReason(reservationId, cancellationReasonForSave, user?.email ?? null)
+          setProductCellCancellationReasons((prev) => ({
+            ...prev,
+            [reservationId]: cancellationReasonForSave,
+          }))
         }
       } catch (e) {
         setReservations((prev) =>
@@ -2894,6 +2911,34 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         return cb.localeCompare(ca)
       })
   }, [productCellReservationsModal, reservations, customers, locale, products, airportPickupMemberIdSet, airportSendingMemberIdSet, miscTourProductIds])
+
+  useEffect(() => {
+    if (!productCellReservationsModal) {
+      setProductCellCancellationReasons({})
+      return
+    }
+    const cancelledIds = productCellReservationList
+      .filter((r) => isReservationCancelledStatus(r.status))
+      .map((r) => String(r.id))
+    if (cancelledIds.length === 0) {
+      setProductCellCancellationReasons({})
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const metaMap = await fetchCancellationFollowUpMeta(cancelledIds)
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const id of cancelledIds) {
+        const reason = metaMap.get(id)?.reason?.trim() ?? ''
+        if (reason) next[id] = reason
+      }
+      setProductCellCancellationReasons(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [productCellReservationsModal, productCellReservationList])
 
   const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
     try {
@@ -3130,6 +3175,34 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       }
     },
     [canEditVehicleFromSchedule]
+  )
+
+  const openTeamEditFromSchedule = useCallback(
+    (teamMemberEmail: string) => {
+      if (!canEditTeamFromSchedule) return
+      const member =
+        teamMembers.find((m) => m.email === teamMemberEmail) ??
+        inactiveTeamMembers.find((m) => m.email === teamMemberEmail)
+      if (!member) {
+        alert('팀원 정보를 찾을 수 없습니다.')
+        return
+      }
+      setTeamEditModalMember(member)
+    },
+    [canEditTeamFromSchedule, teamMembers, inactiveTeamMembers]
+  )
+
+  const handleTeamEditModalSaved = useCallback(
+    (updated: Team) => {
+      setTeamMembers((prev) =>
+        prev.map((m) => (m.email === updated.email ? { ...m, ...updated } : m))
+      )
+      setInactiveTeamMembers((prev) =>
+        prev.map((m) => (m.email === updated.email ? { ...m, ...updated } : m))
+      )
+      void fetchData()
+    },
+    [fetchData]
   )
 
   const openRentalVehicleAddFromSchedule = useCallback(() => {
@@ -4095,6 +4168,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return set
   }, [teamMembers, inactiveTeamMembers])
 
+  const cdlKoreanDriverEmailSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const member of [...teamMembers, ...inactiveTeamMembers]) {
+      if (member.cdl_driver_license && doesGuideSupportLanguage(member, 'ko')) {
+        set.add(member.email)
+      }
+    }
+    return set
+  }, [teamMembers, inactiveTeamMembers])
+
   const teamModalSearchNormalized = teamModalSearchQuery.trim().toLowerCase()
   const teamMembersFilteredForModal = useMemo(() => {
     if (!teamModalSearchNormalized) return teamMembers
@@ -4258,56 +4341,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     if (hasSharedSetting) {
       localStorage.setItem('shared_schedule_selected_team_members', JSON.stringify(newSelection))
     }
-  }
-
-  // 가이드 행 드래그앤드롭 핸들러
-  const handleGuideRowDragStart = (e: React.DragEvent, teamMemberId: string) => {
-    setDraggedGuideRow(teamMemberId)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/guide-row', teamMemberId)
-    // 드래그 이미지를 작게 설정
-    const target = e.currentTarget as HTMLElement
-    if (target) {
-      e.dataTransfer.setDragImage(target, 40, 15)
-    }
-  }
-
-  const handleGuideRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, teamMemberId: string) => {
-    e.preventDefault()
-    if (draggedGuideRow && draggedGuideRow !== teamMemberId) {
-      e.dataTransfer.dropEffect = 'move'
-      applyScheduleDragHighlight(e.currentTarget, SCHEDULE_ROW_REORDER_HIGHLIGHT)
-    }
-  }
-
-  const handleGuideRowDragLeave = (e: React.DragEvent<HTMLTableRowElement>) => {
-    const next = e.relatedTarget
-    if (next instanceof Node && e.currentTarget.contains(next)) return
-    clearScheduleDragHighlight()
-  }
-
-  const handleGuideRowDrop = async (e: React.DragEvent, targetTeamMemberId: string) => {
-    e.preventDefault()
-    clearScheduleDragHighlight()
-    
-    if (!draggedGuideRow || draggedGuideRow === targetTeamMemberId) {
-      setDraggedGuideRow(null)
-      return
-    }
-
-    const fromIndex = selectedTeamMembers.indexOf(draggedGuideRow)
-    const toIndex = selectedTeamMembers.indexOf(targetTeamMemberId)
-    
-    if (fromIndex !== -1 && toIndex !== -1) {
-      await moveTeamMember(fromIndex, toIndex)
-    }
-    
-    setDraggedGuideRow(null)
-  }
-
-  const handleGuideRowDragEnd = () => {
-    setDraggedGuideRow(null)
-    clearScheduleDragHighlight()
   }
 
   // 상품 행 드래그앤드롭 핸들러
@@ -7169,6 +7202,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 const canMoveUp = selectedIndex > 0
                 const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
                 const isCdlDriver = cdlDriverEmailSet.has(teamMemberId)
+                const isCdlKoreanDriver = cdlKoreanDriverEmailSet.has(teamMemberId)
                 // 멀티데이 투어 정보를 미리 계산
                 const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: DailyData } } = {}
                 
@@ -7281,6 +7315,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   }
                   if (dateNotes[dateString]?.note) return 'bg-yellow-100'
                   if (highlightedDate === dateString) return 'bg-yellow-200'
+                  if (isCdlKoreanDriver && !hasAssignment && !isGuideDayOff(dateString)) {
+                    return 'bg-yellow-100'
+                  }
                   if (isCdlDriver && !hasAssignment && !isGuideDayOff(dateString)) {
                     return 'bg-sky-100'
                   }
@@ -7290,12 +7327,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 return (
                   <tr 
                     key={teamMemberId} 
-                    className={`group hover:bg-gray-50 transition-colors ${
-                      draggedGuideRow === teamMemberId ? 'opacity-50 bg-blue-50' : ''
-                    }`}
-                    onDragOver={(e) => handleGuideRowDragOver(e, teamMemberId)}
-                    onDragLeave={handleGuideRowDragLeave}
-                    onDrop={(e) => handleGuideRowDrop(e, teamMemberId)}
+                    className="group hover:bg-gray-50 transition-colors"
                     onMouseEnter={() => {
                       if (scheduleInteractionDragging) return
                       setHoveredGuideRow(teamMemberId)
@@ -7306,13 +7338,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     }}
                   >
                     <td 
-                      className={`px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${
-                        draggedGuideRow === teamMemberId ? 'bg-blue-50' : 'bg-white group-hover:bg-gray-50'
-                      }`}
+                      className="px-1 py-0 text-xs leading-tight sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] bg-white group-hover:bg-gray-50"
                       style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
-                      draggable
-                      onDragStart={(e) => handleGuideRowDragStart(e, teamMemberId)}
-                      onDragEnd={handleGuideRowDragEnd}
                     >
                       <div className={`font-medium flex items-center gap-0.5 ${
                         hoveredGuideRow === teamMemberId 
@@ -7347,7 +7374,27 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             <ChevronDown className="w-3 h-3" />
                           </button>
                         </div>
-                        {guide.team_member_name}
+                        <button
+                          type="button"
+                          className={`min-w-0 flex-1 truncate text-left ${
+                            canEditTeamFromSchedule
+                              ? 'cursor-pointer hover:text-blue-700 hover:underline'
+                              : ''
+                          }`}
+                          title={
+                            canEditTeamFromSchedule
+                              ? locale === 'ko'
+                                ? '클릭하여 팀원 정보 수정'
+                                : 'Click to edit team member'
+                              : guide.team_member_name
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openTeamEditFromSchedule(teamMemberId)
+                          }}
+                        >
+                          {guide.team_member_name}
+                        </button>
                       </div>
                     </td>
                     <td className="p-0" colSpan={monthDays.length}>
@@ -7821,7 +7868,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                       /* 드롭 영역 */
                                       <div 
                                         className={`h-full flex items-center justify-center cursor-pointer transition-colors ${
-                                          isCdlDriver ? 'hover:bg-sky-200' : 'hover:bg-gray-100'
+                                          isCdlKoreanDriver
+                                            ? 'hover:bg-yellow-200'
+                                            : isCdlDriver
+                                              ? 'hover:bg-sky-200'
+                                              : 'hover:bg-gray-100'
                                         }`}
                                         onClick={() => openOffScheduleActionModal(null, teamMemberId, dateString)}
                                         onDoubleClick={(e) => {
@@ -10233,11 +10284,20 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           {locale === 'ko' ? '명' : ' pax'}
                         </span>
                       </div>
-                      <span
-                        className={`inline-flex text-xs px-2 py-0.5 rounded-md w-fit font-medium ${getStatusColor(st)}`}
-                      >
-                        {st ? getStatusLabel(st, tReservations) : '—'}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                        <span
+                          className={`inline-flex shrink-0 text-xs px-2 py-0.5 rounded-md font-medium ${getStatusColor(st)}`}
+                        >
+                          {st ? getStatusLabel(st, tReservations) : '—'}
+                        </span>
+                        {isReservationCancelledStatus(st) ? (
+                          <span className="text-[11px] text-gray-600 truncate min-w-0 leading-snug">
+                            {productCellCancellationReasons[String(res.id)]?.trim()
+                              ? productCellCancellationReasons[String(res.id)].trim()
+                              : tResCard('noCancellationReasonShort')}
+                          </span>
+                        ) : null}
+                      </div>
                       {subProductLabel ? (
                         <span className="text-[10px] text-gray-500 truncate">{subProductLabel}</span>
                       ) : null}
@@ -11471,6 +11531,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             setVehicleEditModalVehicle(null)
             setVehicleEditModalPrefill(null)
           }}
+        />
+      )}
+
+      {teamEditModalMember && (
+        <TeamMemberEditModal
+          member={teamEditModalMember}
+          onClose={() => setTeamEditModalMember(null)}
+          onSaved={handleTeamEditModalSaved}
         />
       )}
 
