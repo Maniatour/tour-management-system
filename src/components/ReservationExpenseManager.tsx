@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { ReservationStatusIcon } from '@/components/reservation/ReservationStatusIcon'
 import { getStatusLabel } from '@/utils/reservationUtils'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -2681,7 +2682,17 @@ export default function ReservationExpenseManager({
               }
             }}
             onCancel={handleCloseReservationEditModal}
-            onRefreshCustomers={async () => {}}
+            onRefreshCustomers={async () => {
+              const customerId =
+                editingReservation?.customerId ||
+                (editingReservation as { customer_id?: string | null })?.customer_id
+              await refreshCustomerInList(customerId, (updater) => {
+                setReservationFormData((prev) => {
+                  if (!prev) return prev
+                  return { ...prev, customers: updater(prev.customers) }
+                })
+              })
+            }}
             onDelete={async () => {
               if (!confirm(tRes('messages.reservationDeleteConfirmSoft'))) return
               try {

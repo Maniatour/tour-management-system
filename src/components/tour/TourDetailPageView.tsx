@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { generateTourId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -2563,7 +2564,12 @@ export function TourDetailPageView({
             }
           }}
           onCancel={handleCloseEditModal}
-          onRefreshCustomers={async () => {}}
+          onRefreshCustomers={async () => {
+            const customerId =
+              editingReservation?.customerId ||
+              (editingReservation as { customer_id?: string | null })?.customer_id
+            await refreshCustomerInList(customerId, tourData.setCustomers)
+          }}
           onDelete={async () => {
             if (confirm('정말 이 예약을 삭제하시겠습니까?')) {
               try {

@@ -38,6 +38,43 @@ async function insertCustomerForReservationForm(
   return { row: (data as Database['public']['Tables']['customers']['Row']) ?? null, errorMessage: null }
 }
 
+type CustomerFormFieldSource = {
+  id?: string
+  name?: string | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  language?: string | null
+  emergency_contact?: string | null
+  special_requests?: string | null
+  channel_id?: string | null
+  status?: string | null
+}
+
+function customerRowToFormFields(customer: CustomerFormFieldSource) {
+  const lang = customer.language
+  const customerLanguage =
+    lang === 'EN' || lang === 'en' || lang === '영어'
+      ? 'EN'
+      : lang === 'KR' || lang === 'ko' || lang === '한국어'
+        ? 'KR'
+        : lang || 'KR'
+
+  return {
+    customerId: customer.id,
+    customerName: customer.name || '',
+    customerSearch: customer.name || '',
+    customerPhone: customer.phone || '',
+    customerEmail: customer.email || '',
+    customerAddress: customer.address || '',
+    customerLanguage,
+    customerEmergencyContact: customer.emergency_contact || '',
+    customerSpecialRequests: customer.special_requests || '',
+    customerChannelId: customer.channel_id || '',
+    customerStatus: customer.status || 'active',
+  }
+}
+
 /** id-only 모달: ensure-draft 로 생긴 행을 취소·언마운트 시 제거 */
 async function abandonReservationDraftRequest(reservationId: string) {
   if (!reservationId) return
@@ -1247,20 +1284,7 @@ export default function ReservationForm({
         setShowNewCustomerForm(false) // 고객을 선택하면 새 고객 입력 모드 해제
         setFormData(prev => ({
           ...prev,
-          customerName: customer.name || '',
-          customerPhone: customer.phone || '',
-          customerEmail: customer.email || '',
-          customerAddress: (customer as any)?.address || '',
-          customerLanguage: (() => {
-            const lang = (customer as any)?.language
-            if (lang === 'EN' || lang === 'en' || lang === '영어') return 'EN'
-            if (lang === 'KR' || lang === 'ko' || lang === '한국어') return 'KR'
-            return lang || 'KR'
-          })(),
-          customerEmergencyContact: (customer as any)?.emergency_contact || '',
-          customerSpecialRequests: (customer as any)?.special_requests || '',
-          customerChannelId: (customer as any)?.channel_id || '',
-          customerStatus: (customer as any)?.status || 'active'
+          ...customerRowToFormFields(customer as CustomerFormFieldSource),
         }))
       }
     }
@@ -1607,7 +1631,7 @@ export default function ReservationForm({
           if (reservationData.customer_id) {
             const { data: customerData, error: customerError } = await (supabase as any)
               .from('customers')
-              .select('id, name, email, phone')
+              .select('id, name, email, phone, address, language, emergency_contact, special_requests, channel_id, status')
               .eq('id', reservationData.customer_id)
               .single()
 
@@ -1624,11 +1648,10 @@ export default function ReservationForm({
             } else if (customerData) {
               console.log('ReservationForm: 고객 데이터 조회 성공:', customerData)
               
-              // formData 업데이트 (기본 필드와 choices 데이터, 거주 상태별 인원 수)
+              // formData 업데이트 (고객 연락처 포함 — customers prop 캐시와 무관하게 DB 최신값 반영)
               setFormData(prev => ({
                 ...prev,
-                customerId: customerData.id,
-                customerSearch: customerData.name || '',
+                ...customerRowToFormFields(customerData as CustomerFormFieldSource),
                 productId: reservationData.product_id || '',
                 status: reservationData.status || 'pending',
                 usResidentCount,
@@ -5788,8 +5811,7 @@ export default function ReservationForm({
         finalCustomerId = newCustomer.id
         setFormData(prev => ({ ...prev, customerId: finalCustomerId }))
         
-        // 고객 목록 새로고침은 비동기로 실행 (실패/지연 시에도 예약 저장이 진행되도록 await 하지 않음)
-        void onRefreshCustomers().catch(() => {})
+        await onRefreshCustomers().catch(() => {})
       } else if (formData.customerId) {
         // 기존 고객 업데이트
         const customerData = {
@@ -5815,8 +5837,7 @@ export default function ReservationForm({
           return
         }
         
-        // 고객 목록 새로고침은 비동기로 실행 (실패/지연 시에도 예약 저장이 진행되도록 await 하지 않음)
-        void onRefreshCustomers().catch(() => {})
+        await onRefreshCustomers().catch(() => {})
       }
       
       // 고객 ID 최종 검증 (새 고객 생성 후에도 고객 ID가 없으면 오류)

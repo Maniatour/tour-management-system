@@ -6,6 +6,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
@@ -10527,7 +10528,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               }
             }}
             onCancel={handleCloseScheduleReservationEdit}
-            onRefreshCustomers={async () => {}}
+            onRefreshCustomers={async () => {
+              const customerId =
+                (scheduleEditingReservation as { customerId?: string; customer_id?: string | null })?.customerId ||
+                (scheduleEditingReservation as { customer_id?: string | null })?.customer_id
+              await refreshCustomerInList(customerId, (updater) => {
+                setScheduleReservationFormData((prev) => {
+                  if (!prev) return prev
+                  return { ...prev, customers: updater(prev.customers) }
+                })
+              })
+            }}
             onDelete={async () => {
               const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
               const ok =
