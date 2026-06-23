@@ -5530,6 +5530,11 @@ export default function ReservationForm({
       // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
       const keep = (newVal: number, existingVal: unknown) =>
         existing && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
+      /** 불포함 0 초기화 허용 — UI에서 0 입력 시 keep이 이전 DB값을 복원해 저장이 무시됨 */
+      const resolveNotIncludedForSave = (newVal: number) =>
+        pffd.not_included_price === false
+          ? newVal
+          : keep(newVal, (existing as any)?.not_included_price)
 
       const prepaymentCostSave = Math.round(toNum(fd.prepaymentCost) * 100) / 100
       const prepaymentTipSave = Math.round(toNum(fd.prepaymentTip) * 100) / 100
@@ -5542,7 +5547,7 @@ export default function ReservationForm({
         child_product_price: keep(newChild, (existing as any)?.child_product_price),
         infant_product_price: keep(newInfant, (existing as any)?.infant_product_price),
         product_price_total: keep(newProductTotal, (existing as any)?.product_price_total),
-        not_included_price: keep(newNotIncluded, (existing as any)?.not_included_price),
+        not_included_price: resolveNotIncludedForSave(newNotIncluded),
         required_options: fd.requiredOptions,
         required_option_total: keep(newRequiredOptionTotal, (existing as any)?.required_option_total),
         choices: fd.choices,

@@ -2509,7 +2509,8 @@ export function TourDetailPageView({
                     child_product_price: keep(newChild, existingRow?.child_product_price),
                     infant_product_price: keep(newInfant, existingRow?.infant_product_price),
                     product_price_total: keep(newProductTotal, existingRow?.product_price_total),
-                    not_included_price: keep(newNotIncluded, existingRow?.not_included_price),
+                    /** 불포함 0 초기화 허용 — keep 사용 시 사용자가 0으로 저장해도 이전 DB값이 유지됨 */
+                    not_included_price: newNotIncluded,
                     required_options: pricingInfo.requiredOptions ?? {},
                     required_option_total: keep(newRequiredOptionTotal, existingRow?.required_option_total),
                     choices: pricingInfo.choices ?? {},
