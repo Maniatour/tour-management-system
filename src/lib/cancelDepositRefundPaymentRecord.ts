@@ -4,7 +4,32 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
 
-const PARTNER_REFUND_STATUS = '환불됨 (파트너)'
+export const PARTNER_REFUND_STATUS = '환불됨 (파트너)'
+
+export type PaymentMethodOptionLite = {
+  id: string
+  method: string
+  method_type: string
+}
+
+/** 로드된 결제 방법 목록에서 Partner Received (transfer) 항목 선택 */
+export function pickPartnerReceivedTransferFromOptions(
+  options: PaymentMethodOptionLite[]
+): { id: string; method: string } | null {
+  const exact = options.find(
+    (o) => o.method === 'Partner Received' && o.method_type === 'transfer'
+  )
+  if (exact) return { id: exact.id, method: exact.method }
+
+  const loose = options.find(
+    (o) =>
+      o.method_type === 'transfer' &&
+      o.method.toLowerCase().includes('partner received')
+  )
+  if (loose) return { id: loose.id, method: loose.method }
+
+  return null
+}
 export const CANCEL_DEPOSIT_REFUND_NOTE_AUTO = '자동: 취소 시 보증금 반환 (파트너)'
 export const CANCEL_DEPOSIT_REFUND_NOTE_MANUAL = '수동: 취소 보증금 반환 (파트너)'
 

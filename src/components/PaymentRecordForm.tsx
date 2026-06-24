@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react'
 import { Upload, X, Check, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
+import {
+  PARTNER_REFUND_STATUS,
+  pickPartnerReceivedTransferFromOptions,
+} from '@/lib/cancelDepositRefundPaymentRecord'
 
 interface PaymentRecordFormProps {
   reservationId: string
@@ -278,7 +282,17 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
   }
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'payment_status' && value === PARTNER_REFUND_STATUS) {
+        const picked = pickPartnerReceivedTransferFromOptions(paymentMethodOptions)
+        if (picked) {
+          next.payment_method_id = picked.id
+          next.payment_method = picked.method
+        }
+      }
+      return next
+    })
   }
 
   return (
