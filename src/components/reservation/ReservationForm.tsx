@@ -61,7 +61,7 @@ function customerRowToFormFields(customer: CustomerFormFieldSource) {
         : lang || 'KR'
 
   return {
-    customerId: customer.id,
+    customerId: customer.id ?? '',
     customerName: customer.name || '',
     customerSearch: customer.name || '',
     customerPhone: customer.phone || '',

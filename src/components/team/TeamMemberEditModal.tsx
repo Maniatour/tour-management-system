@@ -37,7 +37,7 @@ export default function TeamMemberEditModal({
       member={member}
       onSubmit={(data) => void handleSubmit(data)}
       onCancel={onClose}
-      onDelete={onDelete}
+      {...(onDelete ? { onDelete } : {})}
     />
   )
 }

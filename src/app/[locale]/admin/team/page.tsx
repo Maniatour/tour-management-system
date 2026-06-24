@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -21,7 +21,6 @@ import {
   Grid,
   List,
   Download,
-  ImagePlus,
 } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
@@ -34,37 +33,6 @@ type TeamCardPaymentMethodRow = Pick<
   Database['public']['Tables']['payment_methods']['Row'],
   'id' | 'method' | 'display_name' | 'status' | 'method_type' | 'user_email' | 'card_holder_name'
 >
-
-/** DB 저장값(영문) + 모달 셀렉트용 한·영 라벨 */
-const TEAM_POSITION_OPTIONS = [
-  { value: 'manager', labelKo: '매니저', labelEn: 'manager' },
-  { value: 'admin', labelKo: '관리자', labelEn: 'admin' },
-  { value: 'tour guide', labelKo: '투어 가이드', labelEn: 'tour guide' },
-  { value: 'driver', labelKo: '운전기사', labelEn: 'driver' },
-  { value: 'op', labelKo: '운영자', labelEn: 'op' },
-] as const
-
-function teamPositionOptionLabel(ko: string, en: string) {
-  return `${ko} (${en})`
-}
-
-/** Supabase public URL → documents 버킷 객체 경로 (관리형 프로필 삭제용) */
-function documentsBucketPathFromPublicUrl(publicUrl: string): string | null {
-  const u = publicUrl.trim()
-  const markers = ['/object/public/documents/', '/storage/v1/object/public/documents/']
-  for (const m of markers) {
-    const i = u.indexOf(m)
-    if (i !== -1) {
-      const raw = u.slice(i + m.length).split('?')[0]
-      try {
-        return decodeURIComponent(raw || '')
-      } catch {
-        return raw || null
-      }
-    }
-  }
-  return null
-}
 
 const TEAM_LIST_UI_DEFAULT = {
   searchTerm: '',

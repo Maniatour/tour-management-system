@@ -11,7 +11,7 @@ export async function refreshCustomerInList<T extends { id: string }>(
   const { data, error } = await supabase.from('customers').select('*').eq('id', id).maybeSingle()
   if (error || !data) return
 
-  const row = data as T
+  const row = data as unknown as T
   setCustomers((prev) => {
     const index = prev.findIndex((c) => c.id === row.id)
     if (index >= 0) {

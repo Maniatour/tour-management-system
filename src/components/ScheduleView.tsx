@@ -10532,10 +10532,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               const customerId =
                 (scheduleEditingReservation as { customerId?: string; customer_id?: string | null })?.customerId ||
                 (scheduleEditingReservation as { customer_id?: string | null })?.customer_id
-              await refreshCustomerInList(customerId, (updater) => {
+              await refreshCustomerInList<{ id: string }>(customerId, (updater) => {
                 setScheduleReservationFormData((prev) => {
                   if (!prev) return prev
-                  return { ...prev, customers: updater(prev.customers) }
+                  return { ...prev, customers: updater(prev.customers as { id: string }[]) }
                 })
               })
             }}
