@@ -20,6 +20,10 @@ function teamPositionOptionLabel(ko: string, en: string) {
   return `${ko} (${en})`
 }
 
+/** 팀원 문서(documents 버킷) 업로드 최대 크기 — storage.buckets.file_size_limit 과 맞출 것 */
+const TEAM_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+const TEAM_DOCUMENT_MAX_LABEL = '50MB'
+
 function documentsBucketPathFromPublicUrl(publicUrl: string): string | null {
   const u = publicUrl.trim()
   const markers = ['/object/public/documents/', '/storage/v1/object/public/documents/']
@@ -134,9 +138,11 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
     
     try {
       const uploadPromises = Array.from(files).map(async (file) => {
-        // 파일 크기 체크 (10MB 제한)
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`파일 "${file.name}"의 크기가 너무 큽니다. 최대 10MB까지 업로드 가능합니다.`)
+        // 파일 크기 체크
+        if (file.size > TEAM_DOCUMENT_MAX_BYTES) {
+          throw new Error(
+            `파일 "${file.name}"의 크기가 너무 큽니다. 최대 ${TEAM_DOCUMENT_MAX_LABEL}까지 업로드 가능합니다.`
+          )
         }
 
         const fileExt = file.name.split('.').pop()
@@ -233,8 +239,8 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
     }
     
     // 파일 크기 체크
-    if (file.size > 10 * 1024 * 1024) {
-      alert('파일 크기가 너무 큽니다. 최대 10MB까지 업로드 가능합니다.')
+    if (file.size > TEAM_DOCUMENT_MAX_BYTES) {
+      alert(`파일 크기가 너무 큽니다. 최대 ${TEAM_DOCUMENT_MAX_LABEL}까지 업로드 가능합니다.`)
       return
     }
     
@@ -921,6 +927,9 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
               <FileText className="w-5 h-5 mr-2" />
               문서 관리
             </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              PDF, Word, 이미지 파일 (파일당 최대 {TEAM_DOCUMENT_MAX_LABEL})
+            </p>
             
             {/* 문서 타입별 섹션 */}
             {[

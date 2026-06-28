@@ -3,14 +3,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { getAccessTokenForApi } from '@/lib/supabase';
 import { deriveLegacyTicketBookingStatusFromAxes } from '@/lib/ticketBookingLegacyAxisMap';
 import { getTicketBookingTimeSelectOptions } from '@/lib/ticketBookingTimeSelect';
 import { X } from 'lucide-react';
 
 function isMissingZelleConfirmationColumnError(err: unknown): boolean {
+  if (typeof err === 'string') {
+    return err.includes('zelle_confirmation_number');
+  }
   if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: string; message?: string };
+  const e = err as { code?: string; message?: string; error?: string };
+  if (
+    typeof e.error === 'string' &&
+    e.error.includes('zelle_confirmation_number')
+  ) {
+    return true;
+  }
   return (
     e.code === 'PGRST204' &&
     typeof e.message === 'string' &&
@@ -178,13 +187,44 @@ export default function TicketBookingBulkAddModal({
     const rows = buildRows();
     setSaving(true);
     try {
-      let insertRes = await (supabase as any).from('ticket_bookings').insert(rows).select('id');
-      if (isMissingZelleConfirmationColumnError(insertRes.error)) {
+      const accessToken = await getAccessTokenForApi(30);
+      if (!accessToken) {
+        alert(t('bulkAddSubmitterRequired'));
+        return;
+      }
+
+      const postBulk = async (payloadRows: ReturnType<typeof buildRows>) => {
+        const apiRes = await fetch('/api/ticket-bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ rows: payloadRows }),
+        });
+        const apiJson = await apiRes.json().catch(() => ({}));
+        return { apiRes, apiJson };
+      };
+
+      let { apiRes, apiJson } = await postBulk(rows);
+      if (
+        !apiRes.ok &&
+        isMissingZelleConfirmationColumnError(apiJson) &&
+        rows.some((row) => 'zelle_confirmation_number' in row)
+      ) {
         omitZelleConfirmationInTicketBookingsPayload = true;
         const rowsNoZelle = rows.map(({ zelle_confirmation_number: _z, ...r }) => r);
-        insertRes = await (supabase as any).from('ticket_bookings').insert(rowsNoZelle).select('id');
+        ({ apiRes, apiJson } = await postBulk(rowsNoZelle));
       }
-      if (insertRes.error) throw insertRes.error;
+
+      if (!apiRes.ok) {
+        throw new Error(
+          typeof apiJson?.error === 'string'
+            ? apiJson.error
+            : '입장권 부킹을 일괄 생성할 수 없습니다'
+        );
+      }
+
       await onSuccess?.();
       alert(t('bulkAddSuccess', { count: previewCount }));
       onClose();

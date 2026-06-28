@@ -7,14 +7,9 @@ import { useLocale, useTranslations } from 'next-intl'
 import { 
   Home, 
   Calendar, 
-  Users, 
-  Map, 
   Package, 
-  Settings, 
-  FileText,
   ChevronLeft,
   ChevronRight,
-  Globe,
   UserCheck
 } from 'lucide-react'
 
@@ -48,16 +43,9 @@ const Sidebar = () => {
 
   const navItems = [
     { href: `/${locale}`, label: t('home'), icon: Home },
-    { href: `/${locale}/schedule`, label: t('schedule'), icon: Calendar },
-    { href: `/${locale}/customers`, label: t('customers'), icon: Users },
-    { href: `/${locale}/reservations`, label: t('reservations'), icon: Calendar },
-    { href: `/${locale}/tours`, label: t('tours'), icon: Map },
-    { href: `/${locale}/channels`, label: t('channels'), icon: Globe },
-    { href: `/${locale}/products`, label: t('products'), icon: Package },
-    { href: `/${locale}/options`, label: t('options'), icon: Settings },
-    { href: `/${locale}/team`, label: t('team'), icon: UserCheck },
-    { href: `/${locale}/courses`, label: t('courses'), icon: FileText },
-
+    { href: `/${locale}/products`, label: t('tourProducts'), icon: Package },
+    { href: `/${locale}/reservation-check`, label: t('reservationCheck'), icon: Calendar },
+    { href: `/${locale}/dashboard`, label: t('dashboard'), icon: UserCheck },
   ]
 
   const toggleSidebar = () => {

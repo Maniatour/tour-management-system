@@ -5,9 +5,21 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
-import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, ArrowLeft } from 'lucide-react'
+import { Calendar, User, Phone, Mail, MapPin, Clock, Users, CheckCircle, AlertCircle, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import CustomerDashboardHeader from '@/components/customer/CustomerDashboardHeader'
+import CustomerDashboardCustomerMatchSection from '@/components/customer/CustomerDashboardCustomerMatchSection'
 
 interface Customer {
   id: string
@@ -45,6 +57,7 @@ export default function CustomerDashboard() {
   const params = useParams()
   const locale = params.locale as string || 'ko'
   const t = useTranslations('common')
+  const tDash = useTranslations('customerDashboard')
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,44 +69,18 @@ export default function CustomerDashboard() {
   })
   const [searchResults, setSearchResults] = useState<Customer[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [matchConfirm, setMatchConfirm] = useState<{
+    customerId: string
+    name: string
+    contact: string
+  } | null>(null)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  // 인증 확인 (시뮬레이션 상태 우선 확인)
-  useEffect(() => {
-    console.log('Dashboard: Auth check effect triggered', { 
-      isSimulating, 
-      hasSimulatedUser: !!simulatedUser, 
-      hasUser: !!user,
-      simulatedUserEmail: simulatedUser?.email 
-    })
-    
-    // 시뮬레이션 중인 경우 인증 체크 완전히 건너뛰기
-    if (isSimulating && simulatedUser) {
-      console.log('Dashboard: Simulation active, skipping authentication check')
-      return
-    }
-    
-    // 시뮬레이션 중이지만 simulatedUser가 없는 경우 잠시 기다림
-    if (isSimulating && !simulatedUser) {
-      console.log('Dashboard: Simulation in progress but no simulatedUser yet, waiting...')
-      return
-    }
-    
-    // 고객 페이지는 로그인하지 않은 사용자도 접근 가능하므로 인증 체크 제거
-    console.log('Dashboard: Customer page allows unauthenticated access')
-  }, [user, isSimulating, simulatedUser, router, locale])
+  const noContactLabel = locale === 'en' ? 'No info' : '정보 없음'
 
-  // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
-  useEffect(() => {
-    if (isSimulating && simulatedUser) {
-      console.log('Dashboard: Simulation state confirmed:', {
-        simulatedUser: simulatedUser.email,
-        role: simulatedUser.role,
-        isSimulating
-      })
-    }
-  }, [isSimulating, simulatedUser])
-
-  // 시뮬레이션 복원 이벤트 리스너 (함수 정의 후에 추가됨)
+  const handleSearchFormChange = (field: keyof typeof searchForm, value: string) => {
+    setSearchForm((prev) => ({ ...prev, [field]: value }))
+  }
 
   // 고객 정보 로드
   const loadCustomerData = useCallback(async () => {
@@ -110,7 +97,6 @@ export default function CustomerDashboard() {
 
     try {
       setLoading(true)
-      console.log('Dashboard: 일반 모드 - 고객 정보 조회:', { userId: authUser.id, email: authUser.email })
       
       // 1. user_customer_links를 통해 고객 정보 조회
       const { data: linkData, error: linkError } = await supabase
@@ -126,7 +112,6 @@ export default function CustomerDashboard() {
       if (linkData && !linkError) {
         // user_customer_links를 통해 고객 정보 조회
         const linkDataTyped = linkData as unknown as { customer_id: string; matched_at: string; matched_by: string }
-        console.log('Dashboard: user_customer_links를 통해 고객 정보 조회:', linkDataTyped.customer_id)
         const { data: linkedCustomer, error: customerError } = await supabase
           .from('customers')
           .select('*')
@@ -137,13 +122,11 @@ export default function CustomerDashboard() {
           console.error('연결된 고객 정보 조회 오류:', customerError)
         } else if (linkedCustomer) {
           customerData = linkedCustomer as Customer
-          console.log('Dashboard: user_customer_links를 통해 고객 정보 발견:', customerData.name)
         }
       }
 
       // 2. user_customer_links에 연결이 없는 경우, 이메일로 직접 조회 시도 (기존 방식)
       if (!customerData) {
-        console.log('Dashboard: user_customer_links 연결 없음, 이메일로 직접 조회 시도')
         const { data: emailCustomer, error: emailError } = await supabase
           .from('customers')
           .select('*')
@@ -168,7 +151,6 @@ export default function CustomerDashboard() {
           }
         } else if (emailCustomer) {
           customerData = emailCustomer as Customer
-          console.log('Dashboard: 이메일로 고객 정보 발견:', customerData.name)
           
           // 이메일로 찾은 경우 자동으로 user_customer_links에 연결 생성
           const { error: autoLinkError } = await supabase
@@ -183,13 +165,11 @@ export default function CustomerDashboard() {
           if (autoLinkError) {
             console.warn('자동 연결 생성 오류 (무시 가능):', autoLinkError)
           } else {
-            console.log('Dashboard: 이메일 매칭으로 자동 연결 생성 완료')
           }
         } else {
           // 3. 이메일로도 찾지 못한 경우, 이름 기반 자동 매칭 시도
           // 구글 프로필 이름과 일치하는 고객이 있는지 확인
           if (authUser.name) {
-            console.log('Dashboard: 이름 기반 자동 매칭 시도:', authUser.name)
             const { data: nameCustomers, error: nameError } = await supabase
               .from('customers')
               .select('*')
@@ -199,21 +179,17 @@ export default function CustomerDashboard() {
             if (!nameError && nameCustomers && nameCustomers.length === 1) {
               // 이름이 정확히 하나만 일치하는 경우 자동 매칭 제안
               const matchedCustomer = nameCustomers[0] as Customer
-              console.log('Dashboard: 이름 기반 단일 고객 발견:', matchedCustomer.name)
               
               // 사용자에게 자동 매칭 제안 (비동기로 처리하여 UI 블로킹 방지)
               setTimeout(() => {
-                const shouldAutoMatch = confirm(
-                  `고객 "${matchedCustomer.name}" (${matchedCustomer.email || matchedCustomer.phone || '정보 없음'})을(를) 자동으로 매칭하시겠습니까?\n\n이제 이 계정으로 예약 정보를 확인할 수 있습니다.`
-                )
-                
-                if (shouldAutoMatch) {
-                  handleMatchCustomer(matchedCustomer.id)
-                }
+                setMatchConfirm({
+                  customerId: matchedCustomer.id,
+                  name: matchedCustomer.name,
+                  contact: matchedCustomer.email || matchedCustomer.phone || noContactLabel,
+                })
               }, 1000)
             } else if (!nameError && nameCustomers && nameCustomers.length > 1) {
               // 여러 고객이 일치하는 경우 검색 결과에 표시
-              console.log('Dashboard: 이름 기반 여러 고객 발견:', nameCustomers.length)
               setSearchResults(nameCustomers as Customer[])
             }
           }
@@ -276,7 +252,7 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [authUser?.id, authUser?.email, isSimulating])
+  }, [authUser?.id, authUser?.email, isSimulating, noContactLabel])
 
   // 시뮬레이션된 고객 데이터 로드
   const loadSimulatedCustomerData = useCallback(async () => {
@@ -288,18 +264,12 @@ export default function CustomerDashboard() {
 
     try {
       setLoading(true)
-      console.log('Dashboard: 시뮬레이션 고객 데이터 로드 시작:', {
-        id: simulatedUser.id,
-        email: simulatedUser.email,
-        name: simulatedUser.name_ko
-      })
 
       // 실제 데이터베이스에서 고객 정보 가져오기
       let customerData: Customer | null = null
 
       // 방법 1: customer_id로 조회
       if (simulatedUser.id) {
-        console.log('Dashboard: customer_id로 고객 정보 조회:', simulatedUser.id)
         const { data, error } = await supabase
           .from('customers')
           .select('*')
@@ -310,14 +280,12 @@ export default function CustomerDashboard() {
           console.warn('Dashboard: customer_id로 조회 실패:', error)
         } else if (data) {
           const typedData = data as unknown as Customer
-          console.log('Dashboard: customer_id로 고객 정보 발견:', typedData.name, typedData.email)
           customerData = typedData
         }
       }
 
       // 방법 2: 이메일로 조회 (customer_id로 찾지 못한 경우)
       if (!customerData && simulatedUser.email) {
-        console.log('Dashboard: 이메일로 고객 정보 조회:', simulatedUser.email)
         const { data, error } = await supabase
           .from('customers')
           .select('*')
@@ -328,18 +296,15 @@ export default function CustomerDashboard() {
           console.warn('Dashboard: 이메일로 조회 실패:', error)
         } else if (data) {
           const typedData = data as unknown as Customer
-          console.log('Dashboard: 이메일로 고객 정보 발견:', typedData.name, typedData.email)
           customerData = typedData
         }
       }
 
       // 실제 고객 정보가 있으면 사용, 없으면 시뮬레이션 데이터 사용
       if (customerData) {
-        console.log('Dashboard: 실제 고객 정보로 설정:', customerData.name, customerData.email)
         setCustomer(customerData)
       } else {
         // 실제 데이터베이스에 고객 정보가 없는 경우 시뮬레이션 데이터 사용
-        console.log('Dashboard: 실제 고객 정보 없음, 시뮬레이션 데이터 사용:', simulatedUser.name_ko, simulatedUser.email)
         setCustomer({
           id: simulatedUser.id,
           name: simulatedUser.name_ko || simulatedUser.name_en || '',
@@ -420,7 +385,6 @@ export default function CustomerDashboard() {
   // 시뮬레이션 복원 이벤트 리스너
   useEffect(() => {
     const handleSimulationRestored = (event: CustomEvent) => {
-      console.log('Dashboard: 시뮬레이션 복원 이벤트 수신:', event.detail)
       // 시뮬레이션 상태가 복원되면 고객 정보 로드
       if (event.detail && event.detail.email) {
         setCustomer(null)
@@ -446,12 +410,10 @@ export default function CustomerDashboard() {
       try {
         const savedSimulation = localStorage.getItem('positionSimulation')
         if (savedSimulation && !isSimulating) {
-          console.log('Dashboard: 저장된 시뮬레이션 상태 발견, 복원 대기 중...')
           // 시뮬레이션 상태가 복원될 때까지 잠시 대기
           setTimeout(() => {
             // 다시 확인
             if (isSimulating && simulatedUser) {
-              console.log('Dashboard: 시뮬레이션 상태 복원됨, 고객 정보 로드')
               setCustomer(null)
               setReservations([])
               loadSimulatedCustomerData()
@@ -466,7 +428,6 @@ export default function CustomerDashboard() {
 
     // 시뮬레이션 모드 우선 확인
     if (isSimulating && simulatedUser) {
-      console.log('Dashboard: 시뮬레이션 모드 - 고객 정보 로드:', simulatedUser.email, simulatedUser.id)
       // 기존 고객 정보 초기화
       setCustomer(null)
       setReservations([])
@@ -483,7 +444,6 @@ export default function CustomerDashboard() {
     // 일반 모드: 시뮬레이션이 아닐 때만 실행
     if (!isSimulating) {
       if (user && authUser?.email) {
-        console.log('Dashboard: 일반 모드 - 고객 정보 로드:', authUser.email)
         // 기존 고객 정보 초기화
         setCustomer(null)
         setReservations([])
@@ -515,7 +475,7 @@ export default function CustomerDashboard() {
   // 고객 ID 검색 및 자동 매칭
   const handleSearch = async () => {
     if (!searchForm.phone && !searchForm.email && !searchForm.tourDate && !searchForm.productName) {
-      alert('검색 조건을 하나 이상 입력해주세요.')
+      setFeedback({ type: 'error', message: t('customerSearchValidation') })
       return
     }
 
@@ -539,7 +499,7 @@ export default function CustomerDashboard() {
           details: error?.details || 'No details'
         })
         console.error('전체 검색 오류 객체:', error)
-        alert('검색 중 오류가 발생했습니다.')
+        setFeedback({ type: 'error', message: t('customerSearchError') })
         return
       }
 
@@ -590,19 +550,17 @@ export default function CustomerDashboard() {
           exactMatch.email.toLowerCase() === searchForm.email.toLowerCase()
 
         if (phoneMatch || emailMatch) {
-          const shouldAutoMatch = confirm(
-            `고객 "${exactMatch.name}" (${exactMatch.email || exactMatch.phone})을(를) 자동으로 매칭하시겠습니까?\n\n이제 이 계정으로 예약 정보를 확인할 수 있습니다.`
-          )
-          
-          if (shouldAutoMatch) {
-            await handleMatchCustomer(exactMatch.id)
-            return
-          }
+          setMatchConfirm({
+            customerId: exactMatch.id,
+            name: exactMatch.name,
+            contact: exactMatch.email || exactMatch.phone || noContactLabel,
+          })
+          return
         }
       }
     } catch (error) {
       console.error('검색 오류:', error)
-      alert('검색 중 오류가 발생했습니다.')
+      setFeedback({ type: 'error', message: t('customerSearchError') })
     } finally {
       setIsSearching(false)
     }
@@ -611,7 +569,7 @@ export default function CustomerDashboard() {
   // 고객 ID 매칭
   const handleMatchCustomer = async (customerId: string) => {
     if (!authUser?.id || !authUser?.email) {
-      alert('로그인이 필요합니다.')
+      setFeedback({ type: 'error', message: t('loginRequired') })
       return
     }
 
@@ -625,7 +583,7 @@ export default function CustomerDashboard() {
         .maybeSingle()
 
       if (existingLink) {
-        alert('이미 매칭된 고객입니다.')
+        setFeedback({ type: 'success', message: t('customerMatchAlready') })
         loadCustomerData()
         setSearchResults([])
         setSearchForm({ phone: '', email: '', tourDate: '', productName: '' })
@@ -658,17 +616,20 @@ export default function CustomerDashboard() {
           code: insertError?.code || 'No code',
           details: insertError?.details || 'No details'
         })
-        alert('고객 ID 매칭 중 오류가 발생했습니다: ' + insertError.message)
+        setFeedback({
+          type: 'error',
+          message: `${t('customerMatchError')}: ${insertError.message}`,
+        })
         return
       }
 
-      alert('고객 ID가 성공적으로 매칭되었습니다.')
+      setFeedback({ type: 'success', message: t('customerMatchSuccess') })
       loadCustomerData()
       setSearchResults([])
       setSearchForm({ phone: '', email: '', tourDate: '', productName: '' })
     } catch (error) {
       console.error('고객 ID 매칭 오류:', error)
-      alert('고객 ID 매칭 중 오류가 발생했습니다.')
+      setFeedback({ type: 'error', message: t('customerMatchError') })
     }
   }
 
@@ -686,157 +647,50 @@ export default function CustomerDashboard() {
         return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-6">
-        {/* 헤더 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">고객 대시보드</h1>
-              <p className="text-gray-600">투어 예약 정보를 확인하고 관리하세요.</p>
-            </div>
-            {isSimulating && simulatedUser && (
-              <div className="flex items-center space-x-2">
-                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-                  시뮬레이션 중: {simulatedUser.name_ko}
-                </div>
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => router.push(`/${locale}/dashboard/profile`)}
-                    className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700"
-                  >
-                    내 정보
-                  </button>
-                  <button
-                    onClick={() => router.push(`/${locale}/dashboard/reservations`)}
-                    className="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700"
-                  >
-                    내 예약
-                  </button>
-                  <button
-                    onClick={handleStopSimulation}
-                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
-                  >
-                    <ArrowLeft className="w-3 h-3 mr-1" />
-                    관리자로 돌아가기
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <CustomerDashboardHeader
+          isSimulating={isSimulating}
+          simulatedUserName={simulatedUser?.name_ko}
+          onProfile={() => router.push(`/${locale}/dashboard/profile`)}
+          onReservations={() => router.push(`/${locale}/dashboard/reservations`)}
+          onStopSimulation={handleStopSimulation}
+        />
 
-        {/* 고객 정보가 없는 경우 - 검색 섹션 */}
-        {!customer && (
-          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-              <Search className="w-5 h-5 mr-2" />
-              고객 ID 검색 및 매칭
-            </h2>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <p className="text-blue-800 text-sm font-medium mb-2">
-                💡 OTA 채널을 통해 예약하신 고객님께서는 아래 정보로 고객 ID를 검색하여 매칭해주세요.
-              </p>
-              <p className="text-blue-700 text-sm">
-                전화번호, 이메일(OTA에서 제공된 임시 이메일), 투어 날짜, 상품명 중 하나 이상을 입력하여 고객 ID를 찾고 매칭하세요.
-                매칭 후에는 이 계정으로 예약 정보를 확인하고 채팅할 수 있습니다.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  전화번호
-                </label>
-                <input
-                  type="text"
-                  value={searchForm.phone}
-                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, phone: e.target.value }))}
-                  placeholder="010-1234-5678"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  이메일
-                </label>
-                <input
-                  type="email"
-                  value={searchForm.email}
-                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, email: e.target.value }))}
-                  placeholder="customer@example.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  투어 날짜
-                </label>
-                <input
-                  type="date"
-                  value={searchForm.tourDate}
-                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, tourDate: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  상품명
-                </label>
-                <input
-                  type="text"
-                  value={searchForm.productName}
-                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, productName: e.target.value }))}
-                  placeholder="투어 상품명"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleSearch}
-              disabled={isSearching}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-            >
-              {isSearching ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  검색 중...
-                </>
+        {feedback && (
+          <div
+            className={`mb-6 rounded-lg border p-4 flex items-start justify-between gap-3 ${
+              feedback.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              {feedback.type === 'success' ? (
+                <CheckCircle className="h-5 w-5 shrink-0 mt-0.5" />
               ) : (
-                <>
-                  <Search className="w-4 h-4 mr-2" />
-                  검색
-                </>
+                <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               )}
+              <p className="text-sm">{feedback.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="text-current opacity-60 hover:opacity-100"
+              aria-label={t('cancel')}
+            >
+              <X className="h-4 w-4" />
             </button>
-
-            {/* 검색 결과 */}
-            {searchResults.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">검색 결과</h3>
-                <div className="space-y-3">
-                  {searchResults.map((result: Customer) => (
-                    <div key={result.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium text-gray-900">{result.name}</h4>
-                          <p className="text-sm text-gray-600">{result.email}</p>
-                          {result.phone && (
-                            <p className="text-sm text-gray-600">{result.phone}</p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleMatchCustomer(result.id)}
-                          className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm"
-                        >
-                          매칭
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+        )}
+
+        {!customer && (
+          <CustomerDashboardCustomerMatchSection
+            searchForm={searchForm}
+            onSearchFormChange={handleSearchFormChange}
+            onSearch={handleSearch}
+            isSearching={isSearching}
+            searchResults={searchResults}
+            onMatch={handleMatchCustomer}
+          />
         )}
 
         {/* 고객 정보가 있는 경우 */}
@@ -884,9 +738,7 @@ export default function CustomerDashboard() {
                   href={`/${locale}/dashboard/resident-check`}
                   className="text-teal-700 hover:text-teal-800 text-sm font-medium"
                 >
-                  {locale === 'en'
-                    ? 'Park entry / residency (email link) →'
-                    : '국립공원 입장·거주 확인(이메일 링크) →'}
+                  {tDash('residentCheckLink')}
                 </Link>
               </div>
             </div>
@@ -895,7 +747,7 @@ export default function CustomerDashboard() {
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
                 <Calendar className="w-5 h-5 mr-2" />
-                내 예약
+                {tDash('myReservationsTitle')}
               </h2>
               
               {reservations.length > 0 ? (
@@ -913,28 +765,30 @@ export default function CustomerDashboard() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900 mb-2">
-                            {reservation.products?.name || '상품명 없음'}
+                            {reservation.products?.name || tDash('noProductName')}
                           </h3>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
                             <div className="flex items-center">
                               <Calendar className="w-4 h-4 mr-2" />
-                              <span>투어 날짜: {reservation.tour_date}</span>
+                              <span>{tDash('tourDate')}: {reservation.tour_date}</span>
                             </div>
                             {reservation.tour_time && (
                               <div className="flex items-center">
                                 <Clock className="w-4 h-4 mr-2" />
-                                <span>투어 시간: {reservation.tour_time}</span>
+                                <span>{tDash('tourTime')}: {reservation.tour_time}</span>
                               </div>
                             )}
                             {reservation.pickup_hotel && (
                               <div className="flex items-center">
                                 <MapPin className="w-4 h-4 mr-2" />
-                                <span>픽업 호텔: {reservation.pickup_hotel}</span>
+                                <span>{tDash('pickupHotel')}: {reservation.pickup_hotel}</span>
                               </div>
                             )}
                             <div className="flex items-center">
                               <Users className="w-4 h-4 mr-2" />
-                              <span>인원: 성인 {reservation.adults}명, 어린이 {reservation.child}명, 유아 {reservation.infant}명</span>
+                              <span>
+                                {tDash('participants')}: {tDash('adults')} {reservation.adults}{tDash('people')}, {tDash('children')} {reservation.child}{tDash('people')}, {tDash('infants')} {reservation.infant}{tDash('people')}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -945,9 +799,9 @@ export default function CustomerDashboard() {
                             reservation.status === 'completed' ? 'bg-blue-100 text-blue-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {reservation.status === 'confirmed' ? '확정' :
-                             reservation.status === 'pending' ? '대기중' :
-                             reservation.status === 'completed' ? '완료' : '취소'}
+                            {reservation.status === 'confirmed' ? t('confirmed') :
+                             reservation.status === 'pending' ? t('pending') :
+                             reservation.status === 'completed' ? t('completed') : t('cancelled')}
                           </span>
                         </div>
                       </div>
@@ -957,13 +811,47 @@ export default function CustomerDashboard() {
               ) : (
                 <div className="text-center py-8">
                   <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-gray-500">예약 내역이 없습니다.</p>
+                  <p className="text-gray-500">{tDash('noReservations')}</p>
                 </div>
               )}
             </div>
           </>
         )}
       </div>
+
+      <AlertDialog
+        open={matchConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setMatchConfirm(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('customerMatchTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {matchConfirm
+                ? t('customerMatchPrompt', {
+                    name: matchConfirm.name,
+                    contact: matchConfirm.contact,
+                  })
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (matchConfirm) {
+                  handleMatchCustomer(matchConfirm.customerId)
+                  setMatchConfirm(null)
+                }
+              }}
+            >
+              {t('confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

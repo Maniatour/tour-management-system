@@ -375,7 +375,7 @@ export default function ProductTagsPage() {
                       {tagCategory.products.slice(0, 3).map((product) => (
                         <Link
                           key={product.id}
-                          href={`/ko/products/${product.id}`}
+                          href={`/${locale}/products/${product.id}`}
                           className="block p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
@@ -408,7 +408,7 @@ export default function ProductTagsPage() {
                       {tagCategory.products.length > 3 && (
                         <div className="text-center pt-2">
                           <Link
-                            href={`/ko/products?tag=${tagCategory.id}`}
+                            href={`/${locale}/products?tag=${tagCategory.id}`}
                             className="text-sm text-blue-600 hover:text-blue-800"
                           >
                             +{tagCategory.products.length - 3}개 더 보기

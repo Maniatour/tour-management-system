@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -27,6 +27,8 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false)
   const { user, loading } = useAuth()
   const router = useRouter()
+  const params = useParams()
+  const locale = (params.locale === 'en' ? 'en' : 'ko') as 'ko' | 'en'
 
   const {
     register,
@@ -38,9 +40,9 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/ko/auth')
+      router.push(`/${locale}/auth`)
     }
-  }, [user, loading, router])
+  }, [user, loading, router, locale])
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     setIsLoading(true)

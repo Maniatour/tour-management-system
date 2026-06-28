@@ -728,7 +728,7 @@ export default function ProductsPage() {
           {/* 뷰 모드 및 태그 링크 */}
           <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
             <Link
-              href="/ko/products/tags"
+              href={`/${locale}/products/tags`}
               className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
             >
               🏷️ {t('viewByTags')}

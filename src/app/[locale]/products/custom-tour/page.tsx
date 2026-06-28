@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, FileText, MapPin, User, Star } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
@@ -53,6 +53,7 @@ const TIP_RATE = 0.15 // 15%
 export default function CustomTourPage() {
   const locale = useLocale()
   const isEnglish = locale === 'en'
+  const t = useTranslations('customTour')
   
   // 기본 상태
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
@@ -131,21 +132,21 @@ export default function CustomTourPage() {
     selected.forEach(course => {
       if (course.price_type === 'per_vehicle') {
         let price = 0
-        let priceType = ''
+        let vehicleLabel = ''
         if (vehicleType === 'minivan' && course.price_minivan) {
           price = course.price_minivan
-          priceType = '미니밴'
+          vehicleLabel = t('priceMinivan')
         } else if (vehicleType === '9seater' && course.price_9seater) {
           price = course.price_9seater
-          priceType = '9인승'
+          vehicleLabel = t('price9seater')
         } else if (vehicleType === '13seater' && course.price_13seater) {
           price = course.price_13seater
-          priceType = '13인승'
+          vehicleLabel = t('price13seater')
         }
         if (price > 0) {
           details.push({
             courseName: course.name_ko || course.name_en,
-            priceType: `차량별 (${priceType})`,
+            priceType: t('pricePerVehicle', { type: vehicleLabel }),
             unitPrice: price,
             quantity: 1,
             total: price
@@ -155,7 +156,7 @@ export default function CustomTourPage() {
         if (course.price_adult) {
           details.push({
             courseName: course.name_ko || course.name_en,
-            priceType: '인원별 (성인)',
+            priceType: t('pricePerPersonAdult'),
             unitPrice: course.price_adult,
             quantity: participantCount,
             total: course.price_adult * participantCount
@@ -165,7 +166,7 @@ export default function CustomTourPage() {
     })
     
     return details
-  }, [selectedCourses, tourCourses, vehicleType, participantCount])
+  }, [selectedCourses, tourCourses, vehicleType, participantCount, t])
 
   // 호텔 숙박비 상세 내역
   const hotelAccommodationDetails = useMemo(() => {
@@ -175,21 +176,21 @@ export default function CustomTourPage() {
     selected.forEach(course => {
       if (course.price_type === 'per_vehicle') {
         let price = 0
-        let priceType = ''
+        let vehicleLabel = ''
         if (vehicleType === 'minivan' && course.price_minivan) {
           price = course.price_minivan
-          priceType = '미니밴'
+          vehicleLabel = t('priceMinivan')
         } else if (vehicleType === '9seater' && course.price_9seater) {
           price = course.price_9seater
-          priceType = '9인승'
+          vehicleLabel = t('price9seater')
         } else if (vehicleType === '13seater' && course.price_13seater) {
           price = course.price_13seater
-          priceType = '13인승'
+          vehicleLabel = t('price13seater')
         }
         if (price > 0) {
           details.push({
             courseName: course.name_ko || course.name_en,
-            priceType: `차량별 (${priceType})`,
+            priceType: t('pricePerVehicle', { type: vehicleLabel }),
             unitPrice: price,
             quantity: 1,
             total: price
@@ -199,7 +200,7 @@ export default function CustomTourPage() {
         if (course.price_adult) {
           details.push({
             courseName: course.name_ko || course.name_en,
-            priceType: '인원별 (성인)',
+            priceType: t('pricePerPersonAdult'),
             unitPrice: course.price_adult,
             quantity: participantCount,
             total: course.price_adult * participantCount
@@ -209,7 +210,7 @@ export default function CustomTourPage() {
     })
     
     return details
-  }, [selectedCourses, tourCourses, vehicleType, participantCount])
+  }, [selectedCourses, tourCourses, vehicleType, participantCount, t])
 
   // 데이터 로드
   useEffect(() => {
@@ -628,7 +629,7 @@ export default function CustomTourPage() {
   // 경로 계산
   const calculateRoute = async () => {
     if (selectedCoursesOrder.length < 2) {
-      alert(isEnglish ? 'Please select at least 2 courses.' : '최소 2개 이상의 코스를 선택해주세요.')
+      alert(t('minTwoCourses'))
       return
     }
 
@@ -636,7 +637,7 @@ export default function CustomTourPage() {
 
     try {
       if (!map || !window.google || !window.google.maps) {
-        alert(isEnglish ? 'Map is not loaded yet.' : '지도가 아직 로드되지 않았습니다.')
+        alert(t('mapNotLoaded'))
         setIsCalculatingRoute(false)
         return
       }
@@ -654,7 +655,7 @@ export default function CustomTourPage() {
       const destination = tourCourses.find(c => c.id === selectedCoursesOrder[selectedCoursesOrder.length - 1].id)?.location || ''
 
       if (!origin || !destination) {
-        alert(isEnglish ? 'Some courses are missing location information.' : '일부 코스에 위치 정보가 없습니다.')
+        alert(t('missingLocation'))
         setIsCalculatingRoute(false)
         return
       }
@@ -720,13 +721,13 @@ export default function CustomTourPage() {
           })
         } else {
           console.error('경로 계산 오류:', status)
-          alert(isEnglish ? 'Failed to calculate route.' : '경로 계산에 실패했습니다.')
+          alert(t('routeFailed'))
         }
         setIsCalculatingRoute(false)
       })
     } catch (error) {
       console.error('경로 계산 중 오류:', error)
-      alert(isEnglish ? 'An error occurred while calculating the route.' : '경로 계산 중 오류가 발생했습니다.')
+      alert(t('routeError'))
       setIsCalculatingRoute(false)
     }
   }
@@ -754,12 +755,10 @@ export default function CustomTourPage() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
         <div className="mb-4 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            {isEnglish ? 'Custom Tour Calculator' : '단독 맞춤 투어 계산기'}
+            {t('title')}
           </h1>
           <p className="text-sm sm:text-base text-gray-600">
-            {isEnglish 
-              ? 'Select your desired destinations and create your custom tour itinerary' 
-              : '원하는 관광지를 선택하고 나만의 맞춤 투어 일정을 만들어보세요'}
+            {t('subtitle')}
           </p>
         </div>
 
@@ -770,7 +769,7 @@ export default function CustomTourPage() {
             <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
               <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
-                {isEnglish ? '1. Select Destinations' : '1. 관광지 선택'}
+                {t('selectDestinations')}
               </h2>
               
               <div className="mb-3 sm:mb-4">
@@ -780,7 +779,7 @@ export default function CustomTourPage() {
                     type="text"
                     value={courseSearchTerm}
                     onChange={(e) => setCourseSearchTerm(e.target.value)}
-                    placeholder={isEnglish ? 'Search destinations...' : '관광지 검색...'}
+                    placeholder={t('searchDestinationsPlaceholder')}
                     className="w-full pl-10 pr-4 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
@@ -896,7 +895,7 @@ export default function CustomTourPage() {
                   if (validCourses.length === 0) {
                     return (
                       <p className="text-sm text-gray-500 text-center py-8">
-                        {isEnglish ? 'No destinations found' : '관광지가 없습니다'}
+                        {t('noDestinationsFound')}
                       </p>
                     )
                   }
@@ -1086,7 +1085,7 @@ export default function CustomTourPage() {
                                 <div className="flex-shrink-0 w-full sm:w-48">
                                   <img 
                                     src={fullPhotoUrl} 
-                                    alt={fullCourseName || 'Course image'} 
+                                    alt={fullCourseName || t('courseImageAlt')} 
                                     className="w-full h-32 sm:h-36 object-cover rounded-lg border border-gray-200"
                                   />
                                 </div>
@@ -1126,7 +1125,7 @@ export default function CustomTourPage() {
             {selectedCoursesOrder.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
-                  {isEnglish ? '2. Tour Schedule' : '2. 투어 일정'}
+                  {t('tourSchedule')}
                 </h2>
                 
                 <DragDropContext onDragEnd={handleDragEnd}>
@@ -1171,7 +1170,7 @@ export default function CustomTourPage() {
                                         }}
                                         className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 px-2 py-1 border border-blue-300 rounded"
                                       >
-                                        {item.day || (isEnglish ? 'Select Day' : '일차 선택')}
+                                        {item.day || t('selectDay')}
                                       </button>
                                       <input
                                         type="time"
@@ -1225,7 +1224,7 @@ export default function CustomTourPage() {
             {selectedCoursesOrder.length > 0 && (
               <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
-                  {isEnglish ? '3. Route & Mileage' : '3. 경로 및 마일리지'}
+                  {t('routeAndMileage')}
                 </h2>
                 
                 <div className="mb-4 sm:mb-6 h-[250px] sm:h-[400px] w-full rounded-lg border border-gray-200 overflow-hidden relative bg-gray-50">
@@ -1234,7 +1233,7 @@ export default function CustomTourPage() {
                     <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                       <div className="text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                        <p>{isEnglish ? 'Loading map...' : '지도를 불러오는 중...'}</p>
+                        <p>{t('loadingMap')}</p>
                       </div>
                     </div>
                   )}
@@ -1249,18 +1248,18 @@ export default function CustomTourPage() {
                     {isCalculatingRoute ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        {isEnglish ? 'Calculating...' : '계산 중...'}
+                        {t('calculating')}
                       </>
                     ) : (
                       <>
                         <Route className="w-4 h-4" />
-                        {isEnglish ? 'Calculate Route' : '경로 자동 계산'}
+                        {t('calculateRoute')}
                       </>
                     )}
                   </button>
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {isEnglish ? 'Mileage (miles)' : '마일리지 (마일)'}
+                      {t('mileageMiles')}
                     </label>
                     <input
                       type="number"
@@ -1269,7 +1268,7 @@ export default function CustomTourPage() {
                       value={mileage || ''}
                       onChange={(e) => setMileage(e.target.value ? parseFloat(e.target.value) : null)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder={isEnglish ? 'Enter manually or auto-calculate' : '직접 입력 또는 자동 계산'}
+                      placeholder={t('mileagePlaceholder')}
                     />
                   </div>
                 </div>
@@ -1278,10 +1277,10 @@ export default function CustomTourPage() {
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-blue-600" />
                       <span className="text-sm font-medium text-blue-900">
-                        {isEnglish ? 'Total Travel Time:' : '이동 시간 총합:'}
+                        {t('travelTimeTotal')}
                       </span>
                       <span className="text-sm font-semibold text-blue-700">
-                        {travelTime.toFixed(1)} {isEnglish ? 'hours' : '시간'}
+                        {travelTime.toFixed(1)} {t('hours')}
                       </span>
                     </div>
                   </div>
@@ -1294,7 +1293,7 @@ export default function CustomTourPage() {
               <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                   <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
-                  {isEnglish ? 'Tour Course Description' : '투어 코스 설명'}
+                  {t('tourCourseDescription')}
                 </h2>
                 <div className="border border-gray-200 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4 bg-gray-50">
                   {(() => {
@@ -1328,7 +1327,7 @@ export default function CustomTourPage() {
                     if (validCourses.length === 0) {
                       return (
                         <p className="text-sm text-gray-500 text-center py-4">
-                          {isEnglish ? 'No point courses selected.' : '포인트 코스가 없습니다.'}
+                          {t('noPointCoursesSelected')}
                         </p>
                       )
                     }
@@ -1420,49 +1419,49 @@ export default function CustomTourPage() {
             <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <User className="w-4 h-4 sm:w-5 sm:h-5" />
-                {isEnglish ? 'Customer Information' : '고객 정보'}
+                {t('customerInfo')}
               </h2>
               
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {isEnglish ? 'Name' : '이름'} *
+                    {t('name')} *
                   </label>
                   <input
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={isEnglish ? 'Enter your name' : '이름을 입력하세요'}
+                    placeholder={t('namePlaceholder')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {isEnglish ? 'Email' : '이메일'} *
+                    {t('email')} *
                   </label>
                   <input
                     type="email"
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={isEnglish ? 'Enter your email' : '이메일을 입력하세요'}
+                    placeholder={t('emailPlaceholder')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {isEnglish ? 'Phone' : '전화번호'}
+                    {t('phone')}
                   </label>
                   <input
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={isEnglish ? 'Enter your phone number' : '전화번호를 입력하세요'}
+                    placeholder={t('phonePlaceholder')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {isEnglish ? 'Participants' : '참가 인원'} *
+                    {t('participants')} *
                   </label>
                   <input
                     type="number"
@@ -1470,7 +1469,7 @@ export default function CustomTourPage() {
                     value={participantCount}
                     onChange={(e) => setParticipantCount(parseInt(e.target.value) || 1)}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={isEnglish ? 'Number of participants' : '참가 인원 수'}
+                    placeholder={t('participantsPlaceholder')}
                   />
                 </div>
               </div>
@@ -1479,24 +1478,24 @@ export default function CustomTourPage() {
             {/* 투어 정보 */}
             <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">
-                {isEnglish ? 'Tour Details' : '투어 정보'}
+                {t('tourDetails')}
               </h2>
               
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {isEnglish ? 'Vehicle Type' : '차량 타입'}
+                    {t('vehicleType')}
                     <span className="ml-2 text-xs text-gray-500 font-normal">
-                      ({isEnglish ? 'Auto' : '자동'})
+                      ({t('vehicleTypeAuto')})
                     </span>
                   </label>
                   <input
                     type="text"
                     value={vehicleType === 'minivan' 
-                      ? (isEnglish ? 'Minivan (1-5 people)' : '미니밴 (1~5인)')
+                      ? t('minivan')
                       : vehicleType === '9seater'
-                      ? (isEnglish ? '9-seater (6-9 people)' : '9인승 (6~9인)')
-                      : (isEnglish ? '13-seater (10+ people)' : '13인승 (10인 이상)')}
+                      ? t('seater9')
+                      : t('seater13')}
                     readOnly
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 cursor-not-allowed"
                   />
@@ -1505,19 +1504,19 @@ export default function CustomTourPage() {
                 {/* 가이드비 자동 계산 표시 */}
                 <div className="pt-4 border-t border-gray-200">
                   <h3 className="text-sm font-medium text-gray-800 mb-2">
-                    {isEnglish ? 'Guide Fee (Auto-calculated)' : '가이드비 (자동 계산)'}
+                    {t('guideFeeAutoCalculated')}
                   </h3>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs text-gray-600">
-                      <span>{isEnglish ? 'Total Hours:' : '총 소요 시간:'}</span>
-                      <span className="font-medium">{totalHours.toFixed(1)} {isEnglish ? 'hours' : '시간'}</span>
+                      <span>{t('totalHours')}</span>
+                      <span className="font-medium">{totalHours.toFixed(1)} {t('hours')}</span>
                     </div>
                     <div className="flex justify-between text-xs text-gray-600">
-                      <span>{isEnglish ? 'Hourly Rate:' : '시급:'}</span>
-                      <span className="font-medium">${guideHourlyRate.toFixed(2)}/{isEnglish ? 'hour' : '시간'}</span>
+                      <span>{t('hourlyRate')}</span>
+                      <span className="font-medium">${guideHourlyRate.toFixed(2)}/{t('perHour')}</span>
                     </div>
                     <div className="flex justify-between text-sm font-semibold text-gray-900 pt-2 border-t border-gray-200">
-                      <span>{isEnglish ? 'Guide Fee:' : '가이드비:'}</span>
+                      <span>{t('guideFee')}</span>
                       <span className="text-blue-600">${calculatedGuideFee.toFixed(2)}</span>
                     </div>
                   </div>
@@ -1528,7 +1527,7 @@ export default function CustomTourPage() {
               <div className="pt-4 mt-4 border-t border-gray-200">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium text-gray-800">
-                    {isEnglish ? 'Other Expenses' : '기타 금액'}
+                    {t('otherExpenses')}
                   </h3>
                   <button
                     onClick={() => {
@@ -1537,7 +1536,7 @@ export default function CustomTourPage() {
                     className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                   >
                     <Plus className="w-3 h-3" />
-                    {isEnglish ? 'Add' : '추가'}
+                    {t('add')}
                   </button>
                 </div>
                 {otherExpenses.length > 0 && (
@@ -1552,7 +1551,7 @@ export default function CustomTourPage() {
                             updated[index].name = e.target.value
                             setOtherExpenses(updated)
                           }}
-                          placeholder={isEnglish ? 'Item name' : '항목명'}
+                          placeholder={t('itemName')}
                           className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <input
@@ -1565,7 +1564,7 @@ export default function CustomTourPage() {
                             updated[index].amount = parseFloat(e.target.value) || 0
                             setOtherExpenses(updated)
                           }}
-                          placeholder={isEnglish ? 'Amount' : '금액'}
+                          placeholder={t('amount')}
                           className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <button
@@ -1586,24 +1585,24 @@ export default function CustomTourPage() {
             {/* 비용 계산 결과 */}
             <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6 lg:sticky lg:top-20">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">
-                {isEnglish ? 'Cost Estimate' : '비용 계산 결과'}
+                {t('costEstimate')}
               </h2>
               
               <div className="space-y-3 sm:space-y-4">
                 <div className="border-b pb-3 sm:pb-4">
                   <div className="flex justify-between text-base sm:text-lg font-semibold mb-2">
-                    <span className="text-sm sm:text-base">{isEnglish ? 'Selling Price (excl. tip)' : '판매가 (팁 제외)'}</span>
+                    <span className="text-sm sm:text-base">{t('sellingPriceExclTip')}</span>
                     <span className="text-blue-600 text-sm sm:text-base">${totalBeforeTip.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
-                    <span>{isEnglish ? 'Tip (15%)' : '팁 (15%)'}</span>
+                    <span>{t('tip15')}</span>
                     <span>${tipAmount.toFixed(2)}</span>
                   </div>
                 </div>
 
                 <div className="pt-3 sm:pt-4 border-t-2 border-gray-300">
                   <div className="flex justify-between text-lg sm:text-xl font-bold">
-                    <span className="text-base sm:text-lg">{isEnglish ? 'Total Price (incl. tip)' : '팁 포함 총액'}</span>
+                    <span className="text-base sm:text-lg">{t('totalPriceInclTip')}</span>
                     <span className="text-green-600 text-base sm:text-lg">${sellingPriceWithTip.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1614,11 +1613,11 @@ export default function CustomTourPage() {
                 <button
                   onClick={() => {
                     if (!customerName || !customerEmail) {
-                      alert(isEnglish ? 'Please enter your name and email.' : '이름과 이메일을 입력해주세요.')
+                      alert(t('nameEmailRequired'))
                       return
                     }
                     if (selectedCoursesOrder.length === 0) {
-                      alert(isEnglish ? 'Please select at least one destination.' : '최소 하나 이상의 관광지를 선택해주세요.')
+                      alert(t('minOneDestination'))
                       return
                     }
                     setShowEstimateModal(true)
@@ -1627,7 +1626,7 @@ export default function CustomTourPage() {
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                 >
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span>{isEnglish ? 'Request Estimate' : '견적서 요청'}</span>
+                  <span>{t('requestEstimate')}</span>
                 </button>
               </div>
             </div>

@@ -1,7 +1,8 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import { AlertCircle, CheckCircle, Upload } from 'lucide-react'
@@ -37,11 +38,8 @@ function formatUsd(cents: number): string {
 }
 
 function ResidentCheckInner() {
-  const params = useParams()
   const searchParams = useSearchParams()
-  const locale = (params.locale as string) || 'ko'
-  const isEnglish = locale === 'en'
-  const t = (ko: string, en: string) => (isEnglish ? en : ko)
+  const t = useTranslations('residentCheck')
 
   const rawToken = searchParams.get('t') || ''
 
@@ -76,7 +74,7 @@ function ResidentCheckInner() {
       const res = await fetch(`/api/resident-check/session?t=${encodeURIComponent(rawToken)}`)
       const data = await res.json()
       if (!res.ok) {
-        setLoadError(data.error || t('링크를 불러올 수 없습니다.', 'Unable to load this link.'))
+        setLoadError(data.error || t('linkLoadError'))
         setSession(null)
         return
       }
@@ -91,12 +89,12 @@ function ResidentCheckInner() {
         setHasAnnualPass(s.submission.has_annual_pass === true)
       }
     } catch {
-      setLoadError(t('오류가 발생했습니다.', 'Something went wrong.'))
+      setLoadError(t('genericError'))
       setSession(null)
     } finally {
       setLoading(false)
     }
-  }, [rawToken, t])
+  }, [rawToken])
 
   useEffect(() => {
     void loadSession()
@@ -125,10 +123,10 @@ function ResidentCheckInner() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setActionMsg(data.error || t('저장에 실패했습니다.', 'Save failed.'))
+        setActionMsg(data.error || t('saveFailed'))
         return
       }
-      setActionMsg(t('저장되었습니다.', 'Saved.'))
+      setActionMsg(t('saved'))
       await loadSession()
     } finally {
       setSaving(false)
@@ -145,10 +143,10 @@ function ResidentCheckInner() {
     const res = await fetch('/api/resident-check/upload', { method: 'POST', body: fd })
     const data = await res.json()
     if (!res.ok) {
-      setActionMsg(data.error || t('업로드 실패', 'Upload failed'))
+      setActionMsg(data.error || t('uploadFailed'))
       return
     }
-    setActionMsg(t('업로드되었습니다.', 'Uploaded.'))
+    setActionMsg(t('uploaded'))
     await loadSession()
   }
 
@@ -167,8 +165,8 @@ function ResidentCheckInner() {
         setActionMsg(
           (data.error as string) ||
             (data.blockers?.length
-              ? t('필수 항목을 완료해 주세요.', 'Please complete required fields.')
-              : t('완료 처리에 실패했습니다.', 'Could not complete.'))
+              ? t('completeRequired')
+              : t('completeFailed'))
         )
         return
       }
@@ -190,7 +188,7 @@ function ResidentCheckInner() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setActionMsg(data.error || t('완료 처리에 실패했습니다.', 'Could not complete.'))
+        setActionMsg(data.error || t('completeFailed'))
         return
       }
       await loadSession()
@@ -205,10 +203,7 @@ function ResidentCheckInner() {
         <div className="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <AlertCircle className="mx-auto mb-3 h-10 w-10 text-amber-500" />
           <p className="text-slate-700">
-            {t(
-              '이 페이지는 이메일로 받은 개인 링크로만 열 수 있습니다. 메일의 버튼 또는 URL을 사용해 주세요.',
-              'This page opens from the personal link in your email. Please use the button or URL from the message.'
-            )}
+            {t('noTokenHint')}
           </p>
         </div>
       </div>
@@ -218,7 +213,7 @@ function ResidentCheckInner() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center text-slate-600">{t('불러오는 중…', 'Loading…')}</div>
+        <div className="text-center text-slate-600">{t('loading')}</div>
       </div>
     )
   }
@@ -227,7 +222,7 @@ function ResidentCheckInner() {
     return (
       <div className="min-h-screen bg-slate-50 py-10 px-4">
         <div className="mx-auto max-w-lg rounded-xl border border-red-200 bg-red-50 p-6 text-red-800">
-          {loadError || t('세션을 불러올 수 없습니다.', 'Could not load session.')}
+          {loadError || t('sessionError')}
         </div>
       </div>
     )
@@ -237,7 +232,7 @@ function ResidentCheckInner() {
     return (
       <div className="min-h-screen bg-slate-50 py-10 px-4">
         <div className="mx-auto max-w-lg rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
-          {t('이 링크는 만료되었습니다(14일). 새 링크가 필요하면 투어사에 문의해 주세요.', 'This link has expired (14 days). Please contact us for a new link.')}
+          {t('expired')}
         </div>
       </div>
     )
@@ -249,7 +244,7 @@ function ResidentCheckInner() {
         <div className="mx-auto max-w-lg rounded-xl border border-green-200 bg-green-50 p-6 text-center text-green-900">
           <CheckCircle className="mx-auto mb-3 h-12 w-12" />
           <p className="font-medium">
-            {t('제출이 완료되었습니다. 감사합니다.', 'Your response is complete. Thank you.')}
+            {t('completed')}
           </p>
         </div>
       </div>
@@ -266,34 +261,31 @@ function ResidentCheckInner() {
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="text-xl font-bold text-slate-900">
-            {t('국립공원 입장 · 거주 확인', 'Park entry & residency')}
+            {t('title')}
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            {r.productName || '—'} · {t('투어일', 'Tour date')}: {r.tour_date}
+            {r.productName || '—'} · {t('tourDate')}: {r.tour_date}
             {r.channel_rn ? ` · RN: ${r.channel_rn}` : ''}
           </p>
           {r.customerName && (
             <p className="mt-2 text-sm text-slate-700">
-              {t('예약자', 'Guest')}: {r.customerName}
+              {t('guest')}: {r.customerName}
             </p>
           )}
         </div>
 
         <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-5 text-sm text-slate-800">
-          <p className="font-semibold text-blue-950">{t('NPS 안내', 'NPS policy')}</p>
+          <p className="font-semibold text-blue-950">{t('npsTitle')}</p>
           <p className="mt-2 leading-relaxed">
-            {t(
-              '2026년 1월 1일부터 일부 국립공원에서 비거주자(만 16세 이상)에게 추가 입장료가 부과될 수 있습니다. 미국 거주자는 표준 요금이 적용됩니다.',
-              'Starting Jan 1, 2026, certain national parks may charge non-U.S. residents (16+) an additional entry fee. U.S. residents pay the standard fee.'
-            )}
+            {t('npsBody')}
           </p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900">{t('설문', 'Questionnaire')}</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t('questionnaire')}</h2>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-700">{t('거주 구분', 'Residency')}</p>
+            <p className="mb-2 text-sm font-medium text-slate-700">{t('residency')}</p>
             <div className="flex flex-col gap-2 text-sm">
               <label className="flex items-center gap-2">
                 <input
@@ -302,7 +294,7 @@ function ResidentCheckInner() {
                   checked={residency === 'us_resident'}
                   onChange={() => setResidency('us_resident')}
                 />
-                {t('미국 거주자', 'U.S. resident')}
+                {t('usResident')}
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -311,7 +303,7 @@ function ResidentCheckInner() {
                   checked={residency === 'non_resident'}
                   onChange={() => setResidency('non_resident')}
                 />
-                {t('비거주자(전원)', 'Non–U.S. resident (entire party)')}
+                {t('nonResidentAll')}
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -320,7 +312,7 @@ function ResidentCheckInner() {
                   checked={residency === 'mixed'}
                   onChange={() => setResidency('mixed')}
                 />
-                {t('혼합(거주자+비거주자)', 'Mixed (residents & non-residents)')}
+                {t('mixed')}
               </label>
             </div>
           </div>
@@ -328,7 +320,7 @@ function ResidentCheckInner() {
           {(residency === 'non_resident' || residency === 'mixed') && (
             <div>
               <label className="block text-sm font-medium text-slate-700">
-                {t('비거주자 만 16세 이상 인원 수', 'Non–U.S. residents age 16+ (count)')}
+                {t('nonResidentCount')}
               </label>
               <input
                 type="number"
@@ -347,7 +339,7 @@ function ResidentCheckInner() {
                 checked={hasAnnualPass}
                 onChange={(e) => setHasAnnualPass(e.target.checked)}
               />
-              {t('America the Beautiful 연간 패스 보유', 'I have an America the Beautiful Annual Pass')}
+              {t('hasAnnualPass')}
             </label>
           )}
 
@@ -357,12 +349,12 @@ function ResidentCheckInner() {
               checked={passAssistance}
               onChange={(e) => setPassAssistance(e.target.checked)}
             />
-            {t('비거주 연간 패스 구매 대행 요청', 'Request purchase assistance for a non-resident Annual Pass')}
+            {t('passAssistance')}
           </label>
 
           {residency !== 'us_resident' && (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">{t('결제 방식', 'Payment method')}</p>
+              <p className="mb-2 text-sm font-medium text-slate-700">{t('paymentMethod')}</p>
               <div className="flex flex-col gap-2 text-sm">
                 <label className="flex items-center gap-2">
                   <input
@@ -371,7 +363,7 @@ function ResidentCheckInner() {
                     checked={paymentMethod === 'cash'}
                     onChange={() => setPaymentMethod('cash')}
                   />
-                  {t('현장 현금', 'Cash on tour day')}
+                  {t('cashOnSite')}
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -380,7 +372,7 @@ function ResidentCheckInner() {
                     checked={paymentMethod === 'card'}
                     onChange={() => setPaymentMethod('card')}
                   />
-                  {t('지금 카드 결제 (해당 금액이 있을 때)', 'Pay by card now (when an amount is due)')}
+                  {t('payCardNow')}
                 </label>
               </div>
             </div>
@@ -389,10 +381,7 @@ function ResidentCheckInner() {
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
             <span>
-              {t(
-                '위 안내 및 금액 계산 방식에 동의합니다.',
-                'I agree to the information above and how amounts are calculated.'
-              )}
+              {t('agreeTerms')}
             </span>
           </label>
 
@@ -402,25 +391,22 @@ function ResidentCheckInner() {
             onClick={() => void handleSave()}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {saving ? t('저장 중…', 'Saving…') : t('저장', 'Save')}
+            {saving ? t('saving') : t('save')}
           </button>
         </div>
 
         {submission && (
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900">{t('증빙 업로드', 'Upload proof')}</h2>
+            <h2 className="text-lg font-semibold text-slate-900">{t('uploadProof')}</h2>
             <p className="text-sm text-slate-600">
-              {t(
-                'JPEG/PNG/WebP, 최대 5MB. 먼저 설문을 저장한 뒤 업로드해 주세요.',
-                'JPEG/PNG/WebP, max 5MB. Save the questionnaire first.'
-              )}
+              {t('uploadHint')}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-600">{t('신분·거주 증빙', 'ID / residency')}</p>
+                <p className="mb-1 text-xs font-medium text-slate-600">{t('idProof')}</p>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
                   <Upload className="h-4 w-4" />
-                  <span>{t('파일 선택', 'Choose file')}</span>
+                  <span>{t('chooseFile')}</span>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif"
@@ -433,15 +419,15 @@ function ResidentCheckInner() {
                   />
                 </label>
                 {submission.id_proof_url && (
-                  <p className="mt-1 truncate text-xs text-green-700">{t('업로드됨', 'Uploaded')}</p>
+                  <p className="mt-1 truncate text-xs text-green-700">{t('uploadedLabel')}</p>
                 )}
               </div>
               {(residency === 'non_resident' && hasAnnualPass) || submission.pass_photo_url ? (
                 <div>
-                  <p className="mb-1 text-xs font-medium text-slate-600">{t('연간 패스 사진', 'Annual pass photo')}</p>
+                  <p className="mb-1 text-xs font-medium text-slate-600">{t('passPhoto')}</p>
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
                     <Upload className="h-4 w-4" />
-                    <span>{t('파일 선택', 'Choose file')}</span>
+                    <span>{t('chooseFile')}</span>
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
@@ -454,7 +440,7 @@ function ResidentCheckInner() {
                     />
                   </label>
                   {submission.pass_photo_url && (
-                    <p className="mt-1 truncate text-xs text-green-700">{t('업로드됨', 'Uploaded')}</p>
+                    <p className="mt-1 truncate text-xs text-green-700">{t('uploadedLabel')}</p>
                   )}
                 </div>
               ) : null}
@@ -464,19 +450,19 @@ function ResidentCheckInner() {
 
         {submission && (
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">{t('금액 요약', 'Amount summary')}</h2>
+            <h2 className="text-lg font-semibold text-slate-900">{t('amountSummary')}</h2>
             <p className="text-sm text-slate-700">
-              {t('NPS 추가(해당 시)', 'NPS add-on (if applicable)')}: {formatUsd(nps)}
+              {t('npsAddon')}: {formatUsd(nps)}
             </p>
             <p className="text-sm text-slate-700">
-              {t('카드 수수료(카드 선택 시)', 'Card fee (if card)')}: {formatUsd(cardFee)}
+              {t('cardFee')}: {formatUsd(cardFee)}
             </p>
             <p className="text-base font-semibold text-slate-900">
-              {t('오늘 카드로 결제할 총액', 'Total to charge today (card)')}: {formatUsd(total)}
+              {t('totalCard')}: {formatUsd(total)}
             </p>
             {blockers.length > 0 && (
               <p className="text-xs text-amber-800">
-                {t('완료 전 단계:', 'Before you can finish:')}{' '}
+                {t('beforeFinish')}{' '}
                 {blockers.join(', ')}
               </p>
             )}
@@ -491,7 +477,7 @@ function ResidentCheckInner() {
               onClick={() => void finalizeZero()}
               className="w-full rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
             >
-              {t('제출 완료 (추가 결제 없음)', 'Submit — no payment due')}
+              {t('submitNoPayment')}
             </button>
           </div>
         )}
@@ -499,10 +485,7 @@ function ResidentCheckInner() {
         {submission && blockers.length === 0 && total > 0 && paymentMethod === 'cash' && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-6 shadow-sm">
             <p className="mb-3 text-sm text-amber-950">
-              {t(
-                '현금 선택 시 투어 당일 가이드에게 약정 금액을 전달해 주세요. 아래를 누르면 접수가 완료됩니다.',
-                'You chose cash. Please pay the guide on the tour day. Click below to confirm.'
-              )}
+              {t('cashConfirmHint')}
             </p>
             <button
               type="button"
@@ -510,20 +493,19 @@ function ResidentCheckInner() {
               onClick={() => void completeCash()}
               className="w-full rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
             >
-              {t('현장 현금으로 진행 확인', 'Confirm cash on site')}
+              {t('confirmCash')}
             </button>
           </div>
         )}
 
         {submission && blockers.length === 0 && total > 0 && paymentMethod === 'card' && stripePromise && (
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-3 text-lg font-semibold text-slate-900">{t('카드 결제', 'Card payment')}</h2>
+            <h2 className="mb-3 text-lg font-semibold text-slate-900">{t('cardPayment')}</h2>
             <Elements stripe={stripePromise}>
               <ResidentCheckStripePay
                 token={rawToken}
                 customerName={r.customerName || ''}
                 customerEmail={r.customerEmail || ''}
-                isEnglish={isEnglish}
                 onPaid={() => void loadSession()}
               />
             </Elements>
@@ -532,7 +514,7 @@ function ResidentCheckInner() {
 
         {submission && blockers.length === 0 && total > 0 && paymentMethod === 'card' && !stripePromise && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-            {t('Stripe 키가 설정되지 않았습니다.', 'Stripe is not configured.')}
+            {t('stripeNotConfigured')}
           </div>
         )}
 
@@ -546,15 +528,18 @@ function ResidentCheckInner() {
   )
 }
 
+function ResidentCheckSuspenseFallback() {
+  const t = useTranslations('residentCheck')
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">
+      {t('suspenseLoading')}
+    </div>
+  )
+}
+
 export default function ResidentCheckPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">
-          Loading…
-        </div>
-      }
-    >
+    <Suspense fallback={<ResidentCheckSuspenseFallback />}>
       <ResidentCheckInner />
     </Suspense>
   )

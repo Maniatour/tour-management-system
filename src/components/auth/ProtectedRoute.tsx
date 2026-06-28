@@ -3,7 +3,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { UserPermissions } from '@/lib/roles'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 interface ProtectedRouteProps {
   children: ReactNode
@@ -20,6 +20,11 @@ export default function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { user, userRole, loading, hasPermission, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+  const localeFromPath = (() => {
+    const segment = pathname?.split('/').filter(Boolean)[0]
+    return segment === 'ko' || segment === 'en' ? segment : 'ko'
+  })()
 
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
@@ -30,7 +35,7 @@ export default function ProtectedRoute({
 
     // 로그인하지 않은 경우 (시뮬레이션 중이 아닌 경우에만)
     if (!currentUser && !isSimulating) {
-      router.push('/ko/auth')
+      router.push(`/${localeFromPath}/auth`)
       return
     }
 
@@ -45,7 +50,7 @@ export default function ProtectedRoute({
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }

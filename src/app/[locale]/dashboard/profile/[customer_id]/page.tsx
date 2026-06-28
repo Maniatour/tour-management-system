@@ -5,6 +5,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { User, Mail, Phone, MapPin, Globe, Save, ArrowLeft, Upload, XCircle, AlertCircle, Shield } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
@@ -27,6 +38,7 @@ export default function CustomerProfile() {
   const locale = params.locale as string || 'ko'
   const customerIdFromUrl = params.customer_id as string
   const t = useTranslations('common')
+  const tProfile = useTranslations('customerProfile')
   const tPass = useTranslations('passUpload')
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [loading, setLoading] = useState(true)
@@ -40,6 +52,10 @@ export default function CustomerProfile() {
     language: 'ko',
     resident_status: null as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
   })
+  const [deletePhotoConfirm, setDeletePhotoConfirm] = useState<{
+    type: 'pass' | 'id'
+    url: string
+  } | null>(null)
 
   // 인증 확인 (시뮬레이션 상태 우선 확인)
   useEffect(() => {
@@ -240,14 +256,14 @@ export default function CustomerProfile() {
     // 파일 타입 검증
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      alert(tPass('imageOnly'))
+      toast.error(tPass('imageOnly'))
       return
     }
 
     // 파일 크기 검증 (5MB 제한)
     const maxSize = 5 * 1024 * 1024 // 5MB
     if (file.size > maxSize) {
-      alert(tPass('fileTooLarge'))
+      toast.error(tPass('fileTooLarge'))
       return
     }
 
@@ -276,29 +292,31 @@ export default function CustomerProfile() {
         setIdPhotoUrl(data.imageUrl)
       }
 
-      alert(tPass('uploadSuccess'))
+      toast.success(tPass('uploadSuccess'))
     } catch (error) {
       console.error('Upload error:', error)
-      alert(error instanceof Error ? error.message : tPass('uploadError'))
+      toast.error(error instanceof Error ? error.message : tPass('uploadError'))
     } finally {
       setUploading(false)
     }
   }
 
   // 파일 삭제 처리
-  const handleDeletePhoto = async (type: 'pass' | 'id', url: string) => {
-    if (!confirm(locale === 'en' ? 'Are you sure you want to delete this photo?' : '이 사진을 삭제하시겠습니까?')) {
-      return
-    }
+  const handleDeletePhoto = (type: 'pass' | 'id', url: string) => {
+    setDeletePhotoConfirm({ type, url })
+  }
+
+  const confirmDeletePhoto = async () => {
+    if (!deletePhotoConfirm) return
+    const { type, url } = deletePhotoConfirm
 
     try {
-      // Supabase Storage에서 파일 삭제
       const response = await fetch('/api/upload/image', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url }),
       })
 
       if (!response.ok) {
@@ -311,23 +329,20 @@ export default function CustomerProfile() {
         setIdPhotoUrl(null)
       }
 
-      // 고객 정보에서도 URL 제거
       if (customer) {
-        const updateData: any = {}
-        if (type === 'pass') {
-          updateData.pass_photo_url = null
-        } else {
-          updateData.id_photo_url = null
-        }
+        const updateData =
+          type === 'pass'
+            ? { pass_photo_url: null }
+            : { id_photo_url: null }
 
-        await supabase
-          .from('customers')
-          .update(updateData)
-          .eq('id', customer.id)
+        await supabase.from('customers').update(updateData).eq('id', customer.id)
       }
+
+      setDeletePhotoConfirm(null)
+      toast.success(tPass('deletePhotoSuccess'))
     } catch (error) {
       console.error('Delete error:', error)
-      alert(locale === 'en' ? 'Failed to delete photo' : '사진 삭제에 실패했습니다.')
+      toast.error(tPass('deletePhotoFailed'))
     }
   }
 
@@ -369,15 +384,15 @@ export default function CustomerProfile() {
 
         if (error) {
           console.error('고객 정보 업데이트 오류:', error)
-          alert(t('saveError'))
+          toast.error(t('saveError'))
           return
         }
 
-        alert(t('saveSuccess'))
+        toast.success(t('saveSuccess'))
         loadCustomerDataById(customer.id)
       } catch (error) {
         console.error(t('saveErrorLog'), error)
-        alert(t('saveError'))
+        toast.error(t('saveError'))
       } finally {
         setSaving(false)
       }
@@ -404,7 +419,7 @@ export default function CustomerProfile() {
 
           if (error) {
             console.error('고객 정보 업데이트 오류:', error)
-            alert(t('saveError'))
+            toast.error(t('saveError'))
             return
           }
         } else {
@@ -422,16 +437,16 @@ export default function CustomerProfile() {
 
           if (error) {
             console.error('고객 정보 생성 오류:', error)
-            alert(t('saveError'))
+            toast.error(t('saveError'))
             return
           }
         }
 
-        alert(t('saveSuccess'))
+        toast.success(t('saveSuccess'))
         loadCustomerData()
       } catch (error) {
         console.error(t('saveErrorLog'), error)
-        alert(t('saveError'))
+        toast.error(t('saveError'))
       } finally {
         setSaving(false)
       }
@@ -461,34 +476,34 @@ export default function CustomerProfile() {
                 className="flex items-center text-gray-600 hover:text-gray-900 mr-4"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                뒤로
+                {t('back')}
               </button>
               <h1 className="text-2xl font-bold text-gray-900">{t('myInfo')}</h1>
             </div>
             {isSimulating && simulatedUser && (
               <div className="flex items-center space-x-2">
                 <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-                  시뮬레이션 중: {simulatedUser.name_ko}
+                  {t('simulating')}: {simulatedUser.name_ko}
                 </div>
                 <div className="flex space-x-1">
                   <button
                     onClick={() => router.push(`/${locale}/dashboard`)}
                     className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700"
                   >
-                    대시보드
+                    {t('dashboard')}
                   </button>
                   <button
                     onClick={() => router.push(`/${locale}/dashboard/reservations`)}
                     className="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700"
                   >
-                    내 예약
+                    {t('myReservations')}
                   </button>
                   <button
                     onClick={handleStopSimulation}
                     className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
                   >
                     <ArrowLeft className="w-3 h-3 mr-1" />
-                    관리자로 돌아가기
+                    {t('backToAdmin')}
                   </button>
                 </div>
               </div>
@@ -569,10 +584,10 @@ export default function CustomerProfile() {
                   onChange={(e) => setFormData(prev => ({ ...prev, language: e.target.value }))}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="ko">한국어</option>
-                  <option value="en">English</option>
-                  <option value="ja">日本語</option>
-                  <option value="zh">中文</option>
+                  <option value="ko">{tProfile('languageKo')}</option>
+                  <option value="en">{tProfile('languageEn')}</option>
+                  <option value="ja">{tProfile('languageJa')}</option>
+                  <option value="zh">{tProfile('languageZh')}</option>
                 </select>
               </div>
             </div>
@@ -580,7 +595,7 @@ export default function CustomerProfile() {
             {/* 거주 상태 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {locale === 'en' ? 'Resident Status' : '거주 상태'}
+                {tProfile('residentStatus')}
               </label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -592,16 +607,14 @@ export default function CustomerProfile() {
                   }))}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">{locale === 'en' ? 'No Information' : '정보 없음'}</option>
-                  <option value="us_resident">{locale === 'en' ? 'US Resident' : '미국 거주자'}</option>
-                  <option value="non_resident">{locale === 'en' ? 'Non-Resident' : '비거주자'}</option>
-                  <option value="non_resident_with_pass">{locale === 'en' ? 'Non-Resident with Pass' : '비거주자 (패스 보유)'}</option>
+                  <option value="">{tProfile('residentStatusNone')}</option>
+                  <option value="us_resident">{tProfile('residentStatusUsResident')}</option>
+                  <option value="non_resident">{tProfile('residentStatusNonResident')}</option>
+                  <option value="non_resident_with_pass">{tProfile('residentStatusNonResidentWithPass')}</option>
                 </select>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                {locale === 'en' 
-                  ? 'Please select your resident status. If you select "Non-Resident with Pass", please upload your pass and ID photos below.' 
-                  : '거주 상태를 선택해주세요. "비거주자 (패스 보유)"를 선택하시면 아래에서 패스 사진과 ID 사진을 업로드해주세요.'}
+                {tProfile('residentStatusHint')}
               </p>
             </div>
           </div>
@@ -813,6 +826,29 @@ export default function CustomerProfile() {
         </div>
         )}
       </div>
+
+      <AlertDialog
+        open={deletePhotoConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletePhotoConfirm(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tPass('deletePhotoTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{tPass('deletePhotoConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => void confirmDeletePhoto()}
+            >
+              {t('confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

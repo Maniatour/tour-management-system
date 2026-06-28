@@ -10,7 +10,7 @@ import { useState, useContext } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import { AuthContext } from '@/contexts/AuthContext'
 import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
@@ -38,6 +38,7 @@ const NavigationContent = () => {
 
   // 상품 관련 페이지인지 확인
   const isProductPage = pathname.includes('/products')
+  const isAdminPath = pathname.startsWith(`/${locale}/admin`)
 
   const handleLogout = async () => {
     try {
@@ -81,14 +82,14 @@ const NavigationContent = () => {
             {isSimulating && simulatedUser && (
               <div className="flex items-center space-x-2">
                 <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                  시뮬레이션: {simulatedUser.name_ko}
+                  {t('simulatingAs')} {simulatedUser.name_ko}
                 </div>
                 <button
                   onClick={handleStopSimulation}
                   className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
                 >
                   <ArrowLeft className="w-3 h-3 mr-1" />
-                  관리자로 돌아가기
+                  {t('backToAdmin')}
                 </button>
               </div>
             )}
@@ -103,13 +104,20 @@ const NavigationContent = () => {
               <Home className="w-4 h-4 mr-2" />
               {t('home')}
             </Link>
+            <Link
+              href={`/${locale}/reservation-check`}
+              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              {t('reservationCheck')}
+            </Link>
             <LanguageSwitcher />
             
             {/* 인증 상태에 따른 메뉴 */}
             {loading ? (
               <div className="flex items-center text-gray-600">
                 <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
-                Loading...
+                {t('loading')}
               </div>
             ) : currentUser ? (
               <div className="flex items-center space-x-4">
@@ -303,7 +311,7 @@ const NavigationContent = () => {
                           )}
                           
                           {/* 시뮬레이션 메뉴 (관리자만) */}
-                          {currentUserRole === 'admin' && !isSimulating && (
+                          {currentUserRole === 'admin' && !isSimulating && isAdminPath && (
                             <div className="px-4 py-2 border-t border-gray-100">
                               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
                                 {t('simulation')}
@@ -399,11 +407,20 @@ const NavigationContent = () => {
                 {t('home')}
               </Link>
               
+              <Link 
+                href={`/${locale}/reservation-check`}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <Search className="w-4 h-4 mr-3" />
+                {t('reservationCheck')}
+              </Link>
+              
               {/* 인증 상태에 따른 메뉴 */}
               {loading ? (
                 <div className="flex items-center text-gray-600 px-2 py-2">
                   <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
-                  Loading...
+                  {t('loading')}
                 </div>
               ) : currentUser ? (
                 <div className="px-2 py-2 space-y-2">

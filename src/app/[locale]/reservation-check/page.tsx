@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Calendar, Users, MapPin, Clock, CreditCard, CheckCircle, AlertCircle, Search, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
 interface Reservation {
@@ -58,6 +59,10 @@ interface Reservation {
 }
 
 export default function ReservationCheckPage() {
+  const t = useTranslations('reservationCheck')
+  const locale = useLocale()
+  const dateLocale = locale === 'en' ? 'en-US' : 'ko-KR'
+
   const [reservationId, setReservationId] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [reservation, setReservation] = useState<Reservation | null>(null)
@@ -65,35 +70,29 @@ export default function ReservationCheckPage() {
   const [error, setError] = useState<string | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
 
-  // 결제 방법 정보 로드
   useEffect(() => {
     const loadPaymentMethods = async () => {
       try {
-        const { data, error } = await supabase
-          .from('payment_methods')
-          .select('id, method')
-        
+        const { data, error } = await supabase.from('payment_methods').select('id, method')
         if (error) throw error
-        
+
         const methodMap: Record<string, string> = {}
-        data?.forEach(pm => {
-          // ID로 조회 시 방법명(method)만 반환
+        data?.forEach((pm) => {
           methodMap[pm.id] = pm.method
-          // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
           methodMap[pm.method] = pm.method
         })
         setPaymentMethodMap(methodMap)
-      } catch (error) {
-        console.error('결제 방법 정보 로드 오류:', error)
+      } catch (err) {
+        console.error('Failed to load payment methods:', err)
       }
     }
-    
+
     loadPaymentMethods()
   }, [])
 
   const handleSearch = async () => {
     if (!reservationId || !customerEmail) {
-      setError('예약 ID와 이메일을 모두 입력해주세요.')
+      setError(t('missingFields'))
       return
     }
 
@@ -103,25 +102,23 @@ export default function ReservationCheckPage() {
     try {
       const response = await fetch('/api/reservations/check', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reservation_id: reservationId,
-          customer_email: customerEmail
-        })
+          customer_email: customerEmail,
+        }),
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || '예약을 찾을 수 없습니다.')
+        throw new Error(data.error || t('notFound'))
       }
 
       setReservation(data.reservation)
-    } catch (error) {
-      console.error('예약 조회 오류:', error)
-      setError(error instanceof Error ? error.message : '예약 조회 중 오류가 발생했습니다.')
+    } catch (err) {
+      console.error('Reservation check error:', err)
+      setError(err instanceof Error ? err.message : t('searchError'))
     } finally {
       setLoading(false)
     }
@@ -147,15 +144,15 @@ export default function ReservationCheckPage() {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return '확정'
+        return t('statusConfirmed')
       case 'inquiry':
-        return '문의중'
+        return t('statusInquiry')
       case 'pending':
-        return '대기중'
+        return t('statusPending')
       case 'cancelled':
-        return '취소됨'
+        return t('statusCancelled')
       case 'completed':
-        return '완료'
+        return t('statusCompleted')
       default:
         return status
     }
@@ -177,55 +174,70 @@ export default function ReservationCheckPage() {
   const getPaymentStatusLabel = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return '확인됨'
+        return t('paymentConfirmed')
       case 'pending':
-        return '대기중'
+        return t('paymentPending')
       case 'rejected':
-        return '거부됨'
+        return t('paymentRejected')
       default:
         return status
     }
   }
 
+  const formatPaymentMethod = (method: string) => {
+    if (paymentMethodMap[method]) return paymentMethodMap[method]
+    if (method === 'card') return t('paymentCard')
+    if (method === 'bank_transfer') return t('paymentBank')
+    if (method === 'cash') return t('paymentCash')
+    return method
+  }
+
+  const formatParticipants = (r: Reservation) => {
+    const parts = [t('adults', { count: r.adults })]
+    if (r.children > 0) parts.push(t('children', { count: r.children }))
+    if (r.infants > 0) parts.push(t('infants', { count: r.infants }))
+    return parts.join(', ')
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4">
-            <Link href="/" className="text-gray-500 hover:text-gray-700">
+            <Link href={`/${locale}`} className="text-gray-500 hover:text-gray-700">
               <ArrowLeft size={24} />
             </Link>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">예약 확인</h1>
-              <p className="text-gray-600">예약 ID와 이메일로 예약 정보를 확인하세요</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+              <p className="text-gray-600">{t('subtitle')}</p>
             </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 검색 폼 */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">예약 정보 입력</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('formTitle')}</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">예약 ID</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('reservationIdLabel')}
+              </label>
               <input
                 type="text"
                 value={reservationId}
                 onChange={(e) => setReservationId(e.target.value)}
-                placeholder="예약 ID를 입력하세요"
+                placeholder={t('reservationIdPlaceholder')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('emailLabel')}</label>
               <input
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="예약 시 사용한 이메일을 입력하세요"
+                placeholder={t('emailPlaceholder')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -236,18 +248,18 @@ export default function ReservationCheckPage() {
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  검색 중...
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  {t('searching')}
                 </>
               ) : (
                 <>
                   <Search className="h-4 w-4 mr-2" />
-                  예약 확인
+                  {t('searchButton')}
                 </>
               )}
             </button>
           </div>
-          
+
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-center">
@@ -258,47 +270,44 @@ export default function ReservationCheckPage() {
           )}
         </div>
 
-        {/* 예약 정보 */}
         {reservation && (
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-            {/* 예약 헤더 */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-white">{reservation.product.customer_name_ko}</h2>
-                  <p className="text-blue-100">예약 ID: {reservation.id}</p>
+                  <p className="text-blue-100">
+                    {t('reservationId')}: {reservation.id}
+                  </p>
                 </div>
                 <div className="text-right">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(reservation.status)}`}>
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(reservation.status)}`}
+                  >
                     {getStatusLabel(reservation.status)}
                   </span>
-                  <div className="text-white text-lg font-semibold mt-1">
-                    ${reservation.total_price}
-                  </div>
+                  <div className="text-white text-lg font-semibold mt-1">${reservation.total_price}</div>
                 </div>
               </div>
             </div>
 
             <div className="p-6">
-              {/* 기본 정보 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">투어 정보</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('tourInfo')}</h3>
                   <div className="space-y-3">
                     <div className="flex items-center">
                       <Calendar className="h-5 w-5 text-blue-500 mr-3" />
                       <div>
-                        <span className="text-sm text-gray-600">투어 날짜</span>
-                        <p className="font-medium">
-                          {reservation.tour_date}
-                        </p>
+                        <span className="text-sm text-gray-600">{t('tourDate')}</span>
+                        <p className="font-medium">{reservation.tour_date}</p>
                       </div>
                     </div>
                     {reservation.departure_time && (
                       <div className="flex items-center">
                         <Clock className="h-5 w-5 text-green-500 mr-3" />
                         <div>
-                          <span className="text-sm text-gray-600">출발 시간</span>
+                          <span className="text-sm text-gray-600">{t('departureTime')}</span>
                           <p className="font-medium">{reservation.departure_time}</p>
                         </div>
                       </div>
@@ -306,19 +315,15 @@ export default function ReservationCheckPage() {
                     <div className="flex items-center">
                       <Users className="h-5 w-5 text-purple-500 mr-3" />
                       <div>
-                        <span className="text-sm text-gray-600">참가자</span>
-                        <p className="font-medium">
-                          성인 {reservation.adults}명
-                          {reservation.children > 0 && `, 아동 ${reservation.children}명`}
-                          {reservation.infants > 0 && `, 유아 ${reservation.infants}명`}
-                        </p>
+                        <span className="text-sm text-gray-600">{t('participants')}</span>
+                        <p className="font-medium">{formatParticipants(reservation)}</p>
                       </div>
                     </div>
                     {(reservation.product.departure_city || reservation.product.arrival_city) && (
                       <div className="flex items-center">
                         <MapPin className="h-5 w-5 text-red-500 mr-3" />
                         <div>
-                          <span className="text-sm text-gray-600">경로</span>
+                          <span className="text-sm text-gray-600">{t('route')}</span>
                           <p className="font-medium">
                             {reservation.product.departure_city && reservation.product.arrival_city
                               ? `${reservation.product.departure_city} → ${reservation.product.arrival_city}`
@@ -331,23 +336,23 @@ export default function ReservationCheckPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">고객 정보</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('customerInfo')}</h3>
                   <div className="space-y-3">
                     <div>
-                      <span className="text-sm text-gray-600">이름</span>
+                      <span className="text-sm text-gray-600">{t('name')}</span>
                       <p className="font-medium">{reservation.customer_name}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-600">이메일</span>
+                      <span className="text-sm text-gray-600">{t('email')}</span>
                       <p className="font-medium">{reservation.customer_email}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-600">전화번호</span>
+                      <span className="text-sm text-gray-600">{t('phone')}</span>
                       <p className="font-medium">{reservation.customer_phone}</p>
                     </div>
                     {reservation.nationality && (
                       <div>
-                        <span className="text-sm text-gray-600">국적</span>
+                        <span className="text-sm text-gray-600">{t('nationality')}</span>
                         <p className="font-medium">{reservation.nationality}</p>
                       </div>
                     )}
@@ -355,13 +360,15 @@ export default function ReservationCheckPage() {
                 </div>
               </div>
 
-              {/* 선택 옵션 */}
-              {reservation.reservation_options && reservation.reservation_options.length > 0 && (
+              {reservation.reservation_options?.length > 0 && (
                 <div className="mb-8">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">선택 옵션</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('selectedOptions')}</h3>
                   <div className="space-y-3">
                     {reservation.reservation_options.map((option, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
                         <div>
                           <span className="font-medium text-gray-900">
                             {option.choice.choice_name_ko || option.choice.choice_name}
@@ -371,9 +378,7 @@ export default function ReservationCheckPage() {
                           </p>
                         </div>
                         {option.option.option_price && (
-                          <span className="font-semibold text-blue-600">
-                            +${option.option.option_price}
-                          </span>
+                          <span className="font-semibold text-blue-600">+${option.option.option_price}</span>
                         )}
                       </div>
                     ))}
@@ -381,38 +386,31 @@ export default function ReservationCheckPage() {
                 </div>
               )}
 
-              {/* 결제 정보 */}
-              {reservation.payment_records && reservation.payment_records.length > 0 && (
+              {reservation.payment_records?.length > 0 && (
                 <div className="mb-8">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">결제 정보</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('paymentInfo')}</h3>
                   <div className="space-y-3">
                     {reservation.payment_records.map((payment, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
                         <div className="flex items-center">
                           <CreditCard className="h-5 w-5 text-gray-500 mr-3" />
                           <div>
                             <span className="font-medium text-gray-900">
-                              {(() => {
-                                const method = payment.payment_method
-                                // payment_methods 테이블에서 조회한 방법명이 있으면 사용
-                                if (paymentMethodMap[method]) {
-                                  return paymentMethodMap[method]
-                                }
-                                // 기본 매핑
-                                if (method === 'card') return '신용카드'
-                                if (method === 'bank_transfer') return '은행 이체'
-                                if (method === 'cash') return '현금'
-                                return method
-                              })()}
+                              {formatPaymentMethod(payment.payment_method)}
                             </span>
                             <p className="text-sm text-gray-600">
-                              {new Date(payment.submit_on).toLocaleDateString('ko-KR')}
+                              {new Date(payment.submit_on).toLocaleDateString(dateLocale)}
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
                           <span className="font-semibold text-gray-900">${payment.amount}</span>
-                          <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(payment.payment_status)}`}>
+                          <span
+                            className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(payment.payment_status)}`}
+                          >
                             {getPaymentStatusLabel(payment.payment_status)}
                           </span>
                         </div>
@@ -422,23 +420,23 @@ export default function ReservationCheckPage() {
                 </div>
               )}
 
-              {/* 특별 요청사항 */}
               {reservation.special_requests && (
                 <div className="mb-8">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">특별 요청사항</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('specialRequests')}</h3>
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-gray-700 whitespace-pre-wrap">{reservation.special_requests}</p>
                   </div>
                 </div>
               )}
 
-              {/* 예약 생성일 */}
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>예약 생성일: {new Date(reservation.created_at).toLocaleDateString('ko-KR')}</span>
+                  <span>
+                    {t('createdAt')}: {new Date(reservation.created_at).toLocaleDateString(dateLocale)}
+                  </span>
                   <div className="flex items-center">
                     <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
-                    <span>예약 확인됨</span>
+                    <span>{t('verified')}</span>
                   </div>
                 </div>
               </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Calendar, MessageCircle, AlertCircle, X } from 'lucide-react'
+import { Home, Calendar, MessageCircle, AlertCircle, X, Package, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -181,20 +181,26 @@ export default function UserFooter({ locale }: UserFooterProps) {
       name: t('home'),
       href: `/${locale}`,
       icon: Home,
-      showForAll: true
+      showForAll: true,
     },
     {
       name: t('products'),
       href: `/${locale}/products`,
-      icon: Calendar,
-      showForAll: true
+      icon: Package,
+      showForAll: true,
+    },
+    {
+      name: t('reservationCheck'),
+      href: `/${locale}/reservation-check`,
+      icon: Search,
+      showForAll: true,
     },
     {
       name: t('myReservations'),
       href: `/${locale}/dashboard/reservations`,
       icon: Calendar,
       showForAll: false,
-      showForCustomer: true
+      showForCustomer: true,
     },
     {
       name: t('announcements'),
@@ -237,7 +243,9 @@ export default function UserFooter({ locale }: UserFooterProps) {
       ? 'grid-cols-2'
       : visibleFooterItems.length === 3
         ? 'grid-cols-3'
-        : 'grid-cols-4'
+        : visibleFooterItems.length === 4
+          ? 'grid-cols-4'
+          : 'grid-cols-5'
 
   return (
     <>
@@ -247,36 +255,53 @@ export default function UserFooter({ locale }: UserFooterProps) {
           {visibleFooterItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.href)
-            
+            const itemClass = `flex flex-col items-center justify-center space-y-1 px-2 py-2 transition-colors relative ${
+              active
+                ? 'text-blue-600 bg-blue-50'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`
+
+            if (item.href !== '#') {
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={itemClass}
+                >
+                  <div className="relative">
+                    <Icon
+                      size={20}
+                      className={active ? 'text-blue-600' : 'text-gray-500'}
+                    />
+                    {item.badge && item.badge > 0 && (
+                      <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[16px] h-[16px] px-1">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium ${active ? 'text-blue-600' : 'text-gray-600'}`}>
+                    {item.name}
+                  </span>
+                </Link>
+              )
+            }
+
             return (
               <button
                 key={item.name}
+                type="button"
                 onClick={item.onClick || (() => {})}
-                className={`flex flex-col items-center justify-center space-y-1 px-2 py-2 transition-colors relative ${
-                  active
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
+                className={itemClass}
               >
-                {item.href !== '#' && (
-                  <Link href={item.href} className="absolute inset-0" />
-                )}
                 <div className="relative">
-                  <Icon 
-                    size={20} 
-                    className={`${active ? 'text-blue-600' : 'text-gray-500'}`}
-                  />
+                  <Icon size={20} className="text-gray-500" />
                   {item.badge && item.badge > 0 && (
                     <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[16px] h-[16px] px-1">
                       {item.badge > 99 ? '99+' : item.badge}
                     </span>
                   )}
                 </div>
-                <span className={`text-xs font-medium ${
-                  active ? 'text-blue-600' : 'text-gray-600'
-                }`}>
-                  {item.name}
-                </span>
+                <span className="text-xs font-medium text-gray-600">{item.name}</span>
               </button>
             )
           })}

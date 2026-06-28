@@ -10,6 +10,7 @@ import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import { usePushNotification } from '@/hooks/usePushNotification'
+import { usePublicChatMessages } from '@/hooks/usePublicChatMessages'
 import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
 import PublicChatTutorialOverlay from '@/components/chat/PublicChatTutorialOverlay'
 import type { ChatRoom, PublicChatRoomBundle } from '@/types/chat'
@@ -48,6 +49,7 @@ export default function PublicChatPage() {
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
+  const t = usePublicChatMessages(selectedLanguage)
 
   // 푸시 알림 훅
   const {
@@ -158,18 +160,11 @@ export default function PublicChatPage() {
       const isChrome = /Chrome/.test(navigator.userAgent)
       
       if (isIOS && isSafari) {
-        alert(selectedLanguage === 'ko' 
-          ? 'Safari에서 공유 버튼(⬆️)을 누르고 "홈 화면에 추가"를 선택하세요.'
-          : 'Tap the Share button (⬆️) in Safari and select "Add to Home Screen".')
+        alert(t('pwaIosSafari'))
       } else if (isAndroid && isChrome) {
-        alert(selectedLanguage === 'ko' 
-          ? 'Chrome 메뉴(⋮)를 열고 "홈 화면에 추가" 또는 "앱 설치"를 선택하세요.'
-          : 'Open Chrome menu (⋮) and select "Add to Home Screen" or "Install App".')
+        alert(t('pwaAndroidChrome'))
       } else {
-        const instructions = selectedLanguage === 'ko' 
-          ? '브라우저 메뉴(⋮ 또는 ⚙️)를 열고 다음 옵션을 찾아주세요:\n\n• "홈 화면에 추가"\n• "앱 설치"\n• "Add to Home Screen"\n• "Install App"\n\n또는 주소창 오른쪽의 설치 아이콘을 클릭하세요.'
-          : 'Open your browser menu (⋮ or ⚙️) and look for:\n\n• "Add to Home Screen"\n• "Install App"\n\nOr click the install icon on the right side of the address bar.'
-        alert(instructions)
+        alert(t('pwaManualInstructions'))
       }
       return
     }
@@ -188,9 +183,7 @@ export default function PublicChatPage() {
         if (typeof window !== 'undefined' && window.location.pathname.startsWith('/chat/')) {
           localStorage.setItem('pwa_install_url', window.location.pathname)
         }
-        alert(selectedLanguage === 'ko' 
-          ? '홈 화면에 추가되었습니다!'
-          : 'Added to home screen!')
+        alert(t('pwaAddedSuccess'))
       } else {
         console.log('User dismissed the install prompt')
       }
@@ -199,9 +192,7 @@ export default function PublicChatPage() {
       setDeferredPrompt(null)
     } catch (error) {
       console.error('Error showing install prompt:', error)
-      alert(selectedLanguage === 'ko' 
-        ? '설치 프롬프트를 표시할 수 없습니다. 브라우저 메뉴에서 직접 설치해주세요.'
-        : 'Cannot show install prompt. Please install from your browser menu.')
+      alert(t('pwaInstallFailed'))
     }
   }
 
@@ -321,7 +312,7 @@ export default function PublicChatPage() {
 
       const b = bundle as PublicChatRoomBundle | null
       if (!b?.room) {
-        setError('Chat room not found. The link may have expired or is invalid.')
+        setError(t('roomNotFoundError'))
         return
       }
 
@@ -357,7 +348,11 @@ export default function PublicChatPage() {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
       })
-      setError(`An error occurred while loading the chat room: ${error instanceof Error ? error.message : String(error)}`)
+      setError(
+        t('loadRoomError', {
+          message: error instanceof Error ? error.message : String(error),
+        })
+      )
     } finally {
       setLoading(false)
     }
@@ -367,12 +362,12 @@ export default function PublicChatPage() {
     const trimmedName = tempName.trim()
     
     if (!trimmedName) {
-      alert('Please enter your name.')
+      alert(t('nameRequired'))
       return
     }
     
     if (trimmedName.length < 2) {
-      alert('Please enter a name with at least 2 characters.')
+      alert(t('nameMinLength'))
       return
     }
     
@@ -403,12 +398,12 @@ export default function PublicChatPage() {
     const trimmedName = tempName.trim()
     
     if (!trimmedName) {
-      alert(selectedLanguage === 'ko' ? '이름을 입력해주세요.' : 'Please enter your name.')
+      alert(t('nameRequired'))
       return
     }
     
     if (trimmedName.length < 2) {
-      alert(selectedLanguage === 'ko' ? '이름은 최소 2자 이상이어야 합니다.' : 'Please enter a name with at least 2 characters.')
+      alert(t('nameMinLength'))
       return
     }
     
@@ -466,7 +461,7 @@ export default function PublicChatPage() {
       <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading chat room...</p>
+          <p className="text-gray-600">{t('loadingChatRoom')}</p>
         </div>
       </div>
     )
@@ -479,14 +474,14 @@ export default function PublicChatPage() {
           <div className="text-red-500 mb-4">
             {/* icon removed */}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Chat Room Not Found</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('chatRoomNotFoundTitle')}</h1>
           <p className="text-gray-600 mb-6">{error}</p>
           <Link
             href="/"
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <ArrowLeft size={16} className="mr-2" />
-            Back to Home
+            {t('backToHome')}
           </Link>
         </div>
       </div>
@@ -497,7 +492,7 @@ export default function PublicChatPage() {
     return (
       <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-500">Unable to load chat room information.</p>
+          <p className="text-gray-500">{t('unableToLoadRoom')}</p>
         </div>
       </div>
     )
@@ -535,7 +530,7 @@ export default function PublicChatPage() {
               <button
                 onClick={handleAddToHomeScreen}
                 className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                title={selectedLanguage === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}
+                title={t('addToHomeScreen')}
               >
                 <Download size={16} />
               </button>
@@ -543,12 +538,12 @@ export default function PublicChatPage() {
                 type="button"
                 onClick={() => setShowPublicTutorial(true)}
                 className="flex items-center gap-1 p-1.5 sm:pl-2 sm:pr-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                title={selectedLanguage === 'ko' ? '메뉴얼 보기' : 'View guide'}
-                aria-label={selectedLanguage === 'ko' ? '메뉴얼 보기' : 'View guide'}
+                title={t('viewGuide')}
+                aria-label={t('viewGuide')}
               >
                 <BookOpen size={16} className="flex-shrink-0" />
                 <span className="hidden sm:inline text-xs font-medium whitespace-nowrap">
-                  {selectedLanguage === 'ko' ? '메뉴얼' : 'Guide'}
+                  {t('guideLabel')}
                 </span>
               </button>
               {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
@@ -560,9 +555,7 @@ export default function PublicChatPage() {
                     } else {
                       const success = await subscribeToPush()
                       if (success) {
-                        alert(selectedLanguage === 'ko' 
-                          ? '푸시 알림이 활성화되었습니다.' 
-                          : 'Push notifications enabled.')
+                        alert(t('pushEnabledShort'))
                       }
                     }
                   }}
@@ -570,9 +563,7 @@ export default function PublicChatPage() {
                   className={`p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors ${
                     isPushSubscribed ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50' : ''
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  title={selectedLanguage === 'ko' 
-                    ? (isPushSubscribed ? '푸시 알림 비활성화' : '푸시 알림 활성화')
-                    : (isPushSubscribed ? 'Disable Push Notifications' : 'Enable Push Notifications')}
+                  title={isPushSubscribed ? t('pushDisableTitle') : t('pushEnableTitle')}
                 >
                   {isPushSubscribed ? (
                     <Bell size={16} />
@@ -591,7 +582,7 @@ export default function PublicChatPage() {
                   }
                 }}
                 className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
+                title={selectedLanguage === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
               >
                 {(() => {
                   const flagCountry = selectedLanguage === 'ko' ? 'KR' : 'US'
@@ -612,7 +603,7 @@ export default function PublicChatPage() {
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors lg:hidden"
-                title={selectedLanguage === 'ko' ? '메뉴' : 'Menu'}
+                title={t('menu')}
               >
                 <Menu size={16} />
               </button>
@@ -635,20 +626,20 @@ export default function PublicChatPage() {
             </div>
             {customerName && (
               <div className="flex items-center space-x-2 ml-2">
-                <span className="text-gray-700">Hi! {customerName}</span>
+                <span className="text-gray-700">{t('hiGuest', { name: customerName })}</span>
                 <button
                   onClick={() => {
                     setTempName(customerName)
                     setShowNameEdit(true)
                   }}
                   className="flex-shrink-0 w-6 h-6 rounded-full overflow-hidden border-2 border-gray-300 hover:border-blue-500 transition-colors"
-                  aria-label={selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
-                  title={selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
+                  aria-label={t('changeNameAvatar')}
+                  title={t('changeNameAvatar')}
                 >
                   {selectedAvatar ? (
                     <img
                       src={selectedAvatar}
-                      alt="Avatar"
+                      alt={t('avatarAlt')}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -668,24 +659,24 @@ export default function PublicChatPage() {
         {/* 고객 이름 입력 (첫 방문 시) */}
         {!customerName && (
           <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Join Chat Room</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('joinTitle')}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Please enter your name
+                  {t('enterNameLabel')}
                 </label>
                 <input
                   type="text"
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="e.g., John Smith"
+                  placeholder={t('enterNamePlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Preferred Language
+                  {t('preferredLanguage')}
                 </label>
                 <div className="relative language-dropdown">
                   <button
@@ -730,7 +721,7 @@ export default function PublicChatPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Avatar
+                  {t('avatarLabel')}
                 </label>
                 <button
                   type="button"
@@ -746,14 +737,14 @@ export default function PublicChatPage() {
                           className="w-8 h-8 rounded-full mr-2 border-2 border-gray-200"
                         />
                         <span className="text-sm text-gray-700">
-                          {selectedLanguage === 'ko' ? '아바타 선택됨' : 'Avatar Selected'}
+                          {t('avatarSelected')}
                         </span>
                       </>
                     ) : (
                       <>
                         <User size={20} className="mr-2 text-gray-400" />
                         <span className="text-sm text-gray-500">
-                          {selectedLanguage === 'ko' ? '아바타 선택' : 'Select Avatar'}
+                          {t('selectAvatar')}
                         </span>
                       </>
                     )}
@@ -765,7 +756,7 @@ export default function PublicChatPage() {
               {isPushSupported && room && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {selectedLanguage === 'ko' ? '푸시 알림 받기' : 'Push Notifications'}
+                    {t('pushNotifications')}
                   </label>
                   <button
                     type="button"
@@ -775,9 +766,7 @@ export default function PublicChatPage() {
                       } else {
                         const success = await subscribeToPush()
                         if (success) {
-                          alert(selectedLanguage === 'ko' 
-                            ? '푸시 알림이 활성화되었습니다. 새 메시지가 도착하면 알림을 받을 수 있습니다.' 
-                            : 'Push notifications enabled. You will receive notifications when new messages arrive.')
+                          alert(t('pushEnabled'))
                         }
                       }
                     }}
@@ -791,24 +780,22 @@ export default function PublicChatPage() {
                     {isPushLoading ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                        <span>{selectedLanguage === 'ko' ? '처리 중...' : 'Loading...'}</span>
+                        <span>{t('processing')}</span>
                       </>
                     ) : isPushSubscribed ? (
                       <>
                         <BellOff size={16} />
-                        <span>{selectedLanguage === 'ko' ? '푸시 알림 비활성화' : 'Disable Push Notifications'}</span>
+                        <span>{t('disablePush')}</span>
                       </>
                     ) : (
                       <>
                         <Bell size={16} />
-                        <span>{selectedLanguage === 'ko' ? '푸시 알림 활성화' : 'Enable Push Notifications'}</span>
+                        <span>{t('enablePush')}</span>
                       </>
                     )}
                   </button>
                   <p className="text-xs text-gray-500 mt-1">
-                    {selectedLanguage === 'ko' 
-                      ? '새 메시지가 도착하면 알림을 받을 수 있습니다' 
-                      : 'Receive notifications when new messages arrive'}
+                    {t('pushHint')}
                   </p>
                 </div>
               )}
@@ -817,7 +804,7 @@ export default function PublicChatPage() {
                 disabled={!tempName.trim()}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Join Chat Room
+                {t('joinButton')}
               </button>
             </div>
           </div>
@@ -846,12 +833,12 @@ export default function PublicChatPage() {
         {/* 사용 안내 - 채팅방이 없을 때만 표시 */}
         {!customerName && (
           <div className="mt-6 bg-gray-50 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-2">Usage Guide</h4>
+            <h4 className="font-semibold text-gray-900 mb-2">{t('usageGuideTitle')}</h4>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>• Feel free to ask about pickup times, locations, or any other questions.</li>
-              <li>• You can communicate in real-time with your guide about special requests or questions during the tour.</li>
-              <li>• Please wait a moment for your guide to respond.</li>
-              <li>• The chat room will remain available for a certain period after the tour ends.</li>
+              <li>• {t('usageGuide1')}</li>
+              <li>• {t('usageGuide2')}</li>
+              <li>• {t('usageGuide3')}</li>
+              <li>• {t('usageGuide4')}</li>
             </ul>
           </div>
         )}
@@ -861,13 +848,13 @@ export default function PublicChatPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
+                {t('changeNameAvatar')}
               </h3>
               <div className="space-y-4">
                 {/* 아바타 선택 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {selectedLanguage === 'ko' ? '아바타' : 'Avatar'}
+                    {t('avatar')}
                   </label>
                   <button
                     type="button"
@@ -883,14 +870,14 @@ export default function PublicChatPage() {
                             className="w-8 h-8 rounded-full mr-2 border-2 border-gray-200"
                           />
                           <span className="text-sm text-gray-700">
-                            {selectedLanguage === 'ko' ? '아바타 선택됨' : 'Avatar Selected'}
+                            {t('avatarSelected')}
                           </span>
                         </>
                       ) : (
                         <>
                           <User size={20} className="mr-2 text-gray-400" />
                           <span className="text-sm text-gray-500">
-                            {selectedLanguage === 'ko' ? '아바타 선택' : 'Select Avatar'}
+                            {t('selectAvatar')}
                           </span>
                         </>
                       )}
@@ -901,7 +888,7 @@ export default function PublicChatPage() {
                 {/* 이름 입력 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {selectedLanguage === 'ko' ? '이름' : 'Name'}
+                    {t('name')}
                   </label>
                   <input
                     type="text"
@@ -913,7 +900,7 @@ export default function PublicChatPage() {
                         handleNameChange()
                       }
                     }}
-                    placeholder={selectedLanguage === 'ko' ? '예: 홍길동' : 'e.g., John Smith'}
+                    placeholder={t('namePlaceholder')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     autoFocus
                   />
@@ -924,7 +911,7 @@ export default function PublicChatPage() {
                     disabled={!tempName.trim()}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {selectedLanguage === 'ko' ? '업데이트' : 'Update'}
+                    {t('update')}
                   </button>
                   <button
                     onClick={() => {
@@ -933,7 +920,7 @@ export default function PublicChatPage() {
                     }}
                     className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
                   >
-                    {selectedLanguage === 'ko' ? '취소' : 'Cancel'}
+                    {t('cancel')}
                   </button>
                 </div>
               </div>

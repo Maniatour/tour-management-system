@@ -5,7 +5,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
-import { Upload, XCircle, CheckCircle, AlertCircle, Shield } from 'lucide-react'
+import { Upload, XCircle, AlertCircle, Shield } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Customer {
   id: string
@@ -29,7 +30,6 @@ export default function PassUploadPage() {
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
   // 고객 정보 로드
   useEffect(() => {
@@ -70,19 +70,18 @@ export default function PassUploadPage() {
     // 파일 타입 검증
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      setMessage({ type: 'error', text: tPass('imageOnly') })
+      toast.error(tPass('imageOnly'))
       return
     }
 
     // 파일 크기 검증 (5MB 제한)
     const maxSize = 5 * 1024 * 1024 // 5MB
     if (file.size > maxSize) {
-      setMessage({ type: 'error', text: tPass('fileTooLarge') })
+      toast.error(tPass('fileTooLarge'))
       return
     }
 
     setUploading(true)
-    setMessage(null)
 
     try {
       const formData = new FormData()
@@ -107,13 +106,10 @@ export default function PassUploadPage() {
         setIdPhotoUrl(data.imageUrl)
       }
 
-      setMessage({ type: 'success', text: tPass('uploadSuccess') })
+      toast.success(tPass('uploadSuccess'))
     } catch (error) {
       console.error('Upload error:', error)
-      setMessage({ 
-        type: 'error', 
-        text: error instanceof Error ? error.message : tPass('uploadError')
-      })
+      toast.error(error instanceof Error ? error.message : tPass('uploadError'))
     } finally {
       setUploading(false)
     }
@@ -122,17 +118,16 @@ export default function PassUploadPage() {
   // 저장 처리
   const handleSave = async () => {
     if (!passPhotoUrl || !idPhotoUrl) {
-      setMessage({ type: 'error', text: tPass('bothPhotosRequired') })
+      toast.error(tPass('bothPhotosRequired'))
       return
     }
 
     if (!customer) {
-      setMessage({ type: 'error', text: tPass('customerNotFound') })
+      toast.error(tPass('customerNotFound'))
       return
     }
 
     setSaving(true)
-    setMessage(null)
 
     try {
       const { error } = await supabase
@@ -148,7 +143,7 @@ export default function PassUploadPage() {
         throw error
       }
 
-      setMessage({ type: 'success', text: tPass('saveSuccess') })
+      toast.success(tPass('saveSuccess'))
       
       // 고객 정보 다시 로드
       const { data } = await supabase
@@ -162,7 +157,7 @@ export default function PassUploadPage() {
       }
     } catch (error) {
       console.error('Error saving:', error)
-      setMessage({ type: 'error', text: tPass('saveError') })
+      toast.error(tPass('saveError'))
     } finally {
       setSaving(false)
     }
@@ -186,7 +181,7 @@ export default function PassUploadPage() {
           <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600">{tPass('loginRequired')}</p>
           <button
-            onClick={() => router.push(`/${locale}/dashboard`)}
+            onClick={() => router.push(`/${locale}/auth?redirectTo=/${locale}/dashboard/pass-upload`)}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             {tPass('goToDashboard')}
@@ -237,22 +232,6 @@ export default function PassUploadPage() {
             </div>
           </div>
         </div>
-
-        {/* 메시지 표시 */}
-        {message && (
-          <div className={`mb-6 p-4 rounded-lg flex items-center space-x-2 ${
-            message.type === 'success' 
-              ? 'bg-green-50 text-green-800 border border-green-200' 
-              : 'bg-red-50 text-red-800 border border-red-200'
-          }`}>
-            {message.type === 'success' ? (
-              <CheckCircle className="h-5 w-5" />
-            ) : (
-              <AlertCircle className="h-5 w-5" />
-            )}
-            <span>{message.text}</span>
-          </div>
-        )}
 
         {/* 업로드 섹션 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

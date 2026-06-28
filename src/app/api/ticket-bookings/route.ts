@@ -65,6 +65,14 @@ function buildTicketBookingInsertPayload(
   return payload
 }
 
+function isBulkInsertBody(body: unknown): body is { rows: Record<string, unknown>[] } {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    Array.isArray((body as { rows?: unknown }).rows)
+  )
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!supabaseAdmin) {
@@ -88,8 +96,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const body = (await request.json()) as Record<string, unknown>
-    const payload = buildTicketBookingInsertPayload(body, user.email)
+    const body = (await request.json()) as Record<string, unknown> | { rows: Record<string, unknown>[] }
+
+    if (isBulkInsertBody(body)) {
+      if (body.rows.length === 0) {
+        return NextResponse.json({ error: '추가할 부킹이 없습니다' }, { status: 400 })
+      }
+      if (body.rows.length > 400) {
+        return NextResponse.json(
+          { error: '한 번에 최대 400건까지 추가할 수 있습니다' },
+          { status: 400 }
+        )
+      }
+
+      const payloads = body.rows.map((row) => buildTicketBookingInsertPayload(row, user.email))
+      for (const payload of payloads) {
+        if (!payload.category || !payload.check_in_date) {
+          return NextResponse.json(
+            { error: '필수 필드가 누락되었습니다' },
+            { status: 400 }
+          )
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('ticket_bookings')
+        .insert(payloads as never[])
+        .select('id')
+
+      if (error) {
+        console.error('[ticket-bookings POST bulk] 생성 오류:', error)
+        return NextResponse.json(
+          { error: error.message || '입장권 부킹을 일괄 생성할 수 없습니다' },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ ticketBookings: data, count: data?.length ?? 0 })
+    }
+
+    const payload = buildTicketBookingInsertPayload(body as Record<string, unknown>, user.email)
 
     if (!payload.category || !payload.check_in_date) {
       return NextResponse.json(

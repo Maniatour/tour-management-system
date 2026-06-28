@@ -681,14 +681,17 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <Link
-              href="/ko/products"
+              href={`/${locale}/products`}
               className="bg-white text-blue-900 hover:bg-gray-100 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors"
             >
               {t('browseTours')}
             </Link>
-            <button className="border-2 border-white text-white hover:bg-white hover:text-blue-900 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors">
+            <a
+              href="mailto:info@maniatour.com"
+              className="border-2 border-white text-white hover:bg-white hover:text-blue-900 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors"
+            >
               {t('contact')}
-            </button>
+            </a>
           </div>
         </div>
       </section>

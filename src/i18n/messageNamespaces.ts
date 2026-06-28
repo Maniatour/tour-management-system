@@ -41,6 +41,12 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'vehicleMaintenance',
   'auth',
   'passUpload',
+  'customerDashboard',
+  'productDetail',
+  'customTour',
+  'reservationCheck',
+  'residentCheck',
+  'publicChat',
   'reservationEvidence',
   'teamBoard',
 ] as const
@@ -129,15 +135,15 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
   },
   {
     test: (p) => /\/products/.test(p),
-    namespaces: ['products', 'booking', 'weather'],
+    namespaces: ['products', 'booking', 'weather', 'productDetail', 'customTour'],
   },
   {
     test: (p) => /\/dashboard/.test(p),
-    namespaces: ['passUpload', 'reservationEvidence', 'reservations'],
+    namespaces: ['passUpload', 'reservationEvidence', 'reservations', 'customerDashboard', 'residentCheck'],
   },
   {
     test: (p) => /\/(reservation-check|off-schedule|employee-contract|sop)/.test(p),
-    namespaces: ['reservations', 'guide'],
+    namespaces: ['reservations', 'guide', 'reservationCheck'],
   },
 ]
 
