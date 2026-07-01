@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import {
   canAttemptProactiveRefresh,
   canUseAuthenticatedRest,
@@ -285,7 +285,8 @@ function getInitialAuthState(): {
   isSimulating: boolean
   restoredFromSnapshot: boolean
 } {
-  const empty = {
+  // SSR·클라이언트 첫 렌더를 동일하게 유지 (sessionStorage는 useLayoutEffect에서 복원)
+  return {
     user: null,
     authUser: null,
     userRole: null,
@@ -296,23 +297,6 @@ function getInitialAuthState(): {
     simulatedUser: null,
     isSimulating: false,
     restoredFromSnapshot: false,
-  }
-  if (typeof window === 'undefined') return empty
-
-  const snapshot = readAuthSnapshot()
-  if (!snapshot) return empty
-
-  return {
-    user: snapshot.user,
-    authUser: snapshot.authUser ?? snapshot.user,
-    userRole: snapshot.userRole,
-    userPosition: snapshot.userPosition,
-    permissions: snapshot.permissions,
-    loading: false,
-    isInitialized: true,
-    simulatedUser: snapshot.simulatedUser,
-    isSimulating: snapshot.isSimulating,
-    restoredFromSnapshot: true,
   }
 }
 
@@ -331,6 +315,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(initialAuth.simulatedUser)
   const [isSimulating, setIsSimulating] = useState(initialAuth.isSimulating)
   const restoredFromSnapshotRef = useRef(initialAuth.restoredFromSnapshot)
+
+  // hydration 직후·첫 페인트 전에 스냅샷 복원 (서버 HTML과 클라이언트 첫 렌더 일치)
+  useLayoutEffect(() => {
+    const snapshot = readAuthSnapshot()
+    if (!snapshot) return
+
+    setUser(snapshot.user)
+    setAuthUser(snapshot.authUser ?? snapshot.user)
+    setUserRole(snapshot.userRole)
+    setUserPosition(snapshot.userPosition)
+    setPermissions(snapshot.permissions)
+    setSimulatedUser(snapshot.simulatedUser)
+    setIsSimulating(snapshot.isSimulating)
+    setLoading(false)
+    setIsInitialized(true)
+    restoredFromSnapshotRef.current = true
+  }, [])
 
   const userRef = useRef<AuthUser | null>(null)
   userRef.current = user

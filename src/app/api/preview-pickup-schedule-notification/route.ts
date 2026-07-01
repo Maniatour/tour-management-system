@@ -1,33 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
-import { generatePickupScheduleEmailContent } from '@/app/api/send-pickup-schedule-notification/route'
-import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
-import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
-import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { buildPickupScheduleEmailPreview } from '@/lib/pickupScheduleEmailPreviewBuilder'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/preview-pickup-schedule-notification
- * 
+ *
  * 픽업 스케줄 알림 이메일 미리보기 API (발송 없이 내용만 반환)
- * 
- * 요청 본문:
- * {
- *   reservationId: string,
- *   pickupTime: string,
- *   tourDate: string,
- *   locale?: 'ko' | 'en'
- * }
  */
 export async function POST(request: NextRequest) {
   try {
-    console.log('[preview-pickup-schedule-notification] 요청 수신')
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale: localeParam, tourId, preparationInfo: preparationInfoFromBody } = body
-
-    console.log('[preview-pickup-schedule-notification] 요청 데이터:', { reservationId, pickupTime, tourDate, locale: localeParam, tourId, hasPreparationInfo: preparationInfoFromBody !== undefined })
+    const {
+      reservationId,
+      pickupTime,
+      tourDate,
+      locale: localeParam,
+      tourId,
+      preparationInfo: preparationInfoFromBody,
+    } = body
 
     if (!reservationId || !pickupTime || !tourDate) {
-      console.error('[preview-pickup-schedule-notification] 필수 파라미터 누락')
       return NextResponse.json(
         { error: '예약 ID, 픽업 시간, 투어 날짜가 필요합니다.' },
         { status: 400 }
@@ -36,7 +30,6 @@ export async function POST(request: NextRequest) {
 
     const routeDb = supabaseAdmin ?? supabase
 
-    // 예약 정보 조회
     const { data: reservation, error: reservationError } = await routeDb
       .from('reservations')
       .select('*')
@@ -44,631 +37,82 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (reservationError || !reservation) {
-      console.error('[preview-pickup-schedule-notification] 예약 조회 실패:', reservationError)
       return NextResponse.json(
         { error: '예약을 찾을 수 없습니다.', details: reservationError?.message },
         { status: 404 }
       )
     }
 
-    // 고객 정보 별도 조회
     let customer = null
     if (reservation.customer_id) {
-      const { data: customerData, error: customerError } = await routeDb
+      const { data: customerData } = await routeDb
         .from('customers')
         .select('id, name, email, language')
         .eq('id', reservation.customer_id)
         .maybeSingle()
-
-      if (customerError) {
-        console.error('[preview-pickup-schedule-notification] 고객 조회 실패:', customerError)
-      } else {
-        customer = customerData
-      }
+      customer = customerData
     }
 
     if (!customer) {
-      return NextResponse.json(
-        { error: '고객 정보를 찾을 수 없습니다.' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: '고객 정보를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // 상품 정보 별도 조회
     let product = null
     if (reservation.product_id) {
-      const { data: productData, error: productError } = await routeDb
+      const { data: productData } = await routeDb
         .from('products')
         .select('id, name, name_ko, name_en, customer_name_ko, customer_name_en')
         .eq('id', reservation.product_id)
         .maybeSingle()
-
-      if (productError) {
-        console.error('[preview-pickup-schedule-notification] 상품 조회 실패:', productError)
-      } else {
-        product = productData
-      }
+      product = productData
     }
 
-    // 픽업 호텔 정보 별도 조회
-    let pickupHotel = null
-    if (reservation.pickup_hotel) {
-      const { data: hotelData, error: hotelError } = await routeDb
-        .from('pickup_hotels')
-        .select('id, hotel, pick_up_location, address, link, media')
-        .eq('id', reservation.pickup_hotel)
-        .maybeSingle()
-
-      if (hotelError) {
-        console.error('[preview-pickup-schedule-notification] 호텔 조회 실패:', hotelError)
-      } else {
-        pickupHotel = hotelData
-      }
-    }
-
-    // 고객 언어에 따라 locale 결정
-    const isEnglish = resolveReservationEmailIsEnglish(customer.language, localeParam)
-
-
-    // reservation_ids 배열 정규화 함수
-    const normalizeIds = (value: unknown): string[] => {
-      if (!value) return []
-      if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(v => v.length > 0)
-      if (typeof value === 'string') {
-        const trimmed = value.trim()
-        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-          try {
-            const parsed = JSON.parse(trimmed)
-            return Array.isArray(parsed) ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) : []
-          } catch { return [] }
-        }
-        if (trimmed.includes(',')) return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
-        return trimmed.length > 0 ? [trimmed] : []
-      }
-      return []
-    }
-
-    // Tour Details 조회
-    let tourDetails: any = null
-    let tourData = null
-    
-    // tourId가 제공된 경우 직접 조회 (투어 상세 페이지에서 호출한 경우)
-    if (tourId) {
-      console.log('[preview-pickup-schedule-notification] tourId로 직접 투어 조회:', tourId)
-      const { data: tourDataById, error: tourError } = await routeDb
-        .from('tours')
-        .select('*')
-        .eq('id', tourId)
-        .maybeSingle()
-
-      if (tourError) {
-        console.error('[preview-pickup-schedule-notification] 투어 조회 오류:', tourError)
-      } else if (tourDataById) {
-        // reservation_ids에 현재 예약 ID가 포함되어 있는지 확인
-        const reservationIds = normalizeIds(tourDataById.reservation_ids)
-        const normalizedReservationId = String(reservationId).trim()
-        const found = reservationIds.some(id => String(id).trim() === normalizedReservationId)
-        if (found) {
-          tourData = tourDataById
-          console.log('[preview-pickup-schedule-notification] tourId로 조회된 투어 (reservation_ids 확인됨):', tourData.id)
-        } else {
-          console.log('[preview-pickup-schedule-notification] tourId로 조회된 투어에 현재 예약 ID가 없음')
-          // tourId가 제공되었지만 reservation_ids에 없어도 tourData로 사용 (투어 상세 페이지에서 호출한 경우)
-          tourData = tourDataById
-          console.log('[preview-pickup-schedule-notification] tourId로 조회된 투어 사용 (reservation_ids 확인 없이):', tourData.id)
-        }
-      } else {
-        console.log('[preview-pickup-schedule-notification] tourId로 조회된 투어가 없음')
-      }
-    } else {
-      // tourId가 없는 경우: reservation_ids에 현재 예약 ID가 포함된 투어 찾기
-      console.log('[preview-pickup-schedule-notification] reservation_ids로 투어 조회 시작:', {
-        reservationId,
-        product_id: reservation.product_id,
-        tour_date: tourDate
-      })
-      
-      // product_id와 tour_date로 먼저 필터링한 후, reservation_ids 배열에서 확인
-      if (reservation.product_id && tourDate) {
-        const { data: toursByProduct, error: tourError } = await routeDb
-          .from('tours')
-          .select('*')
-          .eq('product_id', reservation.product_id)
-          .eq('tour_date', tourDate)
-
-        if (tourError) {
-          console.error('[preview-pickup-schedule-notification] 투어 조회 오류:', tourError)
-        } else if (toursByProduct && toursByProduct.length > 0) {
-          console.log('[preview-pickup-schedule-notification] 조회된 투어 개수:', toursByProduct.length)
-          // reservation_ids 배열에 예약 ID가 포함된 투어 찾기
-          const normalizedReservationId = String(reservationId).trim()
-          console.log('[preview-pickup-schedule-notification] 검색할 예약 ID:', normalizedReservationId)
-          
-          for (const tour of toursByProduct) {
-            const reservationIds = normalizeIds((tour as any).reservation_ids)
-            console.log('[preview-pickup-schedule-notification] 투어 ID:', tour.id, 'reservation_ids:', reservationIds, '원본:', (tour as any).reservation_ids)
-            
-            // 정규화된 ID로 비교 (문자열로 변환하여 비교)
-            const found = reservationIds.some(id => String(id).trim() === normalizedReservationId)
-            if (found) {
-              tourData = tour
-              console.log('[preview-pickup-schedule-notification] reservation_ids로 조회된 투어:', tourData.id)
-              break
-            }
-          }
-
-          if (!tourData) {
-            console.log('[preview-pickup-schedule-notification] reservation_ids에 예약 ID가 포함된 투어를 찾지 못함')
-            console.log('[preview-pickup-schedule-notification] 검색한 예약 ID:', normalizedReservationId)
-            console.log('[preview-pickup-schedule-notification] 조회된 투어들의 reservation_ids:', toursByProduct.map(t => ({ id: t.id, reservation_ids: (t as any).reservation_ids })))
-          }
-        } else {
-          console.log('[preview-pickup-schedule-notification] product_id/tour_date로 조회된 투어가 없음')
-        }
-      }
-    }
-
-    // All Pickup Schedule 조회
-    let allPickups: any[] = []
-    
-    if (tourData && tourData.reservation_ids) {
-      // tourData를 찾은 경우: tourData의 reservation_ids로 조회
-      console.log('[preview-pickup-schedule-notification] tourData를 찾았으므로 reservation_ids로 모든 픽업 스케줄 조회')
-      const reservationIds = normalizeIds(tourData.reservation_ids)
-      console.log('[preview-pickup-schedule-notification] 조회할 reservation_ids:', reservationIds)
-      
-      if (reservationIds.length > 0) {
-        // reservation_ids에 포함된 예약만 조회 (취소된 예약 제외)
-        const { data: allReservations, error: allReservationsError } = await routeDb
-          .from('reservations')
-          .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
-          .in('id', reservationIds)
-          .not('pickup_time', 'is', null)
-          .not('pickup_hotel', 'is', null)
-          .neq('status', 'cancelled')
-
-        if (allReservationsError) {
-          console.error('[preview-pickup-schedule-notification] 예약 조회 오류:', allReservationsError)
-        } else if (allReservations && allReservations.length > 0) {
-          console.log('[preview-pickup-schedule-notification] 조회된 예약 개수:', allReservations.length)
-          allPickups = await Promise.all(
-            allReservations.map(async (res: any) => {
-              const { data: customerInfo } = await routeDb
-                .from('customers')
-                .select('name')
-                .eq('id', res.customer_id)
-                .maybeSingle()
-
-              const { data: hotelInfo } = await routeDb
-                .from('pickup_hotels')
-                .select('hotel, pick_up_location, address, link')
-                .eq('id', res.pickup_hotel)
-                .maybeSingle()
-
-              return {
-                reservation_id: res.id,
-                pickup_time: res.pickup_time || '',
-                pickup_hotel: res.pickup_hotel || '',
-                hotel_name: hotelInfo?.hotel || 'Unknown Hotel',
-                pick_up_location: hotelInfo?.pick_up_location || '',
-                address: hotelInfo?.address || '',
-                link: hotelInfo?.link || '',
-                customer_name: customerInfo?.name || 'Unknown Customer',
-                total_people: res.total_people,
-                tour_date: res.tour_date
-              }
-            })
-          )
-        } else {
-          console.log('[preview-pickup-schedule-notification] reservation_ids에 해당하는 예약이 없음')
-        }
-      } else {
-        console.log('[preview-pickup-schedule-notification] reservation_ids가 비어있음')
-      }
-    } else if (reservation.product_id && tourDate) {
-      // tourData를 찾지 못한 경우: product_id와 tour_date로 fallback 조회
-      console.log('[preview-pickup-schedule-notification] tourData를 찾지 못했으므로 product_id와 tour_date로 모든 픽업 스케줄 조회 (fallback)')
-      const { data: allReservations, error: allReservationsError } = await routeDb
-        .from('reservations')
-        .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
-        .eq('product_id', reservation.product_id)
-        .eq('tour_date', tourDate)
-        .not('pickup_time', 'is', null)
-        .not('pickup_hotel', 'is', null)
-        .neq('status', 'cancelled')
-
-      if (allReservationsError) {
-        console.error('[preview-pickup-schedule-notification] 예약 조회 오류 (fallback):', allReservationsError)
-      } else if (allReservations && allReservations.length > 0) {
-        console.log('[preview-pickup-schedule-notification] 조회된 예약 개수 (fallback):', allReservations.length)
-        allPickups = await Promise.all(
-          allReservations.map(async (res: any) => {
-            const { data: customerInfo } = await routeDb
-              .from('customers')
-              .select('name')
-              .eq('id', res.customer_id)
-              .maybeSingle()
-
-            const { data: hotelInfo } = await routeDb
-              .from('pickup_hotels')
-              .select('hotel, pick_up_location, address, link')
-              .eq('id', res.pickup_hotel)
-              .maybeSingle()
-
-            return {
-              reservation_id: res.id,
-              pickup_time: res.pickup_time || '',
-              pickup_hotel: res.pickup_hotel || '',
-              hotel_name: hotelInfo?.hotel || 'Unknown Hotel',
-              pick_up_location: hotelInfo?.pick_up_location || '',
-              address: hotelInfo?.address || '',
-              link: hotelInfo?.link || '',
-              customer_name: customerInfo?.name || 'Unknown Customer',
-              total_people: res.total_people,
-              tour_date: res.tour_date
-            }
-          })
-        )
-      } else {
-        console.log('[preview-pickup-schedule-notification] product_id/tour_date로 조회된 예약이 없음 (fallback)')
-      }
-    } else {
-      console.log('[preview-pickup-schedule-notification] tourData를 찾지 못했고 product_id/tour_date도 없어서 모든 픽업 스케줄을 조회할 수 없음')
-    }
-    
-    // 같은 시간과 같은 호텔을 가진 항목 중복 제거 및 정렬
-    if (allPickups.length > 0) {
-      // 같은 시간과 같은 호텔을 가진 항목 중복 제거 (정렬 전에 먼저 제거)
-      const uniquePickups = new Map<string, any>()
-      allPickups.forEach(pickup => {
-        // 시간을 정규화 (HH:MM 형식으로 통일)
-        const normalizedTime = pickup.pickup_time ? pickup.pickup_time.substring(0, 5) : ''
-        // 호텔 이름으로 중복 확인 (같은 호텔이지만 ID가 다를 수 있으므로 이름으로 비교)
-        const key = `${normalizedTime}-${pickup.hotel_name}`
-        if (!uniquePickups.has(key)) {
-          uniquePickups.set(key, pickup)
-        }
-      })
-      allPickups = Array.from(uniquePickups.values())
-      
-      // 오후 9시(21:00) 이후 시간은 전날로 취급하여 정렬
-      allPickups.sort((a, b) => {
-        const parseTime = (time: string) => {
-          if (!time) return 0
-          const [hours, minutes] = time.split(':').map(Number)
-          return hours * 60 + (minutes || 0)
-        }
-        
-        const parseDate = (dateStr: string) => {
-          const [year, month, day] = dateStr.split('-').map(Number)
-          return new Date(year, month - 1, day)
-        }
-        
-        const timeA = parseTime(a.pickup_time)
-        const timeB = parseTime(b.pickup_time)
-        const referenceTime = 21 * 60 // 오후 9시 (21:00) = 1260분
-        
-        // 오후 9시 이후 시간은 전날로 취급
-        let dateA = parseDate(a.tour_date || tourDate)
-        let dateB = parseDate(b.tour_date || tourDate)
-        
-        if (timeA >= referenceTime) {
-          dateA = new Date(dateA)
-          dateA.setDate(dateA.getDate() - 1)
-        }
-        if (timeB >= referenceTime) {
-          dateB = new Date(dateB)
-          dateB.setDate(dateB.getDate() - 1)
-        }
-        
-        // 날짜와 시간을 함께 고려하여 정렬
-        const dateTimeA = dateA.getTime() + timeA * 60 * 1000
-        const dateTimeB = dateB.getTime() + timeB * 60 * 1000
-        
-        return dateTimeA - dateTimeB
-      })
-      
-      console.log('[preview-pickup-schedule-notification] 모든 픽업 스케줄 조회 완료:', allPickups.length, '건')
-    } else {
-      console.log('[preview-pickup-schedule-notification] 모든 픽업 스케줄이 없음')
-    }
-
-    // Tour Details 조회
-    if (tourData) {
-      console.log('[preview-pickup-schedule-notification] 투어 데이터:', {
-        id: tourData.id,
-        tour_guide_id: tourData.tour_guide_id,
-        assistant_id: tourData.assistant_id,
-        tour_car_id: tourData.tour_car_id
-      })
-      
-      let tourGuideInfo = null
-      let assistantInfo = null
-      let vehicleInfo = null
-
-      const teamDb = supabaseAdmin ?? supabase
-      if (tourData.tour_guide_id) {
-        console.log('[preview-pickup-schedule-notification] 가이드 조회:', tourData.tour_guide_id)
-        const { data: guideData, error: guideError } = await teamDb
-          .from('team')
-          .select('name_ko, name_en, phone, email, languages')
-          .eq('email', tourData.tour_guide_id)
-          .maybeSingle()
-        
-        if (guideError) {
-          console.error('[preview-pickup-schedule-notification] 가이드 조회 오류:', guideError)
-        } else {
-          tourGuideInfo = guideData
-          console.log('[preview-pickup-schedule-notification] 가이드 정보:', tourGuideInfo ? '있음' : '없음')
-        }
-      }
-
-      if (tourData.assistant_id) {
-        console.log('[preview-pickup-schedule-notification] 어시스턴트 조회:', tourData.assistant_id)
-        const { data: assistantData, error: assistantError } = await teamDb
-          .from('team')
-          .select('name_ko, name_en, phone, email')
-          .eq('email', tourData.assistant_id)
-          .maybeSingle()
-        
-        if (assistantError) {
-          console.error('[preview-pickup-schedule-notification] 어시스턴트 조회 오류:', assistantError)
-        } else {
-          assistantInfo = assistantData
-          console.log('[preview-pickup-schedule-notification] 어시스턴트 정보:', assistantInfo ? '있음' : '없음')
-        }
-      }
-
-      if (tourData.tour_car_id) {
-        console.log('[preview-pickup-schedule-notification] 차량 조회:', tourData.tour_car_id)
-        const vehiclesDb = supabaseAdmin ?? supabase
-        const { data: vehicleData, error: vehicleError } = await vehiclesDb
-          .from('vehicles')
-          .select('vehicle_type, capacity, color')
-          .eq('id', tourData.tour_car_id)
-          .maybeSingle()
-
-        if (vehicleError) {
-          console.error('[preview-pickup-schedule-notification] 차량 조회 오류:', vehicleError)
-        } else if (vehicleData?.vehicle_type) {
-          const { data: vehicleTypeData, error: vehicleTypeError } = await routeDb
-            .from('vehicle_types')
-            .select('id, name, brand, model, passenger_capacity, description')
-            .eq('name', vehicleData.vehicle_type)
-            .maybeSingle()
-
-          if (vehicleTypeError) {
-            console.error('[preview-pickup-schedule-notification] 차량 타입 조회 오류:', vehicleTypeError)
-          }
-
-          const { data: typePhotosData, error: typePhotosError } = await routeDb
-            .from('vehicle_type_photos')
-            .select('photo_url, photo_name, description, is_primary, display_order')
-            .eq('vehicle_type_id', vehicleTypeData?.id || '')
-            .order('display_order', { ascending: true })
-            .order('is_primary', { ascending: false })
-
-          if (typePhotosError) {
-            console.error('[preview-pickup-schedule-notification] vehicle_type_photos 조회 오류:', typePhotosError)
-          }
-
-          const { data: vehiclePhotosData, error: vehiclePhotosError } = await routeDb
-            .from('vehicle_photos')
-            .select('photo_url, photo_name, is_primary, display_order')
-            .eq('vehicle_id', tourData.tour_car_id)
-            .order('display_order', { ascending: true })
-            .order('is_primary', { ascending: false })
-
-          if (vehiclePhotosError) {
-            console.error('[preview-pickup-schedule-notification] vehicle_photos 조회 오류:', vehiclePhotosError)
-          }
-
-          const simplifyUrl = (url: string): string => {
-            if (!url) return url
-            try {
-              const urlObj = new URL(url)
-              urlObj.search = ''
-              urlObj.hash = ''
-              return urlObj.toString()
-            } catch {
-              return url
-            }
-          }
-
-          const toPublicPhotoUrl = (photo: any): any => {
-            if (!photo.photo_url) return null
-            if (photo.photo_url.startsWith('data:image')) {
-              return { ...photo, photo_url: photo.photo_url }
-            }
-            if (!photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
-              try {
-                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(photo.photo_url)
-                return { ...photo, photo_url: simplifyUrl(publicUrl) }
-              } catch (error) {
-                console.error('[preview-pickup-schedule-notification] 차량 사진 공개 URL 생성 오류:', error)
-                return photo
-              }
-            }
-            if (photo.photo_url && photo.photo_url.startsWith('http')) {
-              return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
-            }
-            return photo
-          }
-
-          const processedTypePhotos = (typePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
-          const processedVehiclePhotos = (vehiclePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
-          const displayPhotos = processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
-
-          // data URL 사진은 클릭 시 새 탭에서 보이도록 Storage에 임시 업로드 후 viewUrl 부여
-          const displayPhotosWithViewUrl = await Promise.all(
-            displayPhotos.map(async (photo: any) => {
-              if (!photo.photo_url?.startsWith('data:image')) {
-                return { ...photo, viewUrl: photo.photo_url }
-              }
-              try {
-                const [header, base64] = photo.photo_url.split(',')
-                const mime = (header.match(/data:(.+);/)?.[1] || 'image/jpeg').trim()
-                const ext = (mime.split('/')[1] || 'jpg').replace(/\+xml$/, '') || 'jpg'
-                const buffer = Buffer.from(base64, 'base64')
-                const path = `email-view/${crypto.randomUUID()}.${ext}`
-                const { error } = await supabase.storage
-                  .from('images')
-                  .upload(path, buffer, { contentType: mime, upsert: false })
-                if (error) {
-                  console.warn('[preview-pickup-schedule-notification] data URL 업로드 실패:', error.message)
-                  return { ...photo, viewUrl: null }
-                }
-                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
-                return { ...photo, viewUrl: simplifyUrl(publicUrl) }
-              } catch (e) {
-                console.warn('[preview-pickup-schedule-notification] data URL 업로드 예외:', e)
-                return { ...photo, viewUrl: null }
-              }
-            })
-          )
-
-          vehicleInfo = {
-            vehicle_type: vehicleData.vehicle_type,
-            color: vehicleData.color,
-            vehicle_type_info: vehicleTypeData ? {
-              name: vehicleTypeData.name,
-              brand: vehicleTypeData.brand,
-              model: vehicleTypeData.model,
-              passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
-              description: vehicleTypeData.description
-            } : {
-              name: vehicleData.vehicle_type,
-              passenger_capacity: vehicleData.capacity
-            },
-            vehicle_type_photos: displayPhotosWithViewUrl
-          }
-          console.log('[preview-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
-        }
-      }
-
-      tourDetails = {
-        ...tourData,
-        tour_guide: tourGuideInfo,
-        assistant: assistantInfo,
-        vehicle: vehicleInfo
-      }
-      
-      console.log('[preview-pickup-schedule-notification] 최종 tourDetails:', {
-        hasTourGuide: !!tourDetails.tour_guide,
-        hasAssistant: !!tourDetails.assistant,
-        hasVehicle: !!tourDetails.vehicle
-      })
-    } else {
-      console.log('[preview-pickup-schedule-notification] 투어 데이터를 찾을 수 없음 - tourDetails는 null로 유지')
-    }
-
-    // Chat Room 정보 조회 - tourData가 있으면 tour_id로 조회
-    let chatRoomCode: string | null = null
-    if (tourData && tourData.id) {
-      console.log('[preview-pickup-schedule-notification] 채팅방 조회 시작 (tour_id):', tourData.id)
-      const { data: chatRoomData, error: chatRoomError } = await routeDb
-        .from('chat_rooms')
-        .select('room_code')
-        .eq('tour_id', tourData.id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (chatRoomError) {
-        console.error('[preview-pickup-schedule-notification] 채팅방 조회 오류:', chatRoomError)
-      } else if (chatRoomData) {
-        chatRoomCode = chatRoomData.room_code
-        console.log('[preview-pickup-schedule-notification] 채팅방 코드 조회 성공:', chatRoomCode)
-      } else {
-        console.log('[preview-pickup-schedule-notification] 채팅방을 찾을 수 없음 (tour_id:', tourData.id, ')')
-      }
-    } else {
-      console.log('[preview-pickup-schedule-notification] tourData가 없어서 채팅방을 조회할 수 없음')
-    }
-    
-    if (!chatRoomCode) {
-      console.log('[preview-pickup-schedule-notification] 최종 채팅방 코드: 없음')
-    }
-
-    // 투어일 날씨 조회 (YYYY-MM-DD 통일로 투어 상세 페이지와 동일 데이터 사용)
-    let tourDayWeather: Awaited<ReturnType<typeof getGoblinTourWeatherData>> | null = null
-    try {
-      tourDayWeather = await getGoblinTourWeatherData(normalizeDate(tourDate))
-    } catch (weatherErr) {
-      console.warn('[preview-pickup-schedule-notification] 투어일 날씨 조회 실패 (무시):', weatherErr)
-    }
-
-    // 상품 준비사항(추천 준비물): 요청에 값이 있으면 사용, 없으면 DB 조회
-    let preparationInfo: string | null = null
-    if (preparationInfoFromBody !== undefined && preparationInfoFromBody !== null) {
-      preparationInfo = typeof preparationInfoFromBody === 'string' ? preparationInfoFromBody : String(preparationInfoFromBody)
-    } else if (reservation.product_id) {
-      const languageCode = isEnglish ? 'en' : 'ko'
-      const rez = reservation as {
-        channel_id?: string | null
-        variant_key?: string | null
-      }
-      const channelsLookupClient = supabaseAdmin ?? supabase
-      const row = await fetchProductDetailsForReservationEmail(supabase, {
-        productId: reservation.product_id,
-        languageCode,
-        channelId: rez.channel_id ?? null,
-        variantKey: rez.variant_key ?? 'default',
-        channelsLookupClient,
-      })
-      preparationInfo = (row?.preparation_info as string) ?? null
-    }
-
-    // 이메일 내용 생성 (미리보기에서는 차량 사진을 같은 오리진 프록시로 로드해 표시)
-    console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 중...')
     const imageProxyBaseUrl =
-      (typeof request.headers.get('origin') === 'string' && request.headers.get('origin'))
-      || (typeof request.nextUrl?.origin === 'string' && request.nextUrl?.origin)
-      || process.env.NEXT_PUBLIC_APP_URL
-      || null
-    const emailContent = generatePickupScheduleEmailContent(
+      (typeof request.headers.get('origin') === 'string' && request.headers.get('origin')) ||
+      (typeof request.nextUrl?.origin === 'string' && request.nextUrl?.origin) ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      null
+
+    const result = await buildPickupScheduleEmailPreview({
+      reservationId,
       reservation,
-      customer,
+      customer: {
+        name: customer.name,
+        email: customer.email ?? 'preview@example.com',
+        language: customer.language,
+      },
       product,
-      pickupHotel,
       pickupTime,
       tourDate,
-      isEnglish,
-      allPickups,
-      tourDetails,
-      chatRoomCode,
-      tourDayWeather,
-      preparationInfo,
-      imageProxyBaseUrl
-    )
+      locale: localeParam,
+      tourId,
+      preparationInfoOverride: preparationInfoFromBody,
+      imageProxyBaseUrl,
+      db: routeDb,
+    })
 
-    console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 완료')
+    const isEnglish = localeParam === 'en' || customer.language === 'en'
     const productNameForSource = product
-      ? (isEnglish ? (product.customer_name_en || product.name_en || product.name) : (product.customer_name_ko || product.name_ko || product.name))
+      ? isEnglish
+        ? product.customer_name_en || product.name_en || product.name
+        : product.customer_name_ko || product.name_ko || product.name
       : ''
-    const preparationInfoSource =
-      reservation.product_id
-        ? {
-            productId: reservation.product_id,
-            channelId: (reservation as any).channel_id ?? null,
-            languageCode: isEnglish ? 'en' : 'ko',
-            productName: productNameForSource
-          }
-        : null
+
+    const preparationInfoSource = reservation.product_id
+      ? {
+          productId: reservation.product_id,
+          channelId: (reservation as { channel_id?: string | null }).channel_id ?? null,
+          languageCode: isEnglish ? 'en' : 'ko',
+          productName: productNameForSource,
+        }
+      : null
 
     return NextResponse.json({
       success: true,
-      emailContent: {
-        ...emailContent,
-        customer: {
-          name: customer.name,
-          email: customer.email,
-          language: customer.language
-        }
-      },
-      preparationInfo: preparationInfo ?? '',
-      preparationInfoSource
+      emailContent: result.emailContent,
+      preparationInfo: result.preparationInfo,
+      preparationInfoSource,
     })
-
   } catch (error) {
     console.error('[preview-pickup-schedule-notification] 서버 오류:', error)
     const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
@@ -678,4 +122,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

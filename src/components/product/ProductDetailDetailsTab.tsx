@@ -19,6 +19,7 @@ import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 type ProductDetailDetailsTabProps = {
   product: ProductDetailsTabProduct
@@ -81,7 +82,7 @@ export default function ProductDetailDetailsTab({
   }, [productDetails])
 
   return (
-                  <div className="space-y-6">
+    <CustomerPageZone zone="detail-details-body" className="space-y-6">
                     <h3 className="text-lg font-semibold text-gray-900">{t("detailedTourInformation")}</h3>
                     
                     {/* 상세정보 서브 탭 네비게이션 */}
@@ -543,6 +544,6 @@ export default function ProductDetailDetailsTab({
                         )}
                       </div>
                     )}
-                  </div>
+    </CustomerPageZone>
   )
 }

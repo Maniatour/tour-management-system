@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 type ProductDetailHeaderProps = {
   locale: string
@@ -17,7 +18,7 @@ export default function ProductDetailHeader({
   primaryTag,
 }: ProductDetailHeaderProps) {
   return (
-    <div className="bg-white shadow-sm border-b">
+    <CustomerPageZone zone="detail-header" className="bg-white shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -40,6 +41,6 @@ export default function ProductDetailHeader({
           </div>
         </div>
       </div>
-    </div>
+    </CustomerPageZone>
   )
 }

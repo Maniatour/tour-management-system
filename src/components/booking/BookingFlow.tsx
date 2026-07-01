@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useCart } from '@/components/cart/CartProvider'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 
 interface Product {
   id: string
@@ -3280,7 +3281,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         ...prev,
                         customerInfo: {
                           ...prev.customerInfo,
-                          email: e.target.value
+                          email: stripSpacesFromContactInput(e.target.value)
                         }
                       }))
                     }}

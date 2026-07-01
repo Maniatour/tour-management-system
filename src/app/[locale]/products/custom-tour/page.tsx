@@ -22,6 +22,7 @@ const EntranceFeeDetailModal = dynamic(
 )
 import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
 import { markdownToHtml } from '@/components/LightRichEditor'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 
 type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
   is_favorite?: boolean | null
@@ -1442,7 +1443,7 @@ export default function CustomTourPage() {
                   <input
                     type="email"
                     value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    onChange={(e) => setCustomerEmail(stripSpacesFromContactInput(e.target.value))}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder={t('emailPlaceholder')}
                   />
@@ -1454,7 +1455,7 @@ export default function CustomTourPage() {
                   <input
                     type="tel"
                     value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    onChange={(e) => setCustomerPhone(stripSpacesFromContactInput(e.target.value))}
                     className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder={t('phonePlaceholder')}
                   />

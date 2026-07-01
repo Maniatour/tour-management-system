@@ -14,6 +14,8 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 interface Product {
   id: string
@@ -471,8 +473,35 @@ export default function ProductsPage() {
   }, [selectedCategory, searchTerm, selectedTag, priceRange, filteredCategoryKeysString, viewMode, categoryKeysString, subCategoriesByCategory])
 
   // 상품 카드 렌더링 함수
-  const renderProductCard = (product: Product, index: number) => (
-    <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
+  const renderProductCard = (product: Product, index: number) => {
+    const previewProductId = searchParams.get('productId')
+    const isPreviewTarget =
+      searchParams.get('preview') === '1' &&
+      (!previewProductId || previewProductId === product.id)
+
+    const ListZone = ({
+      zone,
+      className = '',
+      children,
+    }: {
+      zone: string
+      className?: string
+      children: React.ReactNode
+    }) =>
+      isPreviewTarget ? (
+        <CustomerPageZone zone={zone} className={className}>
+          {children}
+        </CustomerPageZone>
+      ) : (
+        <div className={className}>{children}</div>
+      )
+
+    return (
+    <ListZone
+      key={product.id}
+      zone="listing-card"
+      className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
+    >
       {/* 상품 이미지 */}
       <div className="relative h-48 bg-gray-200">
         {product.primary_image && !imageErrors.has(product.id) ? (
@@ -553,11 +582,13 @@ export default function ProductsPage() {
       {/* 상품 정보 */}
       <div className="p-6">
         {/* 상품명 */}
+        <ListZone zone="listing-card-name">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
           <Link href={`/${locale}/products/${product.id}`} className="hover:text-blue-600">
             {getCustomerDisplayName(product)}
           </Link>
         </h3>
+        </ListZone>
 
         {/* 설명 */}
         <p className="text-gray-600 text-sm mb-4 line-clamp-2">
@@ -594,7 +625,7 @@ export default function ProductsPage() {
 
         {/* 태그 */}
         {product.tags && product.tags.length > 0 && (
-          <div className="mb-4">
+          <ListZone zone="listing-card-tags" className="mb-4">
             <div className="flex flex-wrap gap-1">
               {product.tags.slice(0, 3).map((tag, index) => (
                 <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
@@ -602,11 +633,11 @@ export default function ProductsPage() {
                 </span>
               ))}
             </div>
-          </div>
+          </ListZone>
         )}
 
         {/* 상품 세부 정보 */}
-        <div className="space-y-2 mb-4 text-sm text-gray-600">
+        <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm text-gray-600">
           {product.departure_city && (
             <div className="flex items-center">
               <MapPin className="h-4 w-4 mr-2 text-blue-600 flex-shrink-0" />
@@ -630,9 +661,10 @@ export default function ProductsPage() {
               </div>
             )}
           </div>
-        </div>
+        </ListZone>
 
         {/* 가격 */}
+        <ListZone zone="listing-card-price">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-lg font-bold text-gray-900">
@@ -643,6 +675,7 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+        </ListZone>
 
         {/* 상세보기 버튼 */}
         <div className="mt-4">
@@ -654,11 +687,13 @@ export default function ProductsPage() {
           </Link>
         </div>
       </div>
-    </div>
-  )
+    </ListZone>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <CustomerPagePreviewHighlightEffect />
       {/* 헤더 */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

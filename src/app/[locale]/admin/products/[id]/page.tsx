@@ -36,6 +36,9 @@ import TourCoursesTab from '@/components/product/TourCoursesTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
 import ProductPreviewSidebar from '@/components/product/ProductPreviewSidebar'
+import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
+import { PRODUCT_EDIT_TAB_LOCATIONS } from '@/lib/productCustomerPageLocations'
+import { CustomerPagePreviewProvider } from '@/components/product/CustomerPagePreviewContext'
 
 // 타입 정의는 필요에 따라 추가
 
@@ -1165,6 +1168,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   console.log('Page render:', { authLoading, user: !!user, userEmail: user?.email })
 
   return (
+    <CustomerPagePreviewProvider productId={isNewProduct ? null : id} locale={locale}>
     <div className="space-y-6">
       {/* 인증 체크 완전 제거 - 항상 페이지 표시 */}
       {/* 페이지 헤더 */}
@@ -1255,6 +1259,18 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
 
       {/* 탭 컨텐츠 */}
       <div className="space-y-6">
+        {PRODUCT_EDIT_TAB_LOCATIONS[activeTab] && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2 className="text-base font-semibold text-gray-900">
+              {tabs.find((tab) => tab.id === activeTab)?.label}
+            </h2>
+            <CustomerPageLocationHint
+              location={PRODUCT_EDIT_TAB_LOCATIONS[activeTab]}
+              variant="compact"
+            />
+          </div>
+        )}
+
         {/* 기본정보 탭 */}
         {activeTab === 'basic' && (
           <BasicInfoTab
@@ -1530,5 +1546,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         currentLanguage={formData.currentLanguage}
       />
     </div>
+    </CustomerPagePreviewProvider>
   )
 }

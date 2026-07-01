@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils';
 import { mapSupabaseProductChoices } from '@/lib/mapSupabaseProductChoices';
 import SimpleChoiceSelector from './SimpleChoiceSelector';
 
@@ -215,8 +216,8 @@ export default function SimpleReservationForm({
 
       setFormData({
         customerName: customerRow?.name || '',
-        customerEmail: customerRow?.email || '',
-        customerPhone: customerRow?.phone || '',
+        customerEmail: stripSpacesFromContactInput(customerRow?.email || ''),
+        customerPhone: stripSpacesFromContactInput(customerRow?.phone || ''),
         adults: reservationData.adults || 1,
         children: reservationData.child || 0,
         infants: reservationData.infant || 0,
@@ -306,7 +307,7 @@ export default function SimpleReservationForm({
           <input
             type="email"
             value={formData.customerEmail}
-            onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: e.target.value }))}
+            onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: stripSpacesFromContactInput(e.target.value) }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           />
@@ -318,7 +319,7 @@ export default function SimpleReservationForm({
           <input
             type="tel"
             value={formData.customerPhone}
-            onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: e.target.value }))}
+            onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: stripSpacesFromContactInput(e.target.value) }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           />

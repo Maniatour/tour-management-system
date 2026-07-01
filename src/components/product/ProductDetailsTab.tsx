@@ -10,6 +10,8 @@ import { translateProductDetailsFields, type ProductDetailsTranslationFields } f
 import { suggestTourDescription } from '@/lib/chatgptService'
 import LightRichEditor from '@/components/LightRichEditor'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
+import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
+import { DETAIL_FIELD_LOCATIONS } from '@/lib/productCustomerPageLocations'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -3220,17 +3222,39 @@ export default function ProductDetailsTab({
                       const raw = String(getValue(section.key, true) || '')
                       const plain = decodeHtmlEntities(raw.replace(/<[^>]*>/g, '')).trim()
                       return (
-                        <button
+                        <div
                           key={section.key}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => {
                             setPreviewEditingField(section.key)
                             setPreviewEditModalOpen(true)
                           }}
-                          className="text-left border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setPreviewEditingField(section.key)
+                              setPreviewEditModalOpen(true)
+                            }
+                          }}
+                          className="text-left border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
                         >
                           <div className="flex items-center justify-between mb-1 gap-2">
-                            <span className="font-semibold text-gray-900">{getSectionTitle(section.key)}</span>
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                              <span className="font-semibold text-gray-900">{getSectionTitle(section.key)}</span>
+                              {DETAIL_FIELD_LOCATIONS[section.key] && (
+                                <span
+                                  className="shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                >
+                                  <CustomerPageLocationHint
+                                    location={DETAIL_FIELD_LOCATIONS[section.key]}
+                                    variant="compact"
+                                  />
+                                </span>
+                              )}
+                            </div>
                             <span className="flex items-center gap-1.5 shrink-0">
                               {!isCustomerPageFieldVisible(section.key) && (
                                 <span className="text-[10px] font-medium text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
@@ -3243,7 +3267,7 @@ export default function ProductDetailsTab({
                           <div className="text-gray-700 whitespace-pre-wrap text-xs leading-5 max-h-24 overflow-hidden">
                             {plain || '내용 없음'}
                           </div>
-                        </button>
+                        </div>
                       )
                     })}
                   </div>

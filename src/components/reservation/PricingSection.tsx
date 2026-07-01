@@ -24,6 +24,11 @@ import {
 } from '@/utils/usResidentChoiceSync'
 import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
+  computeProductPriceTotal,
+  getSinglePriceBillingPax,
+  isChannelSinglePrice,
+} from '@/lib/productPriceTotal'
+import {
   channelIsOtaForPricingSection,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
@@ -2222,7 +2227,17 @@ export default function PricingSection({
   
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
   const pricingType = selectedChannel?.pricing_type || 'separate'
-  const isSinglePrice = pricingType === 'single'
+  const isSinglePrice = isChannelSinglePrice(selectedChannel)
+  const singlePriceBillingPax = useMemo(
+    () =>
+      getSinglePriceBillingPax({
+        pricingAdults: formData.pricingAdults,
+        reservationAdults: formData.adults,
+        child: formData.child,
+        infant: formData.infant,
+      }),
+    [formData.pricingAdults, formData.adults, formData.child, formData.infant]
+  )
   
   // 초이스별 불포함 금액 계산 (항상 dynamic_pricing에서 조회)
   const calculateChoiceNotIncludedTotal = useCallback(async (): Promise<NotIncludedCalcResult> => {
@@ -2873,9 +2888,16 @@ export default function PricingSection({
                         const childPrice = isSinglePrice ? salePrice : (formData.childProductPrice || 0)
                         const infantPrice = isSinglePrice ? salePrice : (formData.infantProductPrice || 0)
                         
-                        const newProductPriceTotal = (salePrice * formData.pricingAdults) + 
-                                                     (childPrice * formData.child) + 
-                                                     (infantPrice * formData.infant)
+                        const newProductPriceTotal = computeProductPriceTotal({
+                          isSinglePrice,
+                          adultProductPrice: salePrice,
+                          childProductPrice: childPrice,
+                          infantProductPrice: infantPrice,
+                          pricingAdults: formData.pricingAdults,
+                          reservationAdults: formData.adults,
+                          child: formData.child,
+                          infant: formData.infant,
+                        })
                         setFormData({ 
                           ...formData, 
                           adultProductPrice: salePrice,
@@ -2909,9 +2931,16 @@ export default function PricingSection({
                         const childPrice = isSinglePrice ? salePrice : childSalePrice
                         const infantPrice = isSinglePrice ? salePrice : infantSalePrice
                         
-                        const newProductPriceTotal = (salePrice * formData.pricingAdults) + 
-                                                     (childPrice * formData.child) + 
-                                                     (infantPrice * formData.infant)
+                        const newProductPriceTotal = computeProductPriceTotal({
+                          isSinglePrice,
+                          adultProductPrice: salePrice,
+                          childProductPrice: childPrice,
+                          infantProductPrice: infantPrice,
+                          pricingAdults: formData.pricingAdults,
+                          reservationAdults: formData.adults,
+                          child: formData.child,
+                          infant: formData.infant,
+                        })
                         setFormData({ 
                           ...formData, 
                           not_included_price: notIncluded,
@@ -2940,9 +2969,9 @@ export default function PricingSection({
                   <div className="flex items-center space-x-1">
                     {isSinglePrice ? (
                       <>
-                        <span className="text-gray-500">x{formData.pricingAdults + formData.child + formData.infant}</span>
+                        <span className="text-gray-500">x{singlePriceBillingPax}</span>
                         <span className="font-medium">
-                          = ${((formData.adultProductPrice || 0) * (formData.pricingAdults + formData.child + formData.infant)).toFixed(2)}
+                          = ${((formData.adultProductPrice || 0) * singlePriceBillingPax).toFixed(2)}
                         </span>
                       </>
                     ) : (

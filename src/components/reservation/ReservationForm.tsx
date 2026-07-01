@@ -5,6 +5,7 @@ import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMe
 import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import { sanitizeTimeInput, timeToHHmm, normalizeTourDateForDb } from '@/lib/utils'
 import {
   resolveImportChannelVariantKey,
@@ -64,8 +65,8 @@ function customerRowToFormFields(customer: CustomerFormFieldSource) {
     customerId: customer.id ?? '',
     customerName: customer.name || '',
     customerSearch: customer.name || '',
-    customerPhone: customer.phone || '',
-    customerEmail: customer.email || '',
+    customerPhone: stripSpacesFromContactInput(customer.phone || ''),
+    customerEmail: stripSpacesFromContactInput(customer.email || ''),
     customerAddress: customer.address || '',
     customerLanguage,
     customerEmergencyContact: customer.emergency_contact || '',
@@ -120,6 +121,7 @@ import {
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
+import { computeProductPriceTotal, isChannelSinglePrice } from '@/lib/productPriceTotal'
 import {
   emptyResidentStatusAmounts,
   findUsResidentClassificationChoice,
@@ -732,20 +734,20 @@ export default function ReservationForm({
       return ''
     })(),
     customerPhone: (() => {
-      if (initialDataFromImport?.customer_phone && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_phone
+      if (initialDataFromImport?.customer_phone && (reservation as any)?.id?.startsWith?.('import-')) return stripSpacesFromContactInput(initialDataFromImport.customer_phone)
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
-        return customer?.phone || ''
+        return stripSpacesFromContactInput(customer?.phone || '')
       }
       return ''
     })(),
     customerEmail: (() => {
-      if (initialDataFromImport?.customer_email && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_email
+      if (initialDataFromImport?.customer_email && (reservation as any)?.id?.startsWith?.('import-')) return stripSpacesFromContactInput(initialDataFromImport.customer_email)
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
-        return customer?.email || ''
+        return stripSpacesFromContactInput(customer?.email || '')
       }
       return ''
     })(),
@@ -1385,8 +1387,8 @@ export default function ReservationForm({
     if (!isImportMode || !initialDataFromImport) return
     const next: Partial<typeof formData> = {}
     if (initialDataFromImport.customer_name != null && initialDataFromImport.customer_name !== '') next.customerName = initialDataFromImport.customer_name
-    if (initialDataFromImport.customer_email != null && initialDataFromImport.customer_email !== '') next.customerEmail = initialDataFromImport.customer_email
-    if (initialDataFromImport.customer_phone != null && initialDataFromImport.customer_phone !== '') next.customerPhone = initialDataFromImport.customer_phone
+    if (initialDataFromImport.customer_email != null && initialDataFromImport.customer_email !== '') next.customerEmail = stripSpacesFromContactInput(initialDataFromImport.customer_email)
+    if (initialDataFromImport.customer_phone != null && initialDataFromImport.customer_phone !== '') next.customerPhone = stripSpacesFromContactInput(initialDataFromImport.customer_phone)
     if (initialDataFromImport.emergency_contact != null && initialDataFromImport.emergency_contact !== '') next.customerEmergencyContact = initialDataFromImport.emergency_contact
     if (initialDataFromImport.customer_language != null && initialDataFromImport.customer_language !== '') {
       const l = (initialDataFromImport.customer_language || '').trim()
@@ -1481,8 +1483,8 @@ export default function ReservationForm({
           customerId: customer.id,
           customerSearch: customer.name,
           customerName: customer.name,
-          customerPhone: customer.phone || '',
-          customerEmail: customer.email || '',
+          customerPhone: stripSpacesFromContactInput(customer.phone || ''),
+          customerEmail: stripSpacesFromContactInput(customer.email || ''),
           customerAddress: (customerData.address as string | undefined) || '',
           customerLanguage: customer.language || 'KR',
           customerEmergencyContact: (customerData.emergency_contact as string | undefined) || '',
@@ -3882,9 +3884,16 @@ export default function ReservationForm({
             }
             
             // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)
-            const newProductPriceTotal = (updated.adultProductPrice * updated.pricingAdults) + 
-                                         (updated.childProductPrice * updated.child) + 
-                                         (updated.infantProductPrice * updated.infant)
+            const newProductPriceTotal = computeProductPriceTotal({
+              isSinglePrice,
+              adultProductPrice: updated.adultProductPrice,
+              childProductPrice: updated.childProductPrice,
+              infantProductPrice: updated.infantProductPrice,
+              pricingAdults: updated.pricingAdults,
+              reservationAdults: updated.adults,
+              child: updated.child,
+              infant: updated.infant,
+            })
             
             // requiredOptionTotal 계산
             let requiredOptionTotal = 0
@@ -4076,10 +4085,20 @@ export default function ReservationForm({
             : prev.onlinePaymentAmount || 0
         }
         
+        const selectedChannelForDynamic = channels.find(c => c.id === channelId)
+        const isSinglePriceForDynamic = isChannelSinglePrice(selectedChannelForDynamic)
+
         // 가격 계산 수행
-        const newProductPriceTotal = (updated.adultProductPrice * updated.pricingAdults) + 
-                                     (updated.childProductPrice * updated.child) + 
-                                     (updated.infantProductPrice * updated.infant)
+        const newProductPriceTotal = computeProductPriceTotal({
+          isSinglePrice: isSinglePriceForDynamic,
+          adultProductPrice: updated.adultProductPrice,
+          childProductPrice: updated.childProductPrice,
+          infantProductPrice: updated.infantProductPrice,
+          pricingAdults: updated.pricingAdults,
+          reservationAdults: updated.adults,
+          child: updated.child,
+          infant: updated.infant,
+        })
         
         // requiredOptionTotal 계산
         let requiredOptionTotal = 0
@@ -4095,7 +4114,7 @@ export default function ReservationForm({
         })
         
         // OTA 채널인 경우 초이스 가격을 포함하지 않음 (OTA 판매가에 이미 포함됨)
-        const selectedChannelForCheck = channels.find(c => c.id === channelId)
+        const selectedChannelForCheck = selectedChannelForDynamic
         const isOTAChannel = selectedChannelForCheck && (
           (selectedChannelForCheck as any)?.type?.toLowerCase() === 'ota' || 
           (selectedChannelForCheck as any)?.category === 'OTA'
@@ -4198,10 +4217,18 @@ export default function ReservationForm({
             ? Math.max(0, (a - (ni || 0)) * (prev.pricingAdults || 0))
             : prev.onlinePaymentAmount || 0,
       }
-      const newProductPriceTotal =
-        updated.adultProductPrice * updated.pricingAdults +
-        updated.childProductPrice * updated.child +
-        updated.infantProductPrice * updated.infant
+      const selectedChannelForFormula = channels.find((c) => c.id === channelIdForCalc)
+      const isSinglePriceForFormula = isChannelSinglePrice(selectedChannelForFormula)
+      const newProductPriceTotal = computeProductPriceTotal({
+        isSinglePrice: isSinglePriceForFormula,
+        adultProductPrice: updated.adultProductPrice,
+        childProductPrice: updated.childProductPrice,
+        infantProductPrice: updated.infantProductPrice,
+        pricingAdults: updated.pricingAdults,
+        reservationAdults: updated.adults,
+        child: updated.child,
+        infant: updated.infant,
+      })
       let requiredOptionTotal = 0
       Object.entries(updated.requiredOptions).forEach(([optionId, option]) => {
         const isSelected =
@@ -4216,7 +4243,7 @@ export default function ReservationForm({
             optionData.infant * updated.infant
         }
       })
-      const selectedChannelForCheck = channels.find((c) => c.id === channelIdForCalc)
+      const selectedChannelForCheck = selectedChannelForFormula
       const isOTAChannel = !!(
         selectedChannelForCheck &&
         ((selectedChannelForCheck as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
@@ -4258,11 +4285,28 @@ export default function ReservationForm({
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
-    // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
-    return (formData.adultProductPrice * formData.pricingAdults) + 
-           (formData.childProductPrice * formData.child) + 
-           (formData.infantProductPrice * formData.infant)
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant])
+    const selectedChannel = channels.find((c) => c.id === formData.channelId)
+    return computeProductPriceTotal({
+      isSinglePrice: isChannelSinglePrice(selectedChannel),
+      adultProductPrice: formData.adultProductPrice,
+      childProductPrice: formData.childProductPrice,
+      infantProductPrice: formData.infantProductPrice,
+      pricingAdults: formData.pricingAdults,
+      reservationAdults: formData.adults,
+      child: formData.child,
+      infant: formData.infant,
+    })
+  }, [
+    channels,
+    formData.channelId,
+    formData.adultProductPrice,
+    formData.childProductPrice,
+    formData.infantProductPrice,
+    formData.pricingAdults,
+    formData.adults,
+    formData.child,
+    formData.infant,
+  ])
 
   const calculateRequiredOptionTotal = useCallback(() => {
     let total = 0
@@ -4931,10 +4975,17 @@ export default function ReservationForm({
 
   // 상품 가격 또는 인원 수가 변경될 때 productPriceTotal 및 subtotal 자동 업데이트
   useEffect(() => {
-    // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
-    const newProductPriceTotal = (formData.adultProductPrice * formData.pricingAdults) + 
-                                 (formData.childProductPrice * formData.child) + 
-                                 (formData.infantProductPrice * formData.infant)
+    const selectedChannel = channels.find((c) => c.id === formData.channelId)
+    const newProductPriceTotal = computeProductPriceTotal({
+      isSinglePrice: isChannelSinglePrice(selectedChannel),
+      adultProductPrice: formData.adultProductPrice,
+      childProductPrice: formData.childProductPrice,
+      infantProductPrice: formData.infantProductPrice,
+      pricingAdults: formData.pricingAdults,
+      reservationAdults: formData.adults,
+      child: formData.child,
+      infant: formData.infant,
+    })
     
     // productPriceTotal이 다를 때만 업데이트 (무한 루프 방지)
     if (Math.abs(newProductPriceTotal - formData.productPriceTotal) > 0.01) {
@@ -4949,7 +5000,7 @@ export default function ReservationForm({
         subtotal: newSubtotal
       }))
     }
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [channels, formData.channelId, formData.adults, formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션·쿠폰·할인 등으로 총액이 바뀔 때 Grand Total 동기화 (DB 예약 편집만 제외)
   useEffect(() => {
@@ -6360,7 +6411,7 @@ export default function ReservationForm({
                           type="tel"
                           value={formData.customerPhone}
                           onChange={(e) => {
-                            const phone = e.target.value
+                            const phone = stripSpacesFromContactInput(e.target.value)
                             setFormData(prev => {
                               const next = { ...prev, customerPhone: phone }
                               const country = getCountryFromPhone(phone)
@@ -6370,7 +6421,7 @@ export default function ReservationForm({
                             })
                           }}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
-                          placeholder="+82 10 1234 5678"
+                          placeholder="+821012345678"
                         />
                         {(() => {
                           const country = getCountryFromPhone(formData.customerPhone)
@@ -6389,7 +6440,7 @@ export default function ReservationForm({
                         <input
                           type="email"
                           value={formData.customerEmail}
-                          onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: e.target.value }))}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: stripSpacesFromContactInput(e.target.value) }))}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>

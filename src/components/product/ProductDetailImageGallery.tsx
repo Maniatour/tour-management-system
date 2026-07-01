@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Heart, Share2 } from 'lucide-react'
 import type { ProductMedia, TourCoursePhoto } from '@/components/product/productDetailTypes'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 const AUTO_SLIDE_INTERVAL_MS = 4000
 const MANUAL_SELECT_PAUSE_MS = 3000
@@ -70,7 +71,7 @@ export default function ProductDetailImageGallery({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+    <CustomerPageZone zone="detail-gallery" className="bg-white rounded-lg shadow-sm border overflow-hidden">
       {allImages.length > 0 ? (
         <>
           <div
@@ -154,6 +155,6 @@ export default function ProductDetailImageGallery({
           </div>
         </>
       )}
-    </div>
+    </CustomerPageZone>
   )
 }

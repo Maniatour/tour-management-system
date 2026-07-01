@@ -11,6 +11,13 @@ import {
   Table2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint';
+import {
+  DETAIL_FIELD_EMAIL_NOTE,
+  INCLUDED_IN_EMAILS,
+  PRODUCT_PRICE_EMAILS,
+  PRODUCT_PRICE_EMAIL_NOTE,
+} from '@/lib/productEmailDestinations';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
 
 // 커스텀 훅들
@@ -2074,11 +2081,22 @@ export default function DynamicPricingManager({
 
           {/* 포함/불포함 내역 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-semibold text-gray-900">{t('includedExcluded')}</h4>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <h4 className="text-md font-semibold text-gray-900">{t('includedExcluded')}</h4>
+                <CustomerPageLocationHint
+                  paths={[
+                    ['상품 상세', '상세정보 탭', '포함·불포함'],
+                    ['상품 상세', '우측 예약 패널', '포함·불포함 요약'],
+                  ]}
+                  emails={INCLUDED_IN_EMAILS}
+                  emailNote={DETAIL_FIELD_EMAIL_NOTE}
+                  variant="compact"
+                />
+              </div>
               <button
                 onClick={saveChannelIncludedNotIncluded}
-                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 shrink-0"
               >
                 {t('save')}
               </button>
@@ -2211,9 +2229,20 @@ export default function DynamicPricingManager({
         <div className="lg:col-span-4 space-y-4">
           {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h4 className="text-md font-semibold text-gray-900 mb-4">{t('basePriceSection')}</h4>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h4 className="text-md font-semibold text-gray-900">{t('basePriceSection')}</h4>
+              <CustomerPageLocationHint
+                paths={[
+                  ['상품 목록', '상품 카드', '시작 가격'],
+                  ['상품 상세', '우측 예약 패널', '기본가·총액'],
+                ]}
+                emails={PRODUCT_PRICE_EMAILS}
+                emailNote={PRODUCT_PRICE_EMAIL_NOTE}
+                variant="compact"
+              />
+            </div>
             
-            <div className="space-y-4">
+            <div className="space-y-4 mt-4">
               {/* 상품 기본 가격 (읽기 전용) */}
               {(() => {
                 // 선택된 채널의 pricing_type 확인
@@ -2646,9 +2675,18 @@ export default function DynamicPricingManager({
             
             return (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-md font-semibold text-gray-900">{t('choicePricingSection')}</h4>
-                <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <h4 className="text-md font-semibold text-gray-900">{t('choicePricingSection')}</h4>
+                  <CustomerPageLocationHint
+                    paths={[
+                      ['상품 상세', '우측 예약 패널', '옵션별 추가 금액'],
+                      ['예약하기', '옵션 선택', '가격 반영'],
+                    ]}
+                    variant="compact"
+                  />
+                </div>
+                <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-100 shrink-0">
                   <button
                     type="button"
                     onClick={() => setChoicePricingViewMode('table')}

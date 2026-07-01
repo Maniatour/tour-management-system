@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
 import ProductDetailDetailsTab from '@/components/product/ProductDetailDetailsTab'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 import type {
   ProductDetailsFields,
   ProductDetailsTabProduct,
@@ -42,6 +44,8 @@ type ProductDetailTabPanelProps = {
   showDetail: (field: string) => boolean
 }
 
+const VALID_TABS = ['overview', 'itinerary', 'tour-schedule', 'details', 'faq'] as const
+
 export default function ProductDetailTabPanel({
   productId,
   locale,
@@ -56,7 +60,15 @@ export default function ProductDetailTabPanel({
   showDetail,
 }: ProductDetailTabPanelProps) {
   const t = useTranslations('productDetail')
+  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('overview')
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && (VALID_TABS as readonly string[]).includes(tab)) {
+      setActiveTab(tab)
+    }
+  }, [searchParams])
 
   const tabs = [
     { id: 'overview', label: t('tabOverview') },
@@ -67,7 +79,7 @@ export default function ProductDetailTabPanel({
   ]
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
+    <CustomerPageZone zone="detail-tabs" className="bg-white rounded-lg shadow-sm border">
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex overflow-x-auto scrollbar-hide px-4 sm:px-6">
           <div className="flex space-x-2 sm:space-x-8 min-w-max">
@@ -91,48 +103,60 @@ export default function ProductDetailTabPanel({
 
       <div className="p-4 sm:p-6">
         {activeTab === 'overview' && (
-          <ProductDetailOverviewTab
-            product={product}
-            productDetails={
-              productDetails as {
-                slogan1: string | null
-                slogan2: string | null
-                slogan3: string | null
-                greeting: string | null
-                description: string | null
-                tags: string[] | null
-              } | null
-            }
-            displayName={displayName}
-            durationLabel={durationLabel}
-            categoryLabel={categoryLabel}
-            showDetail={showDetail}
-          />
+          <CustomerPageZone zone="detail-tab-overview">
+            <ProductDetailOverviewTab
+              product={product}
+              productDetails={
+                productDetails as {
+                  slogan1: string | null
+                  slogan2: string | null
+                  slogan3: string | null
+                  greeting: string | null
+                  description: string | null
+                  tags: string[] | null
+                } | null
+              }
+              displayName={displayName}
+              durationLabel={durationLabel}
+              categoryLabel={categoryLabel}
+              showDetail={showDetail}
+            />
+          </CustomerPageZone>
         )}
 
         {activeTab === 'itinerary' && (
-          <ProductDetailItineraryTab
-            tourCourses={tourCourses}
-            tourCoursePhotos={tourCoursePhotos}
-            isEnglish={isEnglish}
-          />
+          <CustomerPageZone zone="detail-tab-itinerary">
+            <ProductDetailItineraryTab
+              tourCourses={tourCourses}
+              tourCoursePhotos={tourCoursePhotos}
+              isEnglish={isEnglish}
+            />
+          </CustomerPageZone>
         )}
 
         {activeTab === 'tour-schedule' && (
-          <TourScheduleSection productId={productId} teamType={null} locale={locale} />
+          <CustomerPageZone zone="detail-tab-schedule">
+            <TourScheduleSection productId={productId} teamType={null} locale={locale} />
+          </CustomerPageZone>
         )}
 
         {activeTab === 'details' && (
-          <ProductDetailDetailsTab
-            product={product}
-            productDetails={productDetails}
-            categoryLabel={categoryLabel}
-            durationLabel={durationLabel}
-          />
+          <CustomerPageZone zone="detail-tab-details">
+            <ProductDetailDetailsTab
+              product={product}
+              productDetails={productDetails}
+              categoryLabel={categoryLabel}
+              durationLabel={durationLabel}
+            />
+          </CustomerPageZone>
         )}
 
-        {activeTab === 'faq' && <ProductFaqDisplay productId={productId} />}
+        {activeTab === 'faq' && (
+          <CustomerPageZone zone="detail-tab-faq">
+            <ProductFaqDisplay productId={productId} />
+          </CustomerPageZone>
+        )}
       </div>
-    </div>
+    </CustomerPageZone>
   )
 }

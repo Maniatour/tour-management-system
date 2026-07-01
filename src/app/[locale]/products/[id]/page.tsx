@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useParams, useSearchParams } from 'next/navigation'
 import ProductDetailImageGallery from '@/components/product/ProductDetailImageGallery'
 import { useLocale } from 'next-intl'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
@@ -27,9 +27,11 @@ import {
   getProductCustomerDisplayName,
 } from '@/lib/productDetailDisplay'
 import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
-export default function ProductDetailPage() {
+function ProductDetailPageInner() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const productId = params.id as string
   const locale = useLocale()
   const isEnglish = locale === 'en'
@@ -93,6 +95,13 @@ export default function ProductDetailPage() {
     }
   }, [productId, locale, isEnglish])
 
+  useEffect(() => {
+    if (searchParams.get('preview') !== '1' || searchParams.get('openBooking') !== '1') return
+    if (!product || loading) return
+    const t = window.setTimeout(() => openBookingFlow(), 800)
+    return () => window.clearTimeout(t)
+  }, [searchParams, product, loading, openBookingFlow])
+
   if (loading) {
     return <ProductDetailLoadingState />
   }
@@ -107,6 +116,7 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <CustomerPagePreviewHighlightEffect />
       <ProductDetailHeader
         locale={locale}
         displayName={displayName}
@@ -169,5 +179,13 @@ export default function ProductDetailPage() {
         onCloseChoiceDescriptionModal={closeChoiceDescriptionModal}
       />
     </div>
+  )
+}
+
+export default function ProductDetailPage() {
+  return (
+    <Suspense fallback={<ProductDetailLoadingState />}>
+      <ProductDetailPageInner />
+    </Suspense>
   )
 }

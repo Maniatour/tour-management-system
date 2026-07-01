@@ -31,6 +31,7 @@ import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { filterRowsByArchiveSearchTier } from '@/lib/customerArchiveSearchFilter'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import type { 
   Customer as ReservationCustomer, 
@@ -2537,9 +2538,9 @@ function CustomerForm({
       const newFormData = {
         id: customer.id,
         name: customer.name,
-        phone: customer.phone,
+        phone: stripSpacesFromContactInput(customer.phone || ''),
         emergency_contact: customer.emergency_contact,
-        email: customer.email,
+        email: stripSpacesFromContactInput(customer.email || ''),
         address: customer.address,
         language: languageValue,
         special_requests: customer.special_requests,
@@ -2630,8 +2631,8 @@ function CustomerForm({
       ...formData,
       id: selectedCustomer.id,
       name: selectedCustomer.name,
-      phone: selectedCustomer.phone || '',
-      email: selectedCustomer.email || '',
+      phone: stripSpacesFromContactInput(selectedCustomer.phone || ''),
+      email: stripSpacesFromContactInput(selectedCustomer.email || ''),
       emergency_contact: selectedCustomer.emergency_contact || '',
       address: selectedCustomer.address || '',
       language: selectedCustomer.language || 'KR',
@@ -2845,7 +2846,7 @@ function CustomerForm({
                 <input
                   type="tel"
                   value={formData.phone || ''}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  onChange={(e) => setFormData({...formData, phone: stripSpacesFromContactInput(e.target.value)})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={t('form.fields.phonePlaceholder')}
                 />
@@ -3097,7 +3098,7 @@ function CustomerForm({
               <input
                 type="email"
                 value={formData.email || ''}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({...formData, email: stripSpacesFromContactInput(e.target.value)})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder={t('form.fields.emailPlaceholder')}
               />

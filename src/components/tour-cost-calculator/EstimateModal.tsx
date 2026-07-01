@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Send, DollarSign, Users, Calendar, MapPin, Route, Plus, Save, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import type { Database } from '@/lib/database.types'
 
 // Google Maps 타입 정의 - 다른 파일의 타입 선언과 충돌을 피하기 위해 any 사용
@@ -151,8 +152,8 @@ export default function EstimateModal({
   const [creatingReservation, setCreatingReservation] = useState(false)
   const [copying, setCopying] = useState(false)
   const [customerName, setCustomerName] = useState(customer?.name || '')
-  const [customerEmail, setCustomerEmail] = useState(customer?.email || '')
-  const [customerPhone, setCustomerPhone] = useState(customer?.phone || '')
+  const [customerEmail, setCustomerEmail] = useState(stripSpacesFromContactInput(customer?.email || ''))
+  const [customerPhone, setCustomerPhone] = useState(stripSpacesFromContactInput(customer?.phone || ''))
   const [estimateDate, setEstimateDate] = useState('')
   const [notes, setNotes] = useState('')
   const [customers, setCustomers] = useState<Array<{id: string, name: string, email: string, phone: string | null}>>([])
@@ -179,8 +180,8 @@ export default function EstimateModal({
     setEstimateDate(getLasVegasDate())
     if (customer) {
       setCustomerName(customer.name || '')
-      setCustomerEmail(customer.email || '')
-      setCustomerPhone(customer.phone || '')
+      setCustomerEmail(stripSpacesFromContactInput(customer.email || ''))
+      setCustomerPhone(stripSpacesFromContactInput(customer.phone || ''))
       setCustomerSearch(customer.name || '')
     }
   }, [customer])
@@ -236,8 +237,8 @@ export default function EstimateModal({
   // 고객 선택 핸들러
   const handleCustomerSelect = (selectedCustomer: {id: string, name: string, email: string, phone: string | null}) => {
     setCustomerName(selectedCustomer.name || '')
-    setCustomerEmail(selectedCustomer.email || '')
-    setCustomerPhone(selectedCustomer.phone || '')
+    setCustomerEmail(stripSpacesFromContactInput(selectedCustomer.email || ''))
+    setCustomerPhone(stripSpacesFromContactInput(selectedCustomer.phone || ''))
     setCustomerSearch(selectedCustomer.name || '')
     setShowCustomerDropdown(false)
   }
@@ -2515,7 +2516,7 @@ export default function EstimateModal({
                 <input
                   type="email"
                   value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  onChange={(e) => setCustomerEmail(stripSpacesFromContactInput(e.target.value))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="customer@example.com"
                   required
@@ -2528,7 +2529,7 @@ export default function EstimateModal({
                 <input
                   type="tel"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onChange={(e) => setCustomerPhone(stripSpacesFromContactInput(e.target.value))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="전화번호"
                 />

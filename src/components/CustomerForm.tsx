@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import type { Database } from '@/lib/supabase'
 import { generateCustomerId } from '@/lib/entityIds'
+import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 
 type Customer = Database['public']['Tables']['customers']['Row']
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
@@ -44,9 +45,9 @@ export default function CustomerForm({
       const newFormData = {
         id: customer.id,
         name: customer.name,
-        phone: customer.phone,
+        phone: stripSpacesFromContactInput(customer.phone || ''),
         emergency_contact: customer.emergency_contact,
-        email: customer.email,
+        email: stripSpacesFromContactInput(customer.email || ''),
         address: customer.address,
         language: languageValue,
         special_requests: customer.special_requests,
@@ -170,7 +171,7 @@ export default function CustomerForm({
                 <input
                   type="tel"
                   value={formData.phone || ''}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  onChange={(e) => setFormData({...formData, phone: stripSpacesFromContactInput(e.target.value)})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="전화번호 (선택사항)"
                 />
@@ -298,7 +299,7 @@ export default function CustomerForm({
               <input
                 type="email"
                 value={formData.email || ''}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({...formData, email: stripSpacesFromContactInput(e.target.value)})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="이메일 (선택사항)"
               />

@@ -4,6 +4,7 @@ import { Info, CheckCircle2, XCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
 import { formatInclusionList } from '@/lib/formatInclusionList'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 export type ProductDetailChoiceGroup = {
   choice_id: string
@@ -61,9 +62,9 @@ export default function ProductDetailBookingSidebar({
   const t = useTranslations('productDetail')
 
   return (
-    <div className="space-y-6">
+    <CustomerPageZone zone="detail-sidebar" className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-6">
-        <div className="text-center mb-6">
+        <CustomerPageZone zone="detail-sidebar-price" className="text-center mb-6">
           <div className="text-3xl font-bold text-gray-900">${totalPrice}</div>
           <div className="text-sm text-gray-600 mb-2">{t('totalPrice')}</div>
           <div className="text-left border-t border-gray-200 pt-4 mt-4 space-y-2">
@@ -84,7 +85,7 @@ export default function ProductDetailBookingSidebar({
               )
             })}
           </div>
-        </div>
+        </CustomerPageZone>
 
         <div className="space-y-4 mb-6">
           <div className="flex justify-between text-sm">
@@ -107,7 +108,7 @@ export default function ProductDetailBookingSidebar({
         </div>
 
         {Object.keys(groupedChoices).length > 0 && (
-          <div className="mb-6">
+          <CustomerPageZone zone="detail-sidebar-options" className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium text-gray-900">{t('requiredSelection')}</h4>
               <button
@@ -143,7 +144,7 @@ export default function ProductDetailBookingSidebar({
                 </div>
               ))}
             </div>
-          </div>
+          </CustomerPageZone>
         )}
 
         <button
@@ -163,40 +164,44 @@ export default function ProductDetailBookingSidebar({
           </a>
         </div>
 
-        {showIncluded && includedHtml && (
-          <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg shadow-sm border-2 border-emerald-200 p-6 mt-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-emerald-500 rounded-lg shadow-sm">
-                <CheckCircle2 className="h-5 w-5 text-white" />
+        {(showIncluded && includedHtml) || (showNotIncluded && notIncludedHtml) ? (
+          <CustomerPageZone zone="detail-sidebar-included">
+            {showIncluded && includedHtml && (
+              <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg shadow-sm border-2 border-emerald-200 p-6 mt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2.5 bg-emerald-500 rounded-lg shadow-sm">
+                    <CheckCircle2 className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-emerald-800">{t('included')}</h3>
+                </div>
+                <div
+                  className="text-sm text-gray-800 prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: markdownToHtml(formatInclusionList(includedHtml, true)),
+                  }}
+                />
               </div>
-              <h3 className="text-lg font-bold text-emerald-800">{t('included')}</h3>
-            </div>
-            <div
-              className="text-sm text-gray-800 prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{
-                __html: markdownToHtml(formatInclusionList(includedHtml, true)),
-              }}
-            />
-          </div>
-        )}
+            )}
 
-        {showNotIncluded && notIncludedHtml && (
-          <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm border-2 border-red-200 p-6 mt-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-red-500 rounded-lg shadow-sm">
-                <XCircle className="h-5 w-5 text-white" />
+            {showNotIncluded && notIncludedHtml && (
+              <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm border-2 border-red-200 p-6 mt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2.5 bg-red-500 rounded-lg shadow-sm">
+                    <XCircle className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-red-800">{t('excluded')}</h3>
+                </div>
+                <div
+                  className="text-sm text-gray-800 prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: markdownToHtml(formatInclusionList(notIncludedHtml, false)),
+                  }}
+                />
               </div>
-              <h3 className="text-lg font-bold text-red-800">{t('excluded')}</h3>
-            </div>
-            <div
-              className="text-sm text-gray-800 prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{
-                __html: markdownToHtml(formatInclusionList(notIncludedHtml, false)),
-              }}
-            />
-          </div>
-        )}
+            )}
+          </CustomerPageZone>
+        ) : null}
       </div>
-    </div>
+    </CustomerPageZone>
   )
 }

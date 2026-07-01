@@ -3,6 +3,7 @@
 import { Calendar, Info, Lightbulb, MapPin, Settings, Users, Users2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 type ProductOverview = {
   duration: string | null
@@ -48,7 +49,7 @@ export default function ProductDetailOverviewTab({
       {productDetails &&
         (productDetails.slogan1 || productDetails.slogan2 || productDetails.slogan3) &&
         showDetail('slogan1') && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+          <CustomerPageZone zone="detail-overview-slogan" className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
             <div className="space-y-3">
               {productDetails.slogan1 && (
                 <div className="text-3xl font-bold text-blue-700">{productDetails.slogan1}</div>
@@ -60,11 +61,11 @@ export default function ProductDetailOverviewTab({
                 <div className="text-base text-gray-700">{productDetails.slogan3}</div>
               )}
             </div>
-          </div>
+          </CustomerPageZone>
         )}
 
       {productDetails?.greeting && showDetail('greeting') && (
-        <div className="bg-white rounded-xl shadow-sm border border-emerald-200 p-6">
+        <CustomerPageZone zone="detail-overview-greeting" className="bg-white rounded-xl shadow-sm border border-emerald-200 p-6">
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
             <div className="p-2 bg-emerald-100 rounded-lg">
               <Info className="h-5 w-5 text-emerald-600" />
@@ -75,11 +76,11 @@ export default function ProductDetailOverviewTab({
             className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: markdownToHtml(productDetails.greeting || '') }}
           />
-        </div>
+        </CustomerPageZone>
       )}
 
       {showDetail('description') && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <CustomerPageZone zone="detail-overview-description" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Info className="h-5 w-5 text-blue-600" />
@@ -94,10 +95,10 @@ export default function ProductDetailOverviewTab({
               ),
             }}
           />
-        </div>
+        </CustomerPageZone>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <CustomerPageZone zone="detail-overview-keyinfo" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
           <div className="p-2 bg-green-100 rounded-lg">
             <Settings className="h-5 w-5 text-green-600" />
@@ -147,10 +148,10 @@ export default function ProductDetailOverviewTab({
             </div>
           )}
         </div>
-      </div>
+      </CustomerPageZone>
 
       {tags.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <CustomerPageZone zone="detail-overview-tags" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
             <div className="p-2 bg-yellow-100 rounded-lg">
               <Lightbulb className="h-5 w-5 text-yellow-600" />
@@ -167,7 +168,7 @@ export default function ProductDetailOverviewTab({
               </span>
             ))}
           </div>
-        </div>
+        </CustomerPageZone>
       )}
     </div>
   )

@@ -13,6 +13,9 @@ import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CategoryManagementModal from './CategoryManagementModal'
 import TagSelector from '@/components/admin/TagSelector'
+import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
+import { PRODUCT_NAME_EMAILS, PRODUCT_NAME_EMAIL_NOTE } from '@/lib/productEmailDestinations'
+import { BASIC_INFO_SECTION_LOCATIONS } from '@/lib/productCustomerPageLocations'
 
 interface CategoryItem {
   value: string
@@ -689,17 +692,23 @@ export default function BasicInfoTab({
     <div className="space-y-6">
       {/* 상품 기본 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('sectionTitle')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('sectionTitle')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.sectionTitle} />
+        </div>
         <div className="space-y-4">
         {/* 상품명 필드들 - 2x2 그리드로 배치 */}
         <div className="space-y-4">
           {/* 내부 한국어, 내부 영어 - 한 줄에 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameInternalKo')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tBasic('nameInternalKo')}
+                <CustomerPageLocationHint internal variant="inline" />
+              </label>
               <input
                 type="text"
                 value={formData.name}
@@ -710,7 +719,10 @@ export default function BasicInfoTab({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameInternalEn')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tBasic('nameInternalEn')}
+                <CustomerPageLocationHint internal variant="inline" />
+              </label>
               <input
                 type="text"
                 value={formData.nameEn || ''}
@@ -724,7 +736,15 @@ export default function BasicInfoTab({
           {/* 고객용 한국어, 고객용 영어 - 한 줄에 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameCustomerKo')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tBasic('nameCustomerKo')}
+                <CustomerPageLocationHint
+                  paths={[['상품 상세', '상단 헤더', '상품명']]}
+                  emails={PRODUCT_NAME_EMAILS}
+                  emailNote={PRODUCT_NAME_EMAIL_NOTE}
+                  variant="inline"
+                />
+              </label>
               <input
                 type="text"
                 value={formData.customerNameKo || ''}
@@ -734,7 +754,15 @@ export default function BasicInfoTab({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameCustomerEn')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {tBasic('nameCustomerEn')}
+                <CustomerPageLocationHint
+                  paths={[['상품 상세', '상단 헤더', '상품명 (EN)']]}
+                  emails={PRODUCT_NAME_EMAILS}
+                  emailNote={PRODUCT_NAME_EMAIL_NOTE}
+                  variant="inline"
+                />
+              </label>
               <input
                 type="text"
                 value={formData.customerNameEn || ''}
@@ -749,7 +777,10 @@ export default function BasicInfoTab({
         {/* 상품 코드, 판매 상태, 카테고리, 서브카테고리 - 한 줄에 배치 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('productCode')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('productCode')}
+              <CustomerPageLocationHint internal variant="inline" />
+            </label>
             <input
               type="text"
               value={formData.productCode || ''}
@@ -760,7 +791,13 @@ export default function BasicInfoTab({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('salesStatus')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('salesStatus')}
+              <CustomerPageLocationHint
+                paths={[['상품 목록', '노출 여부']]}
+                variant="inline"
+              />
+            </label>
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
@@ -773,7 +810,13 @@ export default function BasicInfoTab({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('category')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('category')}
+              <CustomerPageLocationHint
+                paths={[['상품 상세', '상단 헤더', '카테고리 배지']]}
+                variant="inline"
+              />
+            </label>
             <div className="flex gap-2">
               <select
                 value={formData.category}
@@ -882,10 +925,13 @@ export default function BasicInfoTab({
 
       {/* 출발/도착 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('departureArrival')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('departureArrival')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.departureArrival} />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('departureCity')}</label>
@@ -958,10 +1004,13 @@ export default function BasicInfoTab({
 
       {/* 투어 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('tourInfo')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('tourInfo')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.tourInfo} />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* 운송수단 */}
         <div>
@@ -1111,10 +1160,13 @@ export default function BasicInfoTab({
 
       {/* 연령 기준 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('ageSection')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('ageSection')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.ageSection} />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('adultAgeMin')}</label>
@@ -1173,10 +1225,13 @@ export default function BasicInfoTab({
 
       {/* 가격 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('priceSection')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('priceSection')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.priceSection} />
+        </div>
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -1450,10 +1505,13 @@ export default function BasicInfoTab({
 
       {/* 상품 태그 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('productTags')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('productTags')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.productTags} />
+        </div>
         <TagSelector
           selectedTags={formData.tags || []}
           onTagsChange={handleTagsChange}
@@ -1464,10 +1522,13 @@ export default function BasicInfoTab({
 
       {/* 추가 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2 text-blue-600" />
-          {tBasic('additionalInfo')}
-        </h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            {tBasic('additionalInfo')}
+          </h3>
+          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.additionalInfo} />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('totalTourHours')}</label>
