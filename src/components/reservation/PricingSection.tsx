@@ -2226,7 +2226,6 @@ export default function PricingSection({
   const prevChannelIdRef = useRef<string | undefined>(undefined)
   
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
-  const pricingType = selectedChannel?.pricing_type || 'separate'
   const isSinglePrice = isChannelSinglePrice(selectedChannel)
   const singlePriceBillingPax = useMemo(
     () =>

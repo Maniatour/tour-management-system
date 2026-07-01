@@ -1,4 +1,4 @@
-export function isChannelSinglePrice(channel: { pricing_type?: string } | null | undefined): boolean {
+export function isChannelSinglePrice(channel: { pricing_type?: string | null } | null | undefined): boolean {
   return (channel?.pricing_type || 'separate') === 'single'
 }
 

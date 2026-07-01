@@ -65,7 +65,11 @@ export async function POST(request: NextRequest) {
 
     const result = await buildReservationEmailPreview({
       reservation,
-      customer,
+      customer: {
+        name: customer.name,
+        email: customer.email ?? 'preview@example.com',
+        language: customer.language,
+      },
       product,
       type,
       locale: localeParam,

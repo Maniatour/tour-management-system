@@ -383,7 +383,16 @@ export async function resolveProductEmailPreviewContext(
       .maybeSingle()
 
     if (customer) {
-      return { product, reservation, customer, usedSampleData: false }
+      return {
+        product,
+        reservation,
+        customer: {
+          name: customer.name,
+          email: customer.email ?? 'preview@example.com',
+          language: customer.language,
+        },
+        usedSampleData: false,
+      }
     }
   }
 

@@ -121,7 +121,7 @@ function LocationHintPopover({
           <PathBreadcrumb paths={paths} />
         </div>
       )}
-      <EmailDestinationsBlock emails={emails} emailNote={emailNote} inPopover />
+      <EmailDestinationsBlock emails={emails} {...(emailNote ? { emailNote } : {})} inPopover />
       {note && <p className="text-[11px] text-gray-600 mt-2 pt-2 border-t border-gray-100">{note}</p>}
       {previewHint && (
         <p className="text-[10px] text-indigo-600 mt-2 pt-2 border-t border-gray-100">{previewHint}</p>
@@ -414,7 +414,7 @@ export default function CustomerPageLocationHint({
   }
 
   const isCompact = variant === 'compact'
-  const buttonSize = isCompact || variant === 'inline' ? 'sm' : 'md'
+  const buttonSize = isCompact ? 'sm' : 'md'
 
   return (
     <>
@@ -424,7 +424,7 @@ export default function CustomerPageLocationHint({
           hasEmail={hasEmail}
           emailCount={emails.length}
           canPreview={canPreview}
-          previewLabel={previewLabel}
+          {...(previewLabel ? { previewLabel } : {})}
           size={buttonSize}
           onClick={openPreview}
         />

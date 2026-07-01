@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
     if (authError || !user?.email) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
+    const userEmail = user.email
 
     const body = (await request.json()) as Record<string, unknown> | { rows: Record<string, unknown>[] }
 
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const payloads = body.rows.map((row) => buildTicketBookingInsertPayload(row, user.email))
+      const payloads = body.rows.map((row) => buildTicketBookingInsertPayload(row, userEmail))
       for (const payload of payloads) {
         if (!payload.category || !payload.check_in_date) {
           return NextResponse.json(
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ticketBookings: data, count: data?.length ?? 0 })
     }
 
-    const payload = buildTicketBookingInsertPayload(body as Record<string, unknown>, user.email)
+    const payload = buildTicketBookingInsertPayload(body as Record<string, unknown>, userEmail)
 
     if (!payload.category || !payload.check_in_date) {
       return NextResponse.json(
