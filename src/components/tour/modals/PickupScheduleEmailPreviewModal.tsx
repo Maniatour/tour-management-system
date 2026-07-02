@@ -9,6 +9,27 @@ import { supabase } from '@/lib/supabase'
 import { loadHtml2Canvas, loadHtml2Pdf, loadJsPDF } from '@/lib/lazyPdfLibs'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+import {
+  getEffectivePickupHotelId,
+  loadPickupResolveContextForTour,
+  type PickupResolveContext,
+} from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
+
+type ReservationPreviewDetails = {
+  customerName: string
+  adults: number | null
+  children: number | null
+  infants: number | null
+  requestedPickupHotel: string | null
+  requestedPickupLocation: string | null
+  actualPickupHotel: string | null
+  actualPickupLocation: string | null
+  pickupRedirected: boolean
+  communicationChannel: string | null
+  channelId: string | null
+  channelName: string | null
+}
 
 interface PickupScheduleEmailPreviewModalProps {
   isOpen: boolean
@@ -51,17 +72,7 @@ export default function PickupScheduleEmailPreviewModal({
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const emailPreviewRef = useRef<HTMLDivElement>(null)
-  const [reservationDetails, setReservationDetails] = useState<Record<string, {
-    customerName: string
-    adults: number | null
-    children: number | null
-    infants: number | null
-    pickupHotel: string | null
-    pickupLocation: string | null
-    communicationChannel: string | null
-    channelId: string | null
-    channelName: string | null
-  }>>({})
+  const [reservationDetails, setReservationDetails] = useState<Record<string, ReservationPreviewDetails>>({})
   const [preparationInfoSource, setPreparationInfoSource] = useState<{
     productId: string
     channelId: string | null
@@ -125,24 +136,27 @@ export default function PickupScheduleEmailPreviewModal({
   useEffect(() => {
     if (!isOpen || reservationsWithPickupTime.length === 0) return
 
-    const fetchReservationDetails = async () => {
-      const details: Record<string, {
-        customerName: string
-        adults: number | null
-        children: number | null
-        infants: number | null
-        pickupHotel: string | null
-        pickupLocation: string | null
-        communicationChannel: string | null
-        channelId: string | null
-        channelName: string | null
-      }> = {}
+    const emptyDetails = (): ReservationPreviewDetails => ({
+      customerName: 'Unknown',
+      adults: null,
+      children: null,
+      infants: null,
+      requestedPickupHotel: null,
+      requestedPickupLocation: null,
+      actualPickupHotel: null,
+      actualPickupLocation: null,
+      pickupRedirected: false,
+      communicationChannel: null,
+      channelId: null,
+      channelName: null,
+    })
 
-      // 모든 예약 ID 수집
+    const fetchReservationDetails = async () => {
+      const details: Record<string, ReservationPreviewDetails> = {}
+
       const reservationIds = reservationsWithPickupTime.map(r => r.id)
       
       try {
-        // 한 번에 모든 예약 정보 조회
         type ReservationData = {
           id: string
           customer_id: string | null
@@ -161,19 +175,8 @@ export default function PickupScheduleEmailPreviewModal({
 
         if (reservationsError) {
           console.error('예약 정보 조회 오류:', reservationsError)
-          // 에러가 발생해도 기본값 설정
           reservationsWithPickupTime.forEach(res => {
-            details[res.id] = {
-              customerName: 'Unknown',
-              adults: null,
-              children: null,
-              infants: null,
-              pickupHotel: null,
-              pickupLocation: null,
-              communicationChannel: null,
-              channelId: null,
-              channelName: null,
-            }
+            details[res.id] = emptyDetails()
           })
           setReservationDetails(details)
           return
@@ -181,13 +184,34 @@ export default function PickupScheduleEmailPreviewModal({
 
         const reservationsTyped = (reservationsData || []) as ReservationData[]
 
-        // 고객 ID 수집
+        let pickupHotelsCatalog: PickupHotelUtil[] = []
+        let pickupContext: PickupResolveContext = {}
+
+        if (tourId) {
+          const { data: tourRow } = await supabase
+            .from('tours')
+            .select('use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides')
+            .eq('id', tourId)
+            .maybeSingle()
+          if (tourRow) {
+            const loaded = await loadPickupResolveContextForTour(supabase, tourRow)
+            pickupContext = loaded.context
+            pickupHotelsCatalog = loaded.hotelsCatalog as PickupHotelUtil[]
+          }
+        } else {
+          const { data: hotelsData } = await supabase
+            .from('pickup_hotels')
+            .select('*')
+            .eq('use_for_pickup', true)
+            .or('is_active.is.null,is_active.eq.true')
+          pickupHotelsCatalog = (hotelsData || []) as PickupHotelUtil[]
+        }
+
         const customerIds = [...new Set(reservationsTyped
           .map(r => r.customer_id)
           .filter((id): id is string => id !== null)
         )]
 
-        // 한 번에 모든 고객 정보 조회
         type CustomerData = {
           id: string
           name: string
@@ -209,13 +233,19 @@ export default function PickupScheduleEmailPreviewModal({
           }
         }
 
-        // 호텔 ID 수집
-        const hotelIds = [...new Set(reservationsTyped
-          .map(r => r.pickup_hotel)
-          .filter((id): id is string => id !== null)
-        )]
+        const hotelIds = new Set<string>()
+        for (const reservation of reservationsTyped) {
+          if (!reservation.pickup_hotel) continue
+          hotelIds.add(reservation.pickup_hotel)
+          const effectiveId =
+            getEffectivePickupHotelId(
+              reservation.pickup_hotel,
+              pickupHotelsCatalog,
+              pickupContext
+            ) || reservation.pickup_hotel
+          hotelIds.add(effectiveId)
+        }
 
-        // 한 번에 모든 호텔 정보 조회
         type HotelData = {
           id: string
           hotel: string
@@ -223,11 +253,11 @@ export default function PickupScheduleEmailPreviewModal({
         }
         
         let hotelsMap: Record<string, { hotel: string; location: string | null }> = {}
-        if (hotelIds.length > 0) {
+        if (hotelIds.size > 0) {
           const { data: hotelsData } = await supabase
             .from('pickup_hotels')
             .select('id, hotel, pick_up_location')
-            .in('id', hotelIds)
+            .in('id', [...hotelIds])
 
           if (hotelsData) {
             const hotelsTyped = hotelsData as HotelData[]
@@ -265,23 +295,30 @@ export default function PickupScheduleEmailPreviewModal({
           }
         }
 
-        // 예약별로 상세 정보 구성
         reservationsTyped.forEach(reservation => {
           const customerName = reservation.customer_id 
             ? (customersMap[reservation.customer_id] || 'Unknown')
             : 'Unknown'
           
-          const hotelInfo = reservation.pickup_hotel 
-            ? hotelsMap[reservation.pickup_hotel]
+          const requestedId = reservation.pickup_hotel
+          const effectiveId = requestedId
+            ? getEffectivePickupHotelId(requestedId, pickupHotelsCatalog, pickupContext) ||
+              requestedId
             : null
+          const requestedInfo = requestedId ? hotelsMap[requestedId] : null
+          const actualInfo = effectiveId ? hotelsMap[effectiveId] : null
+          const pickupRedirected = !!(requestedId && effectiveId && requestedId !== effectiveId)
 
           details[reservation.id] = {
             customerName,
             adults: reservation.adults || null,
             children: reservation.child || null,
             infants: reservation.infant || null,
-            pickupHotel: hotelInfo?.hotel || null,
-            pickupLocation: hotelInfo?.location || null,
+            requestedPickupHotel: requestedInfo?.hotel || null,
+            requestedPickupLocation: requestedInfo?.location || null,
+            actualPickupHotel: actualInfo?.hotel || requestedInfo?.hotel || null,
+            actualPickupLocation: actualInfo?.location || requestedInfo?.location || null,
+            pickupRedirected,
             communicationChannel: reservation.customer_communication_channel || null,
             channelId: reservation.channel_id || null,
             channelName: reservation.channel_id
@@ -290,39 +327,17 @@ export default function PickupScheduleEmailPreviewModal({
           }
         })
 
-        // 데이터가 없는 예약에 대해서도 기본값 설정
         reservationsWithPickupTime.forEach(res => {
           if (!details[res.id]) {
-            details[res.id] = {
-              customerName: 'Unknown',
-              adults: null,
-              children: null,
-              infants: null,
-              pickupHotel: null,
-              pickupLocation: null,
-              communicationChannel: null,
-              channelId: null,
-              channelName: null,
-            }
+            details[res.id] = emptyDetails()
           }
         })
 
         setReservationDetails(details)
       } catch (error) {
         console.error('예약 상세 정보 조회 오류:', error)
-        // 에러 발생 시 기본값 설정
         reservationsWithPickupTime.forEach(res => {
-          details[res.id] = {
-            customerName: 'Unknown',
-            adults: null,
-            children: null,
-            infants: null,
-            pickupHotel: null,
-            pickupLocation: null,
-            communicationChannel: null,
-            channelId: null,
-            channelName: null,
-          }
+          details[res.id] = emptyDetails()
         })
         setReservationDetails(details)
       }
@@ -330,7 +345,7 @@ export default function PickupScheduleEmailPreviewModal({
 
     fetchReservationDetails()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, reservationIds.join(',')])
+  }, [isOpen, reservationIds.join(','), tourId])
 
   const handleCommunicationChannelChange = useCallback(
     async (reservationId: string, channel: CustomerCommunicationChannel) => {
@@ -345,8 +360,11 @@ export default function PickupScheduleEmailPreviewModal({
               adults: null,
               children: null,
               infants: null,
-              pickupHotel: null,
-              pickupLocation: null,
+              requestedPickupHotel: null,
+              requestedPickupLocation: null,
+              actualPickupHotel: null,
+              actualPickupLocation: null,
+              pickupRedirected: false,
               channelId: null,
               channelName: null,
               communicationChannel: null,
@@ -370,8 +388,11 @@ export default function PickupScheduleEmailPreviewModal({
               adults: null,
               children: null,
               infants: null,
-              pickupHotel: null,
-              pickupLocation: null,
+              requestedPickupHotel: null,
+              requestedPickupLocation: null,
+              actualPickupHotel: null,
+              actualPickupLocation: null,
+              pickupRedirected: false,
               channelId: null,
               channelName: null,
               communicationChannel: null,
@@ -1035,14 +1056,56 @@ export default function PickupScheduleEmailPreviewModal({
                       )}
 
                       {/* 픽업 호텔 */}
-                      {details?.pickupHotel && (
-                        <div className="flex items-start gap-1 text-xs text-gray-600">
-                          <Building size={12} className="mt-0.5 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">{details.pickupHotel}</div>
-                            {details.pickupLocation && (
-                              <div className="text-gray-500 truncate mt-0.5">{details.pickupLocation}</div>
+                      {(details?.actualPickupHotel || details?.requestedPickupHotel) && (
+                        <div className="flex items-start gap-1 text-xs">
+                          <Building size={12} className="mt-0.5 flex-shrink-0 text-gray-500" />
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            {details.pickupRedirected && details.requestedPickupHotel && (
+                              <div className="text-gray-500">
+                                <div className="text-[10px] font-medium text-gray-400 mb-0.5">
+                                  {t('requestedHotelShort')}
+                                </div>
+                                <div className="truncate">{details.requestedPickupHotel}</div>
+                                {details.requestedPickupLocation && (
+                                  <div className="text-gray-400 truncate mt-0.5">
+                                    {details.requestedPickupLocation}
+                                  </div>
+                                )}
+                              </div>
                             )}
+                            <div
+                              className={
+                                details.pickupRedirected
+                                  ? 'rounded-md border border-blue-200 bg-blue-50/80 px-2 py-1.5'
+                                  : 'text-gray-600'
+                              }
+                            >
+                              {details.pickupRedirected && (
+                                <div className="text-[10px] font-semibold text-blue-700 mb-0.5">
+                                  {t('groupRepPickupRef')}
+                                </div>
+                              )}
+                              <div
+                                className={`truncate ${
+                                  details.pickupRedirected
+                                    ? 'font-semibold text-blue-900'
+                                    : 'font-medium text-gray-700'
+                                }`}
+                              >
+                                {details.actualPickupHotel}
+                              </div>
+                              {details.actualPickupLocation && (
+                                <div
+                                  className={`truncate mt-0.5 ${
+                                    details.pickupRedirected
+                                      ? 'font-medium text-blue-800'
+                                      : 'text-gray-500'
+                                  }`}
+                                >
+                                  {details.actualPickupLocation}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}

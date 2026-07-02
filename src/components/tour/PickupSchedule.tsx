@@ -1,10 +1,25 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { ChevronDown, ChevronUp, MapPin, Map, Users, Home, Plane, PlaneTakeoff, HelpCircle, X } from 'lucide-react'
 import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, FaPaperPlane } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import ReactCountryFlag from 'react-country-flag'
+import {
+  getEffectivePickupHotelId,
+  isPickupRedirected,
+  getMainGroupFromHotelId,
+  getPickupModeForGroup,
+  presetDisplayName,
+  formatPickupHotelDisplayLine,
+  getGroupRepresentativeHotelId,
+  type PickupResolveContext,
+  type PickupGroupMode,
+  type PickupGroupPresetRow,
+  type PickupGroupPresetWithReps,
+} from '@/lib/pickupGroupPreset'
+import { getPickupHotelNameById } from '@/lib/effectivePickupHotel'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 interface PickupScheduleProps {
   assignedReservations: Array<{
@@ -23,6 +38,7 @@ interface PickupScheduleProps {
     hotel: string
     pick_up_location?: string
     google_maps_link?: string
+    group_number?: number | null
   }>
   expandedSections: Set<string>
   connectionStatus: { reservations: boolean }
@@ -36,6 +52,16 @@ interface PickupScheduleProps {
   openGoogleMaps: (link: string) => void
   /** 투어 상품이 거주 상태 UI 대상일 때만 예약 행에 거주 아이콘·조회 */
   residentStatusIndicatorsEnabled?: boolean
+  /** @deprecated 프리셋 선택으로 대체 */
+  useRepresentativePickup?: boolean
+  onUseRepresentativePickupChange?: (value: boolean) => void | Promise<void>
+  representativePickupToggleDisabled?: boolean
+  pickupPresets?: PickupGroupPresetRow[]
+  activePresetId?: string | null
+  activePreset?: PickupGroupPresetWithReps | null
+  groupModeOverrides?: Record<string, PickupGroupMode>
+  onPickupPresetChange?: (presetId: string | null) => void | Promise<void>
+  onGroupModeOverrideChange?: (groupIndex: number, mode: PickupGroupMode) => void | Promise<void>
 }
 
 export const PickupSchedule: React.FC<PickupScheduleProps> = ({
@@ -51,7 +77,16 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   getCustomerName,
   getCustomerLanguage,
   openGoogleMaps,
-  residentStatusIndicatorsEnabled = false
+  residentStatusIndicatorsEnabled = false,
+  useRepresentativePickup = false,
+  onUseRepresentativePickupChange: _onUseRepresentativePickupChange,
+  representativePickupToggleDisabled = false,
+  pickupPresets = [],
+  activePresetId = null,
+  activePreset = null,
+  groupModeOverrides = {},
+  onPickupPresetChange,
+  onGroupModeOverrideChange,
 }) => {
   const t = useTranslations('tours.pickupSchedule')
   const tCommon = useTranslations('common')
@@ -70,6 +105,62 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     bounce_reason?: string | null
   }>>({})
   const [showEmailStatusHelpModal, setShowEmailStatusHelpModal] = useState(false)
+  const [representativePickupSaving, setRepresentativePickupSaving] = useState(false)
+  const [groupModeSaving, setGroupModeSaving] = useState<number | null>(null)
+
+  const pickupHotelsForResolve = pickupHotels as PickupHotelUtil[]
+
+  const pickupContext: PickupResolveContext = useMemo(
+    () => ({
+      useRepresentativePickup,
+      preset: activePreset,
+      groupModeOverrides,
+    }),
+    [useRepresentativePickup, activePreset, groupModeOverrides]
+  )
+
+  const renderGroupModeSwitch = (groupIndex: number | null) => {
+    if (groupIndex == null || !onGroupModeOverrideChange) return null
+    const mode = getPickupModeForGroup(groupIndex, pickupContext)
+    const isRep = mode === 'representative'
+    return (
+      <div
+        className="flex items-center gap-1 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className={`text-[10px] font-medium ${!isRep ? 'text-blue-700' : 'text-gray-400'}`}>
+          {t('pickupModeRequested')}
+        </span>
+        <button
+          type="button"
+          disabled={groupModeSaving === groupIndex || representativePickupToggleDisabled}
+          onClick={async () => {
+            setGroupModeSaving(groupIndex)
+            try {
+              await onGroupModeOverrideChange(groupIndex, isRep ? 'requested' : 'representative')
+            } finally {
+              setGroupModeSaving(null)
+            }
+          }}
+          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            isRep ? 'bg-amber-500' : 'bg-blue-600'
+          }`}
+          role="switch"
+          aria-checked={isRep}
+          title={t('groupPickupModeHint')}
+        >
+          <span
+            className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+              isRep ? 'translate-x-[14px]' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+        <span className={`text-[10px] font-medium ${isRep ? 'text-amber-700' : 'text-gray-400'}`}>
+          {t('pickupModeRepresentative')}
+        </span>
+      </div>
+    )
+  }
 
   // 예약 ID 목록만 바뀔 때만 이펙트 실행 (부모가 매 렌더 새 배열을 넘겨도 동일 ID면 조회 생략)
   const reservationIdsKey = assignedReservations
@@ -435,10 +526,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       )
     }
 
-    // 픽업 호텔 ID별로 그룹화 (같은 호텔이어도 픽업 장소가 다르면 별도 그룹으로 표시)
+    // 픽업 호텔 ID별로 그룹화 (대표 픽업 모드면 실제 픽업 호텔 기준)
     const groupedByPickupHotelId = assignedReservations.reduce((acc: Record<string, Array<{ id: string; customer_id: string | null; pickup_time: string | null; pickup_hotel?: string | null; adults: number | null; children?: number | null; infants?: number | null; tour_date?: string | null }>>, reservation) => {
-      const hotelId = reservation.pickup_hotel || ''
-      if (!hotelId) return acc
+      const requestedHotelId = reservation.pickup_hotel || ''
+      if (!requestedHotelId) return acc
+      const hotelId = getEffectivePickupHotelId(
+        requestedHotelId,
+        pickupHotelsForResolve,
+        pickupContext
+      ) || requestedHotelId
       if (!acc[hotelId]) {
         acc[hotelId] = []
       }
@@ -523,11 +619,35 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       const earliestTime = sortedReservations[0]?.pickup_time 
         ? sortedReservations[0].pickup_time.substring(0, 5) 
         : '08:00'
+
+      const cardMainGroup = getMainGroupFromHotelId(
+        sortedReservations[0]?.pickup_hotel ?? null,
+        pickupHotelsForResolve
+      )
+      const cardMode =
+        cardMainGroup != null ? getPickupModeForGroup(cardMainGroup, pickupContext) : null
+      const groupRepHotelId =
+        cardMainGroup != null
+          ? getGroupRepresentativeHotelId(
+              cardMainGroup,
+              pickupHotelsForResolve,
+              pickupContext,
+              sortedReservations[0]?.pickup_hotel
+            )
+          : null
+      const groupRepPickupLine = groupRepHotelId
+        ? formatPickupHotelDisplayLine(groupRepHotelId, pickupHotels)
+        : null
       
       return (
         <div key={pickupHotelId} className="border rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center space-x-2">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <div className="flex items-center space-x-2 min-w-0 flex-wrap">
+              {cardMainGroup != null && (
+                <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-medium shrink-0">
+                  {t('groupLabel', { n: cardMainGroup })}
+                </span>
+              )}
               <span className="text-sm font-medium text-blue-600">{earliestTime}</span>
               <span className="text-gray-300">|</span>
               <span className="font-medium text-sm">{hotelName}</span>
@@ -536,21 +656,23 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <span>{totalPeople}</span>
               </span>
             </div>
-            {(hotelInfo?.google_maps_link || (hotelInfo as { link?: string })?.link) && (
-              <button
-                onClick={() =>
-                  openGoogleMaps(
-                    hotelInfo?.google_maps_link || (hotelInfo as { link?: string }).link || ''
-                  )
-                }
-                className="text-blue-600 hover:text-blue-800 transition-colors p-1"
-                title="구글 맵에서 보기"
-              >
-                <Map size={16} />
-              </button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {(hotelInfo?.google_maps_link || (hotelInfo as { link?: string })?.link) && (
+                <button
+                  onClick={() =>
+                    openGoogleMaps(
+                      hotelInfo?.google_maps_link || (hotelInfo as { link?: string }).link || ''
+                    )
+                  }
+                  className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                  title="구글 맵에서 보기"
+                >
+                  <Map size={16} />
+                </button>
+              )}
+            </div>
           </div>
-          {hotelInfo && (
+          {hotelInfo && cardMode !== 'representative' && (
             <div className="text-xs text-gray-500 mb-2">
               {hotelInfo.pick_up_location}
             </div>
@@ -595,6 +717,21 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                       )
                     })()}
                     <span className="text-gray-700 font-medium">{getCustomerName(reservation.customer_id || '')}</span>
+                    {isPickupRedirected(
+                        reservation.pickup_hotel,
+                        pickupHotelsForResolve,
+                        pickupContext
+                      ) && (
+                        <span
+                          className="text-gray-400 font-normal"
+                          title={t('requestedPickupHotel')}
+                        >
+                          ({t('requestedHotelShort')}:{' '}
+                          {getPickupHotelNameById(reservation.pickup_hotel, pickupHotels) ||
+                            getPickupHotelNameOnly(reservation.pickup_hotel || '')}
+                          )
+                        </span>
+                      )}
                   </div>
                   <div className="flex items-center space-x-1 text-xs text-gray-500">
                     {status && (status.usResident > 0 || status.nonResident > 0 || status.nonResidentWithPass > 0) && (
@@ -636,6 +773,33 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               )
             })}
           </div>
+          {cardMainGroup != null && (
+            <div
+              className={`mt-2 pt-2 border-t flex items-end justify-between gap-3 ${
+                cardMode === 'representative' ? 'border-amber-200' : 'border-gray-200'
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`text-[10px] font-medium mb-0.5 ${
+                    cardMode === 'representative' ? 'text-amber-700/80' : 'text-gray-500'
+                  }`}
+                >
+                  {cardMode === 'representative'
+                    ? t('groupRepPickupRef')
+                    : t('groupRepPickupRefHint')}
+                </p>
+                <p
+                  className={`text-xs font-medium truncate ${
+                    cardMode === 'representative' ? 'text-amber-900' : 'text-gray-600'
+                  }`}
+                >
+                  {groupRepPickupLine ?? t('repNotSet')}
+                </p>
+              </div>
+              {renderGroupModeSwitch(cardMainGroup)}
+            </div>
+          )}
         </div>
       )
     })
@@ -653,6 +817,36 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
           </h2>
           <div className="flex items-center space-x-2">
+            {onPickupPresetChange && (
+              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <label htmlFor="pickup-preset-select" className="sr-only">
+                  {t('pickupPresetLabel')}
+                </label>
+                <select
+                  id="pickup-preset-select"
+                  value={activePresetId ?? ''}
+                  disabled={representativePickupToggleDisabled || representativePickupSaving}
+                  onChange={async (e) => {
+                    const next = e.target.value || null
+                    setRepresentativePickupSaving(true)
+                    try {
+                      await onPickupPresetChange(next)
+                    } finally {
+                      setRepresentativePickupSaving(false)
+                    }
+                  }}
+                  className="text-xs border border-gray-300 rounded-md py-1 pl-2 pr-7 max-w-[140px] sm:max-w-[180px] truncate bg-white disabled:opacity-50"
+                  title={t('pickupPresetHint')}
+                >
+                  <option value="">{t('pickupModeRequested')}</option>
+                  {pickupPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {presetDisplayName(p, locale)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation()

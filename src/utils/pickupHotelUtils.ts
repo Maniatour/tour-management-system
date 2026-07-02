@@ -78,6 +78,23 @@ export function groupHotelsByGroupNumber(hotels: PickupHotel[]): { [key: string]
   return groups
 }
 
+/** "그룹 1" 형식 키에서 정수 메인 그룹 번호 추출 */
+export function parseMainGroupFromGroupKey(groupKey: string): number | null {
+  if (groupKey === '그룹 미설정') return null
+  const num = parseInt(groupKey.replace('그룹 ', ''), 10)
+  return Number.isNaN(num) ? null : num
+}
+
+/** 그룹 키에 해당하는 대표 픽업 호텔 (정수 group_number) */
+export function getRepresentativeHotelForGroupKey(
+  groupKey: string,
+  hotels: PickupHotel[]
+): PickupHotel | null {
+  const mainGroup = parseMainGroupFromGroupKey(groupKey)
+  if (mainGroup === null) return null
+  return findRoundedGroupHotel(mainGroup, hotels)
+}
+
 /**
  * 픽업 요청 처리 예시 함수
  * @param requestedHotelName 요청된 호텔명

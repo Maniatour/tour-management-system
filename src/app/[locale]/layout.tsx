@@ -5,6 +5,7 @@ import LazyUserFooter from "@/components/layout/LazyUserFooter";
 import { FloatingChatProvider } from "@/contexts/FloatingChatContext";
 import LazyFloatingChatContainer from "@/components/layout/LazyFloatingChatContainer";
 import LazyStripeErrorHandler from "@/components/layout/LazyStripeErrorHandler";
+import LazyModalBackdropGuard from "@/components/layout/LazyModalBackdropGuard";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -48,6 +49,7 @@ export default async function LocaleLayout({
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
           <LazyStripeErrorHandler />
+          <LazyModalBackdropGuard />
           <div className="min-h-screen bg-gray-50">
             {children}
             <LazyFloatingChatContainer />
@@ -63,6 +65,7 @@ export default async function LocaleLayout({
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
           <LazyStripeErrorHandler />
+          <LazyModalBackdropGuard />
           <div className="min-h-screen bg-gray-50">
             <LazyNavigation />
             {children}
@@ -78,6 +81,7 @@ export default async function LocaleLayout({
     <NextIntlClientProvider messages={messages} locale={locale}>
       <FloatingChatProvider>
         <LazyStripeErrorHandler />
+        <LazyModalBackdropGuard />
         <CartProviderWrapper>
           <div className="min-h-screen bg-gray-50">
             <LazyNavigation />

@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { X, Clock, ChevronUp, ChevronDown } from 'lucide-react'
 import { getSunriseSunsetData } from '@/lib/weatherApi'
+import { getEffectivePickupHotelId } from '@/lib/effectivePickupHotel'
+import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 interface PickupHotel {
   id: string
@@ -34,6 +37,8 @@ interface PickupScheduleAutoGenerateModalProps {
   onClose: () => void
   onSave: (pickupTimes: Record<string, string>) => Promise<void>
   getCustomerName: (customerId: string) => string
+  useRepresentativePickup?: boolean
+  pickupResolveContext?: PickupResolveContext
 }
 
 export default function PickupScheduleAutoGenerateModal({
@@ -44,7 +49,9 @@ export default function PickupScheduleAutoGenerateModal({
   pickupHotels,
   onClose,
   onSave,
-  getCustomerName
+  getCustomerName,
+  useRepresentativePickup = false,
+  pickupResolveContext,
 }: PickupScheduleAutoGenerateModalProps) {
   const t = useTranslations('tours.pickupSchedule')
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -256,10 +263,16 @@ export default function PickupScheduleAutoGenerateModal({
       return // Google Maps API가 로드되지 않았으면 대기
     }
 
-    // 호텔별로 예약 그룹화
+    // 호텔별로 예약 그룹화 (대표 픽업 모드면 실제 픽업 호텔 기준)
     const reservationsByHotel = assignedReservations.reduce((acc, reservation) => {
       if (!reservation.pickup_hotel) return acc
-      const hotelId = reservation.pickup_hotel
+      const hotelId =
+        getEffectivePickupHotelId(
+          reservation.pickup_hotel,
+          pickupHotels as PickupHotelUtil[],
+          pickupResolveContext ?? useRepresentativePickup
+        ) ||
+        reservation.pickup_hotel
       if (!acc[hotelId]) {
         acc[hotelId] = []
       }
@@ -614,7 +627,7 @@ export default function PickupScheduleAutoGenerateModal({
     })
 
     setPickupSchedule(schedule)
-  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, sunriseOffsetTotalMinutes, mapLoaded])
+  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, sunriseOffsetTotalMinutes, mapLoaded, useRepresentativePickup, pickupResolveContext])
 
   // 실제 이동 시간을 기반으로 픽업 시간 업데이트
   const updatePickupTimesWithTravelTimes = useCallback((travelTimes: number[]) => {

@@ -4,6 +4,12 @@ import { generatePickupScheduleEmailContent } from '@/app/api/send-pickup-schedu
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import {
+  getEffectivePickupHotelId,
+  loadPickupResolveContextForTour,
+  type PickupResolveContext,
+} from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 export type PickupScheduleEmailPreviewResult = {
   emailContent: {
@@ -171,16 +177,33 @@ async function findTourData(
   return tourData
 }
 
+async function fetchAllPickupHotelsCatalog(routeDb: SupabaseClient): Promise<PickupHotelUtil[]> {
+  const { data } = await routeDb
+    .from('pickup_hotels')
+    .select('*')
+    .eq('use_for_pickup', true)
+    .or('is_active.is.null,is_active.eq.true')
+  return (data || []) as PickupHotelUtil[]
+}
+
 async function fetchAllPickups(
   routeDb: SupabaseClient,
   params: {
     tourData: Record<string, unknown> | null
     productId?: string | null
     tourDate: string
+    pickupContext?: PickupResolveContext
+    pickupHotelsCatalog?: PickupHotelUtil[]
   }
 ) {
-  const { tourData, productId, tourDate } = params
+  const { tourData, productId, tourDate, pickupContext = { useRepresentativePickup: false } } =
+    params
   let allPickups: Record<string, unknown>[] = []
+  const hotelsCatalog =
+    params.pickupHotelsCatalog ??
+    (pickupContext.preset || pickupContext.useRepresentativePickup
+      ? await fetchAllPickupHotelsCatalog(routeDb)
+      : [])
 
   const mapReservationToPickup = async (res: Record<string, unknown>) => {
     const { data: customerInfo } = await routeDb
@@ -189,16 +212,21 @@ async function fetchAllPickups(
       .eq('id', res.customer_id as string)
       .maybeSingle()
 
+    const requestedHotelId = res.pickup_hotel as string
+    const effectiveHotelId =
+      getEffectivePickupHotelId(requestedHotelId, hotelsCatalog, pickupContext) ||
+      requestedHotelId
+
     const { data: hotelInfo } = await routeDb
       .from('pickup_hotels')
       .select('hotel, pick_up_location, address, link')
-      .eq('id', res.pickup_hotel as string)
+      .eq('id', effectiveHotelId)
       .maybeSingle()
 
     return {
       reservation_id: res.id,
       pickup_time: res.pickup_time || '',
-      pickup_hotel: res.pickup_hotel || '',
+      pickup_hotel: effectiveHotelId || '',
       hotel_name: hotelInfo?.hotel || 'Unknown Hotel',
       pick_up_location: hotelInfo?.pick_up_location || '',
       address: hotelInfo?.address || '',
@@ -416,10 +444,8 @@ export async function buildPickupScheduleEmailPreview(
   const isEnglish = resolveReservationEmailIsEnglish(customer.language, localeParam)
   const productId = (reservation.product_id as string | undefined) ?? null
 
-  let pickupHotel = await fetchPickupHotel(routeDb, reservation.pickup_hotel as string | undefined)
-  if (!pickupHotel && useSamplePickupFallback) {
-    pickupHotel = samplePickupHotel(isEnglish)
-  }
+  let pickupHotel = null
+  let requestedPickupHotel = null
 
   const tourData = await findTourData(routeDb, {
     reservationId,
@@ -428,10 +454,30 @@ export async function buildPickupScheduleEmailPreview(
     ...(tourId ? { tourId } : {}),
   })
 
+  const { context: pickupContext, hotelsCatalog: pickupHotelsCatalog } = tourData
+    ? await loadPickupResolveContextForTour(routeDb, tourData)
+    : { context: { useRepresentativePickup: false }, hotelsCatalog: [] as PickupHotelUtil[] }
+
+  if (reservation.pickup_hotel) {
+    requestedPickupHotel = await fetchPickupHotel(routeDb, reservation.pickup_hotel as string)
+    const effectiveId =
+      getEffectivePickupHotelId(
+        reservation.pickup_hotel as string,
+        pickupHotelsCatalog,
+        pickupContext
+      ) || (reservation.pickup_hotel as string)
+    pickupHotel = await fetchPickupHotel(routeDb, effectiveId)
+  }
+  if (!pickupHotel && useSamplePickupFallback) {
+    pickupHotel = samplePickupHotel(isEnglish)
+  }
+
   let allPickups = await fetchAllPickups(routeDb, {
     tourData,
     productId,
     tourDate,
+    pickupContext,
+    pickupHotelsCatalog,
   })
 
   if (allPickups.length === 0 && useSamplePickupFallback && pickupHotel) {
@@ -505,6 +551,7 @@ export async function buildPickupScheduleEmailPreview(
     chatRoomCode,
     tourDayWeather,
     preparationInfo,
+    requestedPickupHotel,
     imageProxyBaseUrl
   )
 

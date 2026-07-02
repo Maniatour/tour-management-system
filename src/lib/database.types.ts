@@ -3927,6 +3927,75 @@ export type Database = {
         }
         Relationships: []
       }
+      pickup_group_preset_representatives: {
+        Row: {
+          id: string
+          preset_id: string
+          group_index: number
+          representative_hotel_id: string | null
+        }
+        Insert: {
+          id?: string
+          preset_id: string
+          group_index: number
+          representative_hotel_id?: string | null
+        }
+        Update: {
+          id?: string
+          preset_id?: string
+          group_index?: number
+          representative_hotel_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_group_preset_representatives_preset_id_fkey"
+            columns: ["preset_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_group_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_group_preset_representatives_representative_hotel_id_fkey"
+            columns: ["representative_hotel_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_hotels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pickup_group_presets: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string | null
+          group_count: number
+          sort_order: number
+          is_active: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en?: string | null
+          group_count: number
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string | null
+          group_count?: number
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       pickup_hotels: {
         Row: {
           address: string | null
@@ -9046,6 +9115,9 @@ export type Database = {
           tour_start_datetime: string | null
           tour_status: string | null
           updated_at: string | null
+          use_representative_pickup: boolean
+          pickup_group_preset_id: string | null
+          pickup_group_mode_overrides: Record<string, unknown> | null
         }
         Insert: {
           assignment_status?: string | null
@@ -9068,6 +9140,9 @@ export type Database = {
           tour_start_datetime?: string | null
           tour_status?: string | null
           updated_at?: string | null
+          use_representative_pickup?: boolean
+          pickup_group_preset_id?: string | null
+          pickup_group_mode_overrides?: Record<string, unknown> | null
         }
         Update: {
           assignment_status?: string | null
@@ -9090,6 +9165,9 @@ export type Database = {
           tour_start_datetime?: string | null
           tour_status?: string | null
           updated_at?: string | null
+          use_representative_pickup?: boolean
+          pickup_group_preset_id?: string | null
+          pickup_group_mode_overrides?: Record<string, unknown> | null
         }
         Relationships: [
           {

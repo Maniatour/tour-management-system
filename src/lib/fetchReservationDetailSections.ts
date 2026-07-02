@@ -1,4 +1,7 @@
 import { supabase } from '@/lib/supabase'
+import { getEffectivePickupHotelId } from '@/lib/effectivePickupHotel'
+import { loadPickupResolveContextForTour, type PickupResolveContext } from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 import type {
   PickupInfo,
   PickupSchedule,
@@ -126,8 +129,29 @@ export async function fetchReservationPickupSchedule(
       allPickups: [],
     }
 
+    let pickupContext: PickupResolveContext = {}
+    let pickupHotelsCatalog: PickupHotelUtil[] = []
+    const tourId = (currentReservation as SupabaseReservation)?.tour_id
+
+    if (tourId) {
+      const { data: tourRow } = await supabase
+        .from('tours')
+        .select('use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides')
+        .eq('id', tourId)
+        .maybeSingle()
+      if (tourRow) {
+        const loaded = await loadPickupResolveContextForTour(supabase, tourRow)
+        pickupContext = loaded.context
+        pickupHotelsCatalog = loaded.hotelsCatalog as PickupHotelUtil[]
+      }
+    }
+
     if ((currentReservation as SupabaseReservation)?.pickup_hotel) {
       try {
+        const requestedId = (currentReservation as SupabaseReservation).pickup_hotel!
+        const effectiveId =
+          getEffectivePickupHotelId(requestedId, pickupHotelsCatalog, pickupContext) ||
+          requestedId
         const { data: hotelInfo, error: hotelError } = await supabase
           .from('pickup_hotels')
           .select(`
@@ -139,7 +163,7 @@ export async function fetchReservationPickupSchedule(
             media,
             youtube_link
           `)
-          .eq('id', (currentReservation as SupabaseReservation).pickup_hotel!)
+          .eq('id', effectiveId)
           .single()
 
         if (!hotelError && hotelInfo) {
@@ -152,7 +176,7 @@ export async function fetchReservationPickupSchedule(
       }
     }
 
-    if ((currentReservation as SupabaseReservation)?.tour_id) {
+    if (tourId) {
       const { data: allReservations, error: allReservationsError } = await supabase
         .from('reservations')
         .select(`
@@ -163,7 +187,7 @@ export async function fetchReservationPickupSchedule(
           total_people,
           tour_date
         `)
-        .eq('tour_id', (currentReservation as SupabaseReservation).tour_id!)
+        .eq('tour_id', tourId)
         .not('pickup_time', 'is', null)
         .not('pickup_hotel', 'is', null)
 
@@ -185,10 +209,16 @@ export async function fetchReservationPickupSchedule(
 
             let hotelInfo = null
             try {
+              const effectiveId =
+                getEffectivePickupHotelId(
+                  res.pickup_hotel!,
+                  pickupHotelsCatalog,
+                  pickupContext
+                ) || res.pickup_hotel!
               const { data, error: hotelError } = await supabase
                 .from('pickup_hotels')
                 .select('hotel, pick_up_location, address, link')
-                .eq('id', res.pickup_hotel!)
+                .eq('id', effectiveId)
                 .single()
 
               if (!hotelError && data) {
@@ -200,10 +230,17 @@ export async function fetchReservationPickupSchedule(
               console.warn('픽업 호텔 정보 조회 중 오류:', error)
             }
 
+            const effectiveHotelId =
+              getEffectivePickupHotelId(
+                res.pickup_hotel!,
+                pickupHotelsCatalog,
+                pickupContext
+              ) || res.pickup_hotel || ''
+
             return {
               reservation_id: res.id,
               pickup_time: res.pickup_time || '',
-              pickup_hotel: res.pickup_hotel || '',
+              pickup_hotel: effectiveHotelId,
               hotel: (hotelInfo as { hotel?: string } | null)?.hotel || 'Unknown Hotel',
               pick_up_location: (hotelInfo as { pick_up_location?: string } | null)?.pick_up_location || '',
               address: (hotelInfo as { address?: string } | null)?.address || '',
@@ -215,8 +252,20 @@ export async function fetchReservationPickupSchedule(
           })
         )
 
-        pickupInfos.sort((a, b) => a.pickup_time.localeCompare(b.pickup_time))
-        result.allPickups = pickupInfos
+        // 대표 픽업 모드: 동일 시간·호텔 중복 제거
+        let finalPickups = pickupInfos
+        if (pickupContext.preset || pickupContext.useRepresentativePickup) {
+          const uniquePickups = new Map<string, PickupInfo>()
+          pickupInfos.forEach((pickup) => {
+            const normalizedTime = pickup.pickup_time ? pickup.pickup_time.substring(0, 5) : ''
+            const key = `${normalizedTime}-${pickup.hotel}`
+            if (!uniquePickups.has(key)) uniquePickups.set(key, pickup)
+          })
+          finalPickups = Array.from(uniquePickups.values())
+        }
+
+        finalPickups.sort((a, b) => a.pickup_time.localeCompare(b.pickup_time))
+        result.allPickups = finalPickups
       }
     }
 

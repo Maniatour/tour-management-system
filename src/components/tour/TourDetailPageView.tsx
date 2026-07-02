@@ -56,6 +56,15 @@ import { upsertReservationCancellationReason } from '@/lib/reservationCancellati
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import {
+  fetchActivePickupGroupPresets,
+  fetchPickupGroupPresetWithReps,
+  buildPickupResolveContextFromTour,
+  normalizeGroupModeOverrides,
+  type PickupGroupPresetRow,
+  type PickupGroupPresetWithReps,
+  type PickupGroupMode,
+} from '@/lib/pickupGroupPreset'
 import type { Customer } from '@/types/reservation'
 import { 
   getStatusColor,
@@ -176,6 +185,8 @@ export function TourDetailPageView({
   const [showEditReceiptModal, setShowEditReceiptModal] = useState<boolean>(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
+  const [pickupPresets, setPickupPresets] = useState<PickupGroupPresetRow[]>([])
+  const [activePickupPreset, setActivePickupPreset] = useState<PickupGroupPresetWithReps | null>(null)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
@@ -191,6 +202,42 @@ export function TourDetailPageView({
   })
   
   // 스크롤 감지로 현재 섹션 추적
+  useEffect(() => {
+    void fetchActivePickupGroupPresets(supabase).then(setPickupPresets)
+  }, [])
+
+  useEffect(() => {
+    const presetId = tourData.tour?.pickup_group_preset_id ?? null
+    if (!presetId) {
+      setActivePickupPreset(null)
+      return
+    }
+    void fetchPickupGroupPresetWithReps(supabase, presetId).then(setActivePickupPreset)
+  }, [tourData.tour?.pickup_group_preset_id])
+
+  const pickupGroupModeOverrides = useMemo(
+    () => normalizeGroupModeOverrides(tourData.tour?.pickup_group_mode_overrides),
+    [tourData.tour?.pickup_group_mode_overrides]
+  )
+
+  const pickupResolveContext = useMemo(
+    () =>
+      buildPickupResolveContextFromTour(
+        {
+          use_representative_pickup: tourData.tour?.use_representative_pickup ?? null,
+          pickup_group_preset_id: tourData.tour?.pickup_group_preset_id ?? null,
+          pickup_group_mode_overrides: pickupGroupModeOverrides,
+        },
+        activePickupPreset
+      ),
+    [
+      tourData.tour?.use_representative_pickup,
+      tourData.tour?.pickup_group_preset_id,
+      pickupGroupModeOverrides,
+      activePickupPreset,
+    ]
+  )
+
   useEffect(() => {
     const sections = [
       'tour-info',
@@ -1425,7 +1472,52 @@ export function TourDetailPageView({
     }
   }
 
-  // 픽업 스케줄 자동 생성 저장 핸들러
+  const handlePickupPresetChange = async (presetId: string | null) => {
+    if (!tourData.tour?.id) return
+    const { error } = await supabase
+      .from('tours')
+      .update({
+        pickup_group_preset_id: presetId,
+        use_representative_pickup: presetId != null,
+      } as never)
+      .eq('id', tourData.tour.id)
+
+    if (error) {
+      console.error('픽업 프리셋 저장 오류:', error)
+      alert(t('pickupSchedule.presetSaveFailed'))
+      throw error
+    }
+
+    tourData.setTour({
+      ...tourData.tour,
+      pickup_group_preset_id: presetId,
+      use_representative_pickup: presetId != null,
+    })
+  }
+
+  const handleGroupModeOverrideChange = async (groupIndex: number, mode: PickupGroupMode) => {
+    if (!tourData.tour?.id) return
+    const next = {
+      ...pickupGroupModeOverrides,
+      [String(groupIndex)]: mode,
+    }
+    const { error } = await supabase
+      .from('tours')
+      .update({ pickup_group_mode_overrides: next } as never)
+      .eq('id', tourData.tour.id)
+
+    if (error) {
+      console.error('그룹 픽업 모드 저장 오류:', error)
+      alert(t('pickupSchedule.groupModeSaveFailed'))
+      throw error
+    }
+
+    tourData.setTour({
+      ...tourData.tour,
+      pickup_group_mode_overrides: next,
+    })
+  }
+
   const handleSavePickupSchedule = async (pickupTimes: Record<string, string>) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1940,6 +2032,8 @@ export function TourDetailPageView({
         vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
         assignedReservations={tourData.assignedReservations}
         pickupHotels={tourData.pickupHotels}
+        useRepresentativePickup={pickupResolveContext.useRepresentativePickup === true || !!pickupResolveContext.preset}
+        pickupResolveContext={pickupResolveContext}
         getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
         ticketBookings={filteredTicketBookings}
         tourHotelBookings={tourHotelBookings}
@@ -2014,6 +2108,16 @@ export function TourDetailPageView({
                   ? String(tourData.product.product_code)
                   : null
               )}
+              useRepresentativePickup={
+                !!tourData.tour?.pickup_group_preset_id ||
+                tourData.tour?.use_representative_pickup === true
+              }
+              pickupPresets={pickupPresets}
+              activePresetId={tourData.tour?.pickup_group_preset_id ?? null}
+              activePreset={activePickupPreset}
+              groupModeOverrides={pickupGroupModeOverrides}
+              onPickupPresetChange={handlePickupPresetChange}
+              onGroupModeOverrideChange={handleGroupModeOverrideChange}
         />
         </div>
 
@@ -2679,6 +2783,11 @@ export function TourDetailPageView({
           onClose={() => setShowPickupScheduleModal(false)}
           onSave={handleSavePickupSchedule}
           getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+          useRepresentativePickup={
+            !!tourData.tour.pickup_group_preset_id ||
+            tourData.tour.use_representative_pickup === true
+          }
+          pickupResolveContext={pickupResolveContext}
         />
       )}
 

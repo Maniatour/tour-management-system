@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { resolvePickupStopCoords } from '@/lib/geo'
 import { hhmmToSortMinutes } from '@/lib/tourPickupLiveWindow'
+import { getEffectivePickupHotelId } from '@/lib/effectivePickupHotel'
+import { loadPickupResolveContextForTour } from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 export type GuidePickupScheduleRow = {
   time: string
@@ -16,6 +19,9 @@ export type GuidePickupScheduleRow = {
 
 type TourRow = {
   reservation_ids: string[] | null
+  use_representative_pickup?: boolean | null
+  pickup_group_preset_id?: string | null
+  pickup_group_mode_overrides?: unknown
 }
 
 type ReservationRow = {
@@ -63,7 +69,7 @@ export async function fetchPickupScheduleForTour(
 ): Promise<GuidePickupScheduleRow[]> {
   const { data: tour, error: tourError } = await supabase
     .from('tours')
-    .select('reservation_ids, tour_date')
+    .select('reservation_ids, tour_date, use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides')
     .eq('id', tourId)
     .single()
 
@@ -73,6 +79,11 @@ export async function fetchPickupScheduleForTour(
   }
 
   const tourData = tour as TourRow & { tour_date?: string | null }
+  const { context: pickupContext, hotelsCatalog } = await loadPickupResolveContextForTour(
+    supabase,
+    tourData
+  )
+  const useRepMode = !!pickupContext.preset || pickupContext.useRepresentativePickup === true
   const effectiveTourDate =
     (tourDate && tourDate.trim()) || (tourData.tour_date ? String(tourData.tour_date).split('T')[0] : '')
   if (!tourData.reservation_ids || tourData.reservation_ids.length === 0) {
@@ -127,29 +138,37 @@ export async function fetchPickupScheduleForTour(
     }
   }) as Array<ReservationRow & { customers?: CustomerRow }>
 
-  const pickupHotelIds = [
-    ...new Set(
-      reservationsWithCustomers.map((r) => r.pickup_hotel).filter(Boolean) as string[]
-    )
-  ]
-
   let pickupHotels: PickupHotelRow[] = []
-  if (pickupHotelIds.length > 0) {
-    const { data: hotelsData, error: hotelsError } = await supabase
-      .from('pickup_hotels')
-      .select('id, hotel, pick_up_location, pin, link')
-      .in('id', pickupHotelIds)
-      .eq('is_active', true)
+  if (useRepMode) {
+    pickupHotels = hotelsCatalog as PickupHotelRow[]
+  } else {
+    const requestedHotelIds = [
+      ...new Set(
+        reservationsWithCustomers.map((r) => r.pickup_hotel).filter(Boolean) as string[]
+      ),
+    ]
+    if (requestedHotelIds.length > 0) {
+      const { data: hotelsData, error: hotelsError } = await supabase
+        .from('pickup_hotels')
+        .select('id, hotel, pick_up_location, pin, link')
+        .in('id', requestedHotelIds)
+        .eq('is_active', true)
 
-    if (hotelsError) {
-      console.error('[fetchPickupScheduleForTour] pickup_hotels error:', hotelsError)
-    } else {
-      pickupHotels = (hotelsData as PickupHotelRow[]) || []
+      if (hotelsError) {
+        console.error('[fetchPickupScheduleForTour] pickup_hotels error:', hotelsError)
+      } else {
+        pickupHotels = (hotelsData as PickupHotelRow[]) || []
+      }
     }
   }
 
+  const hotelsForResolve = pickupHotels as PickupHotelUtil[]
+
   const groupedByHotel = reservationsWithCustomers.reduce<Record<string, GroupedStop>>((acc, reservation) => {
-    const hotel = pickupHotels.find((h) => h.id === reservation.pickup_hotel)
+    const effectiveHotelId =
+      getEffectivePickupHotelId(reservation.pickup_hotel, hotelsForResolve, pickupContext) ||
+      reservation.pickup_hotel
+    const hotel = pickupHotels.find((h) => h.id === effectiveHotelId)
     if (!hotel) {
       const hotelKey = `unknown-${reservation.pickup_hotel}`
         if (!acc[hotelKey]) {

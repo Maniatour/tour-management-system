@@ -4,14 +4,16 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Sparkles } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 
 import PickupHotelForm from '@/components/PickupHotelForm'
+import PickupHotelAutoGroupModal from '@/components/PickupHotelAutoGroupModal'
+import PickupGroupPresetManager from '@/components/PickupGroupPresetManager'
 
-import { groupHotelsByGroupNumber, processPickupRequest, type PickupHotel } from '@/utils/pickupHotelUtils'
+import { groupHotelsByGroupNumber, processPickupRequest, getRepresentativeHotelForGroupKey, validateGroupNumber, type PickupHotel } from '@/utils/pickupHotelUtils'
 
 type PickupHotelsListUiState = {
   searchTerm: string
@@ -298,6 +300,14 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
   const [selectedHotelInfo, setSelectedHotelInfo] = useState<{ name: string; pickup: string; address: string; group: number | null; id: string } | null>(null)
   const [quickEditMode, setQuickEditMode] = useState(false)
   const [quickEditGroupNumber, setQuickEditGroupNumber] = useState<number | null>(null)
+  const [groupNumberEditModal, setGroupNumberEditModal] = useState<{
+    isOpen: boolean
+    hotel: PickupHotel | null
+  }>({ isOpen: false, hotel: null })
+  const [groupNumberEditValue, setGroupNumberEditValue] = useState('')
+  const [groupNumberEditSaving, setGroupNumberEditSaving] = useState(false)
+  const [showAutoGroupModal, setShowAutoGroupModal] = useState(false)
+  const [showPresetManager, setShowPresetManager] = useState(false)
   
   // Supabase에서 픽업 호텔 데이터 가져오기
 
@@ -752,6 +762,67 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
     } catch (error) {
       console.error('Error updating hotel group number:', error)
       alert('Error updating group number.')
+    }
+  }
+
+  const openGroupNumberEditModal = (hotel: PickupHotel, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setGroupNumberEditModal({ isOpen: true, hotel })
+    setGroupNumberEditValue(
+      hotel.group_number !== null && hotel.group_number !== undefined
+        ? String(hotel.group_number)
+        : ''
+    )
+  }
+
+  const closeGroupNumberEditModal = () => {
+    if (groupNumberEditSaving) return
+    setGroupNumberEditModal({ isOpen: false, hotel: null })
+    setGroupNumberEditValue('')
+  }
+
+  const saveGroupNumberEditModal = async () => {
+    const hotel = groupNumberEditModal.hotel
+    if (!hotel) return
+
+    const trimmed = groupNumberEditValue.trim()
+    const parsed = trimmed === '' ? null : parseFloat(trimmed)
+
+    if (parsed !== null && Number.isNaN(parsed)) {
+      alert(locale === 'en' ? 'Please enter a valid group number.' : '올바른 그룹 번호를 입력해 주세요.')
+      return
+    }
+
+    const validation = validateGroupNumber(parsed)
+    if (!validation.isValid) {
+      alert(validation.message)
+      return
+    }
+
+    setGroupNumberEditSaving(true)
+    try {
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .update({ group_number: parsed } as never)
+        .eq('id', hotel.id)
+
+      if (error) {
+        console.error('Error updating hotel group number:', error)
+        alert(
+          (locale === 'en' ? 'Error updating group number: ' : '그룹 번호 수정 오류: ') +
+            error.message
+        )
+        return
+      }
+
+      await fetchHotels()
+      setGroupNumberEditModal({ isOpen: false, hotel: null })
+      setGroupNumberEditValue('')
+    } catch (error) {
+      console.error('Error updating hotel group number:', error)
+      alert(locale === 'en' ? 'Error updating group number.' : '그룹 번호 수정에 실패했습니다.')
+    } finally {
+      setGroupNumberEditSaving(false)
     }
   }
 
@@ -1570,6 +1641,26 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
           )}
 
           <button
+            type="button"
+            onClick={() => setShowPresetManager(true)}
+            className="bg-violet-600 text-white px-3 py-1.5 rounded-md hover:bg-violet-700 flex items-center gap-1.5 text-sm font-medium"
+            title={locale === 'en' ? 'Manage pickup group presets (8/10/15 hotels, etc.)' : '픽업 그룹 프리셋 관리 (8/10/15호텔 그룹 등)'}
+          >
+            <Table size={16} />
+            <span>{locale === 'en' ? 'Group Presets' : '그룹 프리셋'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAutoGroupModal(true)}
+            className="bg-amber-600 text-white px-3 py-1.5 rounded-md hover:bg-amber-700 flex items-center gap-1.5 text-sm font-medium"
+            title={locale === 'en' ? 'Auto-assign group numbers by location' : '위치 기준 그룹 번호 자동 정렬'}
+          >
+            <Sparkles size={16} />
+            <span>{locale === 'en' ? 'Auto Group' : '그룹 자동 정렬'}</span>
+          </button>
+
+          <button
 
             onClick={() => setShowAddForm(true)}
 
@@ -1780,8 +1871,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             <div className="space-y-4 sm:space-y-6">
 
-              {sortedGroupKeys.map((groupKey) => (
-
+              {sortedGroupKeys.map((groupKey) => {
+                const representativeHotel = getRepresentativeHotelForGroupKey(groupKey, hotels)
+                return (
               <div key={groupKey} className="bg-white rounded-lg shadow-md border border-gray-200">
 
                 {/* 그룹 헤더 */}
@@ -1794,7 +1886,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                 >
 
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
 
                     <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{getGroupLabel(groupKey)}</h2>
 
@@ -1803,6 +1895,15 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                       {groupedHotels[groupKey].length} hotels
 
                     </span>
+
+                    {representativeHotel && (
+                      <span
+                        className="px-2 py-1 bg-amber-50 text-amber-900 text-xs sm:text-sm font-medium rounded-full shrink-0 max-w-[min(100%,280px)] truncate"
+                        title={representativeHotel.hotel}
+                      >
+                        {locale === 'en' ? 'Rep.' : '대표'}: {representativeHotel.hotel}
+                      </span>
+                    )}
 
                   </div>
 
@@ -1852,14 +1953,24 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                   <h3 className="text-base font-semibold text-gray-900">{hotel.hotel}</h3>
 
-                  {hotel.group_number && (
-
-                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-
+                  {hotel.group_number != null && hotel.group_number !== undefined ? (
+                    <button
+                      type="button"
+                      onClick={(e) => openGroupNumberEditModal(hotel, e)}
+                      className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full hover:bg-green-200 transition-colors"
+                      title={locale === 'en' ? 'Edit group number' : '그룹 번호 수정'}
+                    >
                       Group {hotel.group_number}
-
-                    </span>
-
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => openGroupNumberEditModal(hotel, e)}
+                      className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full hover:bg-gray-200 transition-colors"
+                      title={locale === 'en' ? 'Set group number' : '그룹 번호 설정'}
+                    >
+                      {locale === 'en' ? 'No group' : '그룹 미설정'}
+                    </button>
                   )}
 
                 </div>
@@ -2394,7 +2505,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
           </div>
 
-        ))}
+        )})}
 
             </div>
 
@@ -3877,6 +3988,89 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
 
 
+      {/* 그룹 번호 빠른 수정 모달 (그리드 뷰) */}
+      {groupNumberEditModal.isOpen && groupNumberEditModal.hotel && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={closeGroupNumberEditModal}
+        >
+          <div
+            className="bg-white rounded-lg p-6 w-full max-w-sm mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {locale === 'en' ? 'Edit Group Number' : '그룹 번호 수정'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeGroupNumberEditModal}
+                disabled={groupNumberEditSaving}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="text-sm font-medium text-gray-900 mb-1">{groupNumberEditModal.hotel.hotel}</p>
+            <p className="text-xs text-gray-500 mb-4">{groupNumberEditModal.hotel.pick_up_location}</p>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {locale === 'en' ? 'Group Number' : '그룹 번호'}
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="0.1"
+              max="999"
+              value={groupNumberEditValue}
+              onChange={(e) => setGroupNumberEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void saveGroupNumberEditModal()
+                }
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder={locale === 'en' ? 'e.g. 1 or 1.1' : '예: 1 또는 1.1'}
+              autoFocus
+              disabled={groupNumberEditSaving}
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              {locale === 'en'
+                ? 'Integer (e.g. 1) = representative pickup hotel for the group. Decimal (e.g. 1.1) = pickup request hotel.'
+                : '정수(예: 1) = 그룹 대표 픽업 호텔, 소수(예: 1.1) = 픽업 요청 호텔'}
+            </p>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={closeGroupNumberEditModal}
+                disabled={groupNumberEditSaving}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
+              >
+                {locale === 'en' ? 'Cancel' : '취소'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveGroupNumberEditModal()}
+                disabled={groupNumberEditSaving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Save size={16} />
+                {groupNumberEditSaving
+                  ? locale === 'en'
+                    ? 'Saving...'
+                    : '저장 중...'
+                  : locale === 'en'
+                    ? 'Save'
+                    : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 삭제 확인 모달 */}
 
       {deleteConfirm.isOpen && deleteConfirm.hotel && (
@@ -3954,6 +4148,22 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
         </div>
 
       )}
+
+      <PickupHotelAutoGroupModal
+        isOpen={showAutoGroupModal}
+        onClose={() => setShowAutoGroupModal(false)}
+        hotels={hotels}
+        locale={locale}
+        onApplied={() => void fetchHotels()}
+      />
+
+      <PickupGroupPresetManager
+        isOpen={showPresetManager}
+        onClose={() => setShowPresetManager(false)}
+        hotels={hotels}
+        locale={locale}
+        onChanged={() => void fetchHotels()}
+      />
 
     </div>
 

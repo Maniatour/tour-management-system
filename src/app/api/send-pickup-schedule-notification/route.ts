@@ -6,6 +6,12 @@ import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetail
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import { getOperationsCc } from '@/lib/emailConfig'
 import { renderTourChatRoomEmailSectionHtml } from '@/lib/tourChatRoomEmailHtml'
+import {
+  getEffectivePickupHotelId,
+  loadPickupResolveContextForTour,
+  type PickupResolveContext,
+} from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 /**
  * POST /api/send-pickup-schedule-notification
@@ -97,20 +103,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 픽업 호텔 정보 별도 조회
+    // 픽업 호텔·대표 픽업 해석용 (투어 조회 후 실제 호텔 확정)
     let pickupHotel = null
-    if (reservation.pickup_hotel) {
+    let pickupResolveContext: PickupResolveContext = { useRepresentativePickup: false }
+    let allPickupHotelsForResolve: PickupHotelUtil[] = []
+
+    const resolvePickupHotelRow = async (requestedHotelId: string) => {
+      const effectiveHotelId =
+        getEffectivePickupHotelId(
+          requestedHotelId,
+          allPickupHotelsForResolve,
+          pickupResolveContext
+        ) || requestedHotelId
       const { data: hotelData, error: hotelError } = await routeDb
         .from('pickup_hotels')
         .select('id, hotel, pick_up_location, address, link, media')
-        .eq('id', reservation.pickup_hotel)
-        .single()
-
+        .eq('id', effectiveHotelId)
+        .maybeSingle()
       if (hotelError) {
         console.error('[send-pickup-schedule-notification] 픽업 호텔 조회 오류:', hotelError)
-      } else {
-        pickupHotel = hotelData
+        return null
       }
+      return hotelData
     }
 
     if (!customer) {
@@ -223,6 +237,11 @@ export async function POST(request: NextRequest) {
 
     // All Pickup Schedule 조회 (찾은 투어의 reservation_ids에 포함된 예약만)
     let allPickups: any[] = []
+    if (tourData) {
+      const loaded = await loadPickupResolveContextForTour(routeDb, tourData)
+      pickupResolveContext = loaded.context
+      allPickupHotelsForResolve = loaded.hotelsCatalog as PickupHotelUtil[]
+    }
     if (tourData && tourData.reservation_ids) {
       const reservationIds = normalizeIds(tourData.reservation_ids)
       
@@ -245,16 +264,23 @@ export async function POST(request: NextRequest) {
                 .eq('id', res.customer_id)
                 .maybeSingle()
 
+              const effectiveHotelId =
+                getEffectivePickupHotelId(
+                  res.pickup_hotel,
+                  allPickupHotelsForResolve,
+                  pickupResolveContext
+                ) || res.pickup_hotel
+
               const { data: hotelInfo } = await routeDb
                 .from('pickup_hotels')
                 .select('hotel, pick_up_location, address, link')
-                .eq('id', res.pickup_hotel)
+                .eq('id', effectiveHotelId)
                 .maybeSingle()
 
               return {
                 reservation_id: res.id,
                 pickup_time: res.pickup_time || '',
-                pickup_hotel: res.pickup_hotel || '',
+                pickup_hotel: effectiveHotelId || '',
                 hotel_name: hotelInfo?.hotel || 'Unknown Hotel',
                 pick_up_location: hotelInfo?.pick_up_location || '',
                 address: hotelInfo?.address || '',
@@ -503,6 +529,18 @@ export async function POST(request: NextRequest) {
       console.log('[send-pickup-schedule-notification] 투어 데이터를 찾을 수 없음')
     }
 
+    // 예약자 픽업 호텔 (요청 + 대표 픽업 반영된 실제 호텔)
+    let requestedPickupHotel = null
+    if (reservation.pickup_hotel) {
+      const { data: requestedRow } = await routeDb
+        .from('pickup_hotels')
+        .select('id, hotel, pick_up_location, address, link, media')
+        .eq('id', reservation.pickup_hotel)
+        .maybeSingle()
+      requestedPickupHotel = requestedRow
+      pickupHotel = await resolvePickupHotelRow(reservation.pickup_hotel)
+    }
+
     // Chat Room 정보 조회 (찾은 투어 ID 사용)
     let chatRoomCode: string | null = null
     if (tourData && tourData.id) {
@@ -560,7 +598,8 @@ export async function POST(request: NextRequest) {
       tourDetails,
       chatRoomCode,
       tourDayWeather,
-      preparationInfo
+      preparationInfo,
+      requestedPickupHotel,
     )
 
     // Resend를 사용한 이메일 발송
@@ -819,6 +858,117 @@ export type TourDayWeather = {
   pageCity: { location: string; weather: { temperature: number | null; temp_max: number | null; temp_min: number | null; weather_main: string | null; weather_description: string | null } }
 }
 
+type PickupHotelEmailRow = {
+  id?: string
+  hotel?: string
+  pick_up_location?: string | null
+  address?: string | null
+  link?: string | null
+  media?: string[] | null
+}
+
+function isPickupHotelRedirectedForEmail(
+  requested: PickupHotelEmailRow | null | undefined,
+  actual: PickupHotelEmailRow | null | undefined
+): boolean {
+  if (!requested || !actual) return false
+  if (requested.id && actual.id) return requested.id !== actual.id
+  return (requested.hotel || '').trim() !== (actual.hotel || '').trim()
+}
+
+function buildPickupRedirectNoticeHtml(isEnglish: boolean): string {
+  const title = isEnglish ? 'Important: Pickup Location Update' : '픽업 장소 안내 (중요)'
+  const body = isEnglish
+    ? 'We sincerely apologize — due to heavy traffic on the Las Vegas Strip and limited vehicle access at many hotels, we are unable to pick up guests at the hotel you originally requested. To keep the tour running smoothly for everyone, please come directly to the pickup hotel and location shown below. Thank you very much for your understanding.'
+    : '라스베가스 스트립 일대의 교통 혼잡과 호텔 차량 진입·접근 제한으로 인해, 예약 시 요청해 주신 호텔에서는 픽업이 어려운 점 진심으로 양해 부탁드립니다. 더 원활한 투어 진행을 위해 아래 안내드리는 픽업 호텔·장소로 직접 와 주시기 바랍니다. 너른 양해에 감사드립니다.'
+  return `
+          <div style="background: #fff7ed; border: 2px solid #ea580c; border-radius: 10px; padding: 18px 20px; margin: 18px 0; box-shadow: 0 2px 8px rgba(234, 88, 12, 0.12);">
+            <p style="margin: 0 0 10px 0; font-size: 17px; font-weight: bold; color: #c2410c; line-height: 1.4;">
+              ⚠️ ${title}
+            </p>
+            <p style="margin: 0; font-size: 14px; line-height: 1.75; color: #7c2d12;">
+              ${body}
+            </p>
+          </div>`
+}
+
+function buildMapButtonHintHtml(isEnglish: boolean): string {
+  return isEnglish
+    ? 'Click the button above to view the exact pickup location on Google Maps, and tap <strong>Directions</strong> to see your full route. Many Las Vegas hotels have multiple entrances, and the pickup point is often not the main lobby — please be sure to come to the location shown by this button.'
+    : '위 버튼을 클릭하시면 구글 지도에서 정확한 픽업 장소를 확인하실 수 있고, <strong>Directions(길찾기)</strong> 버튼을 누르시면 이동 경로까지 모두 확인하실 수 있습니다. 라스베가스 호텔은 입구가 여러 곳이며 픽업 장소가 메인 로비와 다른 경우가 많으니, 반드시 이 버튼이 안내하는 픽업 포인트로 와 주시기 바랍니다.'
+}
+
+function buildPickupHotelSectionHtml(
+  isEnglish: boolean,
+  pickupHotel: PickupHotelEmailRow,
+  requestedPickupHotel: PickupHotelEmailRow | null | undefined,
+  pickupRedirected: boolean
+): string {
+  const mapHint = pickupHotel.link
+    ? `
+            <div class="info-row">
+              <a href="${pickupHotel.link}" target="_blank" class="button">${isEnglish ? 'View on Map' : '지도에서 보기'}</a>
+            </div>
+            <div class="info-row" style="margin-top: 12px;">
+              <p style="margin: 0; font-size: 13px; color: #4b5563; line-height: 1.6;">
+                ${buildMapButtonHintHtml(isEnglish)}
+              </p>
+            </div>`
+    : ''
+
+  if (pickupRedirected && requestedPickupHotel) {
+    return `
+            <div class="info-row" style="margin-top: 8px;">
+              <span class="label">${isEnglish ? 'Requested Hotel (at booking):' : '요청 호텔 (예약 시):'}</span>
+              <span class="value" style="font-size: 15px; color: #6b7280; font-weight: normal;">${requestedPickupHotel.hotel || '—'}</span>
+            </div>
+            ${requestedPickupHotel.pick_up_location ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Requested Pickup Location:' : '요청 픽업 장소:'}</span>
+              <span class="value" style="font-size: 14px; color: #9ca3af; font-weight: normal;">${requestedPickupHotel.pick_up_location}</span>
+            </div>
+            ` : ''}
+            <div style="background: #eff6ff; border: 2px solid #2563eb; padding: 16px; border-radius: 8px; margin: 14px 0 8px;">
+              <div class="info-row" style="margin-top: 0;">
+                <span class="label" style="color: #1e40af;">${isEnglish ? 'Your Tour Pickup Hotel:' : '실제 투어 픽업 호텔:'}</span>
+                <span class="value" style="color: #1d4ed8; font-weight: bold; font-size: 22px;">${pickupHotel.hotel || '—'}</span>
+              </div>
+              ${pickupHotel.pick_up_location ? `
+              <div class="info-row">
+                <span class="label" style="color: #1e40af;">${isEnglish ? 'Tour Pickup Location:' : '실제 픽업 장소:'}</span>
+                <span class="value" style="color: #1e40af; font-weight: bold; font-size: 18px;">${pickupHotel.pick_up_location}</span>
+              </div>
+              ` : ''}
+              ${pickupHotel.address ? `
+              <div class="info-row">
+                <span class="label">${isEnglish ? 'Address:' : '주소:'}</span>
+                <span class="value" style="font-size: 15px;">${pickupHotel.address}</span>
+              </div>
+              ` : ''}
+              ${mapHint}
+            </div>`
+  }
+
+  return `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Pickup Hotel:' : '픽업 호텔:'}</span>
+              <span class="value">${pickupHotel.hotel}</span>
+            </div>
+            ${pickupHotel.pick_up_location ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Pickup Location:' : '픽업 장소:'}</span>
+              <span class="value" style="color: #1e40af; font-weight: bold;">${pickupHotel.pick_up_location}</span>
+            </div>
+            ` : ''}
+            ${pickupHotel.address ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Address:' : '주소:'}</span>
+              <span class="value">${pickupHotel.address}</span>
+            </div>
+            ` : ''}
+            ${mapHint}`
+}
+
 export function generatePickupScheduleEmailContent(
   reservation: any,
   customer: any,
@@ -832,9 +982,10 @@ export function generatePickupScheduleEmailContent(
   chatRoomCode?: string | null,
   tourDayWeather?: TourDayWeather | null,
   preparationInfo?: string | null,
-  /** 미리보기에서 이미지 로딩용. 설정 시 차량 사진 img src를 이 베이스 URL의 /api/proxy-image?url=... 로 래핑 */
+  requestedPickupHotel?: PickupHotelEmailRow | null,
   imageProxyBaseUrl?: string | null
 ) {
+  const pickupRedirected = isPickupHotelRedirectedForEmail(requestedPickupHotel, pickupHotel)
   const imageUrl = (url: string) => {
     if (!url || url.startsWith('data:')) return url
     if (imageProxyBaseUrl) {
@@ -975,6 +1126,8 @@ export function generatePickupScheduleEmailContent(
             ? `Your pickup schedule for the tour has been confirmed. Please find the details below:`
             : `투어 픽업 스케줄이 확정되었습니다. 아래 내용을 확인해주세요.`}</p>
 
+          ${pickupRedirected ? buildPickupRedirectNoticeHtml(isEnglish) : ''}
+
           <div class="info-box">
             <div class="info-row">
               <span class="label">${isEnglish ? 'Tour:' : '투어:'}</span>
@@ -988,36 +1141,7 @@ export function generatePickupScheduleEmailContent(
               <span class="label">${isEnglish ? 'Pickup Time:' : '픽업 시간:'}</span>
               <span class="value" style="color: #2563eb; font-weight: bold; font-size: 20px;">${formattedPickupTime}</span>
             </div>
-            ${pickupHotel ? `
-            <div class="info-row">
-              <span class="label">${isEnglish ? 'Pickup Hotel:' : '픽업 호텔:'}</span>
-              <span class="value">${pickupHotel.hotel}</span>
-            </div>
-            ${pickupHotel.pick_up_location ? `
-            <div class="info-row">
-              <span class="label">${isEnglish ? 'Pickup Location:' : '픽업 장소:'}</span>
-              <span class="value" style="color: #1e40af; font-weight: bold;">${pickupHotel.pick_up_location}</span>
-            </div>
-            ` : ''}
-            ${pickupHotel.address ? `
-            <div class="info-row">
-              <span class="label">${isEnglish ? 'Address:' : '주소:'}</span>
-              <span class="value">${pickupHotel.address}</span>
-            </div>
-            ` : ''}
-            ${pickupHotel.link ? `
-            <div class="info-row">
-              <a href="${pickupHotel.link}" target="_blank" class="button">${isEnglish ? 'View on Map' : '지도에서 보기'}</a>
-            </div>
-            <div class="info-row" style="margin-top: 12px;">
-              <p style="margin: 0; font-size: 13px; color: #4b5563; line-height: 1.6;">
-                ${isEnglish
-                  ? 'Please click the button to check the exact pickup location on Google Maps. Many Las Vegas hotels have multiple entrances, and the pickup point may be different from the main lobby. Please come to the exact location shown on Google Maps.'
-                  : '위 버튼을 눌러 구글 지도에서 정확한 픽업 위치를 확인해 주세요. 라스베가스 호텔은 입구가 여러 곳이며, 픽업 장소가 메인 로비와 다른 경우가 많습니다. 반드시 구글 지도에 표시된 픽업 포인트로 와주시기 바랍니다.'}
-              </p>
-            </div>
-            ` : ''}
-            ` : `
+            ${pickupHotel ? buildPickupHotelSectionHtml(isEnglish, pickupHotel, requestedPickupHotel, pickupRedirected) : `
             <div class="info-row">
               <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 4px; margin-top: 10px;">
                 <p style="margin: 0; color: #92400e; font-weight: 600; font-size: 14px;">
@@ -1175,6 +1299,9 @@ export function generatePickupScheduleEmailContent(
                       <a href="${pickup.link}" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px;">
                         ${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}
                       </a>
+                      <p style="margin: 8px 0 0; font-size: 12px; color: #6b7280; line-height: 1.6;">
+                        ${buildMapButtonHintHtml(isEnglish)}
+                      </p>
                     </div>
                     ` : ''}
                   </div>

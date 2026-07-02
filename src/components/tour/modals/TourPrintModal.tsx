@@ -5,6 +5,9 @@ import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
+import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
+import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 // ---------------------------------------------------------------------------
 // 타입
@@ -27,6 +30,7 @@ export interface PrintPickupHotel {
   id: string
   hotel: string
   pick_up_location?: string
+  group_number?: number | null
 }
 
 export interface PrintTicketBooking {
@@ -76,6 +80,8 @@ export interface TourPrintModalProps {
   vehicleLabel: string | null
   assignedReservations: PrintReservation[]
   pickupHotels: PrintPickupHotel[]
+  useRepresentativePickup?: boolean
+  pickupResolveContext?: PickupResolveContext
   getCustomerName: (customerId: string) => string
   ticketBookings: PrintTicketBooking[]
   tourHotelBookings: PrintHotelBooking[]
@@ -186,6 +192,8 @@ export default function TourPrintModal({
   vehicleLabel,
   assignedReservations,
   pickupHotels,
+  useRepresentativePickup = false,
+  pickupResolveContext,
   getCustomerName,
   ticketBookings,
   tourHotelBookings,
@@ -342,10 +350,15 @@ export default function TourPrintModal({
 
   // 픽업 호텔별 그룹화 + 정렬
   const pickupGroups = useMemo(() => {
+    const hotelsForResolve = pickupHotels as PickupHotelUtil[]
+    const resolveCtx = pickupResolveContext ?? useRepresentativePickup
     const groups = new Map<string, PrintReservation[]>()
     for (const r of assignedReservations) {
-      const key = r.pickup_hotel || ''
-      if (!key) continue
+      const requestedKey = r.pickup_hotel || ''
+      if (!requestedKey) continue
+      const key =
+        getEffectivePickupHotelId(requestedKey, hotelsForResolve, resolveCtx) ||
+        requestedKey
       const list = groups.get(key) || []
       list.push(r)
       groups.set(key, list)
@@ -368,7 +381,7 @@ export default function TourPrintModal({
         pickupSortValue(a.reservations[0]?.pickup_time || null) -
         pickupSortValue(b.reservations[0]?.pickup_time || null)
     )
-  }, [assignedReservations, pickupHotels])
+  }, [assignedReservations, pickupHotels, useRepresentativePickup, pickupResolveContext])
 
   const totalTourBalance = useMemo(() => {
     let sum = 0
@@ -571,6 +584,19 @@ export default function TourPrintModal({
                           <div key={r.id} className="tp-pax-row">
                             <span className="tp-pax-name">
                               {getCustomerName(r.customer_id || '') || '—'}
+                              {useRepresentativePickup &&
+                                r.pickup_hotel &&
+                                (getEffectivePickupHotelId(
+                                  r.pickup_hotel,
+                                  pickupHotels as PickupHotelUtil[],
+                                  pickupResolveContext ?? true
+                                ) !== r.pickup_hotel) && (
+                                  <span className="tp-pax-requested-hotel">
+                                    {' '}
+                                    ({isKo ? '요청' : 'Req'}:{' '}
+                                    {getPickupHotelNameById(r.pickup_hotel, pickupHotels)})
+                                  </span>
+                                )}
                             </span>
                             <span className="tp-pax-meta">
                               <span className="tp-pax-people">
