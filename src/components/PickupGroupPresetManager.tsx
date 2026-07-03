@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Plus, Save, Trash2, RefreshCw, Loader2, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { X, Plus, Save, Trash2, RefreshCw, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   fetchPickupGroupPresetWithReps,
@@ -10,6 +10,7 @@ import {
   type PickupGroupPresetRow,
 } from '@/lib/pickupGroupPreset'
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import { SearchablePickupHotelSelect } from '@/components/SearchablePickupHotelSelect'
 
 interface PickupGroupPresetManagerProps {
   isOpen: boolean
@@ -26,122 +27,6 @@ type DraftPreset = {
   group_count: number
   sort_order: number
   representatives: Record<number, string | null>
-}
-
-function SearchableHotelSelect({
-  hotels,
-  value,
-  onChange,
-  placeholder,
-  noResultsLabel,
-  clearTitle,
-}: {
-  hotels: PickupHotel[]
-  value: string | null
-  onChange: (id: string | null) => void
-  placeholder: string
-  noResultsLabel: string
-  clearTitle: string
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [search, setSearch] = useState('')
-  const [open, setOpen] = useState(false)
-
-  const selectedHotel = useMemo(
-    () => hotels.find((h) => h.id === value) ?? null,
-    [hotels, value]
-  )
-
-  const filteredHotels = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return hotels
-    return hotels.filter(
-      (h) =>
-        h.hotel.toLowerCase().includes(q) ||
-        (h.pick_up_location || '').toLowerCase().includes(q) ||
-        (h.address || '').toLowerCase().includes(q)
-    )
-  }, [hotels, search])
-
-  useEffect(() => {
-    if (!open) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setSearch('')
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
-  return (
-    <div ref={containerRef} className="relative flex-1 min-w-0">
-      <div className="relative">
-        <Search
-          size={14}
-          className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-        />
-        <input
-          type="text"
-          value={open ? search : selectedHotel?.hotel ?? ''}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setOpen(true)
-          }}
-          onFocus={() => {
-            setSearch(selectedHotel?.hotel ?? '')
-            setOpen(true)
-          }}
-          placeholder={placeholder}
-          className="w-full pl-7 pr-8 py-1.5 border rounded-md text-sm"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange(null)
-              setSearch('')
-              setOpen(false)
-            }}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
-            title={clearTitle}
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      {open && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-52 overflow-y-auto">
-          {filteredHotels.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-500 text-center">{noResultsLabel}</p>
-          ) : (
-            filteredHotels.map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                onClick={() => {
-                  onChange(h.id)
-                  setSearch('')
-                  setOpen(false)
-                }}
-                className={`w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 ${
-                  value === h.id ? 'bg-blue-50/80' : ''
-                }`}
-              >
-                <div className="text-sm font-medium text-gray-900 truncate">{h.hotel}</div>
-                {(h.pick_up_location || h.address) && (
-                  <div className="text-xs text-gray-500 truncate">
-                    {[h.pick_up_location, h.address].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
 }
 
 export default function PickupGroupPresetManager({
@@ -432,7 +317,7 @@ export default function PickupGroupPresetManager({
                     <span className="text-sm font-semibold text-gray-700 w-14 shrink-0">
                       {isEn ? `Group ${groupIndex}` : `그룹 ${groupIndex}`}
                     </span>
-                    <SearchableHotelSelect
+                    <SearchablePickupHotelSelect
                       hotels={selectableHotels}
                       value={editing.representatives[groupIndex] ?? null}
                       onChange={(hotelId) =>
@@ -447,6 +332,7 @@ export default function PickupGroupPresetManager({
                       placeholder={isEn ? 'Search hotel...' : '호텔 검색...'}
                       noResultsLabel={isEn ? 'No hotels found' : '검색 결과 없음'}
                       clearTitle={isEn ? 'Clear selection' : '선택 해제'}
+                      className="flex-1"
                     />
                   </div>
                 ))}

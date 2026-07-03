@@ -190,7 +190,7 @@ export default function PickupScheduleEmailPreviewModal({
         if (tourId) {
           const { data: tourRow } = await supabase
             .from('tours')
-            .select('use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides')
+            .select('use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides, pickup_group_representative_overrides')
             .eq('id', tourId)
             .maybeSingle()
           if (tourRow) {

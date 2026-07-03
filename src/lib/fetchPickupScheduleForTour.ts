@@ -22,6 +22,7 @@ type TourRow = {
   use_representative_pickup?: boolean | null
   pickup_group_preset_id?: string | null
   pickup_group_mode_overrides?: unknown
+  pickup_group_representative_overrides?: unknown
 }
 
 type ReservationRow = {
@@ -69,7 +70,7 @@ export async function fetchPickupScheduleForTour(
 ): Promise<GuidePickupScheduleRow[]> {
   const { data: tour, error: tourError } = await supabase
     .from('tours')
-    .select('reservation_ids, tour_date, use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides')
+    .select('reservation_ids, tour_date, use_representative_pickup, pickup_group_preset_id, pickup_group_mode_overrides, pickup_group_representative_overrides')
     .eq('id', tourId)
     .single()
 

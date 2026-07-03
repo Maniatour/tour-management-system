@@ -28,6 +28,8 @@ export type PickupResolveContext = {
   useRepresentativePickup?: boolean
   preset?: PickupGroupPresetWithReps | null
   groupModeOverrides?: Record<string, PickupGroupMode>
+  /** 투어별 그룹 대표 호텔 (프리셋·자동 추론보다 우선) */
+  groupRepresentativeOverrides?: Record<string, string>
 }
 
 export function normalizeGroupModeOverrides(
@@ -38,6 +40,19 @@ export function normalizeGroupModeOverrides(
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (value === 'representative' || value === 'requested') {
       out[String(key)] = value
+    }
+  }
+  return out
+}
+
+export function normalizeGroupRepresentativeOverrides(
+  raw: unknown
+): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim()) {
+      out[String(key)] = value.trim()
     }
   }
   return out
@@ -88,6 +103,7 @@ export function buildPickupResolveContextFromTour(
     use_representative_pickup?: boolean | null
     pickup_group_preset_id?: string | null
     pickup_group_mode_overrides?: unknown
+    pickup_group_representative_overrides?: unknown
   },
   preset?: PickupGroupPresetWithReps | null
 ): PickupResolveContext {
@@ -96,6 +112,9 @@ export function buildPickupResolveContextFromTour(
     useRepresentativePickup: tour.use_representative_pickup === true,
     preset: presetId && preset?.id === presetId ? preset : presetId ? preset ?? null : null,
     groupModeOverrides: normalizeGroupModeOverrides(tour.pickup_group_mode_overrides),
+    groupRepresentativeOverrides: normalizeGroupRepresentativeOverrides(
+      tour.pickup_group_representative_overrides
+    ),
   }
 }
 
@@ -128,6 +147,11 @@ export function getEffectivePickupHotelId(
 
   if (mode === 'requested') {
     return requestedHotelId
+  }
+
+  if (mainGroup != null) {
+    const tourRep = context.groupRepresentativeOverrides?.[String(mainGroup)]
+    if (tourRep) return tourRep
   }
 
   if (mainGroup != null && context.preset) {
@@ -164,6 +188,9 @@ export function getGroupRepresentativeHotelId(
   context: PickupResolveContext,
   sampleRequestedHotelId?: string | null
 ): string | null {
+  const tourRep = context.groupRepresentativeOverrides?.[String(mainGroup)]
+  if (tourRep) return tourRep
+
   if (context.preset) {
     const fromPreset = getRepresentativeHotelIdFromPreset(mainGroup, context.preset)
     if (fromPreset) return fromPreset
@@ -291,6 +318,7 @@ export async function loadPickupResolveContextForTour(
     use_representative_pickup?: boolean | null
     pickup_group_preset_id?: string | null
     pickup_group_mode_overrides?: unknown
+    pickup_group_representative_overrides?: unknown
   }
 ): Promise<{ context: PickupResolveContext; hotelsCatalog: PickupHotel[] }> {
   let preset: PickupGroupPresetWithReps | null = null

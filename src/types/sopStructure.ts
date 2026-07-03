@@ -1,5 +1,22 @@
 /** SOP 본문: 한/영 병렬 + 섹션 → 카테고리 → 리치(마크다운 저장) */
 
+/** 운영 허브 카테고리 (SOP 섹션·지식 문서 공통) */
+export type OperationsHubCategory =
+  | 'onboarding'
+  | 'reservation'
+  | 'tour_ops'
+  | 'guide'
+  | 'office'
+  | 'system'
+  | 'other'
+
+export type OperationsContentType =
+  | 'regulation'
+  | 'playbook'
+  | 'system_guide'
+  | 'reference'
+  | 'onboarding'
+
 /**
  * 카테고리 안의 한 줄 체크 항목(고정 id).
  * 추후 투어별 체크·서명에서 `item_id` + `category_id` + `section_id` 로 재사용 가능.
@@ -30,6 +47,12 @@ export type SopSection = {
   title_en: string
   sort_order: number
   categories: SopCategory[]
+  /** 운영 허브 카테고리 (있으면 허브에 노출) */
+  hub_category?: OperationsHubCategory | null
+  /** 콘텐츠 유형 — regulation 은 SOP 본문에만 두고 허브에서는 제외 */
+  content_type?: OperationsContentType | null
+  /** 비어 있으면 전 직원. 팀보드 target_positions 와 동일 문자열 */
+  target_roles?: string[] | null
 }
 
 export type SopDocument = {
@@ -339,12 +362,28 @@ function normalizeSection(o: Record<string, unknown>): SopSection | null {
     ]
   }
   const legacyTitle = typeof o.title === 'string' ? o.title : ''
+  let hub_category: OperationsHubCategory | null | undefined
+  if (typeof o.hub_category === 'string' && o.hub_category.trim()) {
+    hub_category = o.hub_category.trim() as OperationsHubCategory
+  }
+  let content_type: OperationsContentType | null | undefined
+  if (typeof o.content_type === 'string' && o.content_type.trim()) {
+    content_type = o.content_type.trim() as OperationsContentType
+  }
+  let target_roles: string[] | null | undefined
+  if (Array.isArray(o.target_roles)) {
+    const roles = o.target_roles.filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+    target_roles = roles.length > 0 ? roles : []
+  }
   return {
     id: typeof o.id === 'string' ? o.id : newSopId(),
     title_ko: typeof o.title_ko === 'string' ? o.title_ko : legacyTitle,
     title_en: typeof o.title_en === 'string' ? o.title_en : '',
     sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
     categories,
+    ...(hub_category !== undefined ? { hub_category } : {}),
+    ...(content_type !== undefined ? { content_type } : {}),
+    ...(target_roles !== undefined ? { target_roles } : {}),
   }
 }
 

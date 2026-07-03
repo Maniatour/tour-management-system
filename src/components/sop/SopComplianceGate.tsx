@@ -70,6 +70,7 @@ export default function SopComplianceGate() {
     pathname.includes('/sop/sign') ||
     pathname.includes('/sop/campaign-sign') ||
     pathname.includes('/employee-contract/sign') ||
+    pathname.includes('/guide/sop') ||
     pathname.includes('/embed') ||
     pathname.includes('/photos/')
 
@@ -278,6 +279,16 @@ export default function SopComplianceGate() {
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 pt-2">
+          {gateKind === 'sop' ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => router.push(`/${locale}/guide/sop`)}
+            >
+              {isEn ? 'Read SOP (table of contents)' : 'SOP 내용 먼저 읽기 (목차)'}
+            </Button>
+          ) : null}
           <Button type="button" onClick={goSign} className="w-full">
             {isEn ? 'Review and sign' : '내용 확인 후 서명하기'}
           </Button>

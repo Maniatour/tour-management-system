@@ -13,6 +13,7 @@ import {
   MessageSquare,
   FileText,
   Calculator,
+  ListChecks,
   ChevronDown,
   ChevronUp,
   Calendar,
@@ -32,6 +33,7 @@ import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
+import TourSopChecklistSection from '@/components/sop/TourSopChecklistSection'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
@@ -428,7 +430,7 @@ export default function GuideTourDetailPage() {
 
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'chat']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'sop-checklist', 'chat']))
   /** 가이드 모바일(lg 미만): 부킹·사진·정산·리포트 섹션은 항상 펼침 */
   const [isGuideMobileLayout, setIsGuideMobileLayout] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
@@ -1751,6 +1753,22 @@ export default function GuideTourDetailPage() {
             tourDate={tour.tour_date} 
             productId={(tour as TourRow & { product_id?: string }).product_id} 
           />
+        </div>
+
+        {/* SOP 체크리스트 — 개요 탭 */}
+        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
+          <AccordionSection
+            id="sop-checklist"
+            title={locale === 'en' ? 'SOP checklist' : 'SOP 체크리스트'}
+            icon={ListChecks}
+          >
+            <TourSopChecklistSection
+              tourId={tour.id}
+              productId={tour.product_id}
+              tourDate={tour.tour_date}
+              locale={locale}
+            />
+          </AccordionSection>
         </div>
 
 

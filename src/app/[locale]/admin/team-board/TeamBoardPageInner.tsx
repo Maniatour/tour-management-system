@@ -174,6 +174,60 @@ const POSITION_OPTIONS = [
   { value: 'driver', label: '드라이버' },
 ] as const
 
+const TASK_PRIORITY_BORDER: Record<'low' | 'medium' | 'high' | 'urgent', string> = {
+  low: 'border-gray-300',
+  medium: 'border-blue-400',
+  high: 'border-orange-400',
+  urgent: 'border-red-500 border-2',
+}
+
+const TASK_PRIORITY_BADGE: Record<'low' | 'medium' | 'high' | 'urgent', { label: string; className: string }> = {
+  low: { label: '낮음', className: 'bg-gray-100 text-gray-600' },
+  medium: { label: '보통', className: 'bg-blue-100 text-blue-700' },
+  high: { label: '높음', className: 'bg-orange-100 text-orange-700' },
+  urgent: { label: '긴급', className: 'bg-red-600 text-white' },
+}
+
+const getTaskPriorityBorderClass = (priority: Task['priority']) =>
+  TASK_PRIORITY_BORDER[priority] ?? TASK_PRIORITY_BORDER.medium
+
+const getTaskPriorityBadge = (priority: Task['priority']) =>
+  TASK_PRIORITY_BADGE[priority] ?? TASK_PRIORITY_BADGE.medium
+
+const getTeamMemberDisplayName = (email: string | null | undefined, members: TeamMember[]) => {
+  if (!email) return '작성자'
+  const member = members.find(m => (m.email || '').toLowerCase() === email.toLowerCase())
+  return member?.name_ko || email.split('@')[0]
+}
+
+const getPositionLabel = (value: string) =>
+  POSITION_OPTIONS.find(p => p.value === value || normalizePosition(p.value) === normalizePosition(value))?.label ?? value
+
+const getTaskTargetBadges = (task: Task, members: TeamMember[]) => {
+  if (task.target_individuals?.length) {
+    return task.target_individuals.map(email => ({
+      key: email,
+      label: getTeamMemberDisplayName(email, members),
+      className: 'bg-blue-100 text-blue-700',
+    }))
+  }
+  if (task.target_positions?.length) {
+    return task.target_positions.map(pos => ({
+      key: pos,
+      label: getPositionLabel(pos),
+      className: 'bg-purple-100 text-purple-700',
+    }))
+  }
+  if (task.assigned_to) {
+    return [{
+      key: task.assigned_to,
+      label: getTeamMemberDisplayName(task.assigned_to, members),
+      className: 'bg-blue-100 text-blue-700',
+    }]
+  }
+  return []
+}
+
 const normalizePosition = (position: string | null | undefined): string => {
   const normalized = (position || '').trim().toLowerCase()
 
@@ -339,7 +393,7 @@ export default function TeamBoardPageInner() {
     }
 
     try {
-      const { data, error } = await supabase.rpc('manual_reset_todos')
+      const { data, error } = await supabase.rpc('manual_reset_todos', { category_name: category })
 
       if (error) throw error
 
@@ -377,6 +431,7 @@ export default function TeamBoardPageInner() {
   // 업무 관리 관련 상태
   const [tasks, setTasks] = useState<Task[]>([])
   const [showNewTaskModal, setShowNewTaskModal] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [showArchivedModal, setShowArchivedModal] = useState(false)
   const [archivedModalSection, setArchivedModalSection] = useState<'tasks' | 'announcements' | 'issues'>('tasks')
   const [newTask, setNewTask] = useState({
@@ -484,6 +539,12 @@ export default function TeamBoardPageInner() {
   const fetchAll = async () => {
     try {
       setLoading(true)
+      // 주기가 지난 완료 항목 자동 리셋 (Las Vegas 03:00 기준)
+      try {
+        await supabase.rpc('apply_due_op_todo_resets')
+      } catch (resetErr) {
+        console.warn('apply_due_op_todo_resets skipped:', resetErr)
+      }
       // 1차: ToDo + 팀(가벼운 select) 병렬 — 둘 중 느린 쪽만큼만 대기 후 스피너 종료
       const [{ data: opTodos }, { data: team }] = await Promise.all([
         supabase
@@ -850,6 +911,71 @@ export default function TeamBoardPageInner() {
            isAdminUser
   }
 
+  const canEditTask = (task: Task) => {
+    if (!authUser?.email) return false
+    const email = authUser.email.toLowerCase()
+    return (
+      isAdminUser ||
+      (task.created_by || '').toLowerCase() === email ||
+      (task.assigned_to != null && task.assigned_to.toLowerCase() === email)
+    )
+  }
+
+  const toDatetimeLocalValue = (iso: string) => {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  const resetTaskForm = () => {
+    setNewTask({
+      title: '',
+      description: '',
+      due_date: '',
+      priority: 'medium',
+      assigned_to: '',
+      target_positions: [],
+      target_individuals: [],
+      tags: [],
+    })
+    setSelectedTaskPositions([])
+    setSelectedTaskIndividuals([])
+    setActivePositionTab('manager')
+    setTaskRecipientMode('individual')
+  }
+
+  const closeTaskModal = () => {
+    setShowNewTaskModal(false)
+    setEditingTask(null)
+    resetTaskForm()
+  }
+
+  const startEditTask = (task: Task) => {
+    const individuals = task.target_individuals || []
+    const positions = task.target_positions || []
+    setEditingTask(task)
+    setNewTask({
+      title: task.title,
+      description: task.description || '',
+      due_date: task.due_date ? toDatetimeLocalValue(task.due_date) : '',
+      priority: task.priority,
+      assigned_to: task.assigned_to || '',
+      target_positions: positions,
+      target_individuals: individuals,
+      tags: task.tags || [],
+    })
+    if (positions.length > 0) {
+      setTaskRecipientMode('group')
+      setSelectedTaskPositions(positions)
+      setSelectedTaskIndividuals(individuals)
+    } else {
+      setTaskRecipientMode('individual')
+      setSelectedTaskPositions([])
+      setSelectedTaskIndividuals(individuals)
+    }
+  }
+
 
 
   const createTodo = async () => {
@@ -1074,23 +1200,51 @@ export default function TeamBoardPageInner() {
         .single()
       if (error) throw error
       setTasks(prev => [data as unknown as Task, ...prev])
-      setShowNewTaskModal(false)
-      setNewTask({
-        title: '',
-        description: '',
-        due_date: '',
-        priority: 'medium',
-        assigned_to: '',
-        target_positions: [],
-        target_individuals: [],
-        tags: []
-      })
-      setSelectedTaskPositions([])
-      setSelectedTaskIndividuals([])
-      setActivePositionTab('manager')
+      closeTaskModal()
     } catch (e) {
       console.error(e)
       alert('업무 생성 중 오류가 발생했습니다.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const updateTask = async (statusOverride?: Task['status']) => {
+    if (!editingTask || !newTask.title.trim()) return
+    setSubmitting(true)
+    try {
+      let finalIndividuals = [...selectedTaskIndividuals]
+      if (taskRecipientMode === 'group' && selectedTaskPositions.length > 0) {
+        const groupMembers = teamMembers
+          .filter(member => member.position && selectedTaskPositions.includes(member.position) && member.is_active && member.email)
+          .map(member => member.email!)
+        finalIndividuals = [...new Set([...selectedTaskIndividuals, ...groupMembers])]
+      }
+
+      const payload = {
+        title: newTask.title.trim(),
+        description: newTask.description.trim() || null,
+        due_date: newTask.due_date || null,
+        priority: newTask.priority,
+        status: statusOverride ?? editingTask.status,
+        assigned_to: newTask.assigned_to || null,
+        target_positions: taskRecipientMode === 'group' ? selectedTaskPositions : null,
+        target_individuals: finalIndividuals.length > 0 ? finalIndividuals : null,
+        tags: newTask.tags,
+        updated_at: new Date().toISOString(),
+      }
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(payload as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', Number(editingTask.id))
+        .select()
+        .single()
+      if (error) throw error
+      setTasks(prev => prev.map(task => (task.id === editingTask.id ? (data as unknown as Task) : task)))
+      closeTaskModal()
+    } catch (e) {
+      console.error(e)
+      alert('업무 수정 중 오류가 발생했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -1553,57 +1707,101 @@ export default function TeamBoardPageInner() {
                           activeTasks
                             .filter(task => task.status === status)
                             .map(task => (
-                              <div key={task.id} className="bg-white p-2 border rounded-md shadow-sm">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center">
-                                    <span className={`text-sm ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
+                              <div
+                                key={task.id}
+                                className={`bg-white p-2 border rounded-md shadow-sm ${getTaskPriorityBorderClass(task.priority)}`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {(() => {
+                                      const badge = getTaskPriorityBadge(task.priority)
+                                      return (
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${badge.className}`}>
+                                          {badge.label}
+                                        </span>
+                                      )
+                                    })()}
+                                    <span className={`text-sm truncate ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
                                       {task.title}
                                     </span>
                                   </div>
-                                  <div className="text-xs text-gray-400">
-                                    {task.priority === 'urgent' ? '긴급' : 
-                                     task.priority === 'high' ? '높음' : 
-                                     task.priority === 'medium' ? '보통' : '낮음'}
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {canEditTask(task) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditTask(task)}
+                                        className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                        title="수정"
+                                      >
+                                        <Edit className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    {isAdminUser && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => void completeTask(task.id)}
+                                          className="px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                        >
+                                          완료
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => void deleteTaskSoft(task.id)}
+                                          className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
+                                        >
+                                          삭제
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  작성: {new Date(task.created_at).toLocaleString()}
-                                </p>
+                                <div className="flex items-start justify-between gap-2 mt-1">
+                                  <p className="text-xs text-gray-400 shrink-0">
+                                    작성: {new Date(task.created_at).toLocaleString()}
+                                  </p>
+                                  <CommentThread
+                                    comments={getCommentsByTarget('task', task.id)}
+                                    value={commentInputs[getCommentKey('task', task.id)] || ''}
+                                    onChange={(value) => setCommentInput('task', task.id, value)}
+                                    onSubmit={() => addComment('task', task.id)}
+                                    onDelete={deleteComment}
+                                    canDelete={canDeleteComment}
+                                    teamMembers={teamMembers}
+                                    compact
+                                    alignRight
+                                    enabled={isCommentsFeatureEnabled}
+                                  />
+                                </div>
+                                <div className="mt-1 text-xs text-gray-500 flex items-center flex-wrap gap-1">
+                                  <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                                    {getTeamMemberDisplayName(task.created_by, teamMembers)}
+                                  </span>
+                                  <span className="mx-0.5">&gt;</span>
+                                  {(() => {
+                                    const targets = getTaskTargetBadges(task, teamMembers)
+                                    return targets.length > 0 ? (
+                                      <span className="flex items-center flex-wrap gap-1">
+                                        {targets.map(target => (
+                                          <span
+                                            key={`${task.id}-target-${target.key}`}
+                                            className={`px-2 py-0.5 rounded-full ${target.className}`}
+                                          >
+                                            {target.label}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">전체</span>
+                                    )
+                                  })()}
+                                </div>
                                 {task.description && <p className="text-xs text-gray-500 mt-1">{task.description}</p>}
                                 {task.due_date && (
                                   <p className="text-xs text-gray-400 mt-1">
                                     마감: {new Date(task.due_date).toLocaleDateString()}
                                   </p>
                                 )}
-                                {isAdminUser && (
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => void completeTask(task.id)}
-                                      className="px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                                    >
-                                      완료
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void deleteTaskSoft(task.id)}
-                                      className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
-                                    >
-                                      삭제
-                                    </button>
-                                  </div>
-                                )}
-                                <CommentThread
-                                  comments={getCommentsByTarget('task', task.id)}
-                                  value={commentInputs[getCommentKey('task', task.id)] || ''}
-                                  onChange={(value) => setCommentInput('task', task.id, value)}
-                                  onSubmit={() => addComment('task', task.id)}
-                                  onDelete={deleteComment}
-                                  canDelete={canDeleteComment}
-                                  teamMembers={teamMembers}
-                                  compact
-                                  enabled={isCommentsFeatureEnabled}
-                                />
                               </div>
                             ))
                         )}
@@ -2876,13 +3074,13 @@ export default function TeamBoardPageInner() {
           </div>
         )}
 
-        {/* New Task Modal */}
-        {showNewTaskModal && (
+        {/* New / Edit Task Modal */}
+        {(showNewTaskModal || editingTask) && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">새 업무 추가</h3>
+                  <h3 className="text-lg font-semibold">{editingTask ? '업무 수정' : '새 업무 추가'}</h3>
                   <div className="flex items-center gap-2">
                     {(['low','medium','high','urgent'] as const).map((p) => (
                       <button
@@ -2923,7 +3121,7 @@ export default function TeamBoardPageInner() {
                     />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid gap-3 ${editingTask ? 'grid-cols-3' : 'grid-cols-2'}`}>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">마감일</label>
                       <input
@@ -2946,6 +3144,26 @@ export default function TeamBoardPageInner() {
                         <option value="urgent">긴급</option>
                       </select>
                     </div>
+                    {editingTask && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">상태</label>
+                        <select
+                          value={editingTask.status}
+                          onChange={(e) =>
+                            setEditingTask({
+                              ...editingTask,
+                              status: e.target.value as Task['status'],
+                            })
+                          }
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          <option value="pending">대기</option>
+                          <option value="in_progress">진행중</option>
+                          <option value="completed">완료</option>
+                          <option value="cancelled">취소</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                   
                   <div>
@@ -3099,20 +3317,17 @@ export default function TeamBoardPageInner() {
                 
                 <div className="flex justify-end space-x-2 mt-4">
                   <button
-                    onClick={() => {
-                      setShowNewTaskModal(false)
-                      setActivePositionTab('manager')
-                    }}
+                    onClick={closeTaskModal}
                     className="px-3 py-1 text-xs text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
                   >
                     취소
                   </button>
                   <button
-                    onClick={createTask}
+                    onClick={() => (editingTask ? void updateTask(editingTask.status) : void createTask())}
                     disabled={submitting}
                     className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {submitting ? '생성 중...' : '생성'}
+                    {submitting ? (editingTask ? '저장 중...' : '생성 중...') : editingTask ? '저장' : '생성'}
                   </button>
                 </div>
               </div>
@@ -3137,10 +3352,23 @@ export default function TeamBoardPageInner() {
                   <p className="text-sm text-gray-500">완료/삭제된 업무가 없습니다.</p>
                 ) : (
                   archivedTasks.map(task => (
-                    <div key={`arch-task-${task.id}`} className="border rounded p-3">
+                    <div
+                      key={`arch-task-${task.id}`}
+                      className={`border rounded p-3 ${getTaskPriorityBorderClass(task.priority)}`}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="text-sm font-medium">{task.title}</div>
+                          <div className="flex items-center gap-2">
+                            {(() => {
+                              const badge = getTaskPriorityBadge(task.priority)
+                              return (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${badge.className}`}>
+                                  {badge.label}
+                                </span>
+                              )
+                            })()}
+                            <div className="text-sm font-medium">{task.title}</div>
+                          </div>
                           <div className="text-xs text-gray-500 mt-1">
                             상태: {task.is_deleted ? '삭제됨' : task.status === 'completed' ? '완료됨' : '취소됨'} | 작성: {new Date(task.created_at).toLocaleString()}
                           </div>
@@ -3648,6 +3876,7 @@ function CommentThread({
   canDelete,
   teamMembers,
   compact = false,
+  alignRight = false,
   enabled = true,
 }: {
   comments: TeamBoardComment[]
@@ -3658,6 +3887,7 @@ function CommentThread({
   canDelete: (comment: TeamBoardComment) => boolean
   teamMembers: TeamMember[]
   compact?: boolean
+  alignRight?: boolean
   enabled?: boolean
 }) {
   const [showComposer, setShowComposer] = useState(false)
@@ -3665,8 +3895,8 @@ function CommentThread({
   const showPanel = hasComments
 
   return (
-    <div className="mt-2">
-      <div className="flex items-center gap-2">
+    <div className={alignRight ? 'shrink-0 min-w-0' : 'mt-2'}>
+      <div className={`flex items-center gap-2 ${alignRight ? 'justify-end' : ''}`}>
         <button
           type="button"
           onClick={() => {
@@ -3676,13 +3906,13 @@ function CommentThread({
             }
             setShowComposer(prev => !prev)
           }}
-          className="p-1.5 rounded-full bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors"
+          className="p-1.5 rounded-full bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
           title="댓글 입력"
         >
           <MessageCircle className="w-3.5 h-3.5" />
         </button>
         {enabled && (showComposer || value.trim().length > 0) && (
-          <div className="flex items-center gap-2 flex-1">
+          <div className={`flex items-center gap-2 ${alignRight ? 'max-w-[12rem] sm:max-w-xs' : 'flex-1'}`}>
             <input
               type="text"
               value={value}
@@ -3695,7 +3925,7 @@ function CommentThread({
                 }
               }}
               placeholder="댓글 입력..."
-              className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={`px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${alignRight ? 'w-full min-w-0' : 'flex-1'}`}
             />
             <button
               type="button"
@@ -3703,7 +3933,7 @@ function CommentThread({
                 onSubmit()
                 setShowComposer(false)
               }}
-              className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0"
             >
               등록
             </button>
@@ -3712,7 +3942,8 @@ function CommentThread({
       </div>
 
       {enabled && showPanel && (
-        <div className={`mt-2 border rounded-md bg-gray-50 ${compact ? 'p-2' : 'p-3'}`}>
+        <div className={`${alignRight ? 'mt-1 flex justify-end' : 'mt-2'}`}>
+          <div className={`border rounded-md bg-gray-50 ${compact ? 'p-2' : 'p-3'} ${alignRight ? 'w-full max-w-md' : 'w-full'}`}>
           {hasComments && (
             <div className="space-y-1 mb-2 max-h-28 overflow-y-auto">
               {comments.map((comment) => {
@@ -3740,6 +3971,7 @@ function CommentThread({
               })}
             </div>
           )}
+          </div>
         </div>
       )}
     </div>

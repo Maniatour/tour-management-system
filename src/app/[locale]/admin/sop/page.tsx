@@ -12,6 +12,7 @@ import AdminStructuredDocPublishTab, {
   type StructuredDocDualCompliance,
   type StructuredDocVersionRow,
 } from '@/components/sop/AdminStructuredDocPublishTab'
+import CompanySopTourChecklistManagement from '@/components/sop/CompanySopTourChecklistManagement'
 import CompanySopDispatchManagement from '@/components/sop/CompanySopDispatchManagement'
 
 type SopVersion = StructuredDocVersionRow
@@ -206,6 +207,14 @@ export default function AdminSopPage() {
               ? 'View signature compliance and published versions below.'
               : '아래에서 서명 현황과 게시된 버전을 확인할 수 있습니다.'}
         </p>
+        <p className="mt-2 text-sm">
+          <Link
+            href={`/${locale}/admin/operations-hub`}
+            className="text-indigo-600 hover:text-indigo-800 underline-offset-2 hover:underline"
+          >
+            {uiLocaleEn ? 'Operations hub (manuals & workflows)' : '운영 허브 (매뉴얼·워크플로) →'}
+          </Link>
+        </p>
       </div>
 
       {canManage ? (
@@ -270,18 +279,7 @@ export default function AdminSopPage() {
           </div>
 
           {sopAdminTab === 'tour-checklists' ? (
-            <div className="p-6" role="tabpanel">
-              <p className="text-sm leading-relaxed text-gray-700">
-                {uiLocaleEn
-                  ? 'Here you will link SOP checklist lines to tours and track guide completion. Database and UI for tour-level checklist assignments are not connected yet; this tab reserves the workflow.'
-                  : 'SOP에 정의한 체크 줄을 투어별로 붙이고, 가이드 이행 여부를 관리하는 화면입니다. 투어 연동·저장 테이블은 아직 연결 전이며, 이 탭에서 작업 흐름을 확장할 예정입니다.'}
-              </p>
-              <p className="mt-3 text-xs text-gray-500">
-                {uiLocaleEn
-                  ? 'Checklist line IDs are stored in the published SOP body_structure for future use.'
-                  : '체크 줄 id는 게시된 SOP의 body_structure에 포함되어 추후 투어와 매칭할 수 있습니다.'}
-              </p>
-            </div>
+            <CompanySopTourChecklistManagement uiLocaleEn={uiLocaleEn} locale={locale} />
           ) : sopAdminTab === 'dispatch' ? (
             <CompanySopDispatchManagement uiLocaleEn={uiLocaleEn} />
           ) : sopAdminTab === 'edit' ? (

@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { Send } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -15,6 +14,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import LightRichEditor from '@/components/LightRichEditor'
+import StructuredDocCompliancePanels from '@/components/sop/StructuredDocCompliancePanels'
+import type { StructuredDocDualCompliance, StructuredDocVersionRow } from '@/components/sop/structuredDocAdminTypes'
+export type { StructuredDocDualCompliance, StructuredDocVersionRow } from '@/components/sop/structuredDocAdminTypes'
 import SopStructureEditor from '@/components/sop/SopStructureEditor'
 import SopPrintPreviewFrame from '@/components/sop/SopPrintPreviewFrame'
 import SopFreeformPrintPreviewFrame from '@/components/sop/SopFreeformPrintPreviewFrame'
@@ -102,16 +104,6 @@ function KoEnLangSwitch({
   )
 }
 
-export type StructuredDocVersionRow = {
-  id: string
-  version_number: number
-  title: string
-  body_md: string | null
-  body_structure: unknown
-  freeform_markdown?: string | null
-  published_at: string
-}
-
 type ModalMainTab = 'preview' | 'structure' | 'freeform'
 
 type SectionAuditRow = {
@@ -123,25 +115,7 @@ type SectionAuditRow = {
   section_json: Json
 }
 
-type ComplianceSigRow = {
-  signer_email: string
-  signer_name: string
-  signed_at: string
-  pdf_storage_path: string
-}
-
 type TeamRow = { email: string; name_ko: string | null; name_en: string | null }
-
-export type StructuredDocDualCompliance = {
-  team: TeamRow[]
-  sopLatest: StructuredDocVersionRow | null
-  sopSigs: ComplianceSigRow[]
-  contractLatest: StructuredDocVersionRow | null
-  contractSigs: ComplianceSigRow[]
-  onOpenPdf: (path: string, bucket: 'sop-signatures' | 'employee-contract-signatures') => void
-  openingPdf: string | null
-  openingPdfBucket: 'sop-signatures' | 'employee-contract-signatures'
-}
 
 function defaultEditorSopDocument(): SopDocument {
   return prefillSortOrders({
@@ -164,14 +138,6 @@ function cloneSopDocument(doc: SopDocument): SopDocument {
   return parsed ? prefillSortOrders(parsed) : doc
 }
 
-function sigMap(rows: ComplianceSigRow[]) {
-  const m = new Map<string, ComplianceSigRow>()
-  for (const s of rows) {
-    m.set(s.signer_email.trim().toLowerCase(), s)
-  }
-  return m
-}
-
 function DualCompliancePanels({
   uiLocaleEn,
   locale,
@@ -181,107 +147,7 @@ function DualCompliancePanels({
   locale: string
   bundle: StructuredDocDualCompliance
 }) {
-  const { team, sopLatest, sopSigs, contractLatest, contractSigs, onOpenPdf, openingPdf, openingPdfBucket } = bundle
-  const sopMap = useMemo(() => sigMap(sopSigs), [sopSigs])
-  const contractMap = useMemo(() => sigMap(contractSigs), [contractSigs])
-
-  const col = (
-    title: string,
-    latest: StructuredDocVersionRow | null,
-    sigs: Map<string, ComplianceSigRow>,
-    docRoute: 'sop' | 'employee-contract',
-    bucket: 'sop-signatures' | 'employee-contract-signatures'
-  ) => (
-    <div className="min-w-0 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      {!latest ? (
-        <p className="mt-2 text-xs text-gray-600">{uiLocaleEn ? 'No published version yet.' : '게시된 버전이 없습니다.'}</p>
-      ) : (
-        <>
-          <p className="mt-1 text-xs text-gray-700">
-            {uiLocaleEn ? 'Version' : '제'} {latest.version_number} — {latest.title}{' '}
-            <Link
-              className="text-blue-600 underline"
-              href={
-                docRoute === 'sop'
-                  ? `/${locale}/sop/sign?version=${latest.id}`
-                  : `/${locale}/employee-contract/sign?version=${latest.id}`
-              }
-            >
-              {uiLocaleEn ? 'Sign page' : '서명 페이지'}
-            </Link>
-          </p>
-          <div className="mt-2 max-h-64 overflow-auto rounded border border-gray-100">
-            <table className="min-w-full text-xs">
-              <thead className="bg-gray-50 text-left">
-                <tr>
-                  <th className="px-2 py-1.5">{uiLocaleEn ? 'Member' : '팀원'}</th>
-                  <th className="px-2 py-1.5">{uiLocaleEn ? 'Status' : '상태'}</th>
-                  <th className="px-2 py-1.5">PDF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {team.map((t) => {
-                  const sig = sigs.get(t.email.trim().toLowerCase())
-                  const label = uiLocaleEn ? t.name_en || t.name_ko || t.email : t.name_ko || t.name_en || t.email
-                  return (
-                    <tr key={t.email} className="border-t border-gray-100">
-                      <td className="px-2 py-1.5">
-                        <div className="font-medium text-gray-900">{label}</div>
-                        <div className="truncate text-gray-500">{t.email}</div>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {sig ? (
-                          <span className="text-green-700">{uiLocaleEn ? 'Signed' : '완료'}</span>
-                        ) : (
-                          <span className="text-amber-700">{uiLocaleEn ? 'Pending' : '미서명'}</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {sig ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            disabled={openingPdf === sig.pdf_storage_path && openingPdfBucket === bucket}
-                            onClick={() => onOpenPdf(sig.pdf_storage_path, bucket)}
-                          >
-                            PDF
-                          </Button>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  )
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {col(
-        uiLocaleEn ? 'SOP signature status (latest version)' : 'SOP 서명 현황 (최신 버전)',
-        sopLatest,
-        sopMap,
-        'sop',
-        'sop-signatures'
-      )}
-      {col(
-        uiLocaleEn ? 'Employment contract signature status' : '직원 계약서 서명 현황 (최신 버전)',
-        contractLatest,
-        contractMap,
-        'employee-contract',
-        'employee-contract-signatures'
-      )}
-    </div>
-  )
+  return <StructuredDocCompliancePanels uiLocaleEn={uiLocaleEn} locale={locale} bundle={bundle} />
 }
 
 export default function AdminStructuredDocPublishTab({

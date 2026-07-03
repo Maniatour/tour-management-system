@@ -1,4 +1,5 @@
 import { markdownToHtml } from '@/components/LightRichEditor'
+import { sopCategoryAnchorId, sopSectionAnchorId } from '@/lib/sopDocumentToc'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { checklistItemDepth, orderedChecklistItems, sopText } from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
@@ -8,6 +9,8 @@ type Props = {
   viewLang: SopEditLocale
   /** card: 섹션별 테두리 박스(기본). flat: 인쇄·PDF에 가까운 단순 구분선. */
   layout?: 'card' | 'flat'
+  /** true면 섹션·카테고리에 scroll 앵커 id 부여 */
+  anchors?: boolean
 }
 
 function RichLine({ text, flat }: { text: string; flat?: boolean }) {
@@ -24,7 +27,7 @@ function RichLine({ text, flat }: { text: string; flat?: boolean }) {
   )
 }
 
-export default function SopDocumentReadonly({ doc, viewLang, layout = 'card' }: Props) {
+export default function SopDocumentReadonly({ doc, viewLang, layout = 'card', anchors = false }: Props) {
   const flat = layout === 'flat'
   const sections = [...doc.sections].sort((a, b) => a.sort_order - b.sort_order)
   const docTitle = sopText(doc.title_ko, doc.title_en, viewLang)
@@ -46,7 +49,9 @@ export default function SopDocumentReadonly({ doc, viewLang, layout = 'card' }: 
         return (
           <section
             key={s.id}
+            id={anchors ? sopSectionAnchorId(s.id) : undefined}
             className={cn(
+              anchors && 'scroll-mt-20',
               flat
                 ? 'border-b border-gray-300 pb-8 last:border-b-0 last:pb-0'
                 : 'rounded-lg border border-gray-200 bg-white p-4 shadow-sm'
@@ -72,7 +77,11 @@ export default function SopDocumentReadonly({ doc, viewLang, layout = 'card' }: 
                   const chkOrdered = orderedChecklistItems(chk)
                   const byId = chk?.length ? new Map(chk.map((x) => [x.id, x])) : null
                   return (
-                    <div key={c.id}>
+                    <div
+                      key={c.id}
+                      id={anchors ? sopCategoryAnchorId(c.id) : undefined}
+                      className={cn(anchors && 'scroll-mt-20')}
+                    >
                       <h3
                         className={cn(
                           'font-semibold text-gray-800 mb-1 flex gap-2 items-start prose prose-sm max-w-none',

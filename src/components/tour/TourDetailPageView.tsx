@@ -36,6 +36,7 @@ import { TourFinance } from '@/components/tour/TourFinance'
 import { TourPhotos } from '@/components/tour/TourPhotos'
 import { TourChat } from '@/components/tour/TourChat'
 import TourHeader from '@/components/tour/TourHeader'
+import TourSopChecklistPanel from '@/components/sop/TourSopChecklistPanel'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
@@ -61,6 +62,7 @@ import {
   fetchPickupGroupPresetWithReps,
   buildPickupResolveContextFromTour,
   normalizeGroupModeOverrides,
+  normalizeGroupRepresentativeOverrides,
   type PickupGroupPresetRow,
   type PickupGroupPresetWithReps,
   type PickupGroupMode,
@@ -93,7 +95,8 @@ import {
   FileText,
   Menu,
   X,
-  Printer
+  Printer,
+  ListChecks
 } from 'lucide-react'
 
 const PickupScheduleEmailPreviewModal = dynamic(
@@ -220,6 +223,14 @@ export function TourDetailPageView({
     [tourData.tour?.pickup_group_mode_overrides]
   )
 
+  const pickupGroupRepresentativeOverrides = useMemo(
+    () =>
+      normalizeGroupRepresentativeOverrides(
+        tourData.tour?.pickup_group_representative_overrides
+      ),
+    [tourData.tour?.pickup_group_representative_overrides]
+  )
+
   const pickupResolveContext = useMemo(
     () =>
       buildPickupResolveContextFromTour(
@@ -227,6 +238,7 @@ export function TourDetailPageView({
           use_representative_pickup: tourData.tour?.use_representative_pickup ?? null,
           pickup_group_preset_id: tourData.tour?.pickup_group_preset_id ?? null,
           pickup_group_mode_overrides: pickupGroupModeOverrides,
+          pickup_group_representative_overrides: pickupGroupRepresentativeOverrides,
         },
         activePickupPreset
       ),
@@ -234,6 +246,7 @@ export function TourDetailPageView({
       tourData.tour?.use_representative_pickup,
       tourData.tour?.pickup_group_preset_id,
       pickupGroupModeOverrides,
+      pickupGroupRepresentativeOverrides,
       activePickupPreset,
     ]
   )
@@ -241,6 +254,7 @@ export function TourDetailPageView({
   useEffect(() => {
     const sections = [
       'tour-info',
+      'sop-checklist',
       'tour-weather',
       'pickup-schedule',
       'tour-schedule',
@@ -1518,6 +1532,34 @@ export function TourDetailPageView({
     })
   }
 
+  const handleGroupRepresentativeOverrideChange = async (
+    groupIndex: number,
+    hotelId: string | null
+  ) => {
+    if (!tourData.tour?.id) return
+    const next = { ...pickupGroupRepresentativeOverrides }
+    if (hotelId) {
+      next[String(groupIndex)] = hotelId
+    } else {
+      delete next[String(groupIndex)]
+    }
+    const { error } = await supabase
+      .from('tours')
+      .update({ pickup_group_representative_overrides: next } as never)
+      .eq('id', tourData.tour.id)
+
+    if (error) {
+      console.error('그룹 대표 픽업 호텔 저장 오류:', error)
+      alert(t('pickupSchedule.groupRepSaveFailed'))
+      throw error
+    }
+
+    tourData.setTour({
+      ...tourData.tour,
+      pickup_group_representative_overrides: next,
+    })
+  }
+
   const handleSavePickupSchedule = async (pickupTimes: Record<string, string>) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -2069,6 +2111,27 @@ export function TourDetailPageView({
             />
             </div>
 
+            {/* SOP 체크리스트 */}
+            {tourData.tour?.id ? (
+              <div id="sop-checklist" className="scroll-mt-20">
+                <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+                    <ListChecks className="h-5 w-5 text-indigo-600" />
+                    <h2 className="text-base font-semibold text-gray-900">SOP 체크리스트</h2>
+                  </div>
+                  <div className="p-4">
+                    <TourSopChecklistPanel
+                      tourId={tourData.tour.id}
+                      productId={tourData.tour.product_id}
+                      tourDate={tourData.tour.tour_date}
+                      locale={locale}
+                      mode="admin"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
         {/* 날씨 정보 섹션 */}
         <div id="tour-weather" className="scroll-mt-20">
           <div className="bg-white rounded-lg shadow-sm border">
@@ -2116,8 +2179,10 @@ export function TourDetailPageView({
               activePresetId={tourData.tour?.pickup_group_preset_id ?? null}
               activePreset={activePickupPreset}
               groupModeOverrides={pickupGroupModeOverrides}
+              groupRepresentativeOverrides={pickupGroupRepresentativeOverrides}
               onPickupPresetChange={handlePickupPresetChange}
               onGroupModeOverrideChange={handleGroupModeOverrideChange}
+              onGroupRepresentativeOverrideChange={handleGroupRepresentativeOverrideChange}
         />
         </div>
 
@@ -2338,6 +2403,7 @@ export function TourDetailPageView({
             <div className="p-2 space-y-1">
               {[
                 { id: 'tour-info', label: '기본정보', icon: Info },
+                { id: 'sop-checklist', label: 'SOP 체크', icon: ListChecks },
                 { id: 'tour-weather', label: '날씨', icon: Cloud },
                 { id: 'pickup-schedule', label: '픽업 스케줄', icon: MapPin },
                 { id: 'tour-schedule', label: '투어 스케줄', icon: Calendar },

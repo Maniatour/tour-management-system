@@ -99,6 +99,12 @@ export default function GuideTeamBoard() {
       
       if (!currentUserEmail) return
 
+      try {
+        await supabase.rpc('apply_due_op_todo_resets')
+      } catch (resetErr) {
+        console.warn('apply_due_op_todo_resets skipped:', resetErr)
+      }
+
       // 할 일 목록 로드 (가이드 담당자만)
       const { data: todosData, error: todosError } = await supabase
         .from('op_todos')

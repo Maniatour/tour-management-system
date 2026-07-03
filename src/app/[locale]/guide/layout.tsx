@@ -538,10 +538,10 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/team-board`)
+              router.push(`/${currentLocale}/guide/operations-hub`)
             }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
-              pathname.includes('/guide/team-board')
+              pathname.includes('/guide/operations-hub')
                 ? 'text-indigo-600'
                 : 'text-gray-600 hover:text-indigo-600'
             }`}

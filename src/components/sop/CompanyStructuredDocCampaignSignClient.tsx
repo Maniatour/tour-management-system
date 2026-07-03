@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
-import { loadJsPDF } from '@/lib/lazyPdfLibs'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
+import SopDocumentWithToc from '@/components/sop/SopDocumentWithToc'
+import SopSignedPdfPrintRoot from '@/components/sop/SopSignedPdfPrintRoot'
+import { captureSignedStructuredDocPdfBlob } from '@/lib/sopPreviewPrintAndPdf'
 import { markdownToHtml } from '@/components/LightRichEditor'
 import {
   parseSopDocumentJson,
-  flattenSopDocumentToPlainText,
   sopText,
   type SopDocument,
   type SopEditLocale,
@@ -57,6 +57,7 @@ export default function CompanyStructuredDocCampaignSignClient() {
   const isEn = locale === 'en'
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pdfPrintRootRef = useRef<HTMLDivElement | null>(null)
   const drawing = useRef(false)
   const [campaign, setCampaign] = useState<CampaignRow | null>(null)
   const [recipient, setRecipient] = useState<RecipientRow | null>(null)
@@ -198,61 +199,15 @@ export default function CompanyStructuredDocCampaignSignClient() {
     try {
       const c = canvasRef.current!
       const sigDataUrl = c.toDataURL('image/png')
-      const jsPDF = await loadJsPDF()
-      const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-      const margin = 40
-      const pageW = doc.internal.pageSize.getWidth()
-      const maxW = pageW - 2 * margin
-      let y = margin
-
-      doc.setFontSize(16)
-      doc.setFont('helvetica', 'bold')
-      doc.text(campaign.title || (campaign.doc_kind === 'sop' ? 'SOP' : 'Contract'), margin, y)
-      y += 28
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      const meta = isEn
-        ? `Acknowledgment · Sent ${new Date(campaign.created_at).toLocaleString()}`
-        : `확인·서명 요청 · 발송 ${new Date(campaign.created_at).toLocaleString('ko-KR')}`
-      doc.text(meta, margin, y)
-      y += 22
-
-      const bodyText = structureDoc
-        ? flattenSopDocumentToPlainText(structureDoc, viewLang)
-        : ''
-
-      doc.setFontSize(11)
-      const lines = doc.splitTextToSize(bodyText, maxW) as string[]
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        if (y > doc.internal.pageSize.getHeight() - 120) {
-          doc.addPage()
-          y = margin
-        }
-        doc.text(line, margin, y)
-        y += 14
+      const printRoot = pdfPrintRootRef.current
+      if (!printRoot) {
+        setSubmitError(isEn ? 'PDF layout not ready.' : 'PDF 준비가 되지 않았습니다.')
+        setSubmitting(false)
+        return
       }
 
-      y += 16
-      doc.setFont('helvetica', 'bold')
-      doc.text(isEn ? 'Signature' : '서명', margin, y)
-      y += 12
-      doc.addImage(sigDataUrl, 'PNG', margin, y, 220, 70)
-      y += 88
-      doc.setFont('helvetica', 'normal')
-      doc.text(
-        `${isEn ? 'Name' : '이름'}: ${authUser.name}  ·  ${isEn ? 'Email' : '이메일'}: ${authUser.email}`,
-        margin,
-        y
-      )
-      y += 16
-      doc.text(
-        `${isEn ? 'Signed at' : '서명 시각'}: ${new Date().toLocaleString(isEn ? 'en-US' : 'ko-KR')}`,
-        margin,
-        y
-      )
-
-      const blob = doc.output('blob')
+      const signedAtText = new Date().toLocaleString(isEn ? 'en-US' : 'ko-KR')
+      const blob = await captureSignedStructuredDocPdfBlob(printRoot, sigDataUrl, signedAtText)
       const storagePath = `${authUser.id}/${campaign.id}.pdf`
       const bucket = 'structured-doc-campaign-signatures'
 
@@ -366,8 +321,28 @@ export default function CompanyStructuredDocCampaignSignClient() {
       ? (sopText(structureDoc.title_ko, structureDoc.title_en, viewLang).trim() || campaign.title)
       : campaign.title
 
+  const pdfMetaLines = [
+    isEn
+      ? `Acknowledgment · Sent ${new Date(campaign.created_at).toLocaleString()}`
+      : `확인·서명 요청 · 발송 ${new Date(campaign.created_at).toLocaleString('ko-KR')}`,
+  ]
+
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6 space-y-6">
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+      <SopSignedPdfPrintRoot
+        ref={pdfPrintRootRef}
+        title={headingText}
+        metaLines={pdfMetaLines}
+        doc={structureDoc}
+        viewLang={viewLang}
+        signatureHeading={isEn ? 'Signature' : '서명'}
+        nameLabel={isEn ? 'Name' : '이름'}
+        emailLabel={isEn ? 'Email' : '이메일'}
+        signedAtLabel={isEn ? 'Signed at' : '서명 시각'}
+        signerName={authUser?.name || ''}
+        signerEmail={authUser?.email || ''}
+        signedAt={new Date().toLocaleString(isEn ? 'en-US' : 'ko-KR')}
+      />
       <div>
         <div
           className="text-2xl font-bold text-gray-900 prose prose-sm max-w-none"
@@ -388,13 +363,13 @@ export default function CompanyStructuredDocCampaignSignClient() {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 max-h-[60vh] overflow-y-auto">
-        {structureDoc ? (
-          <SopDocumentReadonly doc={structureDoc} viewLang={viewLang} />
-        ) : (
+      {structureDoc ? (
+        <SopDocumentWithToc doc={structureDoc} viewLang={viewLang} uiLocaleEn={isEn} />
+      ) : (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
           <p className="text-gray-600">{isEn ? 'No structured content.' : '구조화된 본문이 없습니다.'}</p>
-        )}
-      </div>
+        </div>
+      )}
 
       <div>
         <p className="text-sm font-medium text-gray-800 mb-2">

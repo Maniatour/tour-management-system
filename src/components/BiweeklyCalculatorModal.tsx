@@ -54,6 +54,24 @@ interface AttendanceRecord {
   employee_name: string
 }
 
+function settlementPayMode(method: AttendanceSettlementMethod): 'applied' | 'all_legacy' {
+  return method === 'legacy_auto' ? 'all_legacy' : 'applied'
+}
+
+function cumulativeSettlementHours(
+  records: AttendanceRecord[],
+  index: number,
+  sorted: AttendanceRecord[],
+  mealDates: Set<string>,
+  method: AttendanceSettlementMethod
+): number {
+  const mode = settlementPayMode(method)
+  return records.slice(0, index + 1).reduce(
+    (sum, r) => sum + (r.work_hours ? adjustedWorkHoursForPay(r, sorted, mealDates, mode) : 0),
+    0
+  )
+}
+
 interface TourFee {
   id: string
   tour_id: string
@@ -111,6 +129,8 @@ function teamMemberMatchesSearch(member: BiweeklyTeamMember, query: string): boo
 
 const HOURLY_RATES_STORAGE_KEY = 'biweekly_hourly_rates'
 
+type AttendanceSettlementMethod = 'applied' | 'legacy_auto'
+
 function getSavedHourlyRates(): Record<string, string> {
   if (typeof window === 'undefined') return {}
   try {
@@ -155,6 +175,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [attendancePay, setAttendancePay] = useState<number>(0)
   /** 비교용: 전 기간「8시간 초과 시 30분 자동」규칙만 적용한 출퇴근 소계 */
   const [attendancePayLegacyAuto, setAttendancePayLegacyAuto] = useState<number>(0)
+  const [attendanceSettlementMethod, setAttendanceSettlementMethod] =
+    useState<AttendanceSettlementMethod>('applied')
   const [employeeMealDates, setEmployeeMealDates] = useState<Set<string>>(new Set())
   const [periodMealCounts, setPeriodMealCounts] = useState<Record<string, number>>({})
   const [tourPay, setTourPay] = useState<number>(0)
@@ -529,12 +551,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
   useEffect(() => {
     const sorted = sortedForMeal
+    const mode = settlementPayMode(attendanceSettlementMethod)
     const total = sorted.reduce(
-      (sum, record) => sum + adjustedWorkHoursForPay(record, sorted, employeeMealDates, 'applied'),
+      (sum, record) => sum + adjustedWorkHoursForPay(record, sorted, employeeMealDates, mode),
       0
     )
     setTotalHours(total)
-  }, [sortedForMeal, employeeMealDates])
+  }, [sortedForMeal, employeeMealDates, attendanceSettlementMethod])
 
   // 컴포넌트 마운트 시 팀 멤버 조회
   useEffect(() => {
@@ -719,6 +742,31 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setAttendancePayLegacyAuto(legacyAuto)
   }, [attendanceRecords, selectedEmployee, hourlyRate, employeeRatePeriods, employeeMealDates])
 
+  const selectedAttendancePay = useMemo(
+    () => (attendanceSettlementMethod === 'legacy_auto' ? attendancePayLegacyAuto : attendancePay),
+    [attendanceSettlementMethod, attendancePay, attendancePayLegacyAuto]
+  )
+
+  const isMealSettlement = attendanceSettlementMethod === 'applied'
+  const appliedSettlementCellClass = isMealSettlement
+    ? 'text-xs font-bold text-blue-700 tabular-nums'
+    : 'text-xs text-gray-400 tabular-nums'
+  const legacySettlementCellClass = !isMealSettlement
+    ? 'text-xs font-bold text-emerald-700 tabular-nums'
+    : 'text-xs text-gray-400 tabular-nums'
+  const appliedSettlementHeaderClass = isMealSettlement
+    ? 'px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 ring-1 ring-inset ring-blue-200'
+    : 'px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider'
+  const legacySettlementHeaderClass = !isMealSettlement
+    ? 'px-3 py-2 text-left text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 ring-1 ring-inset ring-emerald-200'
+    : 'px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider'
+  const cumulativeCellClass = isMealSettlement ? appliedSettlementCellClass : legacySettlementCellClass
+  const cumulativeHeaderClass = isMealSettlement ? appliedSettlementHeaderClass : legacySettlementHeaderClass
+  const cumulativeColumnLabel = isMealSettlement ? '누적(식사)' : '누적(8h)'
+  const totalHoursLabel = isMealSettlement
+    ? '총 근무 시간 (식사 횟수 기준):'
+    : '총 근무 시간 (8시간 기준):'
+
   // localStorage에 저장된 시급이 없을 때, 기간 종료일 기준 DB 직원 시급과 입력칸 맞춤
   useEffect(() => {
     if (!isOpen || !selectedEmployee || !endDate) return
@@ -728,11 +776,11 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setHourlyRate(String(getHourlyRateForEmployeeOnDate(employeeRatePeriods, selectedEmployee, endDate, 15)))
   }, [isOpen, endDate, startDate, selectedEmployee, employeeRatePeriods])
 
-  // attendancePay, tourPay, tipPay, personalCarPay가 변경될 때마다 총 급여 계산
+  // 선택한 출퇴근 정산법·투어·팁·Personal Car 변경 시 총 급여 계산
   useEffect(() => {
-    const total = calculateTotalPay(attendancePay, tourPay, tipPay, personalCarPay)
+    const total = calculateTotalPay(selectedAttendancePay, tourPay, tipPay, personalCarPay)
     setTotalPay(total)
-  }, [attendancePay, tourPay, tipPay, personalCarPay])
+  }, [selectedAttendancePay, tourPay, tipPay, personalCarPay])
 
   // 투어 Fee 테이블의 Prepaid Tips 합계를 Tips Share Subtotal(tipPay)과 동기화 (Pay Summary와 아래 테이블 일치)
   useEffect(() => {
@@ -1209,6 +1257,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       paySummary: 'Pay Summary',
       totalWorkHours: 'Total Work Hours:',
       attendancePay: 'Attendance Pay:',
+      attendancePayAppliedLine: 'Attendance (30min off by meal count):',
       guideFeeSubtotal: 'Guide Fee Subtotal:',
       tipsShareSubtotal: 'Tips Share Subtotal:',
       personalCarSubtotal: 'Personal Car Subtotal:',
@@ -1221,7 +1270,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       hoursDeducted: 'Deduction',
       hoursAfterApplied: 'Paid hrs (applied rule)',
       hoursLegacy8h: 'Compare (8h auto)',
-      attendancePayLegacyLine: 'Attendance (compare · 8h auto all dates):',
+      attendancePayLegacyLine: 'Attendance (30min off when over 8h):',
       periodOfficeMeals: 'Office meals in period (count by person)',
       status: 'Status',
       cumulative: 'Cumulative',
@@ -1246,6 +1295,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       paySummary: '급여 계산',
       totalWorkHours: '총 근무시간:',
       attendancePay: '출퇴근 기록 소계:',
+      attendancePayAppliedLine: '출퇴근 소계 (식사 횟수에 따른 30분 제외):',
       guideFeeSubtotal: '가이드 Fee 소계:',
       tipsShareSubtotal: 'Tips 쉐어 소계:',
       personalCarSubtotal: 'Personal Car 소계:',
@@ -1258,7 +1308,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       hoursDeducted: '차감 시간',
       hoursAfterApplied: '적용 정산 시간',
       hoursLegacy8h: '비교(8시간 자동)',
-      attendancePayLegacyLine: '출퇴근 소계 (비교·8시간 자동 전 구간):',
+      attendancePayLegacyLine: '출퇴근 소계 (8시간 이상 근무시 30분 제외):',
       periodOfficeMeals: '기간 내 사무실 식사 (인원별 횟수)',
       status: '상태',
       cumulative: '누적 시간',
@@ -1453,12 +1503,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>${pr.formatWorkHours(totalHours)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>${pr.attendancePay}</span>
-                  <span>$${formatCurrency(attendancePay)}</span>
-                </div>
-                <div class="calculation-item">
-                  <span>${pr.attendancePayLegacyLine}</span>
-                  <span>$${formatCurrency(attendancePayLegacyAuto)}</span>
+                  <span>${attendanceSettlementMethod === 'legacy_auto' ? pr.attendancePayLegacyLine : pr.attendancePayAppliedLine}</span>
+                  <span>$${formatCurrency(selectedAttendancePay)}</span>
                 </div>
                 <div class="calculation-item">
                   <span>${pr.guideFeeSubtotal}</span>
@@ -1498,13 +1544,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               </thead>
               <tbody>
                 ${attendanceRecords.map((record, idx) => {
-                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce(
-                    (sum, r) =>
-                      sum +
-                      (r.work_hours
-                        ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
-                        : 0),
-                    0
+                  const cumulative = cumulativeSettlementHours(
+                    attendanceRecords,
+                    idx,
+                    sortedForMeal,
+                    employeeMealDates,
+                    attendanceSettlementMethod
                   )
                   const whA = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
@@ -1891,12 +1936,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>${pr.formatWorkHours(totalHours)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>${pr.attendancePay}</span>
-                  <span>$${formatCurrency(attendancePay)}</span>
-                </div>
-                <div class="calculation-item">
-                  <span>${pr.attendancePayLegacyLine}</span>
-                  <span>$${formatCurrency(attendancePayLegacyAuto)}</span>
+                  <span>${attendanceSettlementMethod === 'legacy_auto' ? pr.attendancePayLegacyLine : pr.attendancePayAppliedLine}</span>
+                  <span>$${formatCurrency(selectedAttendancePay)}</span>
                 </div>
                 <div class="calculation-item">
                   <span>${pr.guideFeeSubtotal}</span>
@@ -1936,13 +1977,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               </thead>
               <tbody>
                 ${attendanceRecords.map((record, idx) => {
-                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce(
-                    (sum, r) =>
-                      sum +
-                      (r.work_hours
-                        ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
-                        : 0),
-                    0
+                  const cumulative = cumulativeSettlementHours(
+                    attendanceRecords,
+                    idx,
+                    sortedForMeal,
+                    employeeMealDates,
+                    attendanceSettlementMethod
                   )
                   const whA = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
@@ -2562,31 +2602,33 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">
                     <Clock className="w-3 h-3 inline mr-1" />
-                    총 근무 시간 (적용 정산):
+                    {totalHoursLabel}
                   </span>
-                  <span className="text-sm font-bold text-blue-600">
+                  <span className={`text-sm font-bold tabular-nums ${isMealSettlement ? 'text-blue-600' : 'text-emerald-700'}`}>
                     {loading ? '계산 중...' : formatWorkHours(totalHours)}
                   </span>
                 </div>
                 
                 {hourlyRate && !isNaN(Number(hourlyRate)) && (
                   <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-600">
-                        <DollarSign className="w-3 h-3 inline mr-1" />
-                        출퇴근 소계 (적용 정산):
-                      </span>
-                      <span className="text-sm font-bold text-blue-600">
-                        ${formatCurrency(attendancePay)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-600">
-                        <DollarSign className="w-3 h-3 inline mr-1" />
-                        출퇴근 소계 (비교·8시간 자동 전 구간):
-                      </span>
-                      <span className="text-sm font-bold text-slate-600">
-                        ${formatCurrency(attendancePayLegacyAuto)}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-1 items-center gap-1">
+                        <DollarSign className="h-3 w-3 shrink-0 text-gray-600" />
+                        <span className="shrink-0 text-xs font-medium text-gray-600">출퇴근 소계</span>
+                        <select
+                          value={attendanceSettlementMethod}
+                          onChange={(e) =>
+                            setAttendanceSettlementMethod(e.target.value as AttendanceSettlementMethod)
+                          }
+                          className="min-w-0 max-w-[14rem] flex-1 rounded border border-gray-300 bg-white px-1 py-0.5 text-[10px] focus:ring-1 focus:ring-blue-500"
+                          aria-label="출퇴근 소계 정산법"
+                        >
+                          <option value="applied">식사 횟수에 따른 30분 제외</option>
+                          <option value="legacy_auto">8시간 이상 근무시 30분 제외</option>
+                        </select>
+                      </div>
+                      <span className="shrink-0 text-sm font-bold tabular-nums text-blue-600">
+                        ${formatCurrency(selectedAttendancePay)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2671,16 +2713,13 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               {/* 모바일: 카드 리스트 */}
               <div className="md:hidden space-y-2">
                 {attendanceRecords.map((record, index) => {
-                  const cumulative = attendanceRecords
-                    .slice(0, index + 1)
-                    .reduce(
-                      (sum, r) =>
-                        sum +
-                        (r.work_hours
-                          ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
-                          : 0),
-                      0
-                    )
+                  const cumulative = cumulativeSettlementHours(
+                    attendanceRecords,
+                    index,
+                    sortedForMeal,
+                    employeeMealDates,
+                    attendanceSettlementMethod
+                  )
                   const whA = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
                     : 0
@@ -2711,13 +2750,27 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <span>근무</span>
                         <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
                         <span>차감 시간</span>
-                        <span>{deductApplied !== null ? formatWorkHours(deductApplied) : '-'}</span>
-                        <span>적용 정산</span>
-                        <span>{record.work_hours ? formatWorkHours(whA) : '-'}</span>
-                        <span>비교(8h)</span>
-                        <span>{record.work_hours ? formatWorkHours(whL) : '-'}</span>
-                        <span>누적(적용)</span>
-                        <span className="font-medium">{formatWorkHours(cumulative)}</span>
+                        <span className={appliedSettlementCellClass}>
+                          {deductApplied !== null ? formatWorkHours(deductApplied) : '-'}
+                        </span>
+                        <span className={isMealSettlement ? 'font-semibold text-blue-800' : 'text-gray-400'}>
+                          적용 정산
+                        </span>
+                        <span className={appliedSettlementCellClass}>
+                          {record.work_hours ? formatWorkHours(whA) : '-'}
+                        </span>
+                        <span className={!isMealSettlement ? 'font-semibold text-emerald-800' : 'text-gray-400'}>
+                          비교(8h)
+                        </span>
+                        <span className={legacySettlementCellClass}>
+                          {record.work_hours ? formatWorkHours(whL) : '-'}
+                        </span>
+                        <span className={isMealSettlement ? 'font-semibold text-blue-800' : 'text-emerald-800 font-semibold'}>
+                          {cumulativeColumnLabel}
+                        </span>
+                        <span className={`${cumulativeCellClass} font-medium`}>
+                          {formatWorkHours(cumulative)}
+                        </span>
                       </div>
                     </div>
                   )
@@ -2740,35 +2793,32 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         근무시간
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className={appliedSettlementHeaderClass}>
                         차감 시간
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className={appliedSettlementHeaderClass}>
                         적용 정산
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className={legacySettlementHeaderClass}>
                         비교(8h 자동)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         상태
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        누적(적용)
+                      <th className={cumulativeHeaderClass}>
+                        {cumulativeColumnLabel}
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {attendanceRecords.map((record, index) => {
-                      const cumulative = attendanceRecords
-                        .slice(0, index + 1)
-                        .reduce(
-                          (sum, r) =>
-                            sum +
-                            (r.work_hours
-                              ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
-                              : 0),
-                          0
-                        )
+                      const cumulative = cumulativeSettlementHours(
+                        attendanceRecords,
+                        index,
+                        sortedForMeal,
+                        employeeMealDates,
+                        attendanceSettlementMethod
+                      )
                       const whA = record.work_hours
                         ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
                         : 0
@@ -2792,13 +2842,13 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                             {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 tabular-nums">
+                          <td className={`px-3 py-2 whitespace-nowrap ${appliedSettlementCellClass}`}>
                             {deductApplied !== null ? formatWorkHours(deductApplied) : '-'}
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                          <td className={`px-3 py-2 whitespace-nowrap ${appliedSettlementCellClass}`}>
                             {record.work_hours ? formatWorkHours(whA) : '-'}
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">
+                          <td className={`px-3 py-2 whitespace-nowrap ${legacySettlementCellClass}`}>
                             {record.work_hours ? formatWorkHours(whL) : '-'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
@@ -2813,7 +2863,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                                record.status === 'late' ? '지각' : '결근'}
                             </span>
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">
+                          <td className={`px-3 py-2 whitespace-nowrap ${cumulativeCellClass}`}>
                             {formatWorkHours(cumulative)}
                           </td>
                         </tr>

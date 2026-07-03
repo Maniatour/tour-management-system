@@ -9118,6 +9118,7 @@ export type Database = {
           use_representative_pickup: boolean
           pickup_group_preset_id: string | null
           pickup_group_mode_overrides: Record<string, unknown> | null
+          pickup_group_representative_overrides: Record<string, unknown> | null
         }
         Insert: {
           assignment_status?: string | null
@@ -9143,6 +9144,7 @@ export type Database = {
           use_representative_pickup?: boolean
           pickup_group_preset_id?: string | null
           pickup_group_mode_overrides?: Record<string, unknown> | null
+          pickup_group_representative_overrides?: Record<string, unknown> | null
         }
         Update: {
           assignment_status?: string | null
@@ -9168,6 +9170,7 @@ export type Database = {
           use_representative_pickup?: boolean
           pickup_group_preset_id?: string | null
           pickup_group_mode_overrides?: Record<string, unknown> | null
+          pickup_group_representative_overrides?: Record<string, unknown> | null
         }
         Relationships: [
           {
@@ -10066,6 +10069,66 @@ export type Database = {
         }
         Relationships: []
       },
+      company_knowledge_articles: {
+        Row: {
+          id: string
+          slug: string
+          title_ko: string
+          title_en: string
+          summary_ko: string
+          summary_en: string
+          hub_category: string
+          content_type: string
+          target_roles: string[]
+          body_structure: Json
+          sort_order: number
+          is_published: boolean
+          published_at: string | null
+          published_by: string | null
+          created_at: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          slug: string
+          title_ko: string
+          title_en: string
+          summary_ko?: string
+          summary_en?: string
+          hub_category?: string
+          content_type?: string
+          target_roles?: string[]
+          body_structure: Json
+          sort_order?: number
+          is_published?: boolean
+          published_at?: string | null
+          published_by?: string | null
+          created_at?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          slug?: string
+          title_ko?: string
+          title_en?: string
+          summary_ko?: string
+          summary_en?: string
+          hub_category?: string
+          content_type?: string
+          target_roles?: string[]
+          body_structure?: Json
+          sort_order?: number
+          is_published?: boolean
+          published_at?: string | null
+          published_by?: string | null
+          created_at?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      },
       company_sop_draft: {
         Row: {
           singleton: number
@@ -10337,6 +10400,69 @@ export type Database = {
           signer_name?: string
           pdf_storage_path?: string
           signed_at?: string
+        }
+        Relationships: []
+      },
+      sop_product_checklist_items: {
+        Row: {
+          id: string
+          product_id: string
+          sop_version_id: string
+          section_id: string
+          category_id: string
+          item_id: string
+          sort_order: number
+          is_required: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          sop_version_id: string
+          section_id: string
+          category_id: string
+          item_id: string
+          sort_order?: number
+          is_required?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          sop_version_id?: string
+          section_id?: string
+          category_id?: string
+          item_id?: string
+          sort_order?: number
+          is_required?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      },
+      sop_tour_checklist_completions: {
+        Row: {
+          id: string
+          tour_id: string
+          item_id: string
+          completed_at: string
+          completed_by: string | null
+          completed_by_email: string
+        }
+        Insert: {
+          id?: string
+          tour_id: string
+          item_id: string
+          completed_at?: string
+          completed_by?: string | null
+          completed_by_email: string
+        }
+        Update: {
+          id?: string
+          tour_id?: string
+          item_id?: string
+          completed_at?: string
+          completed_by?: string | null
+          completed_by_email?: string
         }
         Relationships: []
       },
@@ -11203,6 +11329,7 @@ export type Database = {
         | { Args: { p_email: string }; Returns: boolean }
       is_super_admin: { Args: { p_email?: string }; Returns: boolean }
       is_team_member: { Args: { p_email: string }; Returns: boolean }
+      apply_due_op_todo_resets: { Args: never; Returns: Json }
       manual_reset_todos: { Args: { category_name: string }; Returns: string }
       op_todo_notify_handle_complete: {
         Args: { p_next_notify_at: string | null; p_todo_id: string }

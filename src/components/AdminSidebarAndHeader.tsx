@@ -641,6 +641,17 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     </button>
                   )}
 
+                  {/* 운영 허브 */}
+                  <div className="relative hidden sm:inline-block">
+                    <Link
+                      href={`/${locale}/admin/operations-hub`}
+                      className="inline-flex items-center justify-center w-9 h-9 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                      title="운영 허브 (매뉴얼·워크플로)"
+                    >
+                      <BookOpen className="w-5 h-5" />
+                    </Link>
+                  </div>
+
                   {/* 팀 보드 바로가기 */}
                   <div className="relative hidden sm:inline-block">
                     <Link

@@ -103,3 +103,59 @@ export async function downloadDomAsA4Pdf(root: HTMLElement, fileBaseName: string
   const safe = fileBaseName.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'document'
   pdf.save(`${safe}.pdf`)
 }
+
+async function renderDomToPdfBlob(root: HTMLElement): Promise<Blob> {
+  const html2canvas = await loadHtml2Canvas()
+  const jsPDF = await loadJsPDF()
+  const canvas = await html2canvas(root, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    allowTaint: false,
+    backgroundColor: '#ffffff',
+  })
+
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageWidth = 210
+  const pageHeight = 297
+  const imgWidth = pageWidth
+  const imgHeight = (canvas.height * imgWidth) / canvas.width
+  const imgData = canvas.toDataURL('image/jpeg', 0.92)
+
+  let heightLeft = imgHeight
+  let position = 0
+  pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
+  heightLeft -= pageHeight
+
+  while (heightLeft > 1) {
+    position = heightLeft - imgHeight
+    pdf.addPage()
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+  }
+
+  return pdf.output('blob')
+}
+
+/** A4 미리보기·서명 PDF용 — DOM 캡처 후 Blob 반환 */
+export async function domElementToPdfBlob(root: HTMLElement): Promise<Blob> {
+  return renderDomToPdfBlob(root)
+}
+
+/** 서명 이미지를 넣은 뒤 구조화 본문 DOM을 PDF Blob으로 변환 */
+export async function captureSignedStructuredDocPdfBlob(
+  root: HTMLElement,
+  signatureDataUrl: string,
+  signedAtText?: string
+): Promise<Blob> {
+  const sigImg = root.querySelector('[data-sop-signature-img]') as HTMLImageElement | null
+  if (sigImg) {
+    sigImg.src = signatureDataUrl
+    await sigImg.decode().catch(() => undefined)
+  }
+  if (signedAtText) {
+    const signedAtEl = root.querySelector('[data-sop-signed-at]')
+    if (signedAtEl) signedAtEl.textContent = signedAtText
+  }
+  return renderDomToPdfBlob(root)
+}

@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/sync",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/reset-todos",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/remind-tour-checklists",
+      "schedule": "0 13 * * *"
     }
   ]
 }

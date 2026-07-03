@@ -19,6 +19,7 @@ import {
   type PickupGroupPresetWithReps,
 } from '@/lib/pickupGroupPreset'
 import { getPickupHotelNameById } from '@/lib/effectivePickupHotel'
+import { SearchablePickupHotelSelect } from '@/components/SearchablePickupHotelSelect'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 interface PickupScheduleProps {
@@ -60,8 +61,13 @@ interface PickupScheduleProps {
   activePresetId?: string | null
   activePreset?: PickupGroupPresetWithReps | null
   groupModeOverrides?: Record<string, PickupGroupMode>
+  groupRepresentativeOverrides?: Record<string, string>
   onPickupPresetChange?: (presetId: string | null) => void | Promise<void>
   onGroupModeOverrideChange?: (groupIndex: number, mode: PickupGroupMode) => void | Promise<void>
+  onGroupRepresentativeOverrideChange?: (
+    groupIndex: number,
+    hotelId: string | null
+  ) => void | Promise<void>
 }
 
 export const PickupSchedule: React.FC<PickupScheduleProps> = ({
@@ -85,8 +91,10 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   activePresetId = null,
   activePreset = null,
   groupModeOverrides = {},
+  groupRepresentativeOverrides = {},
   onPickupPresetChange,
   onGroupModeOverrideChange,
+  onGroupRepresentativeOverrideChange,
 }) => {
   const t = useTranslations('tours.pickupSchedule')
   const tCommon = useTranslations('common')
@@ -107,6 +115,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   const [showEmailStatusHelpModal, setShowEmailStatusHelpModal] = useState(false)
   const [representativePickupSaving, setRepresentativePickupSaving] = useState(false)
   const [groupModeSaving, setGroupModeSaving] = useState<number | null>(null)
+  const [groupRepSaving, setGroupRepSaving] = useState<number | null>(null)
 
   const pickupHotelsForResolve = pickupHotels as PickupHotelUtil[]
 
@@ -115,8 +124,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       useRepresentativePickup,
       preset: activePreset,
       groupModeOverrides,
+      groupRepresentativeOverrides,
     }),
-    [useRepresentativePickup, activePreset, groupModeOverrides]
+    [useRepresentativePickup, activePreset, groupModeOverrides, groupRepresentativeOverrides]
   )
 
   const renderGroupModeSwitch = (groupIndex: number | null) => {
@@ -635,9 +645,13 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               sortedReservations[0]?.pickup_hotel
             )
           : null
-      const groupRepPickupLine = groupRepHotelId
-        ? formatPickupHotelDisplayLine(groupRepHotelId, pickupHotels)
-        : null
+      const groupHotelsForSelect =
+        cardMainGroup != null
+          ? pickupHotelsForResolve.filter(
+              (h) =>
+                h.group_number != null && Math.floor(h.group_number) === cardMainGroup
+            )
+          : []
       
       return (
         <div key={pickupHotelId} className="border rounded-lg p-3">
@@ -789,13 +803,38 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                     ? t('groupRepPickupRef')
                     : t('groupRepPickupRefHint')}
                 </p>
-                <p
-                  className={`text-xs font-medium truncate ${
-                    cardMode === 'representative' ? 'text-amber-900' : 'text-gray-600'
-                  }`}
-                >
-                  {groupRepPickupLine ?? t('repNotSet')}
-                </p>
+                {onGroupRepresentativeOverrideChange ? (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <SearchablePickupHotelSelect
+                      hotels={groupHotelsForSelect}
+                      value={groupRepHotelId}
+                      disabled={
+                        groupRepSaving === cardMainGroup || representativePickupToggleDisabled
+                      }
+                      onChange={async (hotelId) => {
+                        setGroupRepSaving(cardMainGroup)
+                        try {
+                          await onGroupRepresentativeOverrideChange(cardMainGroup, hotelId)
+                        } finally {
+                          setGroupRepSaving(null)
+                        }
+                      }}
+                      placeholder={t('searchRepHotel')}
+                      noResultsLabel={t('hotelSearchNoResults')}
+                      clearTitle={t('clearRepHotelSelection')}
+                    />
+                  </div>
+                ) : (
+                  <p
+                    className={`text-xs font-medium truncate ${
+                      cardMode === 'representative' ? 'text-amber-900' : 'text-gray-600'
+                    }`}
+                  >
+                    {groupRepHotelId
+                      ? formatPickupHotelDisplayLine(groupRepHotelId, pickupHotels)
+                      : t('repNotSet')}
+                  </p>
+                )}
               </div>
               {renderGroupModeSwitch(cardMainGroup)}
             </div>
