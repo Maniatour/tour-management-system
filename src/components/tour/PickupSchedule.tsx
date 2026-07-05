@@ -848,80 +848,77 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     <div className="bg-white rounded-lg shadow-sm border">
       <div className="p-4">
         <div 
-          className="flex items-center justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+          className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           onClick={() => onToggleSection('pickup-schedule')}
         >
-          <h2 className="text-md font-semibold text-gray-900 flex items-center">
+          <h2 className="text-md font-semibold text-gray-900 flex items-center min-w-0 shrink-0">
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
           </h2>
-          <div className="flex items-center space-x-2">
-            {onPickupPresetChange && (
-              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                <label htmlFor="pickup-preset-select" className="sr-only">
-                  {t('pickupPresetLabel')}
-                </label>
-                <select
-                  id="pickup-preset-select"
-                  value={activePresetId ?? ''}
-                  disabled={representativePickupToggleDisabled || representativePickupSaving}
-                  onChange={async (e) => {
-                    const next = e.target.value || null
-                    setRepresentativePickupSaving(true)
-                    try {
-                      await onPickupPresetChange(next)
-                    } finally {
-                      setRepresentativePickupSaving(false)
-                    }
-                  }}
-                  className="text-xs border border-gray-300 rounded-md py-1 pl-2 pr-7 max-w-[140px] sm:max-w-[180px] truncate bg-white disabled:opacity-50"
-                  title={t('pickupPresetHint')}
-                >
-                  <option value="">{t('pickupModeRequested')}</option>
-                  {pickupPresets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {presetDisplayName(p, locale)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowEmailStatusHelpModal(true)
-              }}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-              title={t('emailStatusHelpTitle')}
-            >
-              <HelpCircle size={18} />
-            </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation()
-                onAutoGenerate()
-              }}
-              className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-            >
-              {t('autoGenerate')}
-            </button>
-            {reservationsWithPickupTime > 0 && (
-              <>
-                {onPreviewEmail && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onPreviewEmail()
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              {onPickupPresetChange && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <label htmlFor="pickup-preset-select" className="sr-only">
+                    {t('pickupPresetLabel')}
+                  </label>
+                  <select
+                    id="pickup-preset-select"
+                    value={activePresetId ?? ''}
+                    disabled={representativePickupToggleDisabled || representativePickupSaving}
+                    onChange={async (e) => {
+                      const next = e.target.value || null
+                      setRepresentativePickupSaving(true)
+                      try {
+                        await onPickupPresetChange(next)
+                      } finally {
+                        setRepresentativePickupSaving(false)
+                      }
                     }}
-                    className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center gap-1"
-                    title={t('sendEmailTitle')}
+                    className="text-xs border border-gray-300 rounded-md py-1 pl-2 pr-7 max-w-[140px] sm:max-w-[180px] truncate bg-white disabled:opacity-50"
+                    title={t('pickupPresetHint')}
                   >
-                    <FaEnvelope size={14} />
-                    <span>{t('email')}</span>
-                  </button>
-                )}
-              </>
-            )}
+                    <option value="">{t('pickupModeRequested')}</option>
+                    {pickupPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {presetDisplayName(p, locale)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowEmailStatusHelpModal(true)}
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                title={t('emailStatusHelpTitle')}
+              >
+                <HelpCircle size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={onAutoGenerate}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+              >
+                {t('autoGenerate')}
+              </button>
+              {onPreviewEmail && (
+                <button
+                  type="button"
+                  onClick={onPreviewEmail}
+                  disabled={reservationsWithPickupTime === 0}
+                  className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  title={
+                    reservationsWithPickupTime === 0
+                      ? t('emailDisabledNoPickupTime')
+                      : t('sendEmailTitle')
+                  }
+                >
+                  <FaEnvelope size={14} />
+                  <span>{t('email')}</span>
+                </button>
+              )}
+            </div>
             {expandedSections.has('pickup-schedule') ? (
               <ChevronUp className="w-5 h-5 text-gray-500" />
             ) : (

@@ -74,9 +74,11 @@ interface VehicleEditModalProps {
   prefill?: Partial<Vehicle> | null
   onSave: (vehicleData: Partial<Vehicle>) => void
   onClose: () => void
+  /** 저장된 차량에 대해 차량 정비 관리 모달 열기 (스케줄뷰 등) */
+  onOpenMaintenance?: () => void
 }
 
-export default function VehicleEditModal({ vehicle, prefill = null, onSave, onClose }: VehicleEditModalProps) {
+export default function VehicleEditModal({ vehicle, prefill = null, onSave, onClose, onOpenMaintenance }: VehicleEditModalProps) {
   const [formData, setFormData] = useState<Partial<Vehicle>>({
     vehicle_number: '',
     vin: '',
@@ -869,14 +871,27 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                   : '카테고리·차종을 먼저 정한 뒤 필수 항목을 채워 주세요.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="shrink-0 rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-              aria-label="닫기"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onOpenMaintenance && vehicle?.id ? (
+                <button
+                  type="button"
+                  onClick={onOpenMaintenance}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:px-3 sm:text-sm"
+                  title="차량 정비 관리"
+                >
+                  <Wrench className="h-4 w-4 shrink-0" />
+                  <span className="hidden sm:inline">차량 정비 관리</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClose}
+                className="shrink-0 rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                aria-label="닫기"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/80 px-4 py-4 sm:px-5 sm:py-5">

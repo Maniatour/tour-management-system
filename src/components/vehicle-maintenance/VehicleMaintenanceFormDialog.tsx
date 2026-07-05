@@ -84,6 +84,10 @@ export type VehicleMaintenanceFormDialogProps = {
   expenseStandardCategories: ExpenseStandardCategoryPickRow[]
   paymentMethodOptions: PaymentMethodOption[]
   locale: string
+  /** 신규 등록 시 차량 미리 선택 */
+  defaultVehicleId?: string | null
+  /** 차량 정보 수정 등 상위 모달 위에 겹칠 때 z-index 상향 */
+  nestedModal?: boolean
 }
 
 export default function VehicleMaintenanceFormDialog({
@@ -99,6 +103,8 @@ export default function VehicleMaintenanceFormDialog({
   expenseStandardCategories,
   paymentMethodOptions,
   locale,
+  defaultVehicleId = null,
+  nestedModal = false,
 }: VehicleMaintenanceFormDialogProps) {
   const t = useTranslations('vehicleMaintenance')
 
@@ -182,12 +188,15 @@ export default function VehicleMaintenanceFormDialog({
     if (!open) return
     if (!editingMaintenance) {
       resetForm()
+      if (defaultVehicleId) {
+        setFormData((prev) => ({ ...prev, vehicle_id: defaultVehicleId }))
+      }
       return
     }
     if (editLoadIdRef.current === editingMaintenance.id) return
     editLoadIdRef.current = editingMaintenance.id
     void loadEditForm(editingMaintenance as VehicleMaintenanceWithVehicle)
-  }, [open, editingMaintenance, loadEditForm, resetForm])
+  }, [open, editingMaintenance, defaultVehicleId, loadEditForm, resetForm])
 
   useEffect(() => {
     if (!open || !editPaymentMethodRawRef.current || paymentMethodOptions.length === 0) return
@@ -543,7 +552,10 @@ export default function VehicleMaintenanceFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
+      <DialogContent
+        className={`max-w-6xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0${nestedModal ? ' z-[1400]' : ''}`}
+        {...(nestedModal ? { overlayClassName: 'z-[1400]' } : {})}
+      >
         <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
           <DialogTitle>{editingMaintenance ? t('buttons.edit') : t('addMaintenance')}</DialogTitle>
           <DialogDescription>

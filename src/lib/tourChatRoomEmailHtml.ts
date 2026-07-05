@@ -40,8 +40,8 @@ export function renderTourChatRoomEmailSectionHtml(
             <div style="margin-bottom: 18px;">
               <p style="color: #1e293b; line-height: 1.8; margin: 0 0 15px 0;">
                 ${isEnglish
-                  ? 'Join the tour chat room to communicate with your guide during pickup and view tour photos after the tour ends.'
-                  : '투어 채팅방에 참여하시면 픽업 시 가이드와 연락할 수 있으며, 투어가 끝난 후 투어 사진을 이곳에서 볼 수 있습니다.'}
+                  ? 'Open the tour chat to reach your guide during pickup. When you arrive at the pickup location, please send a message in the chat to let us know you are there. Tour photos are also shared here after the tour.'
+                  : '투어 채팅방에서 픽업 시 가이드와 연락할 수 있습니다. 픽업 장소에 도착하시면 채팅방에 도착 메시지를 남겨 주세요. 투어가 끝난 후 투어 사진도 이곳에서 확인하실 수 있습니다.'}
               </p>
               <a href="${chatUrl}" target="_blank" rel="noopener noreferrer" class="button" style="background: #10b981; display: inline-block; padding: 12px 24px; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
                 ${isEnglish ? 'Open Tour Chat Room' : '투어 채팅방 열기'}
@@ -69,8 +69,8 @@ export function renderTourChatRoomEmailSectionHtml(
             <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid #d1d5db;">
               <p style="font-size: 13px; color: #6b7280; margin: 0; line-height: 1.6;">
                 ${isEnglish
-                  ? '📱 You can access the chat room anytime using the green button or the link above. The guide will be available to assist you during pickup, and tour photos will be shared here after the tour.'
-                  : '📱 위 초록색 버튼이나 링크로 언제든지 채팅방에 접속할 수 있습니다. 픽업 시 가이드가 도움을 드리며, 투어가 끝난 후 투어 사진이 이곳에 공유됩니다.'}
+                  ? '📱 Use the green button or link above to open the chat. Send a quick message when you arrive at pickup so your guide can find you. Tour photos will be shared here after the tour.'
+                  : '📱 위 초록색 버튼이나 링크로 채팅방에 접속하세요. 픽업 장소에 도착하면 도착 메시지를 남겨 주시면 가이드가 더 빠르게 찾아갈 수 있습니다. 투어 후 사진도 이곳에 공유됩니다.'}
               </p>
             </div>
           </div>

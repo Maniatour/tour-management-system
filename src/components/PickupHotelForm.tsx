@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { translatePickupHotelFields, type PickupHotelTranslationFields } from '@/lib/translationService'
 import { suggestHotelDescription } from '@/lib/chatgptService'
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import PickupHotelVehicleAccessSelect from '@/components/pickup-hotel/PickupHotelVehicleAccessSelect'
 
 interface PickupHotelFormProps {
   hotel?: PickupHotel | null
@@ -42,6 +43,11 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     pick_up_location: hotel?.pick_up_location || '',
     description_ko: hotel?.description_ko || '',
     description_en: hotel?.description_en || '',
+    from_inside_hotel_ko: hotel?.from_inside_hotel_ko || '',
+    from_inside_hotel_en: hotel?.from_inside_hotel_en || '',
+    from_outside_hotel_ko: hotel?.from_outside_hotel_ko || '',
+    from_outside_hotel_en: hotel?.from_outside_hotel_en || '',
+    allowed_pickup_access_classes: hotel?.allowed_pickup_access_classes ?? null,
     address: hotel?.address || '',
     pin: hotel?.pin || '',
     link: hotel?.link || '',
@@ -416,6 +422,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
         hotel: formData.hotel,
         pick_up_location: formData.pick_up_location,
         description_ko: formData.description_ko,
+        from_inside_hotel_ko: formData.from_inside_hotel_ko,
+        from_outside_hotel_ko: formData.from_outside_hotel_ko,
         address: formData.address
       }
 
@@ -423,10 +431,12 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
       const result = await translatePickupHotelFields(fieldsToTranslate)
 
       if (result.success && result.translatedFields) {
-        // 번역된 내용을 영어 필드에 적용
+        const translated = result.translatedFields
         setFormData(prev => ({
           ...prev,
-          description_en: result.translatedFields?.description_ko || prev.description_en
+          description_en: translated.description_ko || prev.description_en,
+          from_inside_hotel_en: translated.from_inside_hotel_ko || prev.from_inside_hotel_en,
+          from_outside_hotel_en: translated.from_outside_hotel_ko || prev.from_outside_hotel_en,
         }))
 
         // 번역된 호텔명과 픽업 위치를 별도로 표시하거나 처리할 수 있습니다
@@ -465,8 +475,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[10000] overflow-y-auto bg-black/50">
+      <div className="relative mx-auto mb-8 w-full max-w-4xl rounded-lg bg-white p-6 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center space-x-3">
             <h2 className="text-2xl font-bold">
@@ -660,33 +670,98 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             </div>
           </div>
 
-          {/* 한국어 설명과 영어 설명 */}
+          {/* Location Description */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Location Description</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Location Description (한국어)
+                </label>
+                <textarea
+                  value={formData.description_ko}
+                  onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="예: Rear Rotunda Tour Pickup Area (Back Entrance)."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Location Description (English)
+                </label>
+                <textarea
+                  value={formData.description_en}
+                  onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g. Rear Rotunda Tour Pickup Area (Back Entrance)."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* From Inside / Outside Hotel */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.descriptionKo}
+                From Inside Hotel (한국어)
               </label>
               <textarea
-                value={formData.description_ko}
-                onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                value={formData.from_inside_hotel_ko}
+                onChange={(e) => setFormData({ ...formData, from_inside_hotel_ko: e.target.value })}
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={translations.descriptionKo}
+                placeholder="호텔 내부에서 찾아가는 방법"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.descriptionEn}
+                From Inside Hotel (English)
               </label>
               <textarea
-                value={formData.description_en}
-                onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                value={formData.from_inside_hotel_en}
+                onChange={(e) => setFormData({ ...formData, from_inside_hotel_en: e.target.value })}
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={translations.descriptionEn}
+                placeholder="Directions from inside the hotel"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                From Outside Hotel (한국어)
+              </label>
+              <textarea
+                value={formData.from_outside_hotel_ko}
+                onChange={(e) => setFormData({ ...formData, from_outside_hotel_ko: e.target.value })}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="호텔 밖에서 찾아가는 방법"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                From Outside Hotel (English)
+              </label>
+              <textarea
+                value={formData.from_outside_hotel_en}
+                onChange={(e) => setFormData({ ...formData, from_outside_hotel_en: e.target.value })}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Directions from outside the hotel"
+              />
+            </div>
+          </div>
+
+          {/* Vehicle access */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              진입 가능 차량 등급 (Regular / High Top / Bus)
+            </label>
+            <PickupHotelVehicleAccessSelect
+              value={formData.allowed_pickup_access_classes}
+              onChange={(classes) => setFormData({ ...formData, allowed_pickup_access_classes: classes })}
+            />
           </div>
 
           {/* 주소 */}
@@ -973,8 +1048,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
       {/* 구글맵 좌표 선택 모달 */}
       {showMapModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-black/50">
+          <div className="relative mx-auto mb-8 w-full max-w-5xl rounded-lg bg-white p-6 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">위치 선택</h3>
               <button
@@ -1104,8 +1179,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
       {/* 이미지 확대 모달 */}
       {showImageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-4 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-black/75">
+          <div className="relative mx-auto mb-8 w-full max-w-4xl rounded-lg bg-white p-4 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">이미지 확대 보기</h3>
               <button

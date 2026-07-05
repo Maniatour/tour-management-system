@@ -31,7 +31,9 @@ import {
   type ReceiptOcrSkipLineTemplateId,
   RECEIPT_OCR_SKIP_LINE_PLAIN,
   RECEIPT_OCR_SKIP_LINE_TEMPLATE_IDS,
-  RECEIPT_OCR_BODY_MATCH_TEMPLATE_HORSESHOE,
+  RECEIPT_OCR_BODY_MATCH_TEMPLATES,
+  RECEIPT_OCR_BODY_MATCH_TEMPLATE_IDS,
+  type ReceiptOcrBodyMatchTemplateId,
   plainPhraseToLineContainsPattern,
 } from '@/lib/receiptOcrRuleTemplates'
 import type {
@@ -165,8 +167,8 @@ export default function ReceiptOcrRuleTemplateDialog({
     setCustomLinePhrase('')
   }
 
-  const addBodyHorseshoe = () => {
-    const h = RECEIPT_OCR_BODY_MATCH_TEMPLATE_HORSESHOE
+  const addBodyFromPreset = (id: ReceiptOcrBodyMatchTemplateId) => {
+    const h = RECEIPT_OCR_BODY_MATCH_TEMPLATES[id]
     onAddBodyMatch({
       id: newId(),
       contains_phrase: h.contains_phrase,
@@ -339,9 +341,20 @@ export default function ReceiptOcrRuleTemplateDialog({
           {kind === 'bodyMatch' ? (
             <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/80 p-3">
               <p className="text-[11px] text-slate-600 leading-snug">{t('templateBodyExplain')}</p>
-              <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={addBodyHorseshoe}>
-                {t('templateBodyHorseshoeBtn')}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {RECEIPT_OCR_BODY_MATCH_TEMPLATE_IDS.map((id) => (
+                  <Button
+                    key={id}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => addBodyFromPreset(id)}
+                  >
+                    {tx(`templateBodyChip_${id}`)}
+                  </Button>
+                ))}
+              </div>
               <div className="border-t border-slate-200 pt-3 space-y-2">
                 <p className="text-xs font-medium text-slate-800">{t('templateBodyCustomTitle')}</p>
                 <div className="space-y-1">

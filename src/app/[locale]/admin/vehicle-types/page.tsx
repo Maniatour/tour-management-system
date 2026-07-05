@@ -4,6 +4,13 @@ import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { Plus, Edit, Trash2, Car, Users } from 'lucide-react'
+import {
+  PICKUP_ACCESS_CLASSES,
+  PICKUP_ACCESS_CLASS_LABELS,
+  inferPickupAccessClassFromName,
+  type PickupAccessClass,
+} from '@/lib/pickupAccessClass'
+import PickupAccessClassBadgePicker from '@/components/vehicle-types/PickupAccessClassBadgePicker'
 
 interface VehicleType {
   id: string
@@ -12,6 +19,7 @@ interface VehicleType {
   model: string
   passenger_capacity: number
   vehicle_category: string
+  pickup_access_class?: PickupAccessClass
   description?: string
   is_active: boolean
   display_order: number
@@ -25,6 +33,7 @@ interface VehicleTypeFormData {
   model: string
   passenger_capacity: number
   vehicle_category: string
+  pickup_access_class: PickupAccessClass
   description: string
   is_active: boolean
   display_order: number
@@ -42,6 +51,7 @@ export default function VehicleTypesPage() {
     model: '',
     passenger_capacity: 0,
     vehicle_category: 'rental',
+    pickup_access_class: 'regular',
     description: '',
     is_active: true,
     display_order: 0
@@ -79,6 +89,7 @@ export default function VehicleTypesPage() {
       model: '',
       passenger_capacity: 0,
       vehicle_category: 'rental',
+      pickup_access_class: 'regular',
       description: '',
       is_active: true,
       display_order: 0
@@ -96,6 +107,7 @@ export default function VehicleTypesPage() {
         model: type.model,
         passenger_capacity: type.passenger_capacity,
         vehicle_category: type.vehicle_category,
+        pickup_access_class: type.pickup_access_class || 'regular',
         description: type.description || '',
         is_active: type.is_active,
         display_order: type.display_order
@@ -115,11 +127,17 @@ export default function VehicleTypesPage() {
   // 폼 데이터 변경
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : 
-              type === 'number' ? parseInt(value) || 0 : value
-    }))
+    setFormData(prev => {
+      const next = {
+        ...prev,
+        [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked :
+                type === 'number' ? parseInt(value) || 0 : value
+      }
+      if (name === 'name' && !editingType) {
+        next.pickup_access_class = inferPickupAccessClassFromName(value)
+      }
+      return next
+    })
   }
 
   // 차종 저장
@@ -180,6 +198,20 @@ export default function VehicleTypesPage() {
     }
   }
 
+  // 픽업 진입 등급 변경
+  const updatePickupAccessClass = async (id: string, pickup_access_class: PickupAccessClass) => {
+    const { error } = await supabase
+      .from('vehicle_types')
+      .update({ pickup_access_class })
+      .eq('id', id)
+
+    if (error) throw error
+
+    setVehicleTypes((prev) =>
+      prev.map((type) => (type.id === id ? { ...type, pickup_access_class } : type))
+    )
+  }
+
   // 활성/비활성 토글
   const toggleActive = async (id: string, currentStatus: boolean) => {
     try {
@@ -237,10 +269,22 @@ export default function VehicleTypesPage() {
                     <Car className="w-8 h-8 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center flex-wrap gap-2">
                       <h3 className="text-lg font-medium text-gray-900">
                         {type.name}
                       </h3>
+                      <PickupAccessClassBadgePicker
+                        value={type.pickup_access_class}
+                        onChange={async (accessClass) => {
+                          try {
+                            await updatePickupAccessClass(type.id, accessClass)
+                          } catch (error) {
+                            console.error('픽업 진입 등급 변경 오류:', error)
+                            alert('픽업 진입 등급 변경 중 오류가 발생했습니다.')
+                            throw error
+                          }
+                        }}
+                      />
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         type.is_active 
                           ? 'bg-green-100 text-green-800' 
@@ -386,6 +430,25 @@ export default function VehicleTypesPage() {
                       <option value="company">회사차</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    픽업 진입 등급 *
+                  </label>
+                  <select
+                    name="pickup_access_class"
+                    value={formData.pickup_access_class}
+                    onChange={handleInputChange}
+                    required
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {PICKUP_ACCESS_CLASSES.map((accessClass) => (
+                      <option key={accessClass} value={accessClass}>
+                        {PICKUP_ACCESS_CLASS_LABELS[accessClass].ko} — {PICKUP_ACCESS_CLASS_LABELS[accessClass].descriptionKo}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

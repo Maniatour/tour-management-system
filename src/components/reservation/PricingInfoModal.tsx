@@ -819,6 +819,16 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmt)
     updatedData.total_price = totalPrice
     
+    if (field === 'commission_percent') {
+      const channelPayBase = roundUsd2(
+        Number(updatedData.commission_base_price) || Number(updatedData.deposit_amount) || 0
+      )
+      const pct = Math.max(0, value)
+      if (channelPayBase > 0 && pct > 0) {
+        updatedData.commission_amount = roundUsd2(channelPayBase * (pct / 100))
+      }
+    }
+
     // 디버깅: 필드 변경 시 로그 출력
     if (field === 'additional_cost' || field === 'additional_discount' || field === 'card_fee' || field === 'tax' || field === 'prepayment_cost') {
       console.log(`${field} 변경:`, {

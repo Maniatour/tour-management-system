@@ -249,6 +249,8 @@ export interface PickupHotelTranslationFields {
   hotel?: string
   pick_up_location?: string
   description_ko?: string
+  from_inside_hotel_ko?: string
+  from_outside_hotel_ko?: string
   address?: string
 }
 

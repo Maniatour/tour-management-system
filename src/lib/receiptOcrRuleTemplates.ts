@@ -98,10 +98,55 @@ export const RECEIPT_OCR_AMOUNT_LINE_PLAIN: Record<ReceiptOcrAmountLineTemplateI
   card_total: 'card total',
 }
 
-/** 관리자 «본문 보정» 템플릿 — Horseshoe Bend 입장·주차 영수증 등 */
+/** 관리자 «본문 보정» 템플릿 — Horseshoe Bend·Lake Powell 등 투어 현장 영수증 */
 export const RECEIPT_OCR_BODY_MATCH_TEMPLATE_HORSESHOE = {
   contains_phrase: 'horseshoe bend',
   paid_to: 'Horseshoe Bend',
   paid_for: 'Entrance Fee',
   payment_use_cc_label: true,
 } as const
+
+export const RECEIPT_OCR_BODY_MATCH_TEMPLATE_IDS = [
+  'horseshoe',
+  'lake_powell_travel',
+  'antelope_canyon',
+  'grand_canyon',
+] as const
+
+export type ReceiptOcrBodyMatchTemplateId = (typeof RECEIPT_OCR_BODY_MATCH_TEMPLATE_IDS)[number]
+
+export type ReceiptOcrBodyMatchTemplate = {
+  contains_phrase: string
+  paid_to: string
+  paid_for: string
+  payment_use_cc_label: boolean
+}
+
+export const RECEIPT_OCR_BODY_MATCH_TEMPLATES: Record<
+  ReceiptOcrBodyMatchTemplateId,
+  ReceiptOcrBodyMatchTemplate
+> = {
+  horseshoe: RECEIPT_OCR_BODY_MATCH_TEMPLATE_HORSESHOE,
+  lake_powell_travel: {
+    contains_phrase: 'lake powell travel',
+    paid_to: 'Lake Powell Travel Plaza',
+    paid_for: 'Gas',
+    payment_use_cc_label: true,
+  },
+  antelope_canyon: {
+    contains_phrase: 'antelope canyon',
+    paid_to: 'Antelope Canyon',
+    paid_for: 'Antelope',
+    payment_use_cc_label: true,
+  },
+  grand_canyon: {
+    contains_phrase: 'grand canyon',
+    paid_to: 'Grand Canyon',
+    paid_for: 'Entrance Fee',
+    payment_use_cc_label: true,
+  },
+}
+
+/** shared_settings에 규칙이 없어도 OCR 파서에 항상 병합되는 기본 본문 보정 */
+export const RECEIPT_OCR_BUILTIN_BODY_MATCH_RULES: readonly ReceiptOcrBodyMatchTemplate[] =
+  Object.values(RECEIPT_OCR_BODY_MATCH_TEMPLATES)

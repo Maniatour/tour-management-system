@@ -2,6 +2,9 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createWorker } from 'tesseract.js'
 import { buildReceiptOcrCandidates, type ReceiptOcrCandidates, type ReceiptOcrParseOptions } from '@/lib/receiptOcrParse'
+import { configureReceiptOcrWorker } from '@/lib/receiptOcrPreprocess'
+import { preprocessReceiptBufferForOcr } from '@/lib/receiptOcrPreprocess.server'
+import { finalizeReceiptOcrText, mergeReceiptOcrTextsSmart, receiptOcrHasCoreFields } from '@/lib/receiptOcrCleanup'
 
 export type { ReceiptOcrCandidates } from '@/lib/receiptOcrParse'
 export { buildReceiptOcrCandidates } from '@/lib/receiptOcrParse'
@@ -39,8 +42,22 @@ export async function extractReceiptOcrFromImageBuffer(
 ): Promise<{ text: string; candidates: ReceiptOcrCandidates }> {
   const worker = await createWorker('eng', 1, tesseractNodeWorkerOptions())
   try {
-    const result = await worker.recognize(imageBuffer)
-    const text = result.data.text || ''
+    const [normalized, binarized] = await Promise.all([
+      preprocessReceiptBufferForOcr(imageBuffer, 'normalize'),
+      preprocessReceiptBufferForOcr(imageBuffer, 'binarize'),
+    ])
+    await configureReceiptOcrWorker(worker)
+    const recognize = async (buf: Buffer) => {
+      const result = await worker.recognize(buf)
+      return result.data.text || ''
+    }
+    const normalizedText = await recognize(normalized)
+    let merged = normalizedText
+    if (!receiptOcrHasCoreFields(normalizedText)) {
+      const binarizedText = await recognize(binarized)
+      merged = mergeReceiptOcrTextsSmart(normalizedText, binarizedText)
+    }
+    const text = finalizeReceiptOcrText(merged)
     return { text, candidates: buildReceiptOcrCandidates(text, parseOptions) }
   } finally {
     await worker.terminate()

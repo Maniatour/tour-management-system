@@ -7,6 +7,7 @@ import {
   normalizeReceiptBodyForMatch,
   type ReceiptOcrParseRuntime,
 } from '@/lib/receiptOcrParseRules'
+import { cleanupReceiptOcrLine, scoreReceiptOcrLine } from '@/lib/receiptOcrCleanup'
 
 export type ReceiptOcrCandidates = {
   paid_to: string
@@ -76,12 +77,20 @@ function toIsoDate(year: number, month: number, day: number): string | null {
 }
 
 function extractDate(text: string): string | null {
-  const slash = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/)
+  const cleaned = text.replace(/§(\d)/g, '0$1')
+  const slash = cleaned.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/)
   if (slash) {
-    return toIsoDate(Number.parseInt(slash[3], 10), Number.parseInt(slash[1], 10), Number.parseInt(slash[2], 10))
+    let month = Number.parseInt(slash[1], 10)
+    let day = Number.parseInt(slash[2], 10)
+    let year = Number.parseInt(slash[3], 10)
+    if (year < 100) year = 2000 + year
+    if (month > 12 && day <= 12) {
+      ;[month, day] = [day, month]
+    }
+    return toIsoDate(year, month, day)
   }
 
-  const iso = text.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/)
+  const iso = cleaned.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/)
   if (iso) {
     return toIsoDate(Number.parseInt(iso[1], 10), Number.parseInt(iso[2], 10), Number.parseInt(iso[3], 10))
   }
@@ -92,15 +101,35 @@ function extractDate(text: string): string | null {
 function extractPaidTo(lines: string[], runtime: ReceiptOcrParseRuntime): string {
   const ignored =
     /^(receipt|invoice|sale|customer|merchant|store|date|time|tel|phone|address|thank|welcome|\d+|www\.|http)/i
-  const candidate = lines.find((line) => {
-    const normalized = normalizeWhitespace(line)
-    if (normalized.length < 3 || normalized.length > 48) return false
-    if (ignored.test(normalized)) return false
-    if (runtime.paidToSkipRes.some((re) => re.test(normalized))) return false
-    if (/\$?\s*\d+(?:\.\d{2})/.test(normalized)) return false
-    return /[a-zA-Z]/.test(normalized)
+
+  const candidates = lines
+    .map((line) => normalizeWhitespace(line))
+    .filter((normalized) => {
+      if (normalized.length < 3 || normalized.length > 48) return false
+      if (ignored.test(normalized)) return false
+      if (runtime.paidToSkipRes.some((re) => re.test(normalized))) return false
+      if (/\$?\s*\d+(?:\.\d{2})/.test(normalized)) return false
+      if (/^[X*KHNUO\d\s./#-]+$/i.test(normalized) && /\d{4}\s*$/.test(normalized)) return false
+      const letters = (normalized.match(/[a-zA-Z]/g) || []).length
+      if (letters < 3 || letters / normalized.length < 0.45) return false
+      if (scoreReceiptOcrLine(normalized) < 10) return false
+      return /[a-zA-Z]/.test(normalized)
+    })
+
+  if (candidates.length === 0) return ''
+
+  const businessHint =
+    /\b(travel|plaza|mart|market|gas|fuel|shell|chevron|costco|walmart|store|restaurant|cafe|coffee|park|bend)\b/i
+  const ranked = [...candidates].sort((a, b) => {
+    let sa = scoreReceiptOcrLine(a)
+    let sb = scoreReceiptOcrLine(b)
+    if (businessHint.test(a)) sa += 25
+    if (businessHint.test(b)) sb += 25
+    if (/^[A-Z0-9][A-Z0-9\s&'.-]{2,}$/.test(a)) sa += 8
+    if (/^[A-Z0-9][A-Z0-9\s&'.-]{2,}$/.test(b)) sb += 8
+    return sb - sa
   })
-  return candidate ? normalizeWhitespace(candidate) : ''
+  return ranked[0] ?? ''
 }
 
 function extractPayment(text: string): { payment_method_text: string; card_last4: string } {
@@ -180,7 +209,7 @@ export function buildReceiptOcrCandidates(rawText: string, options?: ReceiptOcrP
 
   const lines = rawText
     .split(/\r?\n/)
-    .map(normalizeWhitespace)
+    .map((line) => cleanupReceiptOcrLine(normalizeWhitespace(line)))
     .filter(Boolean)
 
   const payment = extractPayment(rawText)
@@ -188,7 +217,7 @@ export function buildReceiptOcrCandidates(rawText: string, options?: ReceiptOcrP
   const base: ReceiptOcrCandidates = {
     paid_to: extractPaidTo(lines, runtime),
     amount: extractAmount(lines, runtime),
-    date: extractDate(rawText),
+    date: extractDate(lines.join('\n')),
     payment_method_text: payment.payment_method_text,
     card_last4: payment.card_last4,
     paid_for: inferPaidFor(rawText, runtime),

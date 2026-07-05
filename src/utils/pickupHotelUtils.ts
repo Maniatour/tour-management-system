@@ -1,11 +1,21 @@
 // 픽업 호텔 그룹 번호 관련 유틸리티 함수들
 
+import type { PickupAccessClass } from '@/lib/pickupAccessClass'
+
 export interface PickupHotel {
   id: string
   hotel: string
   pick_up_location: string
+  /** Location Description (Korean) */
   description_ko: string | null
+  /** Location Description (English) */
   description_en: string | null
+  from_inside_hotel_ko: string | null
+  from_inside_hotel_en: string | null
+  from_outside_hotel_ko: string | null
+  from_outside_hotel_en: string | null
+  /** regular | high_top | bus; null/empty = all classes allowed */
+  allowed_pickup_access_classes: PickupAccessClass[] | null
   address: string | null
   pin: string | null
   link: string | null

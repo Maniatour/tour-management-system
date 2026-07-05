@@ -9,7 +9,12 @@ export type ExpenseVendorRecord = {
   id: string
   name: string
   usage_type: ExpenseVendorUsageType
+  match_aliases?: string[]
   created_at?: string | null
+}
+
+export function parseVendorMatchAliasesInput(raw: string): string[] {
+  return [...new Set(raw.split(/[,|\n]+/).map((s) => s.trim()).filter(Boolean))]
 }
 
 export const EXPENSE_VENDOR_USAGE_TYPES: ExpenseVendorUsageType[] = ['reusable', 'one_time']

@@ -2,13 +2,15 @@
 
 import Image from 'next/image'
 import { Clock, ExternalLink, User, Users } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import type { PickupSchedule } from '@/components/customer/customerReservationTypes'
 import {
   calculatePickupDate,
   formatTimeToAMPM,
   isBefore48Hours,
 } from '@/lib/reservationDisplayUtils'
+import PickupHotelLocationDescriptionDisplay from '@/components/pickup-hotel/PickupHotelLocationDescriptionDisplay'
+import type { PickupHotel } from '@/utils/pickupHotelUtils'
 
 type CustomerReservationPickupSectionProps = {
   reservation: {
@@ -26,6 +28,7 @@ export default function CustomerReservationPickupSection({
   onSelectMedia,
 }: CustomerReservationPickupSectionProps) {
   const t = useTranslations('common')
+  const locale = useLocale()
 
   if (!pickupSchedule) return null
 
@@ -100,6 +103,13 @@ export default function CustomerReservationPickupSection({
                                 <h6 className="font-medium text-gray-900 mb-2">{t('pickupHotel')}</h6>
                                     <p className="text-sm text-gray-700">{pickupHotelData.hotel}</p>
                                     <p className="text-xs text-gray-600">{pickupHotelData.pick_up_location}</p>
+                                    <div className="mt-2">
+                                      <PickupHotelLocationDescriptionDisplay
+                                        hotel={pickupHotelData as PickupHotel}
+                                        locale={locale === 'en' ? 'en' : 'ko'}
+                                        compact
+                                      />
+                                    </div>
                                     {pickupHotelData.address && (
                                       <p className="text-xs text-gray-600">{pickupHotelData.address}</p>
                                 )}

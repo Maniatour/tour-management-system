@@ -29,6 +29,7 @@ import {
   formatVendorExpenseAmount,
   formatVendorExpensePaidFor,
   mergePaidToNamesAcrossExpenseTables,
+  parseVendorMatchAliasesInput,
   replacePaidToAcrossExpenseTables,
   vendorLinkedExpenseEditKey,
   vendorLinkedExpenseSourceTable,
@@ -69,9 +70,11 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
   const [vendors, setVendors] = useState<ExpenseVendorRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newAliases, setNewAliases] = useState('')
   const [newUsageType, setNewUsageType] = useState<ExpenseVendorUsageType>('reusable')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [editAliases, setEditAliases] = useState('')
   const [editUsageType, setEditUsageType] = useState<ExpenseVendorUsageType>('reusable')
   const [saving, setSaving] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -153,18 +156,22 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
     setLoading(true)
     try {
       const [{ data, error }, paidToInUse] = await Promise.all([
-        supabase.from('expense_vendors').select('id, name, usage_type, created_at').order('name'),
+        supabase.from('expense_vendors').select('id, name, usage_type, match_aliases, created_at').order('name'),
         fetchPaidToNamesInUse(supabase),
       ])
       if (error) throw error
 
-      const all = ((data ?? []) as Array<{ id: string; name: string; usage_type?: string | null }>).map(
-        (row) => ({
-          id: row.id,
-          name: row.name,
-          usage_type: row.usage_type === 'one_time' ? 'one_time' : 'reusable',
-        })
-      ) as ExpenseVendorRecord[]
+      const all = ((data ?? []) as Array<{
+        id: string
+        name: string
+        usage_type?: string | null
+        match_aliases?: string[] | null
+      }>).map((row) => ({
+        id: row.id,
+        name: row.name,
+        usage_type: row.usage_type === 'one_time' ? 'one_time' : 'reusable',
+        match_aliases: (row.match_aliases ?? []).map((a) => String(a).trim()).filter(Boolean),
+      })) as ExpenseVendorRecord[]
 
       const linked = all.filter((v) => paidToInUse.has(v.name.trim()))
       const orphans = all.filter((v) => !paidToInUse.has(v.name.trim()))
@@ -238,9 +245,13 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
     }
     setSaving(true)
     try {
-      const { error } = await supabase.from('expense_vendors').insert({ name, usage_type: newUsageType })
+      const aliases = parseVendorMatchAliasesInput(newAliases)
+      const { error } = await supabase
+        .from('expense_vendors')
+        .insert({ name, usage_type: newUsageType, match_aliases: aliases })
       if (error) throw error
       setNewName('')
+      setNewAliases('')
       setNewUsageType('reusable')
       await loadVendors()
       onUpdated?.()
@@ -256,12 +267,14 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
   const startEdit = (vendor: ExpenseVendorRecord) => {
     setEditingId(vendor.id)
     setEditName(vendor.name)
+    setEditAliases((vendor.match_aliases ?? []).join(', '))
     setEditUsageType(vendor.usage_type)
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setEditName('')
+    setEditAliases('')
     setEditUsageType('reusable')
   }
 
@@ -277,9 +290,10 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
     }
     setSaving(true)
     try {
+      const aliases = parseVendorMatchAliasesInput(editAliases)
       const { error } = await supabase
         .from('expense_vendors')
-        .update({ name, usage_type: editUsageType })
+        .update({ name, usage_type: editUsageType, match_aliases: aliases })
         .eq('id', editingId)
       if (error) throw error
       if (prev.name !== name) {
@@ -559,6 +573,13 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
               추가
             </Button>
           </div>
+          <Input
+            value={newAliases}
+            onChange={(e) => setNewAliases(e.target.value)}
+            placeholder="OCR 별칭 (쉼표 구분, 선택) — 예: lake powell travel, shell"
+            disabled={saving}
+            className="text-xs shrink-0"
+          />
 
           {selectedIds.size >= 2 && (
             <div className="flex items-center gap-2 shrink-0 text-sm">
@@ -596,20 +617,29 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
                         {editingId === vendor.id ? (
                           <>
                             <div className="w-6 shrink-0" />
-                            <Input
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              className="flex-1 h-8"
-                              disabled={saving}
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  void saveEdit()
-                                }
-                                if (e.key === 'Escape') cancelEdit()
-                              }}
-                            />
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <Input
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="h-8"
+                                disabled={saving}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    void saveEdit()
+                                  }
+                                  if (e.key === 'Escape') cancelEdit()
+                                }}
+                              />
+                              <Input
+                                value={editAliases}
+                                onChange={(e) => setEditAliases(e.target.value)}
+                                className="h-8 text-xs"
+                                placeholder="OCR 별칭 (쉼표 구분)"
+                                disabled={saving}
+                              />
+                            </div>
                             <Select
                               value={editUsageType}
                               onValueChange={(v) => setEditUsageType(v as ExpenseVendorUsageType)}

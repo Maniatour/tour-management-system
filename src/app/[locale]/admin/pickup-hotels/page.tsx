@@ -12,8 +12,18 @@ import { useParams } from 'next/navigation'
 import PickupHotelForm from '@/components/PickupHotelForm'
 import PickupHotelAutoGroupModal from '@/components/PickupHotelAutoGroupModal'
 import PickupGroupPresetManager from '@/components/PickupGroupPresetManager'
+import PickupHotelLocationDescriptionDisplay from '@/components/pickup-hotel/PickupHotelLocationDescriptionDisplay'
 
 import { groupHotelsByGroupNumber, processPickupRequest, getRepresentativeHotelForGroupKey, validateGroupNumber, type PickupHotel } from '@/utils/pickupHotelUtils'
+import {
+  filterHotelsByPickupAccessClass,
+  getBlockedPickupAccessClasses,
+  getPickupAccessClassLabel,
+  getAllowedPickupAccessClasses,
+  isAllPickupAccessClassesAllowed,
+  PICKUP_ACCESS_CLASSES,
+  type PickupAccessClass,
+} from '@/lib/pickupHotelVehicleAccess'
 
 type PickupHotelsListUiState = {
   searchTerm: string
@@ -192,6 +202,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
   
 
   const [hotels, setHotels] = useState<PickupHotel[]>([])
+
+  const [vehicleFilterClass, setVehicleFilterClass] = useState<PickupAccessClass | ''>('')
+  const [vehicleFilterMode, setVehicleFilterMode] = useState<'all' | 'allowed' | 'blocked'>('all')
 
   const [loading, setLoading] = useState(true)
 
@@ -411,7 +424,8 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
 
 
-  const filteredHotels = hotels.filter(hotel => {
+  const filteredHotels = filterHotelsByPickupAccessClass(
+    hotels.filter(hotel => {
 
     const searchLower = searchTerm.toLowerCase()
 
@@ -445,7 +459,10 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
     }
     
     return matchesSearch && matchesGroupFilter && matchesStatusFilter
-  })
+  }),
+    vehicleFilterClass || null,
+    vehicleFilterMode
+  )
 
 
 
@@ -662,6 +679,16 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
       description_ko: hotel.description_ko,
 
       description_en: hotel.description_en,
+
+      from_inside_hotel_ko: hotel.from_inside_hotel_ko,
+
+      from_inside_hotel_en: hotel.from_inside_hotel_en,
+
+      from_outside_hotel_ko: hotel.from_outside_hotel_ko,
+
+      from_outside_hotel_en: hotel.from_outside_hotel_en,
+
+      allowed_pickup_access_classes: hotel.allowed_pickup_access_classes,
 
       address: hotel.address,
 
@@ -1394,6 +1421,16 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
         description_en: hotel.description_en,
 
+        from_inside_hotel_ko: hotel.from_inside_hotel_ko,
+
+        from_inside_hotel_en: hotel.from_inside_hotel_en,
+
+        from_outside_hotel_ko: hotel.from_outside_hotel_ko,
+
+        from_outside_hotel_en: hotel.from_outside_hotel_en,
+
+        allowed_pickup_access_classes: hotel.allowed_pickup_access_classes,
+
         address: hotel.address,
 
         pin: hotel.pin,
@@ -1749,6 +1786,33 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
             >
               Inactive
             </button>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm text-gray-600 font-medium shrink-0">
+              {locale === 'en' ? 'Vehicle:' : '차종:'}
+            </span>
+            <select
+              value={vehicleFilterClass}
+              onChange={(e) => setVehicleFilterClass(e.target.value as PickupAccessClass | '')}
+              className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white"
+            >
+              <option value="">{locale === 'en' ? 'All classes' : '전체 등급'}</option>
+              {PICKUP_ACCESS_CLASSES.map((accessClass) => (
+                <option key={accessClass} value={accessClass}>
+                  {getPickupAccessClassLabel(accessClass, locale === 'en' ? 'en' : 'ko')}
+                </option>
+              ))}
+            </select>
+            <select
+              value={vehicleFilterMode}
+              onChange={(e) => setVehicleFilterMode(e.target.value as 'all' | 'allowed' | 'blocked')}
+              disabled={!vehicleFilterClass}
+              className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white disabled:opacity-50"
+            >
+              <option value="all">{locale === 'en' ? 'Any access' : '전체'}</option>
+              <option value="allowed">{locale === 'en' ? 'Can enter' : '진입 가능'}</option>
+              <option value="blocked">{locale === 'en' ? 'Blocked' : '진입 불가'}</option>
+            </select>
           </div>
         </div>
       </div>
@@ -2169,34 +2233,56 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
 
 
-            {/* Description */}
+            {/* Location Description */}
 
-            {(hotel.description_ko || hotel.description_en) && (
+            <PickupHotelLocationDescriptionDisplay
+              hotel={hotel}
+              locale={locale === 'en' ? 'en' : 'ko'}
+              compact
+            />
 
+            {/* Vehicle access summary */}
+            {!isAllPickupAccessClassesAllowed(hotel) && (
               <div className="mb-4">
-
-                {hotel.description_ko && (
-
-                  <div className="text-sm text-gray-900 mb-1">
-
-                    <span className="font-medium">Description (KO):</span> {hotel.description_ko}
-
-                  </div>
-
+                <p className="text-xs font-medium text-emerald-800 mb-1">
+                  {locale === 'en' ? 'Allowed vehicle classes:' : '진입 가능 등급:'}
+                </p>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {getAllowedPickupAccessClasses(hotel).map((accessClass) => (
+                    <span
+                      key={accessClass}
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800"
+                    >
+                      {getPickupAccessClassLabel(accessClass, locale === 'en' ? 'en' : 'ko')}
+                    </span>
+                  ))}
+                </div>
+                {getBlockedPickupAccessClasses(hotel).length > 0 && (
+                  <>
+                    <p className="text-xs font-medium text-red-800 mb-1">
+                      {locale === 'en' ? 'Not allowed:' : '진입 불가:'}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {getBlockedPickupAccessClasses(hotel).map((accessClass) => (
+                        <span
+                          key={accessClass}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800"
+                        >
+                          {getPickupAccessClassLabel(accessClass, locale === 'en' ? 'en' : 'ko')}
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 )}
-
-                {hotel.description_en && (
-
-                  <div className="text-sm text-gray-600">
-
-                    <span className="font-medium">Description (EN):</span> {hotel.description_en}
-
-                  </div>
-
-                )}
-
               </div>
+            )}
 
+            {isAllPickupAccessClassesAllowed(hotel) && (
+              <div className="mb-4">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800">
+                  {locale === 'en' ? 'All classes allowed (Regular + High Top + Bus)' : '전체 등급 진입 가능 (Regular + High Top + Bus)'}
+                </span>
+              </div>
             )}
 
 

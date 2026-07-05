@@ -31,6 +31,11 @@ import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstant
 import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
 import { buildReceiptOcrCandidates, type ReceiptOcrCandidates as ReceiptOcrParseCandidates } from '@/lib/receiptOcrParse'
 import {
+  resolvePaidForFromOcrCandidate,
+  resolvePaidToFromOcrCandidate,
+  vendorEntriesForOcrMatch,
+} from '@/lib/receiptOcrFieldResolve'
+import {
   fetchReceiptOcrParseRuntime,
   MAX_BODY_MATCH_PHRASE,
   prependBodyMatchRuleToStoredSettings,
@@ -85,6 +90,7 @@ interface ExpenseVendor {
   id: string
   name: string
   usage_type?: string | null
+  match_aliases?: string[] | null
 }
 
 type ReceiptOcrResult = {
@@ -173,6 +179,7 @@ export default function TourExpenseManager({
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
+  const vendorMatchEntries = useMemo(() => vendorEntriesForOcrMatch(vendors), [vendors])
   const [loading, setLoading] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -421,10 +428,13 @@ export default function TourExpenseManager({
 
   const buildOcrReviewFromResult = useCallback(
     (expense: TourExpense, ocrResult: ReceiptOcrResult, applyTarget: 'edit_expense' | 'add_form') => {
+      const categoryNames = categories.map((category) => category.name)
       const rawPaidFor = ocrResult.candidates.paid_for || expense.paid_for || ''
-      const isPaidForInOptions = categories.some((category) => category.name === rawPaidFor)
+      const resolvedPaidFor = resolvePaidForFromOcrCandidate(rawPaidFor, categoryNames)
+      const isPaidForInOptions = resolvedPaidFor != null
       const rawPaidTo = ocrResult.candidates.paid_to || expense.paid_to || ''
-      const isPaidToInOptions = paidToOptions.includes(rawPaidTo)
+      const resolvedPaidTo = resolvePaidToFromOcrCandidate(rawPaidTo, vendorMatchEntries)
+      const isPaidToInOptions = resolvedPaidTo != null
       const paymentMethodId = findPaymentMethodCandidate(ocrResult.candidates)
       const noteParts = [
         expense.note || '',
@@ -436,9 +446,9 @@ export default function TourExpenseManager({
         expense,
         result: ocrResult,
         draft: {
-          paid_to: isPaidToInOptions ? rawPaidTo : '',
+          paid_to: isPaidToInOptions ? resolvedPaidTo! : '',
           custom_paid_to: isPaidToInOptions ? '' : rawPaidTo,
-          paid_for: isPaidForInOptions ? rawPaidFor : '',
+          paid_for: isPaidForInOptions ? resolvedPaidFor! : '',
           custom_paid_for: isPaidForInOptions ? '' : rawPaidFor,
           amount:
             ocrResult.candidates.amount != null
@@ -452,7 +462,7 @@ export default function TourExpenseManager({
         },
       }
     },
-    [categories, findPaymentMethodCandidate, paidToOptions, t]
+    [categories, findPaymentMethodCandidate, vendorMatchEntries, t]
   )
 
   /** 브라우저에서 이미지 바이트 확보 → Tesseract는 브라우저에서 실행 (서버 worker 경로·500 방지) */
@@ -865,7 +875,7 @@ export default function TourExpenseManager({
     try {
       const { data, error } = await supabase
         .from('expense_vendors')
-        .select('*')
+        .select('id, name, usage_type, match_aliases')
         .order('name')
 
       if (error) throw error
@@ -1045,6 +1055,82 @@ export default function TourExpenseManager({
     }
   }
 
+  const buildReceiptOnlyOcrNote = (candidates: ReceiptOcrParseCandidates): string => {
+    const base = 'Receipt uploaded first; expense details pending.'
+    const lines: string[] = [base]
+    const pt = (candidates.paid_to || '').trim()
+    if (pt) lines.push(`[OCR] Vendor: ${pt.slice(0, 200)}`)
+    if (candidates.amount != null && candidates.amount > 0) {
+      lines.push(`[OCR] Amount: ${candidates.amount.toFixed(2)}`)
+    }
+    if (candidates.date) lines.push(`[OCR] Date: ${candidates.date}`)
+    const cat = (candidates.paid_for || '').trim()
+    if (cat) lines.push(`[OCR] Category guess: ${cat}`)
+    return lines.join('\n')
+  }
+
+  const receiptOcrHasUsableSignal = (text: string, candidates: ReceiptOcrParseCandidates): boolean => {
+    if (text.trim().length >= 24) return true
+    if ((candidates.paid_to || '').trim().length >= 3) return true
+    if (candidates.amount != null && candidates.amount > 0) return true
+    if (candidates.date) return true
+    if ((candidates.paid_for || '').trim().length > 0) return true
+    if ((candidates.payment_method_id || '').trim().length > 0) return true
+    return false
+  }
+
+  /** 영수증만 첨부 후 브라우저 OCR로 금액·지급처 등을 자동 반영 (서버 Tesseract 경로 이슈 회피) */
+  const applyClientReceiptOcrToExpense = async (
+    expenseId: string,
+    file: File,
+    fallbackRow: TourExpense
+  ): Promise<{ expense: TourExpense; applied: boolean }> => {
+    try {
+      const buffer = await file.arrayBuffer()
+      const mime = file.type?.startsWith('image/') ? file.type : 'image/jpeg'
+      const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
+      const rt = await fetchReceiptOcrParseRuntime(supabase)
+      const candidates = buildReceiptOcrCandidates(text, { runtime: rt })
+
+      if (!receiptOcrHasUsableSignal(text, candidates)) {
+        return { expense: fallbackRow, applied: false }
+      }
+
+      const paymentMethodId = findPaymentMethodCandidate(candidates)
+      const rawPaidTo = (candidates.paid_to || '').trim()
+      const resolvedPaidTo = resolvePaidToFromOcrCandidate(rawPaidTo, vendorMatchEntries)
+      const amount =
+        candidates.amount != null && Number.isFinite(candidates.amount) && candidates.amount > 0
+          ? candidates.amount
+          : 0
+      const rawPaidFor = (candidates.paid_for || '').trim()
+      const resolvedPaidFor =
+        resolvePaidForFromOcrCandidate(
+          rawPaidFor,
+          categories.map((category) => category.name)
+        ) ?? receiptOnlyPaidFor
+
+      const { data, error } = await supabase
+        .from('tour_expenses')
+        .update({
+          paid_to: resolvedPaidTo,
+          amount,
+          payment_method: paymentMethodId || null,
+          paid_for: resolvedPaidFor,
+          note: buildReceiptOnlyOcrNote(candidates),
+        })
+        .eq('id', expenseId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { expense: data as TourExpense, applied: true }
+    } catch (ocrErr) {
+      console.warn('Client receipt OCR apply failed:', ocrErr)
+      return { expense: fallbackRow, applied: false }
+    }
+  }
+
   // 영수증만 첨부: 여러 장이면 각각 별도 tour_expenses 행으로 저장
   const processReceiptOnlyFiles = async (files: File[]) => {
     const imageFiles = files.filter((f) => f.type.startsWith('image/'))
@@ -1064,6 +1150,11 @@ export default function TourExpenseManager({
       const finalProductId = productId || tourData?.product_id || null
       const inserted: TourExpense[] = []
       let failCount = 0
+      let ocrAppliedCount = 0
+
+      if (imageFiles.length === 1) {
+        toast.info(t('receiptOcrAnalyzingAfterUpload'))
+      }
 
       for (const file of imageFiles) {
         try {
@@ -1089,24 +1180,12 @@ export default function TourExpenseManager({
 
           if (error) throw error
           if (data) {
-            let expenseRow: TourExpense = data as TourExpense
-            try {
-              const ocrRes = await fetch('/api/expenses/receipt-ocr-apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ expenseId: data.id }),
-              })
-              const ocrJson = (await ocrRes.json().catch(() => ({}))) as {
-                ok?: boolean
-                expense?: TourExpense
-              }
-              if (ocrRes.ok && ocrJson?.ok === true && ocrJson.expense) {
-                expenseRow = ocrJson.expense
-              }
-            } catch (ocrApplyErr) {
-              console.warn('receipt-ocr-apply after receipt-only upload:', ocrApplyErr)
-            }
+            const { expense: expenseRow, applied } = await applyClientReceiptOcrToExpense(
+              data.id,
+              file,
+              data as TourExpense
+            )
+            if (applied) ocrAppliedCount += 1
             inserted.push(expenseRow)
           }
         } catch (itemErr) {
@@ -1123,11 +1202,21 @@ export default function TourExpenseManager({
       if (inserted.length === 0) {
         alert(t('expenseRegistrationError'))
       } else if (failCount === 0) {
-        alert(
-          inserted.length === 1
-            ? t('receiptOnlyUploadSuccess')
-            : t('receiptOnlyBatchSuccess', { count: inserted.length })
-        )
+        if (ocrAppliedCount > 0 && ocrAppliedCount === inserted.length) {
+          alert(
+            inserted.length === 1
+              ? t('receiptOnlyUploadSuccessOcr')
+              : t('receiptOnlyBatchSuccessOcr', { count: inserted.length })
+          )
+        } else if (ocrAppliedCount > 0) {
+          alert(t('receiptOnlyBatchPartialOcr', { ocr: ocrAppliedCount, total: inserted.length }))
+        } else {
+          alert(
+            inserted.length === 1
+              ? t('receiptOnlyUploadSuccess')
+              : t('receiptOnlyBatchSuccess', { count: inserted.length })
+          )
+        }
       } else {
         alert(t('receiptOnlyBatchPartialSuccess', { saved: inserted.length, failed: failCount }))
       }

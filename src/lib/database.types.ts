@@ -2887,18 +2887,21 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          match_aliases: string[]
           name: string
           usage_type: string
         }
         Insert: {
           created_at?: string | null
           id?: string
+          match_aliases?: string[]
           name: string
           usage_type?: string
         }
         Update: {
           created_at?: string | null
           id?: string
+          match_aliases?: string[]
           name?: string
           usage_type?: string
         }
@@ -3999,9 +4002,14 @@ export type Database = {
       pickup_hotels: {
         Row: {
           address: string | null
+          allowed_pickup_access_classes: ('regular' | 'high_top' | 'bus')[] | null
           created_at: string | null
           description_en: string | null
           description_ko: string | null
+          from_inside_hotel_en: string | null
+          from_inside_hotel_ko: string | null
+          from_outside_hotel_en: string | null
+          from_outside_hotel_ko: string | null
           group_number: number | null
           hotel: string
           id: string
@@ -4016,9 +4024,14 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          allowed_pickup_access_classes?: ('regular' | 'high_top' | 'bus')[] | null
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
+          from_inside_hotel_en?: string | null
+          from_inside_hotel_ko?: string | null
+          from_outside_hotel_en?: string | null
+          from_outside_hotel_ko?: string | null
           group_number?: number | null
           hotel: string
           id?: string
@@ -4033,9 +4046,14 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          allowed_pickup_access_classes?: ('regular' | 'high_top' | 'bus')[] | null
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
+          from_inside_hotel_en?: string | null
+          from_inside_hotel_ko?: string | null
+          from_outside_hotel_en?: string | null
+          from_outside_hotel_ko?: string | null
           group_number?: number | null
           hotel?: string
           id?: string
@@ -9779,6 +9797,7 @@ export type Database = {
           model: string
           name: string
           passenger_capacity: number
+          pickup_access_class: 'regular' | 'high_top' | 'bus'
           updated_at: string | null
           vehicle_category: string
         }
@@ -9792,6 +9811,7 @@ export type Database = {
           model: string
           name: string
           passenger_capacity: number
+          pickup_access_class?: 'regular' | 'high_top' | 'bus'
           updated_at?: string | null
           vehicle_category?: string
         }
@@ -9805,6 +9825,7 @@ export type Database = {
           model?: string
           name?: string
           passenger_capacity?: number
+          pickup_access_class?: 'regular' | 'high_top' | 'bus'
           updated_at?: string | null
           vehicle_category?: string
         }
@@ -11421,7 +11442,7 @@ export type Database = {
       validate_image_url: { Args: { url: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      pickup_access_class: 'regular' | 'high_top' | 'bus'
     }
     CompositeTypes: {
       [_ in never]: never

@@ -10,6 +10,11 @@ import {
 } from '@/lib/receiptOcrExtract'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import { fetchReceiptOcrParseRuntime } from '@/lib/receiptOcrParseRules'
+import {
+  resolvePaidForFromOcrCandidate,
+  resolvePaidToFromOcrCandidate,
+  vendorEntriesForOcrMatch,
+} from '@/lib/receiptOcrFieldResolve'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -169,20 +174,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, skipped: 'low_signal', expense: fresh }, { status: 200 })
     }
 
-    const pmOptions = await loadPaymentMethodOcrOptions(supabase)
+    const [pmOptions, categoryRes, vendorRes] = await Promise.all([
+      loadPaymentMethodOcrOptions(supabase),
+      supabase.from('expense_categories').select('name').order('name'),
+      supabase.from('expense_vendors').select('name, match_aliases').order('name'),
+    ])
     const paymentMethodId = resolvePaymentMethodIdFromOcrCandidates(candidates, pmOptions)
 
-    const paidToTrim = (candidates.paid_to || '').trim()
+    const categoryNames = ((categoryRes.data || []) as { name: string }[])
+      .map((r) => String(r.name ?? '').trim())
+      .filter(Boolean)
+    const vendorEntries = vendorEntriesForOcrMatch(
+      ((vendorRes.data || []) as { name: string; match_aliases?: string[] | null }[]) ?? []
+    )
+
+    const rawPaidTo = (candidates.paid_to || '').trim()
+    const resolvedPaidTo = resolvePaidToFromOcrCandidate(rawPaidTo, vendorEntries)
+
     const amount =
       candidates.amount != null && Number.isFinite(candidates.amount) && candidates.amount > 0
         ? candidates.amount
         : 0
 
+    const rawPaidFor = (candidates.paid_for || '').trim()
+    const resolvedPaidFor =
+      resolvePaidForFromOcrCandidate(rawPaidFor, categoryNames) ?? TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR
+
     const updatePayload = {
-      paid_to: paidToTrim.length > 0 ? paidToTrim.slice(0, 500) : null,
+      paid_to: resolvedPaidTo,
       amount,
       payment_method: paymentMethodId ?? null,
-      paid_for: TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR,
+      paid_for: resolvedPaidFor,
       note: buildDraftNote(candidates),
     }
 

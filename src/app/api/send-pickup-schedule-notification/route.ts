@@ -12,11 +12,16 @@ import {
   type PickupResolveContext,
 } from '@/lib/pickupGroupPreset'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
+import {
+  formatPickupLocationDescriptionHtml,
+  hasPickupLocationDescription,
+} from '@/lib/pickupHotelVehicleAccess'
+
+const PICKUP_HOTEL_EMAIL_SELECT =
+  'id, hotel, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
 
 /**
  * POST /api/send-pickup-schedule-notification
- * 
- * 픽업 스케줄 확정 알림 이메일 발송 API
  * 
  * 요청 본문:
  * {
@@ -117,7 +122,7 @@ export async function POST(request: NextRequest) {
         ) || requestedHotelId
       const { data: hotelData, error: hotelError } = await routeDb
         .from('pickup_hotels')
-        .select('id, hotel, pick_up_location, address, link, media')
+        .select(PICKUP_HOTEL_EMAIL_SELECT)
         .eq('id', effectiveHotelId)
         .maybeSingle()
       if (hotelError) {
@@ -273,7 +278,7 @@ export async function POST(request: NextRequest) {
 
               const { data: hotelInfo } = await routeDb
                 .from('pickup_hotels')
-                .select('hotel, pick_up_location, address, link')
+                .select(`hotel, pick_up_location, address, link, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en`)
                 .eq('id', effectiveHotelId)
                 .maybeSingle()
 
@@ -534,7 +539,7 @@ export async function POST(request: NextRequest) {
     if (reservation.pickup_hotel) {
       const { data: requestedRow } = await routeDb
         .from('pickup_hotels')
-        .select('id, hotel, pick_up_location, address, link, media')
+        .select(PICKUP_HOTEL_EMAIL_SELECT)
         .eq('id', reservation.pickup_hotel)
         .maybeSingle()
       requestedPickupHotel = requestedRow
@@ -865,6 +870,26 @@ type PickupHotelEmailRow = {
   address?: string | null
   link?: string | null
   media?: string[] | null
+  description_ko?: string | null
+  description_en?: string | null
+  from_inside_hotel_ko?: string | null
+  from_inside_hotel_en?: string | null
+  from_outside_hotel_ko?: string | null
+  from_outside_hotel_en?: string | null
+}
+
+function buildPickupLocationDescriptionBlockHtml(
+  isEnglish: boolean,
+  pickupHotel: PickupHotelEmailRow
+): string {
+  const hotelLike = pickupHotel as PickupHotelUtil
+  if (!hasPickupLocationDescription(hotelLike)) return ''
+  return `
+            <div class="info-row" style="margin-top: 12px;">
+              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px;">
+                ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
+              </div>
+            </div>`
 }
 
 function isPickupHotelRedirectedForEmail(
@@ -896,6 +921,42 @@ function buildMapButtonHintHtml(isEnglish: boolean): string {
   return isEnglish
     ? 'Click the button above to view the exact pickup location on Google Maps, and tap <strong>Directions</strong> to see your full route. Many Las Vegas hotels have multiple entrances, and the pickup point is often not the main lobby — please be sure to come to the location shown by this button.'
     : '위 버튼을 클릭하시면 구글 지도에서 정확한 픽업 장소를 확인하실 수 있고, <strong>Directions(길찾기)</strong> 버튼을 누르시면 이동 경로까지 모두 확인하실 수 있습니다. 라스베가스 호텔은 입구가 여러 곳이며 픽업 장소가 메인 로비와 다른 경우가 많으니, 반드시 이 버튼이 안내하는 픽업 포인트로 와 주시기 바랍니다.'
+}
+
+function buildPickupNotificationRemindersHtml(isEnglish: boolean, hasChatRoom: boolean): string {
+  const title = isEnglish ? 'Reminders for your tour' : '투어 전 참고 사항'
+  const items = isEnglish
+    ? [
+        'Please arrive <strong>10 minutes early</strong> and confirm the pickup location with hotel staff if needed.',
+        hasChatRoom
+          ? 'When you arrive at the pickup location, please open the <strong>tour chat</strong> (link below) and let us know you are there. This helps your guide find you quickly.'
+          : 'When you arrive at the pickup location, please contact us to let us know you are there.',
+        hasChatRoom
+          ? 'If you did not receive your tour chat link, please contact us.'
+          : 'If you need help finding your pickup point, please contact us.',
+      ]
+    : [
+        '픽업 시간보다 <strong>10분 일찍</strong> 도착해 주시고, 필요하면 호텔 직원에게 픽업 장소를 다시 확인해 주세요.',
+        hasChatRoom
+          ? '픽업 장소에 도착하시면 아래 <strong>투어 채팅방</strong> 링크로 들어와 도착했음을 알려 주세요. 가이드가 더 빠르게 찾아갈 수 있습니다.'
+          : '픽업 장소에 도착하시면 저희에게 연락해 도착했음을 알려 주세요.',
+        hasChatRoom
+          ? '투어 채팅 링크를 받지 못하셨다면 저희에게 연락해 주세요.'
+          : '픽업 장소를 찾기 어려우시면 저희에게 연락해 주세요.',
+      ]
+
+  return `
+        <div style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-top: 4px solid #f59e0b; border-bottom: 4px solid #f59e0b; padding: 22px 24px; margin: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);">
+          <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #b45309; text-align: center;">
+            ${isEnglish ? 'Please read first' : '먼저 확인해 주세요'}
+          </p>
+          <h2 style="font-size: 22px; font-weight: bold; color: #92400e; margin: 0 0 14px 0; line-height: 1.35; text-align: center;">
+            📋 ${title}
+          </h2>
+          <ul style="margin: 0 auto; padding-left: 20px; max-width: 540px; color: #78350f; line-height: 1.85; font-size: 15px;">
+            ${items.map((item) => `<li style="margin-bottom: 10px;">${item}</li>`).join('')}
+          </ul>
+        </div>`
 }
 
 function buildPickupHotelSectionHtml(
@@ -945,6 +1006,7 @@ function buildPickupHotelSectionHtml(
                 <span class="value" style="font-size: 15px;">${pickupHotel.address}</span>
               </div>
               ` : ''}
+              ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
               ${mapHint}
             </div>`
   }
@@ -966,6 +1028,7 @@ function buildPickupHotelSectionHtml(
               <span class="value">${pickupHotel.address}</span>
             </div>
             ` : ''}
+            ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
             ${mapHint}`
 }
 
@@ -1119,6 +1182,7 @@ export function generatePickupScheduleEmailContent(
         <div class="header">
           <h1>${isEnglish ? 'Pickup Schedule Confirmed' : '픽업 스케줄 확정 안내'}</h1>
         </div>
+        ${buildPickupNotificationRemindersHtml(isEnglish, !!chatRoomCode)}
         <div class="content">
           <p>${isEnglish ? `Dear ${customer.name},` : `${customer.name}님,`}</p>
           
@@ -1440,12 +1504,6 @@ export function generatePickupScheduleEmailContent(
             ` : ''}
           </div>
           ` : ''}
-
-          <div class="highlight">
-            <p style="margin: 0; font-weight: bold;">${isEnglish 
-              ? '⚠️ Important: Please arrive at the pickup location 5 minutes before the scheduled time.'
-              : '⚠️ 중요: 픽업 시간보다 5분 전에 픽업 장소에 도착해주세요.'}</p>
-          </div>
 
           ${chatRoomCode ? renderTourChatRoomEmailSectionHtml(chatRoomCode, isEnglish) : ''}
 

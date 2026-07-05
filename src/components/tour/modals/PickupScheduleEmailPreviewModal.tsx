@@ -994,9 +994,17 @@ export default function PickupScheduleEmailPreviewModal({
                         : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-sm'
                     }`}
                   >
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedReservationId(reservation.id)}
-                      className="w-full text-left p-4"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setSelectedReservationId(reservation.id)
+                        }
+                      }}
+                      className="w-full cursor-pointer text-left p-4"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-xs font-semibold text-gray-500">
@@ -1109,7 +1117,7 @@ export default function PickupScheduleEmailPreviewModal({
                           </div>
                         </div>
                       )}
-                    </button>
+                    </div>
                     
                     {/* 개별 발송 버튼 */}
                     <div className="px-4 pb-4 space-y-2">

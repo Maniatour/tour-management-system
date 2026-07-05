@@ -1171,7 +1171,7 @@ export default function PricingSection({
             if (isCardFeeManuallyEdited.current) {
               return currentStored
             }
-            if (isExistingPricingLoaded) {
+            if (Math.abs(currentStored - calculatedComm) < 0.01) {
               return currentStored
             }
             return calculatedComm
@@ -1204,11 +1204,12 @@ export default function PricingSection({
               calculatedCommission
             )
             const sameOnline = Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01
-            if (!sameOnline && !skipOtaChannelPaymentAuto) {
+            const sameCommission =
+              Math.abs((formData.commission_amount ?? 0) - nextCommissionAmount) < 0.01
+            if ((!sameOnline || !sameCommission) && !skipOtaChannelPaymentAuto) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
-                onlinePaymentAmount: salePriceTimesPax,
-                commission_base_price: channelPaymentBase,
+                ...(sameOnline ? {} : { onlinePaymentAmount: salePriceTimesPax, commission_base_price: channelPaymentBase }),
                 commission_amount: nextCommissionAmount,
               }))
             }
@@ -4127,30 +4128,14 @@ export default function PricingSection({
                           onChange={(e) => {
                             const percent = Number(e.target.value) || 0
                             markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
-                            const basePrice = formData.commission_base_price !== undefined 
-                              ? formData.commission_base_price 
-                              : (formData.onlinePaymentAmount || (() => {
-                                  // 할인 후 상품가 계산 (불포함 가격 제외)
-                                  const notIncludedPrice = notIncludedBreakdown.totalUsd
-                                  const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
-                                  return discountedPrice > 0 ? discountedPrice : formData.subtotal
-                                })())
-                            const adjustedBasePrice =
-                              isReservationCancelled
-                                ? Math.max(
-                                    0,
-                                    Number(formData.commission_base_price) || channelPaymentAmountAfterReturn || 0
-                                  )
-                                : Math.max(0, basePrice - returnedAmount)
+                            const adjustedBasePrice = Math.max(0, channelPaymentAmountAfterReturn)
                             const calculatedAmount =
                               adjustedBasePrice > 0 && percent > 0
                                 ? Math.round(adjustedBasePrice * (percent / 100) * 100) / 100
                                 : 0
                             isCardFeeManuallyEdited.current = false
-                            otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
-                              adjustedBasePrice,
-                              percent
-                            )
+                            setIsCommissionAmountFocused(false)
+                            setCommissionAmountInput('')
                             setFormData((prev: typeof formData) => ({
                               ...stripChannelSettlementUnlessLocked(prev),
                               commission_percent: percent,

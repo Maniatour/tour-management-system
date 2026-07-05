@@ -1,4 +1,5 @@
 import type { Database } from '@/lib/supabase'
+import type { PickupAccessClass } from '@/lib/pickupAccessClass'
 
 export type Customer = Database['public']['Tables']['customers']['Row']
 export type Product = Database['public']['Tables']['products']['Row']
@@ -19,6 +20,11 @@ export interface PickupHotel {
   pick_up_location: string
   description_ko: string | null
   description_en: string | null
+  from_inside_hotel_ko: string | null
+  from_inside_hotel_en: string | null
+  from_outside_hotel_ko: string | null
+  from_outside_hotel_en: string | null
+  allowed_pickup_access_classes: PickupAccessClass[] | null
   address: string
   pin: string | null
   link: string | null

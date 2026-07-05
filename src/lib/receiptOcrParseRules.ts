@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { RECEIPT_OCR_BUILTIN_CATEGORY_KEYWORDS } from '@/lib/receiptOcrParseBuiltin'
+import { RECEIPT_OCR_BUILTIN_BODY_MATCH_RULES } from '@/lib/receiptOcrRuleTemplates'
 
 export const RECEIPT_OCR_PARSE_RULES_KEY = 'receipt_ocr_parse_rules'
 
@@ -218,20 +219,47 @@ export function buildReceiptOcrParseRuntime(stored: ReceiptOcrParseRulesStored |
   }
 
   const bodyMatchRules: ReceiptOcrParseRuntime['bodyMatchRules'] = []
-  for (const b of s.body_match_rules) {
-    if (!b.enabled) continue
-    const cn = normalizeReceiptBodyForMatch(b.contains_phrase)
-    if (!cn) continue
-    const pt = b.paid_to.trim()
-    const pf = b.paid_for.trim()
-    const pmid = (b.payment_method_id ?? '').trim()
-    if (!pt && !pf && !b.payment_use_cc_label && !pmid) continue
+  const seenBodyNorm = new Set<string>()
+  const pushBodyRule = (rule: {
+    contains_phrase: string
+    paid_to: string
+    paid_for: string
+    payment_method_id?: string
+    payment_use_cc_label: boolean
+  }) => {
+    const cn = normalizeReceiptBodyForMatch(rule.contains_phrase)
+    if (!cn || seenBodyNorm.has(cn)) return
+    const pt = rule.paid_to.trim()
+    const pf = rule.paid_for.trim()
+    const pmid = (rule.payment_method_id ?? '').trim()
+    if (!pt && !pf && !rule.payment_use_cc_label && !pmid) return
+    seenBodyNorm.add(cn)
     bodyMatchRules.push({
       containsNorm: cn,
       paidTo: pt || null,
       paidFor: pf || null,
       paymentMethodId: pmid || null,
-      paymentUseCcLabel: b.payment_use_cc_label,
+      paymentUseCcLabel: rule.payment_use_cc_label,
+    })
+  }
+
+  for (const b of s.body_match_rules) {
+    if (!b.enabled) continue
+    pushBodyRule({
+      contains_phrase: b.contains_phrase,
+      paid_to: b.paid_to,
+      paid_for: b.paid_for,
+      payment_method_id: b.payment_method_id,
+      payment_use_cc_label: b.payment_use_cc_label,
+    })
+  }
+
+  for (const builtin of RECEIPT_OCR_BUILTIN_BODY_MATCH_RULES) {
+    pushBodyRule({
+      contains_phrase: builtin.contains_phrase,
+      paid_to: builtin.paid_to,
+      paid_for: builtin.paid_for,
+      payment_use_cc_label: builtin.payment_use_cc_label,
     })
   }
 

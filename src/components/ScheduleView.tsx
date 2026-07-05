@@ -136,6 +136,14 @@ const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), 
   loading: () => null,
 })
 
+const VehicleMaintenanceVehicleModal = dynamic(
+  () => import('@/components/vehicle-maintenance/VehicleMaintenanceVehicleModal'),
+  {
+    ssr: false,
+    loading: () => null,
+  }
+)
+
 const TeamMemberEditModal = dynamic(() => import('@/components/team/TeamMemberEditModal'), {
   ssr: false,
   loading: () => null,
@@ -922,6 +930,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [vehicleEditModalVehicle, setVehicleEditModalVehicle] = useState<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [vehicleEditModalPrefill, setVehicleEditModalPrefill] = useState<any>(null)
+  const [showVehicleMaintenanceModal, setShowVehicleMaintenanceModal] = useState(false)
+  const [vehicleMaintenanceModalVehicleId, setVehicleMaintenanceModalVehicleId] = useState<string | null>(null)
   const [teamEditModalMember, setTeamEditModalMember] = useState<Team | null>(null)
   // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
   const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
@@ -11542,6 +11552,32 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             setVehicleEditModalVehicle(null)
             setVehicleEditModalPrefill(null)
           }}
+          {...(canEditVehicleFromSchedule && vehicleEditModalVehicle?.id
+            ? {
+                onOpenMaintenance: () => {
+                  setVehicleMaintenanceModalVehicleId(String(vehicleEditModalVehicle.id))
+                  setShowVehicleMaintenanceModal(true)
+                },
+              }
+            : {})}
+        />
+      )}
+
+      {showVehicleMaintenanceModal && vehicleMaintenanceModalVehicleId && (
+        <VehicleMaintenanceVehicleModal
+          open={showVehicleMaintenanceModal}
+          onOpenChange={(open) => {
+            setShowVehicleMaintenanceModal(open)
+            if (!open) setVehicleMaintenanceModalVehicleId(null)
+          }}
+          vehicleId={vehicleMaintenanceModalVehicleId}
+          vehicleLabel={
+            vehicleEditModalVehicle?.id === vehicleMaintenanceModalVehicleId
+              ? (vehicleEditModalVehicle.nick
+                  ? `${vehicleEditModalVehicle.nick} (${vehicleEditModalVehicle.vehicle_number})`
+                  : vehicleEditModalVehicle.vehicle_number) ?? null
+              : null
+          }
         />
       )}
 
