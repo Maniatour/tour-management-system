@@ -952,6 +952,11 @@ function mergeChecklistsParallel(
     out.push({
       ...k,
       title_en: e.title_en?.trim() || e.title_ko?.trim() || k.title_en,
+      ...(e.manual_ko?.trim() && !k.manual_ko?.trim() ? { manual_ko: e.manual_ko } : {}),
+      ...(e.manual_en?.trim() && !k.manual_en?.trim() ? { manual_en: e.manual_en } : {}),
+      ...(e.manual_status && !k.manual_status ? { manual_status: e.manual_status } : {}),
+      ...(e.row_display === 'text' && k.row_display !== 'text' ? { row_display: 'text' as const } : {}),
+      ...(e.attachments?.length && !k.attachments?.length ? { attachments: e.attachments } : {}),
     })
   }
   return sanitizeChecklistItems(out)

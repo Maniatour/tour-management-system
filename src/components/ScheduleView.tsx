@@ -919,6 +919,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     engine_oil_change_cycle?: number | null
     recent_engine_oil_change_mileage?: number | null
     recent_engine_oil_change_date?: string | null
+    current_mileage?: number | null
   }>>([])
   /** 회사 차량 엔진오일 추정용 — fetchData 시 6개월치 투어 (당월 tours 와 id 기준 병합) */
   const [vehicleOilCalcTours, setVehicleOilCalcTours] = useState<ScheduleTourForOil[]>([])
@@ -2315,7 +2316,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const { data: allVehiclesData } = await (supabase as any)
         .from('vehicles')
         .select(
-          'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage',
+          'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage, current_mileage',
         )
       const isCancelled = (s: string | null | undefined) => {
         if (!s) return false
@@ -2388,6 +2389,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             rental_end_date?: string | null
             engine_oil_change_cycle?: number | null
             recent_engine_oil_change_mileage?: number | null
+            current_mileage?: number | null
           }) => {
             const fromMaintenance = oilChangeByVehicleId.get(v.id)
             const fallbackMileage =
@@ -2403,6 +2405,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
               recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
               recent_engine_oil_change_date: fromMaintenance?.date ?? null,
+              current_mileage:
+                v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
             }
           },
         ),
@@ -5936,6 +5940,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
         recent_engine_oil_change_mileage: v.recent_engine_oil_change_mileage ?? null,
         recent_engine_oil_change_date: v.recent_engine_oil_change_date ?? null,
+        current_mileage: v.current_mileage ?? null,
       }
       const summary = computeVehicleOilMaintenanceSummary({
         vehicle: meta,

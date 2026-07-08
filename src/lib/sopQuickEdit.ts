@@ -11,6 +11,31 @@ import {
   type SopChecklistRowDisplay,
   type SopSection,
 } from '@/types/sopStructure'
+import { sopPlainDisplayText } from '@/components/LightRichEditor'
+
+/** 체크리스트 줄 재구성 시 메뉴얼·첨부 등 부가 필드 유지 */
+function copyChecklistItemRowExtras(prev: SopChecklistItem | undefined): Partial<SopChecklistItem> {
+  if (!prev) return {}
+  return {
+    ...(prev.manual_ko ? { manual_ko: prev.manual_ko } : {}),
+    ...(prev.manual_en ? { manual_en: prev.manual_en } : {}),
+    ...(prev.manual_status ? { manual_status: prev.manual_status } : {}),
+    ...(prev.row_display === 'text' ? { row_display: 'text' as const } : {}),
+    ...(prev.attachments?.length ? { attachments: prev.attachments } : {}),
+  }
+}
+
+export function hasChecklistManualContent(value: string | undefined | null): boolean {
+  return Boolean(sopPlainDisplayText(value ?? '').trim())
+}
+
+export function sopDisplayLabel(ko: string, en: string, lang: SopEditLocale): string {
+  return sopPlainDisplayText(sopText(ko, en, lang))
+}
+
+export function getChecklistItemDisplayLabel(item: SopChecklistItem, lang: SopEditLocale): string {
+  return sopDisplayLabel(item.title_ko, item.title_en, lang)
+}
 
 export type ManualIconState = 'empty' | 'draft' | 'complete'
 
@@ -18,8 +43,8 @@ export function getManualIconState(
   item: SopChecklistItem,
   lang: SopEditLocale
 ): ManualIconState {
-  const body = sopText(item.manual_ko ?? '', item.manual_en ?? '', lang).trim()
-  if (!body) return 'empty'
+  const body = sopText(item.manual_ko ?? '', item.manual_en ?? '', lang)
+  if (!hasChecklistManualContent(body)) return 'empty'
   return item.manual_status === 'complete' ? 'complete' : 'draft'
 }
 
@@ -93,6 +118,7 @@ export function applyCategoryBodyDraft(
         title_en: lang === 'en' ? line : (prev?.title_en ?? ''),
         sort_order: idx,
         parent_id: prev?.parent_id ?? null,
+        ...copyChecklistItemRowExtras(prev),
       }
     })
     const { checklist_items: _omit, ...base } = category
@@ -148,8 +174,8 @@ export function applyChecklistManualValue(
   const v = value ?? ''
   const manual_ko = lang === 'ko' ? v : (item.manual_ko ?? '')
   const manual_en = lang === 'en' ? v : (item.manual_en ?? '')
-  const hasKo = Boolean(manual_ko.trim())
-  const hasEn = Boolean(manual_en.trim())
+  const hasKo = hasChecklistManualContent(manual_ko)
+  const hasEn = hasChecklistManualContent(manual_en)
 
   if (!hasKo && !hasEn) {
     const { manual_ko: _ko, manual_en: _en, manual_status: _st, ...rest } = item

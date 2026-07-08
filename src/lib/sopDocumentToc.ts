@@ -1,3 +1,4 @@
+import { sopPlainDisplayText } from '@/components/LightRichEditor'
 import type { SopChecklistItem, SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { checklistRootRows, sopText } from '@/types/sopStructure'
 
@@ -24,14 +25,7 @@ export function sopChecklistAnchorId(itemId: string): string {
 
 /** 목차·앵커용 짧은 평문 라벨 */
 export function sopTocPlainLabel(raw: string, fallback: string, maxLen = 72): string {
-  const t = (raw || '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/^#+\s*/gm, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const t = sopPlainDisplayText(raw)
   const label = t || fallback
   return label.length > maxLen ? `${label.slice(0, maxLen)}…` : label
 }

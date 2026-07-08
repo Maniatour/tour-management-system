@@ -98,6 +98,7 @@ interface OfficeScheduleModalProps {
 const TIME_COL_PX = 56
 const FIXED_SIDE_COLUMNS_PX = TIME_COL_PX * 2
 const DAY_COL_MIN_PX = 30
+const MOBILE_TAP_MOVE_THRESHOLD_PX = 12
 
 const OFFICE_SCHEDULE_STAFF_ORDER = ['judy', 'hana', 'somi', 'mike'] as const
 
@@ -266,6 +267,13 @@ export default function OfficeScheduleModal({
   const paintRafRef = useRef<number | null>(null)
   const pointerCaptureTargetRef = useRef<HTMLElement | null>(null)
   const activePointerIdRef = useRef<number | null>(null)
+  const touchTapPendingRef = useRef<{
+    pointerId: number
+    x: number
+    y: number
+    date: string
+    hourSlot: number
+  } | null>(null)
   const canEditAllRef = useRef(canEditAll)
   const currentUserEmailRef = useRef(currentUserEmail)
 
@@ -285,17 +293,31 @@ export default function OfficeScheduleModal({
     monthDateStringsRef.current = monthDays.map((d) => d.dateString)
   }, [monthDays])
 
+  const [isCompactScheduleTable, setIsCompactScheduleTable] = useState(false)
+
   const isDirty = useMemo(
     () => !slotMapsEqual(savedSlotMap, draftSlotMap),
     [savedSlotMap, draftSlotMap]
   )
 
+  const scheduleTimeColumnCount = isCompactScheduleTable ? 1 : 2
+  const scheduleSideColumnsPx = isCompactScheduleTable ? TIME_COL_PX : FIXED_SIDE_COLUMNS_PX
+
   const dynamicMinTableWidthPx = useMemo(
-    () => FIXED_SIDE_COLUMNS_PX + monthDays.length * DAY_COL_MIN_PX,
-    [monthDays.length]
+    () => scheduleSideColumnsPx + monthDays.length * DAY_COL_MIN_PX,
+    [monthDays.length, scheduleSideColumnsPx]
   )
 
   const bodyScrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const update = () => setIsCompactScheduleTable(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const endStroke = () => {
@@ -825,6 +847,79 @@ export default function OfficeScheduleModal({
     paintStrokeTo({ date, hourSlot }, true)
   }
 
+  const finishStrokeSnapshot = useCallback(() => {
+    const before = strokeBeforeRef.current
+    strokeBeforeRef.current = null
+    if (before && !slotMapsEqual(before, draftSlotMapRef.current)) {
+      setUndoStack((stack) => pushUndoSnapshot(stack, before))
+      setRedoStack([])
+    }
+    setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+    setSaveSuccess(false)
+    setStatsTick((n) => n + 1)
+  }, [])
+
+  const applyMobileTap = useCallback(
+    (date: string, hourSlot: number) => {
+      if (!canPaintCell()) return
+      strokeBeforeRef.current = cloneSlotMap(draftSlotMapRef.current)
+      paintStrokeTo({ date, hourSlot }, true)
+      finishStrokeSnapshot()
+    },
+    [canPaintCell, paintStrokeTo, finishStrokeSnapshot]
+  )
+
+  const handleCellPointerDown = (e: React.PointerEvent, date: string, hourSlot: number) => {
+    if (!canPaintCell()) return
+    if (e.pointerType === 'touch') {
+      touchTapPendingRef.current = {
+        pointerId: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        date,
+        hourSlot,
+      }
+      return
+    }
+    e.preventDefault()
+    startPainting(e, date, hourSlot)
+  }
+
+  useEffect(() => {
+    const onTouchPointerMove = (e: PointerEvent) => {
+      const pending = touchTapPendingRef.current
+      if (!pending || pending.pointerId !== e.pointerId) return
+      const dx = e.clientX - pending.x
+      const dy = e.clientY - pending.y
+      if (
+        dx * dx + dy * dy >
+        MOBILE_TAP_MOVE_THRESHOLD_PX * MOBILE_TAP_MOVE_THRESHOLD_PX
+      ) {
+        touchTapPendingRef.current = null
+      }
+    }
+    const onTouchPointerUp = (e: PointerEvent) => {
+      const pending = touchTapPendingRef.current
+      if (!pending || pending.pointerId !== e.pointerId) return
+      touchTapPendingRef.current = null
+      const dx = e.clientX - pending.x
+      const dy = e.clientY - pending.y
+      if (
+        dx * dx + dy * dy >
+        MOBILE_TAP_MOVE_THRESHOLD_PX * MOBILE_TAP_MOVE_THRESHOLD_PX
+      ) {
+        return
+      }
+      applyMobileTap(pending.date, pending.hourSlot)
+    }
+    window.addEventListener('pointerup', onTouchPointerUp)
+    window.addEventListener('pointermove', onTouchPointerMove, { passive: true })
+    return () => {
+      window.removeEventListener('pointerup', onTouchPointerUp)
+      window.removeEventListener('pointermove', onTouchPointerMove)
+    }
+  }, [applyMobileTap])
+
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
@@ -1038,42 +1133,6 @@ export default function OfficeScheduleModal({
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button
-              type="button"
-              onClick={() => setIsEmployeeSettingsOpen(true)}
-              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
-              title={C.employeeSettingsTitle}
-            >
-              <Briefcase className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsHistoryOpen(true)}
-              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
-              title={C.historyTitle}
-            >
-              <History className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleUndo}
-              disabled={!canUndo || saving}
-              title={C.undo}
-              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg disabled:opacity-40"
-            >
-              <Undo2 className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleRedo}
-              disabled={!canRedo || saving}
-              title={C.redo}
-              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg disabled:opacity-40"
-            >
-              <Redo2 className="w-4 h-4" />
-            </button>
-          </div>
         </div>
 
         <div className="hidden lg:flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 shrink-0">
@@ -1149,25 +1208,65 @@ export default function OfficeScheduleModal({
 
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="px-3 sm:px-4 py-2 border-b border-gray-100 shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2 bg-white">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 min-w-0">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600 shrink-0"
               aria-label={C.prevMonth}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-sm font-semibold text-gray-800 min-w-[6.5rem] text-center">
+            <span className="text-sm font-semibold text-gray-800 min-w-[5.5rem] text-center truncate">
               {monthLabel}
             </span>
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600 shrink-0"
               aria-label={C.nextMonth}
             >
               <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="lg:hidden flex items-center gap-1 ml-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsEmployeeSettingsOpen(true)}
+              className="p-1.5 text-gray-700 bg-white border border-gray-300 rounded-md"
+              title={C.employeeSettingsTitle}
+              aria-label={C.employeeSettingsButton}
+            >
+              <Briefcase className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              className="p-1.5 text-gray-700 bg-white border border-gray-300 rounded-md"
+              title={C.historyTitle}
+              aria-label={C.history}
+            >
+              <History className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo || saving}
+              title={C.undo}
+              aria-label={C.undo}
+              className="p-1.5 text-gray-700 bg-white border border-gray-300 rounded-md disabled:opacity-40"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={!canRedo || saving}
+              title={C.redo}
+              aria-label={C.redo}
+              className="p-1.5 text-gray-700 bg-white border border-gray-300 rounded-md disabled:opacity-40"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
             </button>
           </div>
           <p className="hidden sm:block text-xs text-gray-500">{C.hint}</p>
@@ -1292,7 +1391,7 @@ export default function OfficeScheduleModal({
           ) : (
             <div
               ref={bodyScrollRef}
-              className="overflow-auto min-h-0 flex-1 select-none touch-none [scrollbar-gutter:stable] isolate"
+              className="overflow-auto min-h-0 flex-1 select-none max-lg:touch-pan-x max-lg:touch-pan-y lg:touch-none [scrollbar-gutter:stable] isolate"
             >
                 <table
                   className="border-collapse text-[10px]"
@@ -1300,7 +1399,7 @@ export default function OfficeScheduleModal({
                 >
                   <colgroup>
                     <col style={{ width: TIME_COL_PX }} />
-                    <col style={{ width: TIME_COL_PX }} />
+                    {!isCompactScheduleTable && <col style={{ width: TIME_COL_PX }} />}
                     {monthDays.map((d) => (
                       <col key={`col-${d.dateString}`} style={{ minWidth: DAY_COL_MIN_PX }} />
                     ))}
@@ -1308,7 +1407,7 @@ export default function OfficeScheduleModal({
                   <thead className="sticky top-0 z-30">
                     <tr className="border-b border-gray-300 bg-gray-50">
                       <th
-                        colSpan={2}
+                        colSpan={scheduleTimeColumnCount}
                         className="sticky left-0 z-40 bg-gray-50 border-r border-gray-300 px-1 py-1 text-center text-[11px] text-gray-500 font-medium"
                       />
                       {monthDays.map((d) => (
@@ -1330,12 +1429,14 @@ export default function OfficeScheduleModal({
                       >
                         {C.timeStart}
                       </th>
-                      <th
-                        className="sticky z-40 bg-gray-50 border-r border-gray-300 px-1 py-1 text-center text-[11px] text-gray-600 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]"
-                        style={{ left: TIME_COL_PX }}
-                      >
-                        {C.timeEnd}
-                      </th>
+                      {!isCompactScheduleTable && (
+                        <th
+                          className="sticky z-40 bg-gray-50 border-r border-gray-300 px-1 py-1 text-center text-[11px] text-gray-600 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]"
+                          style={{ left: TIME_COL_PX }}
+                        >
+                          {C.timeEnd}
+                        </th>
+                      )}
                       {monthDays.map((d) => (
                         <th
                           key={`dow-${d.dateString}`}
@@ -1360,14 +1461,16 @@ export default function OfficeScheduleModal({
                         >
                           {row.startLabel}
                         </td>
-                        <td
-                          className={`sticky z-10 border-r border-gray-300 px-1 py-0 text-center text-gray-500 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] ${
-                            row.isBlock ? 'bg-amber-50/80' : 'bg-white'
-                          }`}
-                          style={{ left: TIME_COL_PX }}
-                        >
-                          {row.endLabel}
-                        </td>
+                        {!isCompactScheduleTable && (
+                          <td
+                            className={`sticky z-10 border-r border-gray-300 px-1 py-0 text-center text-gray-500 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] ${
+                              row.isBlock ? 'bg-amber-50/80' : 'bg-white'
+                            }`}
+                            style={{ left: TIME_COL_PX }}
+                          >
+                            {row.endLabel}
+                          </td>
+                        )}
                         {monthDays.map((d) => {
                           const cellKey = officeScheduleCellKey(d.dateString, row.hourSlot)
                           const emails = filterEmailsForView(cellStaffMap.get(cellKey) ?? [])
@@ -1389,8 +1492,7 @@ export default function OfficeScheduleModal({
                                 data-hour={row.hourSlot}
                                 title={label || (canPaintCell() ? C.cellHint : C.readOnly)}
                                 onPointerDown={(e) => {
-                                  e.preventDefault()
-                                  startPainting(e, d.dateString, row.hourSlot)
+                                  handleCellPointerDown(e, d.dateString, row.hourSlot)
                                 }}
                                 className={`w-full h-full min-h-[18px] ${
                                   canPaintCell() ? 'cursor-crosshair hover:brightness-95' : 'cursor-default'
@@ -1413,7 +1515,7 @@ export default function OfficeScheduleModal({
                     {canEditAll && (
                       <tr className="border-t-2 border-gray-300 bg-gray-50">
                         <td
-                          colSpan={2}
+                          colSpan={scheduleTimeColumnCount}
                           className="sticky left-0 z-10 bg-gray-50 border-r border-gray-300 px-1 py-1 text-center text-[9px] text-gray-600 font-semibold shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
                         >
                           {C.dailyTotalHours}
@@ -1423,7 +1525,7 @@ export default function OfficeScheduleModal({
                           return (
                             <td
                               key={`dh-${d.dateString}`}
-                              className={`px-0 py-1 text-center border-r border-gray-200 text-xs font-bold tabular-nums leading-tight bg-gray-50 ${
+                              className={`px-0 py-1 text-center border-r border-gray-200 text-xs max-lg:text-[8px] font-bold tabular-nums leading-tight bg-gray-50 ${
                                 d.isEdgePadding ? 'text-gray-400' : ''
                               } ${d.isWeekend ? 'bg-yellow-50/60' : ''} ${
                                 d.dateString === todayYmd ? 'bg-indigo-50' : ''
@@ -1438,7 +1540,7 @@ export default function OfficeScheduleModal({
                     {isSuper && (
                       <tr className="border-t border-gray-200 bg-amber-50/40">
                         <td
-                          colSpan={2}
+                          colSpan={scheduleTimeColumnCount}
                           className="sticky left-0 z-10 bg-amber-50/90 border-r border-gray-300 px-1 py-1 text-center text-[9px] text-amber-900 font-semibold shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
                         >
                           {C.dailyPay}
@@ -1448,7 +1550,7 @@ export default function OfficeScheduleModal({
                           return (
                             <td
                               key={`pay-${d.dateString}`}
-                              className={`px-0 py-1 text-center border-r border-gray-200 text-xs font-bold tabular-nums leading-tight bg-amber-50/40 ${
+                              className={`px-0 py-1 text-center border-r border-gray-200 text-xs max-lg:text-[8px] font-bold tabular-nums leading-tight bg-amber-50/40 ${
                                 d.isEdgePadding ? 'text-gray-400' : ''
                               } ${d.isWeekend ? 'bg-yellow-50/80' : ''} ${
                                 d.dateString === todayYmd ? 'bg-indigo-50/80' : ''

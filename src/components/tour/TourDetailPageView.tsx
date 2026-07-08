@@ -847,6 +847,16 @@ export function TourDetailPageView({
         return
       }
 
+      if (tourData.selectedVehicleId && endMileage > 0) {
+        const { error: mileageError } = await supabase
+          .from('vehicles')
+          .update({ current_mileage: endMileage } satisfies Database['public']['Tables']['vehicles']['Update'])
+          .eq('id', tourData.selectedVehicleId)
+        if (mileageError) {
+          console.error('차량 종료 마일리지 저장 오류:', mileageError)
+        }
+      }
+
       // 상태 업데이트
       setIsGuideFeeFromTour(true)
       setIsAssistantFeeFromTour(true)
@@ -991,7 +1001,7 @@ export function TourDetailPageView({
       }
 
       setStartMileage(startMileageValue)
-      setEndMileage(startMileageValue) // 종료 마일리지는 시작 마일리지로 초기화
+      setEndMileage(0)
 
     } catch (error) {
       console.error('마일리지 로드 오류:', error)

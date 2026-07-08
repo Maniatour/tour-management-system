@@ -65,6 +65,8 @@ export type ScheduleVehicleOilMeta = {
   engine_oil_change_cycle?: number | null
   recent_engine_oil_change_mileage?: number | null
   recent_engine_oil_change_date?: string | null
+  /** vehicles.current_mileage — 최근 투어 종료 마일리지 등 실측값 */
+  current_mileage?: number | null
 }
 
 export type ScheduleTourForOil = {
@@ -81,7 +83,10 @@ export type VehicleOilMaintenanceSummary = {
   recentOilChangeDate: string | null
   oilChangeCycle: number
   toursSinceOilChange: number
+  /** 정비 판단에 사용된 주행거리 (실측 우선, 없으면 투어 추정) */
+  milesSinceOilChange: number
   estimatedMilesSinceOilChange: number
+  usesActualMileage: boolean
   milesUntilDue: number | null
   isOverdue: boolean
   maintenanceGapDates: Set<string>
@@ -209,46 +214,73 @@ export function computeVehicleOilMaintenanceSummary(params: {
     estimatedMilesSinceOilChange += estimateTourMileage(getTourProductName(tour), tour.product_id)
   }
 
+  const currentMileage =
+    vehicle.current_mileage != null && vehicle.current_mileage > 0 ? vehicle.current_mileage : null
+
+  const usesActualMileage =
+    currentMileage != null &&
+    recentOilChangeMileage != null &&
+    recentOilChangeMileage > 0 &&
+    currentMileage >= recentOilChangeMileage
+
+  const milesSinceOilChange = usesActualMileage
+    ? currentMileage - recentOilChangeMileage!
+    : estimatedMilesSinceOilChange
+
   const isOverdue =
     recentOilChangeMileage != null &&
     recentOilChangeMileage > 0 &&
-    estimatedMilesSinceOilChange >= oilChangeCycle
+    milesSinceOilChange >= oilChangeCycle
 
   const milesUntilDue =
     recentOilChangeMileage != null && recentOilChangeMileage > 0
-      ? oilChangeCycle - estimatedMilesSinceOilChange
+      ? oilChangeCycle - milesSinceOilChange
       : null
 
   const maintenanceGapDates = new Set<string>()
-  let cumulativeMiles = 0
-  let overdueGapStart: string | null = null
 
-  for (let i = 0; i < vehicleTours.length; i++) {
-    const tour = vehicleTours[i]
-    if (recentOilChangeDate && dayjs(tour.tour_date).isBefore(dayjs(recentOilChangeDate), 'day')) {
-      continue
-    }
-
-    if (overdueGapStart) {
-      const gapEnd = dayjs(tour.tour_date).subtract(1, 'day').format('YYYY-MM-DD')
-      if (!dayjs(gapEnd).isBefore(dayjs(overdueGapStart), 'day')) {
-        addGapDates(maintenanceGapDates, overdueGapStart, gapEnd)
+  if (usesActualMileage) {
+    if (isOverdue && visibleDateStrings?.length) {
+      const lastTourAfterOil = toursAfterOilChange[toursAfterOilChange.length - 1]
+      const gapStart = lastTourAfterOil
+        ? dayjs(getTourEndDateString(lastTourAfterOil)).add(1, 'day').format('YYYY-MM-DD')
+        : recentOilChangeDate ?? visibleDateStrings[0]
+      const lastVisible = visibleDateStrings[visibleDateStrings.length - 1]
+      if (!dayjs(lastVisible).isBefore(dayjs(gapStart), 'day')) {
+        addGapDates(maintenanceGapDates, gapStart, lastVisible)
       }
-      overdueGapStart = null
+    }
+  } else {
+    let cumulativeMiles = 0
+    let overdueGapStart: string | null = null
+
+    for (let i = 0; i < vehicleTours.length; i++) {
+      const tour = vehicleTours[i]
+      if (recentOilChangeDate && dayjs(tour.tour_date).isBefore(dayjs(recentOilChangeDate), 'day')) {
+        continue
+      }
+
+      if (overdueGapStart) {
+        const gapEnd = dayjs(tour.tour_date).subtract(1, 'day').format('YYYY-MM-DD')
+        if (!dayjs(gapEnd).isBefore(dayjs(overdueGapStart), 'day')) {
+          addGapDates(maintenanceGapDates, overdueGapStart, gapEnd)
+        }
+        overdueGapStart = null
+      }
+
+      cumulativeMiles += estimateTourMileage(getTourProductName(tour), tour.product_id)
+
+      if (recentOilChangeMileage != null && recentOilChangeMileage > 0 && cumulativeMiles >= oilChangeCycle) {
+        const tourEnd = getTourEndDateString(tour)
+        overdueGapStart = dayjs(tourEnd).add(1, 'day').format('YYYY-MM-DD')
+      }
     }
 
-    cumulativeMiles += estimateTourMileage(getTourProductName(tour), tour.product_id)
-
-    if (recentOilChangeMileage != null && recentOilChangeMileage > 0 && cumulativeMiles >= oilChangeCycle) {
-      const tourEnd = getTourEndDateString(tour)
-      overdueGapStart = dayjs(tourEnd).add(1, 'day').format('YYYY-MM-DD')
-    }
-  }
-
-  if (overdueGapStart && visibleDateStrings?.length) {
-    const lastVisible = visibleDateStrings[visibleDateStrings.length - 1]
-    if (!dayjs(lastVisible).isBefore(dayjs(overdueGapStart), 'day')) {
-      addGapDates(maintenanceGapDates, overdueGapStart, lastVisible)
+    if (overdueGapStart && visibleDateStrings?.length) {
+      const lastVisible = visibleDateStrings[visibleDateStrings.length - 1]
+      if (!dayjs(lastVisible).isBefore(dayjs(overdueGapStart), 'day')) {
+        addGapDates(maintenanceGapDates, overdueGapStart, lastVisible)
+      }
     }
   }
 
@@ -263,7 +295,9 @@ export function computeVehicleOilMaintenanceSummary(params: {
     recentOilChangeDate,
     oilChangeCycle,
     toursSinceOilChange: toursAfterOilChange.length,
+    milesSinceOilChange,
     estimatedMilesSinceOilChange,
+    usesActualMileage,
     milesUntilDue,
     isOverdue,
     maintenanceGapDates: scopedGapDates,
@@ -281,9 +315,15 @@ export function buildVehicleOilTooltipLines(
   } else {
     lines.push('최근 엔진오일: 기록 없음')
   }
-  lines.push(
-    `교체 후: ${summary.toursSinceOilChange}회 투어 · ~${summary.estimatedMilesSinceOilChange.toLocaleString()} mi 운행`,
-  )
+  if (summary.usesActualMileage) {
+    lines.push(
+      `교체 후 실측: ${summary.milesSinceOilChange.toLocaleString()} mi (현재 주행거리 기준)`,
+    )
+  } else {
+    lines.push(
+      `교체 후: ${summary.toursSinceOilChange}회 투어 · ~${summary.estimatedMilesSinceOilChange.toLocaleString()} mi 운행 (추정)`,
+    )
+  }
   lines.push(`교체 주기: ${summary.oilChangeCycle.toLocaleString()} mi`)
   if (summary.isOverdue) {
     lines.push('⚠ 엔진오일 교체 필요 (예상 주행거리 초과)')

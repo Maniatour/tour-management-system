@@ -38,17 +38,18 @@ import {
   detectCategoryEditField,
   getCategoryBodyDraft,
   getCategoryTitleValue,
+  getChecklistItemDisplayLabel,
   getChecklistItemValue,
   getChecklistManualStatus,
   getChecklistManualValue,
   getSectionTitleValue,
+  sopDisplayLabel,
   hydrateDocumentForRowEditing,
   updateDocCategory,
 } from '@/lib/sopQuickEdit'
 import { cn } from '@/lib/utils'
 import {
   prefillSortOrders,
-  sopText,
   type SopDocument,
   type SopEditLocale,
   type SopManualStatus,
@@ -79,6 +80,8 @@ type Props = {
   editable?: boolean
   resizableToc?: boolean
   tocWidthStorageKey?: string
+  /** 메뉴얼 적용 직후 문서를 DB에 저장 (최신 doc 전달) */
+  onPersistDocument?: (doc: SopDocument) => void | Promise<void>
 }
 
 export default function SopDocumentInlinePreviewEditor({
@@ -89,6 +92,7 @@ export default function SopDocumentInlinePreviewEditor({
   editable = true,
   resizableToc = false,
   tocWidthStorageKey,
+  onPersistDocument,
 }: Props) {
   const isEn = uiLocaleEn
   const editLang = viewLang
@@ -133,7 +137,7 @@ export default function SopDocumentInlinePreviewEditor({
 
     if (quickEdit.scope === 'section') {
       const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
-      const label = section ? sopText(section.title_ko, section.title_en, editLang).trim() : ''
+      const label = section ? sopDisplayLabel(section.title_ko, section.title_en, editLang) : ''
       return {
         variant,
         langLabel,
@@ -148,13 +152,13 @@ export default function SopDocumentInlinePreviewEditor({
 
     const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
     const category = section?.categories.find((c) => c.id === quickEdit.categoryId)
-    const label = category ? sopText(category.title_ko, category.title_en, editLang).trim() : ''
+    const label = category ? sopDisplayLabel(category.title_ko, category.title_en, editLang) : ''
 
     if (quickEdit.scope === 'checklist') {
       const item = category?.checklist_items?.find((i) =>
         checklistItemIdsMatch(i.id, quickEdit.itemId)
       )
-      const rowLabel = item ? sopText(item.title_ko, item.title_en, editLang).trim() : ''
+      const rowLabel = item ? getChecklistItemDisplayLabel(item, editLang) : ''
       const isManual = quickEdit.field === 'manual'
       const isStep = Boolean(item?.parent_id)
       return {
@@ -219,14 +223,15 @@ export default function SopDocumentInlinePreviewEditor({
       checklistItemIdsMatch(i.id, quickEdit.itemId)
     )
     if (!item) return null
-    const rowLabel = sopText(item.title_ko, item.title_en, editLang).trim()
+    const rowLabel = getChecklistItemDisplayLabel(item, editLang)
     const blockLabel = category
-      ? sopText(category.title_ko, category.title_en, editLang).trim()
+      ? sopDisplayLabel(category.title_ko, category.title_en, editLang)
       : ''
     return {
       value: getChecklistManualValue(item, editLang),
       status: getChecklistManualStatus(item),
-      title: isEn ? 'Edit manual' : '메뉴얼 수정',
+      title: isEn ? 'View manual' : '메뉴얼 보기',
+      editTitle: isEn ? 'Edit manual' : '메뉴얼 수정',
       description: rowLabel
         ? isEn
           ? `Row: ${rowLabel}`
@@ -244,19 +249,19 @@ export default function SopDocumentInlinePreviewEditor({
     if (!deleteTarget) return ''
     if (deleteTarget.scope === 'section') {
       const section = doc.sections.find((s) => s.id === deleteTarget.sectionId)
-      const label = section ? sopText(section.title_ko, section.title_en, editLang).trim() : ''
+      const label = section ? sopDisplayLabel(section.title_ko, section.title_en, editLang) : ''
       return label || (isEn ? 'this section' : '이 섹션')
     }
     if (deleteTarget.scope === 'checklist') {
       const section = doc.sections.find((s) => s.id === deleteTarget.sectionId)
       const category = section?.categories.find((c) => c.id === deleteTarget.categoryId)
       const item = category?.checklist_items?.find((i) => i.id === deleteTarget.itemId)
-      const label = item ? sopText(item.title_ko, item.title_en, editLang).trim() : ''
+      const label = item ? getChecklistItemDisplayLabel(item, editLang) : ''
       return label || (isEn ? 'this row' : '이 줄')
     }
     const section = doc.sections.find((s) => s.id === deleteTarget.sectionId)
     const category = section?.categories.find((c) => c.id === deleteTarget.categoryId)
-    const label = category ? sopText(category.title_ko, category.title_en, editLang).trim() : ''
+    const label = category ? sopDisplayLabel(category.title_ko, category.title_en, editLang) : ''
     return label || (isEn ? 'this block' : '이 영역')
   }, [deleteTarget, doc.sections, editLang, isEn])
 
@@ -301,17 +306,18 @@ export default function SopDocumentInlinePreviewEditor({
   const handleManualSave = (value: string, status: SopManualStatus) => {
     if (!quickEdit || quickEdit.scope !== 'checklist' || quickEdit.field !== 'manual') return
 
-    onChange(
-      prefillSortOrders(
-        updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
-          const items = category.checklist_items?.map((item) => {
-            if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
-            return applyChecklistManualValue(item, editLang, value, status)
-          })
-          return items?.length ? { ...category, checklist_items: items } : category
+    const nextDoc = prefillSortOrders(
+      updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
+        const items = category.checklist_items?.map((item) => {
+          if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
+          return applyChecklistManualValue(item, editLang, value, status)
         })
-      )
+        return items?.length ? { ...category, checklist_items: items } : category
+      })
     )
+
+    onChange(nextDoc)
+    void onPersistDocument?.(nextDoc)
   }
 
   const handleQuickEditSave = (value: string) => {
@@ -407,7 +413,7 @@ export default function SopDocumentInlinePreviewEditor({
     )
     if (!item) return null
     return {
-      rowLabel: sopText(item.title_ko, item.title_en, editLang).trim() || (isEn ? 'Row' : '줄'),
+      rowLabel: getChecklistItemDisplayLabel(item, editLang) || (isEn ? 'Row' : '줄'),
       attachments: item.attachments ?? [],
     }
   }, [attachmentTarget, doc.sections, editLang, isEn])
@@ -543,11 +549,13 @@ export default function SopDocumentInlinePreviewEditor({
           open={!!quickEdit && isManualEdit}
           onOpenChange={(open) => !open && setQuickEdit(null)}
           title={manualEditContext.title}
+          {...(manualEditContext.editTitle ? { editTitle: manualEditContext.editTitle } : {})}
           {...(manualEditContext.description ? { description: manualEditContext.description } : {})}
           value={manualEditContext.value}
           status={manualEditContext.status}
           uiLocaleEn={isEn}
           langLabel={manualEditContext.langLabel}
+          startInViewMode
           onSave={handleManualSave}
         />
       ) : null}

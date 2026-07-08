@@ -32,11 +32,12 @@ function isSafeSopFontSizeToken(size: string): boolean {
 }
 
 /** 가장 안쪽 `[[sopfs:…]]…[[/sopfs]]`부터 복원 (중첩 시 바깥이 나중에 매칭되도록) */
+const SOPFS_INNER_RE = /\[\[sopfs:([^\]]+)\]\]((?:(?!\[\[sopfs:)[\s\S])*?)\[\[\/sopfs\]\]/
+
 function decodeSopFontSizeTokens(markdown: string): string {
   let out = markdown
-  const innerRe = /\[\[sopfs:([^\]]+)\]\]((?:(?!\[\[sopfs:)[\s\S])*?)\[\[\/sopfs\]\]/
   for (let g = 0; g < 100; g++) {
-    const m = out.match(innerRe)
+    const m = out.match(SOPFS_INNER_RE)
     if (!m) break
     const size = m[1]
     const inner = m[2]
@@ -48,6 +49,29 @@ function decodeSopFontSizeTokens(markdown: string): string {
     out = out.replace(m[0], `<span style="font-size: ${safe}">${inner}</span>`)
   }
   return out
+}
+
+/** 목차·모달 설명 등 평문 표시용 — sopfs 토큰·마크다운 제거 */
+export function stripSopFontSizeTokens(markdown: string): string {
+  let out = markdown ?? ''
+  for (let g = 0; g < 100; g++) {
+    const m = out.match(SOPFS_INNER_RE)
+    if (!m) break
+    out = out.replace(m[0], m[2])
+  }
+  return out
+}
+
+export function sopPlainDisplayText(raw: string): string {
+  let t = stripSopFontSizeTokens(raw ?? '')
+  t = t.replace(/<[^>]+>/g, ' ')
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
+  t = t.replace(/\*([^*]+)\*/g, '$1')
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  t = t.replace(/^#+\s*/gm, '')
+  t = t.replace(/&nbsp;/g, ' ')
+  t = t.replace(/\s+/g, ' ').trim()
+  return t
 }
 
 /** contentEditable이 만든 font-size span을 토큰으로 바꿔 htmlToMarkdown 이후 단계에서 보존 */

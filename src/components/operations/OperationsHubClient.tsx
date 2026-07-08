@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -100,7 +100,18 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const [readArticle, setReadArticle] = useState<KnowledgeArticleRow | null>(null)
   const [readEditDoc, setReadEditDoc] = useState<SopDocument | null>(null)
+  const readEditDocRef = useRef<SopDocument | null>(null)
   const [readSaveMsg, setReadSaveMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    readEditDocRef.current = readEditDoc
+  }, [readEditDoc])
+
+  const handleReadEditDocChange = useCallback((doc: SopDocument) => {
+    readEditDocRef.current = doc
+    setReadEditDoc(doc)
+  }, [])
+
   const [modalViewLang, setModalViewLang] = useState<SopEditLocale>(viewLang)
   const [editOpen, setEditOpen] = useState(false)
   const [form, setForm] = useState<KnowledgeArticleDraftForm>(() => emptyKnowledgeArticleForm())
@@ -149,6 +160,53 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       return [...prev, row]
     })
   }, [])
+
+  const persistReadDoc = useCallback(
+    async (doc: SopDocument, opts?: { silent?: boolean }) => {
+      if (!adminCrud || !readArticle) return false
+      setBusy(true)
+      if (!opts?.silent) setReadSaveMsg(null)
+      const draft = knowledgeArticleRowToForm(readArticle)
+      draft.bodyDoc = doc
+      const result = await saveKnowledgeArticle(draft, authUser?.id ?? null)
+      setBusy(false)
+      if (!result.ok) {
+        setReadSaveMsg(result.error)
+        return false
+      }
+      if (!opts?.silent) {
+        setReadSaveMsg(isEn ? 'Saved.' : '저장했습니다.')
+      }
+      const { data: refreshed } = await supabase
+        .from('company_knowledge_articles')
+        .select(KNOWLEDGE_ARTICLE_SELECT)
+        .eq('id', result.id)
+        .maybeSingle()
+      const saved = refreshed as KnowledgeArticleRow | null
+      if (saved) {
+        upsertArticleInState(saved)
+        setReadArticle(saved)
+        const savedDoc = articleBodyToDocument(saved)
+        const hydrated = savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null
+        readEditDocRef.current = hydrated
+        setReadEditDoc(hydrated)
+      } else {
+        await reloadArticles()
+      }
+      return true
+    },
+    [adminCrud, authUser?.id, isEn, readArticle, reloadArticles, upsertArticleInState]
+  )
+
+  const handlePersistReadDocFromEditor = useCallback(
+    async (doc: SopDocument) => {
+      const ok = await persistReadDoc(doc, { silent: true })
+      if (ok) {
+        setReadSaveMsg(isEn ? 'Manual saved.' : '메뉴얼을 저장했습니다.')
+      }
+    },
+    [isEn, persistReadDoc]
+  )
 
   const load = useCallback(async () => {
     if (!isInitialized || loading || !authUser?.email) return
@@ -360,32 +418,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   }
 
   const handleSaveReadDoc = async () => {
-    if (!adminCrud || !readArticle || !readEditDoc) return
-    setBusy(true)
-    setReadSaveMsg(null)
-    const draft = knowledgeArticleRowToForm(readArticle)
-    draft.bodyDoc = readEditDoc
-    const result = await saveKnowledgeArticle(draft, authUser?.id ?? null)
-    setBusy(false)
-    if (!result.ok) {
-      setReadSaveMsg(result.error)
-      return
-    }
-    setReadSaveMsg(isEn ? 'Saved.' : '저장했습니다.')
-    const { data: refreshed } = await supabase
-      .from('company_knowledge_articles')
-      .select(KNOWLEDGE_ARTICLE_SELECT)
-      .eq('id', result.id)
-      .maybeSingle()
-    const saved = refreshed as KnowledgeArticleRow | null
-    if (saved) {
-      upsertArticleInState(saved)
-      setReadArticle(saved)
-      const savedDoc = articleBodyToDocument(saved)
-      setReadEditDoc(savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null)
-    } else {
-      await reloadArticles()
-    }
+    const doc = readEditDocRef.current
+    if (!adminCrud || !readArticle || !doc) return
+    await persistReadDoc(doc)
   }
 
   const modalUiEn = modalViewLang === 'en'
@@ -731,7 +766,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                 {adminCrud && readEditDoc ? (
                   <SopDocumentInlinePreviewEditor
                     doc={readEditDoc}
-                    onChange={setReadEditDoc}
+                    onChange={handleReadEditDocChange}
+                    onPersistDocument={handlePersistReadDocFromEditor}
                     viewLang={modalViewLang}
                     uiLocaleEn={modalUiEn}
                     resizableToc

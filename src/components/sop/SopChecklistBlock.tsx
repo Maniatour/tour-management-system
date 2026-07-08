@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { markdownToHtml } from '@/components/LightRichEditor'
+import { useEffect, useRef, useState } from 'react'
+import { markdownToHtml, sopPlainDisplayText } from '@/components/LightRichEditor'
 import SopManualEditDialog from '@/components/sop/SopManualEditDialog'
 import { getChecklistManualStatus, getManualIconState } from '@/lib/sopQuickEdit'
 import { sopChecklistAnchorId } from '@/lib/sopDocumentToc'
@@ -13,6 +13,7 @@ import {
   ChevronUp,
   FileText,
   List,
+  MoreHorizontal,
   Paperclip,
   Pencil,
   Plus,
@@ -170,6 +171,8 @@ function ItemToolbar({
   callbacks: RowCallbacks
 }) {
   const isEn = viewLang === 'en'
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const {
     onMoveChecklistItem,
     onEditChecklistItem,
@@ -180,133 +183,178 @@ function ItemToolbar({
   } = callbacks
   const rowDisplay = getChecklistRowDisplay(item)
 
+  const hasActions = Boolean(
+    onMoveChecklistItem ||
+      onEditChecklistItem ||
+      onChangeRowDisplay ||
+      onManageAttachments ||
+      onAddChecklistItem ||
+      onDeleteChecklistItem
+  )
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  if (!hasActions) return null
+
+  const run = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    fn()
+    setOpen(false)
+  }
+
+  const iconBtn =
+    'h-8 w-8 shrink-0 touch-manipulation sm:h-7 sm:w-7'
+
   return (
-    <div className="flex w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-md border border-gray-100 bg-white/95 p-1 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:p-0.5 [&::-webkit-scrollbar]:hidden">
-      {onMoveChecklistItem && siblingIdx > 0 ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-gray-500 hover:bg-gray-100 sm:h-6 sm:w-6"
-          title={isEn ? 'Move up' : '위로'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onMoveChecklistItem(sectionId, categoryId, item.id, -1)
-          }}
+    <div ref={rootRef} className="relative shrink-0">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className={cn(
+          'h-8 w-8 shrink-0 touch-manipulation border-gray-200 bg-white shadow-sm sm:h-7 sm:w-7',
+          open && 'border-indigo-200 bg-indigo-50 text-indigo-700'
+        )}
+        title={isEn ? 'Row actions' : '줄 작업'}
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-50 mt-1 flex max-w-[min(100vw-2rem,20rem)] items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
         >
-          <ChevronUp className="h-3 w-3" />
-        </Button>
-      ) : null}
-      {onMoveChecklistItem && siblingIdx < siblings.length - 1 ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-gray-500 hover:bg-gray-100 sm:h-6 sm:w-6"
-          onClick={(e) => {
-            e.stopPropagation()
-            onMoveChecklistItem(sectionId, categoryId, item.id, 1)
-          }}
-        >
-          <ChevronDown className="h-3 w-3" />
-        </Button>
-      ) : null}
-      {onEditChecklistItem ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-indigo-700 hover:bg-indigo-50 sm:h-6 sm:w-6"
-          title={isEn ? 'Edit title' : '제목 수정'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onEditChecklistItem(sectionId, categoryId, item.id)
-          }}
-        >
-          <Pencil className="h-3 w-3" />
-        </Button>
-      ) : null}
-      {onChangeRowDisplay ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={cn(
-            'h-9 w-9 shrink-0 touch-manipulation sm:h-6 sm:w-6',
-            rowDisplay === 'list'
-              ? 'text-indigo-700 hover:bg-indigo-50'
-              : 'text-gray-600 hover:bg-gray-100'
-          )}
-          title={
-            rowDisplay === 'list'
-              ? isEn
-                ? 'List style — click for text'
-                : '목록 형식 — 클릭 시 텍스트'
-              : isEn
-                ? 'Text style — click for list'
-                : '텍스트 형식 — 클릭 시 목록'
-          }
-          onClick={(e) => {
-            e.stopPropagation()
-            onChangeRowDisplay(
-              sectionId,
-              categoryId,
-              item.id,
-              rowDisplay === 'list' ? 'text' : 'list'
-            )
-          }}
-        >
-          {rowDisplay === 'list' ? (
-            <List className="h-3 w-3" />
-          ) : (
-            <Type className="h-3 w-3" />
-          )}
-        </Button>
-      ) : null}
-      {onManageAttachments ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-6 sm:w-6"
-          title={isEn ? 'Attachments' : '첨부파일'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onManageAttachments(sectionId, categoryId, item.id)
-          }}
-        >
-          <Paperclip className="h-3 w-3" />
-        </Button>
-      ) : null}
-      {onAddChecklistItem ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-6 sm:w-6"
-          title={isEn ? 'Add row below' : '아래에 줄 추가'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onAddChecklistItem(sectionId, categoryId, item.id)
-          }}
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-      ) : null}
-      {onDeleteChecklistItem ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 shrink-0 touch-manipulation text-red-700 hover:bg-red-50 sm:h-6 sm:w-6"
-          title={isEn ? 'Delete' : '삭제'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onDeleteChecklistItem(sectionId, categoryId, item.id)
-          }}
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
+          {onMoveChecklistItem && siblingIdx > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-gray-500 hover:bg-gray-100')}
+              title={isEn ? 'Move up' : '위로'}
+              onClick={run(() => onMoveChecklistItem(sectionId, categoryId, item.id, -1))}
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {onMoveChecklistItem && siblingIdx < siblings.length - 1 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-gray-500 hover:bg-gray-100')}
+              title={isEn ? 'Move down' : '아래로'}
+              onClick={run(() => onMoveChecklistItem(sectionId, categoryId, item.id, 1))}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {onEditChecklistItem ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-indigo-700 hover:bg-indigo-50')}
+              title={isEn ? 'Edit title' : '제목 수정'}
+              onClick={run(() => onEditChecklistItem(sectionId, categoryId, item.id))}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {onChangeRowDisplay ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                iconBtn,
+                rowDisplay === 'list'
+                  ? 'text-indigo-700 hover:bg-indigo-50'
+                  : 'text-gray-600 hover:bg-gray-100'
+              )}
+              title={
+                rowDisplay === 'list'
+                  ? isEn
+                    ? 'List style — click for text'
+                    : '목록 형식 — 클릭 시 텍스트'
+                  : isEn
+                    ? 'Text style — click for list'
+                    : '텍스트 형식 — 클릭 시 목록'
+              }
+              onClick={run(() =>
+                onChangeRowDisplay(
+                  sectionId,
+                  categoryId,
+                  item.id,
+                  rowDisplay === 'list' ? 'text' : 'list'
+                )
+              )}
+            >
+              {rowDisplay === 'list' ? (
+                <List className="h-3.5 w-3.5" />
+              ) : (
+                <Type className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          ) : null}
+          {onManageAttachments ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-gray-600 hover:bg-gray-100')}
+              title={isEn ? 'Attachments' : '첨부파일'}
+              onClick={run(() => onManageAttachments(sectionId, categoryId, item.id))}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {onAddChecklistItem ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-gray-600 hover:bg-gray-100')}
+              title={isEn ? 'Add row below' : '아래에 줄 추가'}
+              onClick={run(() => onAddChecklistItem(sectionId, categoryId, item.id))}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {onDeleteChecklistItem ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-red-700 hover:bg-red-50')}
+              title={isEn ? 'Delete' : '삭제'}
+              onClick={run(() => onDeleteChecklistItem(sectionId, categoryId, item.id))}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )
@@ -357,7 +405,7 @@ function ChecklistRootRow({
         isListRow ? 'border-b border-gray-100 py-3 last:border-b-0 sm:py-3' : 'py-2 sm:py-1.5'
       )}
     >
-      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
+      <div className="flex w-full min-w-0 items-center gap-1.5">
         <div
           className={cn(
             'flex min-w-0 flex-1 items-center gap-2 sm:gap-1.5',
@@ -466,9 +514,9 @@ export default function SopChecklistBlock({
         <SopManualEditDialog
           open
           onOpenChange={(open) => !open && setViewRow(null)}
-          title={isEn ? 'Manual' : '메뉴얼'}
+          title={isEn ? 'View manual' : '메뉴얼 보기'}
           {...(() => {
-            const desc = sopText(viewRow.title_ko, viewRow.title_en, viewLang).trim()
+            const desc = sopPlainDisplayText(sopText(viewRow.title_ko, viewRow.title_en, viewLang))
             return desc ? { description: desc } : {}
           })()}
           value={viewManualValue}
