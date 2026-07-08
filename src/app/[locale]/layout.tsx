@@ -10,6 +10,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
+import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider';
 import { getLocaleLayoutMetadata } from '@/lib/channelFaviconMetadata';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -83,6 +84,7 @@ export default async function LocaleLayout({
         <LazyStripeErrorHandler />
         <LazyModalBackdropGuard />
         <CartProviderWrapper>
+          <CustomerPageEditModeProvider>
           <div className="min-h-screen bg-gray-50">
             <LazyNavigation />
             <div className="flex flex-col lg:flex-row">
@@ -94,6 +96,7 @@ export default async function LocaleLayout({
             <LazyUserFooter locale={locale} />
             <LazyFloatingChatContainer />
           </div>
+          </CustomerPageEditModeProvider>
         </CartProviderWrapper>
       </FloatingChatProvider>
     </NextIntlClientProvider>

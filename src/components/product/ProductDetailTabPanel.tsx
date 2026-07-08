@@ -93,7 +93,8 @@ export default function ProductDetailTabPanel({
   ]
 
   return (
-    <CustomerPageZone zone="detail-tabs" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+    <CustomerPageZone zone="detail-tabs" className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl">
       <div className="border-b border-slate-100 bg-slate-50/50">
         <nav className="-mb-px flex overflow-x-auto px-4 scrollbar-hide sm:px-6" aria-label="Product detail tabs">
           <div className="flex min-w-max gap-1 sm:gap-2">
@@ -176,6 +177,7 @@ export default function ProductDetailTabPanel({
             <ProductFaqDisplay productId={productId} />
           </CustomerPageZone>
         )}
+      </div>
       </div>
     </CustomerPageZone>
   )

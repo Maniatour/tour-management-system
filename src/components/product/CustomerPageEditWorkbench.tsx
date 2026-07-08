@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ExternalLink, Loader2, X } from 'lucide-react'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
-import { isCustomerPageZoneEditMessage } from '@/lib/customerPageEditMessaging'
+import { isCustomerPageZoneEditMessage, notifyIframeCustomerPageEditMode } from '@/lib/customerPageEditMessaging'
 import { getZoneEditConfig } from '@/lib/customerPageZoneEditMap'
 import {
   buildAdminPathForEditTab,
@@ -69,6 +69,10 @@ export default function CustomerPageEditWorkbench({
   useEffect(() => {
     if (variant === 'modal' && !isOpen) return
 
+    const sendEditModeToIframe = () => {
+      notifyIframeCustomerPageEditMode(iframeRef.current)
+    }
+
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
       if (!isCustomerPageZoneEditMessage(event.data)) return
@@ -76,8 +80,14 @@ export default function CustomerPageEditWorkbench({
     }
 
     window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [variant, isOpen])
+    const retryTimers = [200, 600, 1500].map((ms) =>
+      window.setTimeout(sendEditModeToIframe, ms)
+    )
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      retryTimers.forEach((id) => window.clearTimeout(id))
+    }
+  }, [variant, isOpen, iframeKey])
 
   useEffect(() => {
     let cancelled = false
@@ -230,7 +240,10 @@ export default function CustomerPageEditWorkbench({
             title="고객 페이지 편집 미리보기"
             src={previewUrl}
             className="w-full h-full border-0 bg-white"
-            onLoad={() => setIframeLoading(false)}
+            onLoad={() => {
+              setIframeLoading(false)
+              notifyIframeCustomerPageEditMode(iframeRef.current)
+            }}
           />
           {!selectedZone && !iframeLoading && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none">

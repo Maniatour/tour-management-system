@@ -56,6 +56,13 @@ const MANUAL_ICON_CLASS = {
   complete: 'text-green-600 hover:text-green-700',
 } as const
 
+/** ROW 제목 HTML — prose/인라인 margin 제거로 `-`와 텍스트 수직 정렬 */
+const CHECKLIST_TITLE_HTML_CLASS =
+  'min-w-0 flex-1 break-words text-[15px] font-medium leading-snug text-gray-900 sm:text-sm [&_a]:break-all [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!m-0 [&_p]:!inline [&_p]:!leading-snug [&_ul]:!my-0'
+
+const CHECKLIST_TEXT_HTML_CLASS =
+  'min-w-0 flex-1 break-words text-[15px] leading-snug text-gray-800 sm:text-sm [&_a]:break-all [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!m-0 [&_p]:!inline [&_p]:!leading-snug [&_ul]:!my-0'
+
 function attachmentLabel(att: SopRowAttachment, viewLang: SopEditLocale): string {
   const label = sopText(att.label_ko, att.label_en, viewLang).trim()
   if (label) return label
@@ -122,7 +129,7 @@ function ManualDocIcon({
 
   if (!onClick) {
     return (
-      <span className="shrink-0 p-0.5" title={title}>
+      <span className="inline-flex shrink-0 items-center justify-center p-0.5" title={title}>
         <FileText className={cn('h-4 w-4', MANUAL_ICON_CLASS[state])} />
       </span>
     )
@@ -350,41 +357,44 @@ function ChecklistRootRow({
         isListRow ? 'border-b border-gray-100 py-3 last:border-b-0 sm:py-3' : 'py-2 sm:py-1.5'
       )}
     >
-      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-1.5">
-        <div className="flex min-w-0 flex-1 items-start gap-1.5">
-          <div
-            className={cn(
-              'min-w-0 flex-1',
-              callbacks.onEditChecklistItem &&
-                'cursor-pointer rounded-md py-0.5 hover:bg-gray-50/80 active:bg-gray-50'
-            )}
-            onClick={() => callbacks.onEditChecklistItem?.(sectionId, categoryId, row.id)}
-          >
-            {isListRow ? (
-              <h4 className="flex items-start gap-2 text-[15px] font-medium leading-snug text-gray-900 sm:text-sm">
-                <span className="mt-2 shrink-0 text-indigo-600 sm:mt-1.5">-</span>
-                <span
-                  className={cn(
-                    'prose prose-sm max-w-none break-words [&_p]:my-0',
-                    !title && editable && 'italic text-gray-400'
-                  )}
-                  dangerouslySetInnerHTML={{
-                    __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
-                  }}
-                />
-              </h4>
-            ) : (
+      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 sm:gap-1.5',
+            callbacks.onEditChecklistItem &&
+              'cursor-pointer rounded-md hover:bg-gray-50/80 active:bg-gray-50'
+          )}
+          onClick={() => callbacks.onEditChecklistItem?.(sectionId, categoryId, row.id)}
+        >
+          {isListRow ? (
+            <>
+              <span
+                aria-hidden
+                className="inline-flex h-[1.35rem] w-3 shrink-0 items-center justify-center text-[15px] leading-none text-indigo-600 sm:h-[1.25rem] sm:text-sm"
+              >
+                -
+              </span>
               <div
                 className={cn(
-                  'prose prose-sm max-w-none break-words text-[15px] leading-relaxed text-gray-800 sm:text-sm [&_p]:my-0',
+                  CHECKLIST_TITLE_HTML_CLASS,
                   !title && editable && 'italic text-gray-400'
                 )}
                 dangerouslySetInnerHTML={{
                   __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
                 }}
               />
-            )}
-          </div>
+            </>
+          ) : (
+            <div
+              className={cn(
+                CHECKLIST_TEXT_HTML_CLASS,
+                !title && editable && 'italic text-gray-400'
+              )}
+              dangerouslySetInnerHTML={{
+                __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
+              }}
+            />
+          )}
 
           <ManualDocIcon
             item={row}

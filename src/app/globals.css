@@ -282,9 +282,20 @@
   }
 }
 
-/* 고객 페이지 편집 모드 (editMode=1) */
+/* 고객 페이지 편집 모드 (editMode=1) — iframe 워크bench에서는 hover 없이 항상 표시 */
+.customer-page-zone--editable {
+  outline: 1px dashed rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.customer-page-zone--editable .customer-page-zone-edit-btn {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  visibility: visible !important;
+}
+
 .customer-page-zone--editable:hover {
-  outline: 2px dashed rgba(37, 99, 235, 0.45);
+  outline: 2px dashed rgba(37, 99, 235, 0.55);
   outline-offset: 2px;
 }
 
@@ -292,7 +303,7 @@
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
-  z-index: 20;
+  z-index: 30;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -311,6 +322,7 @@
 }
 
 .customer-page-zone--editable:hover .customer-page-zone-edit-btn,
+.customer-page-zone--editable .customer-page-zone-edit-btn,
 .customer-page-zone-edit-btn:focus-visible {
   opacity: 1;
   transform: translateY(0);

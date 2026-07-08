@@ -221,6 +221,23 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     adminTab: 'media',
     note: '이미지·동영상은 미디어 탭에서 관리합니다.',
   },
+  'detail-highlights': {
+    label: '투어 하이라이트',
+    editType: 'field-picker',
+    detailFields: ['slogan1', 'slogan2', 'slogan3', 'description'],
+    note: '슬로건·설명은 상세정보, 태그 표시명은 태그 영역에서 편집합니다.',
+  },
+  'detail-mobile-booking': {
+    label: '모바일 예약 카드',
+    editType: 'admin-tab',
+    adminTab: 'choices',
+    note: '가격·옵션·포함 사항은 예약 패널 영역별 수정을 이용하세요.',
+  },
+  'detail-faq-section': {
+    label: 'FAQ 섹션',
+    editType: 'admin-tab',
+    adminTab: 'faq',
+  },
   'detail-tabs': {
     label: '상세 탭',
     editType: 'admin-tab',
