@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { CalendarClock, ChevronLeft, ChevronRight, Eraser, Eye, EyeOff, History, Loader2, Redo2, Save, Undo2, X } from 'lucide-react'
+import { CalendarClock, Briefcase, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eraser, Eye, EyeOff, History, Loader2, Redo2, Save, Undo2, X } from 'lucide-react'
 import dayjs from 'dayjs'
 import { OFFICE_SCHEDULE_COPY as C } from '@/lib/officeScheduleCopy'
 import {
@@ -36,6 +36,8 @@ import {
   computeDailyPayTotals,
   computeStaffPaySummaries,
   formatDailyPayAmount,
+  formatHourlyRateLabel,
+  formatScheduledDays,
   getScheduleLoadRange,
   slotMapsEqual,
   sumStaffHoursSummaries,
@@ -51,8 +53,21 @@ import {
   type PaintCellCoord,
 } from '@/lib/officeSchedulePaintRange'
 import { pushUndoSnapshot } from '@/lib/officeScheduleUndo'
-import { fetchEmployeeHourlyRatePeriods, type EmployeeRatePeriod } from '@/lib/employeeHourlyRates'
+import { fetchEmployeeHourlyRatePeriods, getHourlyRateForEmployeeOnDate, type EmployeeRatePeriod } from '@/lib/employeeHourlyRates'
 import OfficeScheduleHistoryPanel from '@/components/attendance/OfficeScheduleHistoryPanel'
+import OfficeScheduleEmployeeSettingsModal from '@/components/attendance/OfficeScheduleEmployeeSettingsModal'
+import {
+  computeFullTimeMonthlyMinimum,
+  formatMonthlyMinimum,
+  getEmployeeSettings,
+  type OfficeScheduleEmployeeSettings,
+} from '@/lib/officeScheduleEmployeeSettings'
+import {
+  batchShiftTimeLabel,
+  buildBatchShiftSlotKeys,
+  countNewBatchShiftSlots,
+  type OfficeBatchShift,
+} from '@/lib/officeScheduleBatchShift'
 
 type TeamRow = {
   email: string
@@ -84,6 +99,32 @@ const TIME_COL_PX = 56
 const FIXED_SIDE_COLUMNS_PX = TIME_COL_PX * 2
 const DAY_COL_MIN_PX = 30
 
+const OFFICE_SCHEDULE_STAFF_ORDER = ['judy', 'hana', 'somi', 'mike'] as const
+
+function scheduleStaffSortLabel(m: TeamRow): string {
+  return (m.display_name || m.name_en || m.email.split('@')[0]).trim().toLowerCase()
+}
+
+function scheduleStaffOrderIndex(m: TeamRow): number {
+  const label = scheduleStaffSortLabel(m)
+  const first = label.split(/\s+/)[0] ?? label
+  const email = m.email.trim().toLowerCase()
+  const idx = OFFICE_SCHEDULE_STAFF_ORDER.findIndex(
+    (key) => first === key || label.startsWith(`${key} `) || email.includes(key)
+  )
+  return idx >= 0 ? idx : OFFICE_SCHEDULE_STAFF_ORDER.length
+}
+
+function filterAndSortOfficeScheduleTeam(rows: TeamRow[]): TeamRow[] {
+  return rows
+    .filter((m) => !m.email.trim().toLowerCase().includes('vegasmaniatour'))
+    .sort((a, b) => {
+      const orderDiff = scheduleStaffOrderIndex(a) - scheduleStaffOrderIndex(b)
+      if (orderDiff !== 0) return orderDiff
+      return scheduleStaffSortLabel(a).localeCompare(scheduleStaffSortLabel(b))
+    })
+}
+
 function displayName(m: TeamRow): string {
   return (m.display_name || m.name_en || m.email.split('@')[0]).trim()
 }
@@ -108,6 +149,76 @@ function buildCellStaffMap(slotMap: SlotMap): Map<string, string[]> {
     map.set(cellKey, list)
   }
   return map
+}
+
+function ScheduleStatsPeriodCell({
+  label,
+  labelTitle,
+  hours,
+  days,
+  pay,
+  highlight = false,
+  monthlyMin,
+}: {
+  label: string
+  labelTitle?: string
+  hours: number
+  days: number
+  pay?: number | undefined
+  highlight?: boolean
+  monthlyMin?: { minDays: number; minHours: number } | undefined
+}) {
+  const belowMin =
+    monthlyMin != null && (days < monthlyMin.minDays || hours < monthlyMin.minHours)
+
+  return (
+    <div
+      className={`rounded-md border px-1 py-1 text-center min-w-0 max-lg:flex max-lg:items-center max-lg:justify-between max-lg:gap-2 max-lg:px-2.5 max-lg:py-1.5 max-lg:text-left ${
+        highlight ? 'bg-indigo-50 border-indigo-100' : 'bg-slate-50 border-slate-100'
+      }`}
+    >
+      <p
+        className={`text-[9px] font-medium leading-tight mb-0.5 truncate max-lg:mb-0 max-lg:text-[10px] max-lg:shrink-0 ${
+          highlight ? 'text-indigo-600' : 'text-gray-500'
+        }`}
+        title={labelTitle ?? label}
+      >
+        {label}
+      </p>
+      <div className="max-lg:flex max-lg:items-center max-lg:gap-2.5 max-lg:shrink-0">
+        <p
+          className={`text-xs font-bold tabular-nums leading-tight ${
+            highlight ? 'text-indigo-700' : 'text-slate-800'
+          }`}
+        >
+          {hours}h
+        </p>
+        <p
+          className={`text-[9px] font-semibold tabular-nums ${
+            highlight ? 'text-indigo-600/80' : 'text-gray-600'
+          }`}
+          title={C.statsScheduledDays}
+        >
+          {formatScheduledDays(days)}
+        </p>
+        {monthlyMin != null && (
+          <p
+            className={`text-[8px] font-medium tabular-nums max-lg:mt-0 mt-0.5 leading-tight ${
+              belowMin ? 'text-rose-600' : 'text-emerald-700'
+            }`}
+            title={C.employeeSettingsMonthlyMin}
+          >
+            {formatMonthlyMinimum(monthlyMin.minDays, monthlyMin.minHours)}
+          </p>
+        )}
+        {pay != null && (
+          <p className="text-[9px] font-bold text-amber-800 tabular-nums max-lg:mt-0 mt-0.5">
+            {formatDailyPayAmount(pay)}
+          </p>
+        )}
+      </div>
+    </div>
+  )
 }
 
 type StrokeMode = 'add' | 'remove'
@@ -135,8 +246,14 @@ export default function OfficeScheduleModal({
   const [undoStack, setUndoStack] = useState<SlotMap[]>([])
   const [redoStack, setRedoStack] = useState<SlotMap[]>([])
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [isEmployeeSettingsOpen, setIsEmployeeSettingsOpen] = useState(false)
+  const [mobileStatsOpen, setMobileStatsOpen] = useState(false)
+  const [mobileStaffOpen, setMobileStaffOpen] = useState(false)
   const [hiddenStaffEmails, setHiddenStaffEmails] = useState<Set<string>>(() => new Set())
   const [ratePeriods, setRatePeriods] = useState<EmployeeRatePeriod[]>([])
+  const [employeeSettingsMap, setEmployeeSettingsMap] = useState<
+    Map<string, OfficeScheduleEmployeeSettings>
+  >(() => new Map())
 
   const draftSlotMapRef = useRef<SlotMap>(new Map())
   const cellStaffMapRef = useRef<Map<string, string[]>>(new Map())
@@ -235,7 +352,7 @@ export default function OfficeScheduleModal({
       setError(C.loadError)
       return
     }
-    setTeam((data || []) as TeamRow[])
+    setTeam(filterAndSortOfficeScheduleTeam((data || []) as TeamRow[]))
   }, [])
 
   const loadSlots = useCallback(async () => {
@@ -278,6 +395,8 @@ export default function OfficeScheduleModal({
       setRedoStack([])
       strokeBeforeRef.current = null
       isPaintingRef.current = false
+      setMobileStatsOpen(false)
+      setMobileStaffOpen(false)
       return
     }
     if (team.length === 0 || activeBrush !== null) return
@@ -333,6 +452,13 @@ export default function OfficeScheduleModal({
     }
   }, [isOpen, isSuper])
 
+  const handleEmployeeSettingsChange = useCallback(
+    (map: Map<string, OfficeScheduleEmployeeSettings>) => {
+      setEmployeeSettingsMap(map)
+    },
+    []
+  )
+
   const staffColorMap = useMemo(
     () =>
       buildStaffColorMap(
@@ -387,6 +513,20 @@ export default function OfficeScheduleModal({
     if (hiddenStaffEmails.size === 0) return staffStats
     return staffStats.filter((row) => !hiddenStaffEmails.has(row.email.trim().toLowerCase()))
   }, [staffStats, hiddenStaffEmails])
+
+  const fullTimeMonthlyMinByEmail = useMemo(() => {
+    const map = new Map<string, { minDays: number; minHours: number }>()
+    for (const member of team) {
+      const settings = getEmployeeSettings(employeeSettingsMap, member.email)
+      if (settings.employment_type === 'full_time') {
+        map.set(
+          member.email.trim().toLowerCase(),
+          computeFullTimeMonthlyMinimum(currentMonth, settings.rest_days)
+        )
+      }
+    }
+    return map
+  }, [team, employeeSettingsMap, currentMonth])
 
   const filterEmailsForView = useCallback(
     (emails: string[]): string[] => {
@@ -755,24 +895,108 @@ export default function OfficeScheduleModal({
     setColorOverrides((prev) => clearStaffColorOverride(email, prev))
   }
 
-  const todayYmd = dayjs().format('YYYY-MM-DD')
   const monthLabel = useMemo(() => dayjs(`${currentMonth}-01`).format('MMMM YYYY'), [currentMonth])
   const viewedMonthShort = useMemo(() => dayjs(`${currentMonth}-01`).format('MMM YYYY'), [currentMonth])
+
+  const activeBrushLabel = useMemo(() => {
+    if (activeBrush === 'eraser') return C.eraser
+    if (!activeBrush) return '—'
+    const member = team.find((m) => m.email === activeBrush)
+    return member ? displayName(member) : activeBrush.split('@')[0]
+  }, [activeBrush, team])
+
+  const selectActiveBrush = useCallback((brush: Brush) => {
+    setActiveBrush(brush)
+    setMobileStaffOpen(false)
+  }, [])
+
+  const applyBatchShiftFill = useCallback(
+    (email: string, shift: OfficeBatchShift, restDays: number[]) => {
+      if (!canEditCell(email)) return
+
+      const member = team.find((m) => m.email === email)
+      const name = member ? displayName(member) : email.split('@')[0]
+      const shiftLabel =
+        shift === 'first_half' ? C.employeeSettingsBatchFirstHalf : C.employeeSettingsBatchSecondHalf
+      const timeLabel = batchShiftTimeLabel(shift)
+      const newCount = countNewBatchShiftSlots(
+        draftSlotMapRef.current,
+        email,
+        currentMonth,
+        restDays,
+        shift
+      )
+
+      if (newCount === 0) {
+        window.alert(C.employeeSettingsBatchFillNone)
+        return
+      }
+
+      const confirmed = window.confirm(
+        C.employeeSettingsBatchFillConfirm.replace('{shift}', shiftLabel)
+          .replace('{time}', timeLabel)
+          .replace('{name}', name)
+          .replace('{month}', monthLabel)
+      )
+      if (!confirmed) return
+
+      const before = cloneSlotMap(draftSlotMapRef.current)
+      const keys = buildBatchShiftSlotKeys(email, currentMonth, restDays, shift)
+      let changed = false
+      for (const key of keys) {
+        if (!draftSlotMapRef.current.has(key)) {
+          draftSlotMapRef.current.set(key, { note: null })
+          changed = true
+        }
+      }
+
+      if (!changed) return
+
+      cellStaffMapRef.current = buildCellStaffMap(draftSlotMapRef.current)
+      setUndoStack((stack) => pushUndoSnapshot(stack, before))
+      setRedoStack([])
+      setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+      setSaveSuccess(false)
+      setStatsTick((n) => n + 1)
+      window.alert(C.employeeSettingsBatchFillDone)
+    },
+    [canEditCell, team, currentMonth, monthLabel]
+  )
+
+  const todayYmd = dayjs().format('YYYY-MM-DD')
+
+  useEffect(() => {
+    if (!isOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 bg-black/55"
+      className="modal-inset-below-chrome max-lg:bg-black/45 lg:!fixed lg:!inset-0 lg:!top-0 lg:!bottom-0 lg:z-[100] lg:flex lg:items-center lg:justify-center lg:p-2 lg:bg-black/55"
       role="dialog"
       aria-modal="true"
       aria-labelledby="office-schedule-modal-title"
       onClick={requestClose}
     >
       <div
-        className="relative bg-white rounded-xl shadow-2xl w-[calc(100vw-0.5rem)] max-w-[min(99vw,1920px)] max-h-[min(96dvh,980px)] flex flex-col overflow-hidden border border-indigo-100"
+        className="relative bg-white flex flex-col overflow-hidden border border-indigo-100 max-lg:h-full max-lg:w-full max-lg:max-h-none max-lg:rounded-none max-lg:border-0 max-lg:shadow-none lg:rounded-xl lg:shadow-2xl lg:w-[calc(100vw-0.5rem)] lg:max-w-[min(99vw,1920px)] lg:max-h-[min(96dvh,980px)]"
         onClick={(e) => e.stopPropagation()}
       >
+        <OfficeScheduleEmployeeSettingsModal
+          isOpen={isEmployeeSettingsOpen}
+          onClose={() => setIsEmployeeSettingsOpen(false)}
+          team={team}
+          canEdit={canEditAll}
+          scopeMonth={currentMonth}
+          onSettingsChange={handleEmployeeSettingsChange}
+          onBatchFillShift={applyBatchShiftFill}
+        />
         <OfficeScheduleHistoryPanel
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
@@ -780,9 +1004,80 @@ export default function OfficeScheduleModal({
           canRestore={canEditAll}
           onRestored={() => void handleHistoryRestored()}
         />
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 shrink-0">
+        <div className="lg:hidden shrink-0 border-b border-gray-200 bg-white">
+          <div className="flex items-center justify-between gap-2 px-3 py-2">
+            <h2
+              id="office-schedule-modal-title"
+              className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 min-w-0"
+            >
+              <CalendarClock className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="truncate">{C.title}</span>
+              {isDirty && (
+                <span className="text-[9px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded shrink-0">
+                  Unsaved
+                </span>
+              )}
+            </h2>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!canSave}
+                className="flex items-center justify-center p-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40"
+                title={C.save}
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={requestClose}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"
+                aria-label={C.close}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => setIsEmployeeSettingsOpen(true)}
+              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
+              title={C.employeeSettingsTitle}
+            >
+              <Briefcase className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
+              title={C.historyTitle}
+            >
+              <History className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo || saving}
+              title={C.undo}
+              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg disabled:opacity-40"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={!canRedo || saving}
+              title={C.redo}
+              className="shrink-0 p-2 text-gray-700 bg-white border border-gray-300 rounded-lg disabled:opacity-40"
+            >
+              <Redo2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="hidden lg:flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 shrink-0">
           <h2
-            id="office-schedule-modal-title"
             className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2 min-w-0"
           >
             <CalendarClock className="w-5 h-5 text-indigo-600 shrink-0" />
@@ -794,6 +1089,15 @@ export default function OfficeScheduleModal({
             )}
           </h2>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsEmployeeSettingsOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              title={C.employeeSettingsTitle}
+            >
+              <Briefcase className="w-4 h-4" />
+              <span className="hidden sm:inline">{C.employeeSettingsButton}</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsHistoryOpen(true)}
@@ -843,7 +1147,8 @@ export default function OfficeScheduleModal({
           </div>
         </div>
 
-        <div className="px-4 py-2 border-b border-gray-100 shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="px-3 sm:px-4 py-2 border-b border-gray-100 shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2 bg-white">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -853,7 +1158,7 @@ export default function OfficeScheduleModal({
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-sm font-semibold text-gray-800 min-w-[7rem] text-center">
+            <span className="text-sm font-semibold text-gray-800 min-w-[6.5rem] text-center">
               {monthLabel}
             </span>
             <button
@@ -865,26 +1170,54 @@ export default function OfficeScheduleModal({
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-xs text-gray-500">{C.hint}</p>
+          <p className="hidden sm:block text-xs text-gray-500">{C.hint}</p>
           {!canEditAll && (
             <p className="text-[10px] text-gray-400">{C.historyRestoreRestricted}</p>
           )}
           {saveSuccess && <p className="text-xs text-green-600 font-medium">{C.saveSuccess}</p>}
         </div>
 
-        <div className="px-4 py-2 border-b border-gray-100 shrink-0">
-          <p className="text-[11px] font-medium text-gray-600 mb-1.5">{C.selectStaff}</p>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="shrink-0 border-b border-gray-100 bg-white">
+          <button
+            type="button"
+            onClick={() => setMobileStaffOpen((open) => !open)}
+            className="lg:hidden flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-gray-50"
+            aria-expanded={mobileStaffOpen}
+            aria-label={mobileStaffOpen ? C.staffPickerHide : C.staffPickerShow}
+          >
+            <span className="text-xs font-semibold text-gray-800">{C.selectStaff}</span>
+            <span className="flex items-center gap-1.5 min-w-0 shrink">
+              <span className="text-[10px] font-semibold text-indigo-700 truncate max-w-[9rem]">
+                {activeBrushLabel}
+              </span>
+              {mobileStaffOpen ? (
+                <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-gray-500 shrink-0" />
+              )}
+            </span>
+          </button>
+
+          <div
+            className={`px-3 sm:px-4 py-2.5 ${
+              mobileStaffOpen ? 'max-lg:block' : 'max-lg:hidden'
+            } lg:block`}
+          >
+            <p className="hidden lg:block text-[11px] font-medium text-gray-600 mb-2">{C.selectStaff}</p>
+            <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
             {team.map((member) => {
               const color = staffColorMap.get(member.email.trim().toLowerCase())
               const selected = activeBrush === member.email
               const editable = canEditCell(member.email)
               const visible = !hiddenStaffEmails.has(member.email.trim().toLowerCase())
+              const name = displayName(member)
               return (
                 <div
                   key={member.email}
-                  className={`inline-flex items-center rounded-md border text-xs font-medium transition-all overflow-hidden ${
-                    selected ? 'ring-2 ring-indigo-500 ring-offset-1 shadow-sm' : 'hover:shadow-sm'
+                  className={`rounded-xl border-2 text-xs font-medium transition-all overflow-hidden lg:inline-flex lg:items-center lg:rounded-md lg:border ${
+                    selected
+                      ? 'ring-2 ring-indigo-500 ring-offset-1 shadow-md lg:shadow-sm'
+                      : 'shadow-sm hover:shadow-md lg:hover:shadow-sm'
                   } ${!editable ? 'opacity-45' : ''} ${!visible ? 'opacity-60' : ''}`}
                   style={{
                     backgroundColor: color?.bg ?? '#f3f4f6',
@@ -892,56 +1225,63 @@ export default function OfficeScheduleModal({
                     color: color?.text ?? '#374151',
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleStaffVisibility(member.email)}
-                    title={visible ? C.hideStaff : C.showStaff}
-                    aria-label={visible ? C.hideStaff : C.showStaff}
-                    aria-pressed={visible}
-                    className={`shrink-0 px-1.5 py-1 border-r transition-colors ${
-                      visible
-                        ? 'border-black/10 text-indigo-700 hover:bg-black/5'
-                        : 'border-black/10 text-gray-500 hover:bg-black/5'
-                    }`}
-                    style={{ borderColor: color?.border ?? '#d1d5db' }}
-                  >
-                    {visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!editable}
-                    onClick={() => setActiveBrush(member.email)}
-                    className={`flex items-center gap-1.5 px-2 py-1 ${
-                      !editable ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-black/5'
-                    }`}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-sm border shrink-0"
-                      style={{ backgroundColor: color?.bg, borderColor: color?.border }}
-                    />
-                    {displayName(member)}
-                  </button>
+                  <div className="flex items-stretch lg:contents">
+                    <button
+                      type="button"
+                      onClick={() => toggleStaffVisibility(member.email)}
+                      title={visible ? C.hideStaff : C.showStaff}
+                      aria-label={visible ? C.hideStaff : C.showStaff}
+                      aria-pressed={visible}
+                      className={`shrink-0 px-3 py-3 lg:px-1.5 lg:py-1 border-r transition-colors active:bg-black/10 ${
+                        visible
+                          ? 'border-black/10 text-indigo-700 hover:bg-black/5'
+                          : 'border-black/10 text-gray-500 hover:bg-black/5'
+                      }`}
+                      style={{ borderColor: color?.border ?? '#d1d5db' }}
+                    >
+                      {visible ? (
+                        <Eye className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
+                      ) : (
+                        <EyeOff className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!editable}
+                      onClick={() => selectActiveBrush(member.email)}
+                      className={`flex flex-1 items-center justify-center gap-2 px-2 py-3 lg:justify-start lg:gap-1.5 lg:px-2 lg:py-1 min-w-0 ${
+                        !editable ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-black/5 active:bg-black/10'
+                      }`}
+                    >
+                      <span
+                        className="w-4 h-4 lg:w-3 lg:h-3 rounded-sm border shrink-0"
+                        style={{ backgroundColor: color?.bg, borderColor: color?.border }}
+                      />
+                      <span className="truncate text-sm lg:text-xs font-semibold">{name}</span>
+                    </button>
+                  </div>
                 </div>
               )
             })}
             <button
               type="button"
-              onClick={() => setActiveBrush('eraser')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+              onClick={() => selectActiveBrush('eraser')}
+              className={`col-span-2 lg:col-span-1 flex items-center justify-center gap-2 px-3 py-3 lg:py-1 rounded-xl lg:rounded-md border text-sm lg:text-xs font-semibold transition-all active:scale-[0.98] ${
                 activeBrush === 'eraser'
                   ? 'ring-2 ring-red-400 ring-offset-1 bg-red-50 border-red-300 text-red-700'
                   : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
             >
-              <Eraser className="w-3.5 h-3.5" />
+              <Eraser className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
               {C.eraser}
             </button>
           </div>
+          </div>
         </div>
 
-        {error && <p className="px-4 pt-2 text-sm text-red-600 shrink-0">{error}</p>}
+        {error && <p className="px-3 sm:px-4 pt-2 text-sm text-red-600 shrink-0 bg-white">{error}</p>}
 
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-white">
           {(teamLoading && team.length === 0) || slotsLoading ? (
             <div className="flex items-center justify-center gap-2 text-sm text-gray-600 py-16">
               <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
@@ -950,11 +1290,10 @@ export default function OfficeScheduleModal({
           ) : team.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-16">{C.noStaff}</p>
           ) : (
-            <>
-              <div
-                ref={bodyScrollRef}
-                className="overflow-auto min-h-0 flex-1 select-none touch-none [scrollbar-gutter:stable]"
-              >
+            <div
+              ref={bodyScrollRef}
+              className="overflow-auto min-h-0 flex-1 select-none touch-none [scrollbar-gutter:stable] isolate"
+            >
                 <table
                   className="border-collapse text-[10px]"
                   style={{ minWidth: dynamicMinTableWidthPx, width: '100%', tableLayout: 'fixed' }}
@@ -1123,15 +1462,40 @@ export default function OfficeScheduleModal({
                     )}
                   </tbody>
                 </table>
-              </div>
-            </>
+            </div>
           )}
         </div>
+        </div>
 
-        <div className="shrink-0 border-t border-gray-200 px-4 py-2 bg-gray-50 space-y-2">
-          <div>
+        <div className="shrink-0 border-t border-gray-200 bg-gray-50 min-w-0 lg:border-t-2 lg:border-gray-300">
+          <button
+            type="button"
+            onClick={() => setMobileStatsOpen((open) => !open)}
+            className="lg:hidden flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left active:bg-gray-100/80"
+            aria-expanded={mobileStatsOpen}
+            aria-label={mobileStatsOpen ? C.statsHide : C.statsShow}
+          >
+            <span className="text-xs font-semibold text-gray-800">{C.statsTitle}</span>
+            <span className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] font-semibold text-indigo-700 tabular-nums">
+                {viewedMonthShort} {totalStats.monthHours}h · {formatScheduledDays(totalStats.monthDays)}
+              </span>
+              {mobileStatsOpen ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-gray-500" />
+              )}
+            </span>
+          </button>
+
+          <div
+            className={`space-y-2 px-3 sm:px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] min-w-0 ${
+              mobileStatsOpen ? 'max-lg:block max-lg:max-h-[min(48dvh,360px)] max-lg:overflow-y-auto max-lg:overscroll-y-contain' : 'max-lg:hidden'
+            } lg:block lg:max-h-none lg:overflow-visible`}
+          >
+          <div className="hidden lg:block">
             <p className="text-[10px] font-medium text-gray-500 mb-1">{C.legend}</p>
-            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            <div className="flex flex-nowrap sm:flex-wrap gap-x-3 gap-y-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {team.map((member) => {
                 const color = staffColorMap.get(member.email.trim().toLowerCase()) as StaffColor | undefined
                 if (!color) return null
@@ -1168,44 +1532,47 @@ export default function OfficeScheduleModal({
             </div>
           </div>
 
-          <div>
-            <p className="text-[10px] font-medium text-gray-500 mb-1.5">{C.statsTitle}</p>
-            <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="min-w-0">
+            <p className="hidden lg:block text-[10px] font-medium text-gray-500 mb-1.5">{C.statsTitle}</p>
+            <div className="grid grid-cols-1 gap-2 w-full min-w-0 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[1800px]:grid-cols-5">
               {canEditAll && hiddenStaffEmails.size === 0 && (
-                <div className="shrink-0 min-w-[168px] rounded-lg border border-indigo-200 bg-white shadow-sm overflow-hidden">
+                <div className="w-full min-w-0 rounded-lg border border-indigo-200 bg-white shadow-sm overflow-hidden">
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-indigo-100 bg-indigo-600">
                     <span className="text-[11px] font-semibold text-white">{C.statsTotal}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1 p-1.5">
-                    <div className="rounded-md bg-slate-50 border border-slate-100 px-1.5 py-1 text-center">
-                      <p className="text-[8px] text-gray-500 leading-tight mb-0.5">{C.statsWeek}</p>
-                      <p className="text-sm font-bold text-slate-800 tabular-nums">{totalStats.weekHours}h</p>
-                      {isSuper && (
-                        <p className="text-[10px] font-bold text-amber-800 tabular-nums mt-0.5">
-                          {formatDailyPayAmount(totalPayStats.weekPay)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="rounded-md bg-slate-50 border border-slate-100 px-1.5 py-1 text-center">
-                      <p className="text-[8px] text-gray-500 leading-tight mb-0.5">{C.statsTwoWeeks}</p>
-                      <p className="text-sm font-bold text-slate-800 tabular-nums">{totalStats.twoWeekHours}h</p>
-                      {isSuper && (
-                        <p className="text-[10px] font-bold text-amber-800 tabular-nums mt-0.5">
-                          {formatDailyPayAmount(totalPayStats.twoWeekPay)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="rounded-md bg-indigo-50 border border-indigo-100 px-1.5 py-1 text-center">
-                      <p className="text-[8px] text-indigo-600 leading-tight mb-0.5 truncate" title={viewedMonthShort}>
-                        {viewedMonthShort}
-                      </p>
-                      <p className="text-sm font-bold text-indigo-700 tabular-nums">{totalStats.monthHours}h</p>
-                      {isSuper && (
-                        <p className="text-[10px] font-bold text-amber-800 tabular-nums mt-0.5">
-                          {formatDailyPayAmount(totalPayStats.monthPay)}
-                        </p>
-                      )}
-                    </div>
+                  <div className="grid grid-cols-1 gap-1.5 p-1.5 lg:grid-cols-5 lg:gap-0.5 lg:min-w-0">
+                    <ScheduleStatsPeriodCell
+                      label={C.statsFirstHalf}
+                      hours={totalStats.firstHalfHours}
+                      days={totalStats.firstHalfDays}
+                      pay={isSuper ? totalPayStats.firstHalfPay : undefined}
+                    />
+                    <ScheduleStatsPeriodCell
+                      label={C.statsSecondHalf}
+                      hours={totalStats.secondHalfHours}
+                      days={totalStats.secondHalfDays}
+                      pay={isSuper ? totalPayStats.secondHalfPay : undefined}
+                    />
+                    <ScheduleStatsPeriodCell
+                      label={C.statsWeek}
+                      hours={totalStats.weekHours}
+                      days={totalStats.weekDays}
+                      pay={isSuper ? totalPayStats.weekPay : undefined}
+                    />
+                    <ScheduleStatsPeriodCell
+                      label={C.statsTwoWeeks}
+                      hours={totalStats.twoWeekHours}
+                      days={totalStats.twoWeekDays}
+                      pay={isSuper ? totalPayStats.twoWeekPay : undefined}
+                    />
+                    <ScheduleStatsPeriodCell
+                      label={viewedMonthShort}
+                      labelTitle={C.statsMonth}
+                      hours={totalStats.monthHours}
+                      days={totalStats.monthDays}
+                      pay={isSuper ? totalPayStats.monthPay : undefined}
+                      highlight
+                    />
                   </div>
                 </div>
               )}
@@ -1213,13 +1580,16 @@ export default function OfficeScheduleModal({
                 const m = team.find((t) => t.email === row.email)
                 const color = staffColorMap.get(row.email.trim().toLowerCase())
                 const name = m ? displayName(m) : row.email
+                const empSettings = getEmployeeSettings(employeeSettingsMap, row.email)
+                const hourlyRate = getHourlyRateForEmployeeOnDate(ratePeriods, row.email, todayYmd)
+                const monthlyMin = fullTimeMonthlyMinByEmail.get(row.email.trim().toLowerCase())
                 return (
                   <div
                     key={row.email}
-                    className="shrink-0 min-w-[168px] rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
+                    className="w-full min-w-0 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
                   >
                     <div
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-gray-100"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-gray-100 min-w-0"
                       style={{ backgroundColor: color?.bg ?? '#f9fafb' }}
                     >
                       <span
@@ -1230,32 +1600,71 @@ export default function OfficeScheduleModal({
                         }}
                       />
                       <span
-                        className="text-[11px] font-semibold truncate"
+                        className="text-[11px] font-semibold truncate min-w-0 flex-1"
                         style={{ color: color?.text ?? '#1f2937' }}
                       >
                         {name}
                       </span>
+                      <span
+                        className="text-[8px] font-semibold px-1 py-0.5 rounded border border-gray-200 bg-white/80 text-gray-600 shrink-0"
+                        title={C.employeeSettingsPayType}
+                      >
+                        {empSettings.pay_type === 'monthly'
+                          ? C.statsPayTypeMonthly
+                          : C.statsPayTypeHourly}
+                      </span>
+                      <span
+                        className="text-[8px] font-semibold px-1 py-0.5 rounded border border-gray-200 bg-white/80 text-gray-600 shrink-0"
+                        title={C.employeeSettingsEmployment}
+                      >
+                        {empSettings.employment_type === 'full_time'
+                          ? C.statsEmploymentFullTime
+                          : C.statsEmploymentPartTime}
+                      </span>
+                      {isSuper && empSettings.pay_type === 'hourly' && (
+                        <span
+                          className="text-[9px] font-semibold text-amber-800 tabular-nums shrink-0"
+                          title={C.statsHourlyRate}
+                        >
+                          {formatHourlyRateLabel(hourlyRate)}
+                        </span>
+                      )}
                     </div>
-                    <div className="grid grid-cols-3 gap-1 p-1.5">
-                      <div className="rounded-md bg-slate-50 border border-slate-100 px-1.5 py-1 text-center">
-                        <p className="text-[8px] text-gray-500 leading-tight mb-0.5">{C.statsWeek}</p>
-                        <p className="text-sm font-bold text-slate-800 tabular-nums">{row.weekHours}h</p>
-                      </div>
-                      <div className="rounded-md bg-slate-50 border border-slate-100 px-1.5 py-1 text-center">
-                        <p className="text-[8px] text-gray-500 leading-tight mb-0.5">{C.statsTwoWeeks}</p>
-                        <p className="text-sm font-bold text-slate-800 tabular-nums">{row.twoWeekHours}h</p>
-                      </div>
-                      <div className="rounded-md bg-indigo-50 border border-indigo-100 px-1.5 py-1 text-center">
-                        <p className="text-[8px] text-indigo-600 leading-tight mb-0.5 truncate" title={viewedMonthShort}>
-                          {viewedMonthShort}
-                        </p>
-                        <p className="text-sm font-bold text-indigo-700 tabular-nums">{row.monthHours}h</p>
-                      </div>
+                    <div className="grid grid-cols-1 gap-1.5 p-1.5 lg:grid-cols-5 lg:gap-0.5 lg:min-w-0">
+                      <ScheduleStatsPeriodCell
+                        label={C.statsFirstHalf}
+                        hours={row.firstHalfHours}
+                        days={row.firstHalfDays}
+                      />
+                      <ScheduleStatsPeriodCell
+                        label={C.statsSecondHalf}
+                        hours={row.secondHalfHours}
+                        days={row.secondHalfDays}
+                      />
+                      <ScheduleStatsPeriodCell
+                        label={C.statsWeek}
+                        hours={row.weekHours}
+                        days={row.weekDays}
+                      />
+                      <ScheduleStatsPeriodCell
+                        label={C.statsTwoWeeks}
+                        hours={row.twoWeekHours}
+                        days={row.twoWeekDays}
+                      />
+                      <ScheduleStatsPeriodCell
+                        label={viewedMonthShort}
+                        labelTitle={C.statsMonth}
+                        hours={row.monthHours}
+                        days={row.monthDays}
+                        monthlyMin={monthlyMin}
+                        highlight
+                      />
                     </div>
                   </div>
                 )
               })}
             </div>
+          </div>
           </div>
         </div>
       </div>

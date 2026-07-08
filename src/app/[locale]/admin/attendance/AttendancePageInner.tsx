@@ -67,6 +67,9 @@ import {
   lasVegasTodayYmd,
   workCalendarDateYmd,
 } from '@/lib/employeeHourlyRates'
+import AttendanceMobileDashboard, {
+  type AttendanceDashboardAction,
+} from '@/components/attendance/AttendanceMobileDashboard'
 
 const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
@@ -787,6 +790,110 @@ export default function AttendancePage() {
     return colors[colorIndex]
   }
 
+  const mobileDashboardActions = useMemo((): AttendanceDashboardAction[] => {
+    const actions: AttendanceDashboardAction[] = []
+
+    if (isAdmin) {
+      actions.push({
+        id: 'add-record',
+        label: t('addRecord'),
+        icon: Plus,
+        onClick: () => setIsAddFormOpen(true),
+        tileClass: 'bg-gradient-to-br from-blue-500 to-blue-700',
+      })
+    }
+
+    if (isAdmin || canViewOfficeTips) {
+      if (canManageOfficeMeal) {
+        actions.push({
+          id: 'office-meal',
+          label: t('officeMealButton'),
+          icon: UtensilsCrossed,
+          onClick: () => setIsOfficeMealModalOpen(true),
+          tileClass: 'bg-gradient-to-br from-amber-600 to-amber-800',
+        })
+      }
+      actions.push({
+        id: 'office-schedule',
+        label: t('officeScheduleButton'),
+        icon: CalendarClock,
+        onClick: () => setIsOfficeScheduleModalOpen(true),
+        tileClass: 'bg-gradient-to-br from-indigo-500 to-indigo-700',
+      })
+      actions.push({
+        id: 'office-tips',
+        label: t('officeTips'),
+        icon: DollarSign,
+        onClick: () => setIsOfficeTipsModalOpen(true),
+        tileClass: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      })
+
+      if (isAdmin || canViewTipsShare) {
+        actions.push({
+          id: 'biweekly',
+          label: t('biweekly'),
+          icon: Calculator,
+          onClick: () => setIsBiweeklyCalculatorOpen(true),
+          tileClass: 'bg-gradient-to-br from-emerald-500 to-green-700',
+        })
+        actions.push({
+          id: 'bonus',
+          label: t('bonus'),
+          icon: Calculator,
+          onClick: () => setIsBonusCalculatorOpen(true),
+          tileClass: 'bg-gradient-to-br from-orange-500 to-orange-700',
+        })
+        actions.push({
+          id: 'total-all',
+          label: t('totalAll'),
+          icon: Users,
+          onClick: () => setIsTotalEmployeesModalOpen(true),
+          tileClass: 'bg-gradient-to-br from-sky-500 to-blue-700',
+          badge: totalEmployeesOverdueCount,
+        })
+      }
+    }
+
+    if (isAdmin || canViewTipsShare) {
+      actions.push({
+        id: 'tips-share',
+        label: t('tipsShare'),
+        icon: DollarSign,
+        onClick: () => setIsTipsShareModalOpen(true),
+        tileClass: 'bg-gradient-to-br from-violet-500 to-purple-700',
+      })
+    }
+
+    if (canViewHourlyRatesHistory) {
+      actions.push({
+        id: 'hourly-rates',
+        label: t('hourlyRatesHistory'),
+        icon: History,
+        onClick: () => setIsHourlyRatesModalOpen(true),
+        tileClass: 'bg-gradient-to-br from-teal-500 to-teal-700',
+      })
+    }
+
+    actions.push({
+      id: 'refresh',
+      label: t('refresh'),
+      icon: RefreshCw,
+      onClick: refreshData,
+      tileClass: 'bg-gradient-to-br from-slate-400 to-slate-600',
+    })
+
+    return actions
+  }, [
+    isAdmin,
+    canViewOfficeTips,
+    canManageOfficeMeal,
+    canViewTipsShare,
+    canViewHourlyRatesHistory,
+    totalEmployeesOverdueCount,
+    t,
+    refreshData,
+  ])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
@@ -831,6 +938,8 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
+      <AttendanceMobileDashboard actions={mobileDashboardActions} className="md:hidden" />
+
       {/* 페이지 헤더 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -871,7 +980,7 @@ export default function AttendancePage() {
               💡 {t('crossDayHint')}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
+          <div className="hidden md:flex flex-wrap gap-2 sm:gap-3 shrink-0">
             {(isAdmin || canViewOfficeTips) && (
               <>
                 {isAdmin && (

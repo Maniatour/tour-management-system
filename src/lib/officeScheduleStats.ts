@@ -18,6 +18,28 @@ export type StaffHoursSummary = {
   weekHours: number
   twoWeekHours: number
   monthHours: number
+  firstHalfHours: number
+  secondHalfHours: number
+  weekDays: number
+  twoWeekDays: number
+  monthDays: number
+  firstHalfDays: number
+  secondHalfDays: number
+}
+
+function monthHalfRanges(monthYmd: string): {
+  firstStart: string
+  firstEnd: string
+  secondStart: string
+  secondEnd: string
+} {
+  const monthStart = dayjs(`${monthYmd}-01`)
+  return {
+    firstStart: monthStart.format('YYYY-MM-DD'),
+    firstEnd: monthStart.date(15).format('YYYY-MM-DD'),
+    secondStart: monthStart.date(16).format('YYYY-MM-DD'),
+    secondEnd: monthStart.endOf('month').format('YYYY-MM-DD'),
+  }
 }
 
 function parseSlotKey(key: string): { email: string; date: string; hourSlot: number } | null {
@@ -40,16 +62,31 @@ export function computeStaffHoursSummaries(
   const twoWeekEnd = today.format('YYYY-MM-DD')
   const monthStart = dayjs(`${monthYmd}-01`).startOf('month').format('YYYY-MM-DD')
   const monthEnd = dayjs(`${monthYmd}-01`).endOf('month').format('YYYY-MM-DD')
+  const { firstStart, firstEnd, secondStart, secondEnd } = monthHalfRanges(monthYmd)
 
   const weekByEmail = new Map<string, number>()
   const twoWeekByEmail = new Map<string, number>()
   const monthByEmail = new Map<string, number>()
+  const firstHalfByEmail = new Map<string, number>()
+  const secondHalfByEmail = new Map<string, number>()
+  const weekDaysByEmail = new Map<string, Set<string>>()
+  const twoWeekDaysByEmail = new Map<string, Set<string>>()
+  const monthDaysByEmail = new Map<string, Set<string>>()
+  const firstHalfDaysByEmail = new Map<string, Set<string>>()
+  const secondHalfDaysByEmail = new Map<string, Set<string>>()
 
   for (const email of emails) {
     const norm = email.trim().toLowerCase()
     weekByEmail.set(norm, 0)
     twoWeekByEmail.set(norm, 0)
     monthByEmail.set(norm, 0)
+    firstHalfByEmail.set(norm, 0)
+    secondHalfByEmail.set(norm, 0)
+    weekDaysByEmail.set(norm, new Set())
+    twoWeekDaysByEmail.set(norm, new Set())
+    monthDaysByEmail.set(norm, new Set())
+    firstHalfDaysByEmail.set(norm, new Set())
+    secondHalfDaysByEmail.set(norm, new Set())
   }
 
   for (const key of slotKeys) {
@@ -61,12 +98,23 @@ export function computeStaffHoursSummaries(
     const { date } = parsed
     if (date >= weekStart && date <= weekEnd) {
       weekByEmail.set(norm, (weekByEmail.get(norm) ?? 0) + h)
+      weekDaysByEmail.get(norm)?.add(date)
     }
     if (date >= twoWeekStart && date <= twoWeekEnd) {
       twoWeekByEmail.set(norm, (twoWeekByEmail.get(norm) ?? 0) + h)
+      twoWeekDaysByEmail.get(norm)?.add(date)
     }
     if (date >= monthStart && date <= monthEnd) {
       monthByEmail.set(norm, (monthByEmail.get(norm) ?? 0) + h)
+      monthDaysByEmail.get(norm)?.add(date)
+    }
+    if (date >= firstStart && date <= firstEnd) {
+      firstHalfByEmail.set(norm, (firstHalfByEmail.get(norm) ?? 0) + h)
+      firstHalfDaysByEmail.get(norm)?.add(date)
+    }
+    if (date >= secondStart && date <= secondEnd) {
+      secondHalfByEmail.set(norm, (secondHalfByEmail.get(norm) ?? 0) + h)
+      secondHalfDaysByEmail.get(norm)?.add(date)
     }
   }
 
@@ -77,6 +125,13 @@ export function computeStaffHoursSummaries(
       weekHours: weekByEmail.get(norm) ?? 0,
       twoWeekHours: twoWeekByEmail.get(norm) ?? 0,
       monthHours: monthByEmail.get(norm) ?? 0,
+      firstHalfHours: firstHalfByEmail.get(norm) ?? 0,
+      secondHalfHours: secondHalfByEmail.get(norm) ?? 0,
+      weekDays: weekDaysByEmail.get(norm)?.size ?? 0,
+      twoWeekDays: twoWeekDaysByEmail.get(norm)?.size ?? 0,
+      monthDays: monthDaysByEmail.get(norm)?.size ?? 0,
+      firstHalfDays: firstHalfDaysByEmail.get(norm)?.size ?? 0,
+      secondHalfDays: secondHalfDaysByEmail.get(norm)?.size ?? 0,
     }
   })
 }
@@ -88,9 +143,32 @@ export function sumStaffHoursSummaries(rows: StaffHoursSummary[]): StaffHoursSum
       weekHours: acc.weekHours + row.weekHours,
       twoWeekHours: acc.twoWeekHours + row.twoWeekHours,
       monthHours: acc.monthHours + row.monthHours,
+      firstHalfHours: acc.firstHalfHours + row.firstHalfHours,
+      secondHalfHours: acc.secondHalfHours + row.secondHalfHours,
+      weekDays: acc.weekDays + row.weekDays,
+      twoWeekDays: acc.twoWeekDays + row.twoWeekDays,
+      monthDays: acc.monthDays + row.monthDays,
+      firstHalfDays: acc.firstHalfDays + row.firstHalfDays,
+      secondHalfDays: acc.secondHalfDays + row.secondHalfDays,
     }),
-    { email: '', weekHours: 0, twoWeekHours: 0, monthHours: 0 }
+    {
+      email: '',
+      weekHours: 0,
+      twoWeekHours: 0,
+      monthHours: 0,
+      firstHalfHours: 0,
+      secondHalfHours: 0,
+      weekDays: 0,
+      twoWeekDays: 0,
+      monthDays: 0,
+      firstHalfDays: 0,
+      secondHalfDays: 0,
+    }
   )
+}
+
+export function formatScheduledDays(days: number): string {
+  return `${days}d`
 }
 
 export type StaffPaySummary = {
@@ -98,6 +176,8 @@ export type StaffPaySummary = {
   weekPay: number
   twoWeekPay: number
   monthPay: number
+  firstHalfPay: number
+  secondHalfPay: number
 }
 
 export function computeStaffPaySummaries(
@@ -114,6 +194,7 @@ export function computeStaffPaySummaries(
   const twoWeekEnd = today.format('YYYY-MM-DD')
   const monthStart = dayjs(`${monthYmd}-01`).startOf('month').format('YYYY-MM-DD')
   const monthEnd = dayjs(`${monthYmd}-01`).endOf('month').format('YYYY-MM-DD')
+  const { firstStart, firstEnd, secondStart, secondEnd } = monthHalfRanges(monthYmd)
 
   const hide =
     hiddenEmails && hiddenEmails.size > 0
@@ -123,6 +204,8 @@ export function computeStaffPaySummaries(
   const weekByEmail = new Map<string, number>()
   const twoWeekByEmail = new Map<string, number>()
   const monthByEmail = new Map<string, number>()
+  const firstHalfByEmail = new Map<string, number>()
+  const secondHalfByEmail = new Map<string, number>()
 
   for (const email of emails) {
     const norm = email.trim().toLowerCase()
@@ -130,6 +213,8 @@ export function computeStaffPaySummaries(
     weekByEmail.set(norm, 0)
     twoWeekByEmail.set(norm, 0)
     monthByEmail.set(norm, 0)
+    firstHalfByEmail.set(norm, 0)
+    secondHalfByEmail.set(norm, 0)
   }
 
   for (const key of slotKeys) {
@@ -153,6 +238,12 @@ export function computeStaffPaySummaries(
     if (date >= monthStart && date <= monthEnd) {
       monthByEmail.set(norm, (monthByEmail.get(norm) ?? 0) + pay)
     }
+    if (date >= firstStart && date <= firstEnd) {
+      firstHalfByEmail.set(norm, (firstHalfByEmail.get(norm) ?? 0) + pay)
+    }
+    if (date >= secondStart && date <= secondEnd) {
+      secondHalfByEmail.set(norm, (secondHalfByEmail.get(norm) ?? 0) + pay)
+    }
   }
 
   return emails
@@ -164,6 +255,8 @@ export function computeStaffPaySummaries(
         weekPay: weekByEmail.get(norm) ?? 0,
         twoWeekPay: twoWeekByEmail.get(norm) ?? 0,
         monthPay: monthByEmail.get(norm) ?? 0,
+        firstHalfPay: firstHalfByEmail.get(norm) ?? 0,
+        secondHalfPay: secondHalfByEmail.get(norm) ?? 0,
       }
     })
 }
@@ -175,8 +268,10 @@ export function sumStaffPaySummaries(rows: StaffPaySummary[]): StaffPaySummary {
       weekPay: acc.weekPay + row.weekPay,
       twoWeekPay: acc.twoWeekPay + row.twoWeekPay,
       monthPay: acc.monthPay + row.monthPay,
+      firstHalfPay: acc.firstHalfPay + row.firstHalfPay,
+      secondHalfPay: acc.secondHalfPay + row.secondHalfPay,
     }),
-    { email: '', weekPay: 0, twoWeekPay: 0, monthPay: 0 }
+    { email: '', weekPay: 0, twoWeekPay: 0, monthPay: 0, firstHalfPay: 0, secondHalfPay: 0 }
   )
 }
 
@@ -244,6 +339,11 @@ export function formatDailyPayAmount(amount: number): string {
   if (amount <= 0) return '—'
   const rounded = Math.round(amount * 100) / 100
   return rounded % 1 === 0 ? `$${rounded}` : `$${rounded.toFixed(2)}`
+}
+
+export function formatHourlyRateLabel(rate: number): string {
+  const rounded = Math.round(rate * 100) / 100
+  return rounded % 1 === 0 ? `$${rounded}/h` : `$${rounded.toFixed(2)}/h`
 }
 
 export function slotMapToKeySet(map: Map<string, unknown>): Set<string> {
