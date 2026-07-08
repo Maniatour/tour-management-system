@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactElement } from 'react'
 import {
   BarChart,
   Bar,
@@ -9,7 +10,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart
 } from 'recharts'
+import RechartsContainer from '@/components/ui/RechartsContainer'
 
 interface ChartData {
   name: string
@@ -251,9 +252,9 @@ export default function AdvancedCharts({
   return (
     <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${compact ? 'px-2 py-3' : 'p-6'}`}>
       <h3 className={`font-semibold text-gray-900 mb-2 ${compact ? 'text-sm' : 'text-lg mb-4'}`}>{title}</h3>
-      <ResponsiveContainer width="100%" height={height}>
-        {renderChart()}
-      </ResponsiveContainer>
+      <RechartsContainer height={height}>
+        {renderChart() as ReactElement}
+      </RechartsContainer>
     </div>
   )
 }

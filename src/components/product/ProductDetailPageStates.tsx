@@ -7,10 +7,10 @@ import { useLocale, useTranslations } from 'next-intl'
 export function ProductDetailLoadingState() {
   const t = useTranslations('productDetail')
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-        <p className="text-gray-600">{t('loadingProduct')}</p>
+        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#0B5FFF]" />
+        <p className="text-slate-600">{t('loadingProduct')}</p>
       </div>
     </div>
   )
@@ -25,10 +25,10 @@ export function ProductDetailErrorState({ error }: ProductDetailErrorStateProps)
   const locale = useLocale()
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-red-500 mb-4">
-          <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="max-w-md px-6 text-center">
+        <div className="mb-4 text-red-500">
+          <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -37,13 +37,13 @@ export function ProductDetailErrorState({ error }: ProductDetailErrorStateProps)
             />
           </svg>
         </div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('errorTitle')}</h2>
-        <p className="text-gray-600 mb-4">{error || t('productNotFound')}</p>
+        <h2 className="mb-2 text-xl font-semibold text-slate-900">{t('errorTitle')}</h2>
+        <p className="mb-6 text-slate-600">{error || t('productNotFound')}</p>
         <Link
           href={`/${locale}/products`}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center rounded-xl bg-[#0B5FFF] px-5 py-3 font-medium text-white transition-colors hover:bg-[#0952e0]"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
           {t('backToProductList')}
         </Link>
       </div>

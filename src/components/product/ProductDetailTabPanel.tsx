@@ -9,6 +9,7 @@ import ProductDetailOverviewTab from '@/components/product/ProductDetailOverview
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
 import ProductDetailDetailsTab from '@/components/product/ProductDetailDetailsTab'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import { fetchTagLabelMap, type TagLabelMap } from '@/lib/productTagDisplay'
 import type {
   ProductDetailsFields,
   ProductDetailsTabProduct,
@@ -21,6 +22,8 @@ type TabPanelProduct = ProductDetailsTabProduct & {
   customer_name_ko: string
   customer_name_en: string
   description: string | null
+  summary_ko?: string | null
+  summary_en?: string | null
 }
 
 type TabPanelProductDetails = ProductDetailsFields & {
@@ -62,6 +65,7 @@ export default function ProductDetailTabPanel({
   const t = useTranslations('productDetail')
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState('overview')
+  const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -69,6 +73,16 @@ export default function ProductDetailTabPanel({
       setActiveTab(tab)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    const allTags = [...(product.tags ?? []), ...(productDetails?.tags ?? [])]
+    const unique = [...new Set(allTags)]
+    if (unique.length === 0) {
+      setTagLabelMap({})
+      return
+    }
+    void fetchTagLabelMap(unique).then(setTagLabelMap)
+  }, [product.tags, productDetails?.tags])
 
   const tabs = [
     { id: 'overview', label: t('tabOverview') },
@@ -79,19 +93,21 @@ export default function ProductDetailTabPanel({
   ]
 
   return (
-    <CustomerPageZone zone="detail-tabs" className="bg-white rounded-lg shadow-sm border">
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex overflow-x-auto scrollbar-hide px-4 sm:px-6">
-          <div className="flex space-x-2 sm:space-x-8 min-w-max">
+    <CustomerPageZone zone="detail-tabs" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/50">
+        <nav className="-mb-px flex overflow-x-auto px-4 scrollbar-hide sm:px-6" aria-label="Product detail tabs">
+          <div className="flex min-w-max gap-1 sm:gap-2">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-3 sm:py-4 px-2 sm:px-1 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 transition-colors touch-optimized mobile-button ${
+                aria-selected={activeTab === tab.id}
+                role="tab"
+                className={`mobile-button touch-optimized flex-shrink-0 whitespace-nowrap rounded-t-xl px-4 py-3.5 text-sm font-semibold transition-all sm:px-5 sm:py-4 sm:text-base ${
                   activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-b-2 border-[#0B5FFF] bg-white text-[#0B5FFF] shadow-sm'
+                    : 'border-b-2 border-transparent text-slate-500 hover:bg-white/60 hover:text-slate-800'
                 }`}
               >
                 {tab.label}
@@ -101,7 +117,7 @@ export default function ProductDetailTabPanel({
         </nav>
       </div>
 
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6 lg:p-8">
         {activeTab === 'overview' && (
           <CustomerPageZone zone="detail-tab-overview">
             <ProductDetailOverviewTab
@@ -119,7 +135,9 @@ export default function ProductDetailTabPanel({
               displayName={displayName}
               durationLabel={durationLabel}
               categoryLabel={categoryLabel}
+              locale={locale}
               showDetail={showDetail}
+              tagLabelMap={tagLabelMap}
             />
           </CustomerPageZone>
         )}
@@ -147,6 +165,8 @@ export default function ProductDetailTabPanel({
               productDetails={productDetails}
               categoryLabel={categoryLabel}
               durationLabel={durationLabel}
+              locale={locale}
+              tagLabelMap={tagLabelMap}
             />
           </CustomerPageZone>
         )}

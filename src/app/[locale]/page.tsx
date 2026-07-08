@@ -1,18 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { ArrowRight, Play, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import { getProductSummaryByLocale } from '@/lib/productDetailDisplay'
+import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 interface PopularProduct {
   id: string
   name: string
   name_en: string | null
   description: string | null
+  summary_ko: string | null
+  summary_en: string | null
   category: string | null
   base_price: number | null
   primary_image: string | null
@@ -20,6 +26,14 @@ interface PopularProduct {
 }
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">…</div>}>
+      <HomePageInner />
+    </Suspense>
+  )
+}
+
+function HomePageInner() {
   const t = useTranslations('common')
   const locale = useLocale()
   const { userRole } = useAuth()
@@ -49,8 +63,9 @@ export default function HomePage() {
   }
 
   const getProductDescription = (product: PopularProduct) => {
-    if (product.description && product.description.trim().length > 0) {
-      return product.description
+    const summary = getProductSummaryByLocale(product, locale)
+    if (summary) {
+      return summary
     }
 
     return locale === 'en' ? 'Detailed information is being prepared.' : '상세 정보가 준비 중입니다.'
@@ -79,7 +94,7 @@ export default function HomePage() {
         // 즐겨찾기된 상품 먼저 가져오기
         const { data: favoriteProducts, error: favoriteError } = await supabase
           .from('products')
-          .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
+          .select('id, name, name_en, description, summary_ko, summary_en, base_price, category, is_favorite, favorite_order')
           .eq('status', 'active')
           .eq('is_favorite', true)
           .order('favorite_order', { ascending: true })
@@ -94,7 +109,7 @@ export default function HomePage() {
           // 즐겨찾기 상품이 없으면 최근 상품 가져오기
           const { data: recentProducts, error: recentError } = await supabase
             .from('products')
-            .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
+            .select('id, name, name_en, description, summary_ko, summary_en, base_price, category, is_favorite, favorite_order')
             .eq('status', 'active')
             .order('created_at', { ascending: false })
             .limit(3)
@@ -122,6 +137,8 @@ export default function HomePage() {
           name: product.name,
           name_en: product.name_en,
           description: product.description,
+          summary_ko: product.summary_ko,
+          summary_en: product.summary_en,
           base_price: product.base_price,
           category: product.category,
           favorite_order: product.favorite_order
@@ -129,38 +146,10 @@ export default function HomePage() {
 
         const productsWithImages = await Promise.all(
           rows.map(async (product) => {
-            let primaryImage: string | null = null
-
-            const { data: primaryMedia, error: primaryError } = await supabase
-              .from('product_media')
-              .select('file_url')
-              .eq('product_id', product.id)
-              .eq('file_type', 'image')
-              .eq('is_active', true)
-              .eq('is_primary', true)
-              .single()
-
-            if (!primaryError && primaryMedia && 'file_url' in primaryMedia) {
-              primaryImage = (primaryMedia as { file_url: string }).file_url
-            } else {
-              const { data: firstMedia, error: firstError } = await supabase
-                .from('product_media')
-                .select('file_url')
-                .eq('product_id', product.id)
-                .eq('file_type', 'image')
-                .eq('is_active', true)
-                .order('order_index', { ascending: true })
-                .limit(1)
-                .single()
-
-              if (!firstError && firstMedia && 'file_url' in firstMedia) {
-                primaryImage = (firstMedia as { file_url: string }).file_url
-              }
-            }
-
+            const primaryImage = await fetchProductPrimaryImage(product.id)
             return {
               ...product,
-              primary_image: primaryImage
+              primary_image: primaryImage,
             }
           })
         )
@@ -234,7 +223,7 @@ export default function HomePage() {
       // 데이터베이스에서 최신 데이터 다시 불러오기
       const { data: reloadedFavoriteProducts, error: favoriteError } = await supabase
         .from('products')
-        .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
+        .select('id, name, name_en, description, summary_ko, summary_en, base_price, category, is_favorite, favorite_order')
         .eq('status', 'active')
         .eq('is_favorite', true)
         .order('favorite_order', { ascending: true })
@@ -249,40 +238,15 @@ export default function HomePage() {
         // 이미지 정보 다시 가져오기
         const productsWithImages = await Promise.all(
           reloadedFavoriteProducts.map(async (product) => {
-            let primaryImage: string | null = null
-
-            const { data: primaryMedia } = await supabase
-              .from('product_media')
-              .select('file_url')
-              .eq('product_id', product.id)
-              .eq('file_type', 'image')
-              .eq('is_active', true)
-              .eq('is_primary', true)
-              .single()
-
-            if (primaryMedia && 'file_url' in primaryMedia) {
-              primaryImage = (primaryMedia as { file_url: string }).file_url
-            } else {
-              const { data: firstMedia } = await supabase
-                .from('product_media')
-                .select('file_url')
-                .eq('product_id', product.id)
-                .eq('file_type', 'image')
-                .eq('is_active', true)
-                .order('order_index', { ascending: true })
-                .limit(1)
-                .single()
-
-              if (firstMedia && 'file_url' in firstMedia) {
-                primaryImage = (firstMedia as { file_url: string }).file_url
-              }
-            }
+            const primaryImage = await fetchProductPrimaryImage(product.id)
 
             return {
               id: product.id,
               name: product.name,
               name_en: product.name_en,
               description: product.description,
+              summary_ko: product.summary_ko,
+              summary_en: product.summary_en,
               base_price: product.base_price,
               category: product.category,
               favorite_order: product.favorite_order,
@@ -420,8 +384,8 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
-      {/* 히어로 섹션 - 모바일 최적화 */}
-      <section className="relative bg-gradient-to-r from-blue-900 to-purple-900 text-white">
+      <CustomerPagePreviewHighlightEffect />
+      <CustomerPageZone zone="home-hero" className="relative bg-gradient-to-r from-blue-900 to-purple-900 text-white">
         <div className="absolute inset-0 bg-black/30" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
           <div className="text-center">
@@ -450,10 +414,9 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
 
-      {/* 태그 아이콘 섹션 - 모바일 최적화 */}
-      <section className="py-8 sm:py-12 lg:py-16 bg-white">
+      <CustomerPageZone zone="home-categories" className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
@@ -492,10 +455,9 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
 
-      {/* 통계 섹션 - 모바일 최적화 */}
-      <section className="py-8 sm:py-12 lg:py-16 bg-white">
+      <CustomerPageZone zone="home-stats" className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
             {stats.map((stat, index) => (
@@ -508,17 +470,16 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
 
-      {/* 즐겨찾기/인기 투어 섹션 - 모바일 최적화 */}
-      <section className="py-8 sm:py-12 lg:py-16 bg-gray-50">
+      <CustomerPageZone zone="home-popular" className="py-8 sm:py-12 lg:py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-              {locale === 'en' ? 'Featured Tours' : '추천 투어'}
+              {t('popularTours')}
             </h2>
             <p className="text-lg sm:text-xl text-gray-600">
-              {locale === 'en' ? 'Our specially selected tours for you' : '특별히 추천하는 투어를 만나보세요'}
+              {t('popularToursDesc')}
             </p>
           </div>
 
@@ -633,10 +594,9 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
 
-      {/* 특징 섹션 - 모바일 최적화 */}
-      <section className="py-8 sm:py-12 lg:py-16 bg-white">
+      <CustomerPageZone zone="home-features" className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
@@ -668,10 +628,9 @@ export default function HomePage() {
             })}
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
 
-      {/* CTA 섹션 - 모바일 최적화 */}
-      <section className="py-8 sm:py-12 lg:py-16 bg-blue-900 text-white">
+      <CustomerPageZone zone="home-cta" className="py-8 sm:py-12 lg:py-16 bg-blue-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4">
             {t('startYourJourney')}
@@ -694,7 +653,7 @@ export default function HomePage() {
             </a>
           </div>
         </div>
-      </section>
+      </CustomerPageZone>
     </div>
   )
 }

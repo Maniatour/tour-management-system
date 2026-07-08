@@ -1,9 +1,9 @@
 import type { Json } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import {
+  ensureHubArticleSlug,
   normalizeContentType,
   normalizeHubCategory,
-  slugifyHubArticleSlug,
 } from '@/lib/operationsHub'
 import type { KnowledgeArticleDraftForm } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
@@ -13,10 +13,11 @@ export async function saveKnowledgeArticle(
   form: KnowledgeArticleDraftForm,
   userId: string | null
 ): Promise<{ ok: true; slug: string; id: string } | { ok: false; error: string }> {
-  const slug = slugifyHubArticleSlug(form.slug || form.title_en || form.title_ko)
-  if (!slug) {
+  const slugSource = form.slug.trim() || form.title_en.trim() || form.title_ko.trim()
+  if (!slugSource) {
     return { ok: false, error: 'slug or title required' }
   }
+  const slug = ensureHubArticleSlug(slugSource, form.id ?? undefined)
   if (!form.title_ko.trim() && !form.title_en.trim()) {
     return { ok: false, error: 'title required' }
   }

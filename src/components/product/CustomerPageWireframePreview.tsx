@@ -50,6 +50,9 @@ function ListingWireframe({ target }: { target: CustomerPreviewTarget }) {
           상품명
         </ZoneBlock>
         <div className="h-6 bg-gray-100 rounded text-[10px] px-2 flex items-center text-gray-400">설명</div>
+        <ZoneBlock active={isActive(target, 'listing-card-description')} label="짧은 설명" className="h-6 px-2 flex items-center text-[10px] text-gray-500">
+          상품 요약·설명
+        </ZoneBlock>
         <ZoneBlock active={isActive(target, 'listing-card-location')} label="출발지" className="h-6 px-2 flex items-center text-[10px] text-gray-500">
           📍 출발 도시
         </ZoneBlock>

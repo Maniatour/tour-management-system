@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { getProductSummaryByLocale } from '@/lib/productDetailDisplay'
 
 type ProductSeoRow = {
   name: string | null
@@ -9,6 +10,8 @@ type ProductSeoRow = {
   customer_name_ko: string | null
   customer_name_en: string | null
   description: string | null
+  summary_ko: string | null
+  summary_en: string | null
 }
 
 export async function generateMetadata({
@@ -30,7 +33,7 @@ export async function generateMetadata({
   try {
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
     const { data } = await fromUntypedTable(supabase, 'products')
-      .select('name, name_ko, name_en, customer_name_ko, customer_name_en, description')
+      .select('name, name_ko, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en')
       .eq('id', id)
       .eq('status', 'active')
       .maybeSingle()
@@ -52,7 +55,7 @@ export async function generateMetadata({
           '투어'
 
     const description =
-      row.description?.trim()?.slice(0, 160) ||
+      getProductSummaryByLocale(row, locale).slice(0, 160) ||
       (isEnglish
         ? `Book ${title} with MANIA TOUR.`
         : `${title} — MANIA TOUR에서 예약하세요.`)

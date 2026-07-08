@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
@@ -9,6 +9,9 @@ import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 import DevBootRecovery from "@/components/DevBootRecovery";
 import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineScript";
 import RouteTransitionProgress from "@/components/RouteTransitionProgress";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -42,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
+    <html lang="ko" className={cn("font-sans", geist.variable)}>
       <body className={inter.className}>
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />

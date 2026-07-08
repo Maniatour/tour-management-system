@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { Calendar, Users, MapPin, Clock, CreditCard, CheckCircle, AlertCircle, Search, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 interface Reservation {
   id: string
@@ -59,6 +61,14 @@ interface Reservation {
 }
 
 export default function ReservationCheckPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">…</div>}>
+      <ReservationCheckPageInner />
+    </Suspense>
+  )
+}
+
+function ReservationCheckPageInner() {
   const t = useTranslations('reservationCheck')
   const locale = useLocale()
   const dateLocale = locale === 'en' ? 'en-US' : 'ko-KR'
@@ -201,7 +211,8 @@ export default function ReservationCheckPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
+      <CustomerPagePreviewHighlightEffect />
+      <CustomerPageZone zone="reservation-check-header" className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4">
             <Link href={`/${locale}`} className="text-gray-500 hover:text-gray-700">
@@ -213,10 +224,10 @@ export default function ReservationCheckPage() {
             </div>
           </div>
         </div>
-      </div>
+      </CustomerPageZone>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+        <CustomerPageZone zone="reservation-check-form" className="bg-white rounded-lg shadow-sm border p-6 mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('formTitle')}</h2>
           <div className="space-y-4">
             <div>
@@ -268,7 +279,7 @@ export default function ReservationCheckPage() {
               </div>
             </div>
           )}
-        </div>
+        </CustomerPageZone>
 
         {reservation && (
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">

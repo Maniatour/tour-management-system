@@ -11,6 +11,7 @@ import { FaHelicopter } from 'react-icons/fa'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { getProductSummaryByLocale } from '@/lib/productDetailDisplay'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -580,11 +581,9 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
               )}
             </div>
 
-            {/* 설명 - locale이 en이면 summary_en 우선 */}
+            {/* 설명 - locale별 요약 우선 */}
             {(() => {
-              const descriptionText = locale === 'en'
-                ? ((product as any).summary_en || product.description)
-                : product.description
+              const descriptionText = getProductSummaryByLocale(product, locale)
               return descriptionText ? (
                 <p className="text-sm text-gray-600 line-clamp-2">
                   {descriptionText}

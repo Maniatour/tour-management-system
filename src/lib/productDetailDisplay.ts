@@ -34,9 +34,39 @@ export function getProductCustomerDisplayName(product: Product, locale: string):
   return product.customer_name_ko || product.name_ko || product.name
 }
 
-/** HH:MM:SS 등 시간 문자열을 일수·시간 표기로 변환 */
-export function formatProductDuration(duration: string | null, isEnglish: boolean): string {
-  if (!duration) return isEnglish ? 'Not specified' : '미정'
+export type ProductSummarySource = {
+  description?: string | null
+  summary_ko?: string | null
+  summary_en?: string | null
+}
+
+/** 목록·홈 카드 등 짧은 설명 — locale별 요약 우선, 없으면 products.description */
+export function getProductSummaryByLocale(
+  product: ProductSummarySource,
+  locale: string
+): string {
+  const isEnglish = locale === 'en'
+  const localized = isEnglish ? product.summary_en : product.summary_ko
+  const trimmedSummary = localized?.trim()
+  if (trimmedSummary) return trimmedSummary
+  return product.description?.trim() ?? ''
+}
+
+/** 상품 상세 개요 탭 — 상세정보 description 우선, 없으면 요약·내부 설명 */
+export function getProductOverviewDescription(
+  product: ProductSummarySource,
+  productDetailsDescription: string | null | undefined,
+  locale: string,
+  fallback = ''
+): string {
+  const details = productDetailsDescription?.trim()
+  if (details) return details
+  const summary = getProductSummaryByLocale(product, locale)
+  if (summary) return summary
+  return fallback
+}
+
+export function formatProductDuration(duration: string | null, isEnglish: boolean): string {  if (!duration) return isEnglish ? 'Not specified' : '미정'
 
   const timeMatch = duration.match(/^(\d+):(\d+):(\d+)$/)
   if (timeMatch) {
@@ -76,4 +106,76 @@ export function formatProductDuration(duration: string | null, isEnglish: boolea
   }
 
   return duration
+}
+
+export type ProductLocationSource = {
+  departure_city?: string | null
+  departure_city_ko?: string | null
+  departure_city_en?: string | null
+  arrival_city?: string | null
+  arrival_city_ko?: string | null
+  arrival_city_en?: string | null
+  departure_country?: string | null
+  departure_country_ko?: string | null
+  departure_country_en?: string | null
+  arrival_country?: string | null
+  arrival_country_ko?: string | null
+  arrival_country_en?: string | null
+}
+
+function pickLocalizedField(
+  locale: string,
+  ko: string | null | undefined,
+  en: string | null | undefined,
+  legacy: string | null | undefined
+): string {
+  const koVal = ko?.trim()
+  const enVal = en?.trim()
+  const legacyVal = legacy?.trim()
+  if (locale === 'en') return enVal || legacyVal || koVal || ''
+  return koVal || legacyVal || enVal || ''
+}
+
+export function getProductDepartureCity(product: ProductLocationSource, locale: string): string {
+  return pickLocalizedField(
+    locale,
+    product.departure_city_ko,
+    product.departure_city_en,
+    product.departure_city
+  )
+}
+
+export function getProductArrivalCity(product: ProductLocationSource, locale: string): string {
+  return pickLocalizedField(
+    locale,
+    product.arrival_city_ko,
+    product.arrival_city_en,
+    product.arrival_city
+  )
+}
+
+export function getProductDepartureCountry(product: ProductLocationSource, locale: string): string {
+  return pickLocalizedField(
+    locale,
+    product.departure_country_ko,
+    product.departure_country_en,
+    product.departure_country
+  )
+}
+
+export function getProductArrivalCountry(product: ProductLocationSource, locale: string): string {
+  return pickLocalizedField(
+    locale,
+    product.arrival_country_ko,
+    product.arrival_country_en,
+    product.arrival_country
+  )
+}
+
+/** 목록 카드 등 — 출발지 한 줄 표기 */
+export function formatProductDepartureLine(product: ProductLocationSource, locale: string): string {
+  const city = getProductDepartureCity(product, locale)
+  const country = getProductDepartureCountry(product, locale)
+  if (!city) return ''
+  return country ? `${city}, ${country}` : city
 }

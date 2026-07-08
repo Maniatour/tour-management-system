@@ -15,10 +15,20 @@ export type Product = {
   created_at: string | null
   updated_at: string | null
   description: string | null
+  summary_ko: string | null
+  summary_en: string | null
   departure_city: string | null
+  departure_city_ko?: string | null
+  departure_city_en?: string | null
   arrival_city: string | null
+  arrival_city_ko?: string | null
+  arrival_city_en?: string | null
   departure_country: string | null
+  departure_country_ko?: string | null
+  departure_country_en?: string | null
   arrival_country: string | null
+  arrival_country_ko?: string | null
+  arrival_country_en?: string | null
   languages: string[] | null
   group_size: string | null
   adult_age: number | null
@@ -200,8 +210,16 @@ export type ProductDetailsTabProduct = {
   infant_age: number | null
   languages: string[] | null
   departure_city: string | null
+  departure_city_ko?: string | null
+  departure_city_en?: string | null
   arrival_city: string | null
+  arrival_city_ko?: string | null
+  arrival_city_en?: string | null
   departure_country: string | null
+  departure_country_ko?: string | null
+  departure_country_en?: string | null
   arrival_country: string | null
+  arrival_country_ko?: string | null
+  arrival_country_en?: string | null
   tags: string[] | null
 }

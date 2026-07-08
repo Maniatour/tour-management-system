@@ -1,0 +1,474 @@
+'use client'
+
+import { useState } from 'react'
+import { markdownToHtml } from '@/components/LightRichEditor'
+import SopManualEditDialog from '@/components/sop/SopManualEditDialog'
+import { getChecklistManualStatus, getManualIconState } from '@/lib/sopQuickEdit'
+import { sopChecklistAnchorId } from '@/lib/sopDocumentToc'
+import type { SopChecklistItem, SopEditLocale, SopRowAttachment } from '@/types/sopStructure'
+import { checklistRootRows, getChecklistRowDisplay, sopText } from '@/types/sopStructure'
+import { cn } from '@/lib/utils'
+import {
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  List,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
+  Type,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+
+type RowCallbacks = {
+  onEditChecklistItem?: (sectionId: string, categoryId: string, itemId: string) => void
+  onEditChecklistManual?: (sectionId: string, categoryId: string, itemId: string) => void
+  onDeleteChecklistItem?: (sectionId: string, categoryId: string, itemId: string) => void
+  onMoveChecklistItem?: (
+    sectionId: string,
+    categoryId: string,
+    itemId: string,
+    direction: -1 | 1
+  ) => void
+  onAddChecklistItem?: (sectionId: string, categoryId: string, afterItemId?: string) => void
+  onManageAttachments?: (sectionId: string, categoryId: string, itemId: string) => void
+  onChangeRowDisplay?: (
+    sectionId: string,
+    categoryId: string,
+    itemId: string,
+    display: 'list' | 'text'
+  ) => void
+}
+
+type Props = RowCallbacks & {
+  sectionId: string
+  categoryId: string
+  items: SopChecklistItem[]
+  viewLang: SopEditLocale
+  flat?: boolean
+  anchors?: boolean
+}
+
+const MANUAL_ICON_CLASS = {
+  empty: 'text-gray-400 hover:text-gray-500',
+  draft: 'text-red-600 hover:text-red-700',
+  complete: 'text-green-600 hover:text-green-700',
+} as const
+
+function attachmentLabel(att: SopRowAttachment, viewLang: SopEditLocale): string {
+  const label = sopText(att.label_ko, att.label_en, viewLang).trim()
+  if (label) return label
+  try {
+    const name = new URL(att.url).pathname.split('/').pop()
+    return name || att.url
+  } catch {
+    return att.url
+  }
+}
+
+function AttachmentList({
+  attachments,
+  viewLang,
+}: {
+  attachments: SopRowAttachment[]
+  viewLang: SopEditLocale
+}) {
+  if (!attachments.length) return null
+  const sorted = [...attachments].sort((a, b) => a.sort_order - b.sort_order)
+  return (
+    <ul className="mt-2 space-y-1.5 pl-0 sm:pl-5">
+      {sorted.map((att) => (
+        <li key={att.id}>
+          <a
+            href={att.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full max-w-full items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2.5 text-sm font-medium text-indigo-800 transition-colors hover:bg-indigo-100 active:bg-indigo-100"
+          >
+            <FileText className="h-4 w-4 shrink-0" />
+            <span className="truncate">{attachmentLabel(att, viewLang)}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function ManualDocIcon({
+  item,
+  viewLang,
+  isEn,
+  onClick,
+}: {
+  item: SopChecklistItem
+  viewLang: SopEditLocale
+  isEn: boolean
+  onClick?: () => void
+}) {
+  const state = getManualIconState(item, viewLang)
+  const title =
+    state === 'complete'
+      ? isEn
+        ? 'Manual complete'
+        : '메뉴얼 작성완료'
+      : state === 'draft'
+        ? isEn
+          ? 'Manual in progress'
+          : '메뉴얼 수정중'
+        : isEn
+          ? 'No manual yet'
+          : '메뉴얼 없음'
+
+  if (!onClick) {
+    return (
+      <span className="shrink-0 p-0.5" title={title}>
+        <FileText className={cn('h-4 w-4', MANUAL_ICON_CLASS[state])} />
+      </span>
+    )
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 shrink-0 touch-manipulation sm:h-7 sm:w-7"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      <FileText className={cn('h-4 w-4', MANUAL_ICON_CLASS[state])} />
+    </Button>
+  )
+}
+
+function ItemToolbar({
+  sectionId,
+  categoryId,
+  item,
+  siblings,
+  siblingIdx,
+  viewLang,
+  callbacks,
+}: {
+  sectionId: string
+  categoryId: string
+  item: SopChecklistItem
+  siblings: SopChecklistItem[]
+  siblingIdx: number
+  viewLang: SopEditLocale
+  callbacks: RowCallbacks
+}) {
+  const isEn = viewLang === 'en'
+  const {
+    onMoveChecklistItem,
+    onEditChecklistItem,
+    onAddChecklistItem,
+    onDeleteChecklistItem,
+    onManageAttachments,
+    onChangeRowDisplay,
+  } = callbacks
+  const rowDisplay = getChecklistRowDisplay(item)
+
+  return (
+    <div className="flex w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-md border border-gray-100 bg-white/95 p-1 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:flex-wrap sm:justify-end sm:overflow-visible sm:p-0.5 [&::-webkit-scrollbar]:hidden">
+      {onMoveChecklistItem && siblingIdx > 0 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-gray-500 hover:bg-gray-100 sm:h-6 sm:w-6"
+          title={isEn ? 'Move up' : '위로'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveChecklistItem(sectionId, categoryId, item.id, -1)
+          }}
+        >
+          <ChevronUp className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {onMoveChecklistItem && siblingIdx < siblings.length - 1 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-gray-500 hover:bg-gray-100 sm:h-6 sm:w-6"
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveChecklistItem(sectionId, categoryId, item.id, 1)
+          }}
+        >
+          <ChevronDown className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {onEditChecklistItem ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-indigo-700 hover:bg-indigo-50 sm:h-6 sm:w-6"
+          title={isEn ? 'Edit title' : '제목 수정'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onEditChecklistItem(sectionId, categoryId, item.id)
+          }}
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {onChangeRowDisplay ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            'h-9 w-9 shrink-0 touch-manipulation sm:h-6 sm:w-6',
+            rowDisplay === 'list'
+              ? 'text-indigo-700 hover:bg-indigo-50'
+              : 'text-gray-600 hover:bg-gray-100'
+          )}
+          title={
+            rowDisplay === 'list'
+              ? isEn
+                ? 'List style — click for text'
+                : '목록 형식 — 클릭 시 텍스트'
+              : isEn
+                ? 'Text style — click for list'
+                : '텍스트 형식 — 클릭 시 목록'
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onChangeRowDisplay(
+              sectionId,
+              categoryId,
+              item.id,
+              rowDisplay === 'list' ? 'text' : 'list'
+            )
+          }}
+        >
+          {rowDisplay === 'list' ? (
+            <List className="h-3 w-3" />
+          ) : (
+            <Type className="h-3 w-3" />
+          )}
+        </Button>
+      ) : null}
+      {onManageAttachments ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-6 sm:w-6"
+          title={isEn ? 'Attachments' : '첨부파일'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onManageAttachments(sectionId, categoryId, item.id)
+          }}
+        >
+          <Paperclip className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {onAddChecklistItem ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-6 sm:w-6"
+          title={isEn ? 'Add row below' : '아래에 줄 추가'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAddChecklistItem(sectionId, categoryId, item.id)
+          }}
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
+      ) : null}
+      {onDeleteChecklistItem ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 touch-manipulation text-red-700 hover:bg-red-50 sm:h-6 sm:w-6"
+          title={isEn ? 'Delete' : '삭제'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDeleteChecklistItem(sectionId, categoryId, item.id)
+          }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function ChecklistRootRow({
+  row,
+  allItems,
+  sectionId,
+  categoryId,
+  viewLang,
+  anchors,
+  callbacks,
+  onViewManual,
+}: {
+  row: SopChecklistItem
+  allItems: SopChecklistItem[]
+  sectionId: string
+  categoryId: string
+  viewLang: SopEditLocale
+  anchors?: boolean
+  callbacks: RowCallbacks
+  onViewManual?: (row: SopChecklistItem) => void
+}) {
+  const roots = checklistRootRows(allItems)
+  const rootIdx = roots.findIndex((r) => r.id === row.id)
+  const title = sopText(row.title_ko, row.title_en, viewLang).trim()
+  const attachments = row.attachments ?? []
+  const rowDisplay = getChecklistRowDisplay(row)
+  const isListRow = rowDisplay === 'list'
+  const editable = Boolean(
+    callbacks.onEditChecklistItem ||
+      callbacks.onEditChecklistManual ||
+      callbacks.onManageAttachments
+  )
+  const isEn = viewLang === 'en'
+  const openManual = callbacks.onEditChecklistManual
+    ? () => callbacks.onEditChecklistManual!(sectionId, categoryId, row.id)
+    : onViewManual
+      ? () => onViewManual(row)
+      : undefined
+
+  return (
+    <div
+      id={anchors ? sopChecklistAnchorId(row.id) : undefined}
+      className={cn(
+        'group scroll-mt-20',
+        isListRow ? 'border-b border-gray-100 py-3 last:border-b-0 sm:py-3' : 'py-2 sm:py-1.5'
+      )}
+    >
+      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:gap-1.5">
+        <div className="flex min-w-0 flex-1 items-start gap-1.5">
+          <div
+            className={cn(
+              'min-w-0 flex-1',
+              callbacks.onEditChecklistItem &&
+                'cursor-pointer rounded-md py-0.5 hover:bg-gray-50/80 active:bg-gray-50'
+            )}
+            onClick={() => callbacks.onEditChecklistItem?.(sectionId, categoryId, row.id)}
+          >
+            {isListRow ? (
+              <h4 className="flex items-start gap-2 text-[15px] font-medium leading-snug text-gray-900 sm:text-sm">
+                <span className="mt-2 shrink-0 text-indigo-600 sm:mt-1.5">-</span>
+                <span
+                  className={cn(
+                    'prose prose-sm max-w-none break-words [&_p]:my-0',
+                    !title && editable && 'italic text-gray-400'
+                  )}
+                  dangerouslySetInnerHTML={{
+                    __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
+                  }}
+                />
+              </h4>
+            ) : (
+              <div
+                className={cn(
+                  'prose prose-sm max-w-none break-words text-[15px] leading-relaxed text-gray-800 sm:text-sm [&_p]:my-0',
+                  !title && editable && 'italic text-gray-400'
+                )}
+                dangerouslySetInnerHTML={{
+                  __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
+                }}
+              />
+            )}
+          </div>
+
+          <ManualDocIcon
+            item={row}
+            viewLang={viewLang}
+            isEn={isEn}
+            {...(openManual ? { onClick: openManual } : {})}
+          />
+        </div>
+
+        {editable ? (
+          <ItemToolbar
+            sectionId={sectionId}
+            categoryId={categoryId}
+            item={row}
+            siblings={roots}
+            siblingIdx={rootIdx}
+            viewLang={viewLang}
+            callbacks={callbacks}
+          />
+        ) : null}
+      </div>
+
+      <AttachmentList attachments={attachments} viewLang={viewLang} />
+    </div>
+  )
+}
+
+export default function SopChecklistBlock({
+  sectionId,
+  categoryId,
+  items,
+  viewLang,
+  anchors,
+  ...callbacks
+}: Props) {
+  const roots = checklistRootRows(items)
+  const isEn = viewLang === 'en'
+  const [viewRow, setViewRow] = useState<SopChecklistItem | null>(null)
+
+  if (roots.length === 0) return null
+
+  const handleViewManual = callbacks.onEditChecklistManual
+    ? undefined
+    : (row: SopChecklistItem) => setViewRow(row)
+
+  const viewManualValue = viewRow
+    ? sopText(viewRow.manual_ko ?? '', viewRow.manual_en ?? '', viewLang)
+    : ''
+
+  return (
+    <>
+      <div className="mb-2 w-full min-w-0">
+        {roots.map((row) => (
+          <ChecklistRootRow
+            key={row.id}
+            row={row}
+            allItems={items}
+            sectionId={sectionId}
+            categoryId={categoryId}
+            viewLang={viewLang}
+            {...(anchors ? { anchors } : {})}
+            callbacks={callbacks}
+            {...(handleViewManual ? { onViewManual: handleViewManual } : {})}
+          />
+        ))}
+      </div>
+
+      {viewRow ? (
+        <SopManualEditDialog
+          open
+          onOpenChange={(open) => !open && setViewRow(null)}
+          title={isEn ? 'Manual' : '메뉴얼'}
+          {...(() => {
+            const desc = sopText(viewRow.title_ko, viewRow.title_en, viewLang).trim()
+            return desc ? { description: desc } : {}
+          })()}
+          value={viewManualValue}
+          status={getChecklistManualStatus(viewRow)}
+          uiLocaleEn={isEn}
+          langLabel={viewLang === 'en' ? 'English' : '한국어'}
+          readOnly
+          onSave={() => {}}
+        />
+      ) : null}
+    </>
+  )
+}

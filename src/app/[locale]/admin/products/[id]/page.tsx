@@ -14,8 +14,7 @@ import {
   Info,
   Settings,
   Trash2,
-  MapPin,
-  Eye
+  MapPin
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
@@ -35,7 +34,6 @@ import ProductMediaTab from '@/components/product/ProductMediaTab'
 import TourCoursesTab from '@/components/product/TourCoursesTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
-import ProductPreviewSidebar from '@/components/product/ProductPreviewSidebar'
 import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
 import { PRODUCT_EDIT_TAB_LOCATIONS } from '@/lib/productCustomerPageLocations'
 import { CustomerPagePreviewProvider } from '@/components/product/CustomerPagePreviewContext'
@@ -165,7 +163,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
   const [productInfo, setProductInfo] = useState<{
     name: string
     productCode: string
@@ -198,6 +195,14 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     arrivalCity: string
     departureCountry: string
     arrivalCountry: string
+    departureCityKo?: string
+    departureCityEn?: string
+    arrivalCityKo?: string
+    arrivalCityEn?: string
+    departureCountryKo?: string
+    departureCountryEn?: string
+    arrivalCountryKo?: string
+    arrivalCountryEn?: string
     languages: string[]
     groupSize: string[]
     adultAge: number
@@ -304,6 +309,14 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     arrivalCity: '',
     departureCountry: '',
     arrivalCountry: '',
+    departureCityKo: '',
+    departureCityEn: '',
+    arrivalCityKo: '',
+    arrivalCityEn: '',
+    departureCountryKo: '',
+    departureCountryEn: '',
+    arrivalCountryKo: '',
+    arrivalCountryEn: '',
     languages: ['ko'],
     groupSize: ['private'],
     adultAge: 13,
@@ -654,10 +667,18 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             basePriceNumber: ((productData as any).adult_base_price ?? productData.base_price) || 0,
             maxParticipants: productData.max_participants || 10,
             status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
-            departureCity: productData.departure_city || '',
-            arrivalCity: productData.arrival_city || '',
-            departureCountry: productData.departure_country || '',
-            arrivalCountry: productData.arrival_country || '',
+            departureCity: productData.departure_city_ko || productData.departure_city || '',
+            arrivalCity: productData.arrival_city_ko || productData.arrival_city || '',
+            departureCountry: productData.departure_country_ko || productData.departure_country || '',
+            arrivalCountry: productData.arrival_country_ko || productData.arrival_country || '',
+            departureCityKo: productData.departure_city_ko || productData.departure_city || '',
+            departureCityEn: productData.departure_city_en || '',
+            arrivalCityKo: productData.arrival_city_ko || productData.arrival_city || '',
+            arrivalCityEn: productData.arrival_city_en || '',
+            departureCountryKo: productData.departure_country_ko || productData.departure_country || '',
+            departureCountryEn: productData.departure_country_en || '',
+            arrivalCountryKo: productData.arrival_country_ko || productData.arrival_country || '',
+            arrivalCountryEn: productData.arrival_country_en || '',
                          languages: productData.languages || ['ko'],
              groupSize: productData.group_size ? productData.group_size.split(',').filter(Boolean) : ['private'],
              adultAge: productData.adult_age || 13,
@@ -1207,15 +1228,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         {/* 액션 버튼들 */}
         {!isNewProduct && (
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* 미리보기 버튼 */}
-            <button
-              onClick={() => setShowPreview(true)}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-[11px] sm:text-sm font-medium"
-            >
-              <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>{tEdit('preview')}</span>
-            </button>
-            
             {/* 삭제 버튼 */}
             <button
               onClick={() => setShowDeleteModal(true)}
@@ -1514,37 +1526,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         </div>
       )}
 
-      {/* 미리보기 사이드바 */}
-      <ProductPreviewSidebar
-        isOpen={showPreview}
-        onClose={() => setShowPreview(false)}
-        productData={{
-          name: formData.name,
-          nameEn: formData.nameEn || undefined,
-          summaryKo: formData.summaryKo || undefined,
-          summaryEn: formData.summaryEn || undefined,
-          customerNameKo: formData.customerNameKo || undefined,
-          customerNameEn: formData.customerNameEn || undefined,
-          description: formData.description,
-          duration: formData.duration,
-          maxParticipants: formData.maxParticipants,
-          departureCity: formData.departureCity,
-          arrivalCity: formData.arrivalCity,
-          departureCountry: formData.departureCountry,
-          arrivalCountry: formData.arrivalCountry,
-          languages: formData.languages,
-          groupSize: formData.groupSize,
-          adultAge: formData.adultAge,
-          childAgeMin: formData.childAgeMin,
-          childAgeMax: formData.childAgeMax,
-          infantAge: formData.infantAge,
-          status: formData.status,
-          tourDepartureTimes: formData.tourDepartureTimes || undefined,
-          tags: formData.tags || undefined
-        } as any}
-        productDetails={formData.productDetails}
-        currentLanguage={formData.currentLanguage}
-      />
     </div>
     </CustomerPagePreviewProvider>
   )

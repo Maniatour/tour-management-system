@@ -9,11 +9,11 @@ import {
   LabelList,
   Legend,
   Line,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import RechartsContainer from '@/components/ui/RechartsContainer'
 import { Plus, Minus, Equal } from 'lucide-react'
 import { getStatusLabel } from '@/utils/reservationUtils'
 import { BreakdownStatBadges } from '@/components/reservation/BreakdownStatBadges'
@@ -539,9 +539,8 @@ export default function WeeklyStatsPanel({
                   </button>
                 </div>
               ) : null}
-              <div className="w-full min-w-0" style={{ height: regCancelChartHeightPx }}>
-                <ResponsiveContainer width="100%" height={regCancelChartHeightPx} minWidth={0}>
-                  <ComposedChart
+              <RechartsContainer height={regCancelChartHeightPx}>
+                <ComposedChart
                     data={regCancelChartData}
                     margin={{
                       top: 26,
@@ -800,8 +799,7 @@ export default function WeeklyStatsPanel({
                       legendType="plainline"
                     />
                   </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+              </RechartsContainer>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">

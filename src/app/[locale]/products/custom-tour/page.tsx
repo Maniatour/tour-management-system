@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { Suspense, useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import { useLocale, useTranslations } from 'next-intl'
 import { Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, FileText, MapPin, User, Star } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), {
   ssr: false,
@@ -52,6 +54,14 @@ const MARGIN_RATES: Record<MarginType, { min: number; max: number; default: numb
 const TIP_RATE = 0.15 // 15%
 
 export default function CustomTourPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">…</div>}>
+      <CustomTourPageInner />
+    </Suspense>
+  )
+}
+
+function CustomTourPageInner() {
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const t = useTranslations('customTour')
@@ -753,16 +763,18 @@ export default function CustomTourPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <CustomerPagePreviewHighlightEffect />
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
-        <div className="mb-4 sm:mb-8">
+        <CustomerPageZone zone="custom-tour-header" className="mb-4 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             {t('title')}
           </h1>
           <p className="text-sm sm:text-base text-gray-600">
             {t('subtitle')}
           </p>
-        </div>
+        </CustomerPageZone>
 
+        <CustomerPageZone zone="custom-tour-builder">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           {/* 왼쪽: 코스 선택 및 일정 */}
           <div className="lg:col-span-2 space-y-6">
@@ -1633,6 +1645,7 @@ export default function CustomTourPage() {
             </div>
           </div>
         </div>
+        </CustomerPageZone>
       </div>
 
       {/* Estimate 모달 */}

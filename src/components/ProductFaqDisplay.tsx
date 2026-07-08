@@ -87,36 +87,39 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">자주 묻는 질문</h3>
-      
-      <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="space-y-3">
         {faqs.map((faq, index) => (
-          <div key={faq.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div
+            key={faq.id}
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+          >
             <button
+              type="button"
               onClick={() => toggleFaqExpansion(faq.id)}
-              className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between"
+              className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50 sm:px-6 sm:py-5"
+              aria-expanded={expandedFaqs.has(faq.id)}
             >
-              <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium text-blue-600">Q{index + 1}</span>
-                <h4 className="text-left font-medium text-gray-900">
-                  {faq.question}
-                </h4>
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 shrink-0 rounded-lg bg-[#0B5FFF]/10 px-2 py-1 text-xs font-bold text-[#0B5FFF]">
+                  Q{index + 1}
+                </span>
+                <h4 className="font-semibold text-slate-900">{faq.question}</h4>
               </div>
               {expandedFaqs.has(faq.id) ? (
-                <ChevronUp className="h-5 w-5 text-gray-400" />
+                <ChevronUp className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
               ) : (
-                <ChevronDown className="h-5 w-5 text-gray-400" />
+                <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
               )}
             </button>
-            
+
             {expandedFaqs.has(faq.id) && (
-              <div className="px-6 py-4 bg-white border-t border-gray-200">
-                <div className="flex items-start space-x-3">
-                  <span className="text-sm font-medium text-green-600 mt-1">A</span>
-                  <div className="flex-1">
-                    <p className="text-gray-700 whitespace-pre-wrap">{faq.answer}</p>
-                  </div>
+              <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-4 sm:px-6 sm:py-5">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 shrink-0 rounded-lg bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
+                    A
+                  </span>
+                  <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{faq.answer}</p>
                 </div>
               </div>
             )}

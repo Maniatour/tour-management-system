@@ -1,10 +1,12 @@
-import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
-import { sopText } from '@/types/sopStructure'
+import type { SopChecklistItem, SopDocument, SopEditLocale } from '@/types/sopStructure'
+import { checklistRootRows, sopText } from '@/types/sopStructure'
+
+export type SopTocLevel = 'section' | 'category' | 'row' | 'step'
 
 export type SopTocEntry = {
   anchorId: string
   label: string
-  level: 'section' | 'category'
+  level: SopTocLevel
   children?: SopTocEntry[]
 }
 
@@ -14,6 +16,10 @@ export function sopSectionAnchorId(sectionId: string): string {
 
 export function sopCategoryAnchorId(categoryId: string): string {
   return `sop-cat-${categoryId}`
+}
+
+export function sopChecklistAnchorId(itemId: string): string {
+  return `sop-chk-${itemId}`
 }
 
 /** 목차·앵커용 짧은 평문 라벨 */
@@ -28,6 +34,31 @@ export function sopTocPlainLabel(raw: string, fallback: string, maxLen = 72): st
     .trim()
   const label = t || fallback
   return label.length > maxLen ? `${label.slice(0, maxLen)}…` : label
+}
+
+function checklistTocLabel(
+  titleKo: string,
+  titleEn: string,
+  viewLang: SopEditLocale,
+  fallback: string
+): string {
+  return sopTocPlainLabel(sopText(titleKo, titleEn, viewLang), fallback)
+}
+
+function buildChecklistTocTree(
+  items: SopChecklistItem[] | undefined,
+  viewLang: SopEditLocale
+): SopTocEntry[] {
+  if (!items?.length) return []
+  const roots = checklistRootRows(items)
+  return roots.map((row, ri) => {
+    const rowFallback = viewLang === 'en' ? `Row ${ri + 1}` : `줄 ${ri + 1}`
+    return {
+      anchorId: sopChecklistAnchorId(row.id),
+      label: checklistTocLabel(row.title_ko, row.title_en, viewLang, rowFallback),
+      level: 'row' as const,
+    }
+  })
 }
 
 export function buildSopDocumentToc(doc: SopDocument, viewLang: SopEditLocale): SopTocEntry[] {
@@ -45,10 +76,12 @@ export function buildSopDocumentToc(doc: SopDocument, viewLang: SopEditLocale): 
       const c = cats[ci]
       const ct = sopText(c.title_ko, c.title_en, viewLang).trim()
       const catFallback = viewLang === 'en' ? `Category ${ci + 1}` : `카테고리 ${ci + 1}`
+      const rowTree = buildChecklistTocTree(c.checklist_items, viewLang)
       children.push({
         anchorId: sopCategoryAnchorId(c.id),
         label: sopTocPlainLabel(ct, catFallback),
         level: 'category',
+        ...(rowTree.length > 0 ? { children: rowTree } : {}),
       })
     }
 
@@ -65,9 +98,12 @@ export function buildSopDocumentToc(doc: SopDocument, viewLang: SopEditLocale): 
 
 export function sopTocAnchorIds(entries: SopTocEntry[]): string[] {
   const ids: string[] = []
-  for (const e of entries) {
-    ids.push(e.anchorId)
-    for (const ch of e.children ?? []) ids.push(ch.anchorId)
+  const walk = (list: SopTocEntry[]) => {
+    for (const e of list) {
+      ids.push(e.anchorId)
+      if (e.children?.length) walk(e.children)
+    }
   }
+  walk(entries)
   return ids
 }

@@ -18,6 +18,7 @@ import {
   History,
   Landmark,
   LayoutGrid,
+  LayoutTemplate,
   Mail,
   MessageCircle,
   Replace,
@@ -105,6 +106,13 @@ export type AdminSidebarRegistryEntry = {
  * 표시 조건을 바꿀 때는 여기와 `AdminSidebarAndHeader`의 Super/Manager 조회 로직을 함께 맞출 것.
  */
 export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
+  {
+    id: 'customer-pages',
+    path: 'customer-pages',
+    sidebarTranslationKey: 'customerPages',
+    icon: LayoutTemplate,
+    visibility: { type: 'admin_or_manager' },
+  },
   { id: 'products', path: 'products', sidebarTranslationKey: 'products', icon: BookOpen, visibility: { type: 'always' } },
   { id: 'options', path: 'options', sidebarTranslationKey: 'options', icon: Settings, visibility: { type: 'always' } },
   { id: 'tour-courses', path: 'tour-courses', sidebarTranslationKey: 'courses', icon: Globe, visibility: { type: 'always' } },

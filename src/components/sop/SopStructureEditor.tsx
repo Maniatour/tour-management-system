@@ -272,6 +272,16 @@ type Props = {
   onSaveSectionVersion?: (section: SopSection) => void | Promise<void>
   onFetchSectionVersionHistory?: (sectionId: string) => Promise<SectionVersionHistoryRow[]>
   onRestoreSectionFromHistory?: (sectionId: string, sectionJson: unknown) => void | Promise<void>
+  /** true면 트리/펼침 편집 UI 숨기고 모달(섹션·카테고리)만 사용 */
+  hideEditorChrome?: boolean
+  /** 마운트 시 카테고리 편집 모달 자동 오픈 */
+  autoOpenCategory?: { sectionId: string; categoryId: string } | null
+  /** 섹션 추가 버튼 숨김 (단일 섹션 편집 모달용) */
+  hideAddSection?: boolean
+  /** 레이아웃 전환 버튼 숨김 */
+  hideLayoutToggle?: boolean
+  /** 초기 편집 레이아웃 */
+  defaultLayout?: 'tree' | 'classic'
 }
 
 export default function SopStructureEditor({
@@ -287,6 +297,11 @@ export default function SopStructureEditor({
   onSaveSectionVersion,
   onFetchSectionVersionHistory,
   onRestoreSectionFromHistory,
+  hideEditorChrome = false,
+  autoOpenCategory = null,
+  hideAddSection = false,
+  hideLayoutToggle = false,
+  defaultLayout = 'tree',
 }: Props) {
   const isEn = uiLocaleEn
   const pairLayout: PairLayout =
@@ -300,7 +315,7 @@ export default function SopStructureEditor({
   const [historyErr, setHistoryErr] = useState<string | null>(null)
   const [expandedHistoryRevision, setExpandedHistoryRevision] = useState<number | null>(null)
 
-  const [editorLayout, setEditorLayout] = useState<'tree' | 'classic'>('tree')
+  const [editorLayout, setEditorLayout] = useState<'tree' | 'classic'>(defaultLayout)
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set())
   const [nodeModal, setNodeModal] = useState<
     null | { type: 'section'; sectionId: string } | { type: 'category'; sectionId: string; categoryId: string }
@@ -888,6 +903,12 @@ export default function SopStructureEditor({
     setNodeModal({ type: 'category', sectionId, categoryId })
   }
 
+  useEffect(() => {
+    if (!autoOpenCategory) return
+    openCategoryModal(autoOpenCategory.sectionId, autoOpenCategory.categoryId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- autoOpenCategory ids only
+  }, [autoOpenCategory?.sectionId, autoOpenCategory?.categoryId])
+
   const closeCategoryModal = () => {
     setNodeModal(null)
     setCategoryDraft(null)
@@ -1038,6 +1059,7 @@ export default function SopStructureEditor({
 
   return (
     <>
+      {!hideEditorChrome && !hideLayoutToggle ? (
       <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2">
         <span className="text-xs font-medium text-gray-600">
           {isEn ? 'Layout' : '편집 화면'}
@@ -1059,8 +1081,9 @@ export default function SopStructureEditor({
           {isEn ? 'Full form' : '전체 펼침'}
         </Button>
       </div>
+      ) : null}
 
-      {editorLayout === 'tree' ? (
+      {!hideEditorChrome && editorLayout === 'tree' ? (
         <div
           className={cn(
             'space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3 shadow-sm',
@@ -1461,12 +1484,14 @@ export default function SopStructureEditor({
               )
             })}
           </div>
+          {!hideAddSection ? (
           <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addSection}>
             <Plus className="h-4 w-4" />
             {isEn ? 'Add section' : '섹션 추가'}
           </Button>
+          ) : null}
         </div>
-      ) : (
+      ) : !hideEditorChrome ? (
         <div className={cn('space-y-4', disabled && 'pointer-events-none opacity-60')}>
           <p className="text-sm text-gray-600">
             {isEn
@@ -1902,12 +1927,14 @@ export default function SopStructureEditor({
         </div>
       ))}
 
+          {!hideAddSection ? (
           <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addSection}>
             <Plus className="h-4 w-4" />
             {isEn ? 'Add section' : '섹션 추가'}
           </Button>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
     <Dialog
       open={nodeModal?.type === 'section'}

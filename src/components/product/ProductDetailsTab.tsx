@@ -74,6 +74,7 @@ interface ProductDetailsTabProps {
   isNewProduct: boolean
   formData: ProductDetailsFormData
   setFormData: React.Dispatch<React.SetStateAction<ProductDetailsFormData>>
+  onSaveSuccess?: () => void
 }
 
 interface Channel {

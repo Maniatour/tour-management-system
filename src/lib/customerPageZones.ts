@@ -6,6 +6,7 @@ export type CustomerPageZone =
   | 'listing-card-price'
   | 'listing-card-tags'
   | 'listing-card-location'
+  | 'listing-card-description'
   | 'detail-header'
   | 'detail-gallery'
   | 'detail-tabs'
@@ -26,6 +27,18 @@ export type CustomerPageZone =
   | 'detail-sidebar-included'
   | 'booking-participants'
   | 'booking-options'
+  | 'home-hero'
+  | 'home-categories'
+  | 'home-stats'
+  | 'home-popular'
+  | 'home-features'
+  | 'home-cta'
+  | 'tags-page-header'
+  | 'tags-page-categories'
+  | 'custom-tour-header'
+  | 'custom-tour-builder'
+  | 'reservation-check-header'
+  | 'reservation-check-form'
 
 export type CustomerPreviewPage = 'listing' | 'detail' | 'booking'
 
@@ -66,6 +79,7 @@ function resolveSinglePath(path: string[]): CustomerPreviewTarget | null {
     if (last.includes('상품명') || last.includes('카테고리')) zone = 'listing-card-name'
     else if (last.includes('가격') || last.includes('시작')) zone = 'listing-card-price'
     else if (last.includes('태그')) zone = 'listing-card-tags'
+    else if (last.includes('짧은 설명') || last.includes('요약')) zone = 'listing-card-description'
     else if (last.includes('출발') || last.includes('도착') || last.includes('노출')) {
       zone = last.includes('노출') ? 'listing-card' : 'listing-card-location'
     }

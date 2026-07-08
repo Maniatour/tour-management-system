@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Heart, Share2 } from 'lucide-react'
 import type { ProductMedia, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import { cn } from '@/lib/utils'
 
 const AUTO_SLIDE_INTERVAL_MS = 4000
 const MANUAL_SELECT_PAUSE_MS = 3000
@@ -71,11 +72,14 @@ export default function ProductDetailImageGallery({
   }
 
   return (
-    <CustomerPageZone zone="detail-gallery" className="bg-white rounded-lg shadow-sm border overflow-hidden">
+    <CustomerPageZone
+      zone="detail-gallery"
+      className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
+    >
       {allImages.length > 0 ? (
         <>
           <div
-            className="relative w-full h-[600px] bg-gray-200 flex items-center justify-center"
+            className="relative h-[50vh] min-h-[280px] w-full bg-slate-100 sm:h-[55vh] md:h-[60vh] lg:h-[560px]"
             onMouseEnter={() => setIsAutoSlidePaused(true)}
             onMouseLeave={() => setIsAutoSlidePaused(false)}
           >
@@ -85,73 +89,89 @@ export default function ProductDetailImageGallery({
               fill
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 800px"
               priority
-              className="object-contain transition-opacity duration-500"
+              className="object-cover transition-opacity duration-500"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-            <div className="absolute top-4 right-4 flex space-x-2 z-10">
-              <button type="button" className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                <Heart size={20} className="text-gray-600" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-black/5 to-transparent" />
+            <div className="absolute right-4 top-4 z-10 flex gap-2">
+              <button
+                type="button"
+                aria-label={isEnglish ? 'Save to favorites' : '즐겨찾기'}
+                className="rounded-full bg-white/90 p-2.5 shadow-md backdrop-blur-sm transition-all hover:scale-105 hover:bg-white"
+              >
+                <Heart size={20} className="text-slate-600" />
               </button>
-              <button type="button" className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                <Share2 size={20} className="text-gray-600" />
+              <button
+                type="button"
+                aria-label={isEnglish ? 'Share tour' : '공유하기'}
+                className="rounded-full bg-white/90 p-2.5 shadow-md backdrop-blur-sm transition-all hover:scale-105 hover:bg-white"
+              >
+                <Share2 size={20} className="text-slate-600" />
               </button>
             </div>
+            {allImages.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                {allImages.slice(0, 8).map((_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    aria-label={`${isEnglish ? 'Go to image' : '이미지로 이동'} ${index + 1}`}
+                    onClick={() => handleThumbnailSelect(index)}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all',
+                      selectedImageIndex === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
+                    )}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           <div
-            className="p-4"
+            className="border-t border-slate-100 p-4 sm:p-5"
             onMouseEnter={() => setIsAutoSlidePaused(true)}
             onMouseLeave={() => setIsAutoSlidePaused(false)}
           >
-            <div className="flex space-x-2 overflow-x-auto">
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
               {allImages.slice(0, 8).map((image, index) => (
-                <div
+                <button
                   key={image.id}
-                  className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative border-2 ${
-                    selectedImageIndex === index ? 'border-blue-500' : 'border-transparent'
-                  }`}
+                  type="button"
+                  onClick={() => handleThumbnailSelect(index)}
+                  className={cn(
+                    'relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 transition-all sm:h-20 sm:w-20',
+                    selectedImageIndex === index
+                      ? 'border-[#0B5FFF] ring-2 ring-[#0B5FFF]/20'
+                      : 'border-transparent opacity-80 hover:opacity-100'
+                  )}
+                  aria-label={`${isEnglish ? 'Select image' : '이미지 선택'} ${index + 1}`}
                 >
                   <Image
                     src={image.file_url}
                     alt={image.alt_text || image.file_name}
                     fill
                     sizes="80px"
-                    className="object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => handleThumbnailSelect(index)}
+                    className="object-cover"
                   />
-                </div>
+                </button>
               ))}
             </div>
           </div>
         </>
       ) : (
         <>
-          <div className="relative h-96 bg-gray-200">
-            <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-6xl mb-4">🏔️</div>
-                <div className="text-lg font-medium text-gray-600">{displayName}</div>
-                <div className="text-sm text-gray-500 mt-2">
+          <div className="relative h-72 bg-slate-100 sm:h-96 md:h-[420px]">
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+              <div className="text-center px-6">
+                <div className="mb-4 text-6xl" aria-hidden>
+                  🏔️
+                </div>
+                <div className="text-lg font-semibold text-slate-700">{displayName}</div>
+                <div className="mt-2 text-sm text-slate-500">
                   {isEnglish ? 'Image coming soon' : '이미지 준비 중'}
                 </div>
               </div>
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-            <div className="absolute top-4 right-4 flex space-x-2">
-              <button type="button" className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                <Heart size={20} className="text-gray-600" />
-              </button>
-              <button type="button" className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                <Share2 size={20} className="text-gray-600" />
-              </button>
-            </div>
-          </div>
-          <div className="p-4">
-            <div className="flex space-x-2 overflow-x-auto">
-              <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
-                {isEnglish ? 'No image' : '이미지 없음'}
-              </div>
-            </div>
           </div>
         </>
       )}

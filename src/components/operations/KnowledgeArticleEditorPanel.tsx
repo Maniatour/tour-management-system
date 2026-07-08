@@ -5,12 +5,12 @@ import { Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import SopStructureEditor from '@/components/sop/SopStructureEditor'
-import SopDocumentWithToc from '@/components/sop/SopDocumentWithToc'
+import SopDocumentInlinePreviewEditor from '@/components/sop/SopDocumentInlinePreviewEditor'
 import {
   CONTENT_TYPE_LABELS,
   HUB_CATEGORIES,
   HUB_TARGET_ROLE_OPTIONS,
-  slugifyHubArticleSlug,
+  ensureHubArticleSlug,
 } from '@/lib/operationsHub'
 import type { KnowledgeArticleDraftForm } from '@/lib/knowledgeArticleForm'
 import type { SopEditLocale } from '@/types/sopStructure'
@@ -105,7 +105,9 @@ export default function KnowledgeArticleEditorPanel({
             <Input
               value={form.slug}
               onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder={slugifyHubArticleSlug(form.title_en || form.title_ko) || 'my-article'}
+              placeholder={
+                ensureHubArticleSlug(form.slug || form.title_en || form.title_ko || 'my-article')
+              }
               className="mt-1 font-mono text-xs"
             />
           </label>
@@ -214,7 +216,12 @@ export default function KnowledgeArticleEditorPanel({
       ) : null}
 
       {editTab === 'preview' ? (
-        <SopDocumentWithToc doc={form.bodyDoc} viewLang={editLang} uiLocaleEn={isEn} />
+        <SopDocumentInlinePreviewEditor
+          doc={form.bodyDoc}
+          onChange={(bodyDoc) => setForm((f) => ({ ...f, bodyDoc }))}
+          viewLang={editLang}
+          uiLocaleEn={isEn}
+        />
       ) : null}
 
       <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">

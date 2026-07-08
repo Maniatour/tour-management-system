@@ -16,6 +16,9 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { getProductSummaryByLocale, formatProductDepartureLine } from '@/lib/productDetailDisplay'
+import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
+import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
 
 interface Product {
   id: string
@@ -27,6 +30,8 @@ interface Product {
   category: string
   sub_category: string | null
   description: string | null
+  summary_ko: string | null
+  summary_en: string | null
   duration: string | null
   departure_city: string | null
   arrival_city: string | null
@@ -59,6 +64,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
+  const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -82,113 +88,57 @@ export default function ProductsPage() {
       try {
         setLoading(true)
         setError(null)
-        
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-        
-        if (error) {
-          console.error('Error fetching products:', error)
-          setError(t('errorLoadingProducts'))
-          return
+
+        const isPreview = searchParams.get('preview') === '1'
+        const previewProductId = searchParams.get('productId')
+
+        let rows: Product[] = []
+
+        if (isPreview && previewProductId) {
+          const { data: previewRow, error: previewError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', previewProductId)
+            .eq('status', 'active')
+            .maybeSingle()
+
+          if (previewError) {
+            console.error('Error fetching preview product:', previewError)
+            setError(t('errorLoadingProducts'))
+            return
+          }
+
+          rows = previewRow ? [previewRow as Product] : []
+        } else {
+          const { data, error } = await supabase
+            .from('products')
+            .select('*')
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+
+          if (error) {
+            console.error('Error fetching products:', error)
+            setError(t('errorLoadingProducts'))
+            return
+          }
+
+          rows = (data || []) as Product[]
         }
-        
-        // 각 상품의 대표사진 가져오기
-        const productsWithImages = await Promise.all(
-          (data || []).map(async (row) => {
-            const product = row as Product
-            try {
-              // 1. product_media에서 대표사진 찾기
-              const { data: mediaData } = await supabase
-                .from('product_media')
-                .select('file_url')
-                .eq('product_id', product.id)
-                .eq('file_type', 'image')
-                .eq('is_active', true)
-                .eq('is_primary', true)
-                .maybeSingle()
-              
-              if (mediaData && 'file_url' in mediaData) {
-                return { ...product, primary_image: (mediaData as any).file_url }
-              }
-              
-              // 2. product_media에서 첫 번째 이미지 찾기
-              const { data: firstMediaData } = await supabase
-                .from('product_media')
-                .select('file_url')
-                .eq('product_id', product.id)
-                .eq('file_type', 'image')
-                .eq('is_active', true)
-                .order('order_index', { ascending: true })
-                .limit(1)
-                .single()
-              
-              if (firstMediaData && 'file_url' in firstMediaData) {
-                return { ...product, primary_image: (firstMediaData as any).file_url }
-              }
-              
-              // 3. 투어 코스 사진에서 대표사진 찾기
-              const { data: tourCoursesData } = await supabase
-                .from('product_tour_courses')
-                .select(`
-                  tour_course:tour_courses(*)
-                `)
-                .eq('product_id', product.id)
-              
-              if (tourCoursesData && tourCoursesData.length > 0) {
-                const courseIds = tourCoursesData
-                  .map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id)
-                  .filter((id): id is string => id != null)
-                if (courseIds.length > 0) {
-                  const { data: photoData } = await supabase
-                    .from('tour_course_photos')
-                    .select('photo_url')
-                    .in('course_id', courseIds)
-                    .eq('is_primary', true)
-                    .maybeSingle()
-                  
-                  if (photoData && 'photo_url' in photoData) {
-                    return { 
-                      ...product, 
-                      primary_image: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${(photoData as any).photo_url}` 
-                    }
-                  }
-                  
-                  // 4. 투어 코스 사진에서 첫 번째 사진 찾기
-                  const { data: firstPhotoData } = await supabase
-                    .from('tour_course_photos')
-                    .select('photo_url')
-                    .in('course_id', courseIds)
-                    .order('sort_order', { ascending: true })
-                    .limit(1)
-                    .single()
-                  
-                  if (firstPhotoData && 'photo_url' in firstPhotoData) {
-                    return { 
-                      ...product, 
-                      primary_image: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${(firstPhotoData as any).photo_url}` 
-                    }
-                  }
+
+        const productsWithImages = isPreview
+          ? rows.map((product) => ({ ...product, primary_image: null as string | null }))
+          : await Promise.all(
+              rows.map(async (product) => {
+                try {
+                  const primaryImage = await fetchProductPrimaryImage(product.id)
+                  return { ...product, primary_image: primaryImage }
+                } catch (err) {
+                  console.error(`Error fetching image for product ${product.id}:`, err)
+                  return { ...product, primary_image: null as string | null }
                 }
-              }
-              
-              return { ...product, primary_image: null }
-            } catch (err) {
-              console.error(`Error fetching image for product ${product.id}:`, err)
-              return { ...product, primary_image: null }
-            }
-          })
-        )
-        
-        // 디버깅: 운송수단 데이터 확인
-        console.log('Loaded products with transportation_methods:', productsWithImages.map(p => ({
-          id: p.id,
-          name: p.name,
-          transportation_methods: p.transportation_methods
-        })))
-        
+              })
+            )
+
         setProducts(productsWithImages)
       } catch (err) {
         console.error('Error fetching products:', err)
@@ -197,13 +147,22 @@ export default function ProductsPage() {
         setLoading(false)
       }
     }
-    
+
     fetchProducts()
-  }, [])
+  }, [searchParams, t])
+
+  useEffect(() => {
+    const allTags = products.flatMap((p) => p.tags ?? [])
+    if (allTags.length === 0) {
+      setTagLabelMap({})
+      return
+    }
+    void fetchTagLabelMap(allTags).then(setTagLabelMap)
+  }, [products])
 
   const filteredProducts = products.filter(product => {
     const productName = locale === 'en' && product.customer_name_en ? product.customer_name_en : product.customer_name_ko || product.name_ko || product.name
-    const productDescription = product.description || ''
+    const productDescription = getProductSummaryByLocale(product, locale)
     const productTags = product.tags || []
     
     const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -475,9 +434,13 @@ export default function ProductsPage() {
   // 상품 카드 렌더링 함수
   const renderProductCard = (product: Product, index: number) => {
     const previewProductId = searchParams.get('productId')
+    const isPreview = searchParams.get('preview') === '1'
+    const isEditMode = searchParams.get('editMode') === '1'
     const isPreviewTarget =
-      searchParams.get('preview') === '1' &&
-      (!previewProductId || previewProductId === product.id)
+      isPreview &&
+      (isEditMode && !previewProductId
+        ? true
+        : !previewProductId || previewProductId === product.id)
 
     const ListZone = ({
       zone,
@@ -591,9 +554,11 @@ export default function ProductsPage() {
         </ListZone>
 
         {/* 설명 */}
+        <ListZone zone="listing-card-description">
         <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {product.description || t('checkDetailsForMoreInfo')}
+          {getProductSummaryByLocale(product, locale) || t('checkDetailsForMoreInfo')}
         </p>
+        </ListZone>
 
         {/* 운송수단 아이콘 */}
         {(() => {
@@ -629,7 +594,7 @@ export default function ProductsPage() {
             <div className="flex flex-wrap gap-1">
               {product.tags.slice(0, 3).map((tag, index) => (
                 <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                  {tag}
+                  {resolveTagLabel(tag, locale, tagLabelMap)}
                 </span>
               ))}
             </div>
@@ -638,13 +603,10 @@ export default function ProductsPage() {
 
         {/* 상품 세부 정보 */}
         <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm text-gray-600">
-          {product.departure_city && (
+          {formatProductDepartureLine(product, locale) && (
             <div className="flex items-center">
               <MapPin className="h-4 w-4 mr-2 text-blue-600 flex-shrink-0" />
-              <span className="truncate">
-                {product.departure_city}
-                {product.departure_country && `, ${product.departure_country}`}
-              </span>
+              <span className="truncate">{formatProductDepartureLine(product, locale)}</span>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">

@@ -17,17 +17,41 @@ export type OperationsContentType =
   | 'reference'
   | 'onboarding'
 
+export type SopRowAttachmentKind = 'template' | 'report' | 'reference' | 'other'
+
+/** ROW·스텝에 연결된 템플릿·리포트·참고 파일 */
+export type SopRowAttachment = {
+  id: string
+  label_ko: string
+  label_en: string
+  url: string
+  kind: SopRowAttachmentKind
+  sort_order: number
+}
+
+export type SopManualStatus = 'draft' | 'complete'
+
+/** ROW 제목 표시 형식 — list: 불릿 목록, text: 본문 텍스트 */
+export type SopChecklistRowDisplay = 'list' | 'text'
+
 /**
  * 카테고리 안의 한 줄 체크 항목(고정 id).
- * 추후 투어별 체크·서명에서 `item_id` + `category_id` + `section_id` 로 재사용 가능.
  */
 export type SopChecklistItem = {
   id: string
   title_ko: string
   title_en: string
   sort_order: number
-  /** 같은 카테고리 내 상위 항목 id; 없으면 최상위 */
+  /** 같은 카테고리 내 상위 항목 id; 없으면 최상위 ROW */
   parent_id: string | null
+  /** 제목 표시 형식 (기본 list) */
+  row_display?: SopChecklistRowDisplay
+  /** 상세 메뉴얼 본문(리치 마크다운) */
+  manual_ko?: string
+  manual_en?: string
+  /** 메뉴얼 작성 상태 — 내용 없으면 아이콘 회색 */
+  manual_status?: SopManualStatus
+  attachments?: SopRowAttachment[]
 }
 
 export type SopCategory = {
@@ -114,6 +138,32 @@ export function checklistItemDepth(item: SopChecklistItem, byId: Map<string, Sop
   return d
 }
 
+/** parent_id 가 없거나 끊긴 항목 = 목차 ROW */
+export function isChecklistRootRow(
+  item: SopChecklistItem,
+  byId: Map<string, SopChecklistItem>
+): boolean {
+  return !item.parent_id || !byId.has(item.parent_id)
+}
+
+export function checklistChildItems(
+  items: SopChecklistItem[] | undefined | null,
+  parentId: string
+): SopChecklistItem[] {
+  if (!items?.length) return []
+  return orderedChecklistItems(items).filter((it) => it.parent_id === parentId)
+}
+
+export function checklistRootRows(items: SopChecklistItem[] | undefined | null): SopChecklistItem[] {
+  if (!items?.length) return []
+  const byId = new Map(items.map((i) => [i.id, i]))
+  return orderedChecklistItems(items).filter((it) => isChecklistRootRow(it, byId))
+}
+
+export function getChecklistRowDisplay(item: SopChecklistItem): SopChecklistRowDisplay {
+  return item.row_display === 'text' ? 'text' : 'list'
+}
+
 function sanitizeChecklistItems(items: SopChecklistItem[] | undefined | null): SopChecklistItem[] | undefined {
   if (!items || items.length === 0) return undefined
   const ids = new Set(items.map((i) => i.id))
@@ -123,6 +173,11 @@ function sanitizeChecklistItems(items: SopChecklistItem[] | undefined | null): S
     title_en: it.title_en ?? '',
     sort_order: typeof it.sort_order === 'number' ? it.sort_order : 0,
     parent_id: it.parent_id && ids.has(it.parent_id) ? it.parent_id : null,
+    ...(it.manual_ko ? { manual_ko: it.manual_ko } : {}),
+    ...(it.manual_en ? { manual_en: it.manual_en } : {}),
+    ...(it.manual_status ? { manual_status: it.manual_status } : {}),
+    ...(it.row_display === 'text' ? { row_display: 'text' as const } : {}),
+    ...(it.attachments?.length ? { attachments: it.attachments } : {}),
   }))
 }
 
@@ -306,16 +361,71 @@ export function flattenSopDocumentToPlainText(doc: SopDocument, lang: SopEditLoc
   return parts.join('\n').trim()
 }
 
+function checklistItemId(raw: unknown): string {
+  if (typeof raw === 'string' && raw.length > 0) return raw
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return String(raw)
+  return newSopId()
+}
+
+function normalizeAttachmentRow(raw: unknown): SopRowAttachment | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const url = typeof o.url === 'string' ? o.url.trim() : ''
+  if (!url) return null
+  const kindRaw = o.kind
+  const kind: SopRowAttachmentKind =
+    kindRaw === 'template' || kindRaw === 'report' || kindRaw === 'reference' || kindRaw === 'other'
+      ? kindRaw
+      : 'other'
+  return {
+    id: checklistItemId(o.id),
+    label_ko: typeof o.label_ko === 'string' ? o.label_ko : typeof o.name_ko === 'string' ? o.name_ko : '',
+    label_en: typeof o.label_en === 'string' ? o.label_en : typeof o.name_en === 'string' ? o.name_en : '',
+    url,
+    kind,
+    sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
+  }
+}
+
 function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const pid = o.parent_id
+  const legacyTitle =
+    typeof o.title === 'string'
+      ? o.title
+      : typeof o.text === 'string'
+        ? o.text
+        : typeof o.content === 'string'
+          ? o.content
+          : ''
+  const manual_ko = typeof o.manual_ko === 'string' ? o.manual_ko : ''
+  const manual_en = typeof o.manual_en === 'string' ? o.manual_en : ''
+  const statusRaw = o.manual_status
+  const manual_status: SopManualStatus | undefined =
+    statusRaw === 'draft' || statusRaw === 'complete' ? statusRaw : undefined
+  const displayRaw = o.row_display
+  const row_display: SopChecklistRowDisplay | undefined =
+    displayRaw === 'list' || displayRaw === 'text' ? displayRaw : undefined
+  let attachments: SopRowAttachment[] | undefined
+  if (Array.isArray(o.attachments)) {
+    const rows = o.attachments
+      .map(normalizeAttachmentRow)
+      .filter((x): x is SopRowAttachment => x !== null)
+      .sort((a, b) => a.sort_order - b.sort_order)
+    attachments = rows.length > 0 ? rows : undefined
+  }
   return {
-    id: typeof o.id === 'string' ? o.id : newSopId(),
-    title_ko: typeof o.title_ko === 'string' ? o.title_ko : '',
+    id: checklistItemId(o.id),
+    title_ko: typeof o.title_ko === 'string' ? o.title_ko : legacyTitle,
     title_en: typeof o.title_en === 'string' ? o.title_en : '',
     sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
     parent_id: typeof pid === 'string' && pid.length > 0 ? pid : null,
+    ...(manual_ko ? { manual_ko } : {}),
+    ...(manual_en ? { manual_en } : {}),
+    ...(manual_status ? { manual_status } : {}),
+    ...(row_display === 'text' ? { row_display } : {}),
+    ...(attachments ? { attachments } : {}),
   }
 }
 

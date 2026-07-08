@@ -18,6 +18,13 @@ import {
 import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
+import {
+  getProductArrivalCity,
+  getProductArrivalCountry,
+  getProductDepartureCity,
+  getProductDepartureCountry,
+} from '@/lib/productDetailDisplay'
+import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 
@@ -26,6 +33,8 @@ type ProductDetailDetailsTabProps = {
   productDetails: ProductDetailsFields | null
   categoryLabel: string
   durationLabel: string
+  locale: string
+  tagLabelMap: TagLabelMap
 }
 
 export default function ProductDetailDetailsTab({
@@ -33,6 +42,8 @@ export default function ProductDetailDetailsTab({
   productDetails,
   categoryLabel,
   durationLabel,
+  locale,
+  tagLabelMap,
 }: ProductDetailDetailsTabProps) {
   const t = useTranslations('productDetail')
   const [activeDetailTab, setActiveDetailTab] = useState('basic')
@@ -198,27 +209,36 @@ export default function ProductDetailDetailsTab({
                         )}
 
                         {/* 출발/도착 정보 */}
-                        {(product.departure_city || product.arrival_city) && (
+                        {(getProductDepartureCity(product, locale) ||
+                          getProductArrivalCity(product, locale)) && (
                           <div>
                             <h4 className="font-medium text-gray-900 mb-3">{t('departureArrival')}</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {product.departure_city && (
+                              {getProductDepartureCity(product, locale) && (
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="h-4 w-4 text-blue-500" />
                                   <span className="text-sm text-gray-600">{t('departure')}</span>
-                                  <span className="text-sm font-medium">{product.departure_city}</span>
-                                  {product.departure_country && (
-                                    <span className="text-sm text-gray-500">({product.departure_country})</span>
+                                  <span className="text-sm font-medium">
+                                    {getProductDepartureCity(product, locale)}
+                                  </span>
+                                  {getProductDepartureCountry(product, locale) && (
+                                    <span className="text-sm text-gray-500">
+                                      ({getProductDepartureCountry(product, locale)})
+                                    </span>
                                   )}
                                 </div>
                               )}
-                              {product.arrival_city && (
+                              {getProductArrivalCity(product, locale) && (
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="h-4 w-4 text-green-500" />
                                   <span className="text-sm text-gray-600">{t('arrival')}</span>
-                                  <span className="text-sm font-medium">{product.arrival_city}</span>
-                                  {product.arrival_country && (
-                                    <span className="text-sm text-gray-500">({product.arrival_country})</span>
+                                  <span className="text-sm font-medium">
+                                    {getProductArrivalCity(product, locale)}
+                                  </span>
+                                  {getProductArrivalCountry(product, locale) && (
+                                    <span className="text-sm text-gray-500">
+                                      ({getProductArrivalCountry(product, locale)})
+                                    </span>
                                   )}
                                 </div>
                               )}
@@ -236,7 +256,7 @@ export default function ProductDetailDetailsTab({
                                   key={index}
                                   className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
                                 >
-                                  {tag}
+                                  {resolveTagLabel(tag, locale, tagLabelMap)}
                                 </span>
                               ))}
                             </div>

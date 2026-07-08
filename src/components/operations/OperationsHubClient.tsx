@@ -13,7 +13,11 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Save,
+  Settings2,
   Shield,
+  GripVertical,
+  Languages,
   Sparkles,
   Trash2,
   type LucideIcon,
@@ -38,9 +42,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import SopDocumentWithToc from '@/components/sop/SopDocumentWithToc'
+import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
+import SopDocumentInlinePreviewEditor from '@/components/sop/SopDocumentInlinePreviewEditor'
 import KnowledgeArticleEditorPanel from '@/components/operations/KnowledgeArticleEditorPanel'
-import { parseSopDocumentJson, type SopEditLocale } from '@/types/sopStructure'
+import { hydrateDocumentForRowEditing } from '@/lib/sopQuickEdit'
+import { parseSopDocumentJson, sopText, type SopDocument, type SopEditLocale } from '@/types/sopStructure'
 import {
   articleBodyToDocument,
   articleRowToHubEntry,
@@ -93,6 +99,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [loadingData, setLoadingData] = useState(true)
 
   const [readArticle, setReadArticle] = useState<KnowledgeArticleRow | null>(null)
+  const [readEditDoc, setReadEditDoc] = useState<SopDocument | null>(null)
+  const [readSaveMsg, setReadSaveMsg] = useState<string | null>(null)
+  const [modalViewLang, setModalViewLang] = useState<SopEditLocale>(viewLang)
   const [editOpen, setEditOpen] = useState(false)
   const [form, setForm] = useState<KnowledgeArticleDraftForm>(() => emptyKnowledgeArticleForm())
   const [editTab, setEditTab] = useState<'meta' | 'body' | 'preview'>('meta')
@@ -105,6 +114,41 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const hubBase = `/${locale}/${basePath}/operations-hub`
   const adminCrud = enableAdminCrud && canManage
+
+  const reloadArticles = useCallback(async (): Promise<KnowledgeArticleRow[]> => {
+    if (!authUser?.email) return []
+
+    let q = supabase
+      .from('company_knowledge_articles')
+      .select(KNOWLEDGE_ARTICLE_SELECT)
+      .order('sort_order')
+      .order('slug')
+    if (!enableAdminCrud) {
+      q = q.eq('is_published', true)
+    }
+
+    const { data, error } = await q
+    if (error) {
+      setLoadError(error.message)
+      return []
+    }
+
+    const rows = (data || []) as KnowledgeArticleRow[]
+    setArticles(rows)
+    return rows
+  }, [authUser?.email, enableAdminCrud])
+
+  const upsertArticleInState = useCallback((row: KnowledgeArticleRow) => {
+    setArticles((prev) => {
+      const index = prev.findIndex((a) => a.id === row.id)
+      if (index >= 0) {
+        const next = [...prev]
+        next[index] = row
+        return next
+      }
+      return [...prev, row]
+    })
+  }, [])
 
   const load = useCallback(async () => {
     if (!isInitialized || loading || !authUser?.email) return
@@ -179,10 +223,14 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const visibleEntries = useMemo(() => {
     const articleEntries = hubArticles
       .map(articleRowToHubEntry)
-      .filter((e) => matchesHubTargetRoles(e.target_roles, position))
-    const sopEntries = sopSections.filter((e) => matchesHubTargetRoles(e.target_roles, position))
+      .filter(
+        (e) => adminCrud || matchesHubTargetRoles(e.target_roles, position)
+      )
+    const sopEntries = sopSections.filter(
+      (e) => adminCrud || matchesHubTargetRoles(e.target_roles, position)
+    )
     return mergeHubEntries(articleEntries, sopEntries)
-  }, [hubArticles, position, sopSections])
+  }, [adminCrud, hubArticles, position, sopSections])
 
   const grouped = useMemo(() => groupHubEntriesByCategory(visibleEntries), [visibleEntries])
 
@@ -195,6 +243,23 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     () => (readArticle ? articleBodyToDocument(readArticle) : null),
     [readArticle]
   )
+
+  useEffect(() => {
+    if (!readArticle) {
+      setReadEditDoc(null)
+      setReadSaveMsg(null)
+      return
+    }
+    const parsed = articleBodyToDocument(readArticle)
+    setReadEditDoc(parsed ? hydrateDocumentForRowEditing(parsed) : null)
+  }, [readArticle])
+
+  useEffect(() => {
+    if (readArticle?.id) {
+      setModalViewLang(viewLang)
+      setReadSaveMsg(null)
+    }
+  }, [readArticle?.id, viewLang])
 
   const clearUrlParams = useCallback(() => {
     const article = searchParams.get('article')
@@ -275,17 +340,65 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       return
     }
     setCrudMsg(isEn ? 'Saved.' : '저장했습니다.')
-    await load()
+
     const { data: refreshed } = await supabase
       .from('company_knowledge_articles')
       .select(KNOWLEDGE_ARTICLE_SELECT)
       .eq('id', result.id)
       .maybeSingle()
     const saved = refreshed as KnowledgeArticleRow | null
+    if (saved) {
+      upsertArticleInState(saved)
+    } else {
+      await reloadArticles()
+    }
+
     setEditOpen(false)
     if (saved && saved.is_published) {
       setReadArticle(saved)
     }
+  }
+
+  const handleSaveReadDoc = async () => {
+    if (!adminCrud || !readArticle || !readEditDoc) return
+    setBusy(true)
+    setReadSaveMsg(null)
+    const draft = knowledgeArticleRowToForm(readArticle)
+    draft.bodyDoc = readEditDoc
+    const result = await saveKnowledgeArticle(draft, authUser?.id ?? null)
+    setBusy(false)
+    if (!result.ok) {
+      setReadSaveMsg(result.error)
+      return
+    }
+    setReadSaveMsg(isEn ? 'Saved.' : '저장했습니다.')
+    const { data: refreshed } = await supabase
+      .from('company_knowledge_articles')
+      .select(KNOWLEDGE_ARTICLE_SELECT)
+      .eq('id', result.id)
+      .maybeSingle()
+    const saved = refreshed as KnowledgeArticleRow | null
+    if (saved) {
+      upsertArticleInState(saved)
+      setReadArticle(saved)
+      const savedDoc = articleBodyToDocument(saved)
+      setReadEditDoc(savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null)
+    } else {
+      await reloadArticles()
+    }
+  }
+
+  const modalUiEn = modalViewLang === 'en'
+
+  const openReadDocSettings = () => {
+    if (!readArticle) return
+    const draft = knowledgeArticleRowToForm(readArticle)
+    if (readEditDoc) draft.bodyDoc = readEditDoc
+    setForm(draft)
+    setEditTab('meta')
+    setCrudMsg(null)
+    setReadArticle(null)
+    setEditOpen(true)
   }
 
   const confirmDelete = async () => {
@@ -301,7 +414,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (readArticle?.id === deleteTarget.id) setReadArticle(null)
     if (form.id === deleteTarget.id) setEditOpen(false)
     setDeleteTarget(null)
-    await load()
+    await reloadArticles()
   }
 
   const runTemplateSync = async (mode: 'append' | 'overwrite') => {
@@ -424,7 +537,13 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
             <BookOpen className="mx-auto mb-3 h-10 w-10 text-gray-400" />
             <p className="text-gray-700">
-              {isEn ? 'No published documents yet.' : '게시된 운영 문서가 아직 없습니다.'}
+              {adminCrud && articles.length > 0
+                ? isEn
+                  ? 'No documents match your role filter. Adjust target roles or check drafts below after saving.'
+                  : '표시 조건에 맞는 문서가 없습니다. 대상 직책 설정을 확인하거나 저장 후 초안을 확인해 주세요.'
+                : isEn
+                  ? 'No published documents yet.'
+                  : '게시된 운영 문서가 아직 없습니다.'}
             </p>
             {adminCrud ? (
               <Button type="button" className="mt-4" size="sm" onClick={openEditNew}>
@@ -503,55 +622,136 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
         )}
       </div>
 
-      {/* 읽기 모달 */}
-      <Dialog open={!!readArticle && !!readDoc} onOpenChange={(open) => !open && setReadArticle(null)}>
-        <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
-          {readArticle && readDoc ? (
+      {/* 읽기 모달 — 관리자는 미리보기에서 바로 편집 */}
+      <Dialog
+        open={!!readArticle && !!(adminCrud ? readEditDoc : readDoc)}
+        onOpenChange={(open) => !open && setReadArticle(null)}
+      >
+        <ResizableDialogContent
+          storageKey="operations-hub-article-modal-rect"
+          defaultWidth={1024}
+          defaultHeight={760}
+          className="gap-0"
+        >
+          {readArticle && (adminCrud ? readEditDoc : readDoc) ? (
             <>
-              <DialogHeader className="shrink-0 space-y-1 border-b px-6 py-4 pr-12 text-left">
-                <DialogTitle className="text-lg">
-                  {isEn
-                    ? readArticle.title_en || readArticle.title_ko
-                    : readArticle.title_ko || readArticle.title_en}
-                </DialogTitle>
-                <p className="text-xs font-normal text-gray-500">
-                  {hubCategoryLabel(readArticle.hub_category, viewLang)}
-                  {' · '}
-                  {contentTypeLabel(readArticle.content_type, viewLang)}
-                  {!readArticle.is_published ? (isEn ? ' · Draft' : ' · 초안') : ''}
+              <DialogHeader
+                data-dialog-drag-handle
+                className="shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-2">
+                  <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <DialogTitle className="text-base leading-snug sm:text-lg">
+                      {sopText(readArticle.title_ko, readArticle.title_en, modalViewLang) ||
+                        (modalUiEn ? readArticle.title_en : readArticle.title_ko) ||
+                        readArticle.title_ko ||
+                        readArticle.title_en}
+                    </DialogTitle>
+                    <p className="text-xs font-normal text-gray-500">
+                      {hubCategoryLabel(readArticle.hub_category, modalViewLang)}
+                      {' · '}
+                      {contentTypeLabel(readArticle.content_type, modalViewLang)}
+                      {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
+                    </p>
+                  </div>
+                  <div
+                    className="flex w-full shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5 sm:w-auto"
+                    data-no-drag
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setModalViewLang('ko')}
+                      className={cn(
+                        'min-h-10 flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors touch-manipulation sm:min-h-0 sm:flex-none sm:px-2.5 sm:py-1',
+                        modalViewLang === 'ko'
+                          ? 'bg-white text-indigo-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                    >
+                      한국어
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalViewLang('en')}
+                      className={cn(
+                        'min-h-10 flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors touch-manipulation sm:min-h-0 sm:flex-none sm:px-2.5 sm:py-1',
+                        modalViewLang === 'en'
+                          ? 'bg-white text-indigo-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
+                <p className="hidden text-[11px] text-gray-400 sm:block">
+                  {modalUiEn
+                    ? 'Drag the title bar to move · edges/corners to resize'
+                    : '제목 줄 드래그로 이동 · 가장자리/모서리로 크기 조절'}
                 </p>
                 {adminCrud ? (
-                  <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-center" data-no-drag>
                     <Button
                       type="button"
                       size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setReadArticle(null)
-                        openEditRow(readArticle)
-                      }}
+                      disabled={busy}
+                      className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto"
+                      onClick={() => void handleSaveReadDoc()}
                     >
-                      <Pencil className="mr-1 h-3.5 w-3.5" />
-                      {isEn ? 'Edit' : '수정'}
+                      <Save className="mr-1 h-3.5 w-3.5" />
+                      {modalUiEn ? 'Save' : '저장'}
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto" onClick={openReadDocSettings}>
+                      <Settings2 className="mr-1 h-3.5 w-3.5" />
+                      {modalUiEn ? 'Document settings' : '문서 설정'}
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="destructive"
+                      className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto"
                       onClick={() => setDeleteTarget(readArticle)}
                     >
                       <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      {isEn ? 'Delete' : '삭제'}
+                      {modalUiEn ? 'Delete' : '삭제'}
                     </Button>
+                    {readSaveMsg ? (
+                      <span className="text-xs text-gray-600">{readSaveMsg}</span>
+                    ) : null}
                   </div>
-                ) : null}
+                ) : (
+                  <div className="flex items-center gap-1 pt-1 text-xs text-gray-500" data-no-drag>
+                    <Languages className="h-3.5 w-3.5" />
+                    {modalUiEn ? 'View language' : '보기 언어'}
+                  </div>
+                )}
               </DialogHeader>
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-                <SopDocumentWithToc doc={readDoc} viewLang={viewLang} uiLocaleEn={isEn} />
+              <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4 md:px-6">
+                {adminCrud && readEditDoc ? (
+                  <SopDocumentInlinePreviewEditor
+                    doc={readEditDoc}
+                    onChange={setReadEditDoc}
+                    viewLang={modalViewLang}
+                    uiLocaleEn={modalUiEn}
+                    resizableToc
+                    tocWidthStorageKey="operations-hub-article-toc-width"
+                  />
+                ) : readDoc ? (
+                  <SopDocumentInlinePreviewEditor
+                    doc={readDoc}
+                    onChange={() => {}}
+                    viewLang={modalViewLang}
+                    uiLocaleEn={modalUiEn}
+                    editable={false}
+                    resizableToc
+                    tocWidthStorageKey="operations-hub-article-toc-width"
+                  />
+                ) : null}
               </div>
             </>
           ) : null}
-        </DialogContent>
+        </ResizableDialogContent>
       </Dialog>
 
       {/* 편집 모달 */}

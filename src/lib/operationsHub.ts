@@ -223,9 +223,18 @@ export function slugifyHubArticleSlug(raw: string): string {
   return raw
     .trim()
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .replace(/[\s_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 80)
+}
+
+/** slug·제목 slugify 결과가 비면 고유 fallback slug 생성 */
+export function ensureHubArticleSlug(primary: string, fallbackSeed?: string): string {
+  const slug = slugifyHubArticleSlug(primary)
+  if (slug) return slug
+  const seed = (fallbackSeed || '').trim() || Date.now().toString(36)
+  return `doc-${seed}`.slice(0, 80)
 }

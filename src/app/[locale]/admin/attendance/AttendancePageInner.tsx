@@ -11,8 +11,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
 } from 'recharts'
+import RechartsContainer from '@/components/ui/RechartsContainer'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
@@ -1263,9 +1263,8 @@ export default function AttendancePage() {
         {monthlyChartData.length > 0 && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('monthlyChartTitle')}</h3>
-            <div className="h-[240px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+            <RechartsContainer height={240}>
+              <BarChart data={monthlyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis
                     dataKey="dateLabel"
@@ -1294,9 +1293,8 @@ export default function AttendancePage() {
                     }}
                   />
                   <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} name={t('chartYLabel')} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+              </BarChart>
+            </RechartsContainer>
           </div>
         )}
       </div>

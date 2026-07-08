@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { Search, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 interface Product {
   id: string
@@ -50,7 +52,16 @@ interface TagCategory {
 }
 
 export default function ProductTagsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">…</div>}>
+      <ProductTagsPageInner />
+    </Suspense>
+  )
+}
+
+function ProductTagsPageInner() {
   const locale = useLocale()
+  const t = useTranslations('common')
   
   const [tagCategories, setTagCategories] = useState<TagCategory[]>([])
   const [loading, setLoading] = useState(true)
@@ -301,15 +312,15 @@ export default function ProductTagsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <div className="bg-white shadow-sm border-b">
+      <CustomerPagePreviewHighlightEffect />
+      <CustomerPageZone zone="tags-page-header" className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-4xl font-bold text-gray-900 text-center">상품 태그별 모아보기</h1>
+          <h1 className="text-4xl font-bold text-gray-900 text-center">{t('tagsPageTitle')}</h1>
           <p className="mt-4 text-xl text-gray-600 text-center">
-            관심 있는 카테고리별로 상품을 찾아보세요
+            {t('tagsPageSubtitle')}
           </p>
         </div>
-      </div>
+      </CustomerPageZone>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* 검색 */}
@@ -318,7 +329,7 @@ export default function ProductTagsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
             <input
               type="text"
-              placeholder="태그명, 상품명으로 검색..."
+              placeholder={t('tagsPageSearchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -349,7 +360,7 @@ export default function ProductTagsPage() {
 
         {/* 태그 카테고리 목록 */}
         {!loading && !error && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <CustomerPageZone zone="tags-page-categories" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTagCategories.map((tagCategory) => (
               <div key={tagCategory.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
                 {/* 태그 헤더 */}
@@ -424,7 +435,7 @@ export default function ProductTagsPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </CustomerPageZone>
         )}
 
         {/* 검색 결과 없음 */}
