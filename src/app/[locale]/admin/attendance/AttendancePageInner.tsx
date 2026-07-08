@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History, UtensilsCrossed } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History, UtensilsCrossed, CalendarClock } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -18,6 +18,7 @@ import { supabase, isAbortLikeError } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { canViewEmployeeHourlyRatesHistory } from '@/lib/roles'
+import { isSuperAdminActor } from '@/lib/superAdmin'
 
 const AttendanceEditModal = dynamic(() => import('@/components/attendance/AttendanceEditModal'), {
   ssr: false,
@@ -44,6 +45,10 @@ const TipsShareModal = dynamic(() => import('@/components/TipsShareModal'), {
   loading: () => null,
 })
 const OfficeMealModal = dynamic(() => import('@/components/attendance/OfficeMealModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const OfficeScheduleModal = dynamic(() => import('@/components/attendance/OfficeScheduleModal'), {
   ssr: false,
   loading: () => null,
 })
@@ -85,7 +90,6 @@ const ATTENDANCE_UI_DEFAULT = {
 
 export default function AttendancePage() {
   const { authUser, userPosition, userRole } = useAuth()
-  const isSuper = userPosition === 'super'
   const canViewHourlyRatesHistory = useMemo(
     () => canViewEmployeeHourlyRatesHistory(userRole, userPosition),
     [userRole, userPosition]
@@ -104,6 +108,7 @@ export default function AttendancePage() {
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null)
   const [canEditAttendance, setCanEditAttendance] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const isSuper = isSuperAdminActor(authUser?.email, userPosition) || isAdmin
   /** Tips 쉐어 버튼 표시 (super + manager / office manager) */
   const [canViewTipsShare, setCanViewTipsShare] = useState(false)
   /** Office Tips 버튼 표시 (super + manager / office manager + op + om) */
@@ -120,6 +125,7 @@ export default function AttendancePage() {
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [isOfficeTipsModalOpen, setIsOfficeTipsModalOpen] = useState(false)
   const [isOfficeMealModalOpen, setIsOfficeMealModalOpen] = useState(false)
+  const [isOfficeScheduleModalOpen, setIsOfficeScheduleModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
   const [isHourlyRatesModalOpen, setIsHourlyRatesModalOpen] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
@@ -888,6 +894,14 @@ export default function AttendancePage() {
                   </button>
                 )}
                 <button
+                  onClick={() => setIsOfficeScheduleModalOpen(true)}
+                  type="button"
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors min-w-[3rem]"
+                >
+                  <CalendarClock className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeScheduleButton')}</span>
+                </button>
+                <button
                   onClick={() => setIsOfficeTipsModalOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-600 border border-amber-600 rounded-lg hover:bg-amber-700 transition-colors min-w-[3rem]"
                 >
@@ -1382,6 +1396,14 @@ export default function AttendancePage() {
       <OfficeTipsModal
         isOpen={isOfficeTipsModalOpen}
         onClose={() => setIsOfficeTipsModalOpen(false)}
+      />
+      <OfficeScheduleModal
+        isOpen={isOfficeScheduleModalOpen}
+        onClose={() => setIsOfficeScheduleModalOpen(false)}
+        initialMonth={selectedMonth}
+        canEditAll={isAdmin || canManageOfficeMeal}
+        isSuper={isSuper}
+        currentUserEmail={authUser?.email ?? ''}
       />
 
       {/* 직원별 시급 이력 (Office Manager / Super / Admin, OP 제외) */}
