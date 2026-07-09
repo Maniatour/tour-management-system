@@ -65,7 +65,7 @@ export default function SopRichFieldEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[90vh] sm:max-w-[48rem] sm:rounded-lg sm:border">
+      <DialogContent stackLevel="nested" className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[90vh] sm:max-w-[48rem] sm:rounded-lg sm:border">
         <DialogHeader className="border-b px-4 py-3 pr-12 text-left sm:px-5 sm:py-4">
           <DialogTitle className="text-base">{title}</DialogTitle>
           {description ? <p className="text-sm font-normal text-gray-500">{description}</p> : null}

@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { markdownToHtml, sopPlainDisplayText } from '@/components/LightRichEditor'
-import SopManualEditDialog from '@/components/sop/SopManualEditDialog'
-import { getChecklistManualStatus, getManualIconState } from '@/lib/sopQuickEdit'
+import { markdownToHtml } from '@/components/LightRichEditor'
+import SopRowManualAccordion from '@/components/sop/SopRowManualAccordion'
+import { getManualIconState } from '@/lib/sopQuickEdit'
 import { sopChecklistAnchorId } from '@/lib/sopDocumentToc'
 import type { SopChecklistItem, SopEditLocale, SopRowAttachment } from '@/types/sopStructure'
 import { checklistRootRows, getChecklistRowDisplay, sopText } from '@/types/sopStructure'
@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  LayoutList,
   List,
   MoreHorizontal,
   Paperclip,
@@ -40,6 +41,7 @@ type RowCallbacks = {
     itemId: string,
     display: 'list' | 'text'
   ) => void
+  onConvertRowToCategory?: (sectionId: string, categoryId: string, itemId: string) => void
 }
 
 type Props = RowCallbacks & {
@@ -49,6 +51,7 @@ type Props = RowCallbacks & {
   viewLang: SopEditLocale
   flat?: boolean
   anchors?: boolean
+  searchFocusRowId?: string | null
 }
 
 const MANUAL_ICON_CLASS = {
@@ -180,6 +183,7 @@ function ItemToolbar({
     onDeleteChecklistItem,
     onManageAttachments,
     onChangeRowDisplay,
+    onConvertRowToCategory,
   } = callbacks
   const rowDisplay = getChecklistRowDisplay(item)
 
@@ -189,7 +193,8 @@ function ItemToolbar({
       onChangeRowDisplay ||
       onManageAttachments ||
       onAddChecklistItem ||
-      onDeleteChecklistItem
+      onDeleteChecklistItem ||
+      onConvertRowToCategory
   )
 
   useEffect(() => {
@@ -342,6 +347,18 @@ function ItemToolbar({
               <Plus className="h-3.5 w-3.5" />
             </Button>
           ) : null}
+          {onConvertRowToCategory ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(iconBtn, 'text-violet-700 hover:bg-violet-50')}
+              title={isEn ? 'Convert to block' : '영역으로 변환'}
+              onClick={run(() => onConvertRowToCategory(sectionId, categoryId, item.id))}
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
           {onDeleteChecklistItem ? (
             <Button
               type="button"
@@ -367,8 +384,8 @@ function ChecklistRootRow({
   categoryId,
   viewLang,
   anchors,
+  searchFocusRowId,
   callbacks,
-  onViewManual,
 }: {
   row: SopChecklistItem
   allItems: SopChecklistItem[]
@@ -376,8 +393,8 @@ function ChecklistRootRow({
   categoryId: string
   viewLang: SopEditLocale
   anchors?: boolean
+  searchFocusRowId?: string | null
   callbacks: RowCallbacks
-  onViewManual?: (row: SopChecklistItem) => void
 }) {
   const roots = checklistRootRows(allItems)
   const rootIdx = roots.findIndex((r) => r.id === row.id)
@@ -391,11 +408,16 @@ function ChecklistRootRow({
       callbacks.onManageAttachments
   )
   const isEn = viewLang === 'en'
+  const [expanded, setExpanded] = useState(false)
   const openManual = callbacks.onEditChecklistManual
     ? () => callbacks.onEditChecklistManual!(sectionId, categoryId, row.id)
-    : onViewManual
-      ? () => onViewManual(row)
-      : undefined
+    : undefined
+
+  useEffect(() => {
+    if (searchFocusRowId === row.id) setExpanded(true)
+  }, [searchFocusRowId, row.id])
+
+  const toggleExpanded = () => setExpanded((v) => !v)
 
   return (
     <div
@@ -406,14 +428,22 @@ function ChecklistRootRow({
       )}
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
-        <div
+        <button
+          type="button"
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-2 sm:gap-1.5',
-            callbacks.onEditChecklistItem &&
-              'cursor-pointer rounded-md hover:bg-gray-50/80 active:bg-gray-50'
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md text-left sm:gap-1.5',
+            'cursor-pointer touch-manipulation hover:bg-gray-50/80 active:bg-gray-50'
           )}
-          onClick={() => callbacks.onEditChecklistItem?.(sectionId, categoryId, row.id)}
+          aria-expanded={expanded}
+          onClick={toggleExpanded}
         >
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200',
+              expanded && 'rotate-180'
+            )}
+            aria-hidden
+          />
           {isListRow ? (
             <>
               <span
@@ -443,14 +473,14 @@ function ChecklistRootRow({
               }}
             />
           )}
+        </button>
 
-          <ManualDocIcon
-            item={row}
-            viewLang={viewLang}
-            isEn={isEn}
-            {...(openManual ? { onClick: openManual } : {})}
-          />
-        </div>
+        <ManualDocIcon
+          item={row}
+          viewLang={viewLang}
+          isEn={isEn}
+          {...(openManual ? { onClick: openManual } : {})}
+        />
 
         {editable ? (
           <ItemToolbar
@@ -465,6 +495,10 @@ function ChecklistRootRow({
         ) : null}
       </div>
 
+      {expanded ? (
+        <SopRowManualAccordion item={row} viewLang={viewLang} isEn={isEn} />
+      ) : null}
+
       <AttachmentList attachments={attachments} viewLang={viewLang} />
     </div>
   )
@@ -476,57 +510,28 @@ export default function SopChecklistBlock({
   items,
   viewLang,
   anchors,
+  searchFocusRowId = null,
   ...callbacks
 }: Props) {
   const roots = checklistRootRows(items)
-  const isEn = viewLang === 'en'
-  const [viewRow, setViewRow] = useState<SopChecklistItem | null>(null)
 
   if (roots.length === 0) return null
 
-  const handleViewManual = callbacks.onEditChecklistManual
-    ? undefined
-    : (row: SopChecklistItem) => setViewRow(row)
-
-  const viewManualValue = viewRow
-    ? sopText(viewRow.manual_ko ?? '', viewRow.manual_en ?? '', viewLang)
-    : ''
-
   return (
-    <>
-      <div className="mb-2 w-full min-w-0">
-        {roots.map((row) => (
-          <ChecklistRootRow
-            key={row.id}
-            row={row}
-            allItems={items}
-            sectionId={sectionId}
-            categoryId={categoryId}
-            viewLang={viewLang}
-            {...(anchors ? { anchors } : {})}
-            callbacks={callbacks}
-            {...(handleViewManual ? { onViewManual: handleViewManual } : {})}
-          />
-        ))}
-      </div>
-
-      {viewRow ? (
-        <SopManualEditDialog
-          open
-          onOpenChange={(open) => !open && setViewRow(null)}
-          title={isEn ? 'View manual' : '메뉴얼 보기'}
-          {...(() => {
-            const desc = sopPlainDisplayText(sopText(viewRow.title_ko, viewRow.title_en, viewLang))
-            return desc ? { description: desc } : {}
-          })()}
-          value={viewManualValue}
-          status={getChecklistManualStatus(viewRow)}
-          uiLocaleEn={isEn}
-          langLabel={viewLang === 'en' ? 'English' : '한국어'}
-          readOnly
-          onSave={() => {}}
+    <div className="mb-2 w-full min-w-0">
+      {roots.map((row) => (
+        <ChecklistRootRow
+          key={row.id}
+          row={row}
+          allItems={items}
+          sectionId={sectionId}
+          categoryId={categoryId}
+          viewLang={viewLang}
+          {...(anchors ? { anchors } : {})}
+          searchFocusRowId={searchFocusRowId}
+          callbacks={callbacks}
         />
-      ) : null}
-    </>
+      ))}
+    </div>
   )
 }

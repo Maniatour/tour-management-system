@@ -331,3 +331,11 @@
 .customer-page-zone-edit-btn:hover {
   background: #1d4ed8;
 }
+
+.sop-search-active {
+  outline: 2px solid rgb(99 102 241);
+  outline-offset: 4px;
+  border-radius: 0.5rem;
+  background-color: rgb(238 242 255 / 0.45);
+  transition: background-color 0.2s ease, outline-color 0.2s ease;
+}

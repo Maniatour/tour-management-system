@@ -1,5 +1,9 @@
 import { markdownToHtml } from '@/components/LightRichEditor'
+import SopCategoryToolbar from '@/components/sop/SopCategoryToolbar'
 import SopChecklistBlock from '@/components/sop/SopChecklistBlock'
+import SopManualContentPanel from '@/components/sop/SopManualContentPanel'
+import SopManualDocIcon from '@/components/sop/SopManualDocIcon'
+import { hasCategoryManualSource } from '@/lib/sopQuickEdit'
 import { sopCategoryAnchorId, sopSectionAnchorId } from '@/lib/sopDocumentToc'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { sopText } from '@/types/sopStructure'
@@ -41,6 +45,11 @@ type Props = {
     display: 'list' | 'text'
   ) => void
   onManageAttachments?: (sectionId: string, categoryId: string, itemId: string) => void
+  onConvertCategoryToRow?: (sectionId: string, categoryId: string) => void
+  onConvertRowToCategory?: (sectionId: string, categoryId: string, itemId: string) => void
+  onEditCategoryManual?: (sectionId: string, categoryId: string) => void
+  /** 검색 결과 이동 시 해당 ROW 아코디언 펼침 */
+  searchFocusRowId?: string | null
 }
 
 function RichLine({ text, flat }: { text: string; flat?: boolean }) {
@@ -77,6 +86,10 @@ export default function SopDocumentReadonly({
   onEditChecklistManual,
   onChangeRowDisplay,
   onManageAttachments,
+  searchFocusRowId = null,
+  onConvertCategoryToRow,
+  onConvertRowToCategory,
+  onEditCategoryManual,
 }: Props) {
   const flat = layout === 'flat'
   const sections = [...doc.sections].sort((a, b) => a.sort_order - b.sort_order)
@@ -96,15 +109,20 @@ export default function SopDocumentReadonly({
       onMoveChecklistItem ||
       onEditChecklistManual ||
       onChangeRowDisplay ||
-      onManageAttachments
+      onManageAttachments ||
+      onConvertCategoryToRow ||
+      onConvertRowToCategory ||
+      onEditCategoryManual
   )
 
   return (
     <div className={cn('w-full min-w-0 text-sm text-gray-900', flat ? 'space-y-8' : 'space-y-6')}>
       {docTitle ? (
         <div
+          id={anchors ? 'sop-doc-top' : undefined}
           className={cn(
             'prose max-w-none font-bold',
+            anchors && 'scroll-mt-20',
             flat ? 'prose-xl text-black' : 'prose-lg text-indigo-950'
           )}
           dangerouslySetInnerHTML={{ __html: markdownToHtml(docTitle) }}
@@ -195,6 +213,10 @@ export default function SopDocumentReadonly({
                   const body = sopText(c.content_ko, c.content_en, viewLang)
                   const catLabel = ct || (viewLang === 'en' ? '(Category)' : '(카테고리)')
                   const chk = c.checklist_items ?? []
+                  const showCategoryManual = hasCategoryManualSource(c, viewLang)
+                  const openCategoryManual = onEditCategoryManual
+                    ? () => onEditCategoryManual(s.id, c.id)
+                    : undefined
                   return (
                     <div
                       key={c.id}
@@ -203,69 +225,18 @@ export default function SopDocumentReadonly({
                     >
                       <div
                         className={cn(
-                          'relative mb-2 w-full min-w-0 sm:mb-1',
-                          (onEditCategory || onDeleteCategory || onMoveCategory) && 'sm:pr-28'
+                          'relative mb-2 flex w-full min-w-0 items-start gap-2 sm:mb-1',
+                          (onEditCategory ||
+                            onDeleteCategory ||
+                            onMoveCategory ||
+                            onAddChecklistItem ||
+                            onAddCategory) &&
+                            'sm:pr-2'
                         )}
                       >
-                        {(onEditCategory || onDeleteCategory || onMoveCategory) ? (
-                          <div className="mb-2 flex flex-wrap justify-end gap-0.5 sm:absolute sm:right-0 sm:top-0 sm:z-10 sm:mb-0">
-                          {onMoveCategory && ci > 0 ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-7 sm:w-7"
-                              title={viewLang === 'en' ? 'Move up' : '위로'}
-                              onClick={() => onMoveCategory(s.id, c.id, -1)}
-                            >
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : null}
-                          {onMoveCategory && ci < sortedCats.length - 1 ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 touch-manipulation text-gray-600 hover:bg-gray-100 sm:h-7 sm:w-7"
-                              title={viewLang === 'en' ? 'Move down' : '아래로'}
-                              onClick={() => onMoveCategory(s.id, c.id, 1)}
-                            >
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : null}
-                          {onEditCategory ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 gap-1 px-2.5 text-xs touch-manipulation text-indigo-700 hover:bg-indigo-50 sm:h-7 sm:px-2 sm:text-[11px]"
-                              title={viewLang === 'en' ? 'Edit block title' : '영역 제목 수정'}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onEditCategory(s.id, c.id)
-                              }}
-                            >
-                              <Pencil className="h-3 w-3" />
-                              {viewLang === 'en' ? 'Edit' : '수정'}
-                            </Button>
-                          ) : null}
-                          {onDeleteCategory && s.categories.length > 1 ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 gap-1 px-2.5 text-xs touch-manipulation text-red-700 hover:bg-red-50 sm:h-7 sm:px-2 sm:text-[11px]"
-                              onClick={() => onDeleteCategory(s.id, c.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              {viewLang === 'en' ? 'Delete' : '삭제'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
                         <h3
                           className={cn(
-                            'flex items-start gap-2 font-semibold text-gray-800 prose prose-sm max-w-none',
+                            'min-w-0 flex-1 flex items-start gap-2 font-semibold text-gray-800 prose prose-sm max-w-none',
                             flat && 'text-gray-900'
                           )}
                         >
@@ -275,7 +246,36 @@ export default function SopDocumentReadonly({
                             dangerouslySetInnerHTML={{ __html: markdownToHtml(catLabel) }}
                           />
                         </h3>
+                        <SopManualDocIcon
+                          source={c}
+                          viewLang={viewLang}
+                          isEn={viewLang === 'en'}
+                          {...(openCategoryManual ? { onClick: openCategoryManual } : {})}
+                        />
+                        <SopCategoryToolbar
+                          sectionId={s.id}
+                          categoryId={c.id}
+                          categoryIndex={ci}
+                          categoryCount={sortedCats.length}
+                          sectionCategoryCount={s.categories.length}
+                          viewLang={viewLang}
+                          {...(onEditCategory ? { onEditCategory } : {})}
+                          {...(onDeleteCategory ? { onDeleteCategory } : {})}
+                          {...(onMoveCategory ? { onMoveCategory } : {})}
+                          {...(onAddChecklistItem ? { onAddChecklistItem } : {})}
+                          {...(onAddCategory ? { onAddCategory } : {})}
+                          {...(onConvertCategoryToRow ? { onConvertCategoryToRow } : {})}
+                        />
                       </div>
+                      {showCategoryManual ? (
+                        <div className="mb-3">
+                          <SopManualContentPanel
+                            source={c}
+                            viewLang={viewLang}
+                            isEn={viewLang === 'en'}
+                          />
+                        </div>
+                      ) : null}
                       {chk.length > 0 ? (
                         <SopChecklistBlock
                           sectionId={s.id}
@@ -284,6 +284,7 @@ export default function SopDocumentReadonly({
                           viewLang={viewLang}
                           flat={flat}
                           anchors={anchors}
+                          searchFocusRowId={searchFocusRowId}
                           {...(onEditChecklistItem ? { onEditChecklistItem } : {})}
                           {...(onEditChecklistManual ? { onEditChecklistManual } : {})}
                           {...(onChangeRowDisplay ? { onChangeRowDisplay } : {})}
@@ -291,37 +292,10 @@ export default function SopDocumentReadonly({
                           {...(onMoveChecklistItem ? { onMoveChecklistItem } : {})}
                           {...(onAddChecklistItem ? { onAddChecklistItem } : {})}
                           {...(onManageAttachments ? { onManageAttachments } : {})}
+                          {...(onConvertRowToCategory ? { onConvertRowToCategory } : {})}
                         />
                       ) : null}
                       <RichLine text={body} flat={flat} />
-                      {onAddChecklistItem || onAddCategory ? (
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                          {onAddChecklistItem ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-10 w-full gap-1 text-xs touch-manipulation sm:h-7 sm:w-auto"
-                              onClick={() => onAddChecklistItem(s.id, c.id)}
-                            >
-                              <Plus className="h-3 w-3" />
-                              {viewLang === 'en' ? 'Add row' : '줄 추가'}
-                            </Button>
-                          ) : null}
-                          {onAddCategory ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="h-10 w-full gap-1 text-xs touch-manipulation sm:h-7 sm:w-auto"
-                              onClick={() => onAddCategory(s.id, c.id)}
-                            >
-                              <Plus className="h-3 w-3" />
-                              {viewLang === 'en' ? 'Add block' : '영역 추가'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </div>
                   )
                 })}

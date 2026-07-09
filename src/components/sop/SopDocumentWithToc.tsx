@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
+import SopDocumentSearchBar from '@/components/sop/SopDocumentSearchBar'
 import { buildSopDocumentToc, sopTocAnchorIds, type SopTocEntry, type SopTocLevel } from '@/lib/sopDocumentToc'
+import { searchSopDocument } from '@/lib/sopDocumentSearch'
 import { usePersistedSplitWidth } from '@/hooks/usePersistedSplitWidth'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
@@ -39,6 +41,11 @@ type Props = {
     display: 'list' | 'text'
   ) => void
   onManageAttachments?: (sectionId: string, categoryId: string, itemId: string) => void
+  onConvertCategoryToRow?: (sectionId: string, categoryId: string) => void
+  onConvertRowToCategory?: (sectionId: string, categoryId: string, itemId: string) => void
+  onEditCategoryManual?: (sectionId: string, categoryId: string) => void
+  /** 읽기 모달 등 — 문서 내 검색 */
+  enableSearch?: boolean
 }
 
 function scrollToAnchor(anchorId: string) {
@@ -75,20 +82,37 @@ function tocTextClass(level: SopTocLevel): string {
   return 'text-[11px]'
 }
 
+function tocEntryHasMatch(entry: SopTocEntry, matchingAnchorIds: Set<string>): boolean {
+  if (matchingAnchorIds.has(entry.anchorId)) return true
+  return entry.children?.some((child) => tocEntryHasMatch(child, matchingAnchorIds)) ?? false
+}
+
 function TocTree({
   entries,
   activeAnchorId,
+  matchingAnchorIds,
   depth = 0,
   onNavigate,
 }: {
   entries: SopTocEntry[]
   activeAnchorId: string | null
+  matchingAnchorIds?: Set<string> | null
   depth?: number
   onNavigate: (anchorId: string) => void
 }) {
   return (
     <ul className={cn(depth > 0 && 'ml-3 mt-0.5 space-y-0.5 border-l border-gray-200 pl-2', depth === 0 && 'space-y-0.5')}>
-      {entries.map((entry) => (
+      {entries.map((entry) => {
+        const entryMatches = matchingAnchorIds?.has(entry.anchorId) ?? false
+        const showEntry =
+          !matchingAnchorIds ||
+          matchingAnchorIds.size === 0 ||
+          entryMatches ||
+          (matchingAnchorIds ? tocEntryHasMatch(entry, matchingAnchorIds) : false)
+
+        if (!showEntry) return null
+
+        return (
         <li key={entry.anchorId}>
           <button
             type="button"
@@ -96,7 +120,8 @@ function TocTree({
             className={cn(
               'w-full rounded-md px-3 py-2.5 text-left transition-colors touch-manipulation',
               tocTextClass(entry.level),
-              tocLevelClass(entry.level, activeAnchorId === entry.anchorId)
+              tocLevelClass(entry.level, activeAnchorId === entry.anchorId),
+              entryMatches && matchingAnchorIds && 'ring-1 ring-amber-300 bg-amber-50/80'
             )}
           >
             {entry.label}
@@ -105,12 +130,14 @@ function TocTree({
             <TocTree
               entries={entry.children}
               activeAnchorId={activeAnchorId}
+              {...(matchingAnchorIds ? { matchingAnchorIds } : {})}
               depth={depth + 1}
               onNavigate={onNavigate}
             />
           ) : null}
         </li>
-      ))}
+        )
+      })}
     </ul>
   )
 }
@@ -118,12 +145,14 @@ function TocTree({
 function TocNav({
   entries,
   activeAnchorId,
+  matchingAnchorIds,
   uiLocaleEn,
   onNavigate,
   className,
 }: {
   entries: SopTocEntry[]
   activeAnchorId: string | null
+  matchingAnchorIds?: Set<string> | null
   uiLocaleEn: boolean
   onNavigate: (anchorId: string) => void
   className?: string
@@ -132,7 +161,12 @@ function TocNav({
 
   return (
     <nav aria-label={uiLocaleEn ? 'Table of contents' : '목차'} className={className}>
-      <TocTree entries={entries} activeAnchorId={activeAnchorId} onNavigate={onNavigate} />
+      <TocTree
+        entries={entries}
+        activeAnchorId={activeAnchorId}
+        {...(matchingAnchorIds ? { matchingAnchorIds } : {})}
+        onNavigate={onNavigate}
+      />
     </nav>
   )
 }
@@ -156,13 +190,28 @@ export default function SopDocumentWithToc({
   onEditChecklistManual,
   onChangeRowDisplay,
   onManageAttachments,
+  onConvertCategoryToRow,
+  onConvertRowToCategory,
+  onEditCategoryManual,
   resizableToc = false,
   tocWidthStorageKey = 'sop-document-toc-width',
+  enableSearch = false,
 }: Props) {
   const entries = useMemo(() => buildSopDocumentToc(doc, viewLang), [doc, viewLang])
   const flatAnchors = useMemo(() => sopTocAnchorIds(entries), [entries])
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(entries[0]?.anchorId ?? null)
   const [mobileTocOpen, setMobileTocOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0)
+  const searchHits = useMemo(
+    () => (enableSearch ? searchSopDocument(doc, searchQuery, viewLang, uiLocaleEn) : []),
+    [doc, enableSearch, searchQuery, uiLocaleEn, viewLang]
+  )
+  const matchingAnchorIds = useMemo(() => {
+    if (!searchQuery.trim() || searchHits.length === 0) return null
+    return new Set(searchHits.map((hit) => hit.anchorId))
+  }, [searchHits, searchQuery])
+  const activeSearchHit = searchHits[searchActiveIndex] ?? null
   const { width: tocWidth, onResizePointerDown: onTocResizePointerDown } = usePersistedSplitWidth({
     storageKey: tocWidthStorageKey,
     defaultWidth: 224,
@@ -176,6 +225,26 @@ export default function SopDocumentWithToc({
     setActiveAnchorId(anchorId)
     setMobileTocOpen(false)
   }, [])
+
+  useEffect(() => {
+    setSearchActiveIndex(0)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (!enableSearch || !activeSearchHit) return
+    scrollToAnchor(activeSearchHit.anchorId)
+    setActiveAnchorId(activeSearchHit.anchorId)
+  }, [activeSearchHit, enableSearch])
+
+  useEffect(() => {
+    if (!enableSearch || !activeSearchHit) return
+    const el = document.getElementById(activeSearchHit.anchorId)
+    if (!el) return
+    el.classList.add('sop-search-active')
+    return () => {
+      el.classList.remove('sop-search-active')
+    }
+  }, [activeSearchHit, enableSearch])
 
   useEffect(() => {
     if (flatAnchors.length === 0) return
@@ -204,6 +273,7 @@ export default function SopDocumentWithToc({
     doc,
     viewLang,
     anchors: true as const,
+    ...(activeSearchHit?.rowId ? { searchFocusRowId: activeSearchHit.rowId } : {}),
     ...(onEditSection ? { onEditSection } : {}),
     ...(onEditCategory ? { onEditCategory } : {}),
     ...(onAddSection ? { onAddSection } : {}),
@@ -219,18 +289,44 @@ export default function SopDocumentWithToc({
     ...(onEditChecklistManual ? { onEditChecklistManual } : {}),
     ...(onChangeRowDisplay ? { onChangeRowDisplay } : {}),
     ...(onManageAttachments ? { onManageAttachments } : {}),
+    ...(onConvertCategoryToRow ? { onConvertCategoryToRow } : {}),
+    ...(onConvertRowToCategory ? { onConvertRowToCategory } : {}),
+    ...(onEditCategoryManual ? { onEditCategoryManual } : {}),
   }
 
   if (entries.length <= 1 && !(entries[0]?.children?.length)) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4">
-        <SopDocumentReadonly {...readonlyProps} />
+      <div className={cn('space-y-3', resizableToc && 'flex h-full min-h-0 flex-col')}>
+        {enableSearch ? (
+          <SopDocumentSearchBar
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            hits={searchHits}
+            activeIndex={searchActiveIndex}
+            onActiveIndexChange={setSearchActiveIndex}
+            uiLocaleEn={uiLocaleEn}
+          />
+        ) : null}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 sm:p-4">
+          <SopDocumentReadonly {...readonlyProps} />
+        </div>
       </div>
     )
   }
 
   return (
     <div className={cn('space-y-3', resizableToc && 'flex h-full min-h-0 flex-col')}>
+      {enableSearch ? (
+        <SopDocumentSearchBar
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          hits={searchHits}
+          activeIndex={searchActiveIndex}
+          onActiveIndexChange={setSearchActiveIndex}
+          uiLocaleEn={uiLocaleEn}
+          {...(resizableToc ? { className: 'shrink-0' } : {})}
+        />
+      ) : null}
       <div className="md:hidden">
         <button
           type="button"
@@ -246,6 +342,7 @@ export default function SopDocumentWithToc({
             <TocNav
               entries={entries}
               activeAnchorId={activeAnchorId}
+              {...(matchingAnchorIds ? { matchingAnchorIds } : {})}
               uiLocaleEn={uiLocaleEn}
               onNavigate={onNavigate}
             />
@@ -276,6 +373,7 @@ export default function SopDocumentWithToc({
             <TocNav
               entries={entries}
               activeAnchorId={activeAnchorId}
+              {...(matchingAnchorIds ? { matchingAnchorIds } : {})}
               uiLocaleEn={uiLocaleEn}
               onNavigate={onNavigate}
             />

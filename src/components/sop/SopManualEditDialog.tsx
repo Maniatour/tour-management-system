@@ -1,8 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
-import { hasChecklistManualContent } from '@/lib/sopQuickEdit'
+import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
+import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
+import {
+  hasChecklistManualContent,
+  type ManualSavePayload,
+} from '@/lib/sopQuickEdit'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -12,13 +17,13 @@ import {
 } from '@/components/ui/dialog'
 import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { cn } from '@/lib/utils'
-import type { SopManualStatus } from '@/types/sopStructure'
-import { FileText, GripVertical, Pencil } from 'lucide-react'
+import type { SopEditLocale, SopManualStatus } from '@/types/sopStructure'
+import { FileText, GripVertical, Link2, Pencil } from 'lucide-react'
 
 const MANUAL_MODAL_DEFAULT_WIDTH = 1024
 const MANUAL_MODAL_DEFAULT_HEIGHT = 800
 const MANUAL_MODAL_RECT_STORAGE_KEY = 'sop-manual-modal-rect-v2'
-const MANUAL_EDITOR_MIN_HEIGHT = 240
+const MANUAL_EDITOR_HEIGHT = 220
 
 type Props = {
   open: boolean
@@ -28,13 +33,14 @@ type Props = {
   description?: string
   value: string
   status: SopManualStatus
+  linkedHubArticleId?: string | null
+  hubArticles?: HubArticleLinkOption[]
+  viewLang: SopEditLocale
   uiLocaleEn: boolean
   langLabel: string
-  /** true면 수정 불가 (보기만) */
   readOnly?: boolean
-  /** true면 처음에 보기 모드로 열고, 수정 버튼으로 편집 전환 */
   startInViewMode?: boolean
-  onSave: (value: string, status: SopManualStatus) => void
+  onSave: (payload: ManualSavePayload) => void
 }
 
 function StatusOption({
@@ -79,6 +85,21 @@ function StatusOption({
   )
 }
 
+function SectionHeading({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof FileText
+  label: string
+}) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <Icon className="h-4 w-4 text-indigo-600" aria-hidden />
+      <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
+    </div>
+  )
+}
+
 export default function SopManualEditDialog({
   open,
   onOpenChange,
@@ -87,6 +108,9 @@ export default function SopManualEditDialog({
   description,
   value,
   status,
+  linkedHubArticleId = null,
+  hubArticles = [],
+  viewLang,
   uiLocaleEn,
   langLabel,
   readOnly = false,
@@ -95,24 +119,26 @@ export default function SopManualEditDialog({
 }: Props) {
   const [draft, setDraft] = useState(value)
   const [draftStatus, setDraftStatus] = useState<SopManualStatus>(status)
+  const [draftLinkedId, setDraftLinkedId] = useState(linkedHubArticleId ?? '')
   const [isEditing, setIsEditing] = useState(false)
-  const editorWrapRef = useRef<HTMLDivElement>(null)
-  const [editorHeight, setEditorHeight] = useState(520)
 
   const isEn = uiLocaleEn
   const canEdit = !readOnly
   const isViewMode = !isEditing || readOnly
+  const linkedId = isViewMode ? (linkedHubArticleId ?? '') : draftLinkedId
+  const isLinked = Boolean(linkedId.trim())
   const dialogTitle = isViewMode
     ? title
     : editTitle ?? (isEn ? 'Edit manual' : '메뉴얼 수정')
-  const hasContent = hasChecklistManualContent(value)
-  const hasDraftContent = hasChecklistManualContent(draft)
-  const showStatus = hasContent || hasDraftContent || !isViewMode || canEdit
-  const statusContent = isViewMode ? value : draft
-  const canMarkComplete = hasChecklistManualContent(statusContent)
+  const inlineContent = isViewMode ? value : draft
+  const hasInlineContent = hasChecklistManualContent(inlineContent)
+  const hasContent = hasInlineContent || isLinked
+  const canMarkComplete = hasInlineContent || isLinked
+  const showStatus = hasContent || !isViewMode || canEdit
+  const showLinkedSection = isLinked || !isViewMode || hubArticles.length > 0
   const completeHint = isEn
-    ? 'Add manual content before marking complete.'
-    : '메뉴얼 내용을 입력한 뒤 작성완료로 변경할 수 있습니다.'
+    ? 'Add manual notes or link a hub document before marking complete.'
+    : '직접 작성 내용 또는 허브 문서 연결 후 작성완료로 변경할 수 있습니다.'
 
   useEffect(() => {
     if (!open) return
@@ -123,47 +149,25 @@ export default function SopManualEditDialog({
     if (!open || isEditing) return
     setDraft(value)
     setDraftStatus(status)
-  }, [open, value, status, isEditing])
+    setDraftLinkedId(linkedHubArticleId ?? '')
+  }, [open, value, status, linkedHubArticleId, isEditing])
 
-  useEffect(() => {
-    if (!open) return
-
-    let ro: ResizeObserver | null = null
-
-    const attach = () => {
-      const el = editorWrapRef.current
-      if (!el) return false
-
-      const syncHeight = () => {
-        const next = Math.max(MANUAL_EDITOR_MIN_HEIGHT, el.clientHeight)
-        setEditorHeight(next)
-      }
-
-      syncHeight()
-      ro?.disconnect()
-      ro = new ResizeObserver(syncHeight)
-      ro.observe(el)
-      return true
-    }
-
-    if (!attach()) {
-      const frame = window.requestAnimationFrame(() => {
-        attach()
-      })
-      return () => {
-        window.cancelAnimationFrame(frame)
-        ro?.disconnect()
-      }
-    }
-
-    return () => ro?.disconnect()
-  }, [open, showStatus, isViewMode, hasContent, hasDraftContent])
+  const buildSavePayload = (
+    nextStatus: SopManualStatus,
+    inlineValue: string,
+    linkedIdValue: string
+  ): ManualSavePayload => ({
+    value: inlineValue,
+    linkedHubArticleId: linkedIdValue.trim() || null,
+    status: nextStatus,
+  })
 
   const handleClose = () => onOpenChange(false)
 
   const handleCancelEdit = () => {
     setDraft(value)
     setDraftStatus(status)
+    setDraftLinkedId(linkedHubArticleId ?? '')
     if (startInViewMode) {
       setIsEditing(false)
     } else {
@@ -175,7 +179,16 @@ export default function SopManualEditDialog({
     if (next === draftStatus) return
     setDraftStatus(next)
     if (isViewMode && canEdit) {
-      onSave(value, next)
+      onSave(buildSavePayload(next, value, linkedHubArticleId ?? ''))
+    }
+  }
+
+  const handleApply = () => {
+    onSave(buildSavePayload(draftStatus, draft, draftLinkedId))
+    if (startInViewMode) {
+      setIsEditing(false)
+    } else {
+      handleClose()
     }
   }
 
@@ -185,7 +198,7 @@ export default function SopManualEditDialog({
         storageKey={MANUAL_MODAL_RECT_STORAGE_KEY}
         defaultWidth={MANUAL_MODAL_DEFAULT_WIDTH}
         defaultHeight={MANUAL_MODAL_DEFAULT_HEIGHT}
-        elevated
+        stackLevel="nestedElevated"
         className="flex flex-col gap-0"
       >
         <DialogHeader
@@ -239,26 +252,63 @@ export default function SopManualEditDialog({
             </div>
           ) : null}
 
-          {isViewMode && !hasContent && !hasDraftContent ? (
-            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
-              {isEn ? 'No manual content yet.' : '아직 메뉴얼 내용이 없습니다.'}
-            </div>
-          ) : (
-            <div ref={editorWrapRef} className="min-h-0 flex-1">
-              <LightRichEditor
-                className="flex h-full w-full min-w-0 flex-col"
-                value={draft}
-                onChange={(v) => setDraft(v ?? '')}
-                placeholder={isEn ? 'Enter manual content…' : '메뉴얼 내용을 입력하세요…'}
-                height={editorHeight}
-                enableImageUpload={false}
-                enableResize={false}
-                minHeight={MANUAL_EDITOR_MIN_HEIGHT}
-                maxHeight={editorHeight}
-                readOnly={isViewMode}
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
+            <section className="shrink-0">
+              <SectionHeading
+                icon={FileText}
+                label={isEn ? 'Write here' : '직접 작성'}
               />
-            </div>
-          )}
+              {isViewMode && !hasInlineContent ? (
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                  {isEn ? 'No notes written here yet.' : '직접 작성한 내용이 없습니다.'}
+                </div>
+              ) : (
+                <div className="shrink-0">
+                  <LightRichEditor
+                    className="flex w-full min-w-0 flex-col"
+                    value={draft}
+                    onChange={(v) => setDraft(v ?? '')}
+                    placeholder={
+                      isEn
+                        ? 'Add row-specific notes or instructions…'
+                        : '이 줄에 대한 메모·안내를 입력하세요…'
+                    }
+                    height={MANUAL_EDITOR_HEIGHT}
+                    enableImageUpload={!isViewMode}
+                    enableResize={false}
+                    minHeight={MANUAL_EDITOR_HEIGHT}
+                    maxHeight={MANUAL_EDITOR_HEIGHT}
+                    readOnly={isViewMode}
+                  />
+                </div>
+              )}
+            </section>
+
+            {showLinkedSection ? (
+              <section className="shrink-0 flex-col border-t border-gray-100 pt-5">
+                <SectionHeading
+                  icon={Link2}
+                  label={isEn ? 'Linked hub document' : '허브 문서 연결'}
+                />
+                {!isViewMode && hubArticles.length === 0 ? (
+                  <p className="mb-3 text-xs text-gray-500">
+                    {isEn
+                      ? 'No Operations Hub documents yet. Create one in Operations Hub first.'
+                      : '운영 허브에 등록된 문서가 없습니다. 먼저 운영 허브에서 문서를 만드세요.'}
+                  </p>
+                ) : null}
+                <SopManualLinkedArticlePanel
+                  articleId={linkedId}
+                  {...(!isViewMode && canEdit ? { onArticleIdChange: setDraftLinkedId } : {})}
+                  hubArticles={hubArticles}
+                  viewLang={viewLang}
+                  uiLocaleEn={uiLocaleEn}
+                  readOnly={isViewMode || !canEdit}
+                  embedded
+                />
+              </section>
+            ) : null}
+          </div>
         </div>
 
         <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:px-5" data-no-drag>
@@ -296,15 +346,7 @@ export default function SopManualEditDialog({
               <Button
                 type="button"
                 className="w-full touch-manipulation sm:w-auto"
-                onClick={() => {
-                  const nextStatus = hasChecklistManualContent(draft) ? draftStatus : 'draft'
-                  onSave(draft, nextStatus)
-                  if (startInViewMode) {
-                    setIsEditing(false)
-                  } else {
-                    handleClose()
-                  }
-                }}
+                onClick={handleApply}
               >
                 {isEn ? 'Apply' : '적용'}
               </Button>

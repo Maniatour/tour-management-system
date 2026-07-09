@@ -471,18 +471,54 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     fileInputRef.current?.click()
   }
 
+  const insertImageDataUrl = (imageUrl: string, alt: string) => {
+    editorRef.current?.focus()
+    const imageHtml = `<img src="${imageUrl}" alt="${alt.replace(/"/g, '&quot;')}" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />`
+    document.execCommand('insertHTML', false, imageHtml)
+    setTimeout(updateEditorContent, 0)
+  }
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader()
       reader.onload = (event) => {
         const imageUrl = event.target?.result as string
-        const imageHtml = `<img src="${imageUrl}" alt="${file.name}" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />`
-        document.execCommand('insertHTML', false, imageHtml)
-        setTimeout(updateEditorContent, 0)
+        insertImageDataUrl(imageUrl, file.name)
       }
       reader.readAsDataURL(file)
     }
+    e.target.value = ''
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (readOnly || !enableImageUpload) {
+      setTimeout(updateEditorContent, 0)
+      return
+    }
+
+    const items = e.clipboardData?.items
+    if (!items) {
+      setTimeout(updateEditorContent, 0)
+      return
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item?.type.startsWith('image/')) continue
+      e.preventDefault()
+      const file = item.getAsFile()
+      if (!file) continue
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const imageUrl = event.target?.result as string
+        if (imageUrl) insertImageDataUrl(imageUrl, file.name || 'pasted-image')
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+
+    setTimeout(updateEditorContent, 0)
   }
 
   // 글자색 적용
@@ -704,15 +740,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         onInput={readOnly ? undefined : updateEditorContent}
         onBlur={readOnly ? undefined : updateEditorContent}
         onKeyUp={readOnly ? undefined : updateEditorContent}
-        onPaste={
-          readOnly
-            ? undefined
-            : () => {
-                setTimeout(() => {
-                  updateEditorContent()
-                }, 0)
-              }
-        }
+        onPaste={readOnly ? undefined : handlePaste}
         onKeyDown={
           readOnly
             ? undefined

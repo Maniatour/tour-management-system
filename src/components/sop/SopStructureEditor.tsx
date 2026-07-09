@@ -1942,7 +1942,7 @@ export default function SopStructureEditor({
         if (!open) setNodeModal(null)
       }}
     >
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent stackLevel="nested" className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEn ? 'Edit section title' : '섹션 제목 편집'}</DialogTitle>
           <DialogDescription>
@@ -1971,7 +1971,7 @@ export default function SopStructureEditor({
         if (!open) closeCategoryModal()
       }}
     >
-      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent stackLevel="nested" className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-4">
           <DialogTitle>{isEn ? 'Edit category' : '카테고리 편집'}</DialogTitle>
           <DialogDescription className="text-left">
@@ -2244,7 +2244,7 @@ export default function SopStructureEditor({
         if (!next) closeSectionHistory()
       }}
     >
-      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent stackLevel="nested" className="flex max-h-[85vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-4">
           <DialogTitle className="pr-8 text-left text-base">
             {isEn ? 'Section version history' : '섹션 버전 기록'}

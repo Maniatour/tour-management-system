@@ -51,6 +51,8 @@ export type SopChecklistItem = {
   manual_en?: string
   /** 메뉴얼 작성 상태 — 내용 없으면 아이콘 회색 */
   manual_status?: SopManualStatus
+  /** 운영 허브 문서(company_knowledge_articles.id) 연결 — 있으면 해당 문서 본문 표시 */
+  linked_hub_article_id?: string
   attachments?: SopRowAttachment[]
 }
 
@@ -61,6 +63,11 @@ export type SopCategory = {
   content_ko: string
   content_en: string
   sort_order: number
+  /** 영역 전용 메뉴얼(ROW와 동일 필드) */
+  manual_ko?: string
+  manual_en?: string
+  manual_status?: SopManualStatus
+  linked_hub_article_id?: string
   /** 줄 단위 체크(비우면 기존처럼 본문만) */
   checklist_items?: SopChecklistItem[]
 }
@@ -176,6 +183,7 @@ function sanitizeChecklistItems(items: SopChecklistItem[] | undefined | null): S
     ...(it.manual_ko ? { manual_ko: it.manual_ko } : {}),
     ...(it.manual_en ? { manual_en: it.manual_en } : {}),
     ...(it.manual_status ? { manual_status: it.manual_status } : {}),
+    ...(it.linked_hub_article_id ? { linked_hub_article_id: it.linked_hub_article_id } : {}),
     ...(it.row_display === 'text' ? { row_display: 'text' as const } : {}),
     ...(it.attachments?.length ? { attachments: it.attachments } : {}),
   }))
@@ -401,6 +409,9 @@ function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
           : ''
   const manual_ko = typeof o.manual_ko === 'string' ? o.manual_ko : ''
   const manual_en = typeof o.manual_en === 'string' ? o.manual_en : ''
+  const linkedRaw = o.linked_hub_article_id
+  const linked_hub_article_id =
+    typeof linkedRaw === 'string' && linkedRaw.trim() ? linkedRaw.trim() : ''
   const statusRaw = o.manual_status
   const manual_status: SopManualStatus | undefined =
     statusRaw === 'draft' || statusRaw === 'complete' ? statusRaw : undefined
@@ -424,6 +435,7 @@ function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
     ...(manual_ko ? { manual_ko } : {}),
     ...(manual_en ? { manual_en } : {}),
     ...(manual_status ? { manual_status } : {}),
+    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
     ...(row_display === 'text' ? { row_display } : {}),
     ...(attachments ? { attachments } : {}),
   }
@@ -437,6 +449,15 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
     const rows = o.checklist_items.map(normalizeChecklistRow).filter((x): x is SopChecklistItem => x !== null)
     checklist_items = rows.length > 0 ? sanitizeChecklistItems(rows) : undefined
   }
+  const manual_ko = typeof o.manual_ko === 'string' ? o.manual_ko : ''
+  const manual_en = typeof o.manual_en === 'string' ? o.manual_en : ''
+  const linkedRaw = o.linked_hub_article_id
+  const linked_hub_article_id =
+    typeof linkedRaw === 'string' && linkedRaw.trim() ? linkedRaw.trim() : ''
+  let manual_status: SopManualStatus | undefined
+  if (o.manual_status === 'complete' || o.manual_status === 'draft') {
+    manual_status = o.manual_status
+  }
   return {
     id: typeof o.id === 'string' ? o.id : newSopId(),
     title_ko: typeof o.title_ko === 'string' ? o.title_ko : legacyTitle,
@@ -444,6 +465,10 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
     content_ko: typeof o.content_ko === 'string' ? o.content_ko : legacyContent,
     content_en: typeof o.content_en === 'string' ? o.content_en : '',
     sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
+    ...(manual_ko ? { manual_ko } : {}),
+    ...(manual_en ? { manual_en } : {}),
+    ...(manual_status ? { manual_status } : {}),
+    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
     ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }
@@ -955,6 +980,9 @@ function mergeChecklistsParallel(
       ...(e.manual_ko?.trim() && !k.manual_ko?.trim() ? { manual_ko: e.manual_ko } : {}),
       ...(e.manual_en?.trim() && !k.manual_en?.trim() ? { manual_en: e.manual_en } : {}),
       ...(e.manual_status && !k.manual_status ? { manual_status: e.manual_status } : {}),
+      ...(e.linked_hub_article_id && !k.linked_hub_article_id
+        ? { linked_hub_article_id: e.linked_hub_article_id }
+        : {}),
       ...(e.row_display === 'text' && k.row_display !== 'text' ? { row_display: 'text' as const } : {}),
       ...(e.attachments?.length && !k.attachments?.length ? { attachments: e.attachments } : {}),
     })
@@ -983,6 +1011,12 @@ function mergeCategoriesParallel(kc: SopCategory[], ec: SopCategory[]): SopCateg
       ...k,
       title_en: e.title_en?.trim() || e.title_ko?.trim() || k.title_en,
       content_en: e.content_en?.trim() || e.content_ko?.trim() || k.content_en,
+      ...(e.manual_ko?.trim() && !k.manual_ko?.trim() ? { manual_ko: e.manual_ko } : {}),
+      ...(e.manual_en?.trim() && !k.manual_en?.trim() ? { manual_en: e.manual_en } : {}),
+      ...(e.manual_status && !k.manual_status ? { manual_status: e.manual_status } : {}),
+      ...(e.linked_hub_article_id && !k.linked_hub_article_id
+        ? { linked_hub_article_id: e.linked_hub_article_id }
+        : {}),
       ...(mergedChk ? { checklist_items: mergedChk } : {}),
     })
   }
@@ -1049,12 +1083,27 @@ function mergeChecklistItemsForLocale(
 
 function mergeCategoryForLocale(ec: SopCategory, bc: SopCategory | undefined, loc: SopEditLocale): SopCategory {
   const checklist_items = mergeChecklistItemsForLocale(ec.checklist_items, bc?.checklist_items, loc)
+  const manual_ko = loc === 'ko' ? ec.manual_ko : (bc?.manual_ko ?? ec.manual_ko)
+  const manual_en = loc === 'en' ? ec.manual_en : (bc?.manual_en ?? ec.manual_en)
+  const manual_status = ec.manual_status ?? bc?.manual_status
+  const linked_hub_article_id = ec.linked_hub_article_id ?? bc?.linked_hub_article_id
+  const {
+    manual_ko: _mk,
+    manual_en: _me,
+    manual_status: _ms,
+    linked_hub_article_id: _lid,
+    ...base
+  } = ec
   return {
-    ...ec,
+    ...base,
     title_ko: loc === 'ko' ? ec.title_ko : (bc?.title_ko ?? ec.title_ko),
     title_en: loc === 'en' ? ec.title_en : (bc?.title_en ?? ec.title_en),
     content_ko: loc === 'ko' ? ec.content_ko : (bc?.content_ko ?? ec.content_ko),
     content_en: loc === 'en' ? ec.content_en : (bc?.content_en ?? ec.content_en),
+    ...(manual_ko ? { manual_ko } : {}),
+    ...(manual_en ? { manual_en } : {}),
+    ...(manual_status ? { manual_status } : {}),
+    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
     ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }

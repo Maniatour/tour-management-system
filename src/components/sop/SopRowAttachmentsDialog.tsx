@@ -74,7 +74,7 @@ export default function SopRowAttachmentsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-lg gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent stackLevel="nested" className="max-h-[90vh] max-w-lg gap-0 overflow-hidden p-0 sm:max-w-xl">
         <DialogHeader className="border-b px-5 py-4 pr-12 text-left">
           <DialogTitle className="text-base">
             {isEn ? 'Row attachments' : '줄 첨부파일'}

@@ -20,6 +20,7 @@ function copyChecklistItemRowExtras(prev: SopChecklistItem | undefined): Partial
     ...(prev.manual_ko ? { manual_ko: prev.manual_ko } : {}),
     ...(prev.manual_en ? { manual_en: prev.manual_en } : {}),
     ...(prev.manual_status ? { manual_status: prev.manual_status } : {}),
+    ...(prev.linked_hub_article_id ? { linked_hub_article_id: prev.linked_hub_article_id } : {}),
     ...(prev.row_display === 'text' ? { row_display: 'text' as const } : {}),
     ...(prev.attachments?.length ? { attachments: prev.attachments } : {}),
   }
@@ -39,12 +40,94 @@ export function getChecklistItemDisplayLabel(item: SopChecklistItem, lang: SopEd
 
 export type ManualIconState = 'empty' | 'draft' | 'complete'
 
+export type ManualSavePayload = {
+  value: string
+  linkedHubArticleId: string | null
+  status: SopManualStatus
+}
+
+export type SopManualFields = {
+  manual_ko?: string
+  manual_en?: string
+  manual_status?: SopManualStatus
+  linked_hub_article_id?: string
+}
+
+export function getManualValue(fields: SopManualFields, lang: SopEditLocale): string {
+  return sopText(fields.manual_ko ?? '', fields.manual_en ?? '', lang)
+}
+
+export function hasManualLink(fields: SopManualFields): boolean {
+  return Boolean(fields.linked_hub_article_id?.trim())
+}
+
+export function hasManualSource(fields: SopManualFields, lang: SopEditLocale): boolean {
+  if (hasManualLink(fields)) return true
+  return hasChecklistManualContent(getManualValue(fields, lang))
+}
+
+export function getManualIconStateFromFields(
+  fields: SopManualFields,
+  lang: SopEditLocale
+): ManualIconState {
+  if (!hasManualSource(fields, lang)) return 'empty'
+  return fields.manual_status === 'complete' ? 'complete' : 'draft'
+}
+
+export function getManualStatusFromFields(fields: SopManualFields): SopManualStatus {
+  return fields.manual_status === 'complete' ? 'complete' : 'draft'
+}
+
+export function applyManualSaveToFields(
+  fields: SopManualFields,
+  lang: SopEditLocale,
+  payload: ManualSavePayload
+): SopManualFields {
+  const v = payload.value ?? ''
+  const manual_ko = lang === 'ko' ? v : (fields.manual_ko ?? '')
+  const manual_en = lang === 'en' ? v : (fields.manual_en ?? '')
+  const hasKo = hasChecklistManualContent(manual_ko)
+  const hasEn = hasChecklistManualContent(manual_en)
+  const linkId = payload.linkedHubArticleId?.trim() ?? ''
+
+  if (!hasKo && !hasEn && !linkId) {
+    const {
+      manual_ko: _ko,
+      manual_en: _en,
+      linked_hub_article_id: _link,
+      manual_status: _st,
+      ...rest
+    } = fields
+    return rest
+  }
+
+  const next: SopManualFields = { ...fields, manual_status: payload.status }
+  if (hasKo) next.manual_ko = manual_ko
+  else delete next.manual_ko
+  if (hasEn) next.manual_en = manual_en
+  else delete next.manual_en
+  if (linkId) next.linked_hub_article_id = linkId
+  else delete next.linked_hub_article_id
+  return next
+}
+
+export function hasChecklistManualLink(item: SopChecklistItem): boolean {
+  return hasManualLink(item)
+}
+
+export function hasChecklistManualSource(
+  item: SopChecklistItem,
+  lang: SopEditLocale
+): boolean {
+  if (hasChecklistManualLink(item)) return true
+  return hasChecklistManualContent(getChecklistManualValue(item, lang))
+}
+
 export function getManualIconState(
   item: SopChecklistItem,
   lang: SopEditLocale
 ): ManualIconState {
-  const body = sopText(item.manual_ko ?? '', item.manual_en ?? '', lang)
-  if (!hasChecklistManualContent(body)) return 'empty'
+  if (!hasChecklistManualSource(item, lang)) return 'empty'
   return item.manual_status === 'complete' ? 'complete' : 'draft'
 }
 
@@ -162,33 +245,59 @@ export function applyChecklistItemValue(
 }
 
 export function getChecklistManualValue(item: SopChecklistItem, lang: SopEditLocale): string {
-  return sopText(item.manual_ko ?? '', item.manual_en ?? '', lang)
+  return getManualValue(item, lang)
 }
 
-export function applyChecklistManualValue(
+export function getCategoryManualValue(category: SopCategory, lang: SopEditLocale): string {
+  return getManualValue(category, lang)
+}
+
+export function getCategoryManualStatus(category: SopCategory): SopManualStatus {
+  return getManualStatusFromFields(category)
+}
+
+export function getCategoryManualIconState(
+  category: SopCategory,
+  lang: SopEditLocale
+): ManualIconState {
+  return getManualIconStateFromFields(category, lang)
+}
+
+export function hasCategoryManualSource(category: SopCategory, lang: SopEditLocale): boolean {
+  return hasManualSource(category, lang)
+}
+
+function mergeManualFieldsInto<T extends SopManualFields>(base: T, saved: SopManualFields): T {
+  const {
+    manual_ko: _mk,
+    manual_en: _me,
+    manual_status: _ms,
+    linked_hub_article_id: _lid,
+    ...rest
+  } = base
+  return {
+    ...rest,
+    ...(saved.manual_ko ? { manual_ko: saved.manual_ko } : {}),
+    ...(saved.manual_en ? { manual_en: saved.manual_en } : {}),
+    ...(saved.manual_status ? { manual_status: saved.manual_status } : {}),
+    ...(saved.linked_hub_article_id ? { linked_hub_article_id: saved.linked_hub_article_id } : {}),
+  } as T
+}
+
+export function applyCategoryManualSave(
+  category: SopCategory,
+  lang: SopEditLocale,
+  payload: ManualSavePayload
+): SopCategory {
+  return mergeManualFieldsInto(category, applyManualSaveToFields(category, lang, payload))
+}
+
+export function applyChecklistManualSave(
   item: SopChecklistItem,
   lang: SopEditLocale,
-  value: string,
-  status?: SopManualStatus
+  payload: ManualSavePayload
 ): SopChecklistItem {
-  const v = value ?? ''
-  const manual_ko = lang === 'ko' ? v : (item.manual_ko ?? '')
-  const manual_en = lang === 'en' ? v : (item.manual_en ?? '')
-  const hasKo = hasChecklistManualContent(manual_ko)
-  const hasEn = hasChecklistManualContent(manual_en)
-
-  if (!hasKo && !hasEn) {
-    const { manual_ko: _ko, manual_en: _en, manual_status: _st, ...rest } = item
-    return rest
-  }
-
-  const nextStatus = status ?? item.manual_status ?? 'draft'
-  return {
-    ...item,
-    ...(hasKo ? { manual_ko } : {}),
-    ...(hasEn ? { manual_en } : {}),
-    manual_status: nextStatus,
-  }
+  return mergeManualFieldsInto(item, applyManualSaveToFields(item, lang, payload))
 }
 
 export function patchChecklistItemInDoc(

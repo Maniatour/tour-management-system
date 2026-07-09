@@ -888,7 +888,7 @@ export default function AdminStructuredDocPublishTab({
           }
         }}
       >
-        <DialogContent className="flex max-h-[95vh] max-w-[min(96vw,1100px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1100px)]">
+        <DialogContent stackLevel="nested" className="flex max-h-[95vh] max-w-[min(96vw,1100px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1100px)]">
           <DialogHeader className="shrink-0 border-b border-slate-200 px-4 py-3 pr-12 text-left sm:px-6">
             <DialogTitle>{uiLocaleEn ? 'Edit document' : '문서 편집'}</DialogTitle>
             <DialogDescription className="text-left text-xs">
@@ -1112,7 +1112,7 @@ export default function AdminStructuredDocPublishTab({
       </Dialog>
 
       <Dialog open={pasteImportModalOpen} onOpenChange={setPasteImportModalOpen}>
-        <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent stackLevel="nested" className="flex max-h-[90vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="shrink-0 space-y-2 border-b border-slate-200 px-6 pb-4 pt-6 pr-14 text-left">
             <DialogTitle>{uiLocaleEn ? 'Import from pasted text (KO + EN)' : '텍스트 붙여넣기 (한국어·영문)'}</DialogTitle>
             <DialogDescription className="text-left">
@@ -1180,7 +1180,7 @@ export default function AdminStructuredDocPublishTab({
         setCampaignModalOpen(o)
         if (!o) setCampaignBodyStructure(null)
       }}>
-        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent stackLevel="nested" className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 space-y-2 border-b border-slate-200 px-6 pb-4 pt-6 pr-14 text-left">
             <DialogTitle>{uiLocaleEn ? 'Send for signature' : '서명 요청 발송'}</DialogTitle>
             <DialogDescription className="text-left">

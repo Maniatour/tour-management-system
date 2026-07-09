@@ -16,7 +16,6 @@ import {
   Settings2,
   Shield,
   GripVertical,
-  Languages,
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
@@ -344,6 +343,15 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     setEditOpen(true)
   }
 
+  const openEditNewInCategory = (hubCategory: string) => {
+    setForm({
+      ...emptyKnowledgeArticleForm(),
+      hub_category: hubCategory,
+    })
+    setCrudMsg(null)
+    setEditOpen(true)
+  }
+
   const openEditRow = (row: KnowledgeArticleRow) => {
     setForm(knowledgeArticleRowToForm(row))
     setCrudMsg(null)
@@ -544,8 +552,29 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             {grouped.map(({ category, entries }) => (
               <section key={category.id}>
                 <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
-                  <FileText className="h-5 w-5 text-indigo-600" />
-                  {hubCategoryLabel(category.id, viewLang)}
+                  <FileText className="h-5 w-5 shrink-0 text-indigo-600" />
+                  <span className="min-w-0">{hubCategoryLabel(category.id, viewLang)}</span>
+                  {adminCrud ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 touch-manipulation text-indigo-600 hover:bg-indigo-50"
+                      title={
+                        isEn
+                          ? `Add document to ${hubCategoryLabel(category.id, viewLang)}`
+                          : `${hubCategoryLabel(category.id, viewLang)}에 문서 추가`
+                      }
+                      aria-label={
+                        isEn
+                          ? `Add document to ${hubCategoryLabel(category.id, viewLang)}`
+                          : `${hubCategoryLabel(category.id, viewLang)}에 문서 추가`
+                      }
+                      onClick={() => openEditNewInCategory(category.id)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                 </h2>
                 <ul className="grid gap-3 sm:grid-cols-2">
                   {entries.map((entry) => (
@@ -618,15 +647,88 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           storageKey="operations-hub-article-modal-rect"
           defaultWidth={1024}
           defaultHeight={760}
+          stackLevel="elevated"
           className="gap-0"
         >
           {readArticle && (adminCrud ? readEditDoc : readDoc) ? (
             <>
               <DialogHeader
                 data-dialog-drag-handle
-                className="shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
+                className="relative shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-2">
+                <div
+                  className="absolute right-12 top-3 z-20 flex max-w-[min(calc(100%-2.5rem),42rem)] flex-nowrap items-center gap-1 sm:top-3.5 sm:gap-1.5"
+                  data-no-drag
+                >
+                  {adminCrud ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={busy}
+                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                        onClick={() => void handleSaveReadDoc()}
+                      >
+                        <Save className="mr-1 h-3.5 w-3.5" />
+                        {modalUiEn ? 'Save' : '저장'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                        onClick={openReadDocSettings}
+                      >
+                        <Settings2 className="mr-1 h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{modalUiEn ? 'Document settings' : '문서 설정'}</span>
+                        <span className="sm:hidden">{modalUiEn ? 'Settings' : '설정'}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                        onClick={() => setDeleteTarget(readArticle)}
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        {modalUiEn ? 'Delete' : '삭제'}
+                      </Button>
+                    </>
+                  ) : null}
+                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setModalViewLang('ko')}
+                      className={cn(
+                        'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
+                        modalViewLang === 'ko'
+                          ? 'bg-white text-indigo-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                    >
+                      한국어
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalViewLang('en')}
+                      className={cn(
+                        'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
+                        modalViewLang === 'en'
+                          ? 'bg-white text-indigo-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className={cn(
+                    'flex items-start gap-2',
+                    adminCrud ? 'pr-0 sm:pr-[22rem] md:pr-[24rem]' : 'pr-0 sm:pr-[9.5rem]'
+                  )}
+                >
                   <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
                   <div className="min-w-0 flex-1">
                     <DialogTitle className="text-base leading-snug sm:text-lg">
@@ -641,35 +743,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                       {contentTypeLabel(readArticle.content_type, modalViewLang)}
                       {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
                     </p>
-                  </div>
-                  <div
-                    className="flex w-full shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5 sm:w-auto"
-                    data-no-drag
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setModalViewLang('ko')}
-                      className={cn(
-                        'min-h-10 flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors touch-manipulation sm:min-h-0 sm:flex-none sm:px-2.5 sm:py-1',
-                        modalViewLang === 'ko'
-                          ? 'bg-white text-indigo-700 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      )}
-                    >
-                      한국어
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModalViewLang('en')}
-                      className={cn(
-                        'min-h-10 flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors touch-manipulation sm:min-h-0 sm:flex-none sm:px-2.5 sm:py-1',
-                        modalViewLang === 'en'
-                          ? 'bg-white text-indigo-700 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      )}
-                    >
-                      English
-                    </button>
+                    {adminCrud && readSaveMsg ? (
+                      <p className="pt-1 text-xs text-gray-600">{readSaveMsg}</p>
+                    ) : null}
                   </div>
                 </div>
                 <p className="hidden text-[11px] text-gray-400 sm:block">
@@ -677,42 +753,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                     ? 'Drag the title bar to move · edges/corners to resize'
                     : '제목 줄 드래그로 이동 · 가장자리/모서리로 크기 조절'}
                 </p>
-                {adminCrud ? (
-                  <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-center" data-no-drag>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={busy}
-                      className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto"
-                      onClick={() => void handleSaveReadDoc()}
-                    >
-                      <Save className="mr-1 h-3.5 w-3.5" />
-                      {modalUiEn ? 'Save' : '저장'}
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto" onClick={openReadDocSettings}>
-                      <Settings2 className="mr-1 h-3.5 w-3.5" />
-                      {modalUiEn ? 'Document settings' : '문서 설정'}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      className="h-10 w-full touch-manipulation sm:h-9 sm:w-auto"
-                      onClick={() => setDeleteTarget(readArticle)}
-                    >
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      {modalUiEn ? 'Delete' : '삭제'}
-                    </Button>
-                    {readSaveMsg ? (
-                      <span className="text-xs text-gray-600">{readSaveMsg}</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 pt-1 text-xs text-gray-500" data-no-drag>
-                    <Languages className="h-3.5 w-3.5" />
-                    {modalUiEn ? 'View language' : '보기 언어'}
-                  </div>
-                )}
               </DialogHeader>
               <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4 md:px-6">
                 {adminCrud && readEditDoc ? (
@@ -744,7 +784,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
       {/* 편집 모달 */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="flex max-h-[92vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+        <DialogContent stackLevel="nested" className="flex max-h-[92vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4 pr-12 text-left">
             <DialogTitle>
               {form.id ? (isEn ? 'Edit document' : '문서 수정') : isEn ? 'New document' : '새 문서'}
@@ -775,7 +815,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
       {/* 삭제 확인 */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent stackLevel="nested">
           <AlertDialogHeader>
             <AlertDialogTitle>{isEn ? 'Delete document?' : '문서를 삭제할까요?'}</AlertDialogTitle>
             <AlertDialogDescription>

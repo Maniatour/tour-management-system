@@ -5,6 +5,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useResizableRect } from '@/hooks/useResizableRect'
 import { cn } from '@/lib/utils'
+import { DIALOG_Z_INDEX, type DialogStackLevel } from '@/lib/dialogZIndex'
 import type { ResizeHandle } from '@/lib/resizableRect'
 
 const MOBILE_MAX_WIDTH = 767
@@ -27,8 +28,12 @@ type Props = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   draggableHeaderSelector?: string
   hideCloseButton?: boolean
   overlayClassName?: string
-  /** 중첩 모달(예: 메뉴얼 보기) — z-index 상향 */
+  /** z-index 계층 — elevated: 읽기 모달, nestedElevated: 읽기 모달 위 편집 */
+  stackLevel?: DialogStackLevel
+  /** @deprecated stackLevel="elevated" 사용 */
   elevated?: boolean
+  /** false면 헤더 아래 inset 없이 전체 뷰포트 사용 */
+  respectHeaderInset?: boolean
 }
 
 const ResizableDialogContent = React.forwardRef<
@@ -45,11 +50,16 @@ const ResizableDialogContent = React.forwardRef<
       draggableHeaderSelector = '[data-dialog-drag-handle]',
       hideCloseButton,
       overlayClassName,
+      stackLevel,
       elevated = false,
+      respectHeaderInset = true,
+      style: propsStyle,
       ...props
     },
     ref
   ) => {
+    const resolvedStackLevel: DialogStackLevel =
+      stackLevel ?? (elevated ? 'elevated' : 'default')
     const contentNodeRef = React.useRef<HTMLDivElement | null>(null)
     const setContentRef = React.useCallback(
       (node: HTMLDivElement | null) => {
@@ -90,18 +100,30 @@ const ResizableDialogContent = React.forwardRef<
       onResizePointerDown(handle)(e)
     }
 
-    const layerClass = elevated ? 'z-[1200]' : 'z-[1100]'
+    const zIndex = DIALOG_Z_INDEX[resolvedStackLevel]
 
     const contentStyle: React.CSSProperties = isMobile
-      ? {
-          left: 0,
-          top: 0,
-          width: '100%',
-          height: '100dvh',
-          maxWidth: 'none',
-          maxHeight: 'none',
-          transform: 'none',
-        }
+      ? respectHeaderInset
+        ? {
+            left: 0,
+            top: 'var(--header-height, 4rem)',
+            width: '100%',
+            height: 'calc(100dvh - var(--header-height, 4rem))',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            transform: 'none',
+            zIndex,
+          }
+        : {
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100dvh',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            transform: 'none',
+            zIndex,
+          }
       : {
           left: rect.x,
           top: rect.y,
@@ -110,6 +132,7 @@ const ResizableDialogContent = React.forwardRef<
           maxWidth: 'none',
           maxHeight: 'none',
           transform: 'none',
+          zIndex,
         }
 
     return (
@@ -117,9 +140,9 @@ const ResizableDialogContent = React.forwardRef<
         <DialogPrimitive.Overlay
           className={cn(
             'fixed inset-0 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-            layerClass,
             overlayClassName
           )}
+          style={{ zIndex }}
         />
         <DialogPrimitive.Content
           ref={setContentRef}
@@ -127,12 +150,11 @@ const ResizableDialogContent = React.forwardRef<
           onPointerDown={handleHeaderPointerDown}
           className={cn(
             'fixed flex flex-col gap-0 overflow-hidden border bg-white p-0 shadow-2xl duration-200',
-            layerClass,
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 max-md:rounded-none sm:rounded-lg',
             className
           )}
-          style={contentStyle}
+          style={{ ...contentStyle, ...propsStyle }}
           {...props}
         >
           {children}

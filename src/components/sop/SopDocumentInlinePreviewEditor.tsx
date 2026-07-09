@@ -19,6 +19,8 @@ import {
   addSopCategory,
   addSopChecklistItem,
   addSopSection,
+  convertSopCategoryToRow,
+  convertSopRowToCategory,
   moveSopCategory,
   moveSopChecklistItem,
   moveSopSection,
@@ -29,14 +31,17 @@ import {
 } from '@/lib/sopDocumentMutations'
 import {
   applyCategoryBodyDraft,
+  applyCategoryManualSave,
   applyCategoryTitleValue,
   applyChecklistItemValue,
-  applyChecklistManualValue,
+  applyChecklistManualSave,
   applyChecklistRowDisplay,
   applySectionTitleValue,
   checklistItemIdsMatch,
   detectCategoryEditField,
   getCategoryBodyDraft,
+  getCategoryManualStatus,
+  getCategoryManualValue,
   getCategoryTitleValue,
   getChecklistItemDisplayLabel,
   getChecklistItemValue,
@@ -46,19 +51,23 @@ import {
   sopDisplayLabel,
   hydrateDocumentForRowEditing,
   updateDocCategory,
+  type ManualSavePayload,
 } from '@/lib/sopQuickEdit'
+import {
+  fetchHubArticlesForManualLink,
+  type HubArticleLinkOption,
+} from '@/lib/hubArticleManualLink'
 import { cn } from '@/lib/utils'
 import {
   prefillSortOrders,
   type SopDocument,
   type SopEditLocale,
-  type SopManualStatus,
   type SopRowAttachment,
 } from '@/types/sopStructure'
 
 type QuickEdit =
   | { scope: 'section'; sectionId: string; field: 'title' }
-  | { scope: 'category'; sectionId: string; categoryId: string; field: 'title' | 'body' }
+  | { scope: 'category'; sectionId: string; categoryId: string; field: 'title' | 'body' | 'manual' }
   | { scope: 'checklist'; sectionId: string; categoryId: string; itemId: string; field: 'title' | 'manual' }
 
 type AttachmentTarget = {
@@ -100,6 +109,12 @@ export default function SopDocumentInlinePreviewEditor({
   const [quickEdit, setQuickEdit] = useState<QuickEdit | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [attachmentTarget, setAttachmentTarget] = useState<AttachmentTarget | null>(null)
+  const [hubArticles, setHubArticles] = useState<HubArticleLinkOption[]>([])
+
+  useEffect(() => {
+    if (!editable) return
+    void fetchHubArticlesForManualLink().then(setHubArticles)
+  }, [editable])
 
   useEffect(() => {
     if (!editable) return
@@ -124,6 +139,9 @@ export default function SopDocumentInlinePreviewEditor({
       return quickEdit.field === 'manual'
         ? getChecklistManualValue(item, editLang)
         : getChecklistItemValue(item, editLang)
+    }
+    if (quickEdit.field === 'manual') {
+      return getCategoryManualValue(category, editLang)
     }
     return quickEdit.field === 'title'
       ? getCategoryTitleValue(category, editLang)
@@ -213,36 +231,63 @@ export default function SopDocumentInlinePreviewEditor({
   }, [doc.sections, editLang, isEn, quickEdit])
 
   const isManualEdit =
-    quickEdit?.scope === 'checklist' && quickEdit.field === 'manual'
+    quickEdit?.field === 'manual' &&
+    (quickEdit.scope === 'checklist' || quickEdit.scope === 'category')
 
   const manualEditContext = useMemo(() => {
-    if (!isManualEdit || !quickEdit || quickEdit.scope !== 'checklist') return null
-    const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
-    const category = section?.categories.find((c) => c.id === quickEdit.categoryId)
-    const item = category?.checklist_items?.find((i) =>
-      checklistItemIdsMatch(i.id, quickEdit.itemId)
-    )
-    if (!item) return null
-    const rowLabel = getChecklistItemDisplayLabel(item, editLang)
-    const blockLabel = category
-      ? sopDisplayLabel(category.title_ko, category.title_en, editLang)
-      : ''
-    return {
-      value: getChecklistManualValue(item, editLang),
-      status: getChecklistManualStatus(item),
-      title: isEn ? 'View manual' : '메뉴얼 보기',
-      editTitle: isEn ? 'Edit manual' : '메뉴얼 수정',
-      description: rowLabel
-        ? isEn
-          ? `Row: ${rowLabel}`
-          : `줄: ${rowLabel}`
-        : blockLabel
+    if (!isManualEdit || !quickEdit) return null
+
+    if (quickEdit.scope === 'checklist') {
+      const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
+      const category = section?.categories.find((c) => c.id === quickEdit.categoryId)
+      const item = category?.checklist_items?.find((i) =>
+        checklistItemIdsMatch(i.id, quickEdit.itemId)
+      )
+      if (!item) return null
+      const rowLabel = getChecklistItemDisplayLabel(item, editLang)
+      const blockLabel = category
+        ? sopDisplayLabel(category.title_ko, category.title_en, editLang)
+        : ''
+      return {
+        value: getChecklistManualValue(item, editLang),
+        status: getChecklistManualStatus(item),
+        linkedHubArticleId: item.linked_hub_article_id ?? null,
+        title: isEn ? 'View manual' : '메뉴얼 보기',
+        editTitle: isEn ? 'Edit manual' : '메뉴얼 수정',
+        description: rowLabel
+          ? isEn
+            ? `Row: ${rowLabel}`
+            : `줄: ${rowLabel}`
+          : blockLabel
+            ? isEn
+              ? `Block: ${blockLabel}`
+              : `영역: ${blockLabel}`
+            : undefined,
+        langLabel: editLang === 'en' ? 'English' : '한국어',
+      }
+    }
+
+    if (quickEdit.scope === 'category') {
+      const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
+      const category = section?.categories.find((c) => c.id === quickEdit.categoryId)
+      if (!category) return null
+      const blockLabel = sopDisplayLabel(category.title_ko, category.title_en, editLang)
+      return {
+        value: getCategoryManualValue(category, editLang),
+        status: getCategoryManualStatus(category),
+        linkedHubArticleId: category.linked_hub_article_id ?? null,
+        title: isEn ? 'View block manual' : '영역 메뉴얼 보기',
+        editTitle: isEn ? 'Edit block manual' : '영역 메뉴얼 수정',
+        description: blockLabel
           ? isEn
             ? `Block: ${blockLabel}`
             : `영역: ${blockLabel}`
           : undefined,
-      langLabel: editLang === 'en' ? 'English' : '한국어',
+        langLabel: editLang === 'en' ? 'English' : '한국어',
+      }
     }
+
+    return null
   }, [doc.sections, editLang, isEn, isManualEdit, quickEdit])
 
   const deleteLabel = useMemo(() => {
@@ -284,6 +329,10 @@ export default function SopDocumentInlinePreviewEditor({
     setQuickEdit({ scope: 'checklist', sectionId, categoryId, itemId, field: 'manual' })
   }
 
+  const openCategoryManualEdit = (sectionId: string, categoryId: string) => {
+    setQuickEdit({ scope: 'category', sectionId, categoryId, field: 'manual' })
+  }
+
   const handleChangeRowDisplay = (
     sectionId: string,
     categoryId: string,
@@ -303,21 +352,33 @@ export default function SopDocumentInlinePreviewEditor({
     )
   }
 
-  const handleManualSave = (value: string, status: SopManualStatus) => {
-    if (!quickEdit || quickEdit.scope !== 'checklist' || quickEdit.field !== 'manual') return
+  const handleManualSave = (payload: ManualSavePayload) => {
+    if (!quickEdit || quickEdit.field !== 'manual') return
 
-    const nextDoc = prefillSortOrders(
-      updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
-        const items = category.checklist_items?.map((item) => {
-          if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
-          return applyChecklistManualValue(item, editLang, value, status)
+    if (quickEdit.scope === 'checklist') {
+      const nextDoc = prefillSortOrders(
+        updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
+          const items = category.checklist_items?.map((item) => {
+            if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
+            return applyChecklistManualSave(item, editLang, payload)
+          })
+          return items?.length ? { ...category, checklist_items: items } : category
         })
-        return items?.length ? { ...category, checklist_items: items } : category
-      })
-    )
+      )
+      onChange(nextDoc)
+      void onPersistDocument?.(nextDoc)
+      return
+    }
 
-    onChange(nextDoc)
-    void onPersistDocument?.(nextDoc)
+    if (quickEdit.scope === 'category') {
+      const nextDoc = prefillSortOrders(
+        updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) =>
+          applyCategoryManualSave(category, editLang, payload)
+        )
+      )
+      onChange(nextDoc)
+      void onPersistDocument?.(nextDoc)
+    }
   }
 
   const handleQuickEditSave = (value: string) => {
@@ -400,6 +461,47 @@ export default function SopDocumentInlinePreviewEditor({
       sectionId,
       categoryId,
       itemId: result.itemId,
+      field: 'title',
+    })
+  }
+
+  const handleConvertCategoryToRow = (sectionId: string, categoryId: string) => {
+    const result = convertSopCategoryToRow(doc, sectionId, categoryId)
+    if (!result) return
+    onChange(result.doc)
+    if (
+      quickEdit?.scope === 'category' &&
+      quickEdit.categoryId === categoryId
+    ) {
+      setQuickEdit(null)
+    }
+    setQuickEdit({
+      scope: 'checklist',
+      sectionId,
+      categoryId: result.hostCategoryId,
+      itemId: result.rowId,
+      field: 'title',
+    })
+  }
+
+  const handleConvertRowToCategory = (
+    sectionId: string,
+    categoryId: string,
+    itemId: string
+  ) => {
+    const result = convertSopRowToCategory(doc, sectionId, categoryId, itemId)
+    if (!result) return
+    onChange(result.doc)
+    if (
+      quickEdit?.scope === 'checklist' &&
+      quickEdit.itemId === itemId
+    ) {
+      setQuickEdit(null)
+    }
+    setQuickEdit({
+      scope: 'category',
+      sectionId,
+      categoryId: result.newCategoryId,
       field: 'title',
     })
   }
@@ -494,6 +596,7 @@ export default function SopDocumentInlinePreviewEditor({
         onAddChecklistItem: handleAddChecklistItem,
         onEditChecklistItem: openChecklistEdit,
         onEditChecklistManual: openChecklistManualEdit,
+        onEditCategoryManual: openCategoryManualEdit,
         onChangeRowDisplay: handleChangeRowDisplay,
         onManageAttachments: (sectionId: string, categoryId: string, itemId: string) =>
           setAttachmentTarget({ sectionId, categoryId, itemId }),
@@ -516,6 +619,8 @@ export default function SopDocumentInlinePreviewEditor({
           const next = moveSopCategory(doc, sectionId, categoryId, direction)
           if (next) onChange(next)
         },
+        onConvertCategoryToRow: handleConvertCategoryToRow,
+        onConvertRowToCategory: handleConvertRowToCategory,
       }
     : {}
 
@@ -526,6 +631,7 @@ export default function SopDocumentInlinePreviewEditor({
         viewLang={viewLang}
         uiLocaleEn={isEn}
         resizableToc={resizableToc}
+        enableSearch
         {...(tocWidthStorageKey ? { tocWidthStorageKey } : {})}
         {...previewCallbacks}
       />
@@ -553,6 +659,9 @@ export default function SopDocumentInlinePreviewEditor({
           {...(manualEditContext.description ? { description: manualEditContext.description } : {})}
           value={manualEditContext.value}
           status={manualEditContext.status}
+          linkedHubArticleId={manualEditContext.linkedHubArticleId}
+          hubArticles={hubArticles}
+          viewLang={editLang}
           uiLocaleEn={isEn}
           langLabel={manualEditContext.langLabel}
           startInViewMode
@@ -573,7 +682,7 @@ export default function SopDocumentInlinePreviewEditor({
       ) : null}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent stackLevel="nested">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {deleteTarget?.scope === 'section'
