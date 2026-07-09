@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Search, Users, Calendar, Heart, Loader2, ChevronDown, ChevronUp, Grid3x3, List, MapPin } from 'lucide-react'
 import { 
   MdDirectionsCar,      // 밴
@@ -17,8 +17,16 @@ import { useSearchParams } from 'next/navigation'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { getProductSummaryByLocale, formatProductDepartureLine } from '@/lib/productDetailDisplay'
+import {
+  getPreviewDepartureLine,
+  getPreviewListingPrice,
+  getPreviewProductDisplayName,
+  getPreviewProductSummary,
+} from '@/lib/customerPageDisplayFromBindings'
+import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
 import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
+import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 
 interface Product {
   id: string
@@ -59,6 +67,7 @@ export default function ProductsPage() {
   const locale = useLocale()
   const searchParams = useSearchParams()
   const t = useTranslations('common')
+  const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
   
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,10 +92,12 @@ export default function ProductsPage() {
   }, [searchParams])
 
   // 제품 데이터 로드
-  useEffect(() => {
-    const fetchProducts = async () => {
+  const fetchProducts = useCallback(
+    async (options?: { silent?: boolean }) => {
       try {
-        setLoading(true)
+        if (!options?.silent) {
+          setLoading(true)
+        }
         setError(null)
 
         const isPreview = searchParams.get('preview') === '1'
@@ -144,12 +155,19 @@ export default function ProductsPage() {
         console.error('Error fetching products:', err)
         setError(t('errorLoadingProducts'))
       } finally {
-        setLoading(false)
+        if (!options?.silent) {
+          setLoading(false)
+        }
       }
-    }
+    },
+    [searchParams, t]
+  )
 
-    fetchProducts()
-  }, [searchParams, t])
+  useEffect(() => {
+    void fetchProducts()
+  }, [fetchProducts])
+
+  useCustomerPageSoftReload(() => fetchProducts({ silent: true }))
 
   useEffect(() => {
     const allTags = products.flatMap((p) => p.tags ?? [])
@@ -199,10 +217,38 @@ export default function ProductsPage() {
   }
 
   const getCustomerDisplayName = (product: Product) => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewProductDisplayName('listing-card-name', product as unknown as Record<string, unknown>, locale)
+    }
     if (locale === 'en' && product.customer_name_en) {
       return product.customer_name_en
     }
     return product.customer_name_ko || product.name_ko || product.name
+  }
+
+  const getListProductSummary = (product: Product) => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewProductSummary('listing-card-description', product as unknown as Record<string, unknown>, locale)
+    }
+    return getProductSummaryByLocale(product, locale)
+  }
+
+  const getListDepartureLine = (product: Product) => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewDepartureLine('listing-card-location', product as unknown as Record<string, unknown>, locale)
+    }
+    return formatProductDepartureLine(product, locale)
+  }
+
+  const getListPrice = (product: Product) => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewListingPrice('listing-card-price', product as unknown as Record<string, unknown>, product.base_price) ?? product.base_price
+    }
+    return product.base_price
   }
 
   // 운송수단 데이터 유효성 검사 헬퍼 함수
@@ -433,15 +479,6 @@ export default function ProductsPage() {
 
   // 상품 카드 렌더링 함수
   const renderProductCard = (product: Product, index: number) => {
-    const previewProductId = searchParams.get('productId')
-    const isPreview = searchParams.get('preview') === '1'
-    const isEditMode = searchParams.get('editMode') === '1'
-    const isPreviewTarget =
-      isPreview &&
-      (isEditMode && !previewProductId
-        ? true
-        : !previewProductId || previewProductId === product.id)
-
     const ListZone = ({
       zone,
       className = '',
@@ -450,22 +487,20 @@ export default function ProductsPage() {
       zone: string
       className?: string
       children: React.ReactNode
-    }) =>
-      isPreviewTarget ? (
-        <CustomerPageZone zone={zone} className={className}>
-          {children}
-        </CustomerPageZone>
-      ) : (
-        <div className={className}>{children}</div>
-      )
+    }) => (
+      <CustomerPageZone zone={zone} productId={product.id} className={className}>
+        {children}
+      </CustomerPageZone>
+    )
 
     return (
     <ListZone
       key={product.id}
       zone="listing-card"
-      className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
+      className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
     >
       {/* 상품 이미지 */}
+      <ListZone zone="listing-card-image">
       <div className="relative h-48 bg-gray-200">
         {product.primary_image && !imageErrors.has(product.id) ? (
           <Image
@@ -541,13 +576,14 @@ export default function ProductsPage() {
           })()}
         </div>
       </div>
+      </ListZone>
 
       {/* 상품 정보 */}
       <div className="p-6">
         {/* 상품명 */}
         <ListZone zone="listing-card-name">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          <Link href={`/${locale}/products/${product.id}`} className="hover:text-blue-600">
+        <h3 className="text-lg font-semibold mb-2">
+          <Link href={`/${locale}/products/${product.id}`} className="cp-ui-link hover:underline">
             {getCustomerDisplayName(product)}
           </Link>
         </h3>
@@ -555,8 +591,8 @@ export default function ProductsPage() {
 
         {/* 설명 */}
         <ListZone zone="listing-card-description">
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {getProductSummaryByLocale(product, locale) || t('checkDetailsForMoreInfo')}
+        <p className="cp-ui-muted text-sm mb-4 line-clamp-2">
+          {getListProductSummary(product) || t('checkDetailsForMoreInfo')}
         </p>
         </ListZone>
 
@@ -602,11 +638,11 @@ export default function ProductsPage() {
         )}
 
         {/* 상품 세부 정보 */}
-        <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm text-gray-600">
-          {formatProductDepartureLine(product, locale) && (
+        <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm cp-ui-muted">
+          {getListDepartureLine(product) && (
             <div className="flex items-center">
-              <MapPin className="h-4 w-4 mr-2 text-blue-600 flex-shrink-0" />
-              <span className="truncate">{formatProductDepartureLine(product, locale)}</span>
+              <MapPin className="h-4 w-4 mr-2 cp-ui-icon flex-shrink-0" />
+              <span className="truncate">{getListDepartureLine(product)}</span>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -629,10 +665,10 @@ export default function ProductsPage() {
         <ListZone zone="listing-card-price">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-lg font-bold text-gray-900">
-              ${product.base_price} {t('startingFrom')}
+            <div className="text-lg font-bold cp-ui-price">
+              ${getListPrice(product)} {t('startingFrom')}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm cp-ui-muted">
               {t('perAdult')}
             </div>
           </div>
@@ -643,7 +679,7 @@ export default function ProductsPage() {
         <div className="mt-4">
           <Link
             href={`/${locale}/products/${product.id}`}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block"
+            className="cp-ui-btn-primary w-full py-2 px-4 rounded-lg transition-colors text-center block"
           >
             {t('viewDetails')}
           </Link>

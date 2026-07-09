@@ -72,7 +72,7 @@ export default function ProductDetailImageGallery({
   }
 
   return (
-    <CustomerPageZone zone="detail-gallery" className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+    <CustomerPageZone zone="detail-gallery" className="rounded-2xl cp-ui-panel-surface shadow-sm">
       <div className="overflow-hidden rounded-2xl">
       {allImages.length > 0 ? (
         <>

@@ -93,9 +93,9 @@ export default function ProductDetailTabPanel({
   ]
 
   return (
-    <CustomerPageZone zone="detail-tabs" className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+    <CustomerPageZone zone="detail-tabs" className="rounded-2xl cp-ui-panel-surface shadow-sm">
       <div className="overflow-hidden rounded-2xl">
-      <div className="border-b border-slate-100 bg-slate-50/50">
+      <div className="border-b cp-ui-panel-surface">
         <nav className="-mb-px flex overflow-x-auto px-4 scrollbar-hide sm:px-6" aria-label="Product detail tabs">
           <div className="flex min-w-max gap-1 sm:gap-2">
             {tabs.map((tab) => (
@@ -105,10 +105,10 @@ export default function ProductDetailTabPanel({
                 onClick={() => setActiveTab(tab.id)}
                 aria-selected={activeTab === tab.id}
                 role="tab"
-                className={`mobile-button touch-optimized flex-shrink-0 whitespace-nowrap rounded-t-xl px-4 py-3.5 text-sm font-semibold transition-all sm:px-5 sm:py-4 sm:text-base ${
+                className={`mobile-button touch-optimized flex-shrink-0 whitespace-nowrap rounded-t-xl border-b-2 px-4 py-3.5 text-sm font-semibold transition-all sm:px-5 sm:py-4 sm:text-base ${
                   activeTab === tab.id
-                    ? 'border-b-2 border-[#0B5FFF] bg-white text-[#0B5FFF] shadow-sm'
-                    : 'border-b-2 border-transparent text-slate-500 hover:bg-white/60 hover:text-slate-800'
+                    ? 'cp-ui-tab-active shadow-sm'
+                    : 'cp-ui-tab-inactive border-transparent'
                 }`}
               >
                 {tab.label}

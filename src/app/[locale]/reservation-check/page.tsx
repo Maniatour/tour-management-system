@@ -212,26 +212,26 @@ function ReservationCheckPageInner() {
   return (
     <div className="min-h-screen bg-gray-50">
       <CustomerPagePreviewHighlightEffect />
-      <CustomerPageZone zone="reservation-check-header" className="bg-white shadow-sm border-b">
+      <CustomerPageZone zone="reservation-check-header" className="shadow-sm border-b cp-ui-panel-surface">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4">
-            <Link href={`/${locale}`} className="text-gray-500 hover:text-gray-700">
+            <Link href={`/${locale}`} className="cp-ui-muted hover:opacity-80">
               <ArrowLeft size={24} />
             </Link>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-              <p className="text-gray-600">{t('subtitle')}</p>
+              <h1 className="text-2xl font-bold">{t('title')}</h1>
+              <p className="cp-ui-muted">{t('subtitle')}</p>
             </div>
           </div>
         </div>
       </CustomerPageZone>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <CustomerPageZone zone="reservation-check-form" className="bg-white rounded-lg shadow-sm border p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('formTitle')}</h2>
+        <CustomerPageZone zone="reservation-check-form" className="cp-ui-panel-surface rounded-lg shadow-sm p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">{t('formTitle')}</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium cp-ui-muted mb-1">
                 {t('reservationIdLabel')}
               </label>
               <input
@@ -243,7 +243,7 @@ function ReservationCheckPageInner() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('emailLabel')}</label>
+              <label className="block text-sm font-medium cp-ui-muted mb-1">{t('emailLabel')}</label>
               <input
                 type="email"
                 value={customerEmail}
@@ -255,7 +255,7 @@ function ReservationCheckPageInner() {
             <button
               onClick={handleSearch}
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center disabled:opacity-50"
+              className="cp-ui-btn-primary w-full py-3 px-4 rounded-lg transition-colors font-medium flex items-center justify-center disabled:opacity-50"
             >
               {loading ? (
                 <>

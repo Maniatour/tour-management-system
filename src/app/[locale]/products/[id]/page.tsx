@@ -30,8 +30,14 @@ import {
   getProductCategoryLabel,
   getProductCustomerDisplayName,
 } from '@/lib/productDetailDisplay'
+import {
+  getPreviewDetailFieldHtml,
+  getPreviewProductDisplayName,
+} from '@/lib/customerPageDisplayFromBindings'
+import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
 import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
+import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 
 function ProductDetailPageInner() {
@@ -40,6 +46,7 @@ function ProductDetailPageInner() {
   const productId = params.id as string
   const locale = useLocale()
   const isEnglish = locale === 'en'
+  const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -72,17 +79,16 @@ function ProductDetailPageInner() {
     [productDetails?.customer_page_visibility]
   )
 
-  useEffect(() => {
-    if (!productId) return
+  const loadProductData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!productId) return
 
-    let cancelled = false
-
-    const loadProductData = async () => {
-      setLoading(true)
+      if (!options?.silent) {
+        setLoading(true)
+      }
       setError(null)
 
       const data = await fetchProductPageData(productId, locale, isEnglish)
-      if (cancelled) return
 
       setProduct(data.product)
       setProductDetails(data.productDetails)
@@ -91,15 +97,27 @@ function ProductDetailPageInner() {
       setProductMedia(data.productMedia)
       setTourCoursePhotos(data.tourCoursePhotos)
       setError(data.error)
-      setLoading(false)
-    }
+      if (!options?.silent) {
+        setLoading(false)
+      }
+    },
+    [productId, locale, isEnglish]
+  )
 
-    loadProductData()
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      await loadProductData()
+      if (cancelled) return
+    })()
 
     return () => {
       cancelled = true
     }
-  }, [productId, locale, isEnglish])
+  }, [loadProductData])
+
+  useCustomerPageSoftReload(() => loadProductData({ silent: true }))
 
   useEffect(() => {
     if (!product?.tags?.length) {
@@ -124,7 +142,13 @@ function ProductDetailPageInner() {
     return <ProductDetailErrorState error={error} />
   }
 
-  const displayName = getProductCustomerDisplayName(product, locale)
+  const displayName = (() => {
+    void bindingRevision
+    if (bindingsActive && product) {
+      return getPreviewProductDisplayName('detail-header', product, locale)
+    }
+    return getProductCustomerDisplayName(product, locale)
+  })()
   const categoryLabel = getProductCategoryLabel(product.category || '', isEnglish)
   const durationLabel = formatProductDuration(product.duration, isEnglish)
   const primaryTag = product.tags?.[0]
@@ -139,6 +163,38 @@ function ProductDetailPageInner() {
   ]
   const showSlogans = Boolean(productDetails?.slogan1 && showDetailOnCustomerPage('slogan1'))
 
+  const includedHtml = (() => {
+    void bindingRevision
+    if (bindingsActive) {
+      return (
+        getPreviewDetailFieldHtml(
+          'detail-sidebar-included',
+          'included',
+          product as Record<string, unknown>,
+          productDetails as Record<string, unknown> | null,
+          productDetails?.included ?? null
+        ) || null
+      )
+    }
+    return productDetails?.included ?? null
+  })()
+
+  const notIncludedHtml = (() => {
+    void bindingRevision
+    if (bindingsActive) {
+      return (
+        getPreviewDetailFieldHtml(
+          'detail-sidebar-included',
+          'not_included',
+          product as Record<string, unknown>,
+          productDetails as Record<string, unknown> | null,
+          productDetails?.not_included ?? null
+        ) || null
+      )
+    }
+    return productDetails?.not_included ?? null
+  })()
+
   const bookingPanelProps = {
     basePrice: product.base_price,
     maxParticipants: product.max_participants,
@@ -147,10 +203,10 @@ function ProductDetailPageInner() {
     totalPrice,
     groupedChoices,
     selectedOptions,
-    includedHtml: productDetails?.included ?? null,
-    notIncludedHtml: productDetails?.not_included ?? null,
-    showIncluded: Boolean(productDetails?.included && showDetailOnCustomerPage('included')),
-    showNotIncluded: Boolean(productDetails?.not_included && showDetailOnCustomerPage('not_included')),
+    includedHtml,
+    notIncludedHtml,
+    showIncluded: Boolean(includedHtml && showDetailOnCustomerPage('included')),
+    showNotIncluded: Boolean(notIncludedHtml && showDetailOnCustomerPage('not_included')),
     isEnglish,
     onOptionChange: handleOptionChange,
     onCompareOptions: openChoiceDescriptionModal,

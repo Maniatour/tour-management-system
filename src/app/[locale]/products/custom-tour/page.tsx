@@ -766,10 +766,10 @@ function CustomTourPageInner() {
       <CustomerPagePreviewHighlightEffect />
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
         <CustomerPageZone zone="custom-tour-header" className="mb-4 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">
             {t('title')}
           </h1>
-          <p className="text-sm sm:text-base text-gray-600">
+          <p className="text-sm sm:text-base cp-ui-muted">
             {t('subtitle')}
           </p>
         </CustomerPageZone>
@@ -779,7 +779,7 @@ function CustomTourPageInner() {
           {/* 왼쪽: 코스 선택 및 일정 */}
           <div className="lg:col-span-2 space-y-6">
             {/* 1. 관광지 선택 */}
-            <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
               <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
                 {t('selectDestinations')}
@@ -988,7 +988,7 @@ function CustomTourPageInner() {
                       result.push(
                         <div 
                           key={course.id} 
-                          className={`bg-white border rounded-lg p-3 sm:p-4 cursor-pointer transition-all hover:shadow-md ${
+                          className={`cp-ui-panel-surface border rounded-lg p-3 sm:p-4 cursor-pointer transition-all hover:shadow-md ${
                             isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
                           }`}
                           onClick={() => {
@@ -1136,7 +1136,7 @@ function CustomTourPageInner() {
 
             {/* 2. 일정 구성 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
                   {t('tourSchedule')}
                 </h2>
@@ -1235,7 +1235,7 @@ function CustomTourPageInner() {
 
             {/* 3. 경로 및 마일리지 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
                   {t('routeAndMileage')}
                 </h2>
@@ -1256,7 +1256,7 @@ function CustomTourPageInner() {
                   <button
                     onClick={calculateRoute}
                     disabled={selectedCoursesOrder.length < 2 || isCalculatingRoute}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 cp-ui-btn-primary rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
                   >
                     {isCalculatingRoute ? (
                       <>
@@ -1303,7 +1303,7 @@ function CustomTourPageInner() {
 
             {/* 투어 코스 설명 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                   <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
                   {t('tourCourseDescription')}
@@ -1393,7 +1393,7 @@ function CustomTourPageInner() {
                       }
 
                       return (
-                        <div key={course.id} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4">
+                        <div key={course.id} className="cp-ui-panel-surface border rounded-lg p-3 sm:p-4">
                           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-start">
                             {fullPhotoUrl && (
                               <div className="flex-shrink-0 w-full sm:w-48">
@@ -1429,7 +1429,7 @@ function CustomTourPageInner() {
           {/* 오른쪽: 계산 결과 및 고객 정보 */}
           <div className="lg:col-span-1 space-y-4 sm:space-y-6 order-first lg:order-last">
             {/* 고객 정보 */}
-            <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <User className="w-4 h-4 sm:w-5 sm:h-5" />
                 {t('customerInfo')}
@@ -1489,7 +1489,7 @@ function CustomTourPageInner() {
             </div>
 
             {/* 투어 정보 */}
-            <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">
                 {t('tourDetails')}
               </h2>
@@ -1546,7 +1546,7 @@ function CustomTourPageInner() {
                     onClick={() => {
                       setOtherExpenses([...otherExpenses, { id: crypto.randomUUID(), name: '', amount: 0 }])
                     }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    className="flex items-center gap-1 px-2 py-1 text-xs cp-ui-btn-primary rounded transition-colors"
                   >
                     <Plus className="w-3 h-3" />
                     {t('add')}
@@ -1636,7 +1636,7 @@ function CustomTourPageInner() {
                     setShowEstimateModal(true)
                   }}
                   disabled={selectedCoursesOrder.length === 0 || !customerName || !customerEmail}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                  className="cp-ui-btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                 >
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                   <span>{t('requestEstimate')}</span>

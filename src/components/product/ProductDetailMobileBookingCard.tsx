@@ -25,7 +25,7 @@ type ProductDetailMobileBookingCardProps = {
 export default function ProductDetailMobileBookingCard(props: ProductDetailMobileBookingCardProps) {
   return (
     <CustomerPageZone zone="detail-mobile-booking" className="lg:hidden">
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+      <div className="rounded-2xl cp-ui-panel-surface p-5 shadow-sm sm:p-6">
         <ProductDetailBookingPanelContent {...props} variant="mobile" />
       </div>
     </CustomerPageZone>

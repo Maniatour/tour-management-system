@@ -1,5 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Geist } from "next/font/google";
+import {
+  Inter,
+  Geist,
+  Playfair_Display,
+  DM_Sans,
+  Poppins,
+  Plus_Jakarta_Sans,
+  Merriweather,
+  Lora,
+} from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
@@ -11,14 +20,63 @@ import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineS
 import RouteTransitionProgress from "@/components/RouteTransitionProgress";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-inter",
   display: "swap",
-  preload: true,
   fallback: ["system-ui", "arial"],
 });
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
+  display: "swap",
+});
+
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
+});
+
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-plus-jakarta",
+  display: "swap",
+});
+
+const merriweather = Merriweather({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-merriweather",
+  display: "swap",
+});
+
+const lora = Lora({
+  subsets: ["latin"],
+  variable: "--font-lora",
+  display: "swap",
+});
+
+const customerPageFontVariables = cn(
+  geist.variable,
+  inter.variable,
+  playfair.variable,
+  dmSans.variable,
+  poppins.variable,
+  plusJakarta.variable,
+  merriweather.variable,
+  lora.variable
+);
 
 export const metadata: Metadata = {
   applicationName: "MANIATOUR",
@@ -45,7 +103,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={cn("font-sans", geist.variable)}>
+    <html lang="ko" className={cn("font-sans", customerPageFontVariables)}>
       <body className={inter.className}>
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />

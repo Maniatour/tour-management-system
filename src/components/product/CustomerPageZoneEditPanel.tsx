@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Loader2, Save, X } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import CustomerPageZoneAdminEmbed from '@/components/product/CustomerPageZoneAdminEmbed'
@@ -21,12 +21,45 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import {
   getZoneEditConfig,
+  resolveCustomerPageZone,
   BASIC_FIELD_LABELS,
   DETAIL_FIELD_LABELS,
   type BasicFieldKey,
   type DetailFieldKey,
   type ZoneEditConfig,
 } from '@/lib/customerPageZoneEditMap'
+import { confirmDiscardUnsavedChanges } from '@/lib/customerPageSoftReload'
+import { emitCustomerPageBindingsUpdate } from '@/lib/customerPageBindingsSync'
+import { persistCustomerPageZoneBindings } from '@/lib/customerPageBindingPersistence'
+import {
+  buildDetailSlotValuesFromRows,
+  buildSlotValuesFromRow,
+  loadZoneDetailFieldBindings,
+  loadZoneFieldBindings,
+  readDetailBoundValue,
+  resolveEditSlotsForBasicFields,
+  resolveEditSlotsForDetailFields,
+  saveZoneDetailFieldBindings,
+  saveZoneFieldBindings,
+  serializeDetailSlotEditState,
+  serializeSlotEditState,
+  slotValuesToDbUpdate,
+  detailSlotValuesToDbUpdates,
+  type BasicSlotValues,
+  type DetailBindingKey,
+  type DetailSlotValues,
+} from '@/lib/customerPageFieldBindings'
+import CustomerPageBasicFieldSlotsForm from '@/components/product/CustomerPageBasicFieldSlotsForm'
+import CustomerPageDetailFieldSlotsForm from '@/components/product/CustomerPageDetailFieldSlotsForm'
+import CustomerPageZoneUiStyleForm from '@/components/product/CustomerPageZoneUiStyleForm'
+import {
+  loadZoneUiStylePatch,
+  persistCustomerPageZoneUiStyle,
+} from '@/lib/customerPageUiStylePersistence'
+import {
+  toEditableZoneUiStylePatch,
+  type ZoneUiStylePatch,
+} from '@/lib/customerPageZoneUiStyle'
 
 type CustomerPageZoneEditPanelProps = {
   zone: CustomerPageZone
@@ -35,6 +68,7 @@ type CustomerPageZoneEditPanelProps = {
   onSaved: () => void
   onNavigateToTab: (tabId: string) => void
   onClose: () => void
+  onDirtyChange?: (dirty: boolean) => void
   variant?: 'sidebar' | 'modal'
 }
 
@@ -52,6 +86,8 @@ function dbColumnForBasicField(field: BasicFieldKey): string {
   const map: Record<BasicFieldKey, string> = {
     customerNameKo: 'customer_name_ko',
     customerNameEn: 'customer_name_en',
+    internalNameKo: 'name',
+    internalNameEn: 'name_en',
     summaryKo: 'summary_ko',
     summaryEn: 'summary_en',
     description: 'description',
@@ -171,6 +207,26 @@ function needsProductForEditing(config: ZoneEditConfig, pickedField: DetailField
   return config.requiresProduct === true
 }
 
+function serializeEditSnapshot(input: {
+  basicForm: BasicFormState
+  detailValues: Partial<Record<DetailFieldKey, string>>
+  visibility: Partial<Record<DetailFieldKey, boolean>>
+  translationForm: TranslationFormState
+  tagTranslations: TagTranslationState
+  pickedField: DetailFieldKey | null
+  uiStyleForm?: ZoneUiStylePatch
+}): string {
+  return JSON.stringify(input)
+}
+
+function supportsDirtyTracking(config: ZoneEditConfig | undefined, pickedField: DetailFieldKey | null): boolean {
+  if (!config) return false
+  if (config.supportsUiStyle) return true
+  if (config.editType === 'admin-tab' || config.editType === 'info') return false
+  if (config.editType === 'field-picker' && !pickedField) return false
+  return true
+}
+
 export default function CustomerPageZoneEditPanel({
   zone,
   productId,
@@ -178,10 +234,22 @@ export default function CustomerPageZoneEditPanel({
   onSaved,
   onNavigateToTab,
   onClose,
+  onDirtyChange,
   variant = 'sidebar',
 }: CustomerPageZoneEditPanelProps) {
-  const config = useMemo(() => getZoneEditConfig(zone), [zone])
-  const [loading, setLoading] = useState(() => needsAsyncLoad(getZoneEditConfig(zone), null, productId))
+  const resolvedZone = useMemo(() => resolveCustomerPageZone(zone), [zone])
+  const config = useMemo(() => getZoneEditConfig(resolvedZone), [resolvedZone])
+  const basicFieldSlots = useMemo(
+    () => (config?.basicFields ? resolveEditSlotsForBasicFields(config.basicFields) : []),
+    [config]
+  )
+  const useBasicFieldSlots = config?.editType === 'basic-fields' && basicFieldSlots.length > 0
+  const initialSnapshotRef = useRef<string | null>(null)
+  const productRowRef = useRef<Record<string, unknown> | null>(null)
+  const detailsRowRef = useRef<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(() =>
+    needsAsyncLoad(getZoneEditConfig(resolveCustomerPageZone(zone)), null, productId)
+  )
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [basicForm, setBasicForm] = useState<BasicFormState>({})
@@ -192,16 +260,117 @@ export default function CustomerPageZoneEditPanel({
   const [detailsRowId, setDetailsRowId] = useState<string | null>(null)
   const [tagTranslations, setTagTranslations] = useState<TagTranslationState>({})
   const [translationForm, setTranslationForm] = useState<TranslationFormState>({})
+  const [slotBindings, setSlotBindings] = useState<Record<string, BasicFieldKey>>({})
+  const [slotValues, setSlotValues] = useState<BasicSlotValues>({})
+  const [detailSlotBindings, setDetailSlotBindings] = useState<Record<string, DetailBindingKey>>({})
+  const [detailSlotValues, setDetailSlotValues] = useState<DetailSlotValues>({})
+  const [editTab, setEditTab] = useState<'content' | 'ui'>('content')
+  const [uiStyleForm, setUiStyleForm] = useState<ZoneUiStylePatch>({})
+
+  const showUiStyleTab = config?.supportsUiStyle === true
+  const showContentPanel = !showUiStyleTab || editTab === 'content'
 
   const fieldsToLoad = useMemo(
     () => resolveDetailFieldsToLoad(config, pickedField),
     [config, pickedField]
   )
+  const detailFieldSlots = useMemo(
+    () => resolveEditSlotsForDetailFields(fieldsToLoad),
+    [fieldsToLoad]
+  )
+  const useDetailFieldSlots =
+    (config?.editType === 'detail-fields' ||
+      (config?.editType === 'field-picker' && !!pickedField)) &&
+    detailFieldSlots.length > 0
 
   useEffect(() => {
     setPickedField(null)
     setMessage(null)
-  }, [zone])
+    setEditTab('content')
+    initialSnapshotRef.current = null
+    productRowRef.current = null
+    detailsRowRef.current = null
+    if (useBasicFieldSlots) {
+      const bindings = loadZoneFieldBindings(zone, basicFieldSlots)
+      setSlotBindings(bindings)
+      setSlotValues({})
+    }
+    if (useDetailFieldSlots || config?.editType === 'detail-fields' || config?.editType === 'field-picker') {
+      setDetailSlotBindings({})
+      setDetailSlotValues({})
+    }
+    if (config?.supportsUiStyle) {
+      setUiStyleForm(toEditableZoneUiStylePatch(resolvedZone, loadZoneUiStylePatch(resolvedZone)))
+    }
+    onDirtyChange?.(false)
+  }, [resolvedZone, zone, onDirtyChange, useBasicFieldSlots, basicFieldSlots, useDetailFieldSlots, config?.editType, config?.supportsUiStyle])
+
+  const captureSnapshot = () => {
+    if (useBasicFieldSlots) {
+      return serializeSlotEditState(slotBindings, slotValues)
+    }
+    if (useDetailFieldSlots) {
+      return serializeDetailSlotEditState(detailSlotBindings, detailSlotValues, visibility)
+    }
+    if (config?.editType === 'admin-tab' && showUiStyleTab) {
+      return JSON.stringify({ uiStyleForm })
+    }
+    return serializeEditSnapshot({
+      basicForm,
+      detailValues,
+      visibility,
+      translationForm,
+      tagTranslations,
+      pickedField,
+      ...(showUiStyleTab ? { uiStyleForm } : {}),
+    })
+  }
+
+  const markSnapshotSaved = () => {
+    initialSnapshotRef.current = captureSnapshot()
+    onDirtyChange?.(false)
+  }
+
+  useEffect(() => {
+    if (loading || !supportsDirtyTracking(config, pickedField)) {
+      onDirtyChange?.(false)
+      return
+    }
+    if (initialSnapshotRef.current === null) {
+      initialSnapshotRef.current = captureSnapshot()
+      onDirtyChange?.(false)
+      return
+    }
+    const dirty = captureSnapshot() !== initialSnapshotRef.current
+    onDirtyChange?.(dirty)
+  }, [
+    basicForm,
+    detailValues,
+    visibility,
+    translationForm,
+    tagTranslations,
+    pickedField,
+    slotBindings,
+    slotValues,
+    detailSlotBindings,
+    detailSlotValues,
+    uiStyleForm,
+    showUiStyleTab,
+    useBasicFieldSlots,
+    useDetailFieldSlots,
+    loading,
+    config,
+    onDirtyChange,
+  ])
+
+  const handleRequestClose = () => {
+    const dirty =
+      supportsDirtyTracking(config, pickedField) &&
+      initialSnapshotRef.current !== null &&
+      captureSnapshot() !== initialSnapshotRef.current
+    if (dirty && !confirmDiscardUnsavedChanges()) return
+    onClose()
+  }
 
   useEffect(() => {
     if (!config) {
@@ -261,7 +430,15 @@ export default function CustomerPageZoneEditPanel({
             .maybeSingle()
           if (error) throw error
           if (!cancelled && data) {
-            setBasicForm(productRowToBasicForm(data as Record<string, unknown>, config.basicFields))
+            const row = data as Record<string, unknown>
+            productRowRef.current = row
+            if (useBasicFieldSlots) {
+              const bindings = loadZoneFieldBindings(zone, basicFieldSlots)
+              setSlotBindings(bindings)
+              setSlotValues(buildSlotValuesFromRow(basicFieldSlots, bindings, row))
+            } else {
+              setBasicForm(productRowToBasicForm(row, config.basicFields))
+            }
           }
         }
 
@@ -284,19 +461,27 @@ export default function CustomerPageZoneEditPanel({
           (config.editType === 'detail-fields' || config.editType === 'field-picker') &&
           detailFieldsToLoad.length > 0
         ) {
-          const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-            .select('*')
-            .eq('product_id', productId)
-            .eq('language_code', locale)
-            .is('channel_id', null)
-            .eq('variant_key', 'default')
-            .maybeSingle()
+          const [{ data: productData, error: productError }, { data, error }] = await Promise.all([
+            supabase.from('products').select('*').eq('id', productId).maybeSingle(),
+            fromUntypedTable(supabase, 'product_details_multilingual')
+              .select('*')
+              .eq('product_id', productId)
+              .eq('language_code', locale)
+              .is('channel_id', null)
+              .eq('variant_key', 'default')
+              .maybeSingle(),
+          ])
 
+          if (productError) throw productError
           if (error) throw error
           if (cancelled) return
 
+          const productRow = (productData ?? {}) as Record<string, unknown>
+          productRowRef.current = productRow
+
           if (data) {
             const row = data as Record<string, unknown>
+            detailsRowRef.current = row
             setDetailsRowId(String(row.id ?? ''))
             const vals: Partial<Record<DetailFieldKey, string>> = {}
             for (const f of detailFieldsToLoad) {
@@ -320,11 +505,26 @@ export default function CustomerPageZoneEditPanel({
             } else {
               setFullVisibility({})
             }
+
+            const slots = resolveEditSlotsForDetailFields(detailFieldsToLoad)
+            const bindings = loadZoneDetailFieldBindings(zone, slots)
+            setDetailSlotBindings(bindings)
+            setDetailSlotValues(
+              buildDetailSlotValuesFromRows(slots, bindings, row, productRow)
+            )
           } else {
+            detailsRowRef.current = {}
             setDetailsRowId(null)
             const vals: Partial<Record<DetailFieldKey, string>> = {}
             for (const f of detailFieldsToLoad) vals[f] = ''
             setDetailValues(vals)
+
+            const slots = resolveEditSlotsForDetailFields(detailFieldsToLoad)
+            const bindings = loadZoneDetailFieldBindings(zone, slots)
+            setDetailSlotBindings(bindings)
+            setDetailSlotValues(
+              buildDetailSlotValuesFromRows(slots, bindings, {}, productRow)
+            )
           }
         }
       } catch (err) {
@@ -341,20 +541,95 @@ export default function CustomerPageZoneEditPanel({
     return () => {
       cancelled = true
     }
-  }, [config, productId, locale, pickedField, zone])
+  }, [config, productId, locale, pickedField, zone, useBasicFieldSlots, basicFieldSlots])
+
+  const handleDetailSlotBindingChange = (slotId: DetailFieldKey, binding: DetailBindingKey) => {
+    const nextBindings = { ...detailSlotBindings, [slotId]: binding }
+    setDetailSlotBindings(nextBindings)
+    saveZoneDetailFieldBindings(zone, nextBindings)
+    emitCustomerPageBindingsUpdate(zone)
+    void persistCustomerPageZoneBindings(zone, { detail: nextBindings }).catch((err) => {
+      console.error('Failed to persist detail field bindings:', err)
+    })
+    if (detailsRowRef.current && productRowRef.current) {
+      setDetailSlotValues((prev) => ({
+        ...prev,
+        [slotId]: readDetailBoundValue(
+          binding,
+          detailsRowRef.current!,
+          productRowRef.current!
+        ),
+      }))
+    }
+  }
+
+  const handleDetailSlotValueChange = (slotId: DetailFieldKey, value: string) => {
+    setDetailSlotValues((prev) => ({ ...prev, [slotId]: value }))
+  }
+
+  const handleSlotBindingChange = (slotId: string, field: BasicFieldKey) => {
+    const nextBindings = { ...slotBindings, [slotId]: field }
+    setSlotBindings(nextBindings)
+    saveZoneFieldBindings(zone, nextBindings)
+    emitCustomerPageBindingsUpdate(zone)
+    void persistCustomerPageZoneBindings(zone, { basic: nextBindings }).catch((err) => {
+      console.error('Failed to persist basic field bindings:', err)
+    })
+    if (productRowRef.current) {
+      setSlotValues((prev) => ({
+        ...prev,
+        ...buildSlotValuesFromRow(basicFieldSlots, nextBindings, productRowRef.current!),
+      }))
+    }
+  }
+
+  const handleSlotValueChange = (slotId: string, value: string | string[]) => {
+    setSlotValues((prev) => ({ ...prev, [slotId]: value }))
+  }
 
   const missingProduct = config ? needsProductForEditing(config, pickedField) && !productId : false
 
   const activeDetailFields = fieldsToLoad
 
-  const handleSaveTranslations = async () => {
-    if (!config?.translationNamespace || !config.translationFields?.length) return
+  const handleSaveUiStyle = async () => {
+    if (!showUiStyleTab) return
     setSaving(true)
     setMessage(null)
     try {
-      await saveCustomerPageTranslations(config.translationNamespace, translationForm)
-      await invalidateTranslationCache()
+      await persistCustomerPageZoneUiStyle(resolvedZone, uiStyleForm)
+      emitCustomerPageBindingsUpdate(resolvedZone)
       setMessage({ text: '저장되었습니다.', type: 'success' })
+      markSnapshotSaved()
+      onSaved()
+    } catch (err) {
+      setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const persistUiStyleIfSupported = async () => {
+    if (!showUiStyleTab) return
+    await persistCustomerPageZoneUiStyle(resolvedZone, uiStyleForm)
+    emitCustomerPageBindingsUpdate(resolvedZone)
+  }
+
+  const handleSaveTranslations = async () => {
+    if (!config?.translationNamespace || !config.translationFields?.length) {
+      if (!showUiStyleTab) return
+    }
+    setSaving(true)
+    setMessage(null)
+    try {
+      if (config?.translationNamespace && config.translationFields?.length) {
+        await saveCustomerPageTranslations(config.translationNamespace, translationForm)
+        await invalidateTranslationCache()
+      }
+      if (showUiStyleTab) {
+        await persistUiStyleIfSupported()
+      }
+      setMessage({ text: '저장되었습니다.', type: 'success' })
+      markSnapshotSaved()
       onSaved()
     } catch (err) {
       setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
@@ -364,19 +639,34 @@ export default function CustomerPageZoneEditPanel({
   }
 
   const handleSaveBasic = async () => {
-    if (!config?.basicFields?.length || !productId) return
+    if (!productId) return
+    if (useBasicFieldSlots) {
+      if (!basicFieldSlots.length) return
+    } else if (!config?.basicFields?.length) {
+      return
+    }
+
     setSaving(true)
     setMessage(null)
     try {
-      const update = basicFormToDbUpdate(basicForm, config.basicFields)
-      // 레거시 컬럼 동기화 (한국어 우선)
-      if (update.departure_city_ko != null) update.departure_city = update.departure_city_ko
-      if (update.arrival_city_ko != null) update.arrival_city = update.arrival_city_ko
-      if (update.departure_country_ko != null) update.departure_country = update.departure_country_ko
-      if (update.arrival_country_ko != null) update.arrival_country = update.arrival_country_ko
+      const update = useBasicFieldSlots
+        ? slotValuesToDbUpdate(basicFieldSlots, slotBindings, slotValues)
+        : basicFormToDbUpdate(basicForm, config!.basicFields!)
+      if (!useBasicFieldSlots) {
+        if (update.departure_city_ko != null) update.departure_city = update.departure_city_ko
+        if (update.arrival_city_ko != null) update.arrival_city = update.arrival_city_ko
+        if (update.departure_country_ko != null) update.departure_country = update.departure_country_ko
+        if (update.arrival_country_ko != null) update.arrival_country = update.arrival_country_ko
+      }
       const { error } = await supabase.from('products').update(update as never).eq('id', productId)
       if (error) throw error
+      if (productRowRef.current) {
+        productRowRef.current = { ...productRowRef.current, ...update }
+      }
+      await persistUiStyleIfSupported()
       setMessage({ text: '저장되었습니다.', type: 'success' })
+      markSnapshotSaved()
+      emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
       setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
@@ -393,6 +683,8 @@ export default function CustomerPageZoneEditPanel({
     try {
       await saveProductTagsWithTranslations(productId, tags, tagTranslations)
       setMessage({ text: '저장되었습니다.', type: 'success' })
+      markSnapshotSaved()
+      emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
       setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
@@ -407,6 +699,73 @@ export default function CustomerPageZoneEditPanel({
     setMessage(null)
 
     try {
+      if (useDetailFieldSlots) {
+        const { productUpdate, detailFieldUpdates } = detailSlotValuesToDbUpdates(
+          detailFieldSlots,
+          detailSlotBindings,
+          detailSlotValues
+        )
+
+        if (Object.keys(productUpdate).length > 0) {
+          const { error: productError } = await supabase
+            .from('products')
+            .update(productUpdate as never)
+            .eq('id', productId)
+          if (productError) throw productError
+          if (productRowRef.current) {
+            productRowRef.current = { ...productRowRef.current, ...productUpdate }
+          }
+        }
+
+        const patch: Record<string, unknown> = {
+          product_id: productId,
+          language_code: locale,
+          channel_id: null,
+          variant_key: 'default',
+        }
+
+        for (const [field, val] of Object.entries(detailFieldUpdates) as [
+          DetailFieldKey,
+          string,
+        ][]) {
+          patch[field] = toNullIfEmpty(val)
+        }
+
+        const visPatch: Record<string, boolean> = { ...fullVisibility }
+        for (const slot of detailFieldSlots) {
+          const bound = detailSlotBindings[slot.slotId] ?? slot.defaultOption
+          if (!bound.startsWith('product:')) {
+            if (visibility[slot.slotId] === false) visPatch[slot.slotId] = false
+            else delete visPatch[slot.slotId]
+          }
+        }
+        patch.customer_page_visibility = visPatch
+
+        if (Object.keys(detailFieldUpdates).length > 0 || Object.keys(visPatch).length > 0) {
+          if (detailsRowId) {
+            const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
+              .update({ ...patch, updated_at: new Date().toISOString() })
+              .eq('id', detailsRowId)
+            if (error) throw error
+          } else if (Object.keys(detailFieldUpdates).length > 0) {
+            const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
+              .insert(patch)
+              .select('id')
+              .single()
+            if (error) throw error
+            setDetailsRowId(String((data as { id: string }).id))
+          }
+          if (detailsRowRef.current) {
+            detailsRowRef.current = { ...detailsRowRef.current, ...patch }
+          }
+        }
+
+        setMessage({ text: '저장되었습니다.', type: 'success' })
+        markSnapshotSaved()
+        onSaved()
+        return
+      }
+
       const patch: Record<string, unknown> = {
         product_id: productId,
         language_code: locale,
@@ -439,7 +798,10 @@ export default function CustomerPageZoneEditPanel({
         setDetailsRowId(String((data as { id: string }).id))
       }
 
+      await persistUiStyleIfSupported()
       setMessage({ text: '저장되었습니다.', type: 'success' })
+      markSnapshotSaved()
+      emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
       setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
@@ -447,6 +809,17 @@ export default function CustomerPageZoneEditPanel({
       setSaving(false)
     }
   }
+
+  const showContentSaveFooter =
+    !missingProduct &&
+    editTab === 'content' &&
+    (config?.editType === 'basic-fields' ||
+      config?.editType === 'tags-bilingual' ||
+      config?.editType === 'translation-fields' ||
+      config?.editType === 'detail-fields' ||
+      (config?.editType === 'field-picker' && pickedField))
+
+  const showUiSaveFooter = showUiStyleTab && editTab === 'ui'
 
   if (!config) {
     return (
@@ -470,14 +843,42 @@ export default function CustomerPageZoneEditPanel({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-white/80 hover:text-gray-600"
             aria-label="닫기"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        {config.note && <p className="text-xs text-gray-600 mt-2">{config.note}</p>}
+        {config.note && editTab === 'content' && (
+          <p className="text-xs text-gray-600 mt-2">{config.note}</p>
+        )}
+        {showUiStyleTab && (
+          <div className="flex gap-1 mt-3 p-1 bg-white/70 rounded-lg border border-gray-200/80">
+            <button
+              type="button"
+              onClick={() => setEditTab('content')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                editTab === 'content'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              내용
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditTab('ui')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                editTab === 'ui'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              UI · 색상
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
@@ -488,13 +889,22 @@ export default function CustomerPageZoneEditPanel({
           </div>
         ) : (
           <>
-            {missingProduct && (
+            {missingProduct && editTab === 'content' && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 이 영역을 편집하려면 상단에서 <strong>상품을 선택</strong>하세요.
               </div>
             )}
 
-            {config.editType === 'translation-fields' && config.translationFields && (
+            {showUiStyleTab && editTab === 'ui' && (
+              <CustomerPageZoneUiStyleForm
+                zone={resolvedZone}
+                value={uiStyleForm}
+                onChange={setUiStyleForm}
+              />
+            )}
+
+            {showContentPanel && config.editType === 'translation-fields' &&
+              config.translationFields && (
               <CustomerPageTranslationEditor
                 fields={config.translationFields}
                 values={translationForm}
@@ -506,10 +916,10 @@ export default function CustomerPageZoneEditPanel({
               <InfoPanel config={config} />
             )}
 
-            {config.editType === 'admin-tab' && config.adminTab && (
+            {showContentPanel && config.editType === 'admin-tab' && config.adminTab && (
               <CustomerPageZoneAdminEmbed
                 config={config}
-                zone={zone}
+                zone={resolvedZone}
                 adminTab={config.adminTab}
                 productId={productId ?? null}
                 locale={locale}
@@ -518,7 +928,7 @@ export default function CustomerPageZoneEditPanel({
               />
             )}
 
-            {!missingProduct && config.editType === 'field-picker' && !pickedField && (
+            {showContentPanel && !missingProduct && config.editType === 'field-picker' && !pickedField && (
               <FieldPickerPanel
                 config={config}
                 onPick={(field) => {
@@ -537,7 +947,7 @@ export default function CustomerPageZoneEditPanel({
               </button>
             )}
 
-            {config.editType === 'tags-bilingual' && !missingProduct && (
+            {showContentPanel && config.editType === 'tags-bilingual' && !missingProduct && (
               <ProductTagsBilingualEditor
                 selectedTags={(basicForm.tags as string[]) ?? []}
                 onTagsChange={(tags) => setBasicForm((prev) => ({ ...prev, tags }))}
@@ -545,7 +955,21 @@ export default function CustomerPageZoneEditPanel({
               />
             )}
 
-            {!missingProduct && config.editType === 'basic-fields' && config.basicFields && (
+            {showContentPanel && !missingProduct && config.editType === 'basic-fields' && useBasicFieldSlots && (
+              <CustomerPageBasicFieldSlotsForm
+                slots={basicFieldSlots}
+                bindings={slotBindings}
+                values={slotValues}
+                onBindingChange={handleSlotBindingChange}
+                onValueChange={handleSlotValueChange}
+              />
+            )}
+
+            {showContentPanel &&
+              !missingProduct &&
+              config.editType === 'basic-fields' &&
+              !useBasicFieldSlots &&
+              config.basicFields && (
               <BasicFieldsForm
                 fields={config.basicFields}
                 form={basicForm}
@@ -553,10 +977,29 @@ export default function CustomerPageZoneEditPanel({
               />
             )}
 
-            {!missingProduct &&
+            {showContentPanel &&
+              !missingProduct &&
               (config.editType === 'detail-fields' ||
                 (config.editType === 'field-picker' && pickedField)) &&
-              activeDetailFields.length > 0 && (
+              activeDetailFields.length > 0 &&
+              useDetailFieldSlots && (
+                <CustomerPageDetailFieldSlotsForm
+                  slots={detailFieldSlots}
+                  bindings={detailSlotBindings}
+                  values={detailSlotValues}
+                  visibility={visibility}
+                  onBindingChange={handleDetailSlotBindingChange}
+                  onValueChange={handleDetailSlotValueChange}
+                  onVisibilityChange={setVisibility}
+                />
+              )}
+
+            {showContentPanel &&
+              !missingProduct &&
+              (config.editType === 'detail-fields' ||
+                (config.editType === 'field-picker' && pickedField)) &&
+              activeDetailFields.length > 0 &&
+              !useDetailFieldSlots && (
                 <DetailFieldsForm
                   fields={activeDetailFields}
                   values={detailValues}
@@ -581,17 +1024,14 @@ export default function CustomerPageZoneEditPanel({
       </div>
 
         {!missingProduct &&
-          (config.editType === 'basic-fields' ||
-            config.editType === 'tags-bilingual' ||
-            config.editType === 'translation-fields' ||
-        config.editType === 'detail-fields' ||
-        (config.editType === 'field-picker' && pickedField)) && (
+          (showContentSaveFooter || showUiSaveFooter) && (
         <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 shrink-0">
           <button
             type="button"
             disabled={saving || loading}
             onClick={() => {
-              if (config.editType === 'tags-bilingual') void handleSaveTags()
+              if (showUiSaveFooter) void handleSaveUiStyle()
+              else if (config.editType === 'tags-bilingual') void handleSaveTags()
               else if (config.editType === 'basic-fields') void handleSaveBasic()
               else if (config.editType === 'translation-fields') void handleSaveTranslations()
               else void handleSaveDetails()

@@ -11,6 +11,9 @@ import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider';
+import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider';
+import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell';
+import CustomerPageEditModeQuickBar from '@/components/product/CustomerPageEditModeQuickBar';
 import { getLocaleLayoutMetadata } from '@/lib/channelFaviconMetadata';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -85,7 +88,9 @@ export default async function LocaleLayout({
         <LazyModalBackdropGuard />
         <CartProviderWrapper>
           <CustomerPageEditModeProvider>
-          <div className="min-h-screen bg-gray-50">
+          <CustomerPageFieldBindingsProvider>
+          <CustomerPageGlobalThemeShell className="min-h-screen">
+          <div className="min-h-screen">
             <LazyNavigation />
             <div className="flex flex-col lg:flex-row">
               <LazySidebar />
@@ -96,6 +101,9 @@ export default async function LocaleLayout({
             <LazyUserFooter locale={locale} />
             <LazyFloatingChatContainer />
           </div>
+          <CustomerPageEditModeQuickBar />
+          </CustomerPageGlobalThemeShell>
+          </CustomerPageFieldBindingsProvider>
           </CustomerPageEditModeProvider>
         </CartProviderWrapper>
       </FloatingChatProvider>

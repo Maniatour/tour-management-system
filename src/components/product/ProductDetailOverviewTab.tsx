@@ -13,6 +13,11 @@ import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ProductDetailSectionCard from '@/components/product/ui/ProductDetailSectionCard'
 
 import { getProductOverviewDescription } from '@/lib/productDetailDisplay'
+import {
+  getPreviewDetailFieldHtml,
+  getPreviewOverviewDescription,
+} from '@/lib/customerPageDisplayFromBindings'
+import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
 
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 
@@ -101,12 +106,43 @@ export default function ProductDetailOverviewTab({
 }: ProductDetailOverviewTabProps) {
 
   const t = useTranslations('productDetail')
-
-
+  const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
 
   const tags = productDetails?.tags || product.tags || []
 
+  const greetingHtml = (() => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewDetailFieldHtml(
+        'detail-overview-greeting',
+        'greeting',
+        product as Record<string, unknown>,
+        productDetails as Record<string, unknown> | null,
+        productDetails?.greeting ?? null
+      )
+    }
+    return productDetails?.greeting ?? ''
+  })()
 
+  const overviewDescription = (() => {
+    void bindingRevision
+    if (bindingsActive) {
+      return getPreviewOverviewDescription(
+        'detail-overview-description',
+        product,
+        productDetails?.description,
+        productDetails as Record<string, unknown> | null,
+        locale,
+        displayName
+      )
+    }
+    return getProductOverviewDescription(
+      product,
+      productDetails?.description,
+      locale,
+      displayName
+    )
+  })()
 
   return (
 
@@ -152,7 +188,7 @@ export default function ProductDetailOverviewTab({
 
 
 
-      {productDetails?.greeting && showDetail('greeting') && (
+      {greetingHtml && showDetail('greeting') && (
 
         <CustomerPageZone zone="detail-overview-greeting">
 
@@ -174,7 +210,7 @@ export default function ProductDetailOverviewTab({
 
               className="prose prose-sm max-w-none leading-relaxed text-slate-700 sm:prose-base"
 
-              dangerouslySetInnerHTML={{ __html: markdownToHtml(productDetails.greeting || '') }}
+              dangerouslySetInnerHTML={{ __html: markdownToHtml(greetingHtml) }}
 
             />
 
@@ -198,21 +234,7 @@ export default function ProductDetailOverviewTab({
 
               dangerouslySetInnerHTML={{
 
-                __html: markdownToHtml(
-
-                  getProductOverviewDescription(
-
-                    product,
-
-                    productDetails?.description,
-
-                    locale,
-
-                    displayName
-
-                  )
-
-                ),
+                __html: markdownToHtml(overviewDescription),
 
               }}
 

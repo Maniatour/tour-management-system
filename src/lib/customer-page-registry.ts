@@ -29,34 +29,68 @@ export const CUSTOMER_PAGE_REGISTRY: readonly CustomerPageDef[] = [
   { id: 'product-booking', label: '예약하기', icon: CalendarCheck, group: 'products', requiresProduct: true },
 ]
 
+/** iframe·고객 페이지 URL에서 상품 ID 추출 (경로 `/products/{id}` 또는 `?productId=`) */
+export function extractProductIdFromCustomerPageUrl(href: string): string | null {
+  try {
+    const url = new URL(href, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    const fromQuery = url.searchParams.get('productId')?.trim()
+    if (fromQuery) return fromQuery
+
+    const match = url.pathname.match(/\/products\/([^/?#]+)/)
+    return match?.[1]?.trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** 고객 페이지 URL → 워크bench pageId (상품 상세·예약하기) */
+export function inferCustomerPageIdFromUrl(href: string): CustomerPageId | null {
+  try {
+    const url = new URL(href, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    const pathMatch = url.pathname.match(/\/products\/([^/?#]+)/)
+    if (pathMatch?.[1]) {
+      return url.searchParams.get('openBooking') === '1' ? 'product-booking' : 'product-detail'
+    }
+    if (url.pathname.includes('/products/tags')) return 'products-tags'
+    if (url.pathname.includes('/products/custom-tour')) return 'custom-tour'
+    if (url.pathname.includes('/products')) return 'products-listing'
+    if (url.pathname.includes('/reservation-check')) return 'reservation-check'
+    if (url.pathname.match(/\/[^/]+\/?$/)) return 'home'
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function buildCustomerPageEditUrl(
   locale: string,
   pageId: CustomerPageId,
-  options?: { productId?: string | null }
+  options?: { productId?: string | null; previewLocale?: string | null }
 ): string {
   const params = new URLSearchParams({ preview: '1', editMode: '1' })
   const productId = options?.productId?.trim() || null
+  const previewLocale = options?.previewLocale?.trim() || locale
 
   switch (pageId) {
     case 'home':
-      return `/${locale}?${params.toString()}`
+      return `/${previewLocale}?${params.toString()}`
     case 'products-listing':
       if (productId) params.set('productId', productId)
-      return `/${locale}/products?${params.toString()}`
+      return `/${previewLocale}/products?${params.toString()}`
     case 'products-tags':
-      return `/${locale}/products/tags?${params.toString()}`
+      return `/${previewLocale}/products/tags?${params.toString()}`
     case 'custom-tour':
-      return `/${locale}/products/custom-tour?${params.toString()}`
+      return `/${previewLocale}/products/custom-tour?${params.toString()}`
     case 'reservation-check':
-      return `/${locale}/reservation-check?${params.toString()}`
+      return `/${previewLocale}/reservation-check?${params.toString()}`
     case 'product-booking':
-      if (!productId) return `/${locale}/products?${params.toString()}`
+      if (!productId) return `/${previewLocale}/products?${params.toString()}`
       params.set('openBooking', '1')
-      return `/${locale}/products/${productId}?${params.toString()}`
+      return `/${previewLocale}/products/${productId}?${params.toString()}`
     case 'product-detail':
     default:
-      if (!productId) return `/${locale}/products?${params.toString()}`
-      return `/${locale}/products/${productId}?${params.toString()}`
+      if (!productId) return `/${previewLocale}/products?${params.toString()}`
+      return `/${previewLocale}/products/${productId}?${params.toString()}`
   }
 }
 

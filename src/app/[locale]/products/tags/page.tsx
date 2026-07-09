@@ -313,10 +313,10 @@ function ProductTagsPageInner() {
   return (
     <div className="min-h-screen bg-gray-50">
       <CustomerPagePreviewHighlightEffect />
-      <CustomerPageZone zone="tags-page-header" className="bg-white shadow-sm border-b">
+      <CustomerPageZone zone="tags-page-header" className="shadow-sm border-b cp-ui-panel-surface">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-4xl font-bold text-gray-900 text-center">{t('tagsPageTitle')}</h1>
-          <p className="mt-4 text-xl text-gray-600 text-center">
+          <h1 className="text-4xl font-bold text-center">{t('tagsPageTitle')}</h1>
+          <p className="mt-4 text-xl cp-ui-muted text-center">
             {t('tagsPageSubtitle')}
           </p>
         </div>
@@ -340,8 +340,8 @@ function ProductTagsPageInner() {
         {/* 로딩 상태 */}
         {loading && (
           <div className="flex justify-center items-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">상품을 불러오는 중...</span>
+            <Loader2 className="h-8 w-8 animate-spin cp-ui-icon" />
+            <span className="ml-2 cp-ui-muted">상품을 불러오는 중...</span>
           </div>
         )}
 
@@ -351,7 +351,7 @@ function ProductTagsPageInner() {
             <div className="text-red-600 mb-4">{error}</div>
             <button 
               onClick={() => window.location.reload()} 
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              className="cp-ui-btn-primary px-4 py-2 rounded-lg transition-colors"
             >
               다시 시도
             </button>
@@ -362,7 +362,7 @@ function ProductTagsPageInner() {
         {!loading && !error && (
           <CustomerPageZone zone="tags-page-categories" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTagCategories.map((tagCategory) => (
-              <div key={tagCategory.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
+              <div key={tagCategory.id} className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
                 {/* 태그 헤더 */}
                 <div className={`bg-gradient-to-r ${tagCategory.color} p-6 text-white`}>
                   <div className="flex items-center space-x-3">
@@ -387,7 +387,7 @@ function ProductTagsPageInner() {
                         <Link
                           key={product.id}
                           href={`/${locale}/products/${product.id}`}
-                          className="block p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                          className="block p-3 border rounded-lg cp-ui-panel-surface hover:border-[var(--cp-ui-accent,#2563eb)] transition-colors"
                         >
                           <div className="flex items-center space-x-3">
                             {product.primary_image ? (
@@ -406,10 +406,10 @@ function ProductTagsPageInner() {
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-medium text-gray-900 truncate">
+                              <h4 className="text-sm font-medium truncate">
                                 {getCustomerDisplayName(product)}
                               </h4>
-                              <p className="text-xs text-gray-500">
+                              <p className="text-xs cp-ui-muted cp-ui-price">
                                 ${product.base_price}부터
                               </p>
                             </div>
@@ -420,7 +420,7 @@ function ProductTagsPageInner() {
                         <div className="text-center pt-2">
                           <Link
                             href={`/${locale}/products?tag=${tagCategory.id}`}
-                            className="text-sm text-blue-600 hover:text-blue-800"
+                            className="text-sm cp-ui-link hover:underline"
                           >
                             +{tagCategory.products.length - 3}개 더 보기
                           </Link>

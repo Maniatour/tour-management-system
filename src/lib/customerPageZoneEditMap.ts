@@ -24,6 +24,8 @@ export type DetailFieldKey =
 export type BasicFieldKey =
   | 'customerNameKo'
   | 'customerNameEn'
+  | 'internalNameKo'
+  | 'internalNameEn'
   | 'summaryKo'
   | 'summaryEn'
   | 'description'
@@ -75,6 +77,8 @@ export type ZoneEditConfig = {
   infoLines?: string[]
   /** basic-fields / detail-fields 저장 시 상품 ID 필요 */
   requiresProduct?: boolean
+  /** 홈 등 — zone UI(색상·간격) 편집 지원 */
+  supportsUiStyle?: boolean
 }
 
 const HOME_CATEGORY_LABEL_FIELDS: TranslationFieldDef[] = [
@@ -116,6 +120,8 @@ export const DETAIL_FIELD_LABELS: Record<DetailFieldKey, string> = {
 export const BASIC_FIELD_LABELS: Record<BasicFieldKey, string> = {
   customerNameKo: '고객용 상품명 (한국어)',
   customerNameEn: '고객용 상품명 (English)',
+  internalNameKo: '내부 상품명 (한국어)',
+  internalNameEn: '내부 상품명 (English)',
   summaryKo: '요약 (한국어)',
   summaryEn: '요약 (English)',
   description: '상품 설명 (내부)',
@@ -166,23 +172,70 @@ export const ADMIN_TAB_LABELS: Record<string, string> = {
 }
 
 /** 고객 페이지 zone → 편집 설정 */
+const HOME_REVIEWS_TRANSLATION_FIELDS: TranslationFieldDef[] = [
+  { key: 'guestReviewsTitle', label: '섹션 제목' },
+  { key: 'guestReviewsDesc', label: '섹션 설명', multiline: true },
+  { key: 'reviewGuest1Name', label: '후기 1 — 이름' },
+  { key: 'reviewGuest1Country', label: '후기 1 — 국가' },
+  { key: 'reviewGuest1Quote', label: '후기 1 — 내용', multiline: true },
+  { key: 'reviewGuest2Name', label: '후기 2 — 이름' },
+  { key: 'reviewGuest2Country', label: '후기 2 — 국가' },
+  { key: 'reviewGuest2Quote', label: '후기 2 — 내용', multiline: true },
+  { key: 'reviewGuest3Name', label: '후기 3 — 이름' },
+  { key: 'reviewGuest3Country', label: '후기 3 — 국가' },
+  { key: 'reviewGuest3Quote', label: '후기 3 — 내용', multiline: true },
+]
+
+const HOME_FAQ_TRANSLATION_FIELDS: TranslationFieldDef[] = [
+  { key: 'faqTitle', label: '섹션 제목' },
+  { key: 'faqDesc', label: '섹션 설명', multiline: true },
+  { key: 'faqQ1', label: '질문 1' },
+  { key: 'faqA1', label: '답변 1', multiline: true },
+  { key: 'faqQ2', label: '질문 2' },
+  { key: 'faqA2', label: '답변 2', multiline: true },
+  { key: 'faqQ3', label: '질문 3' },
+  { key: 'faqA3', label: '답변 3', multiline: true },
+  { key: 'faqQ4', label: '질문 4' },
+  { key: 'faqA4', label: '답변 4', multiline: true },
+  { key: 'faqQ5', label: '질문 5' },
+  { key: 'faqA5', label: '답변 5', multiline: true },
+]
+
+const HOME_PARTNER_LOGO_FIELDS: TranslationFieldDef[] = [
+  { key: 'partnerLogo1', label: '로고 1' },
+  { key: 'partnerLogo2', label: '로고 2' },
+  { key: 'partnerLogo3', label: '로고 3' },
+  { key: 'partnerLogo4', label: '로고 4' },
+  { key: 'partnerLogo5', label: '로고 5' },
+  { key: 'partnerLogo6', label: '로고 6' },
+]
+
 export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfig> = {
   'listing-card': {
     label: '상품 카드',
     editType: 'admin-tab',
     adminTab: 'basic',
-    note: '카드 전체는 기본정보·미디어 등 여러 탭의 내용으로 구성됩니다.',
+    supportsUiStyle: true,
+    note: '카드 전체는 기본정보·미디어 등 여러 탭의 내용으로 구성됩니다. UI·색상 탭에서 카드 스타일을 조정할 수 있습니다.',
+  },
+  'listing-card-image': {
+    label: '카드 이미지',
+    editType: 'admin-tab',
+    adminTab: 'media',
+    note: '대표 이미지·갤러리는 미디어 탭에서 관리합니다.',
   },
   'listing-card-name': {
     label: '상품명·카테고리',
     editType: 'basic-fields',
     basicFields: ['customerNameKo', 'customerNameEn'],
     requiresProduct: true,
+    note: '각 입력칸에서 「연결 컬럼」으로 고객용·내부 상품명 중 무엇을 편집할지 선택할 수 있습니다.',
   },
   'listing-card-price': {
     label: '시작 가격',
     editType: 'basic-fields',
     basicFields: ['adultBasePrice', 'childBasePrice', 'infantBasePrice'],
+    requiresProduct: true,
   },
   'listing-card-tags': {
     label: '태그',
@@ -203,45 +256,53 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
       'arrivalCountryEn',
     ],
     requiresProduct: true,
+    note: '연결 컬럼에서 언어별·레거시(단일) 출발/도착 컬럼을 선택할 수 있습니다.',
   },
   'listing-card-description': {
     label: '짧은 설명',
     editType: 'basic-fields',
-    basicFields: ['summaryKo', 'summaryEn', 'description'],
+    basicFields: ['summaryKo', 'summaryEn'],
+    note: '연결 컬럼에서 요약(한·영) 또는 내부 description 컬럼을 선택할 수 있습니다.',
   },
   'detail-header': {
     label: '상단 헤더',
     editType: 'basic-fields',
+    supportsUiStyle: true,
     basicFields: ['customerNameKo', 'customerNameEn'],
-    note: '태그는 「태그」 영역 수정에서 한·영 표시명을 편집할 수 있습니다.',
+    note: '연결 컬럼에서 고객용·내부 상품명 중 편집할 필드를 선택할 수 있습니다. 태그는 「태그」 영역에서 편집합니다.',
   },
   'detail-gallery': {
     label: '이미지 갤러리',
     editType: 'admin-tab',
     adminTab: 'media',
+    supportsUiStyle: true,
     note: '이미지·동영상은 미디어 탭에서 관리합니다.',
   },
   'detail-highlights': {
     label: '투어 하이라이트',
     editType: 'field-picker',
+    supportsUiStyle: true,
     detailFields: ['slogan1', 'slogan2', 'slogan3', 'description'],
-    note: '슬로건·설명은 상세정보, 태그 표시명은 태그 영역에서 편집합니다.',
+    note: '항목 선택 후 연결 컬럼으로 상세정보·products 요약/설명 필드를 바꿀 수 있습니다.',
   },
   'detail-mobile-booking': {
     label: '모바일 예약 카드',
     editType: 'admin-tab',
     adminTab: 'choices',
+    supportsUiStyle: true,
     note: '가격·옵션·포함 사항은 예약 패널 영역별 수정을 이용하세요.',
   },
   'detail-faq-section': {
     label: 'FAQ 섹션',
     editType: 'admin-tab',
     adminTab: 'faq',
+    supportsUiStyle: true,
   },
   'detail-tabs': {
     label: '상세 탭',
     editType: 'admin-tab',
     adminTab: 'details',
+    supportsUiStyle: true,
     note: '각 탭 내용은 상세정보·일정·FAQ 등 해당 탭에서 편집합니다.',
   },
   'detail-tab-overview': {
@@ -273,17 +334,19 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     label: '슬로건',
     editType: 'detail-fields',
     detailFields: ['slogan1', 'slogan2', 'slogan3'],
+    note: '슬로건은 상세정보 테이블 컬럼에 저장됩니다.',
   },
   'detail-overview-greeting': {
     label: '인사말',
     editType: 'detail-fields',
     detailFields: ['greeting'],
+    note: '연결 컬럼에서 상세정보 인사말 또는 products 요약 필드를 선택할 수 있습니다.',
   },
   'detail-overview-description': {
     label: '상품 설명',
     editType: 'detail-fields',
     detailFields: ['description'],
-    note: '상세정보 탭의 「상품 설명」이 있으면 개요 탭에서 우선 표시됩니다.',
+    note: '연결 컬럼에서 상세정보 설명·products.description·요약(한·영) 중 편집할 필드를 선택할 수 있습니다.',
   },
   'detail-overview-keyinfo': {
     label: '핵심 정보',
@@ -303,7 +366,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
       'languages',
       'transportationMethods',
     ],
-    note: '출발·도착은 언어별로 입력하면 고객 페이지 언어 전환 시 해당 값이 표시됩니다.',
+    note: '출발·도착은 연결 컬럼에서 언어별·레거시 컬럼을 선택할 수 있습니다.',
   },
   'detail-overview-tags': {
     label: '태그',
@@ -318,6 +381,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'detail-sidebar': {
     label: '예약 패널',
     editType: 'basic-fields',
+    supportsUiStyle: true,
     basicFields: ['adultAge', 'childAgeMin', 'childAgeMax', 'infantAge', 'duration', 'maxParticipants', 'groupSize'],
     note: '가격·옵션은 아래 영역별 수정 버튼을 이용하세요.',
   },
@@ -337,6 +401,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     label: '포함·불포함 요약',
     editType: 'detail-fields',
     detailFields: ['included', 'not_included'],
+    note: '연결 컬럼에서 상세정보 포함/불포함 또는 products.description을 선택할 수 있습니다.',
   },
   'booking-participants': {
     label: '인원 선택',
@@ -351,6 +416,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'home-hero': {
     label: '히어로 배너',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'unforgettable', label: '메인 타이틀 (1줄)', multiline: true },
@@ -364,6 +430,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'home-categories': {
     label: '카테고리 그리드',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'findToursByCategory', label: '섹션 제목' },
@@ -376,6 +443,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'home-stats': {
     label: '통계 수치',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'satisfiedCustomers', label: '만족 고객 라벨' },
@@ -388,17 +456,19 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'home-popular': {
     label: '추천 투어',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'popularTours', label: '섹션 제목' },
       { key: 'popularToursDesc', label: '섹션 설명', multiline: true },
       { key: 'viewAllTours', label: '전체 투어 보기 버튼' },
     ],
-    note: '표시할 상품·순서는 상품 관리에서 즐겨찾기·favorite_order로 설정합니다.',
+    note: '섹션 제목·버튼은 여기서, 각 카드의 상품명·설명·출발지·가격·이미지는 카드 안 「수정」 버튼으로 편집합니다. 표시 상품·순서는 상품 관리 즐겨찾기·favorite_order로 설정합니다.',
   },
   'home-features': {
     label: '서비스 특징',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'whyChooseUs', label: '섹션 제목' },
@@ -416,6 +486,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'home-cta': {
     label: '하단 CTA',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'startYourJourney', label: '섹션 제목' },
@@ -424,9 +495,95 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
       { key: 'contact', label: '문의하기 버튼' },
     ],
   },
+  'home-reviews': {
+    label: '고객 후기',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: HOME_REVIEWS_TRANSLATION_FIELDS,
+    note: '동일 유형 섹션을 여러 개 추가해도 문구는 공유됩니다. 항목 수는 섹션 설정에서 조절하세요.',
+  },
+  'home-faq': {
+    label: 'FAQ',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: HOME_FAQ_TRANSLATION_FIELDS,
+    note: '질문·답변은 최대 5쌍까지 편집할 수 있습니다.',
+  },
+  'home-gallery': {
+    label: '갤러리',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'galleryTitle', label: '섹션 제목' },
+      { key: 'galleryDesc', label: '섹션 설명', multiline: true },
+    ],
+    note: '이미지는 추후 업로드·상품 연동 예정입니다. 현재는 플레이스홀더로 표시됩니다.',
+  },
+  'home-logos': {
+    label: '파트너 로고',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'partnersTitle', label: '섹션 제목' },
+      ...HOME_PARTNER_LOGO_FIELDS,
+    ],
+    note: '로고 이미지 업로드는 추후 지원 예정입니다.',
+  },
+  'home-video': {
+    label: '영상 소개',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'videoSectionTitle', label: '섹션 제목' },
+      { key: 'videoSectionDesc', label: '섹션 설명', multiline: true },
+      { key: 'watchIntroVideo', label: '재생 안내 문구' },
+    ],
+    note: '영상 URL 임베드 설정은 추후 섹션 설정에서 지원 예정입니다.',
+  },
+  'home-newsletter': {
+    label: '뉴스레터',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'newsletterTitle', label: '섹션 제목' },
+      { key: 'newsletterDesc', label: '섹션 설명', multiline: true },
+      { key: 'newsletterPlaceholder', label: '이메일 placeholder' },
+      { key: 'newsletterCta', label: '구독 버튼' },
+    ],
+    note: '구독 폼은 UI만 제공됩니다. 메일 연동은 별도 설정이 필요합니다.',
+  },
+  'home-promo': {
+    label: '프로모 배너',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'promoTitle', label: '프로모 제목' },
+      { key: 'promoDesc', label: '프로모 설명', multiline: true },
+      { key: 'promoCta', label: 'CTA 버튼' },
+      { key: 'promoLimited', label: '한정 기간 라벨' },
+    ],
+  },
+  'home-rich-text': {
+    label: '콘텐츠 블록',
+    editType: 'translation-fields',
+    supportsUiStyle: true,
+    translationNamespace: 'common',
+    translationFields: [
+      { key: 'richTextTitle', label: '섹션 제목' },
+      { key: 'richTextBody', label: '본문', multiline: true },
+    ],
+  },
   'tags-page-header': {
     label: '태그 페이지 헤더',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'common',
     translationFields: [
       { key: 'tagsPageTitle', label: '페이지 제목' },
@@ -438,11 +595,13 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     label: '태그 카테고리 목록',
     editType: 'admin-tab',
     adminTab: 'tag-translations',
-    note: '태그별 상품 노출은 태그 번역·상품 태그 설정으로 조정합니다.',
+    supportsUiStyle: true,
+    note: '태그별 상품 노출은 태그 번역·상품 태그 설정으로 조정합니다. UI·색상 탭에서 카드·강조색을 바꿀 수 있습니다.',
   },
   'custom-tour-header': {
     label: '맞춤 투어 소개',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'customTour',
     translationFields: [
       { key: 'title', label: '페이지 제목' },
@@ -453,11 +612,13 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     label: '코스·견적 빌더',
     editType: 'admin-tab',
     adminTab: 'tour-courses',
-    note: '투어 코스·비용은 투어 코스·비용 계산기 관리에서 설정합니다.',
+    supportsUiStyle: true,
+    note: '투어 코스·비용은 투어 코스·비용 계산기 관리에서 설정합니다. UI·색상 탭에서 패널·버튼 스타일을 조정할 수 있습니다.',
   },
   'reservation-check-header': {
     label: '예약 조회 안내',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'reservationCheck',
     translationFields: [
       { key: 'title', label: '페이지 제목' },
@@ -467,6 +628,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'reservation-check-form': {
     label: '예약 조회 폼',
     editType: 'translation-fields',
+    supportsUiStyle: true,
     translationNamespace: 'reservationCheck',
     translationFields: [
       { key: 'formTitle', label: '폼 제목' },
@@ -481,6 +643,33 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   },
 }
 
-export function getZoneEditConfig(zone: CustomerPageZone): ZoneEditConfig | undefined {
-  return CUSTOMER_PAGE_ZONE_EDIT_MAP[zone]
+const DYNAMIC_HOME_SECTION_KINDS = [
+  'reviews',
+  'faq',
+  'gallery',
+  'logos',
+  'video',
+  'newsletter',
+  'promo',
+  'rich-text',
+] as const
+
+/** 동적 instanceId(home-cards-*, home-reviews-*) → canonical zone */
+export function resolveCustomerPageZone(zone: string): CustomerPageZone {
+  if (zone in CUSTOMER_PAGE_ZONE_EDIT_MAP) {
+    return zone as CustomerPageZone
+  }
+  if (zone.startsWith('home-cards-')) {
+    return 'home-popular'
+  }
+  for (const kind of DYNAMIC_HOME_SECTION_KINDS) {
+    if (zone.startsWith(`home-${kind}-`)) {
+      return `home-${kind}` as CustomerPageZone
+    }
+  }
+  return zone as CustomerPageZone
+}
+
+export function getZoneEditConfig(zone: string): ZoneEditConfig | undefined {
+  return CUSTOMER_PAGE_ZONE_EDIT_MAP[resolveCustomerPageZone(zone)]
 }

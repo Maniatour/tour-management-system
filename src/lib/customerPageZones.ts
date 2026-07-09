@@ -2,6 +2,7 @@
 
 export type CustomerPageZone =
   | 'listing-card'
+  | 'listing-card-image'
   | 'listing-card-name'
   | 'listing-card-price'
   | 'listing-card-tags'
@@ -36,6 +37,14 @@ export type CustomerPageZone =
   | 'home-popular'
   | 'home-features'
   | 'home-cta'
+  | 'home-reviews'
+  | 'home-faq'
+  | 'home-gallery'
+  | 'home-logos'
+  | 'home-video'
+  | 'home-newsletter'
+  | 'home-promo'
+  | 'home-rich-text'
   | 'tags-page-header'
   | 'tags-page-categories'
   | 'custom-tour-header'
@@ -80,6 +89,7 @@ function resolveSinglePath(path: string[]): CustomerPreviewTarget | null {
   if (path[0] === '상품 목록') {
     let zone: CustomerPageZone = 'listing-card'
     if (last.includes('상품명') || last.includes('카테고리')) zone = 'listing-card-name'
+    else if (last.includes('이미지') || last.includes('미디어')) zone = 'listing-card-image'
     else if (last.includes('가격') || last.includes('시작')) zone = 'listing-card-price'
     else if (last.includes('태그')) zone = 'listing-card-tags'
     else if (last.includes('짧은 설명') || last.includes('요약')) zone = 'listing-card-description'

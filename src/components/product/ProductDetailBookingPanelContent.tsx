@@ -57,18 +57,18 @@ export default function ProductDetailBookingPanelContent({
     <>
       <CustomerPageZone zone="detail-sidebar-price" className={cn('mb-6', isMobile && 'mb-5')}>
         <div className="text-center">
-          <p className="text-sm font-medium text-slate-500">{t('fromPrice')}</p>
+          <p className="text-sm font-medium cp-ui-muted">{t('fromPrice')}</p>
           <div className="mt-1 flex items-baseline justify-center gap-1">
-            <span className="text-4xl font-bold tracking-tight text-slate-900">${totalPrice}</span>
-            <span className="text-base font-medium text-slate-500">{t('perPerson')}</span>
+            <span className="text-4xl font-bold tracking-tight cp-ui-price">${totalPrice}</span>
+            <span className="text-base font-medium cp-ui-muted">{t('perPerson')}</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">{t('totalPrice')}: ${totalPrice}</p>
+          <p className="mt-1 text-xs cp-ui-muted">{t('totalPrice')}: ${totalPrice}</p>
         </div>
 
         <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">{t('basePrice')}</span>
-            <span className="font-medium text-slate-900">${basePrice || 0}</span>
+            <span className="cp-ui-muted">{t('basePrice')}</span>
+            <span className="font-medium">${basePrice || 0}</span>
           </div>
           {Object.values(groupedChoices).map((group) => {
             const selectedOptionId = selectedOptions[group.choice_id]
@@ -77,8 +77,8 @@ export default function ProductDetailBookingPanelContent({
             if (!option?.option_price || option.option_price <= 0) return null
             return (
               <div key={group.choice_id} className="flex justify-between text-sm">
-                <span className="text-slate-500">{group.choice_name}</span>
-                <span className="font-medium text-slate-900">+${option.option_price}</span>
+                <span className="cp-ui-muted">{group.choice_name}</span>
+                <span className="font-medium">+${option.option_price}</span>
               </div>
             )
           })}
@@ -87,22 +87,22 @@ export default function ProductDetailBookingPanelContent({
 
       <TrustBadgeRow items={trustBadges} className="mb-5 justify-center" compact={isMobile} />
 
-      <div className="mb-6 space-y-3 rounded-xl bg-slate-50 p-4">
+      <div className="mb-6 space-y-3 rounded-xl cp-ui-panel-surface p-4">
         <div className="flex justify-between text-sm">
-          <span className="text-slate-500">{t('maxParticipants')}</span>
-          <span className="font-medium text-slate-900">
+          <span className="cp-ui-muted">{t('maxParticipants')}</span>
+          <span className="font-medium">
             {maxParticipants || 0}
             {t('peopleUnit')}
           </span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-slate-500">{t('duration')}</span>
-          <span className="font-medium text-slate-900">{durationLabel}</span>
+          <span className="cp-ui-muted">{t('duration')}</span>
+          <span className="font-medium">{durationLabel}</span>
         </div>
         {groupSize && (
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">{t('groupSize')}</span>
-            <span className="font-medium text-slate-900">{groupSize}</span>
+            <span className="cp-ui-muted">{t('groupSize')}</span>
+            <span className="font-medium">{groupSize}</span>
           </div>
         )}
       </div>
@@ -110,11 +110,11 @@ export default function ProductDetailBookingPanelContent({
       {Object.keys(groupedChoices).length > 0 && (
         <CustomerPageZone zone="detail-sidebar-options" className="mb-6">
           <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-semibold text-slate-900">{t('requiredSelection')}</h4>
+            <h4 className="font-semibold">{t('requiredSelection')}</h4>
             <button
               type="button"
               onClick={onCompareOptions}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 px-3 py-1.5 text-sm font-medium text-[#0B5FFF] transition-colors hover:bg-blue-50"
+              className="cp-ui-btn-outline inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium transition-colors"
             >
               <Info className="h-4 w-4" aria-hidden />
               <span>{t('compareOptions')}</span>
@@ -154,17 +154,17 @@ export default function ProductDetailBookingPanelContent({
       <button
         type="button"
         onClick={onBookNow}
-        className="w-full rounded-xl bg-[#0B5FFF] py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/25 transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#0952e0] hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B5FFF] focus-visible:ring-offset-2"
+        className="cp-ui-btn-primary w-full rounded-xl py-4 text-base font-semibold shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       >
         {t('bookNow')}
       </button>
 
-      <p className="mt-3 text-center text-xs text-slate-500">{t('freeCancellationNote')}</p>
+      <p className="mt-3 text-center text-xs cp-ui-muted">{t('freeCancellationNote')}</p>
 
       <div className="mt-4 text-center">
         <a
           href={`mailto:${contactEmail}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0B5FFF] transition-colors hover:text-[#0952e0]"
+          className="cp-ui-link inline-flex items-center gap-1.5 text-sm font-medium transition-colors"
         >
           <MessageCircle className="h-4 w-4" aria-hidden />
           {t('contactUs')}

@@ -1,35 +1,60 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { useMemo } from 'react'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Pencil } from 'lucide-react'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
 import type { CustomerPageZone as CustomerPageZoneId } from '@/lib/customerPageZones'
+import { getZoneEditConfig, resolveCustomerPageZone } from '@/lib/customerPageZoneEditMap'
 import { postCustomerPageZoneEdit } from '@/lib/customerPageEditMessaging'
-import { getZoneEditConfig } from '@/lib/customerPageZoneEditMap'
+import { zoneUiStyleToCssProperties } from '@/lib/customerPageZoneUiStyle'
+import { useCustomerPageZoneUiStyle } from '@/hooks/useCustomerPageZoneUiStyle'
 
 type CustomerPageZoneProps = {
   zone: string
   children: ReactNode
   className?: string
+  /** 목록 카드 등 URL에 상품 ID가 없을 때 명시적으로 전달 */
+  productId?: string | null
 }
 
 /** 고객 페이지 영역 — preview=1&editMode=1 또는 워크bench postMessage 시 수정 버튼 표시 */
-export default function CustomerPageZone({ zone, children, className = '' }: CustomerPageZoneProps) {
+export default function CustomerPageZone({
+  zone,
+  children,
+  className = '',
+  productId: productIdProp,
+}: CustomerPageZoneProps) {
+  const params = useParams()
+  const searchParams = useSearchParams()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
   const showEditButton = isPreview && isEditMode
-  const editConfig = getZoneEditConfig(zone as CustomerPageZoneId)
+  const canonicalZone = resolveCustomerPageZone(zone)
+  const editConfig = getZoneEditConfig(canonicalZone)
+  const uiStyle = useCustomerPageZoneUiStyle(canonicalZone)
+  const uiInlineStyle = uiStyle ? zoneUiStyleToCssProperties(uiStyle) : undefined
+  const hasUiStyle = uiStyle !== null
+
+  const resolvedProductId = useMemo(() => {
+    if (productIdProp?.trim()) return productIdProp.trim()
+    const fromParams = params.id
+    if (typeof fromParams === 'string' && fromParams.trim()) return fromParams.trim()
+    return searchParams.get('productId')?.trim() || null
+  }, [productIdProp, params.id, searchParams])
 
   const handleEditClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    postCustomerPageZoneEdit(zone as CustomerPageZoneId)
+    postCustomerPageZoneEdit(canonicalZone as CustomerPageZoneId, resolvedProductId)
   }
 
   return (
     <div
       data-customer-zone={zone}
       data-edit-mode={showEditButton ? '1' : '0'}
-      className={`customer-page-zone relative ${showEditButton ? 'customer-page-zone--editable' : ''} ${className}`.trim()}
+      style={uiInlineStyle}
+      className={`customer-page-zone cp-ui-zone relative ${hasUiStyle ? 'cp-ui-styled-zone' : ''} ${showEditButton ? 'customer-page-zone--editable' : ''} ${className}`.trim()}
     >
       {children}
       {showEditButton && (

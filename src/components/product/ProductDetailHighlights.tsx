@@ -36,12 +36,12 @@ export default function ProductDetailHighlights({
 
   return (
     <CustomerPageZone zone="detail-highlights">
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
+      <section className="rounded-2xl cp-ui-panel-surface p-6 shadow-sm sm:p-8">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
             {t('tourHighlights')}
           </h2>
-          <p className="mt-2 text-sm text-slate-500 sm:text-base">{t('tourHighlightsSubtitle')}</p>
+          <p className="mt-2 text-sm cp-ui-muted sm:text-base">{t('tourHighlightsSubtitle')}</p>
         </div>
 
         {(categoryLabel || durationLabel) && (
@@ -54,8 +54,8 @@ export default function ProductDetailHighlights({
                 </span>
               )}
               {durationLabel && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-[#0B5FFF]">
-                  <Clock className="h-4 w-4" aria-hidden />
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold cp-ui-link">
+                  <Clock className="h-4 w-4 cp-ui-icon" aria-hidden />
                   {durationLabel}
                 </span>
               )}
