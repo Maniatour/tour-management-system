@@ -374,6 +374,7 @@ const DOC_SPEC: Record<
   'team-chat': { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   'guide-costs': { readGate: 'canViewAdmin', manage: 'canManageTours' },
   documents: { readGate: 'canViewAdmin', manage: 'canManageTours' },
+  'operations-hub': { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   sop: { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   suppliers: { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'suppliers-settlement': { readGate: 'canViewAdmin', manage: 'canViewFinance' },

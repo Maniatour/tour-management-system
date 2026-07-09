@@ -83,6 +83,7 @@ const FALLBACK_TITLES: Record<string, { ko: string; en: string }> = {
   'sidebar.teamChat': { ko: '팀 채팅', en: 'Team Chat' },
   'sidebar.guideFeeManagement': { ko: '가이드비 관리', en: 'Guide Fees' },
   'sidebar.documents': { ko: '문서 관리', en: 'Documents' },
+  'sidebar.operationsHub': { ko: '운영 허브', en: 'Operations Hub' },
   'sidebar.companySop': { ko: '회사 SOP', en: 'Company SOP' },
   'sidebar.suppliers': { ko: '공급사 관리', en: 'Suppliers' },
   'sidebar.supplierSettlement': { ko: '공급사 정산', en: 'Supplier Settlement' },

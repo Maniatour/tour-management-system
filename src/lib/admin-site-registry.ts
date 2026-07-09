@@ -8,6 +8,7 @@ import {
   Car,
   Clock,
   Cloud,
+  ClipboardList,
   CreditCard,
   DollarSign,
   FileCheck,
@@ -106,6 +107,7 @@ export type AdminSidebarRegistryEntry = {
  * 표시 조건을 바꿀 때는 여기와 `AdminSidebarAndHeader`의 Super/Manager 조회 로직을 함께 맞출 것.
  */
 export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
+  { id: 'reservation-imports', path: 'reservation-imports', sidebarTranslationKey: 'reservationImports', icon: Mail, visibility: { type: 'always' } },
   {
     id: 'customer-pages',
     path: 'customer-pages',
@@ -128,6 +130,13 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
   { id: 'team-chat', path: 'team-chat', sidebarTranslationKey: 'teamChat', icon: MessageCircle, visibility: { type: 'always' } },
   { id: 'guide-costs', path: 'guide-costs', sidebarTranslationKey: 'guideFeeManagement', icon: Calculator, visibility: { type: 'always' } },
   { id: 'documents', path: 'documents', sidebarTranslationKey: 'documents', icon: FileText, visibility: { type: 'always' } },
+  {
+    id: 'operations-hub',
+    path: 'operations-hub',
+    sidebarTranslationKey: 'operationsHub',
+    icon: ClipboardList,
+    visibility: { type: 'always' },
+  },
   { id: 'sop', path: 'sop', sidebarTranslationKey: 'companySop', icon: FileCheck, visibility: { type: 'admin_or_manager' } },
   { id: 'suppliers', path: 'suppliers', sidebarTranslationKey: 'suppliers', icon: Truck, visibility: { type: 'always' } },
   { id: 'suppliers-settlement', path: 'suppliers/settlement', sidebarTranslationKey: 'supplierSettlement', icon: DollarSign, visibility: { type: 'always' } },
@@ -156,7 +165,6 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
   { id: 'data-sync', path: 'data-sync', sidebarTranslationKey: 'dataSync', icon: FileSpreadsheet, visibility: { type: 'always' } },
   { id: 'weather-records', path: 'weather-records', sidebarTranslationKey: 'weatherRecords', icon: Cloud, visibility: { type: 'always' } },
   { id: 'data-review', path: 'data-review', sidebarTranslationKey: 'dataReview', icon: FileCheck, visibility: { type: 'always' } },
-  { id: 'reservation-imports', path: 'reservation-imports', sidebarTranslationKey: 'reservationImports', icon: Mail, visibility: { type: 'always' } },
   { id: 'audit-logs', path: 'audit-logs', sidebarTranslationKey: 'auditLogs', icon: History, visibility: { type: 'always' } },
   { id: 'site-directory', path: 'site-directory', sidebarTranslationKey: 'siteDirectory', icon: LayoutGrid, visibility: { type: 'always' } },
   { id: 'dev-tools', path: 'dev-tools', sidebarTranslationKey: 'developerTools', icon: Settings, visibility: { type: 'dev_tools' } },

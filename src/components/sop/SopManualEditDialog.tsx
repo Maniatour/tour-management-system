@@ -37,32 +37,40 @@ function StatusOption({
   label,
   iconClass,
   onClick,
-  disabled,
+  readOnly,
 }: {
   active: boolean
   label: string
   iconClass: string
   onClick?: () => void
-  disabled?: boolean
+  readOnly?: boolean
 }) {
-  const Tag = onClick && !disabled ? 'button' : 'div'
+  const interactive = Boolean(onClick) && !readOnly
+
+  const className = cn(
+    'inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors sm:min-h-0',
+    interactive && 'touch-manipulation cursor-pointer relative z-10',
+    active
+      ? 'border-gray-900 bg-gray-900 text-white shadow-sm'
+      : 'border-gray-200 bg-white text-gray-700',
+    interactive && !active && 'hover:bg-gray-50 active:bg-gray-50',
+    readOnly && 'opacity-95'
+  )
+
+  if (!interactive) {
+    return (
+      <div className={className} aria-disabled="true">
+        <FileText className={cn('h-4 w-4', active ? 'text-white' : iconClass)} />
+        {label}
+      </div>
+    )
+  }
+
   return (
-    <Tag
-      type={Tag === 'button' ? 'button' : undefined}
-      onClick={onClick}
-      className={cn(
-        'inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors sm:min-h-0',
-        onClick && !disabled && 'touch-manipulation',
-        active
-          ? 'border-gray-900 bg-gray-900 text-white shadow-sm'
-          : 'border-gray-200 bg-white text-gray-700',
-        !disabled && onClick && !active && 'hover:bg-gray-50',
-        disabled && 'opacity-90'
-      )}
-    >
+    <button type="button" onClick={onClick} aria-pressed={active} className={className}>
       <FileText className={cn('h-4 w-4', active ? 'text-white' : iconClass)} />
       {label}
-    </Tag>
+    </button>
   )
 }
 
@@ -116,6 +124,21 @@ export default function SopManualEditDialog({
     }
   }
 
+  const handleStatusSelect = (next: SopManualStatus) => {
+    if (next === draftStatus) return
+    setDraftStatus(next)
+    if (isViewMode && canEdit) {
+      onSave(value, next)
+    }
+  }
+
+  const showStatus = hasContent || hasDraftContent || !isViewMode || canEdit
+  const statusContent = isViewMode ? value : draft
+  const canMarkComplete = hasChecklistManualContent(statusContent)
+  const completeHint = isEn
+    ? 'Add manual content before marking complete.'
+    : '메뉴얼 내용을 입력한 뒤 작성완료로 변경할 수 있습니다.'
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[90vh] sm:max-w-[48rem] sm:rounded-lg sm:border">
@@ -126,31 +149,37 @@ export default function SopManualEditDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">
-          {hasContent || hasDraftContent || !isViewMode ? (
-            <div className="space-y-2">
+          {showStatus ? (
+            <div className="relative z-10 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {isEn ? 'Status' : '작성 상태'}
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500">
+                {isEn
+                  ? 'In progress: still being edited. Complete: ready for others to read.'
+                  : '수정중: 아직 작업 중입니다. 작성완료: 다른 사람이 볼 수 있습니다.'}
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <StatusOption
                   active={draftStatus === 'draft'}
                   label={isEn ? 'In progress' : '수정중'}
                   iconClass="text-red-600"
-                  disabled={isViewMode}
-                  {...(!isViewMode
-                    ? { onClick: () => setDraftStatus('draft') }
-                    : {})}
+                  readOnly={!canEdit}
+                  {...(canEdit ? { onClick: () => handleStatusSelect('draft') } : {})}
                 />
                 <StatusOption
                   active={draftStatus === 'complete'}
                   label={isEn ? 'Complete' : '작성완료'}
                   iconClass="text-green-600"
-                  disabled={isViewMode}
-                  {...(!isViewMode
-                    ? { onClick: () => setDraftStatus('complete') }
+                  readOnly={!canEdit || !canMarkComplete}
+                  {...(canEdit && canMarkComplete
+                    ? { onClick: () => handleStatusSelect('complete') }
                     : {})}
                 />
               </div>
+              {canEdit && !canMarkComplete ? (
+                <p className="text-xs text-amber-700">{completeHint}</p>
+              ) : null}
             </div>
           ) : null}
 
@@ -210,8 +239,8 @@ export default function SopManualEditDialog({
                 type="button"
                 className="w-full touch-manipulation sm:w-auto"
                 onClick={() => {
-                  const trimmed = draft.trim()
-                  onSave(draft, trimmed ? draftStatus : 'draft')
+                  const nextStatus = hasChecklistManualContent(draft) ? draftStatus : 'draft'
+                  onSave(draft, nextStatus)
                   if (startInViewMode) {
                     setIsEditing(false)
                   } else {
