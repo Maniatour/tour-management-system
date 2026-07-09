@@ -27,6 +27,8 @@ type Props = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   draggableHeaderSelector?: string
   hideCloseButton?: boolean
   overlayClassName?: string
+  /** 중첩 모달(예: 메뉴얼 보기) — z-index 상향 */
+  elevated?: boolean
 }
 
 const ResizableDialogContent = React.forwardRef<
@@ -43,10 +45,21 @@ const ResizableDialogContent = React.forwardRef<
       draggableHeaderSelector = '[data-dialog-drag-handle]',
       hideCloseButton,
       overlayClassName,
+      elevated = false,
       ...props
     },
     ref
   ) => {
+    const contentNodeRef = React.useRef<HTMLDivElement | null>(null)
+    const setContentRef = React.useCallback(
+      (node: HTMLDivElement | null) => {
+        contentNodeRef.current = node
+        if (typeof ref === 'function') ref(node)
+        else if (ref) ref.current = node
+      },
+      [ref]
+    )
+
     const { rect, onDragPointerDown, onResizePointerDown } = useResizableRect({
       storageKey,
       defaultW: defaultWidth,
@@ -64,10 +77,20 @@ const ResizableDialogContent = React.forwardRef<
 
     const handleHeaderPointerDown = (e: React.PointerEvent) => {
       if (isMobile) return
+      const root = contentNodeRef.current
       const target = e.target as HTMLElement
+      if (!root || !root.contains(target)) return
       if (!target.closest(draggableHeaderSelector)) return
+      e.stopPropagation()
       onDragPointerDown(e)
     }
+
+    const handleResizePointerDown = (handle: ResizeHandle) => (e: React.PointerEvent) => {
+      e.stopPropagation()
+      onResizePointerDown(handle)(e)
+    }
+
+    const layerClass = elevated ? 'z-[1200]' : 'z-[1100]'
 
     const contentStyle: React.CSSProperties = isMobile
       ? {
@@ -93,16 +116,18 @@ const ResizableDialogContent = React.forwardRef<
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className={cn(
-            'fixed inset-0 z-[1100] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+            'fixed inset-0 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+            layerClass,
             overlayClassName
           )}
         />
         <DialogPrimitive.Content
-          ref={ref}
+          ref={setContentRef}
           aria-describedby={undefined}
           onPointerDown={handleHeaderPointerDown}
           className={cn(
-            'fixed z-[1100] flex flex-col gap-0 overflow-hidden border bg-white p-0 shadow-2xl duration-200',
+            'fixed flex flex-col gap-0 overflow-hidden border bg-white p-0 shadow-2xl duration-200',
+            layerClass,
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 max-md:rounded-none sm:rounded-lg',
             className
@@ -117,7 +142,7 @@ const ResizableDialogContent = React.forwardRef<
                   key={handle}
                   aria-hidden
                   className={cn('absolute touch-none', HANDLE_CLASS[handle])}
-                  onPointerDown={onResizePointerDown(handle)}
+                  onPointerDown={handleResizePointerDown(handle)}
                 />
               ))
             : null}

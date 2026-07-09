@@ -12,13 +12,11 @@ import {
   Loader2,
   Pencil,
   Plus,
-  RefreshCw,
   Save,
   Settings2,
   Shield,
   GripVertical,
   Languages,
-  Sparkles,
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
@@ -51,7 +49,6 @@ import {
   articleBodyToDocument,
   articleRowToHubEntry,
   contentTypeLabel,
-  defaultKnowledgeArticleSeeds,
   groupHubEntriesByCategory,
   hubCategoryLabel,
   hubEntrySummary,
@@ -69,11 +66,6 @@ import {
   type KnowledgeArticleDraftForm,
 } from '@/lib/knowledgeArticleForm'
 import { deleteKnowledgeArticle, saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
-import {
-  syncKnowledgeArticleTemplates,
-  templateSyncConfirmMessage,
-  templateSyncResultMessage,
-} from '@/lib/knowledgeArticleTemplateSync'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -88,7 +80,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const locale = (params?.locale as string) || 'ko'
   const viewLang: SopEditLocale = locale === 'en' ? 'en' : 'ko'
   const isEn = viewLang === 'en'
-  const editLang: SopEditLocale = isEn ? 'en' : 'ko'
 
   const { authUser, userRole, loading, isInitialized } = useAuth()
   const [canManage, setCanManage] = useState(false)
@@ -115,7 +106,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [modalViewLang, setModalViewLang] = useState<SopEditLocale>(viewLang)
   const [editOpen, setEditOpen] = useState(false)
   const [form, setForm] = useState<KnowledgeArticleDraftForm>(() => emptyKnowledgeArticleForm())
-  const [editTab, setEditTab] = useState<'meta' | 'body' | 'preview'>('meta')
   const [busy, setBusy] = useState(false)
   const [crudMsg, setCrudMsg] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeArticleRow | null>(null)
@@ -350,14 +340,12 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const openEditNew = () => {
     setForm(emptyKnowledgeArticleForm())
-    setEditTab('meta')
     setCrudMsg(null)
     setEditOpen(true)
   }
 
   const openEditRow = (row: KnowledgeArticleRow) => {
     setForm(knowledgeArticleRowToForm(row))
-    setEditTab('meta')
     setCrudMsg(null)
     setEditOpen(true)
   }
@@ -430,7 +418,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     const draft = knowledgeArticleRowToForm(readArticle)
     if (readEditDoc) draft.bodyDoc = readEditDoc
     setForm(draft)
-    setEditTab('meta')
     setCrudMsg(null)
     setReadArticle(null)
     setEditOpen(true)
@@ -450,20 +437,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (form.id === deleteTarget.id) setEditOpen(false)
     setDeleteTarget(null)
     await reloadArticles()
-  }
-
-  const runTemplateSync = async (mode: 'append' | 'overwrite') => {
-    if (!adminCrud) return
-    if (mode === 'overwrite') {
-      const ok = window.confirm(templateSyncConfirmMessage('overwrite', isEn))
-      if (!ok) return
-    }
-    setBusy(true)
-    setCrudMsg(null)
-    const result = await syncKnowledgeArticleTemplates(mode, authUser?.id ?? null)
-    setBusy(false)
-    setCrudMsg(templateSyncResultMessage(mode, result, defaultKnowledgeArticleSeeds().length, isEn))
-    await load()
   }
 
   if (!isInitialized || loading || loadingData) {
@@ -502,27 +475,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
               <Button type="button" size="sm" onClick={openEditNew}>
                 <Plus className="mr-1 h-4 w-4" />
                 {isEn ? 'New' : '새 문서'}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void runTemplateSync('append')}
-              >
-                <Sparkles className="mr-1 h-4 w-4" />
-                {isEn ? 'Add templates' : '템플릿 추가'}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-amber-300 text-amber-900 hover:bg-amber-50"
-                disabled={busy}
-                onClick={() => void runTemplateSync('overwrite')}
-              >
-                <RefreshCw className="mr-1 h-4 w-4" />
-                {isEn ? 'Overwrite' : '덮어쓰기'}
               </Button>
             </div>
           ) : null}
@@ -802,10 +754,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             <KnowledgeArticleEditorPanel
               form={form}
               setForm={setForm}
-              editTab={editTab}
-              setEditTab={setEditTab}
               isEn={isEn}
-              editLang={editLang}
               busy={busy}
               msg={crudMsg}
               onSave={handleSave}

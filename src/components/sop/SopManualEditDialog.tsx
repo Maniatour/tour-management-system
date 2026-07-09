@@ -1,19 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
 import { hasChecklistManualContent } from '@/lib/sopQuickEdit'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { cn } from '@/lib/utils'
 import type { SopManualStatus } from '@/types/sopStructure'
-import { FileText, Pencil } from 'lucide-react'
+import { FileText, GripVertical, Pencil } from 'lucide-react'
+
+const MANUAL_MODAL_DEFAULT_WIDTH = 1024
+const MANUAL_MODAL_DEFAULT_HEIGHT = 800
+const MANUAL_MODAL_RECT_STORAGE_KEY = 'sop-manual-modal-rect-v2'
+const MANUAL_EDITOR_MIN_HEIGHT = 240
 
 type Props = {
   open: boolean
@@ -91,6 +96,8 @@ export default function SopManualEditDialog({
   const [draft, setDraft] = useState(value)
   const [draftStatus, setDraftStatus] = useState<SopManualStatus>(status)
   const [isEditing, setIsEditing] = useState(false)
+  const editorWrapRef = useRef<HTMLDivElement>(null)
+  const [editorHeight, setEditorHeight] = useState(520)
 
   const isEn = uiLocaleEn
   const canEdit = !readOnly
@@ -100,6 +107,12 @@ export default function SopManualEditDialog({
     : editTitle ?? (isEn ? 'Edit manual' : '메뉴얼 수정')
   const hasContent = hasChecklistManualContent(value)
   const hasDraftContent = hasChecklistManualContent(draft)
+  const showStatus = hasContent || hasDraftContent || !isViewMode || canEdit
+  const statusContent = isViewMode ? value : draft
+  const canMarkComplete = hasChecklistManualContent(statusContent)
+  const completeHint = isEn
+    ? 'Add manual content before marking complete.'
+    : '메뉴얼 내용을 입력한 뒤 작성완료로 변경할 수 있습니다.'
 
   useEffect(() => {
     if (!open) return
@@ -111,6 +124,40 @@ export default function SopManualEditDialog({
     setDraft(value)
     setDraftStatus(status)
   }, [open, value, status, isEditing])
+
+  useEffect(() => {
+    if (!open) return
+
+    let ro: ResizeObserver | null = null
+
+    const attach = () => {
+      const el = editorWrapRef.current
+      if (!el) return false
+
+      const syncHeight = () => {
+        const next = Math.max(MANUAL_EDITOR_MIN_HEIGHT, el.clientHeight)
+        setEditorHeight(next)
+      }
+
+      syncHeight()
+      ro?.disconnect()
+      ro = new ResizeObserver(syncHeight)
+      ro.observe(el)
+      return true
+    }
+
+    if (!attach()) {
+      const frame = window.requestAnimationFrame(() => {
+        attach()
+      })
+      return () => {
+        window.cancelAnimationFrame(frame)
+        ro?.disconnect()
+      }
+    }
+
+    return () => ro?.disconnect()
+  }, [open, showStatus, isViewMode, hasContent, hasDraftContent])
 
   const handleClose = () => onOpenChange(false)
 
@@ -132,25 +179,34 @@ export default function SopManualEditDialog({
     }
   }
 
-  const showStatus = hasContent || hasDraftContent || !isViewMode || canEdit
-  const statusContent = isViewMode ? value : draft
-  const canMarkComplete = hasChecklistManualContent(statusContent)
-  const completeHint = isEn
-    ? 'Add manual content before marking complete.'
-    : '메뉴얼 내용을 입력한 뒤 작성완료로 변경할 수 있습니다.'
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[90vh] sm:max-w-[48rem] sm:rounded-lg sm:border">
-        <DialogHeader className="border-b px-4 py-3 pr-12 text-left sm:px-5 sm:py-4">
-          <DialogTitle className="text-base">{dialogTitle}</DialogTitle>
-          {description ? <p className="text-sm font-normal text-gray-500">{description}</p> : null}
-          <p className="text-xs font-medium text-indigo-700">{langLabel}</p>
+      <ResizableDialogContent
+        storageKey={MANUAL_MODAL_RECT_STORAGE_KEY}
+        defaultWidth={MANUAL_MODAL_DEFAULT_WIDTH}
+        defaultHeight={MANUAL_MODAL_DEFAULT_HEIGHT}
+        elevated
+        className="flex flex-col gap-0"
+      >
+        <DialogHeader
+          data-dialog-drag-handle
+          className="shrink-0 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-5 sm:py-4 sm:active:cursor-grabbing"
+        >
+          <div className="flex items-start gap-2">
+            <GripVertical className="mt-0.5 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-base">{dialogTitle}</DialogTitle>
+              {description ? (
+                <p className="text-sm font-normal text-gray-500">{description}</p>
+              ) : null}
+              <p className="text-xs font-medium text-indigo-700">{langLabel}</p>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 sm:px-5 sm:py-4">
           {showStatus ? (
-            <div className="relative z-10 space-y-2">
+            <div className="relative z-10 mb-4 shrink-0 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {isEn ? 'Status' : '작성 상태'}
               </p>
@@ -184,26 +240,28 @@ export default function SopManualEditDialog({
           ) : null}
 
           {isViewMode && !hasContent && !hasDraftContent ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
               {isEn ? 'No manual content yet.' : '아직 메뉴얼 내용이 없습니다.'}
             </div>
           ) : (
-            <LightRichEditor
-              className="w-full min-w-0"
-              value={draft}
-              onChange={(v) => setDraft(v ?? '')}
-              placeholder={isEn ? 'Enter manual content…' : '메뉴얼 내용을 입력하세요…'}
-              height={280}
-              enableImageUpload={false}
-              enableResize
-              minHeight={160}
-              maxHeight={520}
-              readOnly={isViewMode}
-            />
+            <div ref={editorWrapRef} className="min-h-0 flex-1">
+              <LightRichEditor
+                className="flex h-full w-full min-w-0 flex-col"
+                value={draft}
+                onChange={(v) => setDraft(v ?? '')}
+                placeholder={isEn ? 'Enter manual content…' : '메뉴얼 내용을 입력하세요…'}
+                height={editorHeight}
+                enableImageUpload={false}
+                enableResize={false}
+                minHeight={MANUAL_EDITOR_MIN_HEIGHT}
+                maxHeight={editorHeight}
+                readOnly={isViewMode}
+              />
+            </div>
           )}
         </div>
 
-        <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+        <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:px-5" data-no-drag>
           {isViewMode ? (
             <>
               <Button
@@ -253,7 +311,7 @@ export default function SopManualEditDialog({
             </>
           )}
         </DialogFooter>
-      </DialogContent>
+      </ResizableDialogContent>
     </Dialog>
   )
 }

@@ -61,6 +61,7 @@ export function useResizableRect({
       if (!enabled || e.button !== 0) return
       if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [data-no-drag]')) return
       e.preventDefault()
+      e.stopPropagation()
       const startX = e.clientX
       const startY = e.clientY
       const start = rectRef.current
