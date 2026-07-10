@@ -44,6 +44,8 @@ type Props = {
   onSave: (value: string) => void
   /** 줄 제목 편집 시 텍스트 형식으로 바로 적용 */
   onSaveAsText?: (value: string) => void
+  /** 줄 제목 편집 시 여러 줄을 각각 목록 ROW로 나누어 적용 */
+  onSaveAsSplitListRows?: (value: string) => void
 }
 
 export default function SopRichFieldEditDialog({
@@ -57,6 +59,7 @@ export default function SopRichFieldEditDialog({
   langLabel,
   onSave,
   onSaveAsText,
+  onSaveAsSplitListRows,
 }: Props) {
   const [draft, setDraft] = useState(value)
 
@@ -82,8 +85,8 @@ export default function SopRichFieldEditDialog({
             placeholder={
               onSaveAsText
                 ? uiLocaleEn
-                  ? 'Enter text (line breaks and lists supported)…'
-                  : '텍스트를 입력하세요 (줄바꿈·목록 가능)…'
+                  ? 'Enter one title per line, or paste multiple lines…'
+                  : '한 줄에 하나씩 입력하거나 여러 줄을 붙여넣으세요…'
                 : variant === 'title'
                   ? uiLocaleEn
                     ? 'Enter title…'
@@ -101,6 +104,19 @@ export default function SopRichFieldEditDialog({
           </Button>
           {onSaveAsText ? (
             <>
+              {onSaveAsSplitListRows ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full touch-manipulation sm:w-auto"
+                  onClick={() => {
+                    onSaveAsSplitListRows(draft)
+                    onOpenChange(false)
+                  }}
+                >
+                  {uiLocaleEn ? 'Apply as separate rows' : '줄별 목록으로 적용'}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"

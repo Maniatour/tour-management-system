@@ -4,6 +4,7 @@ import {
   type SopCategory,
   type SopChecklistItem,
   type SopDocument,
+  type SopEditLocale,
   type SopRowAttachment,
   type SopSection,
 } from '@/types/sopStructure'
@@ -282,6 +283,58 @@ export function addSopChecklistItem(
     ),
     itemId: newItem.id,
   }
+}
+
+/** 여러 줄 제목을 각각 목록 ROW로 삽입 (첫 줄은 기존 ROW, 나머지는 바로 아래에 추가) */
+export function splitChecklistTitlesIntoListRows(
+  doc: SopDocument,
+  sectionId: string,
+  categoryId: string,
+  itemId: string,
+  titles: string[],
+  lang: SopEditLocale
+): SopDocument | null {
+  const cleaned = titles.map((t) => t.trim()).filter(Boolean)
+  if (!cleaned.length) return null
+
+  const section = doc.sections.find((s) => s.id === sectionId)
+  const category = section?.categories.find((c) => c.id === categoryId)
+  if (!category?.checklist_items?.length) return null
+
+  const items = [...category.checklist_items]
+  const anchor = items.find((i) => i.id === itemId)
+  if (!anchor) return null
+
+  const parentId = anchor.parent_id ?? null
+  const anchorOrder = anchor.sort_order
+  const extraCount = Math.max(0, cleaned.length - 1)
+
+  const asListRowWithTitle = (item: SopChecklistItem, title: string): SopChecklistItem => {
+    const withTitle =
+      lang === 'ko' ? { ...item, title_ko: title } : { ...item, title_en: title }
+    const { row_display: _omit, ...listRow } = withTitle
+    return listRow
+  }
+
+  const nextItems = items.map((it) => {
+    if (it.id === itemId) return asListRowWithTitle(anchor, cleaned[0])
+    if ((it.parent_id ?? null) === parentId && it.sort_order > anchorOrder && extraCount > 0) {
+      return { ...it, sort_order: it.sort_order + extraCount }
+    }
+    return it
+  })
+
+  cleaned.slice(1).forEach((title, idx) => {
+    nextItems.push({
+      id: newSopId(),
+      title_ko: lang === 'ko' ? title : '',
+      title_en: lang === 'en' ? title : '',
+      sort_order: anchorOrder + idx + 1,
+      parent_id: parentId,
+    })
+  })
+
+  return prefillSortOrders(patchCategoryChecklist(doc, sectionId, categoryId, nextItems))
 }
 
 export function removeSopChecklistItem(

@@ -28,6 +28,7 @@ import {
   removeSopChecklistItem,
   removeSopSection,
   setChecklistItemAttachments,
+  splitChecklistTitlesIntoListRows,
 } from '@/lib/sopDocumentMutations'
 import {
   applyCategoryBodyDraft,
@@ -62,6 +63,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   prefillSortOrders,
+  splitRichContentToChecklistLines,
   type SopDocument,
   type SopEditLocale,
   type SopRowAttachment,
@@ -453,6 +455,25 @@ export default function SopDocumentInlinePreviewEditor({
     )
   }
 
+  const handleChecklistTitleSaveAsSplitListRows = (value: string) => {
+    if (!quickEdit || quickEdit.scope !== 'checklist' || quickEdit.field !== 'title') return
+    const titles = splitRichContentToChecklistLines(value)
+    if (!titles.length) return
+    if (titles.length === 1) {
+      handleChecklistTitleSave(titles[0], 'list')
+      return
+    }
+    const next = splitChecklistTitlesIntoListRows(
+      doc,
+      quickEdit.sectionId,
+      quickEdit.categoryId,
+      quickEdit.itemId,
+      titles,
+      editLang
+    )
+    if (next) onChange(next)
+  }
+
   const isChecklistTitleEdit =
     quickEdit?.scope === 'checklist' && quickEdit.field === 'title'
 
@@ -680,7 +701,10 @@ export default function SopDocumentInlinePreviewEditor({
           langLabel={quickEditMeta.langLabel}
           onSave={handleQuickEditSave}
           {...(isChecklistTitleEdit
-            ? { onSaveAsText: (value) => handleChecklistTitleSave(value, 'text') }
+            ? {
+                onSaveAsText: (value) => handleChecklistTitleSave(value, 'text'),
+                onSaveAsSplitListRows: handleChecklistTitleSaveAsSplitListRows,
+              }
             : {})}
         />
       ) : null}

@@ -409,17 +409,19 @@ function ChecklistRootRow({
   )
   const isEn = viewLang === 'en'
   const [expanded, setExpanded] = useState(false)
-  const showInlineManual = !isListRow && hasChecklistManualSource(row, viewLang)
+  const hasManual = hasChecklistManualSource(row, viewLang)
+  const canAccordion = isListRow && hasManual
+  const showInlineManual = !isListRow && hasManual
   const openManual = callbacks.onEditChecklistManual
     ? () => callbacks.onEditChecklistManual!(sectionId, categoryId, row.id)
     : undefined
 
   useEffect(() => {
-    if (isListRow && searchFocusRowId === row.id) setExpanded(true)
-  }, [isListRow, searchFocusRowId, row.id])
+    if (canAccordion && searchFocusRowId === row.id) setExpanded(true)
+  }, [canAccordion, searchFocusRowId, row.id])
 
   const toggleExpanded = () => {
-    if (!isListRow) return
+    if (!canAccordion) return
     setExpanded((v) => !v)
   }
 
@@ -463,24 +465,28 @@ function ChecklistRootRow({
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
         {isListRow ? (
-          <button
-            type="button"
-            className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-md text-left sm:gap-1.5',
-              'cursor-pointer touch-manipulation hover:bg-gray-50/80 active:bg-gray-50'
-            )}
-            aria-expanded={expanded}
-            onClick={toggleExpanded}
-          >
-            <ChevronDown
+          canAccordion ? (
+            <button
+              type="button"
               className={cn(
-                'h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200',
-                expanded && 'rotate-180'
+                'flex min-w-0 flex-1 items-center gap-2 rounded-md text-left sm:gap-1.5',
+                'cursor-pointer touch-manipulation hover:bg-gray-50/80 active:bg-gray-50'
               )}
-              aria-hidden
-            />
-            {titleMarkup}
-          </button>
+              aria-expanded={expanded}
+              onClick={toggleExpanded}
+            >
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200',
+                  expanded && 'rotate-180'
+                )}
+                aria-hidden
+              />
+              {titleMarkup}
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-1.5">{titleMarkup}</div>
+          )
         ) : (
           <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-1.5">{titleMarkup}</div>
         )}
@@ -505,7 +511,7 @@ function ChecklistRootRow({
         ) : null}
       </div>
 
-      {isListRow && expanded ? (
+      {canAccordion && expanded ? (
         <SopRowManualAccordion item={row} viewLang={viewLang} isEn={isEn} />
       ) : null}
 
