@@ -19,6 +19,8 @@ type Props = {
   onAddChecklistItem?: (sectionId: string, categoryId: string, afterItemId?: string) => void
   onAddCategory?: (sectionId: string, afterCategoryId?: string) => void
   onConvertCategoryToRow?: (sectionId: string, categoryId: string) => void
+  /** 제목 없는 본문 전용 영역 */
+  titleless?: boolean
 }
 
 export default function SopCategoryToolbar({
@@ -34,6 +36,7 @@ export default function SopCategoryToolbar({
   onAddChecklistItem,
   onAddCategory,
   onConvertCategoryToRow,
+  titleless = false,
 }: Props) {
   const isEn = viewLang === 'en'
   const [open, setOpen] = useState(false)
@@ -131,7 +134,15 @@ export default function SopCategoryToolbar({
               variant="ghost"
               size="icon"
               className={cn(iconBtn, 'text-indigo-700 hover:bg-indigo-50')}
-              title={isEn ? 'Edit block title' : '영역 제목 수정'}
+              title={
+                titleless
+                  ? isEn
+                    ? 'Edit content'
+                    : '내용 수정'
+                  : isEn
+                    ? 'Edit block title'
+                    : '영역 제목 수정'
+              }
               onClick={run(() => onEditCategory(sectionId, categoryId))}
             >
               <Pencil className="h-3.5 w-3.5" />

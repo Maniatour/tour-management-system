@@ -408,6 +408,79 @@ export async function fetchPaidToNamesInUse(client: SupabaseClient): Promise<Set
   return names
 }
 
+/** 결제처 이름 일괄 변경 + 재사용 설정 (지출 paid_to·벤더 레코드 동기화) */
+export async function renameExpenseVendorAsReusable(
+  client: SupabaseClient,
+  vendorId: string,
+  newName: string,
+  opts?: { keepOldNameAsAlias?: boolean }
+): Promise<{ vendorId: string; name: string }> {
+  const target = newName.trim()
+  if (!target) throw new Error('새 이름을 입력하세요.')
+
+  const { data: vendor, error } = await client
+    .from('expense_vendors')
+    .select('id, name, usage_type, match_aliases')
+    .eq('id', vendorId)
+    .single()
+  if (error || !vendor) throw error || new Error('결제처를 찾을 수 없습니다.')
+
+  const oldName = String(vendor.name ?? '').trim()
+  if (!oldName) throw new Error('결제처 이름이 비어 있습니다.')
+
+  const { data: allVendors, error: allErr } = await client
+    .from('expense_vendors')
+    .select('id, name, usage_type, match_aliases')
+  if (allErr) throw allErr
+
+  const existingTarget =
+    (allVendors ?? []).find(
+      (v) =>
+        v.id !== vendorId && String(v.name ?? '').trim().toLowerCase() === target.toLowerCase()
+    ) ?? null
+
+  if (oldName.toLowerCase() !== target.toLowerCase()) {
+    await replacePaidToAcrossExpenseTables(client, oldName, target)
+  }
+
+  if (existingTarget) {
+    const aliases = new Set(
+      [...(existingTarget.match_aliases ?? []), ...(vendor.match_aliases ?? [])]
+        .map((a) => String(a).trim())
+        .filter(Boolean)
+    )
+    if (opts?.keepOldNameAsAlias !== false && oldName.toLowerCase() !== target.toLowerCase()) {
+      aliases.add(oldName)
+    }
+    const { error: upErr } = await client
+      .from('expense_vendors')
+      .update({
+        usage_type: 'reusable',
+        match_aliases: [...aliases],
+      })
+      .eq('id', existingTarget.id)
+    if (upErr) throw upErr
+
+    const { error: delErr } = await client.from('expense_vendors').delete().eq('id', vendorId)
+    if (delErr) throw delErr
+
+    return { vendorId: existingTarget.id, name: String(existingTarget.name).trim() }
+  }
+
+  const aliases = (vendor.match_aliases ?? []).map((a) => String(a).trim()).filter(Boolean)
+  const { error: upErr } = await client
+    .from('expense_vendors')
+    .update({
+      name: target,
+      usage_type: 'reusable',
+      match_aliases: aliases,
+    })
+    .eq('id', vendorId)
+  if (upErr) throw upErr
+
+  return { vendorId, name: target }
+}
+
 /** 지출과 연결되지 않은 expense_vendors 행 삭제 */
 export async function deleteOrphanExpenseVendors(client: SupabaseClient): Promise<number> {
   const inUse = await fetchPaidToNamesInUse(client)

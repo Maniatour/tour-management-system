@@ -37,6 +37,7 @@ import {
   applyChecklistManualSave,
   applyChecklistRowDisplay,
   applySectionTitleValue,
+  applySectionBodyValue,
   checklistItemIdsMatch,
   detectCategoryEditField,
   getCategoryBodyDraft,
@@ -47,6 +48,7 @@ import {
   getChecklistItemValue,
   getChecklistManualStatus,
   getChecklistManualValue,
+  getSectionBodyValue,
   getSectionTitleValue,
   sopDisplayLabel,
   hydrateDocumentForRowEditing,
@@ -66,7 +68,7 @@ import {
 } from '@/types/sopStructure'
 
 type QuickEdit =
-  | { scope: 'section'; sectionId: string; field: 'title' }
+  | { scope: 'section'; sectionId: string; field: 'title' | 'body' }
   | { scope: 'category'; sectionId: string; categoryId: string; field: 'title' | 'body' | 'manual' }
   | { scope: 'checklist'; sectionId: string; categoryId: string; itemId: string; field: 'title' | 'manual' }
 
@@ -126,7 +128,10 @@ export default function SopDocumentInlinePreviewEditor({
     if (!quickEdit) return ''
     if (quickEdit.scope === 'section') {
       const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
-      return section ? getSectionTitleValue(section, editLang) : ''
+      if (!section) return ''
+      return quickEdit.field === 'title'
+        ? getSectionTitleValue(section, editLang)
+        : getSectionBodyValue(section, editLang)
     }
     const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
     const category = section?.categories.find((c) => c.id === quickEdit.categoryId)
@@ -156,10 +161,17 @@ export default function SopDocumentInlinePreviewEditor({
     if (quickEdit.scope === 'section') {
       const section = doc.sections.find((s) => s.id === quickEdit.sectionId)
       const label = section ? sopDisplayLabel(section.title_ko, section.title_en, editLang) : ''
+      const isBody = quickEdit.field === 'body'
       return {
         variant,
         langLabel,
-        title: isEn ? 'Edit section title' : '섹션 제목 수정',
+        title: isBody
+          ? isEn
+            ? 'Edit section content'
+            : '섹션 내용 수정'
+          : isEn
+            ? 'Edit section title'
+            : '섹션 제목 수정',
         description: label
           ? isEn
             ? `Section: ${label}`
@@ -218,14 +230,17 @@ export default function SopDocumentInlinePreviewEditor({
       }
     }
 
+    const sectionForBody = doc.sections.find((s) => s.id === quickEdit.sectionId)
+    const categoryForBody = sectionForBody?.categories.find((c) => c.id === quickEdit.categoryId)
+
     return {
       variant,
       langLabel,
       title: isEn ? 'Edit block content' : '영역 내용 수정',
-      description: label
+      description: categoryForBody
         ? isEn
-          ? `Block: ${label}`
-          : `영역: ${label}`
+          ? `Block: ${sopDisplayLabel(categoryForBody.title_ko, categoryForBody.title_en, editLang) || '—'}`
+          : `영역: ${sopDisplayLabel(categoryForBody.title_ko, categoryForBody.title_en, editLang) || '—'}`
         : undefined,
     }
   }, [doc.sections, editLang, isEn, quickEdit])
@@ -314,6 +329,10 @@ export default function SopDocumentInlinePreviewEditor({
     setQuickEdit({ scope: 'section', sectionId, field: 'title' })
   }
 
+  const openSectionContentEdit = (sectionId: string) => {
+    setQuickEdit({ scope: 'section', sectionId, field: 'body' })
+  }
+
   const openCategoryEdit = (sectionId: string, categoryId: string) => {
     const section = doc.sections.find((s) => s.id === sectionId)
     const category = section?.categories.find((c) => c.id === categoryId)
@@ -390,7 +409,9 @@ export default function SopDocumentInlinePreviewEditor({
           ...doc,
           sections: doc.sections.map((section) =>
             section.id === quickEdit.sectionId
-              ? applySectionTitleValue(section, editLang, value)
+              ? quickEdit.field === 'title'
+                ? applySectionTitleValue(section, editLang, value)
+                : applySectionBodyValue(section, editLang, value)
               : section
           ),
         })
@@ -587,6 +608,7 @@ export default function SopDocumentInlinePreviewEditor({
   const previewCallbacks = editable
     ? {
         onEditSection: openSectionEdit,
+        onEditSectionContent: openSectionContentEdit,
         onEditCategory: openCategoryEdit,
         onAddSection: handleAddSection,
         onDeleteSection: (sectionId: string) => setDeleteTarget({ scope: 'section', sectionId }),

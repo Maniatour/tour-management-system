@@ -338,22 +338,28 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   }
 
   const openEditNew = () => {
-    setForm(emptyKnowledgeArticleForm())
+    const draft = emptyKnowledgeArticleForm()
+    draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
+    setForm(draft)
     setCrudMsg(null)
     setEditOpen(true)
   }
 
   const openEditNewInCategory = (hubCategory: string) => {
-    setForm({
+    const draft = {
       ...emptyKnowledgeArticleForm(),
       hub_category: hubCategory,
-    })
+    }
+    draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
+    setForm(draft)
     setCrudMsg(null)
     setEditOpen(true)
   }
 
   const openEditRow = (row: KnowledgeArticleRow) => {
-    setForm(knowledgeArticleRowToForm(row))
+    const draft = knowledgeArticleRowToForm(row)
+    draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
+    setForm(draft)
     setCrudMsg(null)
     setEditOpen(true)
   }
@@ -425,6 +431,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (!readArticle) return
     const draft = knowledgeArticleRowToForm(readArticle)
     if (readEditDoc) draft.bodyDoc = readEditDoc
+    else draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
     setForm(draft)
     setCrudMsg(null)
     setReadArticle(null)
@@ -809,6 +816,24 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
               toggleRole={toggleRole}
               embedded
             />
+            <div className="mt-8 border-t border-gray-100 pt-6">
+              <h3 className="mb-1 text-sm font-semibold text-gray-900">
+                {isEn ? 'Document body' : '문서 본문'}
+              </h3>
+              <p className="mb-4 text-xs text-gray-500">
+                {isEn
+                  ? 'Add a section title, then enter text below without a category title.'
+                  : '섹션 제목을 입력한 뒤, 카테고리 없이 바로 본문을 작성할 수 있습니다.'}
+              </p>
+              <div className="min-h-[280px] rounded-lg border border-gray-200 bg-gray-50/50 p-3 sm:p-4">
+                <SopDocumentInlinePreviewEditor
+                  doc={form.bodyDoc}
+                  onChange={(bodyDoc) => setForm((f) => ({ ...f, bodyDoc }))}
+                  viewLang={viewLang}
+                  uiLocaleEn={isEn}
+                />
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -20,6 +20,8 @@ type Props = {
   anchors?: boolean
   /** 미리보기 편집: 섹션 카드 우상단 수정 */
   onEditSection?: (sectionId: string) => void
+  /** 미리보기 편집: 섹션 제목 아래 본문(카테고리 없이) */
+  onEditSectionContent?: (sectionId: string) => void
   /** 미리보기 편집: 카테고리 블록 우상단 수정 */
   onEditCategory?: (sectionId: string, categoryId: string) => void
   onAddSection?: () => void
@@ -72,6 +74,7 @@ export default function SopDocumentReadonly({
   layout = 'card',
   anchors = false,
   onEditSection,
+  onEditSectionContent,
   onEditCategory,
   onAddSection,
   onDeleteSection,
@@ -96,6 +99,7 @@ export default function SopDocumentReadonly({
   const docTitle = sopText(doc.title_ko, doc.title_en, viewLang)
   const previewEditable = Boolean(
     onEditSection ||
+      onEditSectionContent ||
       onEditCategory ||
       onAddSection ||
       onDeleteSection ||
@@ -131,6 +135,11 @@ export default function SopDocumentReadonly({
       {sections.map((s, si) => {
         const st = sopText(s.title_ko, s.title_en, viewLang).trim()
         const heading = st || (viewLang === 'en' ? `Section ${si + 1}` : `섹션 ${si + 1}`)
+        const sectionBody = sopText(s.content_ko ?? '', s.content_en ?? '', viewLang)
+        const sortedCats = [...s.categories].sort((a, b) => a.sort_order - b.sort_order)
+        const openSectionBodyEdit = onEditSectionContent
+          ? () => onEditSectionContent(s.id)
+          : undefined
         return (
           <section
             key={s.id}
@@ -178,7 +187,19 @@ export default function SopDocumentReadonly({
                     onClick={() => onEditSection(s.id)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                    {viewLang === 'en' ? 'Edit' : '수정'}
+                    {viewLang === 'en' ? 'Title' : '제목'}
+                  </Button>
+                ) : null}
+                {onEditSectionContent ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1 bg-white/95 px-2.5 text-xs shadow-sm touch-manipulation hover:bg-indigo-50 sm:h-8"
+                    onClick={() => onEditSectionContent(s.id)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {viewLang === 'en' ? 'Content' : '내용'}
                   </Button>
                 ) : null}
                 {onDeleteSection && sections.length > 1 ? (
@@ -206,9 +227,32 @@ export default function SopDocumentReadonly({
               dangerouslySetInnerHTML={{ __html: markdownToHtml(heading) }}
             />
             <div className="w-full min-w-0 space-y-4">
-              {[...s.categories]
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .map((c, ci, sortedCats) => {
+              {sectionBody.trim() ? (
+                <button
+                  type="button"
+                  className={cn(
+                    'w-full min-w-0 text-left',
+                    openSectionBodyEdit &&
+                      'cursor-pointer rounded-md transition hover:bg-indigo-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300'
+                  )}
+                  disabled={!openSectionBodyEdit}
+                  onClick={openSectionBodyEdit}
+                >
+                  <RichLine text={sectionBody} flat={flat} />
+                </button>
+              ) : openSectionBodyEdit ? (
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-dashed border-gray-300 bg-gray-50/80 px-4 py-5 text-left text-sm text-gray-500 transition hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-700"
+                  onClick={openSectionBodyEdit}
+                >
+                  {viewLang === 'en'
+                    ? 'Click to add text under section title (no category)'
+                    : '클릭하여 섹션 제목 아래 본문 입력 (카테고리 없이)'}
+                </button>
+              ) : null}
+
+              {sortedCats.map((c, ci) => {
                   const ct = sopText(c.title_ko, c.title_en, viewLang).trim()
                   const body = sopText(c.content_ko, c.content_en, viewLang)
                   const catLabel = ct || (viewLang === 'en' ? '(Category)' : '(카테고리)')
@@ -299,6 +343,23 @@ export default function SopDocumentReadonly({
                     </div>
                   )
                 })}
+              {onAddCategory ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1 touch-manipulation"
+                  onClick={() =>
+                    onAddCategory(
+                      s.id,
+                      sortedCats.length > 0 ? sortedCats[sortedCats.length - 1]?.id : undefined
+                    )
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                  {viewLang === 'en' ? 'Add category' : '카테고리 추가'}
+                </Button>
+              ) : null}
             </div>
           </section>
         )

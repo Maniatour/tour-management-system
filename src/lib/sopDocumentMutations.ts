@@ -81,7 +81,9 @@ export function createEmptySopSection(sortOrder: number): SopSection {
     title_ko: '',
     title_en: '',
     sort_order: sortOrder,
-    categories: [createEmptySopCategory(0)],
+    content_ko: '',
+    content_en: '',
+    categories: [],
   }
 }
 
@@ -152,7 +154,7 @@ export function removeSopCategory(
   categoryId: string
 ): SopDocument | null {
   const section = doc.sections.find((s) => s.id === sectionId)
-  if (!section || section.categories.length <= 1) return null
+  if (!section) return null
 
   return prefillSortOrders({
     ...doc,

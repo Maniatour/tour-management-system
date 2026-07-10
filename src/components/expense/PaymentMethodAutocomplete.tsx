@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { DROPDOWN_Z_INDEX } from '@/lib/dialogZIndex'
 
 export type PaymentMethodAutocompleteOption = {
   id: string
@@ -82,7 +83,10 @@ export function PaymentMethodAutocomplete({
         }
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
+        <ul
+          className="absolute mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg"
+          style={{ zIndex: DROPDOWN_Z_INDEX }}
+        >
           {filtered.map((pm) => (
             <li key={pm.id}>
               <button

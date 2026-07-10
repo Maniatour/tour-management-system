@@ -69,8 +69,10 @@ export function buildSopDocumentToc(doc: SopDocument, viewLang: SopEditLocale): 
     for (let ci = 0; ci < cats.length; ci++) {
       const c = cats[ci]
       const ct = sopText(c.title_ko, c.title_en, viewLang).trim()
-      const catFallback = viewLang === 'en' ? `Category ${ci + 1}` : `카테고리 ${ci + 1}`
       const rowTree = buildChecklistTocTree(c.checklist_items, viewLang)
+      // 제목 없는 본문 전용 영역은 목차에 별도 항목으로 넣지 않음
+      if (!ct && rowTree.length === 0) continue
+      const catFallback = viewLang === 'en' ? `Category ${ci + 1}` : `카테고리 ${ci + 1}`
       children.push({
         anchorId: sopCategoryAnchorId(c.id),
         label: sopTocPlainLabel(ct, catFallback),

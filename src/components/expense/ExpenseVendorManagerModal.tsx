@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { GitMerge, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { GitMerge, Pencil, Plus, Replace, Trash2, X } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +30,7 @@ import {
   formatVendorExpensePaidFor,
   mergePaidToNamesAcrossExpenseTables,
   parseVendorMatchAliasesInput,
+  renameExpenseVendorAsReusable,
   replacePaidToAcrossExpenseTables,
   vendorLinkedExpenseEditKey,
   vendorLinkedExpenseSourceTable,
@@ -82,6 +83,10 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
   const [mergeNameMode, setMergeNameMode] = useState<'existing' | 'custom'>('existing')
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [mergeCustomName, setMergeCustomName] = useState('')
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameVendor, setRenameVendor] = useState<ExpenseVendorRecord | null>(null)
+  const [renameNewName, setRenameNewName] = useState('')
+  const [renameAsReusable, setRenameAsReusable] = useState(true)
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null)
   const [linkedExpenses, setLinkedExpenses] = useState<VendorLinkedExpenseRow[]>([])
   const [loadingExpenses, setLoadingExpenses] = useState(false)
@@ -369,6 +374,87 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
     setMergeOpen(true)
   }
 
+  const openRenameDialog = (vendor: ExpenseVendorRecord) => {
+    setRenameVendor(vendor)
+    setRenameNewName(vendor.name)
+    setRenameAsReusable(true)
+    setRenameOpen(true)
+  }
+
+  const handleRename = async () => {
+    if (!renameVendor) return
+    const newName = renameNewName.trim()
+    if (!newName) {
+      alert('새 결제처 이름을 입력하세요.')
+      return
+    }
+    const oldName = renameVendor.name.trim()
+    if (oldName.toLowerCase() === newName.toLowerCase() && renameVendor.usage_type === 'reusable') {
+      alert('이름과 재사용 설정이 이미 동일합니다.')
+      return
+    }
+
+    const msg = [
+      renameAsReusable
+        ? `"${oldName}"을(를) "${newName}"(으)로 바꾸고 재사용 결제처로 설정합니다.`
+        : `"${oldName}"을(를) "${newName}"(으)로 바꿉니다.`,
+      '',
+      '회사·예약·투어 지출의 결제처(paid_to)도 함께 갱신됩니다.',
+      oldName.toLowerCase() !== newName.toLowerCase()
+        ? '목록에 같은 이름이 있으면 해당 항목으로 합쳐집니다.'
+        : '',
+      '계속할까요?',
+    ]
+      .filter(Boolean)
+      .join('\n')
+    if (!confirm(msg)) return
+
+    setSaving(true)
+    try {
+      let result: { vendorId: string; name: string }
+      if (renameAsReusable) {
+        result = await renameExpenseVendorAsReusable(supabase, renameVendor.id, newName)
+      } else {
+        const { error } = await supabase
+          .from('expense_vendors')
+          .update({ name: newName, usage_type: renameVendor.usage_type })
+          .eq('id', renameVendor.id)
+        if (error) throw error
+        if (oldName !== newName) {
+          await replacePaidToAcrossExpenseTables(supabase, oldName, newName)
+        }
+        result = { vendorId: renameVendor.id, name: newName }
+      }
+
+      setRenameOpen(false)
+      setRenameVendor(null)
+      setRenameNewName('')
+      await loadVendors()
+
+      if (selectedVendorId === renameVendor.id || selectedVendorId === result.vendorId) {
+        setSelectedVendorId(result.vendorId)
+        void loadExpensesForVendor({
+          ...renameVendor,
+          id: result.vendorId,
+          name: result.name,
+          usage_type: renameAsReusable ? 'reusable' : renameVendor.usage_type,
+        })
+      }
+
+      onUpdated?.()
+      alert(
+        renameAsReusable
+          ? `"${oldName}" → "${result.name}"(으)로 변경했습니다. 지출 추가 시 재사용 목록에 표시됩니다.`
+          : `"${oldName}" → "${result.name}"(으)로 변경했습니다.`
+      )
+    } catch (error) {
+      console.error('결제처 이름 일괄 변경 오류:', error)
+      alert(error instanceof Error ? error.message : '결제처 이름 변경에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleMerge = async () => {
     const targetName = mergeTargetName
     if (!targetName) {
@@ -581,6 +667,25 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
             className="text-xs shrink-0"
           />
 
+          {selectedIds.size === 1 && (
+            <div className="flex items-center gap-2 shrink-0 text-sm">
+              <span className="text-muted-foreground">1개 선택</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const vendor = selectedVendors[0]
+                  if (vendor) openRenameDialog(vendor)
+                }}
+                disabled={saving}
+              >
+                <Replace className="h-4 w-4 mr-1" />
+                이름 일괄 변경·재사용
+              </Button>
+            </div>
+          )}
+
           {selectedIds.size >= 2 && (
             <div className="flex items-center gap-2 shrink-0 text-sm">
               <span className="text-muted-foreground">{selectedIds.size}개 선택</span>
@@ -694,6 +799,20 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
                                 </SelectContent>
                               </Select>
                             </div>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 shrink-0"
+                              title="이름 일괄 변경·재사용"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openRenameDialog(vendor)
+                              }}
+                              disabled={saving}
+                            >
+                              <Replace className="h-4 w-4" />
+                            </Button>
                             <Button
                               type="button"
                               size="icon"
@@ -831,7 +950,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" stackLevel="nested">
           <DialogHeader>
             <DialogTitle>결제처 병합</DialogTitle>
             <DialogDescription>
@@ -924,6 +1043,84 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
               disabled={saving || !canConfirmMerge || mergePreviewNames.length === 0}
             >
               병합
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameOpen}
+        onOpenChange={(next) => {
+          setRenameOpen(next)
+          if (!next) {
+            setRenameVendor(null)
+            setRenameNewName('')
+            setRenameAsReusable(true)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md" stackLevel="nested">
+          <DialogHeader>
+            <DialogTitle>결제처 이름 일괄 변경</DialogTitle>
+            <DialogDescription>
+              기존 결제처 이름을 새 이름으로 바꾸면 회사·예약·투어 지출의 결제처(paid_to)도 함께 갱신됩니다.
+              재사용으로 설정하면 지출 추가 시 선택 목록에 표시됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          {renameVendor ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">현재 이름</p>
+                <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{renameVendor.name}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">새 이름</p>
+                <Input
+                  value={renameNewName}
+                  onChange={(e) => setRenameNewName(e.target.value)}
+                  placeholder="예: AAA"
+                  disabled={saving}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && renameNewName.trim()) {
+                      e.preventDefault()
+                      void handleRename()
+                    }
+                  }}
+                />
+              </div>
+              <label className="flex items-start gap-2.5 rounded-md border px-3 py-2.5 cursor-pointer">
+                <Checkbox
+                  checked={renameAsReusable}
+                  onCheckedChange={(checked) => setRenameAsReusable(checked === true)}
+                  disabled={saving}
+                  className="mt-0.5"
+                />
+                <span className="text-sm leading-snug">
+                  <span className="font-medium">재사용 결제처로 설정</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    체크하면 지출 추가 화면 선택 목록에 표시됩니다.
+                  </span>
+                </span>
+              </label>
+              {renameNewName.trim() &&
+                renameVendor.name.trim().toLowerCase() !== renameNewName.trim().toLowerCase() && (
+                  <p className="text-xs text-muted-foreground rounded-md border bg-muted/30 px-3 py-2">
+                    · {renameVendor.name} → {renameNewName.trim()}
+                  </p>
+                )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRenameOpen(false)} disabled={saving}>
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleRename()}
+              disabled={saving || !renameNewName.trim()}
+            >
+              변경 적용
             </Button>
           </DialogFooter>
         </DialogContent>

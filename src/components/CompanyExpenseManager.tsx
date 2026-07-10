@@ -55,6 +55,7 @@ import ExpenseReconciliationExemptToggle from '@/components/reconciliation/Expen
 import ExpenseReconciliationBulkExemptActions from '@/components/reconciliation/ExpenseReconciliationBulkExemptActions'
 import { toast } from 'sonner'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
+import { ExpensePaidToCombobox } from '@/components/expense/ExpensePaidToCombobox'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { VehicleRepairCostReportModal } from '@/components/company-expense/VehicleRepairCostReportModal'
 import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
@@ -264,7 +265,6 @@ export default function CompanyExpenseManager({
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [expenseVendors, setExpenseVendors] = useState<ExpenseVendorRecord[]>([])
   const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
-  const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
   /** reconciliation_matches에 연결된 회사 지출 id */
   const [reconciledExpenseIds, setReconciledExpenseIds] = useState<Set<string>>(() => new Set())
   /** expense_cash_ledger_matches에 연결된 회사 지출 id */
@@ -1246,7 +1246,6 @@ export default function CompanyExpenseManager({
       const paidToTrim = formData.paid_to.trim()
       if (
         paidToTrim &&
-        showCustomPaidTo &&
         !expenseVendors.some((v) => v.name.toLowerCase() === paidToTrim.toLowerCase())
       ) {
         try {
@@ -1416,10 +1415,6 @@ export default function CompanyExpenseManager({
         if (g) setStandardHierarchyLeafId(m)
       }
     }
-    setShowCustomPaidTo(
-      Boolean((expense.paid_to ?? '').trim()) &&
-        !reusablePaidToOptions.includes(expense.paid_to ?? '')
-    )
     setIsDialogOpen(true)
   }
 
@@ -1490,7 +1485,6 @@ export default function CompanyExpenseManager({
     setStandardHierarchyLeafId('')
     setStandardLeafConfirmOpen(false)
     setPendingStandardLeafConfirm(null)
-    setShowCustomPaidTo(false)
   }
 
   const getStatusBadge = (status: string | null) => {
@@ -2134,7 +2128,6 @@ export default function CompanyExpenseManager({
                 setStandardHierarchyLeafId('')
                 setStandardLeafConfirmOpen(false)
                 setPendingStandardLeafConfirm(null)
-                setShowCustomPaidTo(false)
               }
             }}
           >
@@ -2319,62 +2312,18 @@ export default function CompanyExpenseManager({
               >
                 <div>
                   <Label htmlFor="paid_to">{t('form.paidTo')} *</Label>
-                  {!showCustomPaidTo ? (
-                    <div className="space-y-2">
-                      <Select
-                        value={formData.paid_to || ''}
-                        onValueChange={(value) => {
-                          if (value === '__custom__') {
-                            setFormData((prev) => ({ ...prev, paid_to: '' }))
-                            setShowCustomPaidTo(true)
-                            return
-                          }
-                          setFormData((prev) => ({ ...prev, paid_to: value }))
-                        }}
-                      >
-                        <SelectTrigger id="paid_to">
-                          <SelectValue placeholder={t('form.suggestOrType')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {reusablePaidToOptions.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="__custom__">직접 입력…</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Input
-                        id="paid_to"
-                        list="company-expense-datalist-paid-to"
-                        autoComplete="off"
-                        value={formData.paid_to}
-                        onChange={(e) => setFormData({ ...formData, paid_to: e.target.value })}
-                        required
-                        placeholder="결제처 직접 입력"
-                      />
-                      <datalist id="company-expense-datalist-paid-to">
-                        {paidToDatalistOptions.map((v) => (
-                          <option key={v} value={v} />
-                        ))}
-                      </datalist>
-                      <button
-                        type="button"
-                        className="text-xs text-blue-600 hover:text-blue-800"
-                        onClick={() => {
-                          setShowCustomPaidTo(false)
-                          setFormData((prev) => ({ ...prev, paid_to: '' }))
-                        }}
-                      >
-                        목록에서 선택
-                      </button>
-                    </div>
-                  )}
+                  <ExpensePaidToCombobox
+                    id="paid_to"
+                    value={formData.paid_to}
+                    onChange={(paid_to) => setFormData({ ...formData, paid_to })}
+                    options={paidToDatalistOptions}
+                    required
+                    placeholder="결제처 선택"
+                    parentOpen={isDialogOpen}
+                    disabled={saving}
+                  />
                   <p className="text-muted-foreground text-xs mt-1">
-                    {suggestionsLoading ? t('form.suggestionsLoading') : '목록에서 선택하거나 직접 입력할 수 있습니다.'}
+                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
                   </p>
                 </div>
 

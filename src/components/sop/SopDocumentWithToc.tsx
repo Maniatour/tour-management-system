@@ -17,6 +17,7 @@ type Props = {
   resizableToc?: boolean
   tocWidthStorageKey?: string
   onEditSection?: (sectionId: string) => void
+  onEditSectionContent?: (sectionId: string) => void
   onEditCategory?: (sectionId: string, categoryId: string) => void
   onAddSection?: () => void
   onDeleteSection?: (sectionId: string) => void
@@ -176,6 +177,7 @@ export default function SopDocumentWithToc({
   viewLang,
   uiLocaleEn,
   onEditSection,
+  onEditSectionContent,
   onEditCategory,
   onAddSection,
   onDeleteSection,
@@ -275,6 +277,7 @@ export default function SopDocumentWithToc({
     anchors: true as const,
     ...(activeSearchHit?.rowId ? { searchFocusRowId: activeSearchHit.rowId } : {}),
     ...(onEditSection ? { onEditSection } : {}),
+    ...(onEditSectionContent ? { onEditSectionContent } : {}),
     ...(onEditCategory ? { onEditCategory } : {}),
     ...(onAddSection ? { onAddSection } : {}),
     ...(onDeleteSection ? { onDeleteSection } : {}),

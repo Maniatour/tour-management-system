@@ -159,6 +159,84 @@ export function applySectionTitleValue(
   return lang === 'ko' ? { ...section, title_ko: v } : { ...section, title_en: v }
 }
 
+export function getSectionBodyValue(section: SopSection, lang: SopEditLocale): string {
+  return lang === 'ko' ? (section.content_ko ?? '') : (section.content_en ?? '')
+}
+
+export function applySectionBodyValue(
+  section: SopSection,
+  lang: SopEditLocale,
+  value: string
+): SopSection {
+  const v = value ?? ''
+  return lang === 'ko' ? { ...section, content_ko: v } : { ...section, content_en: v }
+}
+
+function joinSectionText(a: string, b: string): string {
+  const parts = [(a || '').trim(), (b || '').trim()].filter(Boolean)
+  return parts.join('\n\n')
+}
+
+function hasCategoryTitle(category: SopCategory): boolean {
+  return Boolean(category.title_ko?.trim() || category.title_en?.trim())
+}
+
+function isLegacySectionBodySlot(category: SopCategory): boolean {
+  if (hasCategoryTitle(category)) return false
+  if ((category.checklist_items?.length ?? 0) > 0) return false
+  if (category.manual_ko?.trim() || category.manual_en?.trim()) return false
+  if (category.linked_hub_article_id?.trim()) return false
+  return true
+}
+
+/** 예전 제목 없는 영역(섹션 본문 대용) → section.content 로 이전, 잘못 들어간 줄은 바로 아래 카테고리로 */
+export function migrateLegacySectionBodySlots(section: SopSection): SopSection {
+  const ordered = [...section.categories].sort((a, b) => a.sort_order - b.sort_order)
+  if (ordered.length === 0) return section
+
+  let content_ko = (section.content_ko ?? '').trim()
+  let content_en = (section.content_en ?? '').trim()
+  let categories = ordered
+  let changed = false
+
+  for (let i = 0; i < ordered.length; i++) {
+    const c = ordered[i]
+    if (isLegacySectionBodySlot(c)) {
+      content_ko = joinSectionText(content_ko, c.content_ko ?? '')
+      content_en = joinSectionText(content_en, c.content_en ?? '')
+      categories = categories.filter((x) => x.id !== c.id)
+      changed = true
+      continue
+    }
+
+    if (!hasCategoryTitle(c) && (c.checklist_items?.length ?? 0) > 0) {
+      const nextTitled = ordered.slice(i + 1).find((x) => hasCategoryTitle(x))
+      if (nextTitled) {
+        categories = categories.map((cat) =>
+          cat.id === nextTitled.id
+            ? {
+                ...cat,
+                checklist_items: [...(cat.checklist_items ?? []), ...(c.checklist_items ?? [])],
+              }
+            : cat
+        )
+        content_ko = joinSectionText(content_ko, c.content_ko ?? '')
+        content_en = joinSectionText(content_en, c.content_en ?? '')
+        categories = categories.filter((x) => x.id !== c.id)
+        changed = true
+      }
+    }
+  }
+
+  if (!changed) return section
+  return {
+    ...section,
+    content_ko,
+    content_en,
+    categories: categories.map((cat, idx) => ({ ...cat, sort_order: idx })),
+  }
+}
+
 export function getCategoryTitleValue(category: SopCategory, lang: SopEditLocale): string {
   return lang === 'ko' ? category.title_ko : category.title_en
 }
@@ -216,6 +294,11 @@ export function applyCategoryBodyDraft(
     ...category,
     ...(lang === 'ko' ? { content_ko: text } : { content_en: text }),
   }
+}
+
+/** 영역(카테고리) 제목 없이 섹션 본문만 쓰는 경우 — 레거시 호환 */
+export function isTitlelessCategory(category: SopCategory, lang: SopEditLocale): boolean {
+  return !sopText(category.title_ko, category.title_en, lang).trim()
 }
 
 export function detectCategoryEditField(
@@ -341,6 +424,10 @@ function hydrateCategoryRowsForEditing(category: SopCategory): {
   const bodyEn = (category.content_en || '').trim()
   const koLines = bodyKo ? splitRichContentToChecklistLines(bodyKo) : []
   const enLines = bodyEn ? splitRichContentToChecklistLines(bodyEn) : []
+  // 제목 없는 레거시 슬롯·섹션 본문은 줄 목록으로 쪼개지 않음
+  if (!hasCategoryTitle(category)) {
+    return { category, changed: false }
+  }
   if (koLines.length <= 1 && enLines.length <= 1) {
     return { category, changed: false }
   }
@@ -369,17 +456,21 @@ function hydrateCategoryRowsForEditing(category: SopCategory): {
 export function hydrateDocumentForRowEditing(doc: SopDocument): SopDocument {
   let anyChanged = false
   const sections = doc.sections.map((section) => {
-    let sectionChanged = false
-    const categories = section.categories.map((category) => {
+    const migrated = migrateLegacySectionBodySlots(section)
+    const sectionBase = migrated !== section ? migrated : section
+    if (migrated !== section) anyChanged = true
+
+    let sectionChanged = migrated !== section
+    const categories = sectionBase.categories.map((category) => {
       const result = hydrateCategoryRowsForEditing(category)
       if (result.changed) sectionChanged = true
       return result.category
     })
     if (sectionChanged) {
       anyChanged = true
-      return { ...section, categories }
+      return { ...sectionBase, categories }
     }
-    return section
+    return sectionBase
   })
   return anyChanged ? { ...doc, sections } : doc
 }

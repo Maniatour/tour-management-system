@@ -77,6 +77,9 @@ export type SopSection = {
   title_ko: string
   title_en: string
   sort_order: number
+  /** 섹션 제목 바로 아래 본문 (카테고리 없이) */
+  content_ko?: string
+  content_en?: string
   categories: SopCategory[]
   /** 운영 허브 카테고리 (있으면 허브에 노출) */
   hub_category?: OperationsHubCategory | null
@@ -291,16 +294,9 @@ export function emptySopDocument(): SopDocument {
         title_ko: '',
         title_en: '',
         sort_order: 0,
-        categories: [
-          {
-            id: newSopId(),
-            title_ko: '',
-            title_en: '',
-            content_ko: '',
-            content_en: '',
-            sort_order: 0,
-          },
-        ],
+        content_ko: '',
+        content_en: '',
+        categories: [],
       },
     ],
   }
@@ -315,6 +311,8 @@ export function prefillSortOrders(doc: SopDocument): SopDocument {
       title_ko: s.title_ko ?? '',
       title_en: s.title_en ?? '',
       sort_order: i,
+      content_ko: s.content_ko ?? '',
+      content_en: s.content_en ?? '',
       categories: s.categories.map((c, j) => {
         const checklist_items = sanitizeChecklistItems(c.checklist_items)
         return {
@@ -344,10 +342,15 @@ export function flattenSopDocumentToPlainText(doc: SopDocument, lang: SopEditLoc
     const line = sopText(s.title_ko, s.title_en, lang).trim() || (lang === 'en' ? '(Section)' : '(섹션)')
     parts.push(line)
     parts.push('')
+    const sectionBody = sopText(s.content_ko ?? '', s.content_en ?? '', lang).trim()
+    if (sectionBody) {
+      parts.push(sectionBody)
+      parts.push('')
+    }
     const cats = [...s.categories].sort((a, b) => a.sort_order - b.sort_order)
     for (const c of cats) {
-      const ct = sopText(c.title_ko, c.title_en, lang).trim() || (lang === 'en' ? '(Category)' : '(카테고리)')
-      parts.push(`● ${ct}`)
+      const ct = sopText(c.title_ko, c.title_en, lang).trim()
+      if (ct) parts.push(`● ${ct}`)
       const items = orderedChecklistItems(c.checklist_items)
       if (items.length > 0) {
         const byId = new Map(items.map((i) => [i.id, i]))
@@ -483,19 +486,7 @@ function normalizeSection(o: Record<string, unknown>): SopSection | null {
   const cats = (o.categories as unknown[]).map((c) =>
     c && typeof c === 'object' ? normalizeCategory(c as Record<string, unknown>) : null
   )
-  let categories = cats.filter((c): c is SopCategory => c !== null)
-  if (categories.length === 0) {
-    categories = [
-      {
-        id: newSopId(),
-        title_ko: '',
-        title_en: '',
-        content_ko: '',
-        content_en: '',
-        sort_order: 0,
-      },
-    ]
-  }
+  const categories = cats.filter((c): c is SopCategory => c !== null)
   const legacyTitle = typeof o.title === 'string' ? o.title : ''
   let hub_category: OperationsHubCategory | null | undefined
   if (typeof o.hub_category === 'string' && o.hub_category.trim()) {
@@ -515,6 +506,8 @@ function normalizeSection(o: Record<string, unknown>): SopSection | null {
     title_ko: typeof o.title_ko === 'string' ? o.title_ko : legacyTitle,
     title_en: typeof o.title_en === 'string' ? o.title_en : '',
     sort_order: typeof o.sort_order === 'number' ? o.sort_order : 0,
+    content_ko: typeof o.content_ko === 'string' ? o.content_ko : '',
+    content_en: typeof o.content_en === 'string' ? o.content_en : '',
     categories,
     ...(hub_category !== undefined ? { hub_category } : {}),
     ...(content_type !== undefined ? { content_type } : {}),
@@ -1117,6 +1110,8 @@ function mergeSectionForLocale(es: SopSection, bs: SopSection | undefined, loc: 
     ...es,
     title_ko: loc === 'ko' ? es.title_ko : (bs?.title_ko ?? es.title_ko),
     title_en: loc === 'en' ? es.title_en : (bs?.title_en ?? es.title_en),
+    content_ko: loc === 'ko' ? (es.content_ko ?? '') : (bs?.content_ko ?? es.content_ko ?? ''),
+    content_en: loc === 'en' ? (es.content_en ?? '') : (bs?.content_en ?? es.content_en ?? ''),
     categories: mergedCats,
   }
 }
@@ -1172,6 +1167,7 @@ export function isPublishableSopDocument(doc: SopDocument): boolean {
   if (doc.title_ko?.trim() || doc.title_en?.trim()) return true
   for (const s of doc.sections) {
     if (s.title_ko?.trim() || s.title_en?.trim()) return true
+    if (s.content_ko?.trim() || s.content_en?.trim()) return true
     for (const c of s.categories) {
       if (c.title_ko?.trim() || c.title_en?.trim() || c.content_ko?.trim() || c.content_en?.trim()) return true
       for (const it of c.checklist_items || []) {
