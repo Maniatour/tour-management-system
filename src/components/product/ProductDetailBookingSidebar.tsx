@@ -40,7 +40,7 @@ type ProductDetailBookingSidebarProps = {
 
 export default function ProductDetailBookingSidebar(props: ProductDetailBookingSidebarProps) {
   return (
-    <CustomerPageZone zone="detail-sidebar" className="hidden lg:block">
+    <CustomerPageZone zone="detail-sidebar" suppressEditButton className="hidden lg:block">
       <div className="sticky top-6 rounded-2xl cp-ui-panel-surface p-6 shadow-lg">
         <ProductDetailBookingPanelContent {...props} variant="sidebar" />
       </div>

@@ -23,7 +23,8 @@ import { FileText, GripVertical, Link2, Pencil } from 'lucide-react'
 const MANUAL_MODAL_DEFAULT_WIDTH = 1024
 const MANUAL_MODAL_DEFAULT_HEIGHT = 800
 const MANUAL_MODAL_RECT_STORAGE_KEY = 'sop-manual-modal-rect-v2'
-const MANUAL_EDITOR_HEIGHT = 220
+const MANUAL_EDITOR_MIN_HEIGHT = 140
+const MANUAL_EDITOR_MAX_HEIGHT = 560
 
 type Props = {
   open: boolean
@@ -33,7 +34,7 @@ type Props = {
   description?: string
   value: string
   status: SopManualStatus
-  linkedHubArticleId?: string | null
+  linkedHubArticleIds?: string[]
   hubArticles?: HubArticleLinkOption[]
   viewLang: SopEditLocale
   uiLocaleEn: boolean
@@ -108,7 +109,7 @@ export default function SopManualEditDialog({
   description,
   value,
   status,
-  linkedHubArticleId = null,
+  linkedHubArticleIds = [],
   hubArticles = [],
   viewLang,
   uiLocaleEn,
@@ -119,14 +120,14 @@ export default function SopManualEditDialog({
 }: Props) {
   const [draft, setDraft] = useState(value)
   const [draftStatus, setDraftStatus] = useState<SopManualStatus>(status)
-  const [draftLinkedId, setDraftLinkedId] = useState(linkedHubArticleId ?? '')
+  const [draftLinkedIds, setDraftLinkedIds] = useState<string[]>(linkedHubArticleIds)
   const [isEditing, setIsEditing] = useState(false)
 
   const isEn = uiLocaleEn
   const canEdit = !readOnly
   const isViewMode = !isEditing || readOnly
-  const linkedId = isViewMode ? (linkedHubArticleId ?? '') : draftLinkedId
-  const isLinked = Boolean(linkedId.trim())
+  const linkedIds = isViewMode ? linkedHubArticleIds : draftLinkedIds
+  const isLinked = linkedIds.length > 0
   const dialogTitle = isViewMode
     ? title
     : editTitle ?? (isEn ? 'Edit manual' : '메뉴얼 수정')
@@ -149,16 +150,16 @@ export default function SopManualEditDialog({
     if (!open || isEditing) return
     setDraft(value)
     setDraftStatus(status)
-    setDraftLinkedId(linkedHubArticleId ?? '')
-  }, [open, value, status, linkedHubArticleId, isEditing])
+    setDraftLinkedIds(linkedHubArticleIds)
+  }, [open, value, status, linkedHubArticleIds, isEditing])
 
   const buildSavePayload = (
     nextStatus: SopManualStatus,
     inlineValue: string,
-    linkedIdValue: string
+    linkedIdsValue: string[]
   ): ManualSavePayload => ({
     value: inlineValue,
-    linkedHubArticleId: linkedIdValue.trim() || null,
+    linkedHubArticleIds: [...new Set(linkedIdsValue.map((id) => id.trim()).filter(Boolean))],
     status: nextStatus,
   })
 
@@ -167,7 +168,7 @@ export default function SopManualEditDialog({
   const handleCancelEdit = () => {
     setDraft(value)
     setDraftStatus(status)
-    setDraftLinkedId(linkedHubArticleId ?? '')
+    setDraftLinkedIds(linkedHubArticleIds)
     if (startInViewMode) {
       setIsEditing(false)
     } else {
@@ -179,12 +180,12 @@ export default function SopManualEditDialog({
     if (next === draftStatus) return
     setDraftStatus(next)
     if (isViewMode && canEdit) {
-      onSave(buildSavePayload(next, value, linkedHubArticleId ?? ''))
+      onSave(buildSavePayload(next, value, linkedHubArticleIds))
     }
   }
 
   const handleApply = () => {
-    onSave(buildSavePayload(draftStatus, draft, draftLinkedId))
+    onSave(buildSavePayload(draftStatus, draft, draftLinkedIds))
     if (startInViewMode) {
       setIsEditing(false)
     } else {
@@ -273,11 +274,12 @@ export default function SopManualEditDialog({
                         ? 'Add row-specific notes or instructions…'
                         : '이 줄에 대한 메모·안내를 입력하세요…'
                     }
-                    height={MANUAL_EDITOR_HEIGHT}
+                    height={220}
                     enableImageUpload={!isViewMode}
-                    enableResize={false}
-                    minHeight={MANUAL_EDITOR_HEIGHT}
-                    maxHeight={MANUAL_EDITOR_HEIGHT}
+                    enableResize
+                    resizeWhenReadOnly
+                    minHeight={MANUAL_EDITOR_MIN_HEIGHT}
+                    maxHeight={MANUAL_EDITOR_MAX_HEIGHT}
                     readOnly={isViewMode}
                   />
                 </div>
@@ -288,7 +290,7 @@ export default function SopManualEditDialog({
               <section className="shrink-0 flex-col border-t border-gray-100 pt-5">
                 <SectionHeading
                   icon={Link2}
-                  label={isEn ? 'Linked hub document' : '허브 문서 연결'}
+                  label={isEn ? 'Linked hub documents' : '허브 문서 연결'}
                 />
                 {!isViewMode && hubArticles.length === 0 ? (
                   <p className="mb-3 text-xs text-gray-500">
@@ -298,8 +300,8 @@ export default function SopManualEditDialog({
                   </p>
                 ) : null}
                 <SopManualLinkedArticlePanel
-                  articleId={linkedId}
-                  {...(!isViewMode && canEdit ? { onArticleIdChange: setDraftLinkedId } : {})}
+                  articleIds={linkedIds}
+                  {...(!isViewMode && canEdit ? { onArticleIdsChange: setDraftLinkedIds } : {})}
                   hubArticles={hubArticles}
                   viewLang={viewLang}
                   uiLocaleEn={uiLocaleEn}

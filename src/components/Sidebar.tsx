@@ -4,14 +4,15 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
-import { 
-  Home, 
-  Calendar, 
-  Package, 
+import {
+  Home,
+  Calendar,
+  Package,
   ChevronLeft,
   ChevronRight,
-  UserCheck
+  UserCheck,
 } from 'lucide-react'
+import { isLegalPagePath } from '@/lib/customerSiteRoutes'
 
 const SIDEBAR_COLLAPSED_KEY = 'tms-sidebar-collapsed'
 
@@ -36,6 +37,8 @@ const Sidebar = () => {
       pathname.startsWith(`/${locale}/products`) ||
       pathname.startsWith(`/${locale}/off-schedule`) ||
       pathname.startsWith(`/${locale}/photos/`) ||
+      pathname.startsWith(`/${locale}/reservation-check`) ||
+      isLegalPagePath(pathname) ||
       pathname === `/${locale}` ||
       pathname === `/${locale}/`) {
     return null

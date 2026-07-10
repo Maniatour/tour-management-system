@@ -17,6 +17,8 @@ type CustomerPageZoneProps = {
   className?: string
   /** 목록 카드 등 URL에 상품 ID가 없을 때 명시적으로 전달 */
   productId?: string | null
+  /** 하위 zone에 수정 버튼이 있을 때 부모 버튼 숨김 (하이라이트·탭·카드 등) */
+  suppressEditButton?: boolean
 }
 
 /** 고객 페이지 영역 — preview=1&editMode=1 또는 워크bench postMessage 시 수정 버튼 표시 */
@@ -25,11 +27,12 @@ export default function CustomerPageZone({
   children,
   className = '',
   productId: productIdProp,
+  suppressEditButton = false,
 }: CustomerPageZoneProps) {
   const params = useParams()
   const searchParams = useSearchParams()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const showEditButton = isPreview && isEditMode
+  const showEditButton = isPreview && isEditMode && !suppressEditButton
   const canonicalZone = resolveCustomerPageZone(zone)
   const editConfig = getZoneEditConfig(canonicalZone)
   const uiStyle = useCustomerPageZoneUiStyle(canonicalZone)
@@ -54,7 +57,7 @@ export default function CustomerPageZone({
       data-customer-zone={zone}
       data-edit-mode={showEditButton ? '1' : '0'}
       style={uiInlineStyle}
-      className={`customer-page-zone cp-ui-zone relative ${hasUiStyle ? 'cp-ui-styled-zone' : ''} ${showEditButton ? 'customer-page-zone--editable' : ''} ${className}`.trim()}
+      className={`customer-page-zone cp-ui-zone relative ${hasUiStyle ? 'cp-ui-styled-zone' : ''} ${showEditButton ? 'customer-page-zone--editable' : ''} ${zone === 'detail-mobile-sticky-cta' ? 'customer-page-zone--fixed' : ''} ${className}`.trim()}
     >
       {children}
       {showEditButton && (

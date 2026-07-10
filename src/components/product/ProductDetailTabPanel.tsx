@@ -93,7 +93,7 @@ export default function ProductDetailTabPanel({
   ]
 
   return (
-    <CustomerPageZone zone="detail-tabs" className="rounded-2xl cp-ui-panel-surface shadow-sm">
+    <CustomerPageZone zone="detail-tabs" suppressEditButton className="rounded-2xl cp-ui-panel-surface shadow-sm">
       <div className="overflow-hidden rounded-2xl">
       <div className="border-b cp-ui-panel-surface">
         <nav className="-mb-px flex overflow-x-auto px-4 scrollbar-hide sm:px-6" aria-label="Product detail tabs">

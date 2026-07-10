@@ -1,0 +1,48 @@
+'use client'
+
+import { useEffect, type ReactNode } from 'react'
+import CustomerSiteFooter from '@/components/customer/CustomerSiteFooter'
+import { postCustomerPagePreviewHeight } from '@/lib/customerPageEditMessaging'
+
+type CustomerPageShellProps = {
+  locale: string
+  children: ReactNode
+  className?: string
+}
+
+function measurePreviewHeight() {
+  if (typeof document === 'undefined') return 0
+  return Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)
+}
+
+/** 고객-facing 페이지 공통 래퍼 — 본문 + 사이트 푸터 */
+export default function CustomerPageShell({
+  locale,
+  children,
+  className = '',
+}: CustomerPageShellProps) {
+  useEffect(() => {
+    if (window.parent === window) return
+
+    const notifyOnce = () => {
+      const height = measurePreviewHeight()
+      if (height > 0) postCustomerPagePreviewHeight(height)
+    }
+
+    notifyOnce()
+    const delayedTimers = [400, 1200].map((ms) => window.setTimeout(notifyOnce, ms))
+
+    return () => {
+      delayedTimers.forEach((id) => window.clearTimeout(id))
+    }
+  }, [])
+
+  return (
+    <div className={`customer-page-shell flex min-h-full flex-col ${className}`.trim()}>
+      <div className="flex-1">{children}</div>
+      <div className="-mx-2 mt-8 lg:-mx-6" data-customer-site-footer>
+        <CustomerSiteFooter locale={locale} forceShow />
+      </div>
+    </div>
+  )
+}

@@ -20,7 +20,11 @@ function copyChecklistItemRowExtras(prev: SopChecklistItem | undefined): Partial
     ...(prev.manual_ko ? { manual_ko: prev.manual_ko } : {}),
     ...(prev.manual_en ? { manual_en: prev.manual_en } : {}),
     ...(prev.manual_status ? { manual_status: prev.manual_status } : {}),
-    ...(prev.linked_hub_article_id ? { linked_hub_article_id: prev.linked_hub_article_id } : {}),
+    ...(prev.linked_hub_article_ids?.length
+      ? { linked_hub_article_ids: prev.linked_hub_article_ids }
+      : prev.linked_hub_article_id
+        ? { linked_hub_article_id: prev.linked_hub_article_id }
+        : {}),
     ...(prev.row_display === 'text' ? { row_display: 'text' as const } : {}),
     ...(prev.attachments?.length ? { attachments: prev.attachments } : {}),
   }
@@ -42,7 +46,7 @@ export type ManualIconState = 'empty' | 'draft' | 'complete'
 
 export type ManualSavePayload = {
   value: string
-  linkedHubArticleId: string | null
+  linkedHubArticleIds: string[]
   status: SopManualStatus
 }
 
@@ -51,6 +55,16 @@ export type SopManualFields = {
   manual_en?: string
   manual_status?: SopManualStatus
   linked_hub_article_id?: string
+  linked_hub_article_ids?: string[]
+}
+
+export function getLinkedHubArticleIds(fields: SopManualFields): string[] {
+  const fromArray = (fields.linked_hub_article_ids ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean)
+  if (fromArray.length) return [...new Set(fromArray)]
+  const legacy = fields.linked_hub_article_id?.trim()
+  return legacy ? [legacy] : []
 }
 
 export function getManualValue(fields: SopManualFields, lang: SopEditLocale): string {
@@ -58,7 +72,7 @@ export function getManualValue(fields: SopManualFields, lang: SopEditLocale): st
 }
 
 export function hasManualLink(fields: SopManualFields): boolean {
-  return Boolean(fields.linked_hub_article_id?.trim())
+  return getLinkedHubArticleIds(fields).length > 0
 }
 
 export function hasManualSource(fields: SopManualFields, lang: SopEditLocale): boolean {
@@ -88,13 +102,14 @@ export function applyManualSaveToFields(
   const manual_en = lang === 'en' ? v : (fields.manual_en ?? '')
   const hasKo = hasChecklistManualContent(manual_ko)
   const hasEn = hasChecklistManualContent(manual_en)
-  const linkId = payload.linkedHubArticleId?.trim() ?? ''
+  const linkIds = [...new Set((payload.linkedHubArticleIds ?? []).map((id) => id.trim()).filter(Boolean))]
 
-  if (!hasKo && !hasEn && !linkId) {
+  if (!hasKo && !hasEn && !linkIds.length) {
     const {
       manual_ko: _ko,
       manual_en: _en,
       linked_hub_article_id: _link,
+      linked_hub_article_ids: _links,
       manual_status: _st,
       ...rest
     } = fields
@@ -106,8 +121,10 @@ export function applyManualSaveToFields(
   else delete next.manual_ko
   if (hasEn) next.manual_en = manual_en
   else delete next.manual_en
-  if (linkId) next.linked_hub_article_id = linkId
-  else delete next.linked_hub_article_id
+  delete next.linked_hub_article_id
+  delete next.linked_hub_article_ids
+  if (linkIds.length > 1) next.linked_hub_article_ids = linkIds
+  else if (linkIds.length === 1) next.linked_hub_article_id = linkIds[0]
   return next
 }
 
@@ -185,7 +202,7 @@ function isLegacySectionBodySlot(category: SopCategory): boolean {
   if (hasCategoryTitle(category)) return false
   if ((category.checklist_items?.length ?? 0) > 0) return false
   if (category.manual_ko?.trim() || category.manual_en?.trim()) return false
-  if (category.linked_hub_article_id?.trim()) return false
+  if (category.linked_hub_article_ids?.length || category.linked_hub_article_id?.trim()) return false
   // 본문이 있는 레거시 슬롯만 이전 — 빈 새 카테고리는 유지
   return Boolean(category.content_ko?.trim() || category.content_en?.trim())
 }
@@ -357,14 +374,20 @@ function mergeManualFieldsInto<T extends SopManualFields>(base: T, saved: SopMan
     manual_en: _me,
     manual_status: _ms,
     linked_hub_article_id: _lid,
+    linked_hub_article_ids: _lids,
     ...rest
   } = base
+  const linkIds = getLinkedHubArticleIds(saved)
   return {
     ...rest,
     ...(saved.manual_ko ? { manual_ko: saved.manual_ko } : {}),
     ...(saved.manual_en ? { manual_en: saved.manual_en } : {}),
     ...(saved.manual_status ? { manual_status: saved.manual_status } : {}),
-    ...(saved.linked_hub_article_id ? { linked_hub_article_id: saved.linked_hub_article_id } : {}),
+    ...(linkIds.length > 1
+      ? { linked_hub_article_ids: linkIds }
+      : linkIds.length === 1
+        ? { linked_hub_article_id: linkIds[0] }
+        : {}),
   } as T
 }
 

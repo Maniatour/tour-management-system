@@ -7,6 +7,10 @@ import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
 interface Reservation {
   id: string
@@ -72,6 +76,8 @@ function ReservationCheckPageInner() {
   const t = useTranslations('reservationCheck')
   const locale = useLocale()
   const dateLocale = locale === 'en' ? 'en-US' : 'ko-KR'
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
 
   const [reservationId, setReservationId] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -210,24 +216,36 @@ function ReservationCheckPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <CustomerPagePreviewHighlightEffect />
-      <CustomerPageZone zone="reservation-check-header" className="shadow-sm border-b cp-ui-panel-surface">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center space-x-4">
-            <Link href={`/${locale}`} className="cp-ui-muted hover:opacity-80">
-              <ArrowLeft size={24} />
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold">{t('title')}</h1>
-              <p className="cp-ui-muted">{t('subtitle')}</p>
-            </div>
-          </div>
-        </div>
-      </CustomerPageZone>
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen bg-gray-50">
+        <CustomerPagePreviewHighlightEffect />
+      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="reservation-check" />}
+      <CustomerPageZoneLayoutRenderer
+        pageId="reservation-check"
+        layoutEditMode={layoutEditMode}
+        renderBlock={(zoneId) => {
+          if (zoneId === 'reservation-check-header') {
+            return (
+              <CustomerPageZone zone="reservation-check-header" className="shadow-sm border-b cp-ui-panel-surface">
+                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                  <div className="flex items-center space-x-4">
+                    <Link href={`/${locale}`} className="cp-ui-muted hover:opacity-80">
+                      <ArrowLeft size={24} />
+                    </Link>
+                    <div>
+                      <h1 className="text-2xl font-bold">{t('title')}</h1>
+                      <p className="cp-ui-muted">{t('subtitle')}</p>
+                    </div>
+                  </div>
+                </div>
+              </CustomerPageZone>
+            )
+          }
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <CustomerPageZone zone="reservation-check-form" className="cp-ui-panel-surface rounded-lg shadow-sm p-6 mb-8">
+          if (zoneId === 'reservation-check-form') {
+            return (
+              <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <CustomerPageZone zone="reservation-check-form" className="cp-ui-panel-surface rounded-lg shadow-sm p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4">{t('formTitle')}</h2>
           <div className="space-y-4">
             <div>
@@ -454,7 +472,14 @@ function ReservationCheckPageInner() {
             </div>
           </div>
         )}
+              </div>
+            )
+          }
+
+          return null
+        }}
+      />
       </div>
-    </div>
+    </CustomerPageShell>
   )
 }

@@ -49,9 +49,11 @@ export default function ProductDetailHeader({
                 {categoryLabel}
               </span>
               {primaryTag && (
-                <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:text-sm">
-                  {primaryTag}
-                </span>
+                <CustomerPageZone zone="detail-overview-tags">
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:text-sm">
+                    {primaryTag}
+                  </span>
+                </CustomerPageZone>
               )}
             </div>
 
@@ -80,7 +82,8 @@ export default function ProductDetailHeader({
           </div>
 
           {typeof totalPrice === 'number' && onBookNow && (
-            <div className="hidden shrink-0 rounded-2xl cp-ui-panel-surface p-5 lg:block lg:min-w-[280px]">
+            <CustomerPageZone zone="detail-header-price" className="hidden shrink-0 lg:block">
+            <div className="rounded-2xl cp-ui-panel-surface p-5 lg:min-w-[280px]">
               <p className="text-sm font-medium cp-ui-muted">{t('fromPrice')}</p>
               <p className="mt-1 text-3xl font-bold cp-ui-price">
                 ${totalPrice}
@@ -94,6 +97,7 @@ export default function ProductDetailHeader({
                 {t('checkAvailability')}
               </button>
             </div>
+            </CustomerPageZone>
           )}
         </div>
       </div>

@@ -20,6 +20,68 @@ function selectionInsideList(root: HTMLElement | null): boolean {
   return false
 }
 
+/** LightRichEditor 이미지 너비 — htmlToMarkdown 직렬화용 */
+const SOPIMG_PREFIX = '[[sopimg:'
+const SOPIMG_IMAGE_MD_RE = /\[\[sopimg:([^\]]+)\]\]!\[([^\]]*)\]\(([^)]+)\)/g
+
+const DEFAULT_IMG_STYLE =
+  'max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;'
+
+function isSafeSopImageWidthToken(width: string): boolean {
+  const w = width.trim()
+  if (!w || w.length > 16) return false
+  return /^[0-9.]+\s*(px|%)?$/i.test(w)
+}
+
+function extractImgWidthFromTagAttrs(attrs: string): string | null {
+  const styleMatch = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs)
+  const style = styleMatch?.[1] ?? styleMatch?.[2] ?? ''
+  if (style) {
+    const wm = /(?:^|;)\s*width\s*:\s*([^;]+)/i.exec(style)
+    if (wm?.[1]?.trim()) return wm[1].trim()
+  }
+  const widthAttr = /width\s*=\s*"([^"]+)"/i.exec(attrs)
+  if (widthAttr?.[1]?.trim()) return widthAttr[1].trim()
+  return null
+}
+
+function buildSopImageHtml(src: string, alt: string, width?: string | null, editable = false): string {
+  const safeAlt = alt.replace(/"/g, '&quot;')
+  const cursor = editable ? ' cursor: pointer;' : ''
+  if (width && isSafeSopImageWidthToken(width)) {
+    const w = width.trim()
+    return `<img src="${src}" alt="${safeAlt}" data-sop-img="1" class="sop-editable-image" style="width: ${w}; max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;${cursor}" />`
+  }
+  return `<img src="${src}" alt="${safeAlt}" data-sop-img="1" class="sop-editable-image" style="${DEFAULT_IMG_STYLE}${cursor}" />`
+}
+
+function decodeSopImageWidthTokens(markdown: string, editable = false): string {
+  return markdown.replace(SOPIMG_IMAGE_MD_RE, (_full, width: string, alt: string, src: string) => {
+    if (!isSafeSopImageWidthToken(width)) {
+      return buildSopImageHtml(src, alt, null, editable)
+    }
+    return buildSopImageHtml(src, alt, width, editable)
+  })
+}
+
+function tokenizeSopImages(html: string): string {
+  return html.replace(/<img\b([^>]*?)\/?>/gi, (full, attrs: string) => {
+    const src = /src\s*=\s*"([^"]+)"/i.exec(attrs)?.[1] ?? ''
+    if (!src) return full
+    const alt = /alt\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? ''
+    const width = extractImgWidthFromTagAttrs(attrs)
+    const md = `![${alt}](${src})`
+    if (width && isSafeSopImageWidthToken(width)) {
+      return `${SOPIMG_PREFIX}${width.trim()}]]${md}`
+    }
+    return md
+  })
+}
+
+function stripSopImageWidthTokens(markdown: string): string {
+  return markdown.replace(SOPIMG_IMAGE_MD_RE, (_full, _w: string, alt: string, src: string) => `![${alt}](${src})`)
+}
+
 /** LightRichEditor 글자 크기(span style font-size) — htmlToMarkdown이 태그를 지우기 전에 직렬화 */
 const SOPFS_OPEN = '[[sopfs:'
 const SOPFS_CLOSE = '[[/sopfs]]'
@@ -64,6 +126,7 @@ export function stripSopFontSizeTokens(markdown: string): string {
 
 export function sopPlainDisplayText(raw: string): string {
   let t = stripSopFontSizeTokens(raw ?? '')
+  t = stripSopImageWidthTokens(t)
   t = t.replace(/<[^>]+>/g, ' ')
   t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
   t = t.replace(/\*([^*]+)\*/g, '$1')
@@ -93,14 +156,17 @@ function tokenizeSopFontSizeSpans(html: string): string {
 }
 
 // 마크다운을 HTML로 변환하는 함수
-export const markdownToHtml = (markdown: string): string => {
+export const markdownToHtml = (markdown: string, options?: { editableImages?: boolean }): string => {
   if (!markdown) return ''
 
   let html = markdown.replace(/\r\n/g, '\n')
   html = decodeSopFontSizeTokens(html)
+  html = decodeSopImageWidthTokens(html, options?.editableImages ?? false)
 
-  // 이미지 변환: ![alt](src) -> <img src="src" alt="alt" />
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />')
+  // 이미지 변환: ![alt](src) -> <img ...> (sopimg 토큰은 위에서 이미 처리)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) =>
+    buildSopImageHtml(src, alt, null, options?.editableImages ?? false)
+  )
 
   // 굵게 변환: **text** -> <strong>text</strong>
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -263,10 +329,7 @@ const liInnerToMarkdownLine = (inner: string): string => {
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
   markdown = tokenizeSopFontSizeSpans(markdown)
-
-  // 이미지 변환: <img src="..." alt="..." /> -> ![alt](src)
-  markdown = markdown.replace(/<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*\/?>/g, '![$2]($1)')
-  markdown = markdown.replace(/<img[^>]+src="([^"]+)"[^>]*\/?>/g, '![]($1)')
+  markdown = tokenizeSopImages(markdown)
 
   // 굵게 변환: <strong>text</strong> -> **text**
   markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**')
@@ -352,6 +415,8 @@ interface LightRichEditorProps {
   className?: string
   showToolbar?: boolean
   enableImageUpload?: boolean
+  /** 삽입된 스크린샷·이미지 클릭 후 크기 조절 */
+  enableImageResize?: boolean
   enableColorPicker?: boolean
   enableFontSize?: boolean
   enableLink?: boolean
@@ -360,6 +425,8 @@ interface LightRichEditorProps {
   enableItalic?: boolean
   enableUnderline?: boolean
   enableResize?: boolean
+  /** 읽기 전용이어도 높이 드래그 조절 허용 */
+  resizeWhenReadOnly?: boolean
   minHeight?: number
   maxHeight?: number
 }
@@ -374,6 +441,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   className = "",
   showToolbar = true,
   enableImageUpload = true,
+  enableImageResize = true,
   enableColorPicker = true,
   enableFontSize = true,
   enableLink = true,
@@ -382,14 +450,19 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   enableItalic = true,
   enableUnderline = true,
   enableResize = true,
+  resizeWhenReadOnly = false,
   minHeight = 100,
   maxHeight = 800
 }) => {
   const effectiveShowToolbar = readOnly ? false : showToolbar
-  const effectiveResize = readOnly ? false : enableResize
+  const effectiveResize = readOnly ? resizeWhenReadOnly : enableResize
+  const effectiveImageResize = !readOnly && enableImageUpload && enableImageResize
+  const htmlOptions = { editableImages: effectiveImageResize }
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isInitializedRef = useRef(false)
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
+  const [imageToolbarPos, setImageToolbarPos] = useState<{ top: number; left: number } | null>(null)
   
   // 드롭다운 상태 관리
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -446,14 +519,14 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     if (editorRef.current) {
       if (!isInitializedRef.current) {
         // 초기화: value가 있으면 설정, 없으면 빈 문자열로 초기화
-        const htmlContent = value ? markdownToHtml(value) : ''
+        const htmlContent = value ? markdownToHtml(value, htmlOptions) : ''
         editorRef.current.innerHTML = htmlContent
         isInitializedRef.current = true
       } else {
         // 이미 초기화된 경우, value가 변경되면 에디터 내용도 업데이트
         // 단, 사용자가 현재 편집 중이 아닐 때만 (커서가 없을 때)
         const currentContent = editorRef.current.innerHTML
-        const expectedContent = value ? markdownToHtml(value) : ''
+        const expectedContent = value ? markdownToHtml(value, htmlOptions) : ''
         const currentMarkdown = htmlToMarkdown(currentContent)
         // 현재 내용과 새로운 value가 다를 때만 업데이트 (외부에서 value가 변경된 경우)
         if (currentMarkdown !== value && !editorRef.current.matches(':focus-within')) {
@@ -461,7 +534,138 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         }
       }
     }
-  }, [value, readOnly])
+  }, [value, readOnly, htmlOptions.editableImages])
+
+  // 에디터 내용 업데이트
+  const updateEditorContent = useCallback(() => {
+    if (readOnly) return
+    if (editorRef.current) {
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true
+      }
+
+      const htmlContent = editorRef.current.innerHTML
+      const markdownContent = htmlToMarkdown(htmlContent)
+      onChange(markdownContent)
+    }
+  }, [readOnly, onChange])
+
+  const syncSelectedImageToolbar = useCallback((img: HTMLImageElement | null) => {
+    if (!img || !editorRef.current) {
+      setImageToolbarPos(null)
+      return
+    }
+    const editorBox = editorRef.current.getBoundingClientRect()
+    const imgBox = img.getBoundingClientRect()
+    setImageToolbarPos({
+      top: imgBox.top - editorBox.top + editorRef.current.scrollTop - 4,
+      left: imgBox.left - editorBox.left + editorRef.current.scrollLeft,
+    })
+  }, [])
+
+  const clearSelectedImage = useCallback(() => {
+    if (selectedImage) {
+      selectedImage.classList.remove('sop-editable-image--selected')
+    }
+    setSelectedImage(null)
+    setImageToolbarPos(null)
+  }, [selectedImage])
+
+  const selectEditorImage = useCallback(
+    (img: HTMLImageElement) => {
+      editorRef.current?.querySelectorAll('img.sop-editable-image--selected').forEach((node) => {
+        node.classList.remove('sop-editable-image--selected')
+      })
+      img.classList.add('sop-editable-image--selected')
+      setSelectedImage(img)
+      syncSelectedImageToolbar(img)
+    },
+    [syncSelectedImageToolbar]
+  )
+
+  const applyImageWidth = useCallback(
+    (img: HTMLImageElement, width: string) => {
+      if (!isSafeSopImageWidthToken(width)) return
+      img.style.width = width.trim()
+      img.style.maxWidth = '100%'
+      img.style.height = 'auto'
+      syncSelectedImageToolbar(img)
+      updateEditorContent()
+    },
+    [syncSelectedImageToolbar, updateEditorContent]
+  )
+
+  const getImageWidthPercent = useCallback((img: HTMLImageElement): number => {
+    const editorWidth = editorRef.current?.clientWidth ?? 1
+    const imgWidth = img.getBoundingClientRect().width
+    return Math.round((imgWidth / editorWidth) * 100)
+  }, [])
+
+  const handleEditorImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!effectiveImageResize) return
+    const target = e.target
+    if (target instanceof HTMLImageElement && editorRef.current?.contains(target)) {
+      e.preventDefault()
+      selectEditorImage(target)
+      return
+    }
+    if (!(target instanceof HTMLElement && target.closest('.sop-image-resize-toolbar'))) {
+      clearSelectedImage()
+    }
+  }
+
+  const startImageWidthDrag = (e: React.MouseEvent, img: HTMLImageElement) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startWidth = img.getBoundingClientRect().width
+    const maxWidth = editorRef.current?.clientWidth ?? startWidth
+
+    const onMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault()
+      const delta = moveEvent.clientX - startX
+      const next = Math.max(80, Math.min(maxWidth, startWidth + delta))
+      img.style.width = `${Math.round(next)}px`
+      img.style.maxWidth = '100%'
+      img.style.height = 'auto'
+      syncSelectedImageToolbar(img)
+    }
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      updateEditorContent()
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  React.useEffect(() => {
+    if (!selectedImage || !effectiveImageResize) return
+    const editor = editorRef.current
+    if (!editor) return
+
+    const reposition = () => syncSelectedImageToolbar(selectedImage)
+    editor.addEventListener('scroll', reposition)
+    window.addEventListener('resize', reposition)
+    return () => {
+      editor.removeEventListener('scroll', reposition)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [selectedImage, effectiveImageResize, syncSelectedImageToolbar])
+
+  const imageResizeHandleStyle = React.useMemo(() => {
+    if (!selectedImage || !editorRef.current) return null
+    const editorBox = editorRef.current.getBoundingClientRect()
+    const imgBox = selectedImage.getBoundingClientRect()
+    return {
+      top: imgBox.top - editorBox.top + editorRef.current.scrollTop + imgBox.height / 2 - 12,
+      left: imgBox.right - editorBox.left + editorRef.current.scrollLeft - 6,
+    }
+  }, [selectedImage, imageToolbarPos])
+
+  const IMAGE_WIDTH_PRESETS = ['25%', '50%', '75%', '100%'] as const
 
   // 드롭다운 외부 클릭 시 닫기
   React.useEffect(() => {
@@ -512,21 +716,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     document.addEventListener('touchend', handleEnd)
   }, [currentHeight, minHeight, maxHeight])
 
-  // 에디터 내용 업데이트
-  const updateEditorContent = () => {
-    if (readOnly) return
-    if (editorRef.current) {
-      // 초기화되지 않았다면 초기화
-      if (!isInitializedRef.current) {
-        isInitializedRef.current = true
-      }
-
-      const htmlContent = editorRef.current.innerHTML
-      const markdownContent = htmlToMarkdown(htmlContent)
-      onChange(markdownContent)
-    }
-  }
-
   const insertLink = () => {
     const url = prompt('링크 URL을 입력하세요:')
     if (url) {
@@ -552,7 +741,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
 
   const insertImageDataUrl = (imageUrl: string, alt: string) => {
     editorRef.current?.focus()
-    const imageHtml = `<img src="${imageUrl}" alt="${alt.replace(/"/g, '&quot;')}" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />`
+    const imageHtml = buildSopImageHtml(imageUrl, alt, null, effectiveImageResize)
     document.execCommand('insertHTML', false, imageHtml)
     setTimeout(updateEditorContent, 0)
   }
@@ -812,10 +1001,57 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       )}
       
       {/* 에디터 영역 */}
-      <div 
+      <div className="relative flex-shrink-0">
+        {effectiveImageResize && selectedImage && imageToolbarPos && (
+          <div
+            className="sop-image-resize-toolbar absolute z-20 flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-md"
+            style={{
+              top: Math.max(4, imageToolbarPos.top - 44),
+              left: Math.max(4, imageToolbarPos.left),
+              maxWidth: 'calc(100% - 8px)',
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <span className="mr-1 text-[11px] font-medium text-slate-500">크기</span>
+            {IMAGE_WIDTH_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => applyImageWidth(selectedImage, preset)}
+                className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                  getImageWidthPercent(selectedImage) === parseInt(preset, 10)
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+            <input
+              type="range"
+              min={20}
+              max={100}
+              value={Math.min(100, Math.max(20, getImageWidthPercent(selectedImage)))}
+              onChange={(e) => applyImageWidth(selectedImage, `${e.target.value}%`)}
+              className="ml-1 h-1.5 w-20 cursor-pointer accent-blue-600"
+              aria-label="이미지 너비 조절"
+            />
+          </div>
+        )}
+        {effectiveImageResize && selectedImage && imageResizeHandleStyle && (
+          <div
+            role="presentation"
+            className="absolute z-20 h-6 w-2 cursor-ew-resize rounded bg-blue-600 shadow-sm hover:bg-blue-700"
+            style={imageResizeHandleStyle}
+            title="드래그하여 크기 조절"
+            onMouseDown={(e) => startImageWidthDrag(e, selectedImage)}
+          />
+        )}
+        <div
         ref={editorRef}
         contentEditable={!readOnly}
         suppressContentEditableWarning={true}
+        onClick={handleEditorImageClick}
         onInput={readOnly ? undefined : updateEditorContent}
         onBlur={readOnly ? undefined : updateEditorContent}
         onKeyUp={readOnly ? undefined : updateEditorContent}
@@ -867,7 +1103,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           }
         }
         }
-        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
+        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
         style={{ 
           height: `${currentHeight}px`,
           minHeight: `${minHeight}px`,
@@ -878,6 +1114,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         }}
         data-placeholder={placeholder}
       />
+      </div>
       
       {/* 사이즈 조정 핸들 */}
       {effectiveResize && (

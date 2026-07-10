@@ -11,7 +11,8 @@ import { sopDocumentToJson } from '@/types/sopStructure'
 
 export async function saveKnowledgeArticle(
   form: KnowledgeArticleDraftForm,
-  userId: string | null
+  userId: string | null,
+  options?: { metadataOnly?: boolean }
 ): Promise<{ ok: true; slug: string; id: string } | { ok: false; error: string }> {
   const slugSource = form.slug.trim() || form.title_en.trim() || form.title_ko.trim()
   if (!slugSource) {
@@ -34,8 +35,10 @@ export async function saveKnowledgeArticle(
     sort_order: form.sort_order,
     is_published: form.is_published,
     published_at: form.is_published ? new Date().toISOString() : null,
-    body_structure: sopDocumentToJson(form.bodyDoc) as Json,
     updated_by: userId,
+    ...(options?.metadataOnly && form.id
+      ? {}
+      : { body_structure: sopDocumentToJson(form.bodyDoc) as Json }),
   }
 
   if (form.id) {

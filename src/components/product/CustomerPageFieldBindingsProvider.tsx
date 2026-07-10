@@ -14,7 +14,7 @@ import {
 } from '@/lib/customerPageBindingsSync'
 import { CUSTOMER_PAGE_SOFT_RELOAD_EVENT } from '@/lib/customerPageSoftReload'
 import { fetchAllCustomerPageBindings } from '@/lib/customerPageBindingPersistence'
-import { fetchCustomerPageHomeLayout } from '@/lib/customerPageLayoutPersistence'
+import { fetchCustomerPageHomeLayout, fetchAllCustomerPageZoneLayouts, fetchCustomerPageListingCardLayout } from '@/lib/customerPageLayoutPersistence'
 import { fetchCustomerPageGlobalTheme } from '@/lib/customerPageGlobalThemePersistence'
 import { fetchCustomerPageHomeStructure } from '@/lib/customerPageHomeStructurePersistence'
 import { fetchCustomerPageTemplate } from '@/lib/customerPageTemplatePersistence'
@@ -42,6 +42,8 @@ export function CustomerPageFieldBindingsProvider({ children }: { children: Reac
         fetchAllCustomerPageBindings(),
         fetchAllCustomerPageUiStyles(),
         fetchCustomerPageHomeLayout(),
+        fetchAllCustomerPageZoneLayouts(),
+        fetchCustomerPageListingCardLayout(),
         fetchCustomerPageGlobalTheme(),
         fetchCustomerPageTemplate(),
         fetchCustomerPageHomeStructure(),

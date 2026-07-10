@@ -8,6 +8,10 @@ import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
 interface Product {
   id: string
@@ -62,7 +66,8 @@ export default function ProductTagsPage() {
 function ProductTagsPageInner() {
   const locale = useLocale()
   const t = useTranslations('common')
-  
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
   const [tagCategories, setTagCategories] = useState<TagCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -311,142 +316,159 @@ function ProductTagsPageInner() {
   })
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <CustomerPagePreviewHighlightEffect />
-      <CustomerPageZone zone="tags-page-header" className="shadow-sm border-b cp-ui-panel-surface">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-4xl font-bold text-center">{t('tagsPageTitle')}</h1>
-          <p className="mt-4 text-xl cp-ui-muted text-center">
-            {t('tagsPageSubtitle')}
-          </p>
-        </div>
-      </CustomerPageZone>
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen bg-gray-50">
+        <CustomerPagePreviewHighlightEffect />
+      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-tags" />}
+      <CustomerPageZoneLayoutRenderer
+        pageId="products-tags"
+        layoutEditMode={layoutEditMode}
+        renderBlock={(zoneId) => {
+          if (zoneId === 'tags-page-header') {
+            return (
+              <CustomerPageZone zone="tags-page-header" className="shadow-sm border-b cp-ui-panel-surface">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                  <h1 className="text-4xl font-bold text-center">{t('tagsPageTitle')}</h1>
+                  <p className="mt-4 text-xl cp-ui-muted text-center">{t('tagsPageSubtitle')}</p>
+                </div>
+              </CustomerPageZone>
+            )
+          }
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 검색 */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
-              placeholder={t('tagsPageSearchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        {/* 로딩 상태 */}
-        {loading && (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin cp-ui-icon" />
-            <span className="ml-2 cp-ui-muted">상품을 불러오는 중...</span>
-          </div>
-        )}
-
-        {/* 에러 상태 */}
-        {error && (
-          <div className="text-center py-12">
-            <div className="text-red-600 mb-4">{error}</div>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="cp-ui-btn-primary px-4 py-2 rounded-lg transition-colors"
-            >
-              다시 시도
-            </button>
-          </div>
-        )}
-
-        {/* 태그 카테고리 목록 */}
-        {!loading && !error && (
-          <CustomerPageZone zone="tags-page-categories" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTagCategories.map((tagCategory) => (
-              <div key={tagCategory.id} className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
-                {/* 태그 헤더 */}
-                <div className={`bg-gradient-to-r ${tagCategory.color} p-6 text-white`}>
-                  <div className="flex items-center space-x-3">
-                    <div className="text-3xl">{tagCategory.icon}</div>
-                    <div>
-                      <h3 className="text-lg font-bold">
-                        {locale === 'en' ? tagCategory.nameEn : tagCategory.name}
-                      </h3>
-                      <p className="text-sm opacity-90">{tagCategory.description}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-sm">
-                    {tagCategory.products.length}개 상품
+          if (zoneId === 'tags-page-categories') {
+            return (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+                  <div className="relative">
+                    <Search
+                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                      size={20}
+                    />
+                    <input
+                      type="text"
+                      placeholder={t('tagsPageSearchPlaceholder')}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
                   </div>
                 </div>
 
-                {/* 상품 목록 */}
-                <div className="p-4">
-                  {tagCategory.products.length > 0 ? (
-                    <div className="space-y-3">
-                      {tagCategory.products.slice(0, 3).map((product) => (
-                        <Link
-                          key={product.id}
-                          href={`/${locale}/products/${product.id}`}
-                          className="block p-3 border rounded-lg cp-ui-panel-surface hover:border-[var(--cp-ui-accent,#2563eb)] transition-colors"
-                        >
+                {loading && (
+                  <div className="flex justify-center items-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin cp-ui-icon" />
+                    <span className="ml-2 cp-ui-muted">상품을 불러오는 중...</span>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="text-center py-12">
+                    <div className="text-red-600 mb-4">{error}</div>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="cp-ui-btn-primary px-4 py-2 rounded-lg transition-colors"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                )}
+
+                {!loading && !error && (
+                  <CustomerPageZone
+                    zone="tags-page-categories"
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                  >
+                    {filteredTagCategories.map((tagCategory) => (
+                      <div
+                        key={tagCategory.id}
+                        className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
+                      >
+                        <div className={`bg-gradient-to-r ${tagCategory.color} p-6 text-white`}>
                           <div className="flex items-center space-x-3">
-                            {product.primary_image ? (
-                              <div className="w-12 h-12 relative rounded-lg overflow-hidden">
-                                <Image
-                                  src={product.primary_image}
-                                  alt={getCustomerDisplayName(product)}
-                                  fill
-                                  sizes="48px"
-                                  className="object-cover"
-                                />
-                              </div>
-                            ) : (
-                              <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                                <span className="text-gray-400">🏔️</span>
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-medium truncate">
-                                {getCustomerDisplayName(product)}
-                              </h4>
-                              <p className="text-xs cp-ui-muted cp-ui-price">
-                                ${product.base_price}부터
-                              </p>
+                            <div className="text-3xl">{tagCategory.icon}</div>
+                            <div>
+                              <h3 className="text-lg font-bold">
+                                {locale === 'en' ? tagCategory.nameEn : tagCategory.name}
+                              </h3>
+                              <p className="text-sm opacity-90">{tagCategory.description}</p>
                             </div>
                           </div>
-                        </Link>
-                      ))}
-                      {tagCategory.products.length > 3 && (
-                        <div className="text-center pt-2">
-                          <Link
-                            href={`/${locale}/products?tag=${tagCategory.id}`}
-                            className="text-sm cp-ui-link hover:underline"
-                          >
-                            +{tagCategory.products.length - 3}개 더 보기
-                          </Link>
+                          <div className="mt-3 text-sm">{tagCategory.products.length}개 상품</div>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      <p className="text-sm">해당 태그의 상품이 없습니다</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CustomerPageZone>
-        )}
 
-        {/* 검색 결과 없음 */}
-        {!loading && !error && filteredTagCategories.length === 0 && (
-          <div className="text-center py-12">
-            <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium text-gray-900">검색 결과가 없습니다</p>
-            <p className="text-gray-600">다른 검색어를 시도해보세요</p>
-          </div>
-        )}
+                        <div className="p-4">
+                          {tagCategory.products.length > 0 ? (
+                            <div className="space-y-3">
+                              {tagCategory.products.slice(0, 3).map((product) => (
+                                <Link
+                                  key={product.id}
+                                  href={`/${locale}/products/${product.id}`}
+                                  className="block p-3 border rounded-lg cp-ui-panel-surface hover:border-[var(--cp-ui-accent,#2563eb)] transition-colors"
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    {product.primary_image ? (
+                                      <div className="w-12 h-12 relative rounded-lg overflow-hidden">
+                                        <Image
+                                          src={product.primary_image}
+                                          alt={getCustomerDisplayName(product)}
+                                          fill
+                                          sizes="48px"
+                                          className="object-cover"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                                        <span className="text-gray-400">🏔️</span>
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="text-sm font-medium truncate">
+                                        {getCustomerDisplayName(product)}
+                                      </h4>
+                                      <p className="text-xs cp-ui-muted cp-ui-price">
+                                        ${product.base_price}부터
+                                      </p>
+                                    </div>
+                                  </div>
+                                </Link>
+                              ))}
+                              {tagCategory.products.length > 3 && (
+                                <div className="text-center pt-2">
+                                  <Link
+                                    href={`/${locale}/products?tag=${tagCategory.id}`}
+                                    className="text-sm cp-ui-link hover:underline"
+                                  >
+                                    +{tagCategory.products.length - 3}개 더 보기
+                                  </Link>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <p className="text-sm">해당 태그의 상품이 없습니다</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CustomerPageZone>
+                )}
+
+                {!loading && !error && filteredTagCategories.length === 0 && (
+                  <div className="text-center py-12">
+                    <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p className="text-lg font-medium text-gray-900">검색 결과가 없습니다</p>
+                    <p className="text-gray-600">다른 검색어를 시도해보세요</p>
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          return null
+        }}
+      />
       </div>
-    </div>
+    </CustomerPageShell>
   )
 }

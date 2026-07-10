@@ -49,6 +49,7 @@ import {
   getChecklistItemValue,
   getChecklistManualStatus,
   getChecklistManualValue,
+  getLinkedHubArticleIds,
   getSectionBodyValue,
   getSectionTitleValue,
   sopDisplayLabel,
@@ -268,7 +269,7 @@ export default function SopDocumentInlinePreviewEditor({
       return {
         value: getChecklistManualValue(item, editLang),
         status: getChecklistManualStatus(item),
-        linkedHubArticleId: item.linked_hub_article_id ?? null,
+        linkedHubArticleIds: getLinkedHubArticleIds(item),
         title: isEn ? 'View manual' : '메뉴얼 보기',
         editTitle: isEn ? 'Edit manual' : '메뉴얼 수정',
         description: rowLabel
@@ -292,7 +293,7 @@ export default function SopDocumentInlinePreviewEditor({
       return {
         value: getCategoryManualValue(category, editLang),
         status: getCategoryManualStatus(category),
-        linkedHubArticleId: category.linked_hub_article_id ?? null,
+        linkedHubArticleIds: getLinkedHubArticleIds(category),
         title: isEn ? 'View block manual' : '영역 메뉴얼 보기',
         editTitle: isEn ? 'Edit block manual' : '영역 메뉴얼 수정',
         description: blockLabel
@@ -718,7 +719,7 @@ export default function SopDocumentInlinePreviewEditor({
           {...(manualEditContext.description ? { description: manualEditContext.description } : {})}
           value={manualEditContext.value}
           status={manualEditContext.status}
-          linkedHubArticleId={manualEditContext.linkedHubArticleId}
+          linkedHubArticleIds={manualEditContext.linkedHubArticleIds}
           hubArticles={hubArticles}
           viewLang={editLang}
           uiLocaleEn={isEn}

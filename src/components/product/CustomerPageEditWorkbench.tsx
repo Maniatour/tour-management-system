@@ -9,6 +9,9 @@ import {
   isCustomerPageHomeLayoutEditMessage,
   isCustomerPageTemplateEditMessage,
   isCustomerPageZoneEditMessage,
+  isCustomerPageZoneLayoutEditMessage,
+  isCustomerPageListingCardLayoutEditMessage,
+  isCustomerPagePreviewHeightMessage,
   notifyIframeCustomerPageEditMode,
   notifyIframeCustomerPageReload,
 } from '@/lib/customerPageEditMessaging'
@@ -26,6 +29,7 @@ import {
   inferCustomerPageIdFromUrl,
   type CustomerPageId,
 } from '@/lib/customer-page-registry'
+import { pageSupportsZoneLayout, type ZoneLayoutPageId } from '@/lib/customerPageZoneLayoutCatalog'
 import {
   buildCustomerPageWorkbenchQuery,
   parseCustomerPageWorkbenchUrl,
@@ -34,6 +38,8 @@ import {
 } from '@/lib/customerPageWorkbenchState'
 import CustomerPageZoneEditPanel from '@/components/product/CustomerPageZoneEditPanel'
 import CustomerPageHomeLayoutPanel from '@/components/product/CustomerPageHomeLayoutPanel'
+import CustomerPageZoneLayoutPanel from '@/components/product/CustomerPageZoneLayoutPanel'
+import CustomerPageListingCardLayoutPanel from '@/components/product/CustomerPageListingCardLayoutPanel'
 import CustomerPageGlobalThemePanel from '@/components/product/CustomerPageGlobalThemePanel'
 import CustomerPageTemplatePanel from '@/components/product/CustomerPageTemplatePanel'
 import { useCustomerPageGlobalTheme } from '@/hooks/useCustomerPageGlobalTheme'
@@ -115,15 +121,23 @@ function CustomerPageEditWorkbenchInner({
   const [productsSearching, setProductsSearching] = useState(false)
   const [iframeKey, setIframeKey] = useState(0)
   const [iframeLoading, setIframeLoading] = useState(true)
+  const [iframeContentHeight, setIframeContentHeight] = useState(960)
   const [selectedZone, setSelectedZone] = useState<CustomerPageZone | null>(null)
   const [editProductId, setEditProductId] = useState<string | null>(null)
   const [editDirty, setEditDirty] = useState(false)
   const [showHomeLayoutPanel, setShowHomeLayoutPanel] = useState(false)
+  const [homeLayoutEditTargetId, setHomeLayoutEditTargetId] = useState<string | null>(null)
+  const [showZoneLayoutPanel, setShowZoneLayoutPanel] = useState(false)
+  const [zoneLayoutPageId, setZoneLayoutPageId] = useState<ZoneLayoutPageId>('products-tags')
+  const [zoneLayoutFocusZoneId, setZoneLayoutFocusZoneId] = useState<CustomerPageZone | null>(null)
+  const [showListingCardLayoutPanel, setShowListingCardLayoutPanel] = useState(false)
   const [showGlobalThemePanel, setShowGlobalThemePanel] = useState(false)
   const [showTemplatePanel, setShowTemplatePanel] = useState(false)
   const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale === 'en' ? 'en' : 'ko')
   const [previewViewport, setPreviewViewport] = useState<PreviewViewport>('desktop')
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const previewScrollRef = useRef<HTMLDivElement>(null)
+  const iframeHeightRef = useRef(960)
 
   const syncUrlState = variant === 'embedded'
 
@@ -150,6 +164,44 @@ function CustomerPageEditWorkbenchInner({
     setIframeKey((k) => k + 1)
   }, [])
 
+  const applyIframeHeight = useCallback(
+    (height: number) => {
+      const minHeight = previewViewport === 'mobile' ? 680 : 720
+      const next = Math.max(Math.ceil(height), minHeight)
+      if (Math.abs(next - iframeHeightRef.current) < 16) return
+
+      const scrollEl = previewScrollRef.current
+      const prevScrollTop = scrollEl?.scrollTop ?? 0
+
+      iframeHeightRef.current = next
+      setIframeContentHeight(next)
+
+      requestAnimationFrame(() => {
+        if (scrollEl) scrollEl.scrollTop = prevScrollTop
+      })
+    },
+    [previewViewport]
+  )
+
+  const syncIframeHeight = useCallback(() => {
+    try {
+      const iframe = iframeRef.current
+      const doc = iframe?.contentDocument
+      if (!doc) return
+
+      applyIframeHeight(
+        Math.max(doc.documentElement?.scrollHeight ?? 0, doc.body?.scrollHeight ?? 0)
+      )
+    } catch {
+      /* cross-origin 등 — postMessage fallback 사용 */
+    }
+  }, [applyIframeHeight])
+
+  const scheduleIframeHeightSync = useCallback(() => {
+    syncIframeHeight()
+    window.setTimeout(syncIframeHeight, 500)
+  }, [syncIframeHeight])
+
   const closeEditModal = useCallback(() => {
     setSelectedZone(null)
     setEditProductId(null)
@@ -161,22 +213,62 @@ function CustomerPageEditWorkbenchInner({
     closeEditModal()
   }, [editDirty, closeEditModal])
 
-  const openHomeLayoutPanel = useCallback(() => {
+  const openHomeLayoutPanel = useCallback((instanceId?: string) => {
     if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
     closeEditModal()
     setShowGlobalThemePanel(false)
     setShowTemplatePanel(false)
+    setShowZoneLayoutPanel(false)
+    setShowListingCardLayoutPanel(false)
+    setHomeLayoutEditTargetId(instanceId ?? null)
     setShowHomeLayoutPanel(true)
   }, [closeEditModal, editDirty, selectedZone])
 
+  const openZoneLayoutPanel = useCallback(
+    (targetPageId: ZoneLayoutPageId, zoneId?: CustomerPageZone) => {
+      if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
+      closeEditModal()
+      setShowGlobalThemePanel(false)
+      setShowTemplatePanel(false)
+      setShowHomeLayoutPanel(false)
+      setShowListingCardLayoutPanel(false)
+      setZoneLayoutPageId(targetPageId)
+      setZoneLayoutFocusZoneId(zoneId ?? null)
+      setShowZoneLayoutPanel(true)
+    },
+    [closeEditModal, editDirty, selectedZone]
+  )
+
+  const requestCloseListingCardLayoutPanel = useCallback(() => {
+    setShowListingCardLayoutPanel(false)
+  }, [])
+
+  const openListingCardLayoutPanel = useCallback(() => {
+    if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
+    closeEditModal()
+    setShowGlobalThemePanel(false)
+    setShowTemplatePanel(false)
+    setShowHomeLayoutPanel(false)
+    setShowZoneLayoutPanel(false)
+    setShowListingCardLayoutPanel(true)
+  }, [closeEditModal, editDirty, selectedZone])
+
+  const requestCloseZoneLayoutPanel = useCallback(() => {
+    setShowZoneLayoutPanel(false)
+    setZoneLayoutFocusZoneId(null)
+  }, [])
+
   const requestCloseHomeLayoutPanel = useCallback(() => {
     setShowHomeLayoutPanel(false)
+    setHomeLayoutEditTargetId(null)
   }, [])
 
   const openGlobalThemePanel = useCallback(() => {
     if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
     closeEditModal()
     setShowHomeLayoutPanel(false)
+    setShowZoneLayoutPanel(false)
+    setShowListingCardLayoutPanel(false)
     setShowTemplatePanel(false)
     setShowGlobalThemePanel(true)
   }, [closeEditModal, editDirty, selectedZone])
@@ -189,6 +281,8 @@ function CustomerPageEditWorkbenchInner({
     if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
     closeEditModal()
     setShowHomeLayoutPanel(false)
+    setShowZoneLayoutPanel(false)
+    setShowListingCardLayoutPanel(false)
     setShowGlobalThemePanel(false)
     setShowTemplatePanel(true)
   }, [closeEditModal, editDirty, selectedZone])
@@ -355,8 +449,23 @@ function CustomerPageEditWorkbenchInner({
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
 
+      if (isCustomerPagePreviewHeightMessage(event.data)) {
+        applyIframeHeight(event.data.height)
+        return
+      }
+
       if (isCustomerPageHomeLayoutEditMessage(event.data)) {
-        openHomeLayoutPanel()
+        openHomeLayoutPanel(event.data.instanceId)
+        return
+      }
+
+      if (isCustomerPageZoneLayoutEditMessage(event.data)) {
+        openZoneLayoutPanel(event.data.pageId, event.data.zoneId)
+        return
+      }
+
+      if (isCustomerPageListingCardLayoutEditMessage(event.data)) {
+        openListingCardLayoutPanel()
         return
       }
 
@@ -388,7 +497,13 @@ function CustomerPageEditWorkbenchInner({
       window.removeEventListener('message', handleMessage)
       retryTimers.forEach((id) => window.clearTimeout(id))
     }
-  }, [variant, isOpen, iframeKey, syncContextFromIframe, productId, openZoneEdit, openHomeLayoutPanel, openGlobalThemePanel, openTemplatePanel])
+  }, [variant, isOpen, iframeKey, previewViewport, applyIframeHeight, syncContextFromIframe, productId, openZoneEdit, openHomeLayoutPanel, openZoneLayoutPanel, openListingCardLayoutPanel, openGlobalThemePanel, openTemplatePanel])
+
+  useEffect(() => {
+    const initial = previewViewport === 'mobile' ? 680 : 960
+    iframeHeightRef.current = initial
+    setIframeContentHeight(initial)
+  }, [previewUrl, iframeKey, previewViewport])
 
   useEffect(() => {
     if (!iframeLoading) return
@@ -420,6 +535,8 @@ function CustomerPageEditWorkbenchInner({
     if (!guardUnsaved()) return
     closeEditModal()
     setShowHomeLayoutPanel(false)
+    setShowZoneLayoutPanel(false)
+    setShowListingCardLayoutPanel(false)
     setShowGlobalThemePanel(false)
     setShowTemplatePanel(false)
     setPageId(id)
@@ -469,13 +586,13 @@ function CustomerPageEditWorkbenchInner({
 
   const iframeShellClass =
     previewViewport === 'mobile'
-      ? 'relative mx-auto h-full w-full max-w-[390px] overflow-hidden rounded-[2rem] border-[10px] border-gray-900 bg-gray-900 shadow-2xl'
-      : 'relative h-full w-full min-h-0'
+      ? 'relative mx-auto w-full max-w-[390px] overflow-hidden rounded-[2rem] border-[10px] border-gray-900 bg-gray-900 shadow-2xl'
+      : 'relative w-full'
 
   const iframeClass =
     previewViewport === 'mobile'
-      ? 'h-full min-h-[680px] w-full border-0 bg-white'
-      : 'h-full w-full border-0 bg-white'
+      ? 'block w-full border-0 bg-white'
+      : 'block w-full border-0 bg-white'
 
   return (
     <div className={shellClass}>
@@ -615,11 +732,31 @@ function CustomerPageEditWorkbenchInner({
           {pageId === 'home' && (
             <button
               type="button"
-              onClick={openHomeLayoutPanel}
+              onClick={() => openHomeLayoutPanel()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-violet-600 text-white hover:bg-violet-700"
             >
               <LayoutGrid className="h-3.5 w-3.5" />
               섹션 목록
+            </button>
+          )}
+          {pageId === 'products-listing' && (
+            <button
+              type="button"
+              onClick={openListingCardLayoutPanel}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-amber-600 text-white hover:bg-amber-700"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              카드 슬롯
+            </button>
+          )}
+          {pageSupportsZoneLayout(pageId) && (
+            <button
+              type="button"
+              onClick={() => openZoneLayoutPanel(pageId)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-teal-600 text-white hover:bg-teal-700"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              블록 목록
             </button>
           )}
         </div>
@@ -682,7 +819,16 @@ function CustomerPageEditWorkbenchInner({
           ))}
         </div>
 
+        {!selectedZone && !iframeLoading && (
+          <div className="shrink-0 border-b border-blue-100 bg-blue-50 px-4 py-2.5 text-center text-xs font-medium leading-relaxed text-blue-900">
+            {pageId === 'home'
+              ? '「템플릿」으로 한 번에 꾸미거나, 상단의 테마·섹션·미리보기 「수정」으로 세부 조정하세요'
+              : '상단 「템플릿」·「테마」 또는 미리보기 영역의 「수정」 버튼을 사용하세요'}
+          </div>
+        )}
+
         <div
+          ref={previewScrollRef}
           className={`relative flex-1 min-h-0 overflow-auto ${
             previewViewport === 'mobile' ? 'bg-slate-200 p-4 sm:p-6' : 'bg-gray-100'
           }`}
@@ -702,25 +848,18 @@ function CustomerPageEditWorkbenchInner({
               title="고객 페이지 편집 미리보기"
               src={previewUrl}
               className={iframeClass}
+              style={{ height: iframeContentHeight }}
               onLoad={() => {
                 setIframeLoading(false)
                 notifyIframeCustomerPageEditMode(iframeRef.current)
                 notifyIframeCustomerPageBindingsUpdate(iframeRef.current)
+                scheduleIframeHeightSync()
                 const resolved = syncContextFromIframe()
                 if (resolved) setProductId(resolved)
               }}
               onError={() => setIframeLoading(false)}
             />
           </div>
-          {!selectedZone && !iframeLoading && previewViewport === 'desktop' && (
-            <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2">
-              <div className="rounded-full bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg">
-                {pageId === 'home'
-                ? '「템플릿」으로 한 번에 꾸미거나, 테마·섹션·「수정」으로 세부 조정하세요'
-                : '「템플릿」·「테마」 또는 각 영역 「수정」 버튼을 사용하세요'}
-              </div>
-            </div>
-          )}
         </div>
 
         {showTemplatePanel && (
@@ -761,6 +900,48 @@ function CustomerPageEditWorkbenchInner({
           </div>
         )}
 
+        {showListingCardLayoutPanel && (
+          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            <div
+              className="absolute inset-0 bg-black/45"
+              onClick={requestCloseListingCardLayoutPanel}
+              aria-hidden
+            />
+            <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+              <CustomerPageListingCardLayoutPanel
+                variant="modal"
+                productId={productId}
+                onSaved={() => {
+                  refreshPreview()
+                }}
+                onClose={requestCloseListingCardLayoutPanel}
+              />
+            </div>
+          </div>
+        )}
+
+        {showZoneLayoutPanel && (
+          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            <div
+              className="absolute inset-0 bg-black/45"
+              onClick={requestCloseZoneLayoutPanel}
+              aria-hidden
+            />
+            <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+              <CustomerPageZoneLayoutPanel
+                variant="modal"
+                pageId={zoneLayoutPageId}
+                initialFocusZoneId={zoneLayoutFocusZoneId}
+                productId={productId}
+                onSaved={() => {
+                  refreshPreview()
+                }}
+                onClose={requestCloseZoneLayoutPanel}
+              />
+            </div>
+          </div>
+        )}
+
         {showHomeLayoutPanel && (
           <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
             <div
@@ -771,6 +952,7 @@ function CustomerPageEditWorkbenchInner({
             <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
               <CustomerPageHomeLayoutPanel
                 variant="modal"
+                initialEditInstanceId={homeLayoutEditTargetId}
                 onSaved={() => {
                   refreshPreview()
                 }}

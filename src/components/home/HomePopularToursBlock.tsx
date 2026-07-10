@@ -98,15 +98,22 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     zone,
     className = '',
     productId,
+    suppressEditButton,
     children,
   }: {
     zone: string
     className?: string
     productId: string
+    suppressEditButton?: boolean
     children: ReactNode
   }) =>
     showCardEditZones ? (
-      <CustomerPageZone zone={zone} productId={productId} className={className}>
+      <CustomerPageZone
+        zone={zone}
+        productId={productId}
+        className={className}
+        {...(suppressEditButton ? { suppressEditButton } : {})}
+      >
         {children}
       </CustomerPageZone>
     ) : (
@@ -212,7 +219,7 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
 
     const shellClass = cardShellClass(variant, index)
     return showCardEditZones ? (
-      <CardZone key={product.id} zone="listing-card" productId={product.id} className={shellClass}>
+      <CardZone key={product.id} zone="listing-card" productId={product.id} suppressEditButton className={shellClass}>
         {cardContent}
       </CardZone>
     ) : (

@@ -488,13 +488,7 @@ export function applyTemplateStructureToSections(
   sections: HomePageSectionEntry[],
   globalStructure: HomePageStructure
 ): HomePageSectionEntry[] {
-  return sections.map((section) => ({
-    ...section,
-    config: {
-      ...section.config,
-      structureVariant: getGlobalStructureVariantForKind(section.kind, globalStructure),
-    },
-  }))
+  return applyGlobalStructureToSections(sections, globalStructure)
 }
 
 export function getBuiltinZoneId(section: HomePageSectionEntry): string {

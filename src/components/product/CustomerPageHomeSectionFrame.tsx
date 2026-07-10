@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState, type ReactNode } from 'react'
+import type { DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import {
   ChevronDown,
   ChevronUp,
@@ -9,36 +10,52 @@ import {
   GripVertical,
   LayoutGrid,
   Loader2,
+  Settings2,
 } from 'lucide-react'
 import {
   canHideHomeSection,
   moveHomeSection,
   setHomeSectionVisible,
+  updateHomeSectionStructureVariant,
 } from '@/lib/customerPageHomeLayout'
 import { applyCustomerPageHomeLayoutUpdate } from '@/lib/customerPageHomeLayoutActions'
 import { loadCustomerPageHomeLayout } from '@/lib/customerPageLayoutPersistence'
-import { postCustomerPageHomeLayoutEdit } from '@/lib/customerPageEditMessaging'
+import {
+  getCatalogItem,
+  type HomePageSectionEntry,
+} from '@/lib/customerPageHomeSectionCatalog'
+import {
+  postCustomerPageHomeLayoutEdit,
+  postCustomerPageHomeSectionSettingsEdit,
+} from '@/lib/customerPageEditMessaging'
 
 type CustomerPageHomeSectionFrameProps = {
-  instanceId: string
+  section: HomePageSectionEntry
   sectionLabel: string
   orderIndex: number
   totalSections: number
   visible: boolean
   layoutEditMode: boolean
   children: ReactNode
+  dragHandleProps?: DraggableProvidedDragHandleProps | null
+  isDragging?: boolean
 }
 
 export default function CustomerPageHomeSectionFrame({
-  instanceId,
+  section,
   sectionLabel,
   orderIndex,
   totalSections,
   visible,
   layoutEditMode,
   children,
+  dragHandleProps = null,
+  isDragging = false,
 }: CustomerPageHomeSectionFrameProps) {
   const [busy, setBusy] = useState(false)
+  const catalog = getCatalogItem(section.kind)
+  const structureVariant =
+    section.config.structureVariant ?? catalog.defaultConfig.structureVariant ?? ''
 
   const runLayoutAction = useCallback(
     async (action: () => Promise<void>) => {
@@ -59,28 +76,39 @@ export default function CustomerPageHomeSectionFrame({
     (direction: 'up' | 'down') => {
       void runLayoutAction(async () => {
         await applyCustomerPageHomeLayoutUpdate((layout) =>
-          moveHomeSection(layout, instanceId, direction)
+          moveHomeSection(layout, section.instanceId, direction)
         )
       })
     },
-    [runLayoutAction, instanceId]
+    [runLayoutAction, section.instanceId]
   )
 
   const handleToggleVisible = useCallback(() => {
     const layout = loadCustomerPageHomeLayout()
     const nextVisible = !visible
 
-    if (nextVisible === false && !canHideHomeSection(layout, instanceId)) {
+    if (nextVisible === false && !canHideHomeSection(layout, section.instanceId)) {
       window.alert('최소 1개 섹션은 표시해야 합니다.')
       return
     }
 
     void runLayoutAction(async () => {
       await applyCustomerPageHomeLayoutUpdate((current) =>
-        setHomeSectionVisible(current, instanceId, nextVisible)
+        setHomeSectionVisible(current, section.instanceId, nextVisible)
       )
     })
-  }, [runLayoutAction, instanceId, visible])
+  }, [runLayoutAction, section.instanceId, visible])
+
+  const handleStructureChange = useCallback(
+    (nextVariant: string) => {
+      void runLayoutAction(async () => {
+        await applyCustomerPageHomeLayoutUpdate((layout) =>
+          updateHomeSectionStructureVariant(layout, section.instanceId, nextVariant)
+        )
+      })
+    },
+    [runLayoutAction, section.instanceId]
+  )
 
   if (!layoutEditMode) {
     return <>{children}</>
@@ -88,12 +116,14 @@ export default function CustomerPageHomeSectionFrame({
 
   const canMoveUp = orderIndex > 0
   const canMoveDown = orderIndex < totalSections - 1
-  const canHide = canHideHomeSection(loadCustomerPageHomeLayout(), instanceId)
+  const canHide = canHideHomeSection(loadCustomerPageHomeLayout(), section.instanceId)
 
   return (
     <div
-      className={`customer-page-home-section ${visible ? '' : 'customer-page-home-section--hidden'}`}
-      data-home-section={instanceId}
+      className={`customer-page-home-section ${visible ? '' : 'customer-page-home-section--hidden'} ${
+        isDragging ? 'customer-page-home-section--dragging' : ''
+      }`}
+      data-home-section={section.instanceId}
       data-home-section-visible={visible ? '1' : '0'}
     >
       <div className="customer-page-home-section-toolbar">
@@ -101,13 +131,38 @@ export default function CustomerPageHomeSectionFrame({
           <span className="customer-page-home-section-order" aria-hidden>
             {orderIndex + 1}
           </span>
-          <GripVertical className="h-4 w-4 text-violet-400 shrink-0" aria-hidden />
+          <button
+            type="button"
+            className="customer-page-home-section-grip"
+            {...(dragHandleProps ?? {})}
+            aria-label={`${sectionLabel} 드래그하여 순서 변경`}
+          >
+            <GripVertical className="h-4 w-4 text-violet-500 shrink-0" />
+          </button>
           <div className="min-w-0">
             <p className="customer-page-home-section-label">{sectionLabel}</p>
             {!visible && (
               <p className="customer-page-home-section-sublabel">고객에게는 보이지 않음</p>
             )}
           </div>
+        </div>
+
+        <div className="customer-page-home-section-toolbar__meta">
+          <label className="customer-page-home-section-layout-select">
+            <span className="sr-only">레이아웃</span>
+            <select
+              value={structureVariant}
+              disabled={busy}
+              onChange={(e) => handleStructureChange(e.target.value)}
+              className="text-[10px] font-medium rounded-lg border border-violet-200 bg-white px-2 py-1 text-violet-900 max-w-[8.5rem] truncate"
+            >
+              {catalog.structureVariants.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="customer-page-home-section-toolbar__actions">
@@ -131,6 +186,15 @@ export default function CustomerPageHomeSectionFrame({
             aria-label={`${sectionLabel} 아래로 이동`}
           >
             <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => postCustomerPageHomeSectionSettingsEdit(section.instanceId)}
+            className="customer-page-home-section-btn"
+            title="섹션 설정"
+          >
+            <Settings2 className="h-4 w-4" />
+            <span className="hidden sm:inline">설정</span>
           </button>
           <button
             type="button"

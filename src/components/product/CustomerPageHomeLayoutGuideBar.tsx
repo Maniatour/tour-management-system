@@ -35,8 +35,9 @@ export default function CustomerPageHomeLayoutGuideBar() {
             <p className="text-sm font-semibold text-violet-950">홈 페이지 편집 모드</p>
             <p className="text-xs text-violet-800/90 mt-0.5 leading-relaxed">
               <MoveVertical className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
-              각 섹션 위에서 순서·표시를 바꾸거나,{' '}
-              <strong className="font-semibold">수정</strong>으로 내용·디자인을 편집하세요.
+              섹션을 <strong className="font-semibold">드래그</strong>해 순서를 바꾸거나, 하단{' '}
+              <strong className="font-semibold">섹션 팔레트</strong>에서 끌어다 놓으세요. 각 섹션에서
+              레이아웃·표시·설정도 바로 변경할 수 있습니다.
               {summary.hidden > 0 && (
                 <>
                   {' '}

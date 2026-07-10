@@ -11,9 +11,9 @@ import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditMo
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageHomeLayoutSections } from '@/hooks/useCustomerPageHomeLayout'
 import { emitCustomerPageBindingsUpdate } from '@/lib/customerPageBindingsSync'
-import { getHomeSectionEntryLabel } from '@/lib/customerPageHomeLayout'
-import CustomerPageHomeSectionFrame from '@/components/product/CustomerPageHomeSectionFrame'
+import CustomerPageHomeCanvasBuilder from '@/components/product/CustomerPageHomeCanvasBuilder'
 import CustomerPageHomeLayoutGuideBar from '@/components/product/CustomerPageHomeLayoutGuideBar'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
 export default function HomePage() {
   return (
@@ -213,39 +213,42 @@ function HomePageInner() {
   const layoutEditMode = isPreview && isEditMode
   const showCardEditZones = isPreview && isEditMode
 
+  const renderSection = (section: (typeof orderedHomeSections)[number]['section']) => (
+    <HomeSectionRenderer
+      section={section}
+      locale={locale}
+      t={t}
+      categoryTags={categoryTags}
+      stats={stats}
+      features={features}
+      bindingsActive={bindingsActive}
+      bindingRevision={bindingRevision}
+      isAdmin={isAdmin}
+      isChangingOrder={isChangingOrder}
+      showCardEditZones={showCardEditZones}
+      isPreview={isPreview}
+      isEditMode={isEditMode}
+      onChangeFavoriteOrder={handleChangeFavoriteOrder}
+      getPriceLabel={getPriceLabel}
+    />
+  )
+
   return (
-    <div className="min-h-screen">
-      <CustomerPagePreviewHighlightEffect />
-      {layoutEditMode && <CustomerPageHomeLayoutGuideBar />}
-      {orderedHomeSections.map(({ section, orderIndex, visible }) => (
-        <CustomerPageHomeSectionFrame
-          key={section.instanceId}
-          instanceId={section.instanceId}
-          sectionLabel={getHomeSectionEntryLabel(section)}
-          orderIndex={orderIndex}
-          totalSections={orderedHomeSections.length}
-          visible={visible}
-          layoutEditMode={layoutEditMode}
-        >
-          <HomeSectionRenderer
-            section={section}
-            locale={locale}
-            t={t}
-            categoryTags={categoryTags}
-            stats={stats}
-            features={features}
-            bindingsActive={bindingsActive}
-            bindingRevision={bindingRevision}
-            isAdmin={isAdmin}
-            isChangingOrder={isChangingOrder}
-            showCardEditZones={showCardEditZones}
-            isPreview={isPreview}
-            isEditMode={isEditMode}
-            onChangeFavoriteOrder={handleChangeFavoriteOrder}
-            getPriceLabel={getPriceLabel}
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen">
+        <CustomerPagePreviewHighlightEffect />
+        {layoutEditMode && <CustomerPageHomeLayoutGuideBar />}
+        {layoutEditMode ? (
+          <CustomerPageHomeCanvasBuilder
+            sections={orderedHomeSections}
+            renderSection={renderSection}
           />
-        </CustomerPageHomeSectionFrame>
-      ))}
-    </div>
+        ) : (
+          orderedHomeSections.map(({ section }) => (
+            <div key={section.instanceId}>{renderSection(section)}</div>
+          ))
+        )}
+      </div>
+    </CustomerPageShell>
   )
 }

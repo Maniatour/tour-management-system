@@ -35,7 +35,7 @@ export default function ProductDetailHighlights({
   }
 
   return (
-    <CustomerPageZone zone="detail-highlights">
+    <CustomerPageZone zone="detail-highlights" suppressEditButton>
       <section className="rounded-2xl cp-ui-panel-surface p-6 shadow-sm sm:p-8">
         <div className="mb-6">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">

@@ -9,6 +9,10 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
 const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), {
   ssr: false,
@@ -65,7 +69,8 @@ function CustomTourPageInner() {
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const t = useTranslations('customTour')
-  
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
   // 기본 상태
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
   const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
@@ -762,19 +767,27 @@ function CustomTourPageInner() {
   }, [tourCourses, selectedCourses])
 
   return (
-    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
-      <CustomerPagePreviewHighlightEffect />
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+        <CustomerPagePreviewHighlightEffect />
+      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="custom-tour" />}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
-        <CustomerPageZone zone="custom-tour-header" className="mb-4 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold mb-2">
-            {t('title')}
-          </h1>
-          <p className="text-sm sm:text-base cp-ui-muted">
-            {t('subtitle')}
-          </p>
-        </CustomerPageZone>
+        <CustomerPageZoneLayoutRenderer
+          pageId="custom-tour"
+          layoutEditMode={layoutEditMode}
+          renderBlock={(zoneId) => {
+            if (zoneId === 'custom-tour-header') {
+              return (
+                <CustomerPageZone zone="custom-tour-header" className="mb-4 sm:mb-8">
+                  <h1 className="text-2xl sm:text-3xl font-bold mb-2">{t('title')}</h1>
+                  <p className="text-sm sm:text-base cp-ui-muted">{t('subtitle')}</p>
+                </CustomerPageZone>
+              )
+            }
 
-        <CustomerPageZone zone="custom-tour-builder">
+            if (zoneId === 'custom-tour-builder') {
+              return (
+                <CustomerPageZone zone="custom-tour-builder">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           {/* 왼쪽: 코스 선택 및 일정 */}
           <div className="lg:col-span-2 space-y-6">
@@ -1646,6 +1659,12 @@ function CustomTourPageInner() {
           </div>
         </div>
         </CustomerPageZone>
+              )
+            }
+
+            return null
+          }}
+        />
       </div>
 
       {/* Estimate 모달 */}
@@ -1717,6 +1736,7 @@ function CustomTourPageInner() {
         onClose={() => setShowEntranceFeeDetailModal(false)}
         locale={locale}
       />
-    </div>
+      </div>
+    </CustomerPageShell>
   )
 }

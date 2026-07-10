@@ -88,7 +88,12 @@ export default function CustomerPageZoneAdminEmbed({
         )
 
       case 'details':
-        return <CustomerPageProductDetailsEmbed productId={productId!} />
+        return (
+          <CustomerPageProductDetailsEmbed
+            productId={productId!}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
 
       case 'schedule':
         return (

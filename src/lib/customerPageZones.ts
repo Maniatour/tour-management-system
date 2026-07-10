@@ -8,10 +8,16 @@ export type CustomerPageZone =
   | 'listing-card-tags'
   | 'listing-card-location'
   | 'listing-card-description'
+  | 'listing-card-cta'
+  | 'listing-page-header'
+  | 'listing-page-filters'
+  | 'listing-page-results'
   | 'detail-header'
+  | 'detail-header-price'
   | 'detail-gallery'
   | 'detail-highlights'
   | 'detail-mobile-booking'
+  | 'detail-mobile-sticky-cta'
   | 'detail-faq-section'
   | 'detail-tabs'
   | 'detail-tab-overview'
@@ -31,6 +37,10 @@ export type CustomerPageZone =
   | 'detail-sidebar-included'
   | 'booking-participants'
   | 'booking-options'
+  | 'booking-overlay-header'
+  | 'booking-overlay-stepper'
+  | 'booking-overlay-content'
+  | 'booking-overlay-footer'
   | 'home-hero'
   | 'home-categories'
   | 'home-stats'
@@ -155,12 +165,64 @@ function resolveSinglePath(path: string[]): CustomerPreviewTarget | null {
 
   // 상단 헤더
   if (path.includes('상단 헤더')) {
+    let zone: CustomerPageZone = 'detail-header'
+    if (last.includes('가격') || last.includes('예약') || last.includes('CTA')) {
+      zone = 'detail-header-price'
+    }
     return {
-      id: 'detail-header',
+      id: zone === 'detail-header-price' ? 'detail-header-price' : 'detail-header',
       page: 'detail',
-      highlightZone: 'detail-header',
+      highlightZone: zone,
       tab: 'overview',
       label: last,
+      pathLabel,
+    }
+  }
+
+  // 투어 하이라이트
+  if (path.includes('투어 하이라이트') || path.includes('하이라이트')) {
+    let zone: CustomerPageZone = 'detail-highlights'
+    if (last.includes('슬로건')) zone = 'detail-overview-slogan'
+    else if (last.includes('태그')) zone = 'detail-overview-tags'
+    else if (
+      last.includes('소요') ||
+      last.includes('카테고리') ||
+      last.includes('핵심') ||
+      last.includes('출발') ||
+      last.includes('도착')
+    ) {
+      zone = 'detail-overview-keyinfo'
+    }
+    return {
+      id: `detail-highlights-${zone}`,
+      page: 'detail',
+      highlightZone: zone,
+      tab: 'overview',
+      label: last,
+      pathLabel,
+    }
+  }
+
+  // 모바일 하단 예약 바
+  if (path.includes('모바일') && (path.includes('하단') || path.includes('고정') || path.includes('스티키'))) {
+    return {
+      id: 'detail-mobile-sticky-cta',
+      page: 'detail',
+      highlightZone: 'detail-mobile-sticky-cta',
+      tab: 'overview',
+      label: last || '모바일 예약 바',
+      pathLabel,
+    }
+  }
+
+  // FAQ 섹션 (탭 외)
+  if (path.includes('FAQ 섹션') || (path.includes('FAQ') && !path.includes('탭'))) {
+    return {
+      id: 'detail-faq-section',
+      page: 'detail',
+      highlightZone: 'detail-faq-section',
+      tab: 'faq',
+      label: last || 'FAQ',
       pathLabel,
     }
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Eye,
   EyeOff,
@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
 import { Checkbox } from '@/components/ui/checkbox'
 import { emitCustomerPageBindingsUpdate } from '@/lib/customerPageBindingsSync'
 import {
@@ -47,22 +48,33 @@ type CustomerPageHomeLayoutPanelProps = {
   onClose: () => void
   onSaved: () => void
   variant?: 'sidebar' | 'modal'
+  initialEditInstanceId?: string | null
 }
 
 export default function CustomerPageHomeLayoutPanel({
   onClose,
   onSaved,
   variant = 'modal',
+  initialEditInstanceId = null,
 }: CustomerPageHomeLayoutPanelProps) {
   const [draft, setDraft] = useState<HomePageLayout>(() =>
     normalizeHomePageLayout(loadCustomerPageHomeLayout())
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [editMode, setEditMode] = useState<'add' | 'edit' | null>(null)
   const [editTarget, setEditTarget] = useState<HomePageSectionEntry | null>(null)
+
+  useEffect(() => {
+    if (!initialEditInstanceId) return
+    const target = normalizeHomePageLayout(loadCustomerPageHomeLayout()).sections.find(
+      (s) => s.instanceId === initialEditInstanceId
+    )
+    if (target) {
+      setEditTarget(target)
+      setEditMode('edit')
+    }
+  }, [initialEditInstanceId])
 
   const savedLayout = normalizeHomePageLayout(loadCustomerPageHomeLayout())
   const dirty = useMemo(() => !layoutsEqual(draft, savedLayout), [draft, savedLayout])
@@ -119,30 +131,10 @@ export default function CustomerPageHomeLayoutPanel({
     [editTarget]
   )
 
-  const handleDragStart = useCallback((index: number) => setDraggedIndex(index), [])
-  const handleDragOver = useCallback((event: React.DragEvent, index: number) => {
-    event.preventDefault()
-    setDragOverIndex(index)
-  }, [])
-
-  const handleDrop = useCallback(
-    (event: React.DragEvent, dropIndex: number) => {
-      event.preventDefault()
-      if (draggedIndex === null || draggedIndex === dropIndex) {
-        setDraggedIndex(null)
-        setDragOverIndex(null)
-        return
-      }
-      setDraft((prev) => reorderHomeSectionsAtIndex(prev, draggedIndex, dropIndex))
-      setDraggedIndex(null)
-      setDragOverIndex(null)
-    },
-    [draggedIndex]
-  )
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedIndex(null)
-    setDragOverIndex(null)
+  const handleDragEnd = useCallback((result: DropResult) => {
+    const { source, destination } = result
+    if (!destination || source.index === destination.index) return
+    setDraft((prev) => reorderHomeSectionsAtIndex(prev, source.index, destination.index))
   }, [])
 
   const handleSave = useCallback(async () => {
@@ -198,101 +190,116 @@ export default function CustomerPageHomeLayoutPanel({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
-        {draft.sections.map((section, index) => {
-          const canHide = canHideHomeSection(draft, section.instanceId)
-          const isDragging = draggedIndex === index
-          const isDropTarget = dragOverIndex === index && draggedIndex !== index
-          const catalog = getCatalogItem(section.kind)
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="home-layout-panel-sections">
+            {(provided) => (
+              <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
+                {draft.sections.map((section, index) => {
+                  const canHide = canHideHomeSection(draft, section.instanceId)
+                  const catalog = getCatalogItem(section.kind)
 
-          return (
-            <div
-              key={section.instanceId}
-              draggable
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(event) => handleDragOver(event, index)}
-              onDragLeave={() => setDragOverIndex(null)}
-              onDrop={(event) => handleDrop(event, index)}
-              onDragEnd={handleDragEnd}
-              className={`flex items-start gap-3 rounded-xl border p-3 transition-all cursor-grab active:cursor-grabbing ${
-                section.visible
-                  ? 'border-slate-200 bg-white shadow-sm'
-                  : 'border-dashed border-slate-300 bg-slate-50/90'
-              } ${isDragging ? 'opacity-50 scale-[0.98]' : ''} ${
-                isDropTarget ? 'border-violet-400 ring-2 ring-violet-200' : ''
-              }`}
-            >
-              <div className="flex items-center gap-2 shrink-0 text-slate-400 pt-0.5">
-                <GripVertical className="h-5 w-5" aria-hidden />
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
-                  {index + 1}
-                </span>
+                  return (
+                    <Draggable key={section.instanceId} draggableId={section.instanceId} index={index}>
+                      {(dragProvided, snapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          style={dragProvided.draggableProps.style as React.CSSProperties | undefined}
+                          className={`flex items-start gap-3 rounded-xl border p-3 transition-all ${
+                            section.visible
+                              ? 'border-slate-200 bg-white shadow-sm'
+                              : 'border-dashed border-slate-300 bg-slate-50/90'
+                          } ${snapshot.isDragging ? 'opacity-90 ring-2 ring-violet-300 shadow-lg' : ''}`}
+                        >
+                          <div
+                            className="flex items-center gap-2 shrink-0 text-slate-400 pt-0.5 cursor-grab active:cursor-grabbing"
+                            {...dragProvided.dragHandleProps}
+                          >
+                            <GripVertical className="h-5 w-5" aria-hidden />
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
+                              {index + 1}
+                            </span>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm">{catalog.icon}</span>
+                              <span className="text-sm font-semibold text-gray-900">
+                                {getHomeSectionEntryLabel(section)}
+                              </span>
+                              {!section.visible && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded-full">
+                                  <EyeOff className="h-3 w-3" />
+                                  숨김
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {getHomeSectionDescription(section)}
+                            </p>
+                            {section.kind === 'card-list' && (
+                              <p className="text-[10px] text-violet-600 mt-1">
+                                카드 {section.config.cardCount ?? 3}개 ·{' '}
+                                {section.config.productQuery ?? 'favorites'}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditTarget(section)
+                                  setEditMode('edit')
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+                              >
+                                <Pencil className="h-3 w-3" />
+                                설정
+                              </button>
+                              {canRemoveHomeSection(draft) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemove(section.instanceId)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                  삭제
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <label
+                            className={`flex items-center gap-2 shrink-0 cursor-pointer select-none rounded-lg px-2 py-1.5 ${
+                              !canHide && section.visible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <Checkbox
+                              checked={section.visible}
+                              disabled={!canHide && section.visible}
+                              onCheckedChange={(checked) =>
+                                handleToggleVisible(section.instanceId, checked === true)
+                              }
+                            />
+                            <span className="text-xs text-gray-600 inline-flex items-center gap-1">
+                              {section.visible ? (
+                                <Eye className="h-3.5 w-3.5" />
+                              ) : (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              )}
+                              표시
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </Draggable>
+                  )
+                })}
+                {provided.placeholder}
               </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm">{catalog.icon}</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {getHomeSectionEntryLabel(section)}
-                  </span>
-                  {!section.visible && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded-full">
-                      <EyeOff className="h-3 w-3" />
-                      숨김
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">{getHomeSectionDescription(section)}</p>
-                {section.kind === 'card-list' && (
-                  <p className="text-[10px] text-violet-600 mt-1">
-                    카드 {section.config.cardCount ?? 3}개 · {section.config.productQuery ?? 'favorites'}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditTarget(section)
-                      setEditMode('edit')
-                    }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    설정
-                  </button>
-                  {canRemoveHomeSection(draft) && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(section.instanceId)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      삭제
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <label
-                className={`flex items-center gap-2 shrink-0 cursor-pointer select-none rounded-lg px-2 py-1.5 ${
-                  !canHide && section.visible ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'
-                }`}
-              >
-                <Checkbox
-                  checked={section.visible}
-                  disabled={!canHide && section.visible}
-                  onCheckedChange={(checked) =>
-                    handleToggleVisible(section.instanceId, checked === true)
-                  }
-                />
-                <span className="text-xs text-gray-600 inline-flex items-center gap-1">
-                  {section.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                  표시
-                </span>
-              </label>
-            </div>
-          )
-        })}
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
 
       {error && <div className="px-4 pb-2 text-xs text-red-600 shrink-0">{error}</div>}

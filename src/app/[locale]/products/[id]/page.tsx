@@ -16,6 +16,7 @@ import { ProductDetailErrorState, ProductDetailLoadingState } from '@/components
 import ProductDetailCheckoutLayer, {
   useProductDetailCheckoutActions,
 } from '@/components/product/ProductDetailCheckoutLayer'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import type {
   Product,
   ProductChoice,
@@ -39,6 +40,9 @@ import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/produ
 import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 
 function ProductDetailPageInner() {
   const params = useParams()
@@ -47,6 +51,8 @@ function ProductDetailPageInner() {
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
 
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -214,61 +220,88 @@ function ProductDetailPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-28 lg:pb-12">
-      <CustomerPagePreviewHighlightEffect />
-      <ProductDetailHeader
-        locale={locale}
-        displayName={displayName}
-        categoryLabel={categoryLabel}
-        primaryTag={primaryTag}
-        durationLabel={durationLabel}
-        groupSize={product.group_size}
-        totalPrice={totalPrice}
-        onBookNow={openBookingFlow}
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen bg-slate-50 pb-28 lg:pb-12">
+        <CustomerPagePreviewHighlightEffect />
+      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-detail" />}
+      <CustomerPageZoneLayoutRenderer
+        pageId="product-detail"
+        layoutEditMode={layoutEditMode}
+        productId={productId}
+        renderBlock={(zoneId) => {
+          if (zoneId === 'detail-header') {
+            return (
+              <ProductDetailHeader
+                locale={locale}
+                displayName={displayName}
+                categoryLabel={categoryLabel}
+                primaryTag={primaryTag}
+                durationLabel={durationLabel}
+                groupSize={product.group_size}
+                totalPrice={totalPrice}
+                onBookNow={openBookingFlow}
+              />
+            )
+          }
+
+          if (zoneId === 'detail-gallery') {
+            return (
+              <ProductDetailImageGallery
+                productMedia={productMedia}
+                tourCoursePhotos={tourCoursePhotos}
+                displayName={displayName}
+                isEnglish={isEnglish}
+              />
+            )
+          }
+
+          if (zoneId === 'detail-mobile-booking') {
+            return <ProductDetailMobileBookingCard {...bookingPanelProps} />
+          }
+
+          if (zoneId === 'detail-highlights') {
+            return (
+              <ProductDetailHighlights
+                slogans={slogans}
+                tags={tags}
+                locale={locale}
+                tagLabelMap={tagLabelMap}
+                categoryLabel={categoryLabel}
+                durationLabel={durationLabel}
+                showSlogans={showSlogans}
+              />
+            )
+          }
+
+          if (zoneId === 'detail-tabs') {
+            return (
+              <ProductDetailTabPanel
+                productId={productId}
+                locale={locale}
+                product={product}
+                productDetails={productDetails}
+                tourCourses={tourCourses}
+                tourCoursePhotos={tourCoursePhotos}
+                isEnglish={isEnglish}
+                displayName={displayName}
+                categoryLabel={categoryLabel}
+                durationLabel={durationLabel}
+                showDetail={showDetailOnCustomerPage}
+              />
+            )
+          }
+
+          if (zoneId === 'detail-faq-section') {
+            return <ProductDetailFaqSection productId={productId} />
+          }
+
+          if (zoneId === 'detail-sidebar') {
+            return <ProductDetailBookingSidebar {...bookingPanelProps} />
+          }
+
+          return null
+        }}
       />
-
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
-          <div className="space-y-6 lg:col-span-2 lg:space-y-8">
-            <ProductDetailImageGallery
-              productMedia={productMedia}
-              tourCoursePhotos={tourCoursePhotos}
-              displayName={displayName}
-              isEnglish={isEnglish}
-            />
-
-            <ProductDetailMobileBookingCard {...bookingPanelProps} />
-
-            <ProductDetailHighlights
-              slogans={slogans}
-              tags={tags}
-              locale={locale}
-              tagLabelMap={tagLabelMap}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              showSlogans={showSlogans}
-            />
-
-            <ProductDetailTabPanel
-              productId={productId}
-              locale={locale}
-              product={product}
-              productDetails={productDetails}
-              tourCourses={tourCourses}
-              tourCoursePhotos={tourCoursePhotos}
-              isEnglish={isEnglish}
-              displayName={displayName}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              showDetail={showDetailOnCustomerPage}
-            />
-
-            <ProductDetailFaqSection productId={productId} />
-          </div>
-
-          <ProductDetailBookingSidebar {...bookingPanelProps} />
-        </div>
-      </div>
 
       <ProductDetailMobileStickyCta totalPrice={totalPrice} onBookNow={openBookingFlow} />
 
@@ -281,7 +314,8 @@ function ProductDetailPageInner() {
         showChoiceDescriptionModal={showChoiceDescriptionModal}
         onCloseChoiceDescriptionModal={closeChoiceDescriptionModal}
       />
-    </div>
+      </div>
+    </CustomerPageShell>
   )
 }
 

@@ -16,6 +16,13 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import {
+  useCustomerPageListingCardBodySlots,
+  useCustomerPageListingCardSlotVisible,
+} from '@/hooks/useCustomerPageListingCardLayout'
 import { getProductSummaryByLocale, formatProductDepartureLine } from '@/lib/productDetailDisplay'
 import {
   getPreviewDepartureLine,
@@ -27,6 +34,7 @@ import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBi
 import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
+import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
 interface Product {
   id: string
@@ -68,7 +76,11 @@ export default function ProductsPage() {
   const searchParams = useSearchParams()
   const t = useTranslations('common')
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
-  
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
+  const listingCardBodySlots = useCustomerPageListingCardBodySlots()
+  const showListingCardImage = useCustomerPageListingCardSlotVisible('listing-card-image')
+  const showListingCardCta = useCustomerPageListingCardSlotVisible('listing-card-cta')
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -482,229 +494,248 @@ export default function ProductsPage() {
     const ListZone = ({
       zone,
       className = '',
+      suppressEditButton,
       children,
     }: {
       zone: string
       className?: string
+      suppressEditButton?: boolean
       children: React.ReactNode
     }) => (
-      <CustomerPageZone zone={zone} productId={product.id} className={className}>
+      <CustomerPageZone
+        zone={zone}
+        productId={product.id}
+        className={className}
+        {...(suppressEditButton ? { suppressEditButton } : {})}
+      >
         {children}
       </CustomerPageZone>
     )
+
+    const renderBodySlot = (slotId: (typeof listingCardBodySlots)[number]) => {
+      switch (slotId) {
+        case 'listing-card-name':
+          return (
+            <ListZone zone="listing-card-name">
+              <h3 className="text-lg font-semibold mb-2">
+                <Link href={`/${locale}/products/${product.id}`} className="cp-ui-link hover:underline">
+                  {getCustomerDisplayName(product)}
+                </Link>
+              </h3>
+            </ListZone>
+          )
+        case 'listing-card-description':
+          return (
+            <>
+              <ListZone zone="listing-card-description">
+                <p className="cp-ui-muted text-sm mb-4 line-clamp-2">
+                  {getListProductSummary(product) || t('checkDetailsForMoreInfo')}
+                </p>
+              </ListZone>
+              {(() => {
+                const methods = product.transportation_methods
+                if (hasValidTransportationMethods(methods)) {
+                  const validMethods = (methods as string[]).filter(
+                    (m) => m && typeof m === 'string' && m.trim().length > 0
+                  )
+                  return (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {validMethods.map((method, badgeIndex) => {
+                        const trimmedMethod = method.trim()
+                        const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
+                        return (
+                          <div
+                            key={`transport-badge-${trimmedMethod}-${badgeIndex}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                            title={label}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                            <span>{label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                }
+                return null
+              })()}
+            </>
+          )
+        case 'listing-card-tags':
+          if (!product.tags?.length) return null
+          return (
+            <ListZone zone="listing-card-tags" className="mb-4">
+              <div className="flex flex-wrap gap-1">
+                {product.tags.slice(0, 3).map((tag, tagIndex) => (
+                  <span
+                    key={tagIndex}
+                    className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                  >
+                    {resolveTagLabel(tag, locale, tagLabelMap)}
+                  </span>
+                ))}
+              </div>
+            </ListZone>
+          )
+        case 'listing-card-location':
+          return (
+            <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm cp-ui-muted">
+              {getListDepartureLine(product) && (
+                <div className="flex items-center">
+                  <MapPin className="h-4 w-4 mr-2 cp-ui-icon flex-shrink-0" />
+                  <span className="truncate">{getListDepartureLine(product)}</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                {product.duration && (
+                  <div className="flex items-center">
+                    <Calendar className="h-4 w-4 mr-2" />
+                    {product.duration}
+                  </div>
+                )}
+                {product.max_participants && (
+                  <div className="flex items-center">
+                    <Users className="h-4 w-4 mr-2" />
+                    {t('maxParticipants')}: {product.max_participants}
+                  </div>
+                )}
+              </div>
+            </ListZone>
+          )
+        case 'listing-card-price':
+          return (
+            <ListZone zone="listing-card-price">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-lg font-bold cp-ui-price">
+                    ${getListPrice(product)} {t('startingFrom')}
+                  </div>
+                  <div className="text-sm cp-ui-muted">{t('perAdult')}</div>
+                </div>
+              </div>
+            </ListZone>
+          )
+        default:
+          return null
+      }
+    }
 
     return (
     <ListZone
       key={product.id}
       zone="listing-card"
+      suppressEditButton
       className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
     >
-      {/* 상품 이미지 */}
-      <ListZone zone="listing-card-image">
-      <div className="relative h-48 bg-gray-200">
-        {product.primary_image && !imageErrors.has(product.id) ? (
-          <Image
-            src={product.primary_image}
-            alt={getCustomerDisplayName(product)}
-            fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover"
-            priority={index === 0}
-            onError={() => {
-              setImageErrors(prev => new Set(prev).add(product.id))
-            }}
-            unoptimized={process.env.NODE_ENV === 'development'}
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-4xl mb-2">🏔️</div>
-              <div className="text-sm font-medium text-gray-600">
-                {getCustomerDisplayName(product)}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {product.primary_image ? t('imagePreparing') : t('imagePreparing')}
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-        <div className="absolute top-3 right-3">
-          <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-            <Heart size={16} className="text-gray-600" />
-          </button>
-        </div>
-        {/* 운송수단 아이콘 (이미지 위에 표시) */}
-        <div className="absolute bottom-3 left-3 flex gap-1.5 flex-wrap">
-          {(() => {
-            const methods = product.transportation_methods
-            
-            // 디버깅
-            if (index === 0) {
-              console.log('First product transportation_methods:', {
-                raw: methods,
-                type: typeof methods,
-                isArray: Array.isArray(methods),
-                length: Array.isArray(methods) ? methods.length : 'N/A',
-                valid: hasValidTransportationMethods(methods)
-              })
-            }
-            
-            if (hasValidTransportationMethods(methods)) {
-              const validMethods = (methods as string[]).filter(m => m && typeof m === 'string' && m.trim().length > 0)
-              return validMethods.slice(0, 3).map((method, idx) => {
-                const trimmedMethod = method.trim()
-                const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
-                return (
-                  <div
-                    key={`transport-${trimmedMethod}-${idx}`}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-md border border-white/50 hover:bg-white transition-colors"
-                    title={label}
-                  >
-                    <Icon className="w-4 h-4 text-blue-700" />
+      {showListingCardImage && (
+        <ListZone zone="listing-card-image">
+          <div className="relative h-48 bg-gray-200">
+            {product.primary_image && !imageErrors.has(product.id) ? (
+              <Image
+                src={product.primary_image}
+                alt={getCustomerDisplayName(product)}
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                className="object-cover"
+                priority={index === 0}
+                onError={() => {
+                  setImageErrors((prev) => new Set(prev).add(product.id))
+                }}
+                unoptimized={process.env.NODE_ENV === 'development'}
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">🏔️</div>
+                  <div className="text-sm font-medium text-gray-600">
+                    {getCustomerDisplayName(product)}
                   </div>
-                )
-              })
-            } else {
-              // 운송수단이 없으면 카테고리 뱃지 표시
-              return (
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 backdrop-blur-sm text-gray-800 shadow-md border border-white/50">
-                  {getCategoryLabel(product.category)}
-                </span>
-              )
-            }
-          })()}
-        </div>
-      </div>
-      </ListZone>
-
-      {/* 상품 정보 */}
-      <div className="p-6">
-        {/* 상품명 */}
-        <ListZone zone="listing-card-name">
-        <h3 className="text-lg font-semibold mb-2">
-          <Link href={`/${locale}/products/${product.id}`} className="cp-ui-link hover:underline">
-            {getCustomerDisplayName(product)}
-          </Link>
-        </h3>
-        </ListZone>
-
-        {/* 설명 */}
-        <ListZone zone="listing-card-description">
-        <p className="cp-ui-muted text-sm mb-4 line-clamp-2">
-          {getListProductSummary(product) || t('checkDetailsForMoreInfo')}
-        </p>
-        </ListZone>
-
-        {/* 운송수단 아이콘 */}
-        {(() => {
-          const methods = product.transportation_methods
-          
-          if (hasValidTransportationMethods(methods)) {
-            const validMethods = (methods as string[]).filter(m => m && typeof m === 'string' && m.trim().length > 0)
-            return (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {validMethods.map((method, index) => {
-                  const trimmedMethod = method.trim()
-                  const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
-                  return (
-                    <div
-                      key={`transport-badge-${trimmedMethod}-${index}`}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                      title={label}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{label}</span>
-                    </div>
+                  <div className="text-xs text-gray-500 mt-1">{t('imagePreparing')}</div>
+                </div>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+            <div className="absolute top-3 right-3">
+              <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
+                <Heart size={16} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="absolute bottom-3 left-3 flex gap-1.5 flex-wrap">
+              {(() => {
+                const methods = product.transportation_methods
+                if (hasValidTransportationMethods(methods)) {
+                  const validMethods = (methods as string[]).filter(
+                    (m) => m && typeof m === 'string' && m.trim().length > 0
                   )
-                })}
-              </div>
-            )
-          }
-          return null
-        })()}
-
-        {/* 태그 */}
-        {product.tags && product.tags.length > 0 && (
-          <ListZone zone="listing-card-tags" className="mb-4">
-            <div className="flex flex-wrap gap-1">
-              {product.tags.slice(0, 3).map((tag, index) => (
-                <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                  {resolveTagLabel(tag, locale, tagLabelMap)}
-                </span>
-              ))}
-            </div>
-          </ListZone>
-        )}
-
-        {/* 상품 세부 정보 */}
-        <ListZone zone="listing-card-location" className="space-y-2 mb-4 text-sm cp-ui-muted">
-          {getListDepartureLine(product) && (
-            <div className="flex items-center">
-              <MapPin className="h-4 w-4 mr-2 cp-ui-icon flex-shrink-0" />
-              <span className="truncate">{getListDepartureLine(product)}</span>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-4">
-            {product.duration && (
-              <div className="flex items-center">
-                <Calendar className="h-4 w-4 mr-2" />
-                {product.duration}
-              </div>
-            )}
-            {product.max_participants && (
-              <div className="flex items-center">
-                <Users className="h-4 w-4 mr-2" />
-                {t('maxParticipants')}: {product.max_participants}
-              </div>
-            )}
-          </div>
-        </ListZone>
-
-        {/* 가격 */}
-        <ListZone zone="listing-card-price">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-lg font-bold cp-ui-price">
-              ${getListPrice(product)} {t('startingFrom')}
-            </div>
-            <div className="text-sm cp-ui-muted">
-              {t('perAdult')}
+                  return validMethods.slice(0, 3).map((method, idx) => {
+                    const trimmedMethod = method.trim()
+                    const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
+                    return (
+                      <div
+                        key={`transport-${trimmedMethod}-${idx}`}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-md border border-white/50 hover:bg-white transition-colors"
+                        title={label}
+                      >
+                        <Icon className="w-4 h-4 text-blue-700" />
+                      </div>
+                    )
+                  })
+                }
+                return (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 backdrop-blur-sm text-gray-800 shadow-md border border-white/50">
+                    {getCategoryLabel(product.category)}
+                  </span>
+                )
+              })()}
             </div>
           </div>
-        </div>
         </ListZone>
+      )}
 
-        {/* 상세보기 버튼 */}
-        <div className="mt-4">
+      <div className="p-6">
+        {listingCardBodySlots.map((slotId) => (
+          <React.Fragment key={`${product.id}-${slotId}`}>{renderBodySlot(slotId)}</React.Fragment>
+        ))}
+      </div>
+
+      {showListingCardCta && (
+        <ListZone zone="listing-card-cta" className="px-6 pb-6 pt-0">
           <Link
             href={`/${locale}/products/${product.id}`}
             className="cp-ui-btn-primary w-full py-2 px-4 rounded-lg transition-colors text-center block"
           >
             {t('viewDetails')}
           </Link>
-        </div>
-      </div>
+        </ListZone>
+      )}
     </ListZone>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <CustomerPagePreviewHighlightEffect />
-      {/* 헤더 */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-4xl font-bold text-gray-900 text-center">{t('tourProducts')}</h1>
-          <p className="mt-4 text-xl text-gray-600 text-center">
-            {t('unforgettableTravelExperience')}
-          </p>
-        </div>
-      </div>
+    <CustomerPageShell locale={locale}>
+      <div className="min-h-screen bg-gray-50">
+        <CustomerPagePreviewHighlightEffect />
+      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-listing" />}
+      <CustomerPageZoneLayoutRenderer
+        pageId="products-listing"
+        layoutEditMode={layoutEditMode}
+        renderBlock={(zoneId) => {
+          if (zoneId === 'listing-page-header') {
+            return (
+              <CustomerPageZone zone="listing-page-header" className="shadow-sm border-b cp-ui-panel-surface">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                  <h1 className="text-4xl font-bold text-gray-900 text-center">{t('tourProducts')}</h1>
+                  <p className="mt-4 text-xl cp-ui-muted text-center">{t('unforgettableTravelExperience')}</p>
+                </div>
+              </CustomerPageZone>
+            )
+          }
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 검색 및 필터 */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+          if (zoneId === 'listing-page-filters') {
+            return (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+                <CustomerPageZone zone="listing-page-filters" className="cp-ui-panel-surface rounded-lg shadow-sm border p-6 mb-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {/* 검색 */}
             <div className="relative">
@@ -795,9 +826,15 @@ export default function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+                </CustomerPageZone>
+              </div>
+            )
+          }
 
-        {/* 로딩 상태 */}
+          if (zoneId === 'listing-page-results') {
+            return (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+                <CustomerPageZone zone="listing-page-results" className="block">
         {loading && (
           <div className="flex justify-center items-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -966,8 +1003,16 @@ export default function ProductsPage() {
             <p className="text-gray-600">{t('tryDifferentSearch')}</p>
           </div>
         )}
+                </CustomerPageZone>
+              </div>
+            )
+          }
+
+          return null
+        }}
+      />
       </div>
-    </div>
+    </CustomerPageShell>
   )
 }
 

@@ -10,6 +10,7 @@ import {
   normalizeHomeSectionConfig,
   type HomePageSectionEntry,
   type HomeSectionKind,
+  type HomeSectionConfig,
 } from '@/lib/customerPageHomeSectionCatalog'
 
 export type { HomePageSectionEntry, HomeSectionKind, HomeSectionConfig } from '@/lib/customerPageHomeSectionCatalog'
@@ -157,6 +158,49 @@ export function addHomeSection(
 ): HomePageLayout {
   const entry = createHomeSectionEntry(kind, layout.sections)
   return { sections: [...layout.sections, entry] }
+}
+
+export function insertHomeSectionAtIndex(
+  layout: HomePageLayout,
+  kind: HomeSectionKind,
+  index: number
+): HomePageLayout {
+  const entry = createHomeSectionEntry(kind, layout.sections)
+  const next = layout.sections.map((section) => ({
+    ...section,
+    config: { ...section.config },
+  }))
+  const clampedIndex = Math.max(0, Math.min(index, next.length))
+  next.splice(clampedIndex, 0, entry)
+  return { sections: next }
+}
+
+export function updateHomeSectionStructureVariant(
+  layout: HomePageLayout,
+  instanceId: string,
+  structureVariant: string
+): HomePageLayout {
+  const section = layout.sections.find((s) => s.instanceId === instanceId)
+  if (!section) return layout
+  return updateHomeSectionEntry(layout, instanceId, {
+    config: { ...section.config, structureVariant },
+  })
+}
+
+export function insertHomeSectionFromPresetAtIndex(
+  layout: HomePageLayout,
+  preset: { kind: HomeSectionKind; config: HomeSectionConfig },
+  index: number
+): HomePageLayout {
+  const entry = createHomeSectionEntry(preset.kind, layout.sections)
+  entry.config = normalizeHomeSectionConfig(preset.config, preset.kind)
+  const next = layout.sections.map((section) => ({
+    ...section,
+    config: { ...section.config },
+  }))
+  const clampedIndex = Math.max(0, Math.min(index, next.length))
+  next.splice(clampedIndex, 0, entry)
+  return { sections: next }
 }
 
 export function removeHomeSection(layout: HomePageLayout, instanceId: string): HomePageLayout {

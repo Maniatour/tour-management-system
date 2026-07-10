@@ -43,6 +43,21 @@ export function extractProductIdFromCustomerPageUrl(href: string): string | null
   }
 }
 
+/** pathname만으로 pageId 추론 (iframe 미리보기 퀵바 등) */
+export function inferCustomerPageIdFromPathname(pathname: string | null): CustomerPageId | null {
+  if (!pathname) return null
+  if (/^\/(ko|en)\/?$/.test(pathname)) return 'home'
+  if (pathname.includes('/products/tags')) return 'products-tags'
+  if (pathname.includes('/products/custom-tour')) return 'custom-tour'
+  if (pathname.includes('/reservation-check')) return 'reservation-check'
+  const productMatch = pathname.match(/\/products\/([^/?#]+)/)
+  if (productMatch?.[1] && productMatch[1] !== 'tags' && productMatch[1] !== 'custom-tour') {
+    return 'product-detail'
+  }
+  if (pathname.includes('/products')) return 'products-listing'
+  return null
+}
+
 /** 고객 페이지 URL → 워크bench pageId (상품 상세·예약하기) */
 export function inferCustomerPageIdFromUrl(href: string): CustomerPageId | null {
   try {

@@ -472,9 +472,11 @@ export function convertSopCategoryToRow(
           manual_status: source.manual_status ?? ('draft' as const),
         }
       : {}),
-    ...(source.linked_hub_article_id
-      ? { linked_hub_article_id: source.linked_hub_article_id }
-      : {}),
+    ...(source.linked_hub_article_ids?.length
+      ? { linked_hub_article_ids: source.linked_hub_article_ids }
+      : source.linked_hub_article_id
+        ? { linked_hub_article_id: source.linked_hub_article_id }
+        : {}),
   }
 
   const remappedSourceItems = sourceItems.map((item) => ({
@@ -532,7 +534,8 @@ export function convertSopRowToCategory(
 
   const rowExtras: Partial<SopChecklistItem> = {}
   if (row.attachments?.length) rowExtras.attachments = row.attachments
-  if (row.linked_hub_article_id) rowExtras.linked_hub_article_id = row.linked_hub_article_id
+  if (row.linked_hub_article_ids?.length) rowExtras.linked_hub_article_ids = row.linked_hub_article_ids
+  else if (row.linked_hub_article_id) rowExtras.linked_hub_article_id = row.linked_hub_article_id
   if (row.manual_status) rowExtras.manual_status = row.manual_status
 
   const hasExtras = Object.keys(rowExtras).length > 0
@@ -563,7 +566,11 @@ export function convertSopRowToCategory(
     content_ko: row.manual_ko ?? '',
     content_en: row.manual_en ?? '',
     sort_order: 0,
-    ...(row.linked_hub_article_id ? { linked_hub_article_id: row.linked_hub_article_id } : {}),
+    ...(row.linked_hub_article_ids?.length
+      ? { linked_hub_article_ids: row.linked_hub_article_ids }
+      : row.linked_hub_article_id
+        ? { linked_hub_article_id: row.linked_hub_article_id }
+        : {}),
     ...(row.manual_status && hasRichContent(row.manual_ko ?? '', row.manual_en ?? '')
       ? { manual_status: row.manual_status }
       : {}),

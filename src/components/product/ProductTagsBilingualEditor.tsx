@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import TagSelector from '@/components/admin/TagSelector'
 import { supabase } from '@/lib/supabase'
@@ -92,24 +92,32 @@ export default function ProductTagsBilingualEditor({
 }: ProductTagsBilingualEditorProps) {
   const [translations, setTranslations] = useState<TagTranslationState>({})
   const [loading, setLoading] = useState(false)
-
-  const refreshTranslations = useCallback(
-    async (keys: string[]) => {
-      setLoading(true)
-      try {
-        const loaded = await loadTagTranslations(keys)
-        setTranslations(loaded)
-        onTranslationsChange(loaded)
-      } finally {
-        setLoading(false)
-      }
-    },
-    [onTranslationsChange]
-  )
+  const onTranslationsChangeRef = useRef(onTranslationsChange)
 
   useEffect(() => {
-    void refreshTranslations(selectedTags)
-  }, [selectedTags, refreshTranslations])
+    onTranslationsChangeRef.current = onTranslationsChange
+  }, [onTranslationsChange])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setLoading(true)
+      try {
+        const loaded = await loadTagTranslations(selectedTags)
+        if (cancelled) return
+        setTranslations(loaded)
+        onTranslationsChangeRef.current(loaded)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTags])
 
   const setLabel = (tagKey: string, locale: 'ko' | 'en', value: string) => {
     setTranslations((prev) => {

@@ -88,10 +88,12 @@ function mapDetailsRow(item: Record<string, unknown>) {
 
 type CustomerPageProductDetailsEmbedProps = {
   productId: string
+  onSaved?: () => void
 }
 
 export default function CustomerPageProductDetailsEmbed({
   productId,
+  onSaved,
 }: CustomerPageProductDetailsEmbedProps) {
   const [formData, setFormData] = useState<DetailsFormData>(EMPTY_DETAILS_FORM)
   const [loading, setLoading] = useState(true)
@@ -161,10 +163,11 @@ export default function CustomerPageProductDetailsEmbed({
 
   return (
     <ProductDetailsTab
-        productId={productId}
-        isNewProduct={false}
-        formData={formData}
+      productId={productId}
+      isNewProduct={false}
+      formData={formData}
       setFormData={setFormData}
+      {...(onSaved ? { onSaveSuccess: onSaved } : {})}
     />
   )
 }

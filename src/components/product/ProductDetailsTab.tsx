@@ -393,7 +393,8 @@ export default function ProductDetailsTab({
   productId,
   isNewProduct,
   formData,
-  setFormData
+  setFormData,
+  onSaveSuccess,
 }: ProductDetailsTabProps) {
   const t = useTranslations('products.detailsTab')
   const tDetails = useTranslations('products.detailsPage')
@@ -1856,6 +1857,7 @@ export default function ProductDetailsTab({
 
       setSaveMessage(`${saveTargets.length}개 채널·variant 행에 세부 정보가 저장되었습니다!`)
       setTimeout(() => setSaveMessage(''), 3000)
+      onSaveSuccess?.()
       
       // 저장 후 데이터 새로고침
       loadSelectedChannelData()
@@ -2936,6 +2938,7 @@ export default function ProductDetailsTab({
       setSaveMessage(t('msgDetailsSaveSuccess'))
       setSaveMessageType('success')
       setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
+      onSaveSuccess?.()
     } catch (error: unknown) {
       const e = error as { message?: string; status?: string | number; code?: string }
       const errorMessage = e?.message || ''

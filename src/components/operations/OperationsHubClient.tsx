@@ -65,6 +65,7 @@ import {
   type KnowledgeArticleDraftForm,
 } from '@/lib/knowledgeArticleForm'
 import { deleteKnowledgeArticle, saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
+import LegalPagesHubPanel from '@/components/operations/LegalPagesHubPanel'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -108,6 +109,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [busy, setBusy] = useState(false)
   const [crudMsg, setCrudMsg] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeArticleRow | null>(null)
+  const [legalPagesOpen, setLegalPagesOpen] = useState(false)
 
   const staffOk =
     userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
@@ -357,9 +359,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   }
 
   const openEditRow = (row: KnowledgeArticleRow) => {
-    const draft = knowledgeArticleRowToForm(row)
-    draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
-    setForm(draft)
+    setForm(knowledgeArticleRowToForm(row))
     setCrudMsg(null)
     setEditOpen(true)
   }
@@ -393,7 +393,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (!adminCrud) return
     setBusy(true)
     setCrudMsg(null)
-    const result = await saveKnowledgeArticle(form, authUser?.id ?? null)
+    const result = await saveKnowledgeArticle(form, authUser?.id ?? null, {
+      metadataOnly: !!form.id,
+    })
     setBusy(false)
     if (!result.ok) {
       setCrudMsg(result.error)
@@ -414,8 +416,12 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     }
 
     setEditOpen(false)
-    if (saved && saved.is_published) {
-      setReadArticle(saved)
+    if (saved) {
+      if (readArticle?.id === saved.id) {
+        setReadArticle(saved)
+      } else if (saved.is_published) {
+        setReadArticle(saved)
+      }
     }
   }
 
@@ -429,12 +435,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const openReadDocSettings = () => {
     if (!readArticle) return
-    const draft = knowledgeArticleRowToForm(readArticle)
-    if (readEditDoc) draft.bodyDoc = readEditDoc
-    else draft.bodyDoc = hydrateDocumentForRowEditing(draft.bodyDoc)
-    setForm(draft)
+    setForm(knowledgeArticleRowToForm(readArticle))
     setCrudMsg(null)
-    setReadArticle(null)
     setEditOpen(true)
   }
 
@@ -490,6 +492,10 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
               <Button type="button" size="sm" onClick={openEditNew}>
                 <Plus className="mr-1 h-4 w-4" />
                 {isEn ? 'New' : '새 문서'}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setLegalPagesOpen(true)}>
+                <FileText className="mr-1 h-4 w-4" />
+                {isEn ? 'Legal & policies' : '법적 고지 · 정책'}
               </Button>
             </div>
           ) : null}
@@ -625,7 +631,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                         <div className="absolute right-2 top-2 flex gap-1">
                           <button
                             type="button"
-                            title={isEn ? 'Edit' : '수정'}
+                            title={isEn ? 'Document info' : '기본 정보'}
                             onClick={(e) => {
                               e.stopPropagation()
                               openEditFromEntry(entry.slug!)
@@ -789,12 +795,18 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
         </ResizableDialogContent>
       </Dialog>
 
-      {/* 편집 모달 */}
+      {/* 기본 정보 모달 (카드 수정·문서 설정) */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent stackLevel="nested" className="flex max-h-[92vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+        <DialogContent stackLevel="nested" className="flex max-h-[92vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4 pr-12 text-left">
             <DialogTitle>
-              {form.id ? (isEn ? 'Edit document' : '문서 수정') : isEn ? 'New document' : '새 문서'}
+              {form.id
+                ? isEn
+                  ? 'Document info'
+                  : '기본 정보'
+                : isEn
+                  ? 'New document'
+                  : '새 문서'}
             </DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -816,24 +828,6 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
               toggleRole={toggleRole}
               embedded
             />
-            <div className="mt-8 border-t border-gray-100 pt-6">
-              <h3 className="mb-1 text-sm font-semibold text-gray-900">
-                {isEn ? 'Document body' : '문서 본문'}
-              </h3>
-              <p className="mb-4 text-xs text-gray-500">
-                {isEn
-                  ? 'Use the section ⋯ menu for title, content, or categories.'
-                  : '섹션 ⋯ 메뉴에서 제목·내용·카테고리를 추가할 수 있습니다.'}
-              </p>
-              <div className="min-h-[280px] rounded-lg border border-gray-200 bg-gray-50/50 p-3 sm:p-4">
-                <SopDocumentInlinePreviewEditor
-                  doc={form.bodyDoc}
-                  onChange={(bodyDoc) => setForm((f) => ({ ...f, bodyDoc }))}
-                  viewLang={viewLang}
-                  uiLocaleEn={isEn}
-                />
-              </div>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -864,6 +858,15 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {adminCrud ? (
+        <LegalPagesHubPanel
+          open={legalPagesOpen}
+          onOpenChange={setLegalPagesOpen}
+          locale={locale}
+          isEn={isEn}
+        />
+      ) : null}
     </>
   )
 }

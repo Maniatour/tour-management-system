@@ -12,6 +12,10 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useCart } from '@/components/cart/CartProvider'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 
 interface Product {
   id: string
@@ -476,6 +480,8 @@ function PaymentForm({
 
 export default function BookingFlow({ product, productChoices, onClose, onComplete }: BookingFlowProps) {
   const locale = useLocale()
+  const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const layoutEditMode = isPreview && isEditMode
   const isEnglish = locale === 'en'
   const translate = useCallback((ko: string, en: string) => (isEnglish ? en : ko), [isEnglish])
   const localeTag = isEnglish ? 'en-US' : 'ko-KR'
@@ -3684,176 +3690,214 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">{translate('예약하기', 'Book this tour')}</h2>
-              <p className="text-sm text-gray-600">{productDisplayName}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* 진행 단계 */}
-        <div className="border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => {
-              const Icon = step.icon
-              const isActive = index === currentStep
-              const isCompleted = index < currentStep
-              
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-booking" />}
+        <CustomerPageZoneLayoutRenderer
+          pageId="product-booking"
+          layoutEditMode={layoutEditMode}
+          productId={product.id}
+          renderBlock={(zoneId) => {
+            if (zoneId === 'booking-overlay-header') {
               return (
-                <div key={step.id} className="flex items-center">
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                    isActive 
-                      ? 'border-blue-500 bg-blue-500 text-white' 
-                      : isCompleted 
-                        ? 'border-green-500 bg-green-500 text-white'
-                        : 'border-gray-300 text-gray-400'
-                  }`}>
-                    {isCompleted ? (
-                      <Check className="h-4 w-4" />
+                <CustomerPageZone
+                  zone="booking-overlay-header"
+                  productId={product.id}
+                  className="border-b border-gray-200 px-6 py-4 shrink-0"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900">{translate('예약하기', 'Book this tour')}</h2>
+                      <p className="text-sm text-gray-600">{productDisplayName}</p>
+                    </div>
+                    <button
+                      onClick={onClose}
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="h-6 w-6" />
+                    </button>
+                  </div>
+                </CustomerPageZone>
+              )
+            }
+
+            if (zoneId === 'booking-overlay-stepper') {
+              return (
+                <CustomerPageZone
+                  zone="booking-overlay-stepper"
+                  productId={product.id}
+                  className="border-b border-gray-200 px-6 py-4 shrink-0"
+                >
+                  <div className="flex items-center justify-between">
+                    {steps.map((step, index) => {
+                      const Icon = step.icon
+                      const isActive = index === currentStep
+                      const isCompleted = index < currentStep
+
+                      return (
+                        <div key={step.id} className="flex items-center">
+                          <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+                            isActive
+                              ? 'border-blue-500 bg-blue-500 text-white'
+                              : isCompleted
+                                ? 'border-green-500 bg-green-500 text-white'
+                                : 'border-gray-300 text-gray-400'
+                          }`}>
+                            {isCompleted ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <Icon className="h-4 w-4" />
+                            )}
+                          </div>
+                          <span className={`ml-2 text-sm font-medium ${
+                            isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-400'
+                          }`}>
+                            {step.title}
+                          </span>
+                          {index < steps.length - 1 && (
+                            <div className={`w-8 h-0.5 mx-4 ${
+                              isCompleted ? 'bg-green-500' : 'bg-gray-300'
+                            }`} />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CustomerPageZone>
+              )
+            }
+
+            if (zoneId === 'booking-overlay-content') {
+              return (
+                <CustomerPageZone
+                  zone="booking-overlay-content"
+                  productId={product.id}
+                  className="px-6 py-6 overflow-y-auto flex-1 min-h-0 max-h-[60vh]"
+                >
+                  {renderStepContent()}
+                </CustomerPageZone>
+              )
+            }
+
+            if (zoneId === 'booking-overlay-footer') {
+              return (
+                <CustomerPageZone
+                  zone="booking-overlay-footer"
+                  productId={product.id}
+                  className="border-t border-gray-200 px-6 py-4 shrink-0"
+                >
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={handlePrevious}
+                      disabled={currentStep === 0}
+                      className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                        currentStep === 0
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      {translate('이전', 'Back')}
+                    </button>
+
+                    {currentStep === steps.length - 1 ? (
+                      paymentMethod === 'card' ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleAddToCart}
+                            disabled={!isStepValid()}
+                            className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                              isStepValid()
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-2" />
+                            {translate('장바구니에 추가', 'Add to Cart')}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (paymentSubmitHandler) {
+                                setPaymentProcessing(true)
+                                try {
+                                  await paymentSubmitHandler()
+                                } finally {
+                                  setPaymentProcessing(false)
+                                }
+                              }
+                            }}
+                            disabled={!isStepValid() || !paymentSubmitHandler || paymentProcessing || !stripePromise}
+                            className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
+                              isStepValid() && paymentSubmitHandler && !paymentProcessing && stripePromise
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {paymentProcessing ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                {translate('처리 중...', 'Processing...')}
+                              </>
+                            ) : (
+                              translate('결제하기', 'Pay Now')
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleAddToCart}
+                            disabled={!isStepValid()}
+                            className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                              isStepValid()
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-2" />
+                            {translate('장바구니에 추가', 'Add to Cart')}
+                          </button>
+                          <button
+                            onClick={handleComplete}
+                            disabled={!isStepValid() || loading}
+                            className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
+                              isStepValid() && !loading
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {loading ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                {translate('처리 중...', 'Processing...')}
+                              </>
+                            ) : (
+                              translate('예약 완료', 'Complete booking')
+                            )}
+                          </button>
+                        </div>
+                      )
                     ) : (
-                      <Icon className="h-4 w-4" />
+                      <button
+                        onClick={handleNext}
+                        disabled={!isStepValid()}
+                        className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                          isStepValid()
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {translate('다음', 'Next')}
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </button>
                     )}
                   </div>
-                  <span className={`ml-2 text-sm font-medium ${
-                    isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-400'
-                  }`}>
-                    {step.title}
-                  </span>
-                  {index < steps.length - 1 && (
-                    <div className={`w-8 h-0.5 mx-4 ${
-                      isCompleted ? 'bg-green-500' : 'bg-gray-300'
-                    }`} />
-                  )}
-                </div>
+                </CustomerPageZone>
               )
-            })}
-          </div>
-        </div>
+            }
 
-        {/* 콘텐츠 */}
-        <div className="px-6 py-6 overflow-y-auto max-h-[60vh]">
-          {renderStepContent()}
-        </div>
-
-        {/* 푸터 */}
-        <div className="border-t border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={handlePrevious}
-              disabled={currentStep === 0}
-              className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                currentStep === 0
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              {translate('이전', 'Back')}
-            </button>
-
-            {currentStep === steps.length - 1 ? (
-              // 카드 결제는 PaymentForm에서 처리하므로 버튼 숨김
-              paymentMethod === 'card' ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={!isStepValid()}
-                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                      isStepValid()
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <ShoppingCart className="h-4 w-4 mr-2" />
-                    {translate('장바구니에 추가', 'Add to Cart')}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (paymentSubmitHandler) {
-                        setPaymentProcessing(true)
-                        try {
-                          await paymentSubmitHandler()
-                        } finally {
-                          setPaymentProcessing(false)
-                        }
-                      }
-                    }}
-                    disabled={!isStepValid() || !paymentSubmitHandler || paymentProcessing || !stripePromise}
-                    className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
-                      isStepValid() && paymentSubmitHandler && !paymentProcessing && stripePromise
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    {paymentProcessing ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        {translate('처리 중...', 'Processing...')}
-                      </>
-                    ) : (
-                      translate('결제하기', 'Pay Now')
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={!isStepValid()}
-                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                      isStepValid()
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <ShoppingCart className="h-4 w-4 mr-2" />
-                    {translate('장바구니에 추가', 'Add to Cart')}
-                  </button>
-                  <button
-                    onClick={handleComplete}
-                    disabled={!isStepValid() || loading}
-                    className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
-                      isStepValid() && !loading
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    {loading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        {translate('처리 중...', 'Processing...')}
-                      </>
-                    ) : (
-                      translate('예약 완료', 'Complete booking')
-                    )}
-                  </button>
-                </div>
-              )
-            ) : (
-              <button
-                onClick={handleNext}
-                disabled={!isStepValid()}
-                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isStepValid()
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                {translate('다음', 'Next')}
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </button>
-            )}
-          </div>
-        </div>
+            return null
+          }}
+        />
       </div>
 
       {/* 인증 모달 */}

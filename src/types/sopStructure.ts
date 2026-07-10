@@ -53,6 +53,8 @@ export type SopChecklistItem = {
   manual_status?: SopManualStatus
   /** 운영 허브 문서(company_knowledge_articles.id) 연결 — 있으면 해당 문서 본문 표시 */
   linked_hub_article_id?: string
+  /** 운영 허브 문서 다중 연결 */
+  linked_hub_article_ids?: string[]
   attachments?: SopRowAttachment[]
 }
 
@@ -68,6 +70,7 @@ export type SopCategory = {
   manual_en?: string
   manual_status?: SopManualStatus
   linked_hub_article_id?: string
+  linked_hub_article_ids?: string[]
   /** 줄 단위 체크(비우면 기존처럼 본문만) */
   checklist_items?: SopChecklistItem[]
 }
@@ -186,7 +189,11 @@ function sanitizeChecklistItems(items: SopChecklistItem[] | undefined | null): S
     ...(it.manual_ko ? { manual_ko: it.manual_ko } : {}),
     ...(it.manual_en ? { manual_en: it.manual_en } : {}),
     ...(it.manual_status ? { manual_status: it.manual_status } : {}),
-    ...(it.linked_hub_article_id ? { linked_hub_article_id: it.linked_hub_article_id } : {}),
+    ...(it.linked_hub_article_ids?.length
+      ? { linked_hub_article_ids: it.linked_hub_article_ids }
+      : it.linked_hub_article_id
+        ? { linked_hub_article_id: it.linked_hub_article_id }
+        : {}),
     ...(it.row_display === 'text' ? { row_display: 'text' as const } : {}),
     ...(it.attachments?.length ? { attachments: it.attachments } : {}),
   }))
@@ -398,6 +405,21 @@ function normalizeAttachmentRow(raw: unknown): SopRowAttachment | null {
   }
 }
 
+function normalizeLinkedHubArticleIds(o: Record<string, unknown>): string[] | undefined {
+  const ids: string[] = []
+  if (Array.isArray(o.linked_hub_article_ids)) {
+    for (const raw of o.linked_hub_article_ids) {
+      if (typeof raw === 'string' && raw.trim()) ids.push(raw.trim())
+    }
+  }
+  const legacy = o.linked_hub_article_id
+  if (typeof legacy === 'string' && legacy.trim() && !ids.includes(legacy.trim())) {
+    ids.unshift(legacy.trim())
+  }
+  const unique = [...new Set(ids)]
+  return unique.length ? unique : undefined
+}
+
 function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -412,9 +434,8 @@ function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
           : ''
   const manual_ko = typeof o.manual_ko === 'string' ? o.manual_ko : ''
   const manual_en = typeof o.manual_en === 'string' ? o.manual_en : ''
-  const linkedRaw = o.linked_hub_article_id
-  const linked_hub_article_id =
-    typeof linkedRaw === 'string' && linkedRaw.trim() ? linkedRaw.trim() : ''
+  const linked_hub_article_ids = normalizeLinkedHubArticleIds(o)
+  const linked_hub_article_id = linked_hub_article_ids?.[0]
   const statusRaw = o.manual_status
   const manual_status: SopManualStatus | undefined =
     statusRaw === 'draft' || statusRaw === 'complete' ? statusRaw : undefined
@@ -438,7 +459,11 @@ function normalizeChecklistRow(raw: unknown): SopChecklistItem | null {
     ...(manual_ko ? { manual_ko } : {}),
     ...(manual_en ? { manual_en } : {}),
     ...(manual_status ? { manual_status } : {}),
-    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
+    ...(linked_hub_article_ids && linked_hub_article_ids.length > 1
+      ? { linked_hub_article_ids }
+      : linked_hub_article_id
+        ? { linked_hub_article_id }
+        : {}),
     ...(row_display === 'text' ? { row_display } : {}),
     ...(attachments ? { attachments } : {}),
   }
@@ -454,9 +479,8 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
   }
   const manual_ko = typeof o.manual_ko === 'string' ? o.manual_ko : ''
   const manual_en = typeof o.manual_en === 'string' ? o.manual_en : ''
-  const linkedRaw = o.linked_hub_article_id
-  const linked_hub_article_id =
-    typeof linkedRaw === 'string' && linkedRaw.trim() ? linkedRaw.trim() : ''
+  const linked_hub_article_ids = normalizeLinkedHubArticleIds(o)
+  const linked_hub_article_id = linked_hub_article_ids?.[0]
   let manual_status: SopManualStatus | undefined
   if (o.manual_status === 'complete' || o.manual_status === 'draft') {
     manual_status = o.manual_status
@@ -471,7 +495,11 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
     ...(manual_ko ? { manual_ko } : {}),
     ...(manual_en ? { manual_en } : {}),
     ...(manual_status ? { manual_status } : {}),
-    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
+    ...(linked_hub_article_ids && linked_hub_article_ids.length > 1
+      ? { linked_hub_article_ids }
+      : linked_hub_article_id
+        ? { linked_hub_article_id }
+        : {}),
     ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }
@@ -973,9 +1001,11 @@ function mergeChecklistsParallel(
       ...(e.manual_ko?.trim() && !k.manual_ko?.trim() ? { manual_ko: e.manual_ko } : {}),
       ...(e.manual_en?.trim() && !k.manual_en?.trim() ? { manual_en: e.manual_en } : {}),
       ...(e.manual_status && !k.manual_status ? { manual_status: e.manual_status } : {}),
-      ...(e.linked_hub_article_id && !k.linked_hub_article_id
-        ? { linked_hub_article_id: e.linked_hub_article_id }
-        : {}),
+      ...(e.linked_hub_article_ids?.length && !k.linked_hub_article_ids?.length
+        ? { linked_hub_article_ids: e.linked_hub_article_ids }
+        : e.linked_hub_article_id && !k.linked_hub_article_id && !k.linked_hub_article_ids?.length
+          ? { linked_hub_article_id: e.linked_hub_article_id }
+          : {}),
       ...(e.row_display === 'text' && k.row_display !== 'text' ? { row_display: 'text' as const } : {}),
       ...(e.attachments?.length && !k.attachments?.length ? { attachments: e.attachments } : {}),
     })
@@ -1007,9 +1037,11 @@ function mergeCategoriesParallel(kc: SopCategory[], ec: SopCategory[]): SopCateg
       ...(e.manual_ko?.trim() && !k.manual_ko?.trim() ? { manual_ko: e.manual_ko } : {}),
       ...(e.manual_en?.trim() && !k.manual_en?.trim() ? { manual_en: e.manual_en } : {}),
       ...(e.manual_status && !k.manual_status ? { manual_status: e.manual_status } : {}),
-      ...(e.linked_hub_article_id && !k.linked_hub_article_id
-        ? { linked_hub_article_id: e.linked_hub_article_id }
-        : {}),
+      ...(e.linked_hub_article_ids?.length && !k.linked_hub_article_ids?.length
+        ? { linked_hub_article_ids: e.linked_hub_article_ids }
+        : e.linked_hub_article_id && !k.linked_hub_article_id && !k.linked_hub_article_ids?.length
+          ? { linked_hub_article_id: e.linked_hub_article_id }
+          : {}),
       ...(mergedChk ? { checklist_items: mergedChk } : {}),
     })
   }
@@ -1079,12 +1111,19 @@ function mergeCategoryForLocale(ec: SopCategory, bc: SopCategory | undefined, lo
   const manual_ko = loc === 'ko' ? ec.manual_ko : (bc?.manual_ko ?? ec.manual_ko)
   const manual_en = loc === 'en' ? ec.manual_en : (bc?.manual_en ?? ec.manual_en)
   const manual_status = ec.manual_status ?? bc?.manual_status
-  const linked_hub_article_id = ec.linked_hub_article_id ?? bc?.linked_hub_article_id
+  const linked_hub_article_ids = ec.linked_hub_article_ids?.length
+    ? ec.linked_hub_article_ids
+    : bc?.linked_hub_article_ids?.length
+      ? bc.linked_hub_article_ids
+      : undefined
+  const linked_hub_article_id =
+    ec.linked_hub_article_id ?? bc?.linked_hub_article_id ?? linked_hub_article_ids?.[0]
   const {
     manual_ko: _mk,
     manual_en: _me,
     manual_status: _ms,
     linked_hub_article_id: _lid,
+    linked_hub_article_ids: _lids,
     ...base
   } = ec
   return {
@@ -1096,7 +1135,11 @@ function mergeCategoryForLocale(ec: SopCategory, bc: SopCategory | undefined, lo
     ...(manual_ko ? { manual_ko } : {}),
     ...(manual_en ? { manual_en } : {}),
     ...(manual_status ? { manual_status } : {}),
-    ...(linked_hub_article_id ? { linked_hub_article_id } : {}),
+    ...(linked_hub_article_ids && linked_hub_article_ids.length > 1
+      ? { linked_hub_article_ids }
+      : linked_hub_article_id
+        ? { linked_hub_article_id }
+        : {}),
     ...(checklist_items !== undefined ? { checklist_items } : {}),
   }
 }

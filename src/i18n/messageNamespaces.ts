@@ -49,6 +49,8 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'publicChat',
   'reservationEvidence',
   'teamBoard',
+  'customerSiteFooter',
+  'legalPages',
 ] as const
 
 type LocaleNamespace = (typeof ALL_LOCALE_NAMESPACE_KEYS)[number]
@@ -60,6 +62,23 @@ type RouteNamespaceRule = {
 
 /** 긴 경로·구체적 규칙을 먼저 두고, `/admin` 등 넓은 규칙은 뒤에 둔다. */
 const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
+  {
+    test: (p) =>
+      /^\/(ko|en)\/?$/.test(p) ||
+      /\/products/.test(p) ||
+      /\/reservation-check/.test(p) ||
+      /\/(terms|privacy-policy|sms-terms|cancellation-refund-policy)(\/|$)/.test(p),
+    namespaces: [
+      'customerSiteFooter',
+      'legalPages',
+      'products',
+      'booking',
+      'weather',
+      'productDetail',
+      'customTour',
+      'reservationCheck',
+    ],
+  },
   {
     test: (p) => /\/admin\/(expenses|company-expenses|reservation-expenses|statement-reconciliation|partner-funds|payment-methods|expense-payment-method-normalize|receipt-ocr-parse-rules|company-expense-paid-for-labels)/.test(p),
     namespaces: [

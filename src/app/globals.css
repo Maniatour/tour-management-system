@@ -299,6 +299,22 @@
   outline-offset: 2px;
 }
 
+.customer-page-zone--fixed .customer-page-zone-edit-btn {
+  top: auto;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  z-index: 120;
+}
+
+.customer-page-zone--fixed.customer-page-zone--editable {
+  outline: none;
+}
+
+.customer-page-zone--fixed.customer-page-zone--editable:hover {
+  outline: 2px dashed rgba(37, 99, 235, 0.55);
+  outline-offset: -2px;
+}
+
 .customer-page-zone-edit-btn {
   position: absolute;
   top: 0.5rem;
@@ -457,6 +473,356 @@
   font-size: 0.8125rem;
   font-weight: 500;
   pointer-events: none;
+}
+
+.customer-page-home-section--dragging {
+  box-shadow: 0 12px 40px rgba(91, 33, 182, 0.18);
+  outline: 2px solid rgba(124, 58, 237, 0.35);
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+}
+
+.customer-page-home-section-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.125rem;
+  border: none;
+  background: transparent;
+  cursor: grab;
+  border-radius: 0.375rem;
+}
+
+.customer-page-home-section-grip:active {
+  cursor: grabbing;
+}
+
+.customer-page-home-section-toolbar__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.customer-page-home-canvas {
+  min-height: 100vh;
+  padding-bottom: 4rem;
+}
+
+.customer-page-home-palette {
+  position: fixed;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 18px 48px rgba(91, 33, 182, 0.18),
+    0 4px 16px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.customer-page-home-palette--floating {
+  touch-action: none;
+}
+
+.customer-page-home-palette__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+  border-bottom: 1px solid rgba(124, 58, 237, 0.08);
+  background: linear-gradient(180deg, rgba(245, 243, 255, 0.95) 0%, rgba(255, 255, 255, 0.92) 100%);
+  cursor: default;
+}
+
+.customer-page-home-palette__move-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(124, 58, 237, 0.14);
+  border-radius: 0.625rem;
+  background: #fff;
+  color: #6d28d9;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.customer-page-home-palette__move-handle:active {
+  cursor: grabbing;
+}
+
+.customer-page-home-palette__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0.625rem 0.75rem 0.75rem;
+  overflow: hidden;
+}
+
+.customer-page-home-palette__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.customer-page-home-palette__filter {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  background: #fff;
+  color: #6d28d9;
+}
+
+.customer-page-home-palette__filter--active {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+}
+
+.customer-page-home-palette__scroll {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.customer-page-home-palette__scroll--wrap {
+  flex: 1;
+  min-height: 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.customer-page-home-palette__chip {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 10rem;
+  max-width: 12rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  flex-shrink: 0;
+}
+
+.customer-page-home-palette__chip--dragging {
+  opacity: 0.92;
+  transform: rotate(1deg);
+}
+
+.customer-page-home-palette__grip {
+  display: inline-flex;
+  padding: 0.125rem;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 0.375rem;
+  cursor: grab;
+}
+
+.customer-page-home-palette__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #5b21b6;
+  cursor: pointer;
+}
+
+.customer-page-home-palette__add:hover {
+  background: #fff;
+}
+
+.customer-page-home-palette__meta {
+  margin-top: 0.375rem;
+  padding: 0 0.125rem;
+  font-size: 0.625rem;
+  color: rgba(109, 40, 217, 0.7);
+  flex-shrink: 0;
+}
+
+.customer-page-home-palette__resize-handle {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  width: 1rem;
+  height: 1rem;
+  cursor: nwse-resize;
+  opacity: 0.55;
+  background:
+    linear-gradient(135deg, transparent 0 44%, rgba(109, 40, 217, 0.55) 44% 52%, transparent 52% 68%, rgba(109, 40, 217, 0.55) 68% 76%, transparent 76%);
+}
+
+.customer-page-home-palette__resize-handle:hover {
+  opacity: 0.95;
+}
+
+/* 홈 외 페이지 — zone 블록 레이아웃 편집 */
+.customer-page-zone-layout-guide {
+  background: linear-gradient(135deg, rgb(240 253 250) 0%, rgb(236 254 255) 100%);
+  border-bottom: 1px solid rgb(153 246 228 / 0.6);
+}
+
+.customer-page-zone-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.customer-page-zone-block {
+  position: relative;
+}
+
+.customer-page-zone-block-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, rgb(240 253 250) 0%, rgb(236 254 255) 100%);
+  border: 1px solid rgb(153 246 228 / 0.8);
+  border-bottom: none;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.customer-page-zone-block-toolbar__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.customer-page-zone-block-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.customer-page-zone-block-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
+  color: rgb(100 116 139);
+  cursor: grab;
+}
+
+.customer-page-zone-block-grip--fixed {
+  cursor: not-allowed;
+}
+
+.customer-page-zone-block-grip:active {
+  cursor: grabbing;
+}
+
+.customer-page-zone-block-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: rgb(204 251 241);
+  color: rgb(15 118 110);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.customer-page-zone-block-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgb(15 23 42);
+}
+
+.customer-page-zone-block-sublabel {
+  font-size: 0.6875rem;
+  color: rgb(100 116 139);
+}
+
+.customer-page-zone-block-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(226 232 240);
+  background: white;
+  color: rgb(71 85 105);
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+.customer-page-zone-block-btn:hover:not(:disabled) {
+  background: rgb(248 250 252);
+}
+
+.customer-page-zone-block-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.customer-page-zone-block-btn--active {
+  background: rgb(204 251 241);
+  border-color: rgb(94 234 212);
+  color: rgb(15 118 110);
+}
+
+.customer-page-zone-block-btn--outline {
+  width: auto;
+  padding: 0 0.5rem;
+  gap: 0.25rem;
+}
+
+.customer-page-zone-block-body {
+  position: relative;
+  border: 1px solid rgb(153 246 228 / 0.8);
+  border-radius: 0 0 0.75rem 0.75rem;
+  overflow: hidden;
+}
+
+.customer-page-zone-block--hidden .customer-page-zone-block-body {
+  opacity: 0.45;
+}
+
+.customer-page-zone-block--hidden .customer-page-zone-edit-btn {
+  opacity: 0.35;
+}
+
+.customer-page-zone-block-hidden-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(15 23 42 / 0.08);
+  color: rgb(51 65 85);
+  font-size: 0.75rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.customer-page-zone-block--dragging {
+  opacity: 0.92;
+  box-shadow: 0 12px 28px rgb(15 118 110 / 0.18);
 }
 
 /* 고객 페이지 zone UI 편집 — CSS 변수 기반 */

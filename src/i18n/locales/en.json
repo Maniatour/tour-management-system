@@ -6561,5 +6561,37 @@
       "catMonthly": "Monthly",
       "catYearly": "Yearly"
     }
+  },
+  "customerSiteFooter": {
+    "brandName": "MANIA TOUR",
+    "brandDescription": "Premium Las Vegas–based tours to the Grand Canyon, Antelope Canyon, and the American Southwest with licensed local guides.",
+    "trustBadge": "Safe, trusted, licensed tour operator",
+    "explore": "Explore",
+    "home": "Home",
+    "tours": "Tours",
+    "reservationCheck": "Reservation Lookup",
+    "legal": "Legal",
+    "terms": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "smsTerms": "SMS Terms",
+    "cancellationRefundPolicy": "Cancellation & Refund Policy",
+    "cookiePolicy": "Cookie Policy",
+    "address": "Las Vegas, Nevada, USA",
+    "phoneValue": "+17025551234",
+    "phoneDisplay": "+1 (702) 555-1234",
+    "emailValue": "support@kovegas.com",
+    "emailDisplay": "support@kovegas.com",
+    "copyright": "© {year} MANIA TOUR. All rights reserved.",
+    "disclaimer": "Prices and schedules may vary by product."
+  },
+  "legalPages": {
+    "backToHome": "Back to Home",
+    "lastUpdated": "Last updated",
+    "relatedPolicies": "Related policies",
+    "terms": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "smsTerms": "SMS Terms",
+    "cancellationRefundPolicy": "Cancellation & Refund Policy",
+    "cookiePolicy": "Cookie Policy"
   }
 }
