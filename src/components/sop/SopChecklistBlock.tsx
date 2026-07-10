@@ -65,7 +65,7 @@ const CHECKLIST_TITLE_HTML_CLASS =
   'min-w-0 flex-1 break-words text-[15px] font-medium leading-snug text-gray-900 sm:text-sm [&_a]:break-all [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!m-0 [&_p]:!inline [&_p]:!leading-snug [&_ul]:!my-0'
 
 const CHECKLIST_TEXT_HTML_CLASS =
-  'min-w-0 flex-1 break-words text-[15px] leading-snug text-gray-800 sm:text-sm [&_a]:break-all [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!m-0 [&_p]:!inline [&_p]:!leading-snug [&_ul]:!my-0'
+  'min-w-0 flex-1 break-words text-[15px] leading-relaxed text-gray-800 sm:text-sm [&_a]:break-all [&_br]:block [&_li]:!my-0 [&_ol]:!my-1 [&_p]:!my-1 [&_p]:!block [&_ul]:!my-1'
 
 function attachmentLabel(att: SopRowAttachment, viewLang: SopEditLocale): string {
   const label = sopText(att.label_ko, att.label_en, viewLang).trim()
@@ -448,7 +448,7 @@ function ChecklistRootRow({
         !title && editable && 'italic text-gray-400'
       )}
       dangerouslySetInnerHTML={{
-        __html: markdownToHeadingHtml(title || (isEn ? '(Row)' : '(줄)')),
+        __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
       }}
     />
   )

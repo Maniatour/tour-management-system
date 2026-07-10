@@ -138,44 +138,90 @@ export const markdownToHtml = (markdown: string): string => {
     return `<ol style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: decimal;">${lis.join('')}</ol>`
   }
 
+  const pStyle = 'margin-bottom: 1em; line-height: 1.6;'
+
+  /** 한 단락 안에서 목록 줄과 일반 텍스트가 섞여 있어도 각각 블록으로 렌더 */
+  const renderMixedMarkdownBlock = (paragraph: string): string => {
+    const lines = paragraph.split('\n')
+    const chunks: string[] = []
+    let i = 0
+
+    const isListLine = (line: string) => listLineRe.test(line.trim())
+    const isNumberedLine = (line: string) => /^\d+\.\s+/.test(line.trim())
+    const isBulletLine = (line: string) => /^(\s*)([-*•])\s+/.test(line.trim())
+
+    while (i < lines.length) {
+      const trimmed = lines[i]?.trim() ?? ''
+      if (!trimmed) {
+        i += 1
+        continue
+      }
+
+      if (isListLine(trimmed)) {
+        const collected: string[] = []
+        while (i < lines.length) {
+          const t = lines[i]?.trim() ?? ''
+          if (!t || !isListLine(t)) break
+          collected.push(t)
+          i += 1
+        }
+        // 한 줄만 있을 때(예: "2. OTA의 역할")는 제목·문장으로 보고 목록으로 변환하지 않음
+        if (collected.length > 1) {
+          if (collected.every(isNumberedLine)) {
+            chunks.push(renderOrderedList(collected))
+          } else if (collected.every(isBulletLine)) {
+            chunks.push(renderBulletList(collected))
+          } else {
+            const lis = collected
+              .map((line) => {
+                const num = line.match(/^(\d+)\.\s+(.+)$/)
+                if (num) return `<li style="margin: 0.15em 0;">${num[2]}</li>`
+                const bu = line.match(/^(\s*)([-*•])\s+(.+)$/)
+                return bu ? `<li style="margin: 0.15em 0;">${bu[3]}</li>` : ''
+              })
+              .filter(Boolean)
+            if (lis.length) {
+              chunks.push(
+                `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
+              )
+            }
+          }
+        } else {
+          chunks.push(`<p style="${pStyle}">${collected[0] ?? ''}</p>`)
+        }
+      } else {
+        const textLines: string[] = []
+        while (i < lines.length) {
+          const raw = lines[i] ?? ''
+          const t = raw.trim()
+          if (!t) break
+          if (isListLine(t)) break
+          textLines.push(raw)
+          i += 1
+        }
+        if (textLines.length) {
+          const p = textLines.join('\n').replace(/\n/g, '<br>')
+          if (
+            p.trim().startsWith('<p') ||
+            p.trim().startsWith('<div') ||
+            p.trim().startsWith('<ul') ||
+            p.trim().startsWith('<ol')
+          ) {
+            chunks.push(p)
+          } else {
+            chunks.push(`<p style="${pStyle}">${p}</p>`)
+          }
+        }
+      }
+    }
+
+    return chunks.join('')
+  }
+
   html = paragraphs
     .map((paragraph) => {
       if (!paragraph.trim()) return ''
-
-      const lines = paragraph.split('\n')
-      const nonEmpty = lines.map((l) => l.trim()).filter(Boolean)
-      const allList = nonEmpty.length > 0 && nonEmpty.every((l) => listLineRe.test(l))
-      const allNumbered = nonEmpty.length > 0 && nonEmpty.every((l) => /^\d+\.\s+/.test(l.trim()))
-      const allBullet = nonEmpty.length > 0 && nonEmpty.every((l) => /^(\s*)([-*•])\s+/.test(l.trim()))
-      // 한 줄만 있을 때(예: "2. OTA의 역할")는 제목·문장으로 보고 목록으로 변환하지 않음
-      const multiLineList = nonEmpty.length > 1
-
-      if (allList && allNumbered && multiLineList) {
-        return renderOrderedList(nonEmpty)
-      }
-      if (allList && allBullet && multiLineList) {
-        return renderBulletList(nonEmpty)
-      }
-      if (allList && multiLineList) {
-        const lis = nonEmpty
-          .map((line) => {
-            const t = line.trim()
-            const num = t.match(/^(\d+)\.\s+(.+)$/)
-            if (num) return `<li style="margin: 0.15em 0;">${num[1]}. ${num[2]}</li>`
-            const bu = t.match(/^(\s*)([-*•])\s+(.+)$/)
-            return bu ? `<li style="margin: 0.15em 0;">${bu[3]}</li>` : ''
-          })
-          .filter(Boolean)
-        return lis.length
-          ? `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
-          : ''
-      }
-
-      let p = paragraph.replace(/\n/g, '<br>')
-      if (p.trim().startsWith('<p') || p.trim().startsWith('<div') || p.trim().startsWith('<ul') || p.trim().startsWith('<ol')) {
-        return p
-      }
-      return `<p style="margin-bottom: 1em; line-height: 1.6;">${p}</p>`
+      return renderMixedMarkdownBlock(paragraph)
     })
     .filter(Boolean)
     .join('')
@@ -191,17 +237,26 @@ export function markdownToHeadingHtml(markdown: string): string {
   return wrapped ? wrapped[1] : trimmed
 }
 
-/** li 내부 HTML을 마크다운 한 줄로 (중첩 블록 없다고 가정) */
-const liInnerToMarkdownLine = (inner: string): string => {
+/** li 내부 HTML을 줄 단위 세그먼트로 (목록 항목 이후 본문 분리용) */
+const liInnerToMarkdownSegments = (inner: string): string[] => {
   let t = inner
   t = t.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**')
   t = t.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
   t = t.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
   t = t.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
   t = t.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+  t = t.replace(/<\/div>/gi, '\n')
+  t = t.replace(/<div[^>]*>/gi, '')
+  t = t.replace(/<\/p>/gi, '\n')
+  t = t.replace(/<p[^>]*>/gi, '')
   t = t.replace(/<br\s*\/?>/gi, '\n')
   t = t.replace(/<[^>]+>/g, '')
-  return t.replace(/\n+/g, ' ').trim()
+  return t.split('\n').map((s) => s.trim()).filter(Boolean)
+}
+
+/** li 내부 HTML을 마크다운 한 줄로 (중첩 블록 없다고 가정) */
+const liInnerToMarkdownLine = (inner: string): string => {
+  return liInnerToMarkdownSegments(inner)[0] ?? ''
 }
 
 // HTML을 마크다운으로 변환하는 함수
@@ -226,26 +281,40 @@ const htmlToMarkdown = (html: string): string => {
 
   // 순서 목록: <ol>…</ol> -> "1. …\n2. …"
   markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner: string) => {
-    const lines: string[] = []
+    const listLines: string[] = []
+    const trailingBlocks: string[] = []
     const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
     let match: RegExpExecArray | null
     let i = 1
     while ((match = liRe.exec(inner)) !== null) {
-      lines.push(`${i}. ${liInnerToMarkdownLine(match[1])}`)
+      const segments = liInnerToMarkdownSegments(match[1])
+      if (!segments.length) continue
+      listLines.push(`${i}. ${segments[0]}`)
+      if (segments.length > 1) trailingBlocks.push(...segments.slice(1))
       i += 1
     }
-    return lines.length ? `${lines.join('\n')}\n\n` : ''
+    if (!listLines.length) return ''
+    const body = [listLines.join('\n')]
+    if (trailingBlocks.length) body.push(trailingBlocks.join('\n\n'))
+    return `${body.join('\n\n')}\n\n`
   })
 
   // 글머리 목록: <ul>…</ul> -> "- …\n- …"
   markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_m, inner: string) => {
-    const lines: string[] = []
+    const listLines: string[] = []
+    const trailingBlocks: string[] = []
     const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
     let match: RegExpExecArray | null
     while ((match = liRe.exec(inner)) !== null) {
-      lines.push(`- ${liInnerToMarkdownLine(match[1])}`)
+      const segments = liInnerToMarkdownSegments(match[1])
+      if (!segments.length) continue
+      listLines.push(`- ${segments[0]}`)
+      if (segments.length > 1) trailingBlocks.push(...segments.slice(1))
     }
-    return lines.length ? `${lines.join('\n')}\n\n` : ''
+    if (!listLines.length) return ''
+    const body = [listLines.join('\n')]
+    if (trailingBlocks.length) body.push(trailingBlocks.join('\n\n'))
+    return `${body.join('\n\n')}\n\n`
   })
 
   // 남은 단독 li (ul 밖) 처리

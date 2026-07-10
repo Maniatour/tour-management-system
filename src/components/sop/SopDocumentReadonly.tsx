@@ -56,14 +56,23 @@ type Props = {
   searchFocusRowId?: string | null
 }
 
-function RichLine({ text, flat }: { text: string; flat?: boolean }) {
+function RichLine({
+  text,
+  flat,
+  bordered = true,
+}: {
+  text: string
+  flat?: boolean
+  /** false면 왼쪽 세로 라인 없음 (섹션 본문·카테고리 없음 등) */
+  bordered?: boolean
+}) {
   const t = (text || '').trim()
   if (!t) return null
   return (
     <div
       className={cn(
         'w-full min-w-0 break-words prose prose-sm max-w-none text-gray-800 [&_*]:max-w-full [&_img]:h-auto [&_img]:max-w-full [&_ul]:my-2 [&_p]:my-1',
-        flat ? 'pl-0' : 'ml-1 border-l-2 border-gray-100 pl-6'
+        flat || !bordered ? 'pl-0' : 'ml-1 border-l-2 border-gray-100 pl-6'
       )}
       dangerouslySetInnerHTML={{ __html: markdownToHtml(t) }}
     />
@@ -188,7 +197,7 @@ export default function SopDocumentReadonly({
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <RichLine text={sectionBody} flat={flat} />
+                    <RichLine text={sectionBody} flat={flat} bordered={sortedCats.length > 0} />
                   </div>
                   {previewEditable && onEditSectionContent ? (
                     <SopSectionBodyToolbar

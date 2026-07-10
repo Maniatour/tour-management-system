@@ -42,6 +42,8 @@ type Props = {
   uiLocaleEn: boolean
   langLabel: string
   onSave: (value: string) => void
+  /** 줄 제목 편집 시 텍스트 형식으로 바로 적용 */
+  onSaveAsText?: (value: string) => void
 }
 
 export default function SopRichFieldEditDialog({
@@ -54,6 +56,7 @@ export default function SopRichFieldEditDialog({
   uiLocaleEn,
   langLabel,
   onSave,
+  onSaveAsText,
 }: Props) {
   const [draft, setDraft] = useState(value)
 
@@ -61,7 +64,7 @@ export default function SopRichFieldEditDialog({
     if (open) setDraft(value)
   }, [open, value])
 
-  const editorProps = VARIANT_PROPS[variant]
+  const editorProps = onSaveAsText ? VARIANT_PROPS.body : VARIANT_PROPS[variant]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -77,13 +80,17 @@ export default function SopRichFieldEditDialog({
             value={draft}
             onChange={(v) => setDraft(v ?? '')}
             placeholder={
-              variant === 'title'
+              onSaveAsText
                 ? uiLocaleEn
-                  ? 'Enter title…'
-                  : '제목을 입력하세요…'
-                : uiLocaleEn
-                  ? 'Enter content…'
-                  : '내용을 입력하세요…'
+                  ? 'Enter text (line breaks and lists supported)…'
+                  : '텍스트를 입력하세요 (줄바꿈·목록 가능)…'
+                : variant === 'title'
+                  ? uiLocaleEn
+                    ? 'Enter title…'
+                    : '제목을 입력하세요…'
+                  : uiLocaleEn
+                    ? 'Enter content…'
+                    : '내용을 입력하세요…'
             }
             {...editorProps}
           />
@@ -92,16 +99,42 @@ export default function SopRichFieldEditDialog({
           <Button type="button" variant="secondary" className="w-full touch-manipulation sm:w-auto" onClick={() => onOpenChange(false)}>
             {uiLocaleEn ? 'Cancel' : '취소'}
           </Button>
-          <Button
-            type="button"
-            className="w-full touch-manipulation sm:w-auto"
-            onClick={() => {
-              onSave(draft)
-              onOpenChange(false)
-            }}
-          >
-            {uiLocaleEn ? 'Apply' : '적용'}
-          </Button>
+          {onSaveAsText ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full touch-manipulation sm:w-auto"
+                onClick={() => {
+                  onSaveAsText(draft)
+                  onOpenChange(false)
+                }}
+              >
+                {uiLocaleEn ? 'Apply as text' : '텍스트로 적용'}
+              </Button>
+              <Button
+                type="button"
+                className="w-full touch-manipulation sm:w-auto"
+                onClick={() => {
+                  onSave(draft)
+                  onOpenChange(false)
+                }}
+              >
+                {uiLocaleEn ? 'Apply' : '적용'}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              className="w-full touch-manipulation sm:w-auto"
+              onClick={() => {
+                onSave(draft)
+                onOpenChange(false)
+              }}
+            >
+              {uiLocaleEn ? 'Apply' : '적용'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

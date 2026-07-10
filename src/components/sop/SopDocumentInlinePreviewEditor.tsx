@@ -420,18 +420,9 @@ export default function SopDocumentInlinePreviewEditor({
     }
 
     if (quickEdit.scope === 'checklist') {
-      onChange(
-        prefillSortOrders(
-          updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
-            const items = category.checklist_items?.map((item) => {
-              if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
-              if (quickEdit.field === 'manual') return item
-              return applyChecklistItemValue(item, editLang, value)
-            })
-            return items?.length ? { ...category, checklist_items: items } : category
-          })
-        )
-      )
+      if (quickEdit.field === 'title') {
+        handleChecklistTitleSave(value, 'list')
+      }
       return
     }
 
@@ -445,6 +436,25 @@ export default function SopDocumentInlinePreviewEditor({
       )
     )
   }
+
+  const handleChecklistTitleSave = (value: string, display: 'list' | 'text') => {
+    if (!quickEdit || quickEdit.scope !== 'checklist' || quickEdit.field !== 'title') return
+    onChange(
+      prefillSortOrders(
+        updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
+          const items = category.checklist_items?.map((item) => {
+            if (!checklistItemIdsMatch(item.id, quickEdit.itemId)) return item
+            const withValue = applyChecklistItemValue(item, editLang, value)
+            return applyChecklistRowDisplay(withValue, display)
+          })
+          return items?.length ? { ...category, checklist_items: items } : category
+        })
+      )
+    )
+  }
+
+  const isChecklistTitleEdit =
+    quickEdit?.scope === 'checklist' && quickEdit.field === 'title'
 
   const handleAddSection = () => {
     const result = addSopSection(doc)
@@ -669,6 +679,9 @@ export default function SopDocumentInlinePreviewEditor({
           uiLocaleEn={isEn}
           langLabel={quickEditMeta.langLabel}
           onSave={handleQuickEditSave}
+          {...(isChecklistTitleEdit
+            ? { onSaveAsText: (value) => handleChecklistTitleSave(value, 'text') }
+            : {})}
         />
       ) : null}
 

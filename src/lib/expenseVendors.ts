@@ -422,7 +422,7 @@ export async function renameExpenseVendorAsReusable(
     .from('expense_vendors')
     .select('id, name, usage_type, match_aliases')
     .eq('id', vendorId)
-    .single()
+    .single<Pick<ExpenseVendorRecord, 'id' | 'name' | 'usage_type' | 'match_aliases'>>()
   if (error || !vendor) throw error || new Error('결제처를 찾을 수 없습니다.')
 
   const oldName = String(vendor.name ?? '').trim()
@@ -431,6 +431,7 @@ export async function renameExpenseVendorAsReusable(
   const { data: allVendors, error: allErr } = await client
     .from('expense_vendors')
     .select('id, name, usage_type, match_aliases')
+    .returns<Pick<ExpenseVendorRecord, 'id' | 'name' | 'usage_type' | 'match_aliases'>[]>()
   if (allErr) throw allErr
 
   const existingTarget =
