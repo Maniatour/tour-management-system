@@ -147,14 +147,16 @@ export const markdownToHtml = (markdown: string): string => {
       const allList = nonEmpty.length > 0 && nonEmpty.every((l) => listLineRe.test(l))
       const allNumbered = nonEmpty.length > 0 && nonEmpty.every((l) => /^\d+\.\s+/.test(l.trim()))
       const allBullet = nonEmpty.length > 0 && nonEmpty.every((l) => /^(\s*)([-*•])\s+/.test(l.trim()))
+      // 한 줄만 있을 때(예: "2. OTA의 역할")는 제목·문장으로 보고 목록으로 변환하지 않음
+      const multiLineList = nonEmpty.length > 1
 
-      if (allList && allNumbered) {
+      if (allList && allNumbered && multiLineList) {
         return renderOrderedList(nonEmpty)
       }
-      if (allList && allBullet) {
+      if (allList && allBullet && multiLineList) {
         return renderBulletList(nonEmpty)
       }
-      if (allList) {
+      if (allList && multiLineList) {
         const lis = nonEmpty
           .map((line) => {
             const t = line.trim()
@@ -179,6 +181,14 @@ export const markdownToHtml = (markdown: string): string => {
     .join('')
 
   return html
+}
+
+/** 섹션·카테고리·ROW 제목 등 한 줄 제목용 — 목록 재번호 없이 그대로 표시 */
+export function markdownToHeadingHtml(markdown: string): string {
+  const html = markdownToHtml(markdown)
+  const trimmed = html.trim()
+  const wrapped = /^<p[^>]*>([\s\S]*)<\/p>$/i.exec(trimmed)
+  return wrapped ? wrapped[1] : trimmed
 }
 
 /** li 내부 HTML을 마크다운 한 줄로 (중첩 블록 없다고 가정) */

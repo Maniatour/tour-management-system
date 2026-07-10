@@ -822,8 +822,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
               </h3>
               <p className="mb-4 text-xs text-gray-500">
                 {isEn
-                  ? 'Add a section title, then enter text below without a category title.'
-                  : '섹션 제목을 입력한 뒤, 카테고리 없이 바로 본문을 작성할 수 있습니다.'}
+                  ? 'Use the section ⋯ menu for title, content, or categories.'
+                  : '섹션 ⋯ 메뉴에서 제목·내용·카테고리를 추가할 수 있습니다.'}
               </p>
               <div className="min-h-[280px] rounded-lg border border-gray-200 bg-gray-50/50 p-3 sm:p-4">
                 <SopDocumentInlinePreviewEditor

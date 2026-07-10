@@ -186,7 +186,8 @@ function isLegacySectionBodySlot(category: SopCategory): boolean {
   if ((category.checklist_items?.length ?? 0) > 0) return false
   if (category.manual_ko?.trim() || category.manual_en?.trim()) return false
   if (category.linked_hub_article_id?.trim()) return false
-  return true
+  // 본문이 있는 레거시 슬롯만 이전 — 빈 새 카테고리는 유지
+  return Boolean(category.content_ko?.trim() || category.content_en?.trim())
 }
 
 /** 예전 제목 없는 영역(섹션 본문 대용) → section.content 로 이전, 잘못 들어간 줄은 바로 아래 카테고리로 */

@@ -1,5 +1,7 @@
-import { markdownToHtml } from '@/components/LightRichEditor'
+import { markdownToHtml, markdownToHeadingHtml } from '@/components/LightRichEditor'
 import SopCategoryToolbar from '@/components/sop/SopCategoryToolbar'
+import SopSectionToolbar from '@/components/sop/SopSectionToolbar'
+import SopSectionBodyToolbar from '@/components/sop/SopSectionBodyToolbar'
 import SopChecklistBlock from '@/components/sop/SopChecklistBlock'
 import SopManualContentPanel from '@/components/sop/SopManualContentPanel'
 import SopManualDocIcon from '@/components/sop/SopManualDocIcon'
@@ -8,7 +10,7 @@ import { sopCategoryAnchorId, sopSectionAnchorId } from '@/lib/sopDocumentToc'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { sopText } from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type Props = {
@@ -129,7 +131,7 @@ export default function SopDocumentReadonly({
             anchors && 'scroll-mt-20',
             flat ? 'prose-xl text-black' : 'prose-lg text-indigo-950'
           )}
-          dangerouslySetInnerHTML={{ __html: markdownToHtml(docTitle) }}
+          dangerouslySetInnerHTML={{ __html: markdownToHeadingHtml(docTitle) }}
         />
       ) : null}
       {sections.map((s, si) => {
@@ -137,9 +139,6 @@ export default function SopDocumentReadonly({
         const heading = st || (viewLang === 'en' ? `Section ${si + 1}` : `섹션 ${si + 1}`)
         const sectionBody = sopText(s.content_ko ?? '', s.content_en ?? '', viewLang)
         const sortedCats = [...s.categories].sort((a, b) => a.sort_order - b.sort_order)
-        const openSectionBodyEdit = onEditSectionContent
-          ? () => onEditSectionContent(s.id)
-          : undefined
         return (
           <section
             key={s.id}
@@ -153,103 +152,52 @@ export default function SopDocumentReadonly({
             )}
           >
             {previewEditable && !flat ? (
-              <div className="mb-3 flex flex-wrap justify-end gap-1 sm:absolute sm:right-3 sm:top-3 sm:z-10 sm:mb-0 sm:max-w-[calc(100%-1rem)]">
-                {onMoveSection && si > 0 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 touch-manipulation bg-white/95 shadow-sm sm:h-8 sm:w-8"
-                    title={viewLang === 'en' ? 'Move up' : '위로'}
-                    onClick={() => onMoveSection(s.id, -1)}
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                  </Button>
-                ) : null}
-                {onMoveSection && si < sections.length - 1 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 touch-manipulation bg-white/95 shadow-sm sm:h-8 sm:w-8"
-                    title={viewLang === 'en' ? 'Move down' : '아래로'}
-                    onClick={() => onMoveSection(s.id, 1)}
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                ) : null}
-                {onEditSection ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1 bg-white/95 px-2.5 text-xs shadow-sm touch-manipulation hover:bg-indigo-50 sm:h-8"
-                    onClick={() => onEditSection(s.id)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    {viewLang === 'en' ? 'Title' : '제목'}
-                  </Button>
-                ) : null}
-                {onEditSectionContent ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1 bg-white/95 px-2.5 text-xs shadow-sm touch-manipulation hover:bg-indigo-50 sm:h-8"
-                    onClick={() => onEditSectionContent(s.id)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    {viewLang === 'en' ? 'Content' : '내용'}
-                  </Button>
-                ) : null}
-                {onDeleteSection && sections.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1 bg-white/95 px-2.5 text-xs text-red-700 shadow-sm touch-manipulation hover:bg-red-50 sm:h-8"
-                    onClick={() => onDeleteSection(s.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {viewLang === 'en' ? 'Delete' : '삭제'}
-                  </Button>
-                ) : null}
+              <div className="mb-3 flex justify-end sm:absolute sm:right-3 sm:top-3 sm:z-10 sm:mb-0">
+                <SopSectionToolbar
+                  sectionId={s.id}
+                  sectionIndex={si}
+                  sectionCount={sections.length}
+                  viewLang={viewLang}
+                  {...(sortedCats.length > 0
+                    ? { lastCategoryId: sortedCats[sortedCats.length - 1]?.id }
+                    : {})}
+                  {...(onEditSection ? { onEditSection } : {})}
+                  {...(onEditSectionContent ? { onEditSectionContent } : {})}
+                  {...(onAddCategory ? { onAddCategory } : {})}
+                  {...(onDeleteSection ? { onDeleteSection } : {})}
+                  {...(onMoveSection ? { onMoveSection } : {})}
+                />
               </div>
             ) : null}
             <h2
               className={cn(
-                'font-bold prose prose-sm max-w-none',
+                'text-lg font-bold prose max-w-none sm:text-xl',
                 flat
-                  ? 'text-base text-black border-b border-gray-400 pb-2 mb-4'
-                  : 'text-base text-indigo-900 border-b border-indigo-100 pb-2 mb-3',
-                previewEditable && !flat && 'sm:pr-36',
+                  ? 'text-black border-b border-gray-400 pb-2 mb-4'
+                  : 'text-indigo-900 border-b border-indigo-100 pb-2 mb-3',
+                previewEditable && !flat && 'sm:pr-12',
               )}
-              dangerouslySetInnerHTML={{ __html: markdownToHtml(heading) }}
+              dangerouslySetInnerHTML={{ __html: markdownToHeadingHtml(heading) }}
             />
             <div className="w-full min-w-0 space-y-4">
               {sectionBody.trim() ? (
-                <button
-                  type="button"
+                <div
                   className={cn(
-                    'w-full min-w-0 text-left',
-                    openSectionBodyEdit &&
-                      'cursor-pointer rounded-md transition hover:bg-indigo-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300'
+                    'relative flex w-full min-w-0 items-start gap-2',
+                    previewEditable && onEditSectionContent && 'sm:pr-2'
                   )}
-                  disabled={!openSectionBodyEdit}
-                  onClick={openSectionBodyEdit}
                 >
-                  <RichLine text={sectionBody} flat={flat} />
-                </button>
-              ) : openSectionBodyEdit ? (
-                <button
-                  type="button"
-                  className="w-full rounded-lg border border-dashed border-gray-300 bg-gray-50/80 px-4 py-5 text-left text-sm text-gray-500 transition hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-700"
-                  onClick={openSectionBodyEdit}
-                >
-                  {viewLang === 'en'
-                    ? 'Click to add text under section title (no category)'
-                    : '클릭하여 섹션 제목 아래 본문 입력 (카테고리 없이)'}
-                </button>
+                  <div className="min-w-0 flex-1">
+                    <RichLine text={sectionBody} flat={flat} />
+                  </div>
+                  {previewEditable && onEditSectionContent ? (
+                    <SopSectionBodyToolbar
+                      sectionId={s.id}
+                      viewLang={viewLang}
+                      onEditSectionContent={onEditSectionContent}
+                    />
+                  ) : null}
+                </div>
               ) : null}
 
               {sortedCats.map((c, ci) => {
@@ -280,14 +228,14 @@ export default function SopDocumentReadonly({
                       >
                         <h3
                           className={cn(
-                            'min-w-0 flex-1 flex items-start gap-2 font-semibold text-gray-800 prose prose-sm max-w-none',
+                            'min-w-0 flex-1 flex items-start gap-2 text-base font-semibold text-gray-800 prose max-w-none sm:text-lg',
                             flat && 'text-gray-900'
                           )}
                         >
                           {!flat ? <span className="shrink-0 text-indigo-600">●</span> : null}
                           <span
                             className="min-w-0 flex-1 break-words"
-                            dangerouslySetInnerHTML={{ __html: markdownToHtml(catLabel) }}
+                            dangerouslySetInnerHTML={{ __html: markdownToHeadingHtml(catLabel) }}
                           />
                         </h3>
                         <SopManualDocIcon
@@ -343,23 +291,6 @@ export default function SopDocumentReadonly({
                     </div>
                   )
                 })}
-              {onAddCategory ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1 touch-manipulation"
-                  onClick={() =>
-                    onAddCategory(
-                      s.id,
-                      sortedCats.length > 0 ? sortedCats[sortedCats.length - 1]?.id : undefined
-                    )
-                  }
-                >
-                  <Plus className="h-4 w-4" />
-                  {viewLang === 'en' ? 'Add category' : '카테고리 추가'}
-                </Button>
-              ) : null}
             </div>
           </section>
         )

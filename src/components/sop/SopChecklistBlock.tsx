@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { markdownToHtml } from '@/components/LightRichEditor'
+import { markdownToHtml, markdownToHeadingHtml } from '@/components/LightRichEditor'
 import SopRowManualAccordion from '@/components/sop/SopRowManualAccordion'
-import { getManualIconState } from '@/lib/sopQuickEdit'
+import { getManualIconState, hasChecklistManualSource } from '@/lib/sopQuickEdit'
 import { sopChecklistAnchorId } from '@/lib/sopDocumentToc'
 import type { SopChecklistItem, SopEditLocale, SopRowAttachment } from '@/types/sopStructure'
 import { checklistRootRows, getChecklistRowDisplay, sopText } from '@/types/sopStructure'
@@ -409,15 +409,49 @@ function ChecklistRootRow({
   )
   const isEn = viewLang === 'en'
   const [expanded, setExpanded] = useState(false)
+  const showInlineManual = !isListRow && hasChecklistManualSource(row, viewLang)
   const openManual = callbacks.onEditChecklistManual
     ? () => callbacks.onEditChecklistManual!(sectionId, categoryId, row.id)
     : undefined
 
   useEffect(() => {
-    if (searchFocusRowId === row.id) setExpanded(true)
-  }, [searchFocusRowId, row.id])
+    if (isListRow && searchFocusRowId === row.id) setExpanded(true)
+  }, [isListRow, searchFocusRowId, row.id])
 
-  const toggleExpanded = () => setExpanded((v) => !v)
+  const toggleExpanded = () => {
+    if (!isListRow) return
+    setExpanded((v) => !v)
+  }
+
+  const titleMarkup = isListRow ? (
+    <>
+      <span
+        aria-hidden
+        className="inline-flex h-[1.35rem] w-3 shrink-0 items-center justify-center text-[15px] leading-none text-indigo-600 sm:h-[1.25rem] sm:text-sm"
+      >
+        -
+      </span>
+      <div
+        className={cn(
+          CHECKLIST_TITLE_HTML_CLASS,
+          !title && editable && 'italic text-gray-400'
+        )}
+        dangerouslySetInnerHTML={{
+          __html: markdownToHeadingHtml(title || (isEn ? '(Row)' : '(줄)')),
+        }}
+      />
+    </>
+  ) : (
+    <div
+      className={cn(
+        CHECKLIST_TEXT_HTML_CLASS,
+        !title && editable && 'italic text-gray-400'
+      )}
+      dangerouslySetInnerHTML={{
+        __html: markdownToHeadingHtml(title || (isEn ? '(Row)' : '(줄)')),
+      }}
+    />
+  )
 
   return (
     <div
@@ -428,52 +462,28 @@ function ChecklistRootRow({
       )}
     >
       <div className="flex w-full min-w-0 items-center gap-1.5">
-        <button
-          type="button"
-          className={cn(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md text-left sm:gap-1.5',
-            'cursor-pointer touch-manipulation hover:bg-gray-50/80 active:bg-gray-50'
-          )}
-          aria-expanded={expanded}
-          onClick={toggleExpanded}
-        >
-          <ChevronDown
+        {isListRow ? (
+          <button
+            type="button"
             className={cn(
-              'h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200',
-              expanded && 'rotate-180'
+              'flex min-w-0 flex-1 items-center gap-2 rounded-md text-left sm:gap-1.5',
+              'cursor-pointer touch-manipulation hover:bg-gray-50/80 active:bg-gray-50'
             )}
-            aria-hidden
-          />
-          {isListRow ? (
-            <>
-              <span
-                aria-hidden
-                className="inline-flex h-[1.35rem] w-3 shrink-0 items-center justify-center text-[15px] leading-none text-indigo-600 sm:h-[1.25rem] sm:text-sm"
-              >
-                -
-              </span>
-              <div
-                className={cn(
-                  CHECKLIST_TITLE_HTML_CLASS,
-                  !title && editable && 'italic text-gray-400'
-                )}
-                dangerouslySetInnerHTML={{
-                  __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
-                }}
-              />
-            </>
-          ) : (
-            <div
+            aria-expanded={expanded}
+            onClick={toggleExpanded}
+          >
+            <ChevronDown
               className={cn(
-                CHECKLIST_TEXT_HTML_CLASS,
-                !title && editable && 'italic text-gray-400'
+                'h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200',
+                expanded && 'rotate-180'
               )}
-              dangerouslySetInnerHTML={{
-                __html: markdownToHtml(title || (isEn ? '(Row)' : '(줄)')),
-              }}
+              aria-hidden
             />
-          )}
-        </button>
+            {titleMarkup}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-1.5">{titleMarkup}</div>
+        )}
 
         <ManualDocIcon
           item={row}
@@ -495,7 +505,11 @@ function ChecklistRootRow({
         ) : null}
       </div>
 
-      {expanded ? (
+      {isListRow && expanded ? (
+        <SopRowManualAccordion item={row} viewLang={viewLang} isEn={isEn} />
+      ) : null}
+
+      {showInlineManual ? (
         <SopRowManualAccordion item={row} viewLang={viewLang} isEn={isEn} />
       ) : null}
 
