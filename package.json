@@ -6,6 +6,7 @@
     "dev": "node scripts/dev-win.cjs",
     "dev:webpack": "node scripts/dev-win.cjs",
     "build": "next build --webpack",
+    "vercel-build": "NODE_OPTIONS=--max-old-space-size=7168 next build --webpack",
     "build:analyze": "ANALYZE=true next build --webpack",
     "build:production": "NODE_ENV=production next build --webpack",
     "start": "next start",

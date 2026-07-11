@@ -89,6 +89,9 @@ const nextConfig = {
 		optimizeCss: process.env.NODE_ENV === 'production',
 		scrollRestoration: true,
 		esmExternals: true,
+		// Vercel 8GB 빌드 컨테이너: webpack·TypeScript 단계 메모리 피크 완화
+		webpackMemoryOptimizations: true,
+		webpackBuildWorker: true,
 		// barrel import → 직접 import 변환으로 초기 번들·컴파일 부담 완화
 		optimizePackageImports: [
 			'@supabase/supabase-js',

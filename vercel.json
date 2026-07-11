@@ -1,4 +1,9 @@
 {
+  "build": {
+    "env": {
+      "NODE_OPTIONS": "--max-old-space-size=7168"
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/sync",
