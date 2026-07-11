@@ -46,13 +46,13 @@ export default function WorkflowTemplateModal({ onSelectTemplate: _onSelectTempl
                 placeholder="템플릿 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             >
               <option value="all">전체</option>
               <option value="고객 서비스">고객 서비스</option>
@@ -69,7 +69,7 @@ export default function WorkflowTemplateModal({ onSelectTemplate: _onSelectTempl
             <p className="text-gray-500">템플릿 기능이 준비 중입니다.</p>
             <button
               onClick={onClose}
-              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               닫기
             </button>

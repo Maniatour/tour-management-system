@@ -1326,7 +1326,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10 shrink-0">
           <div className="flex items-center min-w-0">
-            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2 shrink-0" />
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-primary mr-2 shrink-0" />
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">Total Employees Summary</h2>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -1364,7 +1364,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                   type="date"
                   value={startDate}
                   onChange={(e) => handleDateChange('start', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                 />
               </div>
               <div>
@@ -1375,7 +1375,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                   type="date"
                   value={endDate}
                   onChange={(e) => handleDateChange('end', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -1412,7 +1412,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                   onClick={() => setFilterActiveOnly((v) => !v)}
                   className={`px-3 py-2 text-sm font-medium rounded-md border transition-colors touch-manipulation ${
                     filterActiveOnly
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1438,9 +1438,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
           {/* 통계 요약 */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-4 sm:mb-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+            <div className="bg-muted/50 border border-border rounded-lg p-3 sm:p-4">
               <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">출퇴근 소계</div>
-              <div className="text-lg sm:text-2xl font-bold text-blue-600">
+              <div className="text-lg sm:text-2xl font-bold text-primary">
                 ${formatCurrency(displayTotalAttendancePay)}
               </div>
             </div>
@@ -1489,7 +1489,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           {/* 직원별 테이블 */}
           {loading ? (
             <div className="text-center py-6 sm:py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
               <p className="mt-2 text-sm sm:text-base text-gray-600">데이터를 불러오는 중...</p>
             </div>
           ) : filteredEmployeeData.length === 0 && employeeData.length > 0 ? (
@@ -1560,7 +1560,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                               e.stopPropagation()
                               handlePrintEmployee(employee)
                             }}
-                            className="flex items-center px-2 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md touch-manipulation"
+                            className="flex items-center px-2 py-1.5 text-xs font-medium text-primary bg-muted/50 border border-border rounded-md touch-manipulation"
                           >
                             <Printer className="w-3.5 h-3.5 mr-1" />
                             Print
@@ -1601,7 +1601,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                   <div className="flex justify-between items-start gap-2">
                                     <Link
                                       href={`/${locale}/admin/tours/${tour.tour_id}`}
-                                      className="text-blue-600 hover:underline truncate"
+                                      className="text-primary hover:underline truncate"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       {tour.tour_name}
@@ -1714,7 +1714,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                 e.stopPropagation()
                                 toggleEmployeeExpansion(employee.email)
                               }}
-                              className="text-blue-600 hover:text-blue-800 transition-colors"
+                              className="text-primary hover:text-primary/80 transition-colors"
                             >
                               {expandedEmployees.has(employee.email) ? (
                                 <ChevronDown className="w-4 h-4" />
@@ -1736,7 +1736,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                     e.stopPropagation()
                                     handlePrintEmployee(employee)
                                   }}
-                                  className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors w-fit"
+                                  className="flex items-center px-3 py-1.5 text-sm font-medium text-primary bg-muted/50 border border-border rounded-md hover:bg-muted transition-colors w-fit"
                                 >
                                   <Printer className="w-4 h-4 mr-1" />
                                   Print
@@ -1831,7 +1831,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                               <td className="px-2 py-1 text-gray-900">
                                                 <Link 
                                                   href={`/${locale}/admin/tours/${tour.tour_id}`}
-                                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                                  className="text-primary hover:text-primary/80 hover:underline transition-colors"
                                                   onClick={(e) => e.stopPropagation()}
                                                 >
                                                   {tour.tour_name}
@@ -1840,7 +1840,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                               <td className="px-2 py-1">
                                                 <select
                                                   key={`${tour.tour_id}-team-${tour.team_type}`}
-                                                  className="w-full min-w-[7rem] px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                                  className="w-full min-w-[7rem] px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring bg-white"
                                                   value={tour.team_type === 'guide + driver' ? 'guide+driver' : (tour.team_type || '')}
                                                   onChange={(e) => {
                                                     const v = e.target.value
@@ -1865,8 +1865,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                   step={0.01}
                                                   className={`w-20 px-1.5 py-0.5 text-sm rounded focus:ring-1 focus:outline-none ${
                                                     tour.is_guide
-                                                      ? 'border-2 border-blue-500 focus:ring-blue-500 focus:border-blue-500'
-                                                      : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                                                      ? 'border-2 border-primary focus:ring-ring focus:border-primary'
+                                                      : 'border border-gray-300 focus:ring-ring focus:border-primary'
                                                   }`}
                                                   defaultValue={tour.guide_fee}
                                                   onBlur={(e) => {
@@ -1885,7 +1885,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                   className={`w-20 px-1.5 py-0.5 text-sm rounded focus:ring-1 focus:outline-none ${
                                                     tour.is_assistant
                                                       ? 'border-2 border-emerald-500 focus:ring-emerald-500 focus:border-emerald-500'
-                                                      : 'border border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                                                      : 'border border-gray-300 focus:ring-ring focus:border-primary'
                                                   }`}
                                                   defaultValue={tour.assistant_fee}
                                                   onBlur={(e) => {
@@ -1903,7 +1903,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                       type="number"
                                                       min={0}
                                                       step={0.01}
-                                                      className="w-20 px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 shrink-0"
+                                                      className="w-20 px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring shrink-0"
                                                       defaultValue={(Number(tour.prepaid_tip) || 0).toFixed(2)}
                                                       onBlur={(e) => {
                                                         const v = parseFloat(e.target.value)
@@ -1960,7 +1960,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                   <tfoot className="bg-gray-50">
                     <tr>
                       <td className="px-4 py-3 text-sm font-bold text-gray-900">Total</td>
-                      <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                      <td className="px-4 py-3 text-sm font-bold text-primary">
                         ${formatCurrency(displayTotalAttendancePay)}
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-purple-600">
@@ -2062,7 +2062,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                               return (
                                 <Link
                                   href={`/${locale}/dashboard/reservations/${row.customer_id}/${row.reservation_id}`}
-                                  className="text-blue-600 hover:underline break-words"
+                                  className="text-primary hover:underline break-words"
                                   title={title}
                                   onClick={() => setOfficePrepaidDetailOpen(false)}
                                 >
@@ -2081,7 +2081,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                           {row.tour_id && row.tour_date ? (
                             <Link
                               href={`/${locale}/admin/tours/${row.tour_id}`}
-                              className="text-blue-600 hover:underline"
+                              className="text-primary hover:underline"
                               onClick={() => setOfficePrepaidDetailOpen(false)}
                             >
                               {formatTourDate(row.tour_date)}

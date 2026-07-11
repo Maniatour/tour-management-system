@@ -98,7 +98,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
                 {...register('email')}
                 type="email"
                 id="email"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('auth.emailPlaceholder')}
               />
             </div>
@@ -117,7 +117,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
                 {...register('password')}
                 type={showPassword ? 'text' : 'password'}
                 id="password"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('auth.passwordPlaceholder')}
               />
               <button
@@ -136,7 +136,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? t('auth.loggingIn') : t('auth.loginButton')}
           </button>
@@ -155,7 +155,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
           <button
             onClick={handleGoogleSignIn}
             disabled={isLoading}
-            className="mt-4 w-full bg-white text-gray-700 py-3 px-4 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            className="mt-4 w-full bg-white text-gray-700 py-3 px-4 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
@@ -184,7 +184,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
             {t('auth.noAccount')}{' '}
             <button
               onClick={onSwitchToSignUp}
-              className="text-blue-600 hover:text-blue-500 font-medium"
+              className="text-primary hover:text-primary font-medium"
             >
               {t('auth.signUp')}
             </button>

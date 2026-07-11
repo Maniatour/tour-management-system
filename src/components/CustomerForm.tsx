@@ -127,7 +127,7 @@ export default function CustomerForm({
                 ...formData, 
                 status: formData.status === 'active' ? 'inactive' : 'active'
               })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                 formData.status === 'active' ? 'bg-blue-600' : 'bg-gray-200'
               }`}
             >
@@ -138,7 +138,7 @@ export default function CustomerForm({
               />
             </button>
             <span className={`text-sm font-medium ${
-              formData.status === 'active' ? 'text-blue-600' : 'text-gray-500'
+              formData.status === 'active' ? 'text-primary' : 'text-gray-500'
             }`}>
               {formData.status === 'active' ? '활성' : '비활성'}
             </span>
@@ -158,7 +158,7 @@ export default function CustomerForm({
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="고객 이름"
                   required
                 />
@@ -172,7 +172,7 @@ export default function CustomerForm({
                   type="tel"
                   value={formData.phone || ''}
                   onChange={(e) => setFormData({...formData, phone: stripSpacesFromContactInput(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="전화번호 (선택사항)"
                 />
               </div>
@@ -214,7 +214,7 @@ export default function CustomerForm({
                     return ''
                   })()}
                   onChange={(e) => setFormData({...formData, language: e.target.value})}
-                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="">🌐 언어 선택</option>
                   <option value="KR">🇰🇷 한국어</option>
@@ -238,7 +238,7 @@ export default function CustomerForm({
                   type="tel"
                   value={formData.emergency_contact || ''}
                   onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="비상연락처 (선택사항)"
                 />
               </div>
@@ -260,7 +260,7 @@ export default function CustomerForm({
                       onClick={() => setSelectedChannelType(type as 'ota' | 'self' | 'partner')}
                       className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                         selectedChannelType === type
-                          ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                          ? 'bg-white text-primary border-b-2 border-primary'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -274,7 +274,7 @@ export default function CustomerForm({
                   <select
                     value={formData.channel_id || ''}
                     onChange={(e) => setFormData({...formData, channel_id: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   >
                     <option value="">채널 선택</option>
                     {channels
@@ -300,7 +300,7 @@ export default function CustomerForm({
                 type="email"
                 value={formData.email || ''}
                 onChange={(e) => setFormData({...formData, email: stripSpacesFromContactInput(e.target.value)})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="이메일 (선택사항)"
               />
             </div>
@@ -313,7 +313,7 @@ export default function CustomerForm({
                 type="text"
                 value={formData.address || ''}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="주소 (선택사항)"
               />
             </div>
@@ -328,7 +328,7 @@ export default function CustomerForm({
               value={formData.special_requests || ''}
               onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="특별한 요청사항이 있다면 입력해주세요"
             />
           </div>
@@ -361,7 +361,7 @@ export default function CustomerForm({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 {customer ? '수정' : '추가'}
               </button>

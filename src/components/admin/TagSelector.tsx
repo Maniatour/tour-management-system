@@ -271,7 +271,7 @@ export default function TagSelector({
         <button
           type="button"
           onClick={() => setShowDropdown(!showDropdown)}
-          className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-lg bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-lg bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <span className={selectedTags.length === 0 ? 'text-gray-500' : 'text-gray-900'}>
             {selectedTags.length === 0 ? placeholder : `${selectedTags.length}개 선택됨`}
@@ -288,7 +288,7 @@ export default function TagSelector({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="태그 검색..."
-                className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                 autoFocus
               />
             </div>
@@ -309,12 +309,12 @@ export default function TagSelector({
                         type="button"
                         onClick={() => handleTagToggle(tag.key)}
                         className={`w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center justify-between ${
-                          selectedTags.includes(tag.key) ? 'bg-blue-50' : ''
+                          selectedTags.includes(tag.key) ? 'bg-primary/5' : ''
                         }`}
                       >
                         <span>{getTagLabel(tag)}</span>
                         {selectedTags.includes(tag.key) && (
-                          <Check size={16} className="text-blue-600" />
+                          <Check size={16} className="text-primary" />
                         )}
                       </button>
                     </li>
@@ -331,7 +331,7 @@ export default function TagSelector({
                   setShowDropdown(false)
                   setShowAddModal(true)
                 }}
-                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-primary hover:bg-muted/50 rounded"
               >
                 <Plus size={16} />
                 <span>새 태그 추가</span>
@@ -349,12 +349,12 @@ export default function TagSelector({
             return (
               <span
                 key={tagKey}
-                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary"
               >
                 {tag ? getTagLabel(tag) : tagKey}
                 <button
                   onClick={() => handleTagToggle(tagKey)}
-                  className="ml-2 text-blue-600 hover:text-blue-800"
+                  className="ml-2 text-primary hover:text-primary/80"
                   type="button"
                 >
                   <X size={14} />
@@ -390,7 +390,7 @@ export default function TagSelector({
                     setNewTagKey(value)
                   }}
                   placeholder={t('tagKeyPlaceholder') || '예: my_custom_tag'}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent ${
                     newTagKey.trim() && !/^[a-z][a-z0-9_]*$/.test(newTagKey.trim())
                       ? 'border-red-300 bg-red-50'
                       : 'border-gray-300'
@@ -429,7 +429,7 @@ export default function TagSelector({
                             }))
                           }}
                           placeholder={t('tagLabel') || '태그 이름'}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         />
                       </div>
                       <div>
@@ -446,7 +446,7 @@ export default function TagSelector({
                             }))
                           }}
                           placeholder={t('pronunciationPlaceholder') || '발음 (선택사항)'}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         />
                       </div>
                     </div>
@@ -465,7 +465,7 @@ export default function TagSelector({
                 className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
                   !newTagKey.trim() || !/^[a-z][a-z0-9_]*$/.test(newTagKey.trim())
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
                 }`}
               >
                 {t('add') || '추가'}

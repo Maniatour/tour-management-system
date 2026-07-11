@@ -299,7 +299,7 @@ export default function DocumentManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {/* 헤더 - 모바일 컴팩트 */}
         <div className="mb-4 sm:mb-6 lg:mb-8">
@@ -311,7 +311,7 @@ export default function DocumentManagementPage() {
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={() => setShowReminderDashboard(true)}
-                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
                 title="알림 관리"
               >
                 <Bell className="w-4 h-4 sm:mr-2" />
@@ -319,7 +319,7 @@ export default function DocumentManagementPage() {
               </button>
               <button
                 onClick={() => setShowCategoryModal(true)}
-                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
                 title="카테고리 관리"
               >
                 <Folder className="w-4 h-4 sm:mr-2" />
@@ -327,7 +327,7 @@ export default function DocumentManagementPage() {
               </button>
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
                 title="문서 업로드"
               >
                 <Upload className="w-4 h-4 sm:mr-2" />
@@ -341,8 +341,8 @@ export default function DocumentManagementPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
           <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
             <div className="flex items-center gap-2 sm:gap-0 sm:block">
-              <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
-                <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-blue-600" />
+              <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+                <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
               </div>
               <div className="min-w-0 flex-1 sm:ml-4 sm:mt-0">
                 <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">전체</p>
@@ -406,7 +406,7 @@ export default function DocumentManagementPage() {
         <div className="mt-4 sm:mt-6 lg:mt-8">
           {loading ? (
             <div className="flex items-center justify-center py-8 sm:py-12">
-              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-primary"></div>
               <span className="ml-2 sm:ml-3 text-sm text-gray-600">문서를 불러오는 중...</span>
             </div>
           ) : sortedDocuments.length === 0 ? (
@@ -417,7 +417,7 @@ export default function DocumentManagementPage() {
               <div className="mt-4 sm:mt-6">
                 <button
                   onClick={() => setShowUploadModal(true)}
-                  className="inline-flex items-center px-3 py-2 sm:px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-3 py-2 sm:px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   문서 업로드

@@ -698,11 +698,11 @@ export default function LocationPickerModal({
                 }
               }}
               placeholder="위치 검색 (예: Grand Canyon, Las Vegas Strip, New York)"
-              className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {isLoading && (
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
               </div>
             )}
           </div>
@@ -724,10 +724,10 @@ export default function LocationPickerModal({
                     // 외부 클릭 감지가 먼저 실행되지 않도록
                     e.stopPropagation()
                   }}
-                  className="w-full px-4 py-3 text-left hover:bg-blue-50 active:bg-blue-100 border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors"
+                  className="w-full px-4 py-3 text-left hover:bg-muted/50 active:bg-primary/10 border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors"
                 >
                   <div className="flex items-start gap-3">
-                    <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                    <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 truncate">
                         {suggestion.name}
@@ -794,7 +794,7 @@ export default function LocationPickerModal({
               {!mapLoaded && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                   <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
                     <p className="text-gray-600">지도를 불러오는 중...</p>
                   </div>
                 </div>
@@ -806,15 +806,15 @@ export default function LocationPickerModal({
         {/* 선택된 위치 정보 */}
         <div className="p-4 border-t border-gray-200 bg-gray-50">
           {address ? (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="p-3 bg-muted/50 border border-border rounded-lg">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <MapPin className="w-4 h-4 text-blue-600" />
-                    <span className="font-medium text-blue-900">{searchQuery || '선택된 위치'}</span>
+                    <MapPin className="w-4 h-4 text-primary" />
+                    <span className="font-medium text-foreground">{searchQuery || '선택된 위치'}</span>
                   </div>
-                  <div className="text-sm text-blue-700 mb-2">{address}</div>
-                  <div className="text-xs text-blue-600">
+                  <div className="text-sm text-primary mb-2">{address}</div>
+                  <div className="text-xs text-primary">
                     좌표: {selectedLat.toFixed(6)}, {selectedLng.toFixed(6)}
                   </div>
                 </div>
@@ -866,7 +866,7 @@ export default function LocationPickerModal({
             </button>
             <button
               onClick={handleConfirm}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               위치 선택
             </button>

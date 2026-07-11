@@ -33,10 +33,10 @@ export function getGroupColorClasses(
   // 특정 그룹에 대한 색상 매핑
   if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {
     const colors = {
-      bg: 'bg-blue-100',
-      text: 'text-blue-800',
-      border: 'border-blue-200',
-      price: 'text-blue-600'
+      bg: 'bg-primary/10',
+      text: 'text-primary',
+      border: 'border-border',
+      price: 'text-primary'
     }
     return format === 'object' ? colors : { className: `inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text} border ${colors.border}` }
   }

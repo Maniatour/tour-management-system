@@ -67,16 +67,16 @@ export default function MobileFooter({ locale }: MobileFooterProps) {
               href={item.href}
               className={`flex flex-col items-center justify-center space-y-1 px-2 py-2 transition-colors ${
                 active
-                  ? 'text-blue-600 bg-blue-50'
+                  ? 'text-primary bg-primary/5'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <Icon 
                 size={20} 
-                className={`${active ? 'text-blue-600' : 'text-gray-500'}`}
+                className={`${active ? 'text-primary' : 'text-gray-500'}`}
               />
               <span className={`text-xs font-medium ${
-                active ? 'text-blue-600' : 'text-gray-600'
+                active ? 'text-primary' : 'text-gray-600'
               }`}>
                 {item.name}
               </span>

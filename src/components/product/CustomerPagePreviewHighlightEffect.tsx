@@ -47,7 +47,7 @@ export default function CustomerPagePreviewHighlightEffect() {
       className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] pointer-events-none"
       aria-hidden
     >
-      <div className="flex items-center gap-2 rounded-full bg-blue-600 text-white text-xs font-medium px-3 py-1.5 shadow-lg animate-bounce">
+      <div className="flex items-center gap-2 rounded-full bg-primary text-primary-foreground text-xs font-medium px-3 py-1.5 shadow-lg animate-bounce">
         <span className="inline-block w-2 h-2 rounded-full bg-white" />
         편집 내용이 표시되는 영역
       </div>

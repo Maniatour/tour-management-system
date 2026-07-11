@@ -24,7 +24,7 @@ export function ReservationStatusIcon({ status, className = 'h-3.5 w-3.5 shrink-
     return <CheckCircle2 className={`${className} text-emerald-600`} {...aria} />
   }
   if (x === 'completed') {
-    return <CircleCheck className={`${className} text-blue-600`} {...aria} />
+    return <CircleCheck className={`${className} text-primary`} {...aria} />
   }
   if (x === 'cancelled' || x === 'canceled') {
     return <XCircle className={`${className} text-red-600`} {...aria} />

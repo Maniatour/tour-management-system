@@ -1126,7 +1126,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                               cancelEditingConnection()
                             }
                           }}
-                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-ring"
                           autoFocus
                         />
                         <button
@@ -1358,7 +1358,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                       ...prev, 
                       width: Math.max(400, Math.min(2000, parseInt(e.target.value) || 400))
                     }))}
-                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                   />
                   <span className="text-xs text-gray-500">px</span>
                 </div>
@@ -1375,7 +1375,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                       ...prev, 
                       height: Math.max(300, Math.min(1500, parseInt(e.target.value) || 300))
                     }))}
-                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                   />
                   <span className="text-xs text-gray-500">px</span>
                         </div>
@@ -1409,7 +1409,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                 <div className="flex gap-2">
                   <button 
                     onClick={addNewNode}
-                        className="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2 text-sm"
+                        className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2 text-sm"
                   >
                         <Plus size={14} />
                     박스 추가
@@ -1499,7 +1499,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                           alert('연결하려면 최소 2개의 박스를 선택해주세요.')
                         }
                       }}
-                      className="px-2 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center justify-center gap-1 text-sm"
+                      className="px-2 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center justify-center gap-1 text-sm"
                     >
                       <ArrowRight size={12} />
                       연결 추가
@@ -1541,7 +1541,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                     {selectedNodes.length}개 박스 선택됨
                   </p>
                   {selectedNodes.length >= 2 && (
-                    <p className="text-xs text-blue-600 mt-1">
+                    <p className="text-xs text-primary mt-1">
                       연결 추가 가능
                     </p>
                   )}
@@ -1696,10 +1696,10 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
 
                 {/* 설명 - 한국어 */}
                 {(selectedStep.rich_description_ko || selectedStep.step_description_ko) && (
-                  <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="bg-primary/5 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-2">설명 (한국어)</h4>
                     <div 
-                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline"
+                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-primary [&_a]:hover:text-primary/80 [&_a]:underline"
                       dangerouslySetInnerHTML={{ 
                         __html: (selectedStep.rich_description_ko || selectedStep.step_description_ko || '')
                           .replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=')
@@ -1710,10 +1710,10 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
 
                 {/* 설명 - 영어 */}
                 {(selectedStep.rich_description_en || selectedStep.step_description_en) && (
-                  <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="bg-primary/5 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-2">설명 (영어)</h4>
                     <div 
-                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline"
+                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-primary [&_a]:hover:text-primary/80 [&_a]:underline"
                       dangerouslySetInnerHTML={{ 
                         __html: (selectedStep.rich_description_en || selectedStep.step_description_en || '')
                           .replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=')
@@ -1754,7 +1754,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                   <div className="bg-purple-50 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-2">노트 (한국어)</h4>
                     <div 
-                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline"
+                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-primary [&_a]:hover:text-primary/80 [&_a]:underline"
                       dangerouslySetInnerHTML={{ 
                         __html: selectedStep.notes_ko.replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=')
                       }}
@@ -1767,7 +1767,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                   <div className="bg-purple-50 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-2">노트 (영어)</h4>
                     <div 
-                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline"
+                      className="text-gray-700 prose prose-sm max-w-none [&_a]:text-primary [&_a]:hover:text-primary/80 [&_a]:underline"
                       dangerouslySetInnerHTML={{ 
                         __html: selectedStep.notes_en.replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=')
                       }}
@@ -1786,7 +1786,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                             href={link.url} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 underline"
+                            className="text-primary hover:text-primary/80 underline"
                           >
                             {link.title}
                           </a>
@@ -1830,7 +1830,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
                       {selectedStep.tags.map((tag, index) => (
                         <span 
                           key={index}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full"
                         >
                           {tag}
                         </span>
@@ -2051,7 +2051,7 @@ function StepEditModal({
                   type="text"
                   value={formData.step_name_ko}
                   onChange={(e) => setFormData(prev => ({ ...prev, step_name_ko: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="한국어 단계 이름을 입력하세요"
                 />
               </div>
@@ -2062,7 +2062,7 @@ function StepEditModal({
                 <textarea
                           value={formData.notes_ko}
                           onChange={(e) => setFormData(prev => ({ ...prev, notes_ko: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           rows={3}
                           placeholder="한국어 노트를 입력하세요"
                 />
@@ -2079,7 +2079,7 @@ function StepEditModal({
                           type="text"
                           value={formData.step_name_en}
                           onChange={(e) => setFormData(prev => ({ ...prev, step_name_en: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="Enter English step name"
                         />
               </div>
@@ -2090,7 +2090,7 @@ function StepEditModal({
                         <textarea
                           value={formData.notes_en}
                           onChange={(e) => setFormData(prev => ({ ...prev, notes_en: e.target.value }))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           rows={3}
                           placeholder="Enter English notes"
                         />
@@ -2108,7 +2108,7 @@ function StepEditModal({
                         <select
                           value={formData.step_type}
                           onChange={(e) => setFormData(prev => ({ ...prev, step_type: e.target.value as 'start' | 'action' | 'condition' | 'decision' | 'template' | 'manual' | 'end' }))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         >
                           <option value="start">시작 (Start)</option>
                           <option value="action">액션 (Action)</option>
@@ -2127,7 +2127,7 @@ function StepEditModal({
                       type="text"
                       value={formData.action_type}
                       onChange={(e) => setFormData(prev => ({ ...prev, action_type: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="액션 타입을 입력하세요"
                     />
                   </div>
@@ -2138,7 +2138,7 @@ function StepEditModal({
                         <select
                           value={formData.priority}
                           onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as 'low' | 'medium' | 'high' }))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         >
                           <option value="low">낮음 (Low)</option>
                           <option value="medium">보통 (Medium)</option>
@@ -2155,7 +2155,7 @@ function StepEditModal({
                         type="text"
                         value={formData.condition_type}
                         onChange={(e) => setFormData(prev => ({ ...prev, condition_type: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="조건 타입을 입력하세요"
                       />
                     </div>
@@ -2167,7 +2167,7 @@ function StepEditModal({
                         type="text"
                         value={formData.condition_value}
                         onChange={(e) => setFormData(prev => ({ ...prev, condition_value: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="조건 값을 입력하세요"
                       />
                     </div>
@@ -2180,7 +2180,7 @@ function StepEditModal({
                           min="0"
                           value={formData.estimated_time}
                           onChange={(e) => setFormData(prev => ({ ...prev, estimated_time: parseInt(e.target.value) || 0 }))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           placeholder="예상 소요 시간"
                         />
               </div>
@@ -2218,13 +2218,13 @@ function StepEditModal({
                       {formData.tags.map((tag, index) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full flex items-center gap-1"
+                          className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full flex items-center gap-1"
                         >
                           {tag}
                           <button
                             type="button"
                             onClick={() => removeTag(tag)}
-                            className="text-blue-600 hover:text-blue-800"
+                            className="text-primary hover:text-primary/80"
                           >
                             ×
                           </button>
@@ -2237,13 +2237,13 @@ function StepEditModal({
                         value={newTag}
                         onChange={(e) => setNewTag(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         placeholder="새 태그 입력 후 Enter"
                       />
                       <button
                         type="button"
                         onClick={addTag}
-                        className="px-3 py-1.5 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                        className="px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90"
                       >
                         추가
                       </button>
@@ -2267,7 +2267,7 @@ function StepEditModal({
                               onClick={() => setFormData(prev => ({ ...prev, node_shape: shape.value as 'rectangle' | 'rounded' | 'diamond' | 'oval' | 'circle' }))}
                               className={`p-2 border rounded text-xs font-medium transition-colors ${
                                 formData.node_shape === shape.value
-                                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                  ? 'border-primary bg-primary/5 text-primary'
                                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
                               }`}
                             >
@@ -2330,7 +2330,7 @@ function StepEditModal({
                         }, 1000)
                       }
                     }}
-                    className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
+                    className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90 transition-colors"
                     title="한국어 내용을 영어로 복사"
                   >
                     한국어 → 영어

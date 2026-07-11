@@ -12,7 +12,7 @@ export default function PhotosLayout({
     <AuthProvider>
       <FloatingChatProvider>
         <StripeErrorHandler />
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen app-page-bg">
           {children}
           <FloatingChatContainer />
         </div>

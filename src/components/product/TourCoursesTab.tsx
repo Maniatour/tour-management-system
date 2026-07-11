@@ -81,7 +81,7 @@ const TreeItem = ({
     <div className={`${indentClass}`}>
       <div 
         className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-gray-50 group ${
-          isSelected ? 'bg-blue-50 border-l-2 border-blue-500' : ''
+          isSelected ? 'bg-primary/5 border-l-2 border-primary' : ''
         }`}
         onClick={() => {
           if (isSelected) {
@@ -121,16 +121,16 @@ const TreeItem = ({
               onSelect(course)
             }
           }}
-          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          className="w-4 h-4 text-primary rounded focus:ring-ring"
         />
         
         {/* 폴더/파일 아이콘 */}
         <div className="flex items-center gap-1">
           {hasChildren ? (
             isExpanded ? (
-              <FolderOpen className="w-4 h-4 text-blue-500" />
+              <FolderOpen className="w-4 h-4 text-primary" />
             ) : (
-              <Folder className="w-4 h-4 text-blue-500" />
+              <Folder className="w-4 h-4 text-primary" />
             )
           ) : (
             <MapPin className="w-4 h-4 text-gray-400" />
@@ -442,7 +442,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -457,15 +457,15 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
       </div>
 
       {/* 선택된 코스 수 표시 및 액션 버튼 */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+      <div className="bg-muted/50 border border-border rounded-lg p-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-blue-800">
+          <span className="text-sm font-medium text-primary">
             선택된 투어 코스: {selectedCourses.size}개
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={handleSelectAll}
-              className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+              className="px-3 py-1 bg-primary/10 text-primary rounded-lg hover:bg-blue-200 text-sm"
             >
               전체 선택
             </button>
@@ -484,7 +484,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
             </button>
           </div>
           {isNewProduct && (
-            <span className="text-xs text-blue-600">
+            <span className="text-xs text-primary">
               상품 저장 후 투어 코스를 선택할 수 있습니다
             </span>
           )}
@@ -498,7 +498,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 mb-3">
-                <Folder className="w-4 h-4 text-blue-500" />
+                <Folder className="w-4 h-4 text-primary" />
                 투어 코스 목록
               </h4>
               
@@ -510,7 +510,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="투어 코스 검색..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>
@@ -564,7 +564,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-start gap-2 flex-1 min-w-0">
                             {/* 순서 번호 */}
-                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold">
+                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
                               {index + 1}
                             </div>
                             
@@ -578,12 +578,12 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                                 </div>
                               )}
                               {course.customer_name_ko && (
-                                <div className="text-xs text-blue-600 truncate mt-1">
+                                <div className="text-xs text-primary truncate mt-1">
                                   고객용: {course.customer_name_ko}
                                 </div>
                               )}
                               {course.customer_name_en && (
-                                <div className="text-xs text-blue-500 truncate">
+                                <div className="text-xs text-primary truncate">
                                   고객용(EN): {course.customer_name_en}
                                 </div>
                               )}
@@ -594,7 +594,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                                 </div>
                               )}
                               {course.category && (
-                                <div className="text-xs text-blue-600 mt-1">
+                                <div className="text-xs text-primary mt-1">
                                   카테고리: {course.category}
                                 </div>
                               )}
@@ -610,7 +610,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                                   moveCourseUp(index)
                                 }}
                                 disabled={index === 0}
-                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="위로 이동"
                               >
                                 <ArrowUp className="w-3 h-3" />
@@ -621,7 +621,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                                   moveCourseDown(index)
                                 }}
                                 disabled={index === selectedCoursesOrder.length - 1}
-                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="아래로 이동"
                               >
                                 <ArrowDown className="w-3 h-3" />
@@ -630,7 +630,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                             
                             <button
                               onClick={() => handleOpenEditModal(course)}
-                              className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                              className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded"
                               title="편집"
                             >
                               <Edit className="w-4 h-4" />

@@ -107,7 +107,7 @@ export default function TicketBookingStatusMultiFilter({
         aria-haspopup="listbox"
         aria-controls={listId}
         onClick={() => !disabled && setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-left text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+        className="flex w-full items-center justify-between gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-left text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
       >
         <span className="min-w-0 truncate">{summary}</span>
         <ChevronDown
@@ -129,7 +129,7 @@ export default function TicketBookingStatusMultiFilter({
             <div className="flex gap-2 text-[10px] font-medium">
               <button
                 type="button"
-                className="text-blue-600 hover:underline"
+                className="text-primary hover:underline"
                 onClick={selectAll}
               >
                 {isKo ? '전체' : 'All'}
@@ -149,7 +149,7 @@ export default function TicketBookingStatusMultiFilter({
               <label
                 key={opt.key}
                 className={`flex cursor-pointer items-center gap-2 px-2 py-1.5 text-xs hover:bg-gray-50 ${
-                  checked ? 'bg-blue-50/80' : ''
+                  checked ? 'bg-primary/5/80' : ''
                 }`}
               >
                 <input

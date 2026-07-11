@@ -326,7 +326,7 @@ export default function MDGCSunriseRestorePage() {
             className={`px-6 py-3 rounded-lg font-medium ${
               loading
                 ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
             }`}
           >
             {loading ? '복구 중...' : '일정 데이터 복구'}

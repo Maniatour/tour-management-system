@@ -19,7 +19,7 @@ export default function ViewToggle({
         onClick={() => onViewModeChange('card')}
         className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
           viewMode === 'card' 
-            ? 'bg-blue-500 text-white' 
+            ? 'bg-primary text-primary-foreground' 
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
         }`}
       >
@@ -33,7 +33,7 @@ export default function ViewToggle({
         }}
         className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
           viewMode === 'calendar' 
-            ? 'bg-blue-500 text-white' 
+            ? 'bg-primary text-primary-foreground' 
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
         }`}
       >

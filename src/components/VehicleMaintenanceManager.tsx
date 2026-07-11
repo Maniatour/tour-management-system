@@ -545,7 +545,7 @@ export default function VehicleMaintenanceManager() {
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      scheduled: { color: 'bg-blue-100 text-blue-800', icon: Calendar },
+      scheduled: { color: 'bg-primary/10 text-primary', icon: Calendar },
       in_progress: { color: 'bg-yellow-100 text-yellow-800', icon: Wrench },
       completed: { color: 'bg-green-100 text-green-800', icon: DollarSign },
       cancelled: { color: 'bg-red-100 text-red-800', icon: AlertTriangle }
@@ -584,7 +584,7 @@ export default function VehicleMaintenanceManager() {
   const renderStatsSummary = (stats: VehicleMaintenanceStats, vehicle?: Vehicle | null) => (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
       {renderStatMetric(t('statistics.maintenanceCount'), String(stats.count), 'bg-slate-50 border rounded-lg p-3')}
-      {renderStatMetric(t('statistics.totalCost'), formatCurrency(stats.totalCost), 'bg-blue-50 border border-blue-100 rounded-lg p-3')}
+      {renderStatMetric(t('statistics.totalCost'), formatCurrency(stats.totalCost), 'bg-primary/5 border border-border/60 rounded-lg p-3')}
       {renderStatMetric(
         t('statistics.averageCost'),
         stats.count > 0 ? formatCurrency(stats.averageCost) : '—',
@@ -753,7 +753,7 @@ export default function VehicleMaintenanceManager() {
               onClick={() => setActiveVehicleTab('all')}
               className={`flex-shrink-0 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeVehicleTab === 'all'
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  ? 'bg-primary/10 text-primary border border-border'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -765,7 +765,7 @@ export default function VehicleMaintenanceManager() {
                 onClick={() => setActiveVehicleTab('unassigned')}
                 className={`flex-shrink-0 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                   activeVehicleTab === 'unassigned'
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    ? 'bg-primary/10 text-primary border border-border'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                 }`}
               >
@@ -779,7 +779,7 @@ export default function VehicleMaintenanceManager() {
                 onClick={() => setActiveVehicleTab(vehicle.id)}
                 className={`flex-shrink-0 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                   activeVehicleTab === vehicle.id
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    ? 'bg-primary/10 text-primary border border-border'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                 }`}
               >

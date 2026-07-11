@@ -887,7 +887,7 @@ export default function TourReportForm({
                           <span
                             className={cn(
                               'flex h-4 w-4 shrink-0 items-center justify-center rounded border-2',
-                              visited ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
+                              visited ? 'border-primary bg-blue-600' : 'border-gray-300'
                             )}
                           >
                             {visited && (
@@ -1189,7 +1189,7 @@ export default function TourReportForm({
               <Button
                 type="submit"
                 disabled={loading}
-                className="flex-1 h-12 text-base font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200/80 ring-2 ring-blue-200 focus-visible:ring-blue-400"
+                className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200/80 ring-2 ring-ring/30 focus-visible:ring-blue-400"
               >
                 {loading ? getText('제출 중...', 'Submitting...') : t.buttons.submit}
               </Button>
@@ -1251,7 +1251,7 @@ export default function TourReportForm({
                     <Button
                       type="button"
                       disabled={loading}
-                      className="flex-1 h-11 font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200/80 ring-2 ring-blue-200 focus-visible:ring-blue-400"
+                      className="flex-1 h-11 font-semibold bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200/80 ring-2 ring-ring/30 focus-visible:ring-blue-400"
                       onClick={submitReport}
                     >
                       {loading ? getText('제출 중...', 'Submitting...') : t.buttons.submit}

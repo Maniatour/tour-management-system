@@ -256,7 +256,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
   if (loading && tours.length === 0) {
     return (
       <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500 border border-gray-200 rounded-xl bg-white/80">
-        <Loader2 className="w-5 h-5 animate-spin text-blue-600" aria-hidden />
+        <Loader2 className="w-5 h-5 animate-spin text-primary" aria-hidden />
         투어 현황 불러오는 중…
       </div>
     )
@@ -347,7 +347,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
                     <p className="text-sm font-semibold text-teal-800">{confirmed}명</p>
                     <Link
                       href={`/${locale}/admin/tours/${tour.id}`}
-                      className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline mt-1"
+                      className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:underline mt-1"
                     >
                       투어 상세
                       <ExternalLink className="w-3 h-3" aria-hidden />

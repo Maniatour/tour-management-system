@@ -57,13 +57,13 @@ export default function CustomerSection({
             }}
             onFocus={() => setFormData((prev: any) => ({ ...prev, showCustomerDropdown: true }))} // eslint-disable-line @typescript-eslint/no-explicit-any
             placeholder="고객 이름, 이메일, 전화번호로 검색..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-20"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent pr-20"
             required
           />
           <button
             type="button"
             onClick={() => setShowCustomerForm(true)}
-            className="absolute right-1 top-1/2 transform -translate-y-1/2 w-8 h-8 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center justify-center"
+            className="absolute right-1 top-1/2 transform -translate-y-1/2 w-8 h-8 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 flex items-center justify-center"
           >
             +
           </button>
@@ -89,7 +89,7 @@ export default function CustomerSection({
                         showCustomerDropdown: false
                       }))
                     }}
-                    className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    className="px-3 py-2 hover:bg-muted/50 cursor-pointer border-b border-gray-100 last:border-b-0"
                   >
                     <div className="font-medium text-gray-900">{customer.name || '이름 없음'}</div>
                     {customer.email && (
@@ -120,7 +120,7 @@ export default function CustomerSection({
           type="text"
           value={formData.channelRN}
           onChange={(e) => setFormData({ ...formData, channelRN: e.target.value })}
-          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
           placeholder={t('form.channelRNPlaceholder')}
         />
       </div>

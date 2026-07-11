@@ -515,7 +515,7 @@ export default function ReservationFormNew({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">초이스 총액</label>
-            <div className="text-lg font-semibold text-blue-600">
+            <div className="text-lg font-semibold text-primary">
               ${choicesTotal.toLocaleString()}
             </div>
           </div>
@@ -539,7 +539,7 @@ export default function ReservationFormNew({
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90"
         >
           {reservation ? '수정' : '생성'}
         </button>

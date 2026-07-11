@@ -38,7 +38,7 @@ export default function TourPhotoUploadProgressOverlay() {
       >
         <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
           <div className="flex items-center gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600 shrink-0" aria-hidden />
+            <Loader2 className="h-8 w-8 animate-spin text-primary shrink-0" aria-hidden />
             <div>
               <h2 id="tour-photo-upload-preparing-title" className="text-lg font-semibold text-gray-900">
                 {t('uploadProgressModalPreparingTitle')}
@@ -67,7 +67,7 @@ export default function TourPhotoUploadProgressOverlay() {
     >
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-center gap-3 mb-4">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 shrink-0" aria-hidden />
+          <Loader2 className="h-8 w-8 animate-spin text-primary shrink-0" aria-hidden />
           <div>
             <h2 id="tour-photo-upload-progress-title" className="text-lg font-semibold text-gray-900">
               {t('uploadProgressModalTitle')}

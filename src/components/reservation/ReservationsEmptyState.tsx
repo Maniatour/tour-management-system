@@ -49,7 +49,7 @@ export default function ReservationsEmptyState({
               {onClearSearch && (
                 <button
                   onClick={onClearSearch}
-                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                 >
                   검색어 지우기
                 </button>

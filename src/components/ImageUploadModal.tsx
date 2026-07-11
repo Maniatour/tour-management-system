@@ -95,7 +95,7 @@ export default function ImageUploadModal({
               <div className="flex justify-center space-x-2">
                 <button
                   onClick={switchToUploadMode}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                  className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center"
                 >
                   <Upload className="h-4 w-4 mr-1" />
                   이미지 변경
@@ -160,7 +160,7 @@ export default function ImageUploadModal({
                 <button
                   onClick={handleUpload}
                   disabled={!previewUrl || uploading}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                  className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center"
                 >
                   {uploading ? (
                     <>

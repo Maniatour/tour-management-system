@@ -78,7 +78,7 @@ const RichTextEditorExample: React.FC = () => {
       </div>
 
       {/* 사용법 안내 */}
-      <div className="mt-12 p-6 bg-blue-50 rounded-lg">
+      <div className="mt-12 p-6 bg-primary/5 rounded-lg">
         <h3 className="text-lg font-semibold mb-4">사용법</h3>
         <div className="space-y-2 text-sm">
           <p><strong>기본 사용:</strong></p>

@@ -389,7 +389,7 @@ export default function CategoryManagementModal({
             onClick={() => setActiveTab('category')}
             className={`px-6 py-3 font-medium transition-colors ${
               activeTab === 'category'
-                ? 'text-blue-600 border-b-2 border-blue-600'
+                ? 'text-primary border-b-2 border-primary'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -399,7 +399,7 @@ export default function CategoryManagementModal({
             onClick={() => setActiveTab('subcategory')}
             className={`px-6 py-3 font-medium transition-colors ${
               activeTab === 'subcategory'
-                ? 'text-blue-600 border-b-2 border-blue-600'
+                ? 'text-primary border-b-2 border-primary'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -431,7 +431,7 @@ export default function CategoryManagementModal({
                     value={newCategoryName}
                     onChange={(e) => setNewCategoryName(e.target.value)}
                     placeholder="카테고리명을 입력하세요"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
                   />
                   <button
@@ -440,7 +440,7 @@ export default function CategoryManagementModal({
                     className={`px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
                       saving || !newCategoryName.trim()
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
                     }`}
                   >
                     <Plus className="h-4 w-4" />
@@ -461,7 +461,7 @@ export default function CategoryManagementModal({
                             type="text"
                             value={editCategoryName}
                             onChange={(e) => setEditCategoryName(e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                             onKeyPress={(e) => e.key === 'Enter' && handleSaveCategoryEdit()}
                           />
                           <button
@@ -486,7 +486,7 @@ export default function CategoryManagementModal({
                           </div>
                           <button
                             onClick={() => startEditCategory(category)}
-                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                            className="p-2 text-gray-400 hover:text-primary transition-colors"
                           >
                             <Edit2 className="h-4 w-4" />
                           </button>
@@ -511,7 +511,7 @@ export default function CategoryManagementModal({
                     <select
                       value={selectedCategoryForSub}
                       onChange={(e) => setSelectedCategoryForSub(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       <option value="">카테고리를 선택하세요</option>
                       {categories.map((category) => (
@@ -527,7 +527,7 @@ export default function CategoryManagementModal({
                       value={newSubCategoryName}
                       onChange={(e) => setNewSubCategoryName(e.target.value)}
                       placeholder="서브카테고리명을 입력하세요"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       onKeyPress={(e) => e.key === 'Enter' && handleAddSubCategory()}
                     />
                     <button
@@ -536,7 +536,7 @@ export default function CategoryManagementModal({
                       className={`px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
                         saving || !newSubCategoryName.trim() || !selectedCategoryForSub
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-primary text-primary-foreground hover:bg-primary/90'
                       }`}
                     >
                       <Plus className="h-4 w-4" />
@@ -566,7 +566,7 @@ export default function CategoryManagementModal({
                                     type="text"
                                     value={editSubCategoryName}
                                     onChange={(e) => setEditSubCategoryName(e.target.value)}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                                     onKeyPress={(e) => e.key === 'Enter' && handleSaveSubCategoryEdit()}
                                   />
                                   <button
@@ -591,7 +591,7 @@ export default function CategoryManagementModal({
                                   </div>
                                   <button
                                     onClick={() => startEditSubCategory(subCategory)}
-                                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                                    className="p-2 text-gray-400 hover:text-primary transition-colors"
                                   >
                                     <Edit2 className="h-4 w-4" />
                                   </button>

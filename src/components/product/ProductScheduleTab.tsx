@@ -378,7 +378,7 @@ export default function ProductScheduleTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -439,7 +439,7 @@ export default function ProductScheduleTab({
               onClick={() => setViewMode('guide')}
             className={`flex items-center px-3 py-2 rounded-lg text-sm ${
                 viewMode === 'guide'
-                ? 'bg-blue-600 text-white' 
+                ? 'bg-primary text-primary-foreground' 
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -452,7 +452,7 @@ export default function ProductScheduleTab({
             type="button"
             onClick={handleAddSchedule}
             disabled={isNewProduct}
-            className="flex items-center px-3 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-3 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4 mr-1" />
             테이블로 추가/수정
@@ -588,27 +588,27 @@ export default function ProductScheduleTab({
                 </div>
 
                 {/* 가이드+드라이버 박스 */}
-                <div className="bg-white border border-blue-200 rounded-lg p-4">
-                  <h5 className="text-md font-semibold text-blue-800 mb-3 flex items-center">
+                <div className="bg-white border border-border rounded-lg p-4">
+                  <h5 className="text-md font-semibold text-primary mb-3 flex items-center">
                     <Users className="h-4 w-4 mr-2" />
                     {getText('가이드+드라이버 담당', 'Guide+Driver Assigned')}
                   </h5>
                   <div className="grid grid-cols-2 gap-4">
                     {/* 가이드 */}
                     <div className="space-y-2">
-                      <h6 className="text-sm font-medium text-blue-800 text-center">{getText('가이드', 'Guide')}</h6>
+                      <h6 className="text-sm font-medium text-primary text-center">{getText('가이드', 'Guide')}</h6>
                       <div className="space-y-1">
                         <div className="flex justify-between items-center">
-                          <span className="text-xs text-blue-700">{getText('운전시간', 'Drive Time')}</span>
-                          <span className="text-sm font-bold text-blue-900">{getScheduleStats().guideDriverGuide.transport}</span>
+                          <span className="text-xs text-primary">{getText('운전시간', 'Drive Time')}</span>
+                          <span className="text-sm font-bold text-foreground">{getScheduleStats().guideDriverGuide.transport}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-xs text-blue-700">{getText('관광시간', 'Tour Time')}</span>
-                          <span className="text-sm font-bold text-blue-900">{getScheduleStats().guideDriverGuide.tour}</span>
+                          <span className="text-xs text-primary">{getText('관광시간', 'Tour Time')}</span>
+                          <span className="text-sm font-bold text-foreground">{getScheduleStats().guideDriverGuide.tour}</span>
                         </div>
-                        <div className="flex justify-between items-center pt-1 border-t border-blue-200">
-                          <span className="text-xs font-medium text-blue-800">{getText('총시간', 'Total Time')}</span>
-                          <span className="text-sm font-bold text-blue-900">{getScheduleStats().guideDriverGuide.total}</span>
+                        <div className="flex justify-between items-center pt-1 border-t border-border">
+                          <span className="text-xs font-medium text-primary">{getText('총시간', 'Total Time')}</span>
+                          <span className="text-sm font-bold text-foreground">{getScheduleStats().guideDriverGuide.total}</span>
                         </div>
                       </div>
                     </div>
@@ -699,7 +699,7 @@ export default function ProductScheduleTab({
                                 {teamType === 'guide+driver' && schedule.guide_driver_schedule && (
                                   <span className={`px-2 py-1 text-xs rounded ${
                                     schedule.guide_driver_schedule === 'guide' 
-                                      ? 'bg-blue-100 text-blue-800' 
+                                      ? 'bg-primary/10 text-primary' 
                                       : schedule.guide_driver_schedule === 'driver'
                                       ? 'bg-orange-100 text-orange-800'
                                       : 'bg-gray-100 text-gray-800'
@@ -712,7 +712,7 @@ export default function ProductScheduleTab({
                               </div>
                               <div className="flex items-center space-x-1">
                   {schedule.is_transport && (
-                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                    <span className="px-2 py-1 text-xs bg-primary/10 text-primary rounded">
                                     {getText('이동시간', 'Transport')}
                     </span>
                   )}
@@ -735,7 +735,7 @@ export default function ProductScheduleTab({
                                 {(schedule.latitude && schedule.longitude) || getScheduleText(schedule, 'location') ? (
                                   <button
                                     onClick={() => openGoogleMapsNavigation(schedule)}
-                                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                    className="p-1 text-primary hover:text-primary/80 hover:bg-muted/50 rounded transition-colors"
                                     title="구글맵에서 네비게이션 열기"
                                   >
                                     <MapPin className="w-4 h-4" />
@@ -780,7 +780,7 @@ export default function ProductScheduleTab({
               {/* 가이드+드라이버 담당 일정 */}
               <div>
                 <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                  <Users className="h-5 w-5 mr-2 text-blue-600" />
+                  <Users className="h-5 w-5 mr-2 text-primary" />
                   {getText('가이드+드라이버 담당 일정', 'Guide+Driver Assigned Schedules')}
                 </h4>
                 <div className="space-y-4">
@@ -838,7 +838,7 @@ export default function ProductScheduleTab({
                                 {teamType === 'guide+driver' && schedule.guide_driver_schedule && (
                                   <span className={`px-2 py-1 text-xs rounded ${
                                     schedule.guide_driver_schedule === 'guide' 
-                                      ? 'bg-blue-100 text-blue-800' 
+                                      ? 'bg-primary/10 text-primary' 
                                       : schedule.guide_driver_schedule === 'driver'
                                       ? 'bg-orange-100 text-orange-800'
                                       : 'bg-gray-100 text-gray-800'
@@ -851,7 +851,7 @@ export default function ProductScheduleTab({
                               </div>
                               <div className="flex items-center space-x-1">
                   {schedule.is_transport && (
-                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                    <span className="px-2 py-1 text-xs bg-primary/10 text-primary rounded">
                       {getText('이동시간', 'Transport')}
                     </span>
                   )}
@@ -874,7 +874,7 @@ export default function ProductScheduleTab({
                                 {(schedule.latitude && schedule.longitude) || getScheduleText(schedule, 'location') ? (
                                   <button
                                     onClick={() => openGoogleMapsNavigation(schedule)}
-                                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                    className="p-1 text-primary hover:text-primary/80 hover:bg-muted/50 rounded transition-colors"
                                     title="구글맵에서 네비게이션 열기"
                                   >
                                     <MapPin className="w-4 h-4" />

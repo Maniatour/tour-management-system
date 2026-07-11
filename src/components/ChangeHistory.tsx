@@ -114,7 +114,7 @@ export default function ChangeHistory({
   const getActionColor = (action: string) => {
     switch (action) {
       case 'INSERT': return 'bg-green-100 text-green-800'
-      case 'UPDATE': return 'bg-blue-100 text-blue-800'
+      case 'UPDATE': return 'bg-primary/10 text-primary'
       case 'DELETE': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
@@ -181,7 +181,7 @@ export default function ChangeHistory({
     return (
       <div className="bg-gray-50 rounded-lg p-4">
         <div className="flex items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
           <span className="ml-2 text-gray-600">Loading change history...</span>
         </div>
       </div>
@@ -198,8 +198,8 @@ export default function ChangeHistory({
         <div className="mt-2 text-xs text-gray-400">
           아직 {tableName} 테이블에 대한 변경사항이 기록되지 않았습니다.
         </div>
-        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-          <div className="text-xs text-blue-800">
+        <div className="mt-3 p-3 bg-muted/50 border border-border rounded-md">
+          <div className="text-xs text-primary">
             <strong>💡 팁:</strong> 감사 추적 시스템이 활성화되면 모든 데이터 변경사항이 자동으로 기록됩니다.
           </div>
         </div>
@@ -214,13 +214,13 @@ export default function ChangeHistory({
       {/* 헤더 */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center">
-          <Activity className="h-5 w-5 text-blue-600 mr-2" />
+          <Activity className="h-5 w-5 text-primary mr-2" />
           <h3 className="text-lg font-medium text-gray-900">{title}</h3>
           <span className="ml-2 text-sm text-gray-500">({changes.length}건)</span>
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-primary hover:text-primary/80"
         >
           {expanded ? '접기' : '더보기'}
         </button>
@@ -302,7 +302,7 @@ export default function ChangeHistory({
                         alert(`삭제된 데이터:\n${JSON.stringify(change.old_values, null, 2)}`)
                       }
                     }}
-                    className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                    className="text-primary hover:text-primary/80 text-sm flex items-center"
                   >
                     <Eye className="h-4 w-4 mr-1" />
                     상세 내용 보기
@@ -319,7 +319,7 @@ export default function ChangeHistory({
         <div className="p-4 border-t border-gray-200 text-center">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            className="text-primary hover:text-primary/80 text-sm font-medium"
           >
             {expanded ? '처음 5개만 보기' : `전체 ${changes.length}개 보기`}
           </button>

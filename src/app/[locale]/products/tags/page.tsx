@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
-import { Search, Loader2 } from 'lucide-react'
+import { Search, Loader2, Mountain } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -12,6 +12,8 @@ import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditMo
 import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import PriceDisplay from '@/components/customer/ui/PriceDisplay'
+import { getTagCategoryIcon } from '@/lib/tagCategoryIcons'
 
 interface Product {
   id: string
@@ -49,9 +51,7 @@ interface TagCategory {
   id: string
   name: string
   nameEn: string
-  icon: string
   description: string
-  color: string
   products: Product[]
 }
 
@@ -75,134 +75,22 @@ function ProductTagsPageInner() {
 
   // 태그 카테고리 정의
   const tagDefinitions: Omit<TagCategory, 'products'>[] = [
-    {
-      id: 'antelope-canyon',
-      name: '앤텔롭 캐년',
-      nameEn: 'Antelope Canyon',
-      icon: '🏜️',
-      description: '세계적으로 유명한 사암 협곡의 아름다움을 경험하세요',
-      color: 'from-yellow-400 to-orange-500'
-    },
-    {
-      id: 'grand-canyon',
-      name: '그랜드캐년',
-      nameEn: 'Grand Canyon',
-      icon: '🏔️',
-      description: '세계 7대 자연경관의 위대함을 만나보세요',
-      color: 'from-orange-400 to-red-500'
-    },
-    {
-      id: 'suburban-tour',
-      name: '근교투어',
-      nameEn: 'Suburban Tour',
-      icon: '🗺️',
-      description: '도시 근처의 아름다운 자연을 탐험하세요',
-      color: 'from-green-400 to-emerald-500'
-    },
-    {
-      id: 'day-tour',
-      name: '당일투어',
-      nameEn: 'Day Tour',
-      icon: '🛣️',
-      description: '하루 만에 완성하는 특별한 여행',
-      color: 'from-blue-400 to-cyan-500'
-    },
-    {
-      id: 'accommodation-tour',
-      name: '숙박투어',
-      nameEn: 'Accommodation Tour',
-      icon: '🏕️',
-      description: '숙박이 포함된 며칠간의 여행',
-      color: 'from-purple-400 to-pink-500'
-    },
-    {
-      id: 'city-tour',
-      name: '시티투어',
-      nameEn: 'City Tour',
-      icon: '🏙️',
-      description: '도시의 명소와 문화를 둘러보세요',
-      color: 'from-indigo-400 to-blue-500'
-    },
-    {
-      id: 'helicopter-tour',
-      name: '헬기 투어',
-      nameEn: 'Helicopter Tour',
-      icon: '🚁',
-      description: '하늘에서 바라보는 장관의 풍경',
-      color: 'from-red-400 to-pink-500'
-    },
-    {
-      id: 'light-aircraft-tour',
-      name: '경비행기 투어',
-      nameEn: 'Light Aircraft Tour',
-      icon: '✈️',
-      description: '로맨틱한 항공 투어 경험',
-      color: 'from-sky-400 to-blue-500'
-    },
-    {
-      id: 'bus-tour',
-      name: '버스투어',
-      nameEn: 'Bus Tour',
-      icon: '🚌',
-      description: '편안한 버스로 떠나는 그룹 투어',
-      color: 'from-yellow-400 to-orange-500'
-    },
-    {
-      id: 'premium-tour',
-      name: '프리미엄 투어',
-      nameEn: 'Premium Tour',
-      icon: '⭐',
-      description: '최고급 서비스의 특별한 투어',
-      color: 'from-amber-400 to-yellow-500'
-    },
-    {
-      id: 'performance-ticket',
-      name: '공연티켓',
-      nameEn: 'Performance Ticket',
-      icon: '🎫',
-      description: '다양한 공연과 쇼의 티켓',
-      color: 'from-orange-400 to-red-500'
-    },
-    {
-      id: 'attraction',
-      name: '어트랙션',
-      nameEn: 'Attraction',
-      icon: '🎪',
-      description: '재미있는 놀이시설과 어트랙션',
-      color: 'from-purple-400 to-pink-500'
-    },
-    {
-      id: 'event',
-      name: '이벤트',
-      nameEn: 'Event',
-      icon: '🎉',
-      description: '특별한 이벤트와 축제',
-      color: 'from-pink-400 to-rose-500'
-    },
-    {
-      id: 'coupon',
-      name: '쿠폰',
-      nameEn: 'Coupon',
-      icon: '🎟️',
-      description: '할인 혜택이 있는 쿠폰',
-      color: 'from-green-400 to-emerald-500'
-    },
-    {
-      id: 'insurance',
-      name: '보험',
-      nameEn: 'Insurance',
-      icon: '🛡️',
-      description: '안전한 여행을 위한 보험',
-      color: 'from-blue-400 to-indigo-500'
-    },
-    {
-      id: 'convention-support',
-      name: '컨벤션지원',
-      nameEn: 'Convention Support',
-      icon: '🤝',
-      description: '비즈니스 미팅과 컨벤션 지원',
-      color: 'from-teal-400 to-cyan-500'
-    }
+    { id: 'antelope-canyon', name: '앤텔롭 캐년', nameEn: 'Antelope Canyon', description: '세계적으로 유명한 사암 협곡의 아름다움을 경험하세요' },
+    { id: 'grand-canyon', name: '그랜드캐년', nameEn: 'Grand Canyon', description: '세계 7대 자연경관의 위대함을 만나보세요' },
+    { id: 'suburban-tour', name: '근교투어', nameEn: 'Suburban Tour', description: '도시 근처의 아름다운 자연을 탐험하세요' },
+    { id: 'day-tour', name: '당일투어', nameEn: 'Day Tour', description: '하루 만에 완성하는 특별한 여행' },
+    { id: 'accommodation-tour', name: '숙박투어', nameEn: 'Accommodation Tour', description: '숙박이 포함된 며칠간의 여행' },
+    { id: 'city-tour', name: '시티투어', nameEn: 'City Tour', description: '도시의 명소와 문화를 둘러보세요' },
+    { id: 'helicopter-tour', name: '헬기 투어', nameEn: 'Helicopter Tour', description: '하늘에서 바라보는 장관의 풍경' },
+    { id: 'light-aircraft-tour', name: '경비행기 투어', nameEn: 'Light Aircraft Tour', description: '로맨틱한 항공 투어 경험' },
+    { id: 'bus-tour', name: '버스투어', nameEn: 'Bus Tour', description: '편안한 버스로 떠나는 그룹 투어' },
+    { id: 'premium-tour', name: '프리미엄 투어', nameEn: 'Premium Tour', description: '최고급 서비스의 특별한 투어' },
+    { id: 'performance-ticket', name: '공연티켓', nameEn: 'Performance Ticket', description: '다양한 공연과 쇼의 티켓' },
+    { id: 'attraction', name: '어트랙션', nameEn: 'Attraction', description: '재미있는 놀이시설과 어트랙션' },
+    { id: 'event', name: '이벤트', nameEn: 'Event', description: '특별한 이벤트와 축제' },
+    { id: 'coupon', name: '쿠폰', nameEn: 'Coupon', description: '할인 혜택이 있는 쿠폰' },
+    { id: 'insurance', name: '보험', nameEn: 'Insurance', description: '안전한 여행을 위한 보험' },
+    { id: 'convention-support', name: '컨벤션지원', nameEn: 'Convention Support', description: '비즈니스 미팅과 컨벤션 지원' },
   ]
 
   // 상품 데이터 로드
@@ -317,7 +205,7 @@ function ProductTagsPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen app-page-bg">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-tags" />}
       <CustomerPageZoneLayoutRenderer
@@ -338,10 +226,10 @@ function ProductTagsPageInner() {
           if (zoneId === 'tags-page-categories') {
             return (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+                <div className="app-panel mb-8 p-6">
                   <div className="relative">
                     <Search
-                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                       size={20}
                     />
                     <input
@@ -349,7 +237,7 @@ function ProductTagsPageInner() {
                       placeholder={t('tagsPageSearchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="app-input pl-10"
                     />
                   </div>
                 </div>
@@ -378,22 +266,28 @@ function ProductTagsPageInner() {
                     zone="tags-page-categories"
                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                   >
-                    {filteredTagCategories.map((tagCategory) => (
+                    {filteredTagCategories.map((tagCategory) => {
+                      const Icon = getTagCategoryIcon(tagCategory.id)
+                      return (
                       <div
                         key={tagCategory.id}
-                        className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
+                        className="cp-ui-card-surface overflow-hidden rounded-card border border-border/60 shadow-card transition-shadow hover:shadow-card-hover"
                       >
-                        <div className={`bg-gradient-to-r ${tagCategory.color} p-6 text-white`}>
-                          <div className="flex items-center space-x-3">
-                            <div className="text-3xl">{tagCategory.icon}</div>
-                            <div>
+                        <div className="border-b border-border/60 bg-card p-6">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-booking/10">
+                              <Icon className="h-5 w-5 text-booking" aria-hidden />
+                            </div>
+                            <div className="min-w-0 flex-1">
                               <h3 className="text-lg font-bold">
                                 {locale === 'en' ? tagCategory.nameEn : tagCategory.name}
                               </h3>
-                              <p className="text-sm opacity-90">{tagCategory.description}</p>
+                              <p className="mt-1 text-sm cp-ui-muted">{tagCategory.description}</p>
+                              <p className="mt-2 text-xs font-medium text-booking">
+                                {tagCategory.products.length}개 상품
+                              </p>
                             </div>
                           </div>
-                          <div className="mt-3 text-sm">{tagCategory.products.length}개 상품</div>
                         </div>
 
                         <div className="p-4">
@@ -403,7 +297,7 @@ function ProductTagsPageInner() {
                                 <Link
                                   key={product.id}
                                   href={`/${locale}/products/${product.id}`}
-                                  className="block p-3 border rounded-lg cp-ui-panel-surface hover:border-[var(--cp-ui-accent,#2563eb)] transition-colors"
+                                  className="block rounded-lg border border-border/60 p-3 transition-colors hover:border-booking/30"
                                 >
                                   <div className="flex items-center space-x-3">
                                     {product.primary_image ? (
@@ -417,17 +311,23 @@ function ProductTagsPageInner() {
                                         />
                                       </div>
                                     ) : (
-                                      <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                                        <span className="text-gray-400">🏔️</span>
+                                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted/50">
+                                        <Mountain className="h-5 w-5 text-muted-foreground" aria-hidden />
                                       </div>
                                     )}
                                     <div className="flex-1 min-w-0">
                                       <h4 className="text-sm font-medium truncate">
                                         {getCustomerDisplayName(product)}
                                       </h4>
-                                      <p className="text-xs cp-ui-muted cp-ui-price">
-                                        ${product.base_price}부터
-                                      </p>
+                                      <div className="text-xs cp-ui-muted">
+                                        <PriceDisplay
+                                          amount={product.base_price}
+                                          {...(locale === 'en'
+                                            ? { prefixLabel: 'From', suffixLabel: '/ person' }
+                                            : { suffixLabel: '부터' })}
+                                          size="sm"
+                                        />
+                                      </div>
                                     </div>
                                   </div>
                                 </Link>
@@ -444,21 +344,21 @@ function ProductTagsPageInner() {
                               )}
                             </div>
                           ) : (
-                            <div className="text-center py-4 text-gray-500">
+                            <div className="py-4 text-center text-muted-foreground">
                               <p className="text-sm">해당 태그의 상품이 없습니다</p>
                             </div>
                           )}
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </CustomerPageZone>
                 )}
 
                 {!loading && !error && filteredTagCategories.length === 0 && (
-                  <div className="text-center py-12">
-                    <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p className="text-lg font-medium text-gray-900">검색 결과가 없습니다</p>
-                    <p className="text-gray-600">다른 검색어를 시도해보세요</p>
+                  <div className="py-12 text-center">
+                    <Search className="mx-auto mb-4 h-12 w-12 text-muted-foreground/40" />
+                    <p className="text-lg font-medium text-foreground">검색 결과가 없습니다</p>
+                    <p className="text-muted-foreground">다른 검색어를 시도해보세요</p>
                   </div>
                 )}
               </div>

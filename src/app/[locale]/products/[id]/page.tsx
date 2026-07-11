@@ -12,6 +12,10 @@ import ProductDetailHighlights from '@/components/product/ProductDetailHighlight
 import ProductDetailMobileBookingCard from '@/components/product/ProductDetailMobileBookingCard'
 import ProductDetailMobileStickyCta from '@/components/product/ProductDetailMobileStickyCta'
 import ProductDetailFaqSection from '@/components/product/ProductDetailFaqSection'
+import ProductDetailReviewsSection, {
+  type ProductReviewItem,
+} from '@/components/product/ProductDetailReviewsSection'
+import { fetchProductReviews } from '@/lib/fetchProductReviews'
 import { ProductDetailErrorState, ProductDetailLoadingState } from '@/components/product/ProductDetailPageStates'
 import ProductDetailCheckoutLayer, {
   useProductDetailCheckoutActions,
@@ -63,6 +67,9 @@ function ProductDetailPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
+  const [productReviews, setProductReviews] = useState<ProductReviewItem[]>([])
+  const [reviewRating, setReviewRating] = useState<number | null>(null)
+  const [reviewCount, setReviewCount] = useState(0)
 
   const {
     showBookingFlow,
@@ -103,6 +110,16 @@ function ProductDetailPageInner() {
       setProductMedia(data.productMedia)
       setTourCoursePhotos(data.tourCoursePhotos)
       setError(data.error)
+
+      const reviewsData = await fetchProductReviews({
+        productId,
+        locale,
+        limit: 12,
+      })
+      setProductReviews(reviewsData.reviews)
+      setReviewRating(reviewsData.averageRating)
+      setReviewCount(reviewsData.reviewCount)
+
       if (!options?.silent) {
         setLoading(false)
       }
@@ -221,7 +238,7 @@ function ProductDetailPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-slate-50 pb-24 lg:pb-12">
+      <div className="min-h-screen bg-muted/30 pb-20 lg:pb-12">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-detail" />}
       <CustomerPageZoneLayoutRenderer
@@ -239,6 +256,9 @@ function ProductDetailPageInner() {
                 durationLabel={durationLabel}
                 groupSize={product.group_size}
                 totalPrice={totalPrice}
+                {...(reviewCount > 0 && reviewRating != null
+                  ? { reviewRating, reviewCount }
+                  : {})}
                 onBookNow={openBookingFlow}
               />
             )
@@ -287,6 +307,15 @@ function ProductDetailPageInner() {
                 categoryLabel={categoryLabel}
                 durationLabel={durationLabel}
                 showDetail={showDetailOnCustomerPage}
+              />
+            )
+          }
+
+          if (zoneId === 'detail-reviews-section') {
+            return (
+              <ProductDetailReviewsSection
+                reviews={productReviews}
+                {...(reviewRating != null ? { averageRating: reviewRating } : {})}
               />
             )
           }

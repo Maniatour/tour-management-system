@@ -21,7 +21,7 @@ export default function OfflinePage() {
       </div>
       <Link
         href="/"
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
         prefetch={false}
       >
         홈으로

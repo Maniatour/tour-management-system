@@ -240,7 +240,7 @@ export default function DocumentUploadModal({
             </h2>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
             >
               <X className="w-5 h-5" />
             </button>
@@ -259,7 +259,7 @@ export default function DocumentUploadModal({
                 >
                   {selectedFile ? (
                     <div className="flex items-center justify-center space-x-3">
-                      <FileText className="w-8 h-8 text-blue-500" />
+                      <FileText className="w-8 h-8 text-primary" />
                       <div className="text-left">
                         <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
                         <p className="text-xs text-gray-500">
@@ -296,7 +296,7 @@ export default function DocumentUploadModal({
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="문서 제목을 입력하세요"
                 required
               />
@@ -311,7 +311,7 @@ export default function DocumentUploadModal({
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="문서에 대한 설명을 입력하세요"
               />
             </div>
@@ -324,7 +324,7 @@ export default function DocumentUploadModal({
               <select
                 value={formData.category_id}
                 onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">카테고리 선택</option>
                 {categories.map((category) => (
@@ -345,7 +345,7 @@ export default function DocumentUploadModal({
                   type="date"
                   value={formData.issue_date}
                   onChange={(e) => handleIssueDateChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               
@@ -358,7 +358,7 @@ export default function DocumentUploadModal({
                   value={formData.expiry_date}
                   onChange={(e) => setFormData(prev => ({ ...prev, expiry_date: e.target.value }))}
                   disabled={formData.auto_calculate_expiry}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent disabled:bg-gray-100"
                 />
               </div>
             </div>
@@ -370,7 +370,7 @@ export default function DocumentUploadModal({
                 id="auto_calculate_expiry"
                 checked={formData.auto_calculate_expiry}
                 onChange={(e) => handleAutoCalculateChange(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
               />
               <label htmlFor="auto_calculate_expiry" className="text-sm font-medium text-gray-700">
                 발급일 기준으로 만료일 자동 계산
@@ -388,7 +388,7 @@ export default function DocumentUploadModal({
                   max="120"
                   value={formData.validity_period_months}
                   onChange={(e) => setFormData(prev => ({ ...prev, validity_period_months: parseInt(e.target.value) || 12 }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             )}
@@ -405,7 +405,7 @@ export default function DocumentUploadModal({
                     id="reminder_30_days"
                     checked={formData.reminder_30_days}
                     onChange={(e) => setFormData(prev => ({ ...prev, reminder_30_days: e.target.checked }))}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                   />
                   <label htmlFor="reminder_30_days" className="text-sm text-gray-700">
                     30일 전 알림
@@ -418,7 +418,7 @@ export default function DocumentUploadModal({
                     id="reminder_7_days"
                     checked={formData.reminder_7_days}
                     onChange={(e) => setFormData(prev => ({ ...prev, reminder_7_days: e.target.checked }))}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                   />
                   <label htmlFor="reminder_7_days" className="text-sm text-gray-700">
                     7일 전 알림
@@ -431,7 +431,7 @@ export default function DocumentUploadModal({
                     id="reminder_expired"
                     checked={formData.reminder_expired}
                     onChange={(e) => setFormData(prev => ({ ...prev, reminder_expired: e.target.checked }))}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                   />
                   <label htmlFor="reminder_expired" className="text-sm text-gray-700">
                     만료일 당일 알림
@@ -449,7 +449,7 @@ export default function DocumentUploadModal({
                 type="text"
                 value={formData.tags}
                 onChange={(e) => setFormData(prev => ({ ...prev, tags: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="태그를 쉼표로 구분하여 입력하세요 (예: 계약서, 호텔, 중요)"
               />
             </div>
@@ -463,7 +463,7 @@ export default function DocumentUploadModal({
                 type="text"
                 value={formData.version}
                 onChange={(e) => setFormData(prev => ({ ...prev, version: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="1.0"
               />
             </div>
@@ -473,14 +473,14 @@ export default function DocumentUploadModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 취소
               </button>
               <button
                 type="submit"
                 disabled={loading || uploading}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {loading || uploading ? (
                   <>

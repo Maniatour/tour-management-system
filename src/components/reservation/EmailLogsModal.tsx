@@ -140,7 +140,7 @@ export default function EmailLogsModal({ isOpen, onClose, reservationId }: Email
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : emailLogs.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
@@ -258,7 +258,7 @@ export default function EmailLogsModal({ isOpen, onClose, reservationId }: Email
                           )}
                         </div>
                         {log.clicked_at && (
-                          <div className="flex items-center gap-2 text-sm text-blue-700">
+                          <div className="flex items-center gap-2 text-sm text-primary">
                             <MousePointerClick className="w-4 h-4" />
                             <span>
                               <strong>링크 클릭:</strong> {formatDate(log.clicked_at)}

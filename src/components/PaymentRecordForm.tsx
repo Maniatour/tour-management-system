@@ -311,11 +311,11 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
             </button>
           </div>
 
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
+          <div className="mb-4 p-3 bg-primary/5 rounded-lg">
+            <p className="text-sm text-primary">
               <strong>고객:</strong> {customerName}
             </p>
-            <p className="text-sm text-blue-800">
+            <p className="text-sm text-primary">
               <strong>예약 ID:</strong> {reservationId}
             </p>
           </div>
@@ -336,7 +336,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                 <select
                   value={formData.payment_status}
                   onChange={(e) => handleInputChange('payment_status', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="Partner Received">파트너 수령</option>
                   <option value="Deposit Requested">보증금 요청</option>
@@ -368,7 +368,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                       handleInputChange('payment_method_id', e.target.value)
                       handleInputChange('payment_method', selectedOption?.method || '')
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   >
                     <option value="">결제 방법을 선택하세요</option>
@@ -398,7 +398,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                   step="0.01"
                   value={formData.amount}
                   onChange={(e) => handleInputChange('amount', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="0.00"
                   required
                 />
@@ -413,7 +413,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                   step="1"
                   value={formData.amount_krw}
                   onChange={(e) => handleInputChange('amount_krw', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="0"
                 />
               </div>
@@ -426,7 +426,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
               <textarea
                 value={formData.note}
                 onChange={(e) => handleInputChange('note', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 rows={3}
                 placeholder="입금 관련 메모를 입력하세요..."
               />
@@ -455,7 +455,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                   <div className="text-center">
                     <Upload size={24} className="mx-auto text-gray-400 mb-2" />
                     <label className="cursor-pointer">
-                      <span className="text-sm text-blue-600 hover:text-blue-800">
+                      <span className="text-sm text-primary hover:text-primary/80">
                         파일을 선택하거나 드래그하여 업로드
                       </span>
                       <input
@@ -491,7 +491,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
               <button
                 type="button"
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
                 disabled={saving}
               >
                 {saving ? (

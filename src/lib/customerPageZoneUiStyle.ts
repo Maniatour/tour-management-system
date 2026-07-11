@@ -10,6 +10,7 @@ import {
   BORDER_RADIUS_CSS,
   GRADIENT_DIRECTION_CSS,
 } from '@/lib/customerPageZoneUiStyleTokens'
+import { BRAND_BOOKING_HEX, BRAND_BOOKING_HOVER_HEX } from '@/lib/brandTokens'
 
 export type {
   ZoneUiFontWeight,
@@ -200,8 +201,8 @@ const PADDING_Y_CSS: Record<ZoneUiPadding, { paddingTop: string; paddingBottom: 
   spacious: { paddingTop: '4.5rem', paddingBottom: '4.5rem' },
 }
 
-const DETAIL_ACCENT = '#0B5FFF'
-const DETAIL_ACCENT_HOVER = '#0952e0'
+const DETAIL_ACCENT = BRAND_BOOKING_HEX
+const DETAIL_ACCENT_HOVER = BRAND_BOOKING_HOVER_HEX
 
 export const ZONE_UI_PRESETS: ZoneUiPreset[] = [
   { id: 'default', label: '기본 (브랜드 블루)', patch: { fontFamily: 'inter', fontSize: 'default' } },
@@ -215,7 +216,7 @@ export const ZONE_UI_PRESETS: ZoneUiPreset[] = [
       backgroundColor: '#0f172a',
       textColor: '#f8fafc',
       mutedTextColor: '#94a3b8',
-      accentColor: '#0B5FFF',
+      accentColor: BRAND_BOOKING_HEX,
       accentHoverColor: '#0952e0',
       accentTextColor: '#ffffff',
       surfaceColor: 'rgba(255,255,255,0.08)',
@@ -238,7 +239,7 @@ export const ZONE_UI_PRESETS: ZoneUiPreset[] = [
       accentTextColor: '#ffffff',
       surfaceColor: '#ffffff',
       borderColor: '#e2e8f0',
-      iconColor: '#0B5FFF',
+      iconColor: BRAND_BOOKING_HEX,
       overlayOpacity: 0,
       fontFamily: 'inter',
       fontSize: 'default',
@@ -406,12 +407,12 @@ export const ZONE_UI_PRESETS: ZoneUiPreset[] = [
       backgroundColor: '#ffffff',
       textColor: '#000000',
       mutedTextColor: '#404040',
-      accentColor: '#0B5FFF',
+      accentColor: BRAND_BOOKING_HEX,
       accentHoverColor: '#0952e0',
       accentTextColor: '#ffffff',
       surfaceColor: '#ffffff',
       borderColor: '#000000',
-      iconColor: '#0B5FFF',
+      iconColor: BRAND_BOOKING_HEX,
       fontFamily: 'system',
       fontSize: 'large',
     },
@@ -565,10 +566,10 @@ export const ZONE_UI_DEFAULTS: Partial<Record<CustomerPageZone, ZoneUiStylePatch
     backgroundColor: '#1e3a8a',
     textColor: '#ffffff',
     mutedTextColor: '#bfdbfe',
-    accentColor: '#ffffff',
-    accentHoverColor: '#f3f4f6',
-    accentTextColor: '#1e3a8a',
-    surfaceColor: 'transparent',
+    accentColor: BRAND_BOOKING_HEX,
+    accentHoverColor: BRAND_BOOKING_HOVER_HEX,
+    accentTextColor: '#ffffff',
+    surfaceColor: '#ffffff',
     borderColor: '#ffffff',
     paddingY: 'default',
   },
@@ -864,6 +865,20 @@ export const ZONE_UI_DEFAULTS: Partial<Record<CustomerPageZone, ZoneUiStylePatch
     iconColor: DETAIL_ACCENT,
     paddingY: 'none',
   },
+  'detail-reviews-section': {
+    presetId: 'default',
+    useGradient: false,
+    backgroundColor: 'transparent',
+    textColor: '#0f172a',
+    mutedTextColor: '#64748b',
+    accentColor: DETAIL_ACCENT,
+    accentHoverColor: DETAIL_ACCENT_HOVER,
+    accentTextColor: '#ffffff',
+    surfaceColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    iconColor: DETAIL_ACCENT,
+    paddingY: 'default',
+  },
   'detail-faq-section': {
     presetId: 'default',
     useGradient: false,
@@ -926,12 +941,12 @@ export const ZONE_UI_DEFAULTS: Partial<Record<CustomerPageZone, ZoneUiStylePatch
     backgroundColor: 'transparent',
     textColor: '#111827',
     mutedTextColor: '#4b5563',
-    accentColor: '#0B5FFF',
+    accentColor: BRAND_BOOKING_HEX,
     accentHoverColor: '#0952e0',
     accentTextColor: '#ffffff',
     surfaceColor: '#ffffff',
     borderColor: '#e5e7eb',
-    iconColor: '#0B5FFF',
+    iconColor: BRAND_BOOKING_HEX,
     paddingY: 'none',
   },
   'custom-tour-builder': {
@@ -940,12 +955,12 @@ export const ZONE_UI_DEFAULTS: Partial<Record<CustomerPageZone, ZoneUiStylePatch
     backgroundColor: 'transparent',
     textColor: '#111827',
     mutedTextColor: '#4b5563',
-    accentColor: '#0B5FFF',
+    accentColor: BRAND_BOOKING_HEX,
     accentHoverColor: '#0952e0',
     accentTextColor: '#ffffff',
     surfaceColor: '#ffffff',
     borderColor: '#e5e7eb',
-    iconColor: '#0B5FFF',
+    iconColor: BRAND_BOOKING_HEX,
     paddingY: 'default',
   },
   'reservation-check-header': {
@@ -1020,6 +1035,7 @@ export const DETAIL_UI_ZONES: CustomerPageZone[] = [
   'detail-gallery',
   'detail-highlights',
   'detail-tabs',
+  'detail-reviews-section',
   'detail-sidebar',
   'detail-faq-section',
   'detail-mobile-booking',
@@ -1153,6 +1169,59 @@ export function resolveZoneUiStyle(
   return { ...core, ...advanced }
 }
 
+const LIGHT_SURFACE_COLORS = new Set([
+  '#ffffff',
+  '#fff',
+  'white',
+  '#f8fafc',
+  '#f9fafb',
+  '#fafaf9',
+  '#fffbeb',
+  '#eff6ff',
+  '#f1f5f9',
+  '#fef3c7',
+  '#fff1f2',
+  '#f0fdf4',
+  '#ecfeff',
+])
+
+function normalizeColorKey(color: string): string {
+  return color.trim().toLowerCase()
+}
+
+function isLightSurfaceColor(color: string): boolean {
+  const key = normalizeColorKey(color)
+  if (LIGHT_SURFACE_COLORS.has(key)) return true
+  if (key.startsWith('rgba(255') || key.startsWith('rgb(255')) return true
+  return false
+}
+
+function isLightTextColor(color: string): boolean {
+  const key = normalizeColorKey(color)
+  if (key === '#ffffff' || key === '#fff' || key === 'white') return true
+  if (key.startsWith('#f') && key.length <= 7) return true
+  if (key.startsWith('rgba(255') || key.startsWith('rgb(255')) return true
+  return false
+}
+
+function resolveSurfaceTextColors(
+  textColor: string,
+  mutedTextColor: string,
+  surfaceColor: string
+): { surfaceForeground: string; surfaceMuted: string } {
+  if (isLightSurfaceColor(surfaceColor) && isLightTextColor(textColor)) {
+    return {
+      surfaceForeground: '#0f172a',
+      surfaceMuted: '#64748b',
+    }
+  }
+
+  return {
+    surfaceForeground: textColor,
+    surfaceMuted: mutedTextColor,
+  }
+}
+
 export function zoneUiStyleToCssProperties(style: ResolvedZoneUiStyle): CSSProperties {
   const padding = PADDING_Y_CSS[style.paddingY]
   const bodyFontSize = style.fontSize
@@ -1170,6 +1239,11 @@ export function zoneUiStyleToCssProperties(style: ResolvedZoneUiStyle): CSSPrope
     accentTextColor: style.accentTextColor,
     borderColor: style.borderColor,
   })
+  const surfaceText = resolveSurfaceTextColors(
+    style.textColor,
+    style.mutedTextColor,
+    style.surfaceColor
+  )
 
   const gradientDir = GRADIENT_DIRECTION_CSS[style.gradientDirection]
 
@@ -1201,6 +1275,9 @@ export function zoneUiStyleToCssProperties(style: ResolvedZoneUiStyle): CSSPrope
       : { backgroundColor: style.backgroundColor }),
     ['--cp-ui-text' as string]: style.textColor,
     ['--cp-ui-muted' as string]: style.mutedTextColor,
+    ['--cp-ui-background' as string]: style.backgroundColor,
+    ['--cp-ui-surface-foreground' as string]: surfaceText.surfaceForeground,
+    ['--cp-ui-surface-muted' as string]: surfaceText.surfaceMuted,
     ['--cp-ui-accent' as string]: style.accentColor,
     ['--cp-ui-accent-hover' as string]: style.accentHoverColor,
     ['--cp-ui-accent-text' as string]: style.accentTextColor,

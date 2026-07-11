@@ -1069,7 +1069,7 @@ export default function GuideTourDetailPage() {
     
     if (tour.assistant_id) {
       // 두 명의 가이드가 있는 경우
-      return { type: 'two-guides', label: t('guideConfig.twoGuides'), color: 'text-blue-600' }
+      return { type: 'two-guides', label: t('guideConfig.twoGuides'), color: 'text-primary' }
     } else {
       // 가이드 1명만 있는 경우 (가이드 + 드라이버)
       return { type: 'guide-driver', label: t('guideConfig.oneGuideDriver'), color: 'text-green-600' }
@@ -1346,7 +1346,7 @@ export default function GuideTourDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loadingTourInfo')}</p>
         </div>
       </div>
@@ -1361,7 +1361,7 @@ export default function GuideTourDetailPage() {
           <p className="text-gray-600 mb-4">{error}</p>
           <button 
             onClick={() => router.push(`/${locale}/guide/tours`)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
           >
             {t('backToTourList')}
           </button>
@@ -1377,7 +1377,7 @@ export default function GuideTourDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-4">{locale === 'ko' ? '투어를 찾을 수 없습니다' : 'Tour not found'}</h1>
           <button 
             onClick={() => router.push(`/${locale}/guide/tours`)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
           >
             {t('backToTourList')}
           </button>
@@ -1407,7 +1407,7 @@ export default function GuideTourDetailPage() {
               onClick={() => handleTabChange('overview')}
               className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
                 activeTab === 'overview'
-                  ? 'bg-blue-500 text-white shadow-lg transform scale-105'
+                  ? 'bg-primary text-primary-foreground shadow-lg transform scale-105'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
               }`}
             >
@@ -1506,11 +1506,11 @@ export default function GuideTourDetailPage() {
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' ? 'bg-blue-100 text-blue-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' ? 'bg-primary/10 text-primary' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'rejected' ? 'bg-red-100 text-red-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'recruiting' ? 'bg-primary/10 text-primary' :
                   'bg-gray-100 text-gray-800'
                 }`}>
                   {(() => {
@@ -1579,7 +1579,7 @@ export default function GuideTourDetailPage() {
             
             {/* 날짜, 인원, 차량 - 뱃지 스타일 */}
             <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-blue-100 text-blue-800">
+              <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-primary/10 text-primary">
                 📅 {tour.tour_date}
               </span>
               <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-green-100 text-green-800">
@@ -1619,7 +1619,7 @@ export default function GuideTourDetailPage() {
                 )
               )}
               <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${
-                getGuideConfiguration().type === 'two-guides' ? 'bg-blue-100 text-blue-800' :
+                getGuideConfiguration().type === 'two-guides' ? 'bg-primary/10 text-primary' :
                 getGuideConfiguration().type === 'guide-driver' ? 'bg-green-100 text-green-800' :
                 'bg-gray-100 text-gray-800'
               }`}>
@@ -1694,12 +1694,12 @@ export default function GuideTourDetailPage() {
                             {residentStatusSummary.usResident}{locale === 'ko' ? '명' : ''}
                           </div>
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="bg-muted/50 border border-border rounded-lg p-3">
                           <div className="flex items-center space-x-2 mb-1">
                             <span className="w-3 h-3 rounded-full bg-blue-600"></span>
-                            <span className="text-xs font-medium text-blue-900">{tCommon('statusNonResident')}</span>
+                            <span className="text-xs font-medium text-foreground">{tCommon('statusNonResident')}</span>
                           </div>
-                          <div className="text-lg font-semibold text-blue-900">
+                          <div className="text-lg font-semibold text-foreground">
                             {residentStatusSummary.nonResident}{locale === 'ko' ? '명' : ''}
                           </div>
                         </div>
@@ -1898,7 +1898,7 @@ export default function GuideTourDetailPage() {
                       {/* 호텔 정보 헤더 - 3줄 구조 */}
                       <div className="space-y-2">
                         {/* 1줄: 픽업 시간 - 더 크게 */}
-                        <div className="text-blue-600 font-bold text-lg">
+                        <div className="text-primary font-bold text-lg">
                           {(() => {
                             if (!sortedReservations[0]?.pickup_time) {
                               return `${t('tbd')} ${tour.tour_date}`
@@ -1922,12 +1922,12 @@ export default function GuideTourDetailPage() {
                         {/* 2줄: 호텔 정보 */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2">
-                            <Hotel className={`w-4 h-4 ${isUnassignedHotel ? 'text-amber-600' : 'text-blue-600'}`} />
+                            <Hotel className={`w-4 h-4 ${isUnassignedHotel ? 'text-amber-600' : 'text-primary'}`} />
                             <span className={`font-semibold ${isUnassignedHotel ? 'text-amber-900' : 'text-gray-900'}`}>
                               {isUnassignedHotel ? t('pickupHotelUnassigned') : (hotel?.hotel || t('noHotelInfo'))}
                             </span>
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              isUnassignedHotel ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-800'
+                              isUnassignedHotel ? 'bg-amber-100 text-amber-900' : 'bg-primary/10 text-primary'
                             }`}>
                               <Users className="w-3 h-3 mr-1" />
                               {sortedReservations.reduce(
@@ -1941,7 +1941,7 @@ export default function GuideTourDetailPage() {
                               href={hotel?.link || `https://www.google.com/maps?q=${(hotel as PickupHotel & { pin?: string })?.pin}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-700 transition-colors"
+                              className="text-primary hover:text-primary/80 transition-colors"
                               title={locale === 'ko' ? '지도에서 보기' : 'View on map'}
                             >
                               <MapPin className="w-4 h-4" />
@@ -2090,7 +2090,7 @@ export default function GuideTourDetailPage() {
                                     {customer?.email && (
                                       <a 
                                         href={`mailto:${customer.email}`}
-                                        className="text-blue-600 hover:text-blue-700 transition-colors"
+                                        className="text-primary hover:text-primary/80 transition-colors"
                                         title={customer.email}
                                       >
                                         <Mail className="w-4 h-4" />
@@ -2386,7 +2386,7 @@ export default function GuideTourDetailPage() {
               <h3 className="text-lg font-medium text-gray-900">{t('reportManagement')}</h3>
               <button 
                 onClick={() => setIsReportModalOpen(true)}
-                className="inline-flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                 title={t('addTourReport')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

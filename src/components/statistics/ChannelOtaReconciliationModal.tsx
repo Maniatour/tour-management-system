@@ -662,7 +662,7 @@ export default function ChannelOtaReconciliationModal({
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50">
           <div className="min-w-0">
             <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-blue-600 flex-shrink-0" />
+              <FileSpreadsheet className="h-5 w-5 text-primary flex-shrink-0" />
               정산 비교 (OTA 파일 ↔ 시스템)
             </h2>
             <p className="text-xs sm:text-sm text-gray-600 mt-1" title={channelName}>
@@ -680,7 +680,7 @@ export default function ChannelOtaReconciliationModal({
                   <span className="text-gray-400"> (통계 기간·투어 진행 내역 목록)</span>
                 </span>
               ) : fullChannelLoading ? (
-                <span className="inline-flex items-center gap-1 text-blue-700">
+                <span className="inline-flex items-center gap-1 text-primary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   전체 예약 불러오는 중…
                 </span>
@@ -745,7 +745,7 @@ export default function ChannelOtaReconciliationModal({
           )}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-2 p-3 rounded-lg border border-dashed border-gray-300 bg-gray-50/50 hover:border-blue-300 cursor-pointer">
+            <label className="flex flex-col gap-2 p-3 rounded-lg border border-dashed border-gray-300 bg-gray-50/50 hover:border-border cursor-pointer">
               <span className="text-xs font-medium text-gray-700 flex items-center gap-2">
                 <Upload className="h-4 w-4" />
                 CSV, PDF 또는 Excel 업로드
@@ -779,7 +779,7 @@ export default function ChannelOtaReconciliationModal({
                   type="button"
                   onClick={() => loadFromText(rawText)}
                   disabled={!channelId || !rawText.trim()}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white disabled:opacity-50"
+                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground disabled:opacity-50"
                 >
                   표로 파싱
                 </button>
@@ -796,7 +796,7 @@ export default function ChannelOtaReconciliationModal({
           </div>
 
           {directOtaRows && (
-            <div className="text-xs text-gray-600 bg-blue-50/80 border border-blue-100 rounded-lg px-3 py-2">
+            <div className="text-xs text-gray-600 bg-primary/5/80 border border-border/60 rounded-lg px-3 py-2">
               줄 단위 추출 {directOtaRows.length}건 · 열 매핑 없이 대사합니다.
             </div>
           )}
@@ -865,7 +865,7 @@ export default function ChannelOtaReconciliationModal({
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {parsedTable.slice(0, 4).map((r, ri) => (
-                      <tr key={ri} className={ri === headerRowIndex ? 'bg-blue-50/60' : ''}>
+                      <tr key={ri} className={ri === headerRowIndex ? 'bg-primary/5/60' : ''}>
                         <td className="px-2 py-1 text-gray-500 font-medium tabular-nums w-10" title="파일 상 줄 번호(1부터)">
                           {ri + 1}
                         </td>
@@ -914,7 +914,7 @@ export default function ChannelOtaReconciliationModal({
                         ? '파일과 통계 기간 내 투어 목록 예약을 채널 RN으로 비교합니다.'
                         : '파일의 모든 행과 DB 채널 전체 예약을 RN으로 비교합니다.'
               }
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               대사 실행
             </button>
@@ -1123,7 +1123,7 @@ export default function ChannelOtaReconciliationModal({
                             {row.reservationId && onOpenReservation && (
                               <button
                                 type="button"
-                                className="text-blue-600 hover:underline"
+                                className="text-primary hover:underline"
                                 onClick={() => {
                                   onOpenReservation(row.reservationId!)
                                 }}

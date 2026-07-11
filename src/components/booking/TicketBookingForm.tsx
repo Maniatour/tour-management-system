@@ -1136,7 +1136,7 @@ export default function TicketBookingForm({
     <div className="space-y-3 sm:space-y-4">
         <form onSubmit={handleSubmit}>
           {/* 공급업체 티켓 사용 여부 선택 - 모바일 최적화 */}
-          <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+          <div className="bg-primary/5 p-3 sm:p-4 rounded-lg">
             <div className="flex items-center mb-2 sm:mb-3">
               <input
                 type="checkbox"
@@ -1153,11 +1153,11 @@ export default function TicketBookingForm({
                 }}
                 className="mr-2"
               />
-              <label htmlFor="useSupplierTicket" className="text-sm font-medium text-blue-800">
+              <label htmlFor="useSupplierTicket" className="text-sm font-medium text-primary">
                 {t('useSupplierTicket')}
               </label>
             </div>
-            <p className="text-xs text-blue-600">
+            <p className="text-xs text-primary">
               {t('useSupplierTicketDesc')}
             </p>
           </div>
@@ -1188,7 +1188,7 @@ export default function TicketBookingForm({
                       if (e.key === 'Escape') setShowNewCategoryInput(false);
                     }}
                     placeholder={t('categoryPlaceholder')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     autoFocus
                     disabled={useSupplierTicket}
                   />
@@ -1203,7 +1203,7 @@ export default function TicketBookingForm({
                         setShowNewCategoryInput(false);
                       }
                     }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
                   >
                     {t('add')}
                   </button>
@@ -1224,7 +1224,7 @@ export default function TicketBookingForm({
                     setFormData(prev => ({ ...prev, category: v }));
                   }}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   disabled={useSupplierTicket}
                 >
                   <option value="">{t('selectCategory')}</option>
@@ -1259,7 +1259,7 @@ export default function TicketBookingForm({
                       if (e.key === 'Escape') setShowNewCompanyInput(false);
                     }}
                     placeholder={t('supplierPlaceholder')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     autoFocus
                     disabled={useSupplierTicket}
                   />
@@ -1274,7 +1274,7 @@ export default function TicketBookingForm({
                         setShowNewCompanyInput(false);
                       }
                     }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
                   >
                     {t('add')}
                   </button>
@@ -1295,7 +1295,7 @@ export default function TicketBookingForm({
                     setFormData(prev => ({ ...prev, company: v }));
                   }}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   disabled={useSupplierTicket}
                 >
                   <option value="">{t('selectCompany')}</option>
@@ -1334,7 +1334,7 @@ export default function TicketBookingForm({
                     }
                   }}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">공급업체 티켓을 선택하세요</option>
                   {supplierProducts.map((product) => (
@@ -1397,7 +1397,7 @@ export default function TicketBookingForm({
                   value={formData.check_in_date}
                   onChange={handleChange}
                   required
-                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex flex-col">
                   <button
@@ -1433,7 +1433,7 @@ export default function TicketBookingForm({
                 value={formData.time || ''}
                 onChange={handleChange}
                 required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">{t('selectTime')}</option>
                 {getTicketBookingTimeSelectOptions().map(({ value, bg, text }) => (
@@ -1455,17 +1455,17 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 required
                 {...(isEditingBooking ? {} : { min: 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             </div>
 
             {!booking?.id && requestEmailDraft ?
-              <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-                <p className="mb-2 text-xs font-medium text-blue-900">
+              <div className="rounded-lg border border-border/60 bg-primary/5/50 p-3">
+                <p className="mb-2 text-xs font-medium text-foreground">
                   예매 요청 — 제휴업체 이메일
                 </p>
-                <p className="mb-2 text-[11px] text-blue-800">
+                <p className="mb-2 text-[11px] text-primary">
                   저장 전에 아래 문구를 복사해 제휴업체에 보낼 수 있습니다. 저장 시 예매 요청·벤더 응답 대기 상태로 등록됩니다.
                 </p>
                 <TicketBookingVendorEmailCopyBlock
@@ -1494,7 +1494,7 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 step="0.01"
                 {...(isEditingBooking ? {} : { min: 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -1509,7 +1509,7 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 step="0.01"
                 min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -1531,13 +1531,13 @@ export default function TicketBookingForm({
                       if (e.key === 'Escape') setShowNewPaymentMethodInput(false);
                     }}
                     placeholder={t('paymentMethod')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     autoFocus
                   />
                   <button
                     type="button"
                     onClick={handleAddPaymentMethod}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
                   >
                     {t('add')}
                   </button>
@@ -1557,7 +1557,7 @@ export default function TicketBookingForm({
                     }
                     setFormData(prev => ({ ...prev, payment_method: v }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">{t('select')}</option>
                   {paymentMethodsList.map((pm) => (
@@ -1580,7 +1580,7 @@ export default function TicketBookingForm({
                 name="rn_number"
                 value={formData.rn_number}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -1593,7 +1593,7 @@ export default function TicketBookingForm({
                 name="invoice_number"
                 value={formData.invoice_number || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Invoice#"
               />
             </div>
@@ -1607,7 +1607,7 @@ export default function TicketBookingForm({
                 name="zelle_confirmation_number"
                 value={formData.zelle_confirmation_number || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={t('zelleConfirmationPlaceholder')}
                 autoComplete="off"
               />
@@ -1626,7 +1626,7 @@ export default function TicketBookingForm({
                 value={formData.tour_id || ''}
                 onChange={handleChange}
                 disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">{t('selectTourPlaceholder')}</option>
                 {!formData.check_in_date?.trim() ? (
@@ -1679,7 +1679,7 @@ export default function TicketBookingForm({
                   !formData.check_in_date?.trim() ||
                   reservationsLoading
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">{t('selectReservationPlaceholder')}</option>
                 {!formData.check_in_date?.trim() ? (
@@ -1747,7 +1747,7 @@ export default function TicketBookingForm({
                   name="status"
                   value={formData.status || ''}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   {TICKET_BOOKING_STATUS_VALUES.map((sv) => (
                     <option key={sv} value={sv}>
@@ -1770,7 +1770,7 @@ export default function TicketBookingForm({
                 name="season"
                 value={formData.season || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="no">{t('seasonNo')}</option>
                 <option value="yes">{t('seasonYes')}</option>
@@ -1788,7 +1788,7 @@ export default function TicketBookingForm({
                 name="note"
                 value={formData.note}
                 onChange={handleChange}
-                className="w-full min-h-[12rem] flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y box-border"
+                className="w-full min-h-[12rem] flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-y box-border"
                 placeholder={t('memoPlaceholder')}
               />
             </div>
@@ -1803,8 +1803,8 @@ export default function TicketBookingForm({
                 isUploading 
                   ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
                   : isDragOver 
-                    ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer' 
-                    : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                    ? 'border-primary bg-primary/10 scale-105 cursor-pointer' 
+                    : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
               }`}
               onDragOver={!isUploading ? handleDragOver : undefined}
               onDragEnter={!isUploading ? handleDragEnter : undefined}
@@ -1817,19 +1817,19 @@ export default function TicketBookingForm({
               <div className="flex flex-1 flex-col items-center justify-center space-y-2">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                   isUploading 
-                    ? 'bg-blue-100' 
+                    ? 'bg-primary/10' 
                     : isDragOver 
                       ? 'bg-blue-200' 
                       : 'bg-gray-100'
                 }`}>
                   {isUploading ? (
                     <div className="animate-spin">
-                      <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                     </div>
                   ) : isDragOver ? (
-                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                   ) : (
@@ -1840,7 +1840,7 @@ export default function TicketBookingForm({
                 </div>
                 <div>
                   <p className={`text-sm font-medium transition-colors ${
-                    isDragOver ? 'text-blue-900' : 'text-gray-900'
+                    isDragOver ? 'text-foreground' : 'text-gray-900'
                   }`}>
                     {isUploading 
                       ? t('uploading') 
@@ -1875,13 +1875,13 @@ export default function TicketBookingForm({
                     {formData.uploaded_files.map((file, index) => (
                       <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                          <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
                             {file.type.startsWith('image/') ? (
-                              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
                             ) : (
-                              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                               </svg>
                             )}
@@ -1997,7 +1997,7 @@ export default function TicketBookingForm({
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
               >
                 {loading ? t('saving') : t('save')}
               </button>

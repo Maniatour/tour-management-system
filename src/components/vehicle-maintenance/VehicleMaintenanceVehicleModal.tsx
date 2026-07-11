@@ -290,7 +290,7 @@ export default function VehicleMaintenanceVehicleModal({
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      scheduled: { color: 'bg-blue-100 text-blue-800', icon: Calendar },
+      scheduled: { color: 'bg-primary/10 text-primary', icon: Calendar },
       in_progress: { color: 'bg-yellow-100 text-yellow-800', icon: Wrench },
       completed: { color: 'bg-green-100 text-green-800', icon: DollarSign },
       cancelled: { color: 'bg-red-100 text-red-800', icon: AlertTriangle },
@@ -347,7 +347,7 @@ export default function VehicleMaintenanceVehicleModal({
                 <div className="text-xs text-muted-foreground">{t('statistics.maintenanceCount')}</div>
                 <div className="mt-0.5 text-lg font-semibold tabular-nums">{stats.count}</div>
               </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <div className="rounded-lg border border-border/60 bg-primary/5 p-3">
                 <div className="text-xs text-muted-foreground">{t('statistics.totalCost')}</div>
                 <div className="mt-0.5 text-lg font-semibold tabular-nums">
                   {formatCurrency(stats.totalCost)}

@@ -1982,7 +1982,7 @@ export default function DynamicPricingManager({
               <select
                 value={selectedVariant}
                 onChange={(e) => setSelectedVariant(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-ring"
               >
                 {productVariants.map((variant) => (
                   <option key={variant.variant_key} value={variant.variant_key}>
@@ -2023,7 +2023,7 @@ export default function DynamicPricingManager({
                  onClick={() => setViewMode('calendar')}
                 className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-colors ${
                    viewMode === 'calendar'
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    ? 'bg-primary/10 text-primary border border-border'
                     : 'bg-gray-100 text-gray-700 border border-gray-200'
                  }`}
                >
@@ -2034,7 +2034,7 @@ export default function DynamicPricingManager({
                  onClick={() => setViewMode('list')}
                 className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-colors ${
                    viewMode === 'list'
-                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                    ? 'bg-primary/10 text-primary border border-border'
                     : 'bg-gray-100 text-gray-700 border border-gray-200'
                  }`}
                >
@@ -2096,7 +2096,7 @@ export default function DynamicPricingManager({
               </div>
               <button
                 onClick={saveChannelIncludedNotIncluded}
-                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 shrink-0"
+                className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 shrink-0"
               >
                 {t('save')}
               </button>
@@ -2117,7 +2117,7 @@ export default function DynamicPricingManager({
                       ...prev,
                       included_ko: e.target.value
                     }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     rows={3}
                     placeholder={t('placeholderIncluded')}
                   />
@@ -2133,7 +2133,7 @@ export default function DynamicPricingManager({
                       ...prev,
                       included_en: e.target.value
                     }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     rows={3}
                     placeholder={t('placeholderIncluded')}
                   />
@@ -2150,7 +2150,7 @@ export default function DynamicPricingManager({
                       ...prev,
                       not_included_ko: e.target.value
                     }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     rows={3}
                     placeholder={t('placeholderNotIncluded')}
                   />
@@ -2166,7 +2166,7 @@ export default function DynamicPricingManager({
                       ...prev,
                       not_included_en: e.target.value
                     }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     rows={3}
                     placeholder={t('placeholderNotIncluded')}
                   />
@@ -2188,7 +2188,7 @@ export default function DynamicPricingManager({
                 <button
                   type="button"
                   onClick={() => handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                     pricingConfig.is_sale_available
                       ? 'bg-blue-600'
                       : 'bg-gray-300'
@@ -2472,14 +2472,14 @@ export default function DynamicPricingManager({
                                     </>
                                   )}
                                 </td>
-                                <td className="py-2 px-2 text-right text-blue-700 text-xs font-bold group-hover:text-blue-900">
+                                <td className="py-2 px-2 text-right text-primary text-xs font-bold group-hover:text-foreground">
                                   {formatPrice(salePrice.adult)}
                                   {!isSinglePrice && (
                                     <>
                                       <br />
-                                      <span className="text-blue-500 text-[10px]">{t('child')}: {formatPrice(salePrice.child)}</span>
+                                      <span className="text-primary text-[10px]">{t('child')}: {formatPrice(salePrice.child)}</span>
                                       <br />
-                                      <span className="text-blue-500 text-[10px]">{t('infant')}: {formatPrice(salePrice.infant)}</span>
+                                      <span className="text-primary text-[10px]">{t('infant')}: {formatPrice(salePrice.infant)}</span>
                                     </>
                                   )}
                                 </td>
@@ -2544,7 +2544,7 @@ export default function DynamicPricingManager({
                         handlePricingConfigUpdate({ commission_percent: 0 });
                       }
                     }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                        placeholder="0"
                      />
                  </div>
@@ -2572,7 +2572,7 @@ export default function DynamicPricingManager({
                         handlePricingConfigUpdate({ commission_amount: 0 });
                       }
                     }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                        placeholder="0"
                      />
                  </div>
@@ -2604,7 +2604,7 @@ export default function DynamicPricingManager({
                         handlePricingConfigUpdate({ coupon_percent: 0 });
                       }
                     }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                          placeholder="0"
                        />
                    </div>
@@ -2632,7 +2632,7 @@ export default function DynamicPricingManager({
                         handlePricingConfigUpdate({ not_included_price: 0 });
                       }
                     }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                          placeholder="0"
                        />
                      </div>
@@ -2690,7 +2690,7 @@ export default function DynamicPricingManager({
                   <button
                     type="button"
                     onClick={() => setChoicePricingViewMode('table')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'table' ? 'bg-white text-blue-600 shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'table' ? 'bg-white text-primary shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
                   >
                     <Table2 className="h-4 w-4" />
                     {t('tableView')}
@@ -2698,7 +2698,7 @@ export default function DynamicPricingManager({
                   <button
                     type="button"
                     onClick={() => setChoicePricingViewMode('card')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'card' ? 'bg-white text-blue-600 shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'card' ? 'bg-white text-primary shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
                   >
                     <LayoutGrid className="h-4 w-4" />
                     {t('cardView')}
@@ -2823,7 +2823,7 @@ export default function DynamicPricingManager({
                           });
                         };
 
-                        const inputCls = 'w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+                        const inputCls = 'w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-ring focus:border-ring';
 
                         return (
                           <tr key={combination.id} className="hover:bg-gray-50">
@@ -3073,7 +3073,7 @@ export default function DynamicPricingManager({
                                 <span
                                   key={index}
                                   className={`inline-block px-2 py-1 text-xs rounded ${
-                                    index % 4 === 0 ? 'bg-blue-100 text-blue-800' :
+                                    index % 4 === 0 ? 'bg-primary/10 text-primary' :
                                     index % 4 === 1 ? 'bg-green-100 text-green-800' :
                                     index % 4 === 2 ? 'bg-purple-100 text-purple-800' :
                                     'bg-orange-100 text-orange-800'
@@ -3207,7 +3207,7 @@ export default function DynamicPricingManager({
                                   });
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               placeholder="예: 384"
                             />
                           </div>
@@ -3347,7 +3347,7 @@ export default function DynamicPricingManager({
                                   }
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               placeholder={t('notIncludedPlaceholder')}
                               step="0.01"
                               min="0"
@@ -3369,7 +3369,7 @@ export default function DynamicPricingManager({
                           )}
                         </div>
                         {(otaSalePrice > 0 || ((currentChoiceData.adult_price ?? currentChoiceData.adult ?? 0) + (currentChoiceData.child_price ?? currentChoiceData.child ?? 0) + (currentChoiceData.infant_price ?? currentChoiceData.infant ?? 0)) > 0) && (
-                          <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                          <div className="bg-muted/50 border border-border rounded p-2">
                             <div className="text-xs text-gray-600 mb-1">
                               <div>{t('commissionLabel')} {commissionPercent}%</div>
                               <div>{t('couponLabel')} {couponPercent}%</div>
@@ -3381,7 +3381,7 @@ export default function DynamicPricingManager({
                                 <span className="ml-2">${totalNotIncludedForDisplay.toFixed(2)}</span>
                               </div>
                             )}
-                            <div className="text-sm font-semibold text-blue-900 mb-1">
+                            <div className="text-sm font-semibold text-foreground mb-1">
                               {t('netPriceLabel')} ${netPrice.toFixed(2)}
                               {homepageNetPrice > 0 && (
                                 <span className={`ml-2 text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -3409,7 +3409,7 @@ export default function DynamicPricingManager({
                         // 홈페이지 단일 가격 모드
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            {t('salePriceLabel')} <span className="text-blue-600">({t('singlePrice')})</span>
+                            {t('salePriceLabel')} <span className="text-primary">({t('singlePrice')})</span>
                           </label>
                           <input
                             type="number"
@@ -3443,10 +3443,10 @@ export default function DynamicPricingManager({
                                 handleChoicePriceUpdate(combination.id, 'infant_price', 0);
                               }
                             }}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                             placeholder="0"
                           />
-                          <p className="text-xs text-blue-600 mt-1">{t('singlePriceNote')}</p>
+                          <p className="text-xs text-primary mt-1">{t('singlePriceNote')}</p>
                           <div className="text-xs text-gray-500 mt-1">
                             {t('originalSum')} ${combination.combination_details ? 
                               combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
@@ -3484,7 +3484,7 @@ export default function DynamicPricingManager({
                                   handleChoicePriceUpdate(combination.id, 'adult_price', 0);
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               placeholder="0"
                             />
                             <div className="text-xs text-gray-500 mt-1">
@@ -3517,7 +3517,7 @@ export default function DynamicPricingManager({
                                   handleChoicePriceUpdate(combination.id, 'child_price', 0);
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               placeholder="0"
                             />
                             <div className="text-xs text-gray-500 mt-1">
@@ -3550,7 +3550,7 @@ export default function DynamicPricingManager({
                                   handleChoicePriceUpdate(combination.id, 'infant_price', 0);
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               placeholder="0"
                             />
                             <div className="text-xs text-gray-500 mt-1">
@@ -3568,7 +3568,7 @@ export default function DynamicPricingManager({
                         <div className="text-xs font-medium text-gray-700 mb-2">
                           {t('actualCostPriceLabel')}
                         {isHomepageSinglePrice && (
-                          <span className="ml-2 text-blue-600">({t('singlePrice')})</span>
+                          <span className="ml-2 text-primary">({t('singlePrice')})</span>
                         )}
                       </div>
                       {isHomepageSinglePrice ? (
@@ -3622,7 +3622,7 @@ export default function DynamicPricingManager({
                             className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
                             placeholder="예: 107.33"
                           />
-                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 구매가가 적용됩니다</p>
+                          <p className="text-xs text-primary mt-1">성인/아동/유아 모두 동일한 구매가가 적용됩니다</p>
                         </div>
                       ) : (
                         // 분리 가격 모드: 성인/아동/유아 구매가 분리 입력
@@ -3918,7 +3918,7 @@ export default function DynamicPricingManager({
                             });
                           }
                         }}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         placeholder="예: 384"
                       />
                     </div>
@@ -4051,7 +4051,7 @@ export default function DynamicPricingManager({
                             }
                           }
                         }}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         placeholder="0"
                         step="0.01"
                         min="0"
@@ -4059,7 +4059,7 @@ export default function DynamicPricingManager({
                     </div>
                   </div>
                   {otaSalePrice > 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                    <div className="bg-muted/50 border border-border rounded p-2">
                       <div className="text-xs text-gray-600 mb-1">
                         <div>{t('commissionLabel')} {commissionPercent}%</div>
                         <div>{t('couponLabel')} {couponPercent}%</div>
@@ -4071,7 +4071,7 @@ export default function DynamicPricingManager({
                           <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
                         </div>
                       )}
-                      <div className="text-sm font-semibold text-blue-900 mb-1">
+                      <div className="text-sm font-semibold text-foreground mb-1">
                         {t('netPriceLabel')} ${netPrice.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">

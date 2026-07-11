@@ -749,13 +749,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
   const isMealSettlement = attendanceSettlementMethod === 'applied'
   const appliedSettlementCellClass = isMealSettlement
-    ? 'text-xs font-bold text-blue-700 tabular-nums'
+    ? 'text-xs font-bold text-primary tabular-nums'
     : 'text-xs text-gray-400 tabular-nums'
   const legacySettlementCellClass = !isMealSettlement
     ? 'text-xs font-bold text-emerald-700 tabular-nums'
     : 'text-xs text-gray-400 tabular-nums'
   const appliedSettlementHeaderClass = isMealSettlement
-    ? 'px-3 py-2 text-left text-xs font-bold text-blue-800 uppercase tracking-wider bg-blue-50 ring-1 ring-inset ring-blue-200'
+    ? 'px-3 py-2 text-left text-xs font-bold text-primary uppercase tracking-wider bg-primary/5 ring-1 ring-inset ring-ring/30'
     : 'px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider'
   const legacySettlementHeaderClass = !isMealSettlement
     ? 'px-3 py-2 text-left text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 ring-1 ring-inset ring-emerald-200'
@@ -2346,7 +2346,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10 shrink-0">
           <div className="flex items-center min-w-0">
-            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2 shrink-0" />
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-primary mr-2 shrink-0" />
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">2주급 계산기</h2>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -2397,7 +2397,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       }}
                       aria-expanded={employeePickerOpen}
                       aria-haspopup="listbox"
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 sm:px-2 sm:py-1.5 text-sm text-left border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 sm:px-2 sm:py-1.5 text-sm text-left border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                     >
                       <span className="truncate min-w-0">
                         {selectedEmployee
@@ -2425,7 +2425,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             onClick={() => setEmployeeTab('active')}
                             className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                               employeeTab === 'active'
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
@@ -2436,7 +2436,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             onClick={() => setEmployeeTab('inactive')}
                             className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                               employeeTab === 'inactive'
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
@@ -2450,7 +2450,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             value={employeeSearch}
                             onChange={e => setEmployeeSearch(e.target.value)}
                             placeholder="이름, 이메일, 포지션 검색"
-                            className="w-full rounded-md border border-gray-300 py-1.5 pl-9 pr-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                            className="w-full rounded-md border border-gray-300 py-1.5 pl-9 pr-2 text-sm focus:border-primary focus:ring-2 focus:ring-ring"
                             autoComplete="off"
                           />
                         </div>
@@ -2472,7 +2472,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                                       setEmployeePickerOpen(false)
                                     }}
                                     className={`flex w-full flex-col items-start rounded-md px-2 py-2 text-left text-sm transition-colors ${
-                                      selected ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
+                                      selected ? 'bg-primary/5 text-foreground' : 'text-gray-900 hover:bg-gray-50'
                                     }`}
                                   >
                                     <span className="font-medium">
@@ -2493,7 +2493,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     <button
                       onClick={setCurrentPeriod}
                       type="button"
-                      className="flex-1 sm:flex-none px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
+                      className="flex-1 sm:flex-none px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-white bg-blue-600 border border-primary rounded-md hover:bg-primary/90 transition-colors touch-manipulation"
                     >
                       이번
                     </button>
@@ -2530,7 +2530,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     type="date"
                     value={startDate}
                     onChange={(e) => handleDateChange('start', e.target.value)}
-                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div>
@@ -2542,7 +2542,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     type="date"
                     value={endDate}
                     onChange={(e) => handleDateChange('end', e.target.value)}
-                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div>
@@ -2555,7 +2555,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     value={hourlyRate}
                     onChange={handleHourlyRateChange}
                     placeholder="예: 15.00"
-                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
               </div>
@@ -2604,7 +2604,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     <Clock className="w-3 h-3 inline mr-1" />
                     {totalHoursLabel}
                   </span>
-                  <span className={`text-sm font-bold tabular-nums ${isMealSettlement ? 'text-blue-600' : 'text-emerald-700'}`}>
+                  <span className={`text-sm font-bold tabular-nums ${isMealSettlement ? 'text-primary' : 'text-emerald-700'}`}>
                     {loading ? '계산 중...' : formatWorkHours(totalHours)}
                   </span>
                 </div>
@@ -2620,14 +2620,14 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           onChange={(e) =>
                             setAttendanceSettlementMethod(e.target.value as AttendanceSettlementMethod)
                           }
-                          className="min-w-0 max-w-[14rem] flex-1 rounded border border-gray-300 bg-white px-1 py-0.5 text-[10px] focus:ring-1 focus:ring-blue-500"
+                          className="min-w-0 max-w-[14rem] flex-1 rounded border border-gray-300 bg-white px-1 py-0.5 text-[10px] focus:ring-1 focus:ring-ring"
                           aria-label="출퇴근 소계 정산법"
                         >
                           <option value="applied">식사 횟수에 따른 30분 제외</option>
                           <option value="legacy_auto">8시간 이상 근무시 30분 제외</option>
                         </select>
                       </div>
-                      <span className="shrink-0 text-sm font-bold tabular-nums text-blue-600">
+                      <span className="shrink-0 text-sm font-bold tabular-nums text-primary">
                         ${formatCurrency(selectedAttendancePay)}
                       </span>
                     </div>
@@ -2753,7 +2753,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <span className={appliedSettlementCellClass}>
                           {deductApplied !== null ? formatWorkHours(deductApplied) : '-'}
                         </span>
-                        <span className={isMealSettlement ? 'font-semibold text-blue-800' : 'text-gray-400'}>
+                        <span className={isMealSettlement ? 'font-semibold text-primary' : 'text-gray-400'}>
                           적용 정산
                         </span>
                         <span className={appliedSettlementCellClass}>
@@ -2765,7 +2765,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <span className={legacySettlementCellClass}>
                           {record.work_hours ? formatWorkHours(whL) : '-'}
                         </span>
-                        <span className={isMealSettlement ? 'font-semibold text-blue-800' : 'text-emerald-800 font-semibold'}>
+                        <span className={isMealSettlement ? 'font-semibold text-primary' : 'text-emerald-800 font-semibold'}>
                           {cumulativeColumnLabel}
                         </span>
                         <span className={`${cumulativeCellClass} font-medium`}>
@@ -2898,7 +2898,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       onClick={() =>
                         setTourDetailModal({ tourId: tour.tour_id, tourName: tour.tour_name })
                       }
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline block mb-3 truncate text-left max-w-full"
+                      className="text-sm font-medium text-primary hover:text-primary/80 hover:underline block mb-3 truncate text-left max-w-full"
                       title="투어 상세 보기"
                     >
                       {tour.tour_name}
@@ -2912,7 +2912,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <select
                           value={tour.team_type || ''}
                           onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'team_type', e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                         >
                           <option value="1guide">1guide</option>
                           <option value="2guide">2guide</option>
@@ -2927,8 +2927,8 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.guide_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'guide_fee', parseFloat(e.target.value) || 0)}
-                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500 ${
-                              tour.tour_guide_id === selectedEmployee ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-ring ${
+                              tour.tour_guide_id === selectedEmployee ? 'border-primary bg-primary/5' : 'border-gray-300'
                             }`}
                           />
                         </div>
@@ -2939,7 +2939,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.driver_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'driver_fee', parseFloat(e.target.value) || 0)}
-                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500 ${
+                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-ring ${
                               tour.assistant_id === selectedEmployee ? 'border-green-500 bg-green-50' : 'border-gray-300'
                             }`}
                           />
@@ -2962,7 +2962,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                           />
                         </div>
                         <div>
@@ -2978,7 +2978,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.personal_car || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'personal_car', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                           />
                         </div>
                       </div>
@@ -3039,7 +3039,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             onClick={() =>
                               setTourDetailModal({ tourId: tour.tour_id, tourName: tour.tour_name })
                             }
-                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-xs text-left"
+                            className="text-primary hover:text-primary/80 hover:underline cursor-pointer text-xs text-left"
                             title="투어 상세 보기"
                           >
                             {tour.tour_name}
@@ -3056,7 +3056,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           <select
                             value={tour.team_type || ''}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'team_type', e.target.value)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                           >
                             <option value="1guide">1guide</option>
                             <option value="2guide">2guide</option>
@@ -3069,9 +3069,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.guide_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'guide_fee', parseFloat(e.target.value) || 0)}
-                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-ring focus:border-ring ${
                               tour.tour_guide_id === selectedEmployee 
-                                ? 'border-blue-500 bg-blue-50' 
+                                ? 'border-primary bg-primary/5' 
                                 : 'border-gray-300'
                             }`}
                           />
@@ -3082,7 +3082,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.driver_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'driver_fee', parseFloat(e.target.value) || 0)}
-                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-ring focus:border-ring ${
                               tour.assistant_id === selectedEmployee 
                                 ? 'border-green-500 bg-green-50' 
                                 : 'border-gray-300'
@@ -3096,7 +3096,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                               step="0.01"
                               value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
                               onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
-                              className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                             <button
                               type="button"
@@ -3118,7 +3118,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             step="0.01"
                             value={tour.personal_car || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'personal_car', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                           />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600 align-middle">
@@ -3190,7 +3190,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       onClick={() => setCompanyExpenseViewMode('latest')}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors touch-manipulation ${
                         companyExpenseViewMode === 'latest'
-                          ? 'bg-white text-blue-700 shadow-sm'
+                          ? 'bg-white text-primary shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
@@ -3205,7 +3205,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       }}
                       className={`px-3 py-1.5 text-xs font-medium rounded transition-colors touch-manipulation ${
                         companyExpenseViewMode === 'period'
-                          ? 'bg-white text-blue-700 shadow-sm'
+                          ? 'bg-white text-primary shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
@@ -3222,7 +3222,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         type="date"
                         value={companyExpenseFilterStart}
                         onChange={(e) => setCompanyExpenseFilterStart(e.target.value)}
-                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                       <span className="text-xs text-gray-500">~</span>
                       <label className="sr-only" htmlFor="company-expense-filter-end">
@@ -3233,7 +3233,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         type="date"
                         value={companyExpenseFilterEnd}
                         onChange={(e) => setCompanyExpenseFilterEnd(e.target.value)}
-                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                       {(startDate || endDate) &&
                         (companyExpenseFilterStart !== startDate ||
@@ -3244,7 +3244,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                               if (startDate) setCompanyExpenseFilterStart(startDate)
                               if (endDate) setCompanyExpenseFilterEnd(endDate)
                             }}
-                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline touch-manipulation"
+                            className="text-xs text-primary hover:text-primary/80 hover:underline touch-manipulation"
                           >
                             위 기간과 동일
                           </button>
@@ -3316,7 +3316,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               <button
                 onClick={handlePayment}
                 disabled={isGeneratingPDF || totalPay === 0}
-                className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium touch-manipulation"
+                className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium touch-manipulation"
               >
                 <CreditCard className="w-4 h-4 shrink-0" />
                 {isGeneratingPDF ? 'PDF 생성 중...' : '지불'}
@@ -3358,7 +3358,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   type="text"
                   value={paymentData.paid_to}
                   onChange={(e) => setPaymentData({ ...paymentData, paid_to: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   required
                 />
               </div>
@@ -3380,7 +3380,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               <textarea
                 value={paymentData.description}
                 onChange={(e) => setPaymentData({ ...paymentData, description: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                 rows={2}
               />
             </div>
@@ -3395,7 +3395,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   step="0.01"
                   value={paymentData.amount}
                   onChange={(e) => setPaymentData({ ...paymentData, amount: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   required
                 />
               </div>
@@ -3407,7 +3407,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 <select
                   value={paymentData.payment_method}
                   onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   required
                 >
                   <option value="zelle">Zelle</option>
@@ -3428,7 +3428,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 type="text"
                 value={paymentData.photo_url}
                 onChange={(e) => setPaymentData({ ...paymentData, photo_url: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                 readOnly
               />
               {paymentData.photo_url && (
@@ -3436,7 +3436,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   href={paymentData.photo_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline"
+                  className="mt-2 text-sm text-primary hover:text-primary/80 underline"
                 >
                   PDF 보기
                 </a>
@@ -3457,7 +3457,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               <button
                 onClick={handleSaveCompanyExpense}
                 type="button"
-                className="px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
+                className="px-4 py-3 sm:py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors touch-manipulation"
               >
                 저장
               </button>
@@ -3490,7 +3490,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />

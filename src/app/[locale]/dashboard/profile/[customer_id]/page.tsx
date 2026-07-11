@@ -455,9 +455,9 @@ export default function CustomerProfile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loading')}</p>
         </div>
       </div>
@@ -465,7 +465,7 @@ export default function CustomerProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="container mx-auto px-4 py-6">
         {/* 헤더 */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -482,13 +482,13 @@ export default function CustomerProfile() {
             </div>
             {isSimulating && simulatedUser && (
               <div className="flex items-center space-x-2">
-                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+                <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium">
                   {t('simulating')}: {simulatedUser.name_ko}
                 </div>
                 <div className="flex space-x-1">
                   <button
                     onClick={() => router.push(`/${locale}/dashboard`)}
-                    className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700"
+                    className="bg-primary text-primary-foreground px-2 py-1 rounded text-xs hover:bg-primary/90"
                   >
                     {t('dashboard')}
                   </button>
@@ -531,7 +531,7 @@ export default function CustomerProfile() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder={t('enterName')}
                   required
                 />
@@ -566,7 +566,7 @@ export default function CustomerProfile() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder={t('enterPhone')}
                 />
               </div>
@@ -582,7 +582,7 @@ export default function CustomerProfile() {
                 <select
                   value={formData.language}
                   onChange={(e) => setFormData(prev => ({ ...prev, language: e.target.value }))}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="ko">{tProfile('languageKo')}</option>
                   <option value="en">{tProfile('languageEn')}</option>
@@ -605,7 +605,7 @@ export default function CustomerProfile() {
                     ...prev, 
                     resident_status: e.target.value === '' ? null : e.target.value as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
                   }))}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">{tProfile('residentStatusNone')}</option>
                   <option value="us_resident">{tProfile('residentStatusUsResident')}</option>
@@ -624,7 +624,7 @@ export default function CustomerProfile() {
             <button
               onClick={handleSave}
               disabled={saving || !formData.name.trim()}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="bg-primary text-primary-foreground px-6 py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               {saving ? (
                 <>
@@ -650,12 +650,12 @@ export default function CustomerProfile() {
           </h2>
 
           {/* 안내 사항 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="bg-muted/50 border border-border rounded-lg p-4 mb-6">
             <div className="flex items-start space-x-3">
-              <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <AlertCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <h3 className="font-semibold text-blue-900 mb-2 text-sm">{tPass('uploadGuide')}</h3>
-                <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                <h3 className="font-semibold text-foreground mb-2 text-sm">{tPass('uploadGuide')}</h3>
+                <ul className="text-xs text-primary space-y-1 list-disc list-inside">
                   <li>{tPass('passPhoto')}: {tPass('passPhotoDesc')}</li>
                   <li>{tPass('idPhoto')}: {tPass('idPhotoDesc')}</li>
                   <li>{tPass('fileFormat')}</li>
@@ -732,12 +732,12 @@ export default function CustomerProfile() {
                   />
                   <div className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
                     uploading 
-                      ? 'border-blue-400 bg-blue-50' 
+                      ? 'border-blue-400 bg-primary/5' 
                       : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
                   }`}>
                     {uploading ? (
                       <div className="flex flex-col items-center space-y-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                         <span className="text-sm text-gray-600">{tPass('uploading')}</span>
                       </div>
                     ) : (
@@ -804,12 +804,12 @@ export default function CustomerProfile() {
                   />
                   <div className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
                     uploading 
-                      ? 'border-blue-400 bg-blue-50' 
+                      ? 'border-blue-400 bg-primary/5' 
                       : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
                   }`}>
                     {uploading ? (
                       <div className="flex flex-col items-center space-y-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                         <span className="text-sm text-gray-600">{tPass('uploading')}</span>
                       </div>
                     ) : (

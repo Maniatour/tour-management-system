@@ -130,14 +130,14 @@ export default function ExpensesManagementPage() {
       <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <Receipt className="w-5 h-5 sm:w-7 sm:h-7 text-blue-600 flex-shrink-0" />
+            <Receipt className="w-5 h-5 sm:w-7 sm:h-7 text-primary flex-shrink-0" />
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('title')}</h1>
           </div>
           <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-gray-600 hidden sm:block">{t('subtitle')}</p>
           <p className="mt-1 text-xs text-gray-500 hidden sm:block">
             <Link
               href={`/${locale}/admin/expense-payment-method-normalize`}
-              className="text-blue-600 hover:underline"
+              className="text-primary hover:underline"
             >
               {t('linkNormalizePaymentMethods')}
             </Link>
@@ -189,7 +189,7 @@ export default function ExpensesManagementPage() {
                   className={`
                     flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm font-medium rounded-md sm:rounded-lg transition-colors min-w-0
                     ${isActive
-                      ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-700'
+                      ? 'bg-primary/5 text-primary border-b-2 border-blue-700'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                     }
                   `}

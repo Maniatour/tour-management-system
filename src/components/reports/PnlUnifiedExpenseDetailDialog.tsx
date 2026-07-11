@@ -2423,7 +2423,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                 href={`/${locale}/admin/tours/${tourDetailModalId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />
@@ -2458,7 +2458,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                 href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />

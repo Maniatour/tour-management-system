@@ -183,7 +183,7 @@ const TASK_PRIORITY_BORDER: Record<'low' | 'medium' | 'high' | 'urgent', string>
 
 const TASK_PRIORITY_BADGE: Record<'low' | 'medium' | 'high' | 'urgent', { label: string; className: string }> = {
   low: { label: '낮음', className: 'bg-gray-100 text-gray-600' },
-  medium: { label: '보통', className: 'bg-blue-100 text-blue-700' },
+  medium: { label: '보통', className: 'bg-primary/10 text-primary' },
   high: { label: '높음', className: 'bg-orange-100 text-orange-700' },
   urgent: { label: '긴급', className: 'bg-red-600 text-white' },
 }
@@ -208,7 +208,7 @@ const getTaskTargetBadges = (task: Task, members: TeamMember[]) => {
     return task.target_individuals.map(email => ({
       key: email,
       label: getTeamMemberDisplayName(email, members),
-      className: 'bg-blue-100 text-blue-700',
+      className: 'bg-primary/10 text-primary',
     }))
   }
   if (task.target_positions?.length) {
@@ -222,7 +222,7 @@ const getTaskTargetBadges = (task: Task, members: TeamMember[]) => {
     return [{
       key: task.assigned_to,
       label: getTeamMemberDisplayName(task.assigned_to, members),
-      className: 'bg-blue-100 text-blue-700',
+      className: 'bg-primary/10 text-primary',
     }]
   }
   return []
@@ -1730,7 +1730,7 @@ export default function TeamBoardPageInner() {
                                       <button
                                         type="button"
                                         onClick={() => startEditTask(task)}
-                                        className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                        className="p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                                         title="수정"
                                       >
                                         <Edit className="w-4 h-4" />
@@ -1886,7 +1886,7 @@ export default function TeamBoardPageInner() {
                                     return names.length > 0 ? (
                                       <span className="flex items-center flex-wrap gap-1">
                                         {names.map((n, idx) => (
-                                          <span key={`${a.id}-rec-${idx}`} className={`px-2 py-0.5 rounded-full ${n.acked ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{n.name}</span>
+                                          <span key={`${a.id}-rec-${idx}`} className={`px-2 py-0.5 rounded-full ${n.acked ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700'}`}>{n.name}</span>
                                         ))}
                                       </span>
                                     ) : (
@@ -1934,7 +1934,7 @@ export default function TeamBoardPageInner() {
                                   <>
                                     <button 
                                       onClick={() => startEditAnnouncement(a)} 
-                                      className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                      className="p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                                       title="수정"
                                     >
                                       <Edit className="w-4 h-4" />
@@ -1950,7 +1950,7 @@ export default function TeamBoardPageInner() {
                                 )}
                                 <button 
                                   onClick={() => mineAck ? unackAnnouncement(a.id) : ackAnnouncement(a.id)} 
-                                  className={`p-1 rounded transition-colors ${mineAck ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-50'}`}
+                                  className={`p-1 rounded transition-colors ${mineAck ? 'text-primary hover:bg-muted/50' : 'text-gray-400 hover:bg-gray-50'}`}
                                   title={mineAck ? "확인 취소" : "확인"}
                                 >
                                   <Check className="w-4 h-4" />
@@ -2014,7 +2014,7 @@ export default function TeamBoardPageInner() {
                                       return names.length > 0 ? (
                                         <span className="flex items-center flex-wrap gap-1">
                                           {names.map((n, idx) => (
-                                            <span key={`${a.id}-rec-${idx}`} className={`px-2 py-0.5 rounded-full ${n.acked ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{n.name}</span>
+                                            <span key={`${a.id}-rec-${idx}`} className={`px-2 py-0.5 rounded-full ${n.acked ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700'}`}>{n.name}</span>
                                           ))}
                                         </span>
                                       ) : (
@@ -2062,7 +2062,7 @@ export default function TeamBoardPageInner() {
                                     <>
                                       <button 
                                         onClick={() => startEditAnnouncement(a)} 
-                                        className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                        className="p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                                         title="수정"
                                       >
                                         <Edit className="w-4 h-4" />
@@ -2078,7 +2078,7 @@ export default function TeamBoardPageInner() {
                                   )}
                                   <button 
                                     onClick={() => mineAck ? unackAnnouncement(a.id) : ackAnnouncement(a.id)} 
-                                    className={`p-1 rounded transition-colors ${mineAck ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-50'}`}
+                                    className={`p-1 rounded transition-colors ${mineAck ? 'text-primary hover:bg-muted/50' : 'text-gray-400 hover:bg-gray-50'}`}
                                     title={mineAck ? "확인 취소" : "확인"}
                                   >
                                     <Check className="w-4 h-4" />
@@ -2169,7 +2169,7 @@ export default function TeamBoardPageInner() {
                       type="text"
                       value={editAnnouncement.title}
                       onChange={(e) => setEditAnnouncement({ ...editAnnouncement, title: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder="공지 제목"
                     />
                   </div>
@@ -2179,7 +2179,7 @@ export default function TeamBoardPageInner() {
                     <textarea
                       value={editAnnouncement.content}
                       onChange={(e) => setEditAnnouncement({ ...editAnnouncement, content: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       rows={3}
                       placeholder="공지 내용"
                     />
@@ -2192,7 +2192,7 @@ export default function TeamBoardPageInner() {
                         type="text"
                         value={editAnnouncement.tags}
                         onChange={(e) => setEditAnnouncement({ ...editAnnouncement, tags: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                         placeholder="예: 긴급, 회의"
                       />
                     </div>
@@ -2211,7 +2211,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'individual'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -2226,7 +2226,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'group'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -2245,7 +2245,7 @@ export default function TeamBoardPageInner() {
                                 onClick={() => setActivePositionTab(value)}
                                 className={`px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors ${
                                   activePositionTab === value
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                               >
@@ -2272,7 +2272,7 @@ export default function TeamBoardPageInner() {
                                     }}
                                     className={`px-3 py-2 text-sm rounded transition-colors ${
                                       selectedTaskIndividuals.includes(member.email)
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-primary text-primary-foreground'
                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                     }`}
                                   >
@@ -2307,7 +2307,7 @@ export default function TeamBoardPageInner() {
                                 }}
                                 className={`w-full text-left px-3 py-2 text-sm font-medium rounded transition-colors ${
                                   selectedTaskPositions.includes(value)
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
@@ -2357,7 +2357,7 @@ export default function TeamBoardPageInner() {
                   <button
                     onClick={updateAnnouncement}
                     disabled={submitting}
-                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                   >
                     {submitting ? '수정 중...' : '수정'}
                   </button>
@@ -2398,7 +2398,7 @@ export default function TeamBoardPageInner() {
                       type="text"
                       value={newAnnouncement.title}
                       onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder="공지 제목"
                     />
                   </div>
@@ -2408,7 +2408,7 @@ export default function TeamBoardPageInner() {
                     <textarea
                       value={newAnnouncement.content}
                       onChange={(e) => setNewAnnouncement({ ...newAnnouncement, content: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       rows={3}
                       placeholder="공지 내용"
                     />
@@ -2421,7 +2421,7 @@ export default function TeamBoardPageInner() {
                         type="text"
                         value={newAnnouncement.tags}
                         onChange={(e) => setNewAnnouncement({ ...newAnnouncement, tags: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                         placeholder="예: 긴급, 회의"
                       />
                     </div>
@@ -2440,7 +2440,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'individual'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -2455,7 +2455,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'group'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -2474,7 +2474,7 @@ export default function TeamBoardPageInner() {
                                 onClick={() => setActivePositionTab(value)}
                                 className={`px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors ${
                                   activePositionTab === value
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                               >
@@ -2501,7 +2501,7 @@ export default function TeamBoardPageInner() {
                                     }}
                                     className={`px-3 py-2 text-sm rounded transition-colors ${
                                       selectedTaskIndividuals.includes(member.email)
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-primary text-primary-foreground'
                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                     }`}
                                   >
@@ -2536,7 +2536,7 @@ export default function TeamBoardPageInner() {
                                 }}
                                 className={`w-full text-left px-3 py-2 text-sm font-medium rounded transition-colors ${
                                   selectedTaskPositions.includes(value)
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
@@ -2586,7 +2586,7 @@ export default function TeamBoardPageInner() {
                   <button
                     onClick={handleCreateAnnouncement}
                     disabled={submitting}
-                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                   >
                     {submitting ? '작성 중...' : '작성'}
                   </button>
@@ -2694,7 +2694,7 @@ export default function TeamBoardPageInner() {
                                     <option value="yearly">연간</option>
                                   </select>
                                 ) : (
-                                  <span className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                                  <span className="rounded bg-primary/5 px-2 py-1 text-xs text-primary">
                                     {todo.category === 'daily' ? '일일' : todo.category === 'weekly' ? '주간' : todo.category === 'monthly' ? '월간' : '연간'}
                                   </span>
                                 )}
@@ -2873,7 +2873,7 @@ export default function TeamBoardPageInner() {
                           onClick={() => setNewTodo({ ...newTodo, category: period as 'daily' | 'weekly' | 'monthly' | 'yearly' })}
                           className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                             newTodo.category === period
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
@@ -2975,7 +2975,7 @@ export default function TeamBoardPageInner() {
                     </button>
                     <button 
                       onClick={createTodo} 
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                     >
                       추가
                     </button>
@@ -3105,7 +3105,7 @@ export default function TeamBoardPageInner() {
                       type="text"
                       value={newTask.title}
                       onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder="업무 제목"
                     />
                   </div>
@@ -3115,7 +3115,7 @@ export default function TeamBoardPageInner() {
                     <textarea
                       value={newTask.description}
                       onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       rows={2}
                       placeholder="업무 설명"
                     />
@@ -3128,7 +3128,7 @@ export default function TeamBoardPageInner() {
                         type="datetime-local"
                         value={newTask.due_date}
                         onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
                     <div>
@@ -3136,7 +3136,7 @@ export default function TeamBoardPageInner() {
                       <select
                         value={newTask.priority}
                         onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as 'low' | 'medium' | 'high' | 'urgent' })}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       >
                         <option value="low">낮음</option>
                         <option value="medium">보통</option>
@@ -3155,7 +3155,7 @@ export default function TeamBoardPageInner() {
                               status: e.target.value as Task['status'],
                             })
                           }
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                         >
                           <option value="pending">대기</option>
                           <option value="in_progress">진행중</option>
@@ -3179,7 +3179,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-3 py-1 rounded text-xs font-medium ${
                             taskRecipientMode === 'individual'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -3194,7 +3194,7 @@ export default function TeamBoardPageInner() {
                           }}
                           className={`px-3 py-1 rounded text-xs font-medium ${
                             taskRecipientMode === 'group'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -3213,7 +3213,7 @@ export default function TeamBoardPageInner() {
                             onClick={() => setActivePositionTab(value)}
                             className={`px-3 py-2 text-xs font-medium border-r last:border-r-0 transition-colors ${
                               activePositionTab === value
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
@@ -3240,7 +3240,7 @@ export default function TeamBoardPageInner() {
                                 }}
                                 className={`px-2 py-1 text-xs rounded transition-colors ${
                                   selectedTaskIndividuals.includes(member.email)
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
@@ -3275,7 +3275,7 @@ export default function TeamBoardPageInner() {
                             }}
                             className={`w-full text-left px-2 py-1 text-xs font-medium rounded transition-colors ${
                               selectedTaskPositions.includes(value)
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                           >
@@ -3325,7 +3325,7 @@ export default function TeamBoardPageInner() {
                   <button
                     onClick={() => (editingTask ? void updateTask(editingTask.status) : void createTask())}
                     disabled={submitting}
-                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
                   >
                     {submitting ? (editingTask ? '저장 중...' : '생성 중...') : editingTask ? '저장' : '생성'}
                   </button>
@@ -3377,7 +3377,7 @@ export default function TeamBoardPageInner() {
                           <button
                             type="button"
                             onClick={() => void restoreTask(String(task.id))}
-                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                            className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
                           >
                             복구
                           </button>
@@ -3400,7 +3400,7 @@ export default function TeamBoardPageInner() {
                                 [getStatusLogKey('task', String(task.id))]: !prev[getStatusLogKey('task', String(task.id))],
                               }))
                             }
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                            className="text-xs text-primary hover:text-primary/80"
                           >
                             {expandedStatusLogs[getStatusLogKey('task', String(task.id))] ? '접기' : '더보기'}
                           </button>
@@ -3428,7 +3428,7 @@ export default function TeamBoardPageInner() {
                           <button
                             type="button"
                             onClick={() => void restoreAnnouncement(announcement.id)}
-                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                            className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
                           >
                             복구
                           </button>
@@ -3451,7 +3451,7 @@ export default function TeamBoardPageInner() {
                                 [getStatusLogKey('announcement', announcement.id)]: !prev[getStatusLogKey('announcement', announcement.id)],
                               }))
                             }
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                            className="text-xs text-primary hover:text-primary/80"
                           >
                             {expandedStatusLogs[getStatusLogKey('announcement', announcement.id)] ? '접기' : '더보기'}
                           </button>
@@ -3479,7 +3479,7 @@ export default function TeamBoardPageInner() {
                           <button
                             type="button"
                             onClick={() => void restoreIssue(issue.id)}
-                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                            className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
                           >
                             복구
                           </button>
@@ -3502,7 +3502,7 @@ export default function TeamBoardPageInner() {
                                 [getStatusLogKey('issue', issue.id)]: !prev[getStatusLogKey('issue', issue.id)],
                               }))
                             }
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                            className="text-xs text-primary hover:text-primary/80"
                           >
                             {expandedStatusLogs[getStatusLogKey('issue', issue.id)] ? '접기' : '더보기'}
                           </button>
@@ -3648,7 +3648,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
 
   // 색상 매핑 (카드/게이지)
   const colorByCategory: Record<'daily'|'weekly'|'monthly'|'yearly', { cardBg: string; cardBorder: string; barBg: string; barFill: string; badge: string }> = {
-    daily:   { cardBg: 'bg-blue-50',   cardBorder: 'border-blue-200',   barBg: 'bg-blue-100',   barFill: 'bg-blue-500',   badge: 'bg-blue-100 text-blue-700' },
+    daily:   { cardBg: 'bg-primary/5',   cardBorder: 'border-border',   barBg: 'bg-primary/10',   barFill: 'bg-primary/50',   badge: 'bg-primary/10 text-primary' },
     weekly:  { cardBg: 'bg-slate-50',  cardBorder: 'border-slate-200',  barBg: 'bg-slate-100',  barFill: 'bg-slate-400',  badge: 'bg-slate-100 text-slate-700' },
     monthly: { cardBg: 'bg-green-50',  cardBorder: 'border-green-200',  barBg: 'bg-green-100',  barFill: 'bg-green-500',  badge: 'bg-green-100 text-green-700' },
     yearly:  { cardBg: 'bg-purple-50', cardBorder: 'border-purple-200', barBg: 'bg-purple-100', barFill: 'bg-purple-500', badge: 'bg-purple-100 text-purple-700' },
@@ -3663,7 +3663,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
           <select
             value={selectedDepartment}
             onChange={(e) => onDepartmentChange(e.target.value as 'all' | 'office' | 'guide' | 'common')}
-            className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="all">전체</option>
             <option value="office">Office</option>
@@ -3681,7 +3681,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
           </button>
           <button
             onClick={onAddTodo}
-            className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition-colors"
+            className="w-8 h-8 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center transition-colors"
             title={t('newTodo')}
           >
             <Plus className="w-4 h-4" />
@@ -3718,7 +3718,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
                   <span className="text-xs text-gray-500">{percent}%</span>
                   <button
                     onClick={() => openHistoryModal(category)}
-                    className="p-1 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                    className="p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                     title="히스토리 보기"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3793,14 +3793,14 @@ function IssuePanel({
 }) {
   const statusColors = {
     open: 'bg-red-100 text-red-700',
-    in_progress: 'bg-blue-100 text-blue-700',
+    in_progress: 'bg-primary/10 text-primary',
     resolved: 'bg-green-100 text-green-700',
     closed: 'bg-gray-100 text-gray-700'
   }
 
   const priorityColors = {
     low: 'bg-gray-100 text-gray-600',
-    medium: 'bg-blue-100 text-blue-600',
+    medium: 'bg-primary/10 text-primary',
     high: 'bg-orange-100 text-orange-600',
     critical: 'bg-red-100 text-red-600'
   }
@@ -3925,7 +3925,7 @@ function CommentThread({
                 }
               }}
               placeholder="댓글 입력..."
-              className={`px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${alignRight ? 'w-full min-w-0' : 'flex-1'}`}
+              className={`px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring ${alignRight ? 'w-full min-w-0' : 'flex-1'}`}
             />
             <button
               type="button"
@@ -3933,7 +3933,7 @@ function CommentThread({
                 onSubmit()
                 setShowComposer(false)
               }}
-              className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0"
+              className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
             >
               등록
             </button>

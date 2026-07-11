@@ -77,7 +77,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({
                 onClick={() => handleConfigSelect(null)}
                 className={`p-2 rounded cursor-pointer transition-colors ${
                   !editingConfig
-                    ? 'bg-blue-50 border-2 border-blue-500'
+                    ? 'bg-primary/5 border-2 border-primary'
                     : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
                 }`}
               >
@@ -95,7 +95,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({
                     onClick={() => handleConfigSelect(config)}
                     className={`p-2 rounded cursor-pointer transition-colors ${
                       editingConfig?.id === config.id
-                        ? 'bg-blue-50 border-2 border-blue-500'
+                        ? 'bg-primary/5 border-2 border-primary'
                         : 'bg-white hover:bg-gray-50 border-2 border-transparent'
                     }`}
                   >
@@ -129,7 +129,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({
               }
             }}
             placeholder={locale === 'ko' ? '예: 라스베가스 3일 투어' : 'e.g., Las Vegas 3-Day Tour'}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -138,7 +138,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({
             }}
           />
           {editingConfig && (
-            <p className="mt-1 text-xs text-blue-600">
+            <p className="mt-1 text-xs text-primary">
               {locale === 'ko' ? '기존 설정을 덮어씁니다.' : 'Will overwrite existing configuration.'}
             </p>
           )}
@@ -152,7 +152,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
           >
             {editingConfig 
               ? (locale === 'ko' ? '덮어쓰기' : 'Overwrite')

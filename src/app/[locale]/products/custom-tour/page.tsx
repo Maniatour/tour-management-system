@@ -768,7 +768,7 @@ function CustomTourPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <div className="min-h-screen bg-muted/30 py-4 sm:py-8">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="custom-tour" />}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
@@ -792,7 +792,7 @@ function CustomTourPageInner() {
           {/* 왼쪽: 코스 선택 및 일정 */}
           <div className="lg:col-span-2 space-y-6">
             {/* 1. 관광지 선택 */}
-            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
               <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
                 {t('selectDestinations')}
@@ -806,7 +806,7 @@ function CustomTourPageInner() {
                     value={courseSearchTerm}
                     onChange={(e) => setCourseSearchTerm(e.target.value)}
                     placeholder={t('searchDestinationsPlaceholder')}
-                    className="w-full pl-10 pr-4 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
               </div>
@@ -1002,7 +1002,7 @@ function CustomTourPageInner() {
                         <div 
                           key={course.id} 
                           className={`cp-ui-panel-surface border rounded-lg p-3 sm:p-4 cursor-pointer transition-all hover:shadow-md ${
-                            isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                            isSelected ? 'border-booking bg-booking/5' : 'border-border'
                           }`}
                           onClick={() => {
                             const newSet = new Set(selectedCourses)
@@ -1104,7 +1104,7 @@ function CustomTourPageInner() {
                                   }
                                   setSelectedCourses(newSet)
                                 }}
-                                className="w-5 h-5 text-blue-600 rounded cursor-pointer flex-shrink-0 mt-1"
+                                className="h-5 w-5 shrink-0 cursor-pointer rounded text-booking"
                                 onClick={(e) => e.stopPropagation()}
                               />
                               {fullPhotoUrl && (
@@ -1149,7 +1149,7 @@ function CustomTourPageInner() {
 
             {/* 2. 일정 구성 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
                   {t('tourSchedule')}
                 </h2>
@@ -1194,7 +1194,7 @@ function CustomTourPageInner() {
                                           setEditingDayIndex(index)
                                           setShowDaySelectModal(true)
                                         }}
-                                        className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 px-2 py-1 border border-blue-300 rounded"
+                                        className="rounded border border-booking/30 px-2 py-1 text-xs text-booking hover:text-booking/80 sm:text-sm"
                                       >
                                         {item.day || t('selectDay')}
                                       </button>
@@ -1248,7 +1248,7 @@ function CustomTourPageInner() {
 
             {/* 3. 경로 및 마일리지 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">
                   {t('routeAndMileage')}
                 </h2>
@@ -1258,7 +1258,7 @@ function CustomTourPageInner() {
                   {!map && (
                     <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                       <div className="text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                        <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-booking"></div>
                         <p>{t('loadingMap')}</p>
                       </div>
                     </div>
@@ -1293,19 +1293,19 @@ function CustomTourPageInner() {
                       step="0.1"
                       value={mileage || ''}
                       onChange={(e) => setMileage(e.target.value ? parseFloat(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder={t('mileagePlaceholder')}
                     />
                   </div>
                 </div>
                 {travelTime !== null && (
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="mt-4 rounded-lg border border-border/60 bg-muted/50 p-3">
                     <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-900">
+                      <Clock className="h-4 w-4 text-booking" />
+                      <span className="text-sm font-medium text-foreground">
                         {t('travelTimeTotal')}
                       </span>
-                      <span className="text-sm font-semibold text-blue-700">
+                      <span className="text-sm font-semibold text-booking">
                         {travelTime.toFixed(1)} {t('hours')}
                       </span>
                     </div>
@@ -1316,7 +1316,7 @@ function CustomTourPageInner() {
 
             {/* 투어 코스 설명 */}
             {selectedCoursesOrder.length > 0 && (
-              <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+              <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                   <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
                   {t('tourCourseDescription')}
@@ -1442,7 +1442,7 @@ function CustomTourPageInner() {
           {/* 오른쪽: 계산 결과 및 고객 정보 */}
           <div className="lg:col-span-1 space-y-4 sm:space-y-6 order-first lg:order-last">
             {/* 고객 정보 */}
-            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 flex items-center gap-2">
                 <User className="w-4 h-4 sm:w-5 sm:h-5" />
                 {t('customerInfo')}
@@ -1457,7 +1457,7 @@ function CustomTourPageInner() {
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder={t('namePlaceholder')}
                   />
                 </div>
@@ -1469,7 +1469,7 @@ function CustomTourPageInner() {
                     type="email"
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(stripSpacesFromContactInput(e.target.value))}
-                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder={t('emailPlaceholder')}
                   />
                 </div>
@@ -1481,7 +1481,7 @@ function CustomTourPageInner() {
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(stripSpacesFromContactInput(e.target.value))}
-                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder={t('phonePlaceholder')}
                   />
                 </div>
@@ -1494,7 +1494,7 @@ function CustomTourPageInner() {
                     min="1"
                     value={participantCount}
                     onChange={(e) => setParticipantCount(parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 sm:py-2 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder={t('participantsPlaceholder')}
                   />
                 </div>
@@ -1502,7 +1502,7 @@ function CustomTourPageInner() {
             </div>
 
             {/* 투어 정보 */}
-            <div className="cp-ui-panel-surface rounded-lg shadow-sm p-4 sm:p-6">
+            <div className="cp-ui-panel-surface rounded-card p-4 sm:p-6">
               <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">
                 {t('tourDetails')}
               </h2>
@@ -1543,7 +1543,7 @@ function CustomTourPageInner() {
                     </div>
                     <div className="flex justify-between text-sm font-semibold text-gray-900 pt-2 border-t border-gray-200">
                       <span>{t('guideFee')}</span>
-                      <span className="text-blue-600">${calculatedGuideFee.toFixed(2)}</span>
+                      <span className="text-booking">${calculatedGuideFee.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -1578,7 +1578,7 @@ function CustomTourPageInner() {
                             setOtherExpenses(updated)
                           }}
                           placeholder={t('itemName')}
-                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         />
                         <input
                           type="number"
@@ -1591,7 +1591,7 @@ function CustomTourPageInner() {
                             setOtherExpenses(updated)
                           }}
                           placeholder={t('amount')}
-                          className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         />
                         <button
                           onClick={() => {
@@ -1618,7 +1618,7 @@ function CustomTourPageInner() {
                 <div className="border-b pb-3 sm:pb-4">
                   <div className="flex justify-between text-base sm:text-lg font-semibold mb-2">
                     <span className="text-sm sm:text-base">{t('sellingPriceExclTip')}</span>
-                    <span className="text-blue-600 text-sm sm:text-base">${totalBeforeTip.toFixed(2)}</span>
+                    <span className="text-sm text-booking sm:text-base">${totalBeforeTip.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
                     <span>{t('tip15')}</span>

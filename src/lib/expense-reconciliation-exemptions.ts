@@ -31,7 +31,9 @@ function markExemptionsTableUnavailable(err: { code?: string; message?: string }
   }
 }
 
-export async function fetchReconciliationExemptSourceIds(
+const RECON_EXEMPT_FETCH_CHUNK = 100
+
+async function fetchReconciliationExemptSourceIdsChunk(
   supabase: SupabaseClient,
   sourceTable: string,
   sourceIds: string[]
@@ -55,18 +57,26 @@ export async function fetchReconciliationExemptSourceIds(
   )
 }
 
+export async function fetchReconciliationExemptSourceIds(
+  supabase: SupabaseClient,
+  sourceTable: string,
+  sourceIds: string[]
+): Promise<Set<string>> {
+  return fetchReconciliationExemptSourceIdsBatched(supabase, sourceTable, sourceIds)
+}
+
 export async function fetchReconciliationExemptSourceIdsBatched(
   supabase: SupabaseClient,
   sourceTable: string,
   sourceIds: string[],
-  chunkSize = 200
+  chunkSize = RECON_EXEMPT_FETCH_CHUNK
 ): Promise<Set<string>> {
   const ids = [...new Set(sourceIds.filter(Boolean))]
   if (ids.length === 0) return new Set()
   const out = new Set<string>()
   for (let i = 0; i < ids.length; i += chunkSize) {
     const chunk = ids.slice(i, i + chunkSize)
-    const s = await fetchReconciliationExemptSourceIds(supabase, sourceTable, chunk)
+    const s = await fetchReconciliationExemptSourceIdsChunk(supabase, sourceTable, chunk)
     s.forEach((id) => out.add(id))
   }
   return out

@@ -156,13 +156,13 @@ export default function ProductDetailOverviewTab({
 
           <CustomerPageZone zone="detail-overview-slogan">
 
-            <div className="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4 sm:rounded-2xl sm:border sm:border-blue-100 sm:p-8">
+            <div className="rounded-feature border border-border/60 bg-booking/5 p-4 sm:p-8">
 
               <div className="space-y-3">
 
                 {productDetails.slogan1 && (
 
-                  <div className="text-xl font-bold text-[#0B5FFF] sm:text-3xl">{productDetails.slogan1}</div>
+                  <div className="text-xl font-bold text-booking sm:text-3xl">{productDetails.slogan1}</div>
 
                 )}
 
@@ -266,9 +266,9 @@ export default function ProductDetailOverviewTab({
 
             <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
-              <div className="shrink-0 rounded-lg bg-blue-50 p-2 sm:rounded-xl sm:p-3">
+              <div className="shrink-0 rounded-lg bg-booking/10 p-2 sm:rounded-xl sm:p-3">
 
-                <Calendar className="h-5 w-5 text-[#0B5FFF] sm:h-6 sm:w-6" aria-hidden />
+                <Calendar className="h-5 w-5 text-booking sm:h-6 sm:w-6" aria-hidden />
 
               </div>
 
@@ -378,7 +378,7 @@ export default function ProductDetailOverviewTab({
 
                   key={index}
 
-                  className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-[#0B5FFF] sm:rounded-xl sm:border sm:border-blue-100 sm:px-4 sm:py-2 sm:text-sm"
+                  className="inline-flex items-center rounded-lg bg-booking/10 px-2.5 py-1 text-xs font-medium text-booking sm:rounded-xl sm:border sm:border-border/60 sm:px-4 sm:py-2 sm:text-sm"
 
                 >
 

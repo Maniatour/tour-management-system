@@ -532,7 +532,7 @@ export default function ProductMediaTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">Loading...</span>
       </div>
     )
@@ -571,7 +571,7 @@ export default function ProductMediaTab({
             type="button"
             onClick={handleAddMedia}
             disabled={isNewProduct || uploading}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload className="h-4 w-4 mr-2" />
             {uploading ? '업로드 중...' : '미디어 추가'}
@@ -616,13 +616,13 @@ export default function ProductMediaTab({
           tabIndex={0}
           className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
             isDragOver
-              ? 'border-blue-500 bg-blue-50'
+              ? 'border-primary bg-primary/5'
               : 'border-gray-300 hover:border-gray-400'
           }`}
         >
           <div className="space-y-4">
             <div className="flex justify-center">
-              <Upload className={`h-12 w-12 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} />
+              <Upload className={`h-12 w-12 ${isDragOver ? 'text-primary' : 'text-gray-400'}`} />
             </div>
             <div>
               <h4 className="text-lg font-medium text-gray-900 mb-2">
@@ -642,7 +642,7 @@ export default function ProductMediaTab({
               type="button"
               onClick={handleAddMedia}
               disabled={uploading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploading ? '업로드 중...' : '파일 선택'}
             </button>
@@ -768,7 +768,7 @@ export default function ProductMediaTab({
 
             {loadingBucketImages ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <span className="ml-2 text-gray-600">이미지 로딩 중...</span>
               </div>
             ) : bucketImages.length > 0 ? (
@@ -776,7 +776,7 @@ export default function ProductMediaTab({
                 {bucketImages.map((image, index) => (
                   <div
                     key={index}
-                    className="relative group cursor-pointer border border-gray-200 rounded-lg overflow-hidden hover:border-blue-500 transition-colors"
+                    className="relative group cursor-pointer border border-gray-200 rounded-lg overflow-hidden hover:border-primary transition-colors"
                     onClick={() => handleAddFromBucket(image.url, image.name)}
                   >
                     <img
@@ -897,7 +897,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
               type="text"
               value={formData.file_name}
               onChange={(e) => handleInputChange('file_name', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
               required
             />
           </div>
@@ -910,7 +910,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
               type="text"
               value={formData.alt_text}
               onChange={(e) => handleInputChange('alt_text', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="접근성을 위한 대체 텍스트를 입력해주세요"
             />
           </div>
@@ -923,7 +923,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
               value={formData.caption}
               onChange={(e) => handleInputChange('caption', e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="미디어에 대한 설명을 입력해주세요"
             />
           </div>
@@ -935,7 +935,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
                 id="is_primary"
                 checked={formData.is_primary}
                 onChange={(e) => handleInputChange('is_primary', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="is_primary" className="ml-2 text-sm text-gray-700">
                 대표 이미지로 설정
@@ -947,7 +947,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
                 id="is_active"
                 checked={formData.is_active}
                 onChange={(e) => handleInputChange('is_active', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
                 활성화
@@ -967,7 +967,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? '저장 중...' : '저장'}

@@ -460,7 +460,7 @@ export default function PublicChatPage() {
     return (
       <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loadingChatRoom')}</p>
         </div>
       </div>
@@ -478,7 +478,7 @@ export default function PublicChatPage() {
           <p className="text-gray-600 mb-6">{error}</p>
           <Link
             href="/"
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             <ArrowLeft size={16} className="mr-2" />
             {t('backToHome')}
@@ -561,7 +561,7 @@ export default function PublicChatPage() {
                   }}
                   disabled={isPushLoading}
                   className={`p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors ${
-                    isPushSubscribed ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50' : ''
+                    isPushSubscribed ? 'text-primary hover:text-primary/80 hover:bg-muted/50' : ''
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                   title={isPushSubscribed ? t('pushDisableTitle') : t('pushEnableTitle')}
                 >
@@ -632,7 +632,7 @@ export default function PublicChatPage() {
                     setTempName(customerName)
                     setShowNameEdit(true)
                   }}
-                  className="flex-shrink-0 w-6 h-6 rounded-full overflow-hidden border-2 border-gray-300 hover:border-blue-500 transition-colors"
+                  className="flex-shrink-0 w-6 h-6 rounded-full overflow-hidden border-2 border-gray-300 hover:border-primary transition-colors"
                   aria-label={t('changeNameAvatar')}
                   title={t('changeNameAvatar')}
                 >
@@ -671,7 +671,7 @@ export default function PublicChatPage() {
                   onChange={(e) => setTempName(e.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder={t('enterNamePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -682,7 +682,7 @@ export default function PublicChatPage() {
                   <button
                     type="button"
                     onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent flex items-center justify-between"
                   >
                     <span className="flex items-center">
                       <span className="mr-2">
@@ -708,7 +708,7 @@ export default function PublicChatPage() {
                             }
                           }}
                           className={`w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center space-x-2 ${
-                            selectedLanguage === language.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            selectedLanguage === language.code ? 'bg-primary/5 text-primary' : 'text-gray-700'
                           }`}
                         >
                           <span className="text-base">{language.flag}</span>
@@ -726,7 +726,7 @@ export default function PublicChatPage() {
                 <button
                   type="button"
                   onClick={() => setShowAvatarSelector(true)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between hover:bg-gray-50"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent flex items-center justify-between hover:bg-gray-50"
                 >
                   <span className="flex items-center">
                     {selectedAvatar ? (
@@ -774,7 +774,7 @@ export default function PublicChatPage() {
                     className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
                       isPushSubscribed
                         ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     {isPushLoading ? (
@@ -802,7 +802,7 @@ export default function PublicChatPage() {
               <button
                 onClick={handleJoinChat}
                 disabled={!tempName.trim()}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('joinButton')}
               </button>
@@ -859,7 +859,7 @@ export default function PublicChatPage() {
                   <button
                     type="button"
                     onClick={() => setShowAvatarSelector(true)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between hover:bg-gray-50"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent flex items-center justify-between hover:bg-gray-50"
                   >
                     <span className="flex items-center">
                       {selectedAvatar ? (
@@ -901,7 +901,7 @@ export default function PublicChatPage() {
                       }
                     }}
                     placeholder={t('namePlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                     autoFocus
                   />
                 </div>
@@ -909,7 +909,7 @@ export default function PublicChatPage() {
                   <button
                     onClick={handleNameChange}
                     disabled={!tempName.trim()}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {t('update')}
                   </button>

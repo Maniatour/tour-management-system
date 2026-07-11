@@ -57,7 +57,7 @@ function getReservationStatusColor(status: string): string {
     case 'confirmed':
       return 'bg-green-500'
     case 'completed':
-      return 'bg-blue-500'
+      return 'bg-primary/50'
     case 'cancelled':
     case 'canceled':
       return 'bg-red-500'
@@ -146,7 +146,7 @@ const CalendarDayCell = memo(function CalendarDayCell({
       <div
         className={`text-sm font-medium mb-1 ${
           isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
-        } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}
+        } ${isTodayDate ? 'text-primary font-bold' : ''}`}
       >
         {date.getDate()}
       </div>
@@ -312,7 +312,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value as 'created_at' | 'tour_date')}
-              className="px-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="px-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
             >
               <option value="created_at">등록일 기준</option>
               <option value="tour_date">투어일 기준</option>
@@ -328,7 +328,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
           <span className="text-lg font-medium text-gray-900 flex items-center gap-2">
             {currentDate.getFullYear()}년 {MONTH_NAMES[currentDate.getMonth()]}
             {isLoading && (
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" aria-hidden />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
             )}
           </span>
           <button
@@ -347,7 +347,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
             aria-live="polite"
             aria-busy="true"
           >
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
             {loadingProgress && loadingProgress.total > 0 && (
               <p className="mt-2 text-sm text-gray-600">
                 {loadingProgress.current} / {loadingProgress.total}
@@ -361,7 +361,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
             <div
               key={day}
               className={`p-2 text-center text-sm font-medium ${
-                index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
+                index === 0 ? 'text-red-500' : index === 6 ? 'text-primary' : 'text-gray-700'
               }`}
             >
               {day}

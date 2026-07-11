@@ -153,7 +153,7 @@ export default function DynamicPricingManagerRefactored({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <DollarSign className="h-8 w-8 text-blue-600" />
+          <DollarSign className="h-8 w-8 text-primary" />
           <div>
             <h2 className="text-2xl font-bold text-gray-900">동적 가격 관리</h2>
             <p className="text-sm text-gray-600">상품의 가격을 날짜와 채널별로 관리하세요</p>
@@ -165,7 +165,7 @@ export default function DynamicPricingManagerRefactored({
             onClick={() => setViewMode('calendar')}
             className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
               viewMode === 'calendar'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                ? 'bg-primary/10 text-primary border border-border'
                 : 'bg-gray-100 text-gray-700 border border-gray-200'
             }`}
           >
@@ -176,7 +176,7 @@ export default function DynamicPricingManagerRefactored({
             onClick={() => setViewMode('list')}
             className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
               viewMode === 'list'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                ? 'bg-primary/10 text-primary border border-border'
                 : 'bg-gray-100 text-gray-700 border border-gray-200'
             }`}
           >
@@ -232,7 +232,7 @@ export default function DynamicPricingManagerRefactored({
                     type="number"
                     value={pricingConfig.adult_price}
                     onChange={(e) => updatePricingConfig({ adult_price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="0"
                   />
                 </div>
@@ -242,7 +242,7 @@ export default function DynamicPricingManagerRefactored({
                     type="number"
                     value={pricingConfig.child_price}
                     onChange={(e) => updatePricingConfig({ child_price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="0"
                   />
                 </div>
@@ -252,7 +252,7 @@ export default function DynamicPricingManagerRefactored({
                     type="number"
                     value={pricingConfig.infant_price}
                     onChange={(e) => updatePricingConfig({ infant_price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="0"
                   />
                 </div>
@@ -277,13 +277,13 @@ export default function DynamicPricingManagerRefactored({
       </div>
 
       {selectedDates.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-muted/50 border border-border rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-medium text-blue-900">
+              <h4 className="text-sm font-medium text-foreground">
                 선택된 날짜 ({selectedDates.length}개)
               </h4>
-              <p className="text-sm text-blue-700 mt-1">
+              <p className="text-sm text-primary mt-1">
                 {selectedDates.map(date => new Date(date).toLocaleDateString('ko-KR')).join(', ')}
               </p>
             </div>

@@ -257,7 +257,7 @@ export default function UserFooter({ locale }: UserFooterProps) {
             const active = isActive(item.href)
             const itemClass = `flex flex-col items-center justify-center space-y-1 px-2 py-2 transition-colors relative ${
               active
-                ? 'text-blue-600 bg-blue-50'
+                ? 'text-primary bg-primary/5'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`
 
@@ -271,7 +271,7 @@ export default function UserFooter({ locale }: UserFooterProps) {
                   <div className="relative">
                     <Icon
                       size={20}
-                      className={active ? 'text-blue-600' : 'text-gray-500'}
+                      className={active ? 'text-primary' : 'text-gray-500'}
                     />
                     {item.badge && item.badge > 0 && (
                       <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[16px] h-[16px] px-1">
@@ -279,7 +279,7 @@ export default function UserFooter({ locale }: UserFooterProps) {
                       </span>
                     )}
                   </div>
-                  <span className={`text-xs font-medium ${active ? 'text-blue-600' : 'text-gray-600'}`}>
+                  <span className={`text-xs font-medium ${active ? 'text-primary' : 'text-gray-600'}`}>
                     {item.name}
                   </span>
                 </Link>

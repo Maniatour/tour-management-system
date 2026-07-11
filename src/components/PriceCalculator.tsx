@@ -181,7 +181,7 @@ export default function PriceCalculator({
     <div className="space-y-6">
       {/* 헤더 */}
       <div className="flex items-center space-x-3">
-        <Calculator className="h-6 w-6 text-blue-600" />
+        <Calculator className="h-6 w-6 text-primary" />
         <h2 className="text-xl font-bold text-gray-900">가격 계산기</h2>
       </div>
 
@@ -198,7 +198,7 @@ export default function PriceCalculator({
             <select
               value={calculationInput.channel_id}
               onChange={(e) => setCalculationInput(prev => ({ ...prev, channel_id: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">채널을 선택하세요</option>
               {channels.map(channel => (
@@ -219,7 +219,7 @@ export default function PriceCalculator({
               value={calculationInput.tour_date}
               onChange={(e) => setCalculationInput(prev => ({ ...prev, tour_date: e.target.value }))}
               min={new Date().toISOString().split('T')[0]}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
         </div>
@@ -246,7 +246,7 @@ export default function PriceCalculator({
                   value={calculationInput.adults}
                   onChange={(e) => handleParticipantChange('adults', parseInt(e.target.value) || 0)}
                   min="0"
-                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 <button
                   onClick={() => handleParticipantChange('adults', calculationInput.adults + 1)}
@@ -272,7 +272,7 @@ export default function PriceCalculator({
                   value={calculationInput.children}
                   onChange={(e) => handleParticipantChange('children', parseInt(e.target.value) || 0)}
                   min="0"
-                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 <button
                   onClick={() => handleParticipantChange('children', calculationInput.children + 1)}
@@ -298,7 +298,7 @@ export default function PriceCalculator({
                   value={calculationInput.infants}
                   onChange={(e) => handleParticipantChange('infants', parseInt(e.target.value) || 0)}
                   min="0"
-                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-16 text-center px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 <button
                   onClick={() => handleParticipantChange('infants', calculationInput.infants + 1)}
@@ -311,8 +311,8 @@ export default function PriceCalculator({
           </div>
 
           {/* 총 참가자 수 */}
-          <div className="col-span-3 mt-4 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
+          <div className="col-span-3 mt-4 p-3 bg-primary/5 rounded-lg">
+            <p className="text-sm text-primary">
               총 참가자: <span className="font-semibold">{totalParticipants}명</span>
               {totalParticipants < product.min_participants && (
                 <span className="text-red-600 ml-2">
@@ -353,7 +353,7 @@ export default function PriceCalculator({
           <button
             onClick={handleCalculatePrice}
             disabled={isCalculating || !calculationInput.channel_id || !calculationInput.tour_date || totalParticipants === 0}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            className="bg-primary text-primary-foreground px-6 py-3 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             <Calculator size={20} />
             <span>{isCalculating ? '계산 중...' : '가격 계산하기'}</span>
@@ -380,7 +380,7 @@ export default function PriceCalculator({
                 </div>
                 <div className="flex justify-between">
                   <span>아동:</span>
-                  <span className="font-medium text-blue-600">${calculationResult.child_price.toFixed(2)}</span>
+                  <span className="font-medium text-primary">${calculationResult.child_price.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>유아:</span>
@@ -416,12 +416,12 @@ export default function PriceCalculator({
 
           {/* 적용된 규칙 정보 */}
           {calculationResult.applied_rule && (
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+            <div className="bg-primary/5 p-4 rounded-lg">
+              <h4 className="font-medium text-foreground mb-2 flex items-center">
                 <Info className="h-4 w-4 mr-2" />
                 적용된 가격 규칙
               </h4>
-              <p className="text-sm text-blue-800">
+              <p className="text-sm text-primary">
                 {channels.find(c => c.id === calculationInput.channel_id)?.name} • 
                 {calculationInput.tour_date} • 
                 {DAY_NAMES[new Date(calculationInput.tour_date).getDay()]}

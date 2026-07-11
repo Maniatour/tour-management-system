@@ -62,7 +62,7 @@ export default function ResetPasswordForm({ onBack }: ResetPasswordFormProps) {
           </p>
           <button
             onClick={onBack}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+            className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors"
           >
             로그인 페이지로 돌아가기
           </button>
@@ -97,7 +97,7 @@ export default function ResetPasswordForm({ onBack }: ResetPasswordFormProps) {
                 {...register('email')}
                 type="email"
                 id="email"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="이메일을 입력하세요"
               />
             </div>
@@ -109,7 +109,7 @@ export default function ResetPasswordForm({ onBack }: ResetPasswordFormProps) {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? '전송 중...' : '재설정 링크 전송'}
           </button>
@@ -118,7 +118,7 @@ export default function ResetPasswordForm({ onBack }: ResetPasswordFormProps) {
         <div className="mt-6 text-center">
           <button
             onClick={onBack}
-            className="text-blue-600 hover:text-blue-500 font-medium flex items-center justify-center mx-auto"
+            className="text-primary hover:text-primary font-medium flex items-center justify-center mx-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
             로그인 페이지로 돌아가기

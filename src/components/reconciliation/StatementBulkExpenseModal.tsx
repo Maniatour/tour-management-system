@@ -1558,7 +1558,7 @@ export default function StatementBulkExpenseModal({
                             <td className="py-0.5 px-1.5 whitespace-nowrap">
                               <button
                                 type="button"
-                                className="text-blue-700 hover:underline mr-2"
+                                className="text-primary hover:underline mr-2"
                                 disabled={savingRuleEdit || addingRule}
                                 onClick={() => {
                                   setFormError(null)

@@ -345,11 +345,11 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       
       {/* 선택된 상품 정보 표시 - 검색창 위에 배치 */}
       {formData.productId && (
-        <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mb-3 px-3 py-2 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-600 font-medium">선택된 상품:</span>
-              <span className="text-sm text-blue-900 font-medium">
+              <span className="text-xs text-primary font-medium">선택된 상품:</span>
+              <span className="text-sm text-foreground font-medium">
                 {products.find(p => p.id === formData.productId)?.name_ko || '알 수 없는 상품'}
               </span>
             </div>
@@ -370,7 +370,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
                   choicesTotal: 0
                 }));
               }}
-              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+              className="text-xs text-primary hover:text-primary/80 px-2 py-1 hover:bg-muted rounded"
             >
               해제
             </button>

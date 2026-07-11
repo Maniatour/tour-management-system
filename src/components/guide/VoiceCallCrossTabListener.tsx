@@ -151,8 +151,8 @@ export default function VoiceCallCrossTabListener({ locale }: VoiceCallCrossTabL
       role="alert"
       aria-live="assertive"
     >
-      <div className="pointer-events-auto flex max-w-lg w-full items-center gap-3 rounded-xl border border-blue-200 bg-white px-4 py-3 shadow-lg">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+      <div className="pointer-events-auto flex max-w-lg w-full items-center gap-3 rounded-xl border border-border bg-white px-4 py-3 shadow-lg">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Phone className="h-5 w-5 animate-pulse" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
@@ -165,7 +165,7 @@ export default function VoiceCallCrossTabListener({ locale }: VoiceCallCrossTabL
           <Link
             href={active.openPath}
             onClick={() => dismiss()}
-            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-primary/90"
           >
             {t.go}
           </Link>

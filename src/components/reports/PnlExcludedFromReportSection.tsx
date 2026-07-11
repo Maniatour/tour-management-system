@@ -179,7 +179,7 @@ export default function PnlExcludedFromReportSection({
                           {onOpenExcludedInflowsMonth ? (
                             <button
                               type="button"
-                              className="text-blue-800 hover:underline underline-offset-2"
+                              className="text-primary hover:underline underline-offset-2"
                               onClick={() => onOpenExcludedInflowsMonth(ym)}
                             >
                               {formatMonthLabel(ym)}

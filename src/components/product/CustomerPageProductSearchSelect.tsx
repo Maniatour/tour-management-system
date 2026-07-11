@@ -116,7 +116,7 @@ export default function CustomerPageProductSearchSelect({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={placeholder}
-                className="w-full rounded-lg border border-gray-200 py-2 pl-8 pr-3 text-xs focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-lg border border-border py-2 pl-8 pr-3 text-xs focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
                 autoFocus
               />
             </div>
@@ -134,8 +134,8 @@ export default function CustomerPageProductSearchSelect({
                       setOpen(false)
                       setQuery('')
                     }}
-                    className={`flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-blue-50 ${
-                      value === option.id ? 'bg-blue-50 text-blue-900' : 'text-gray-800'
+                    className={`flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-muted/50 ${
+                      value === option.id ? 'bg-primary/5 text-foreground' : 'text-gray-800'
                     }`}
                   >
                     <span className="font-medium truncate w-full">{option.label}</span>

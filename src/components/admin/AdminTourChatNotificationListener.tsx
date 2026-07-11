@@ -256,9 +256,9 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
       aria-labelledby="tour-chat-notify-title"
     >
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-gray-200 overflow-hidden">
-        <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-100 bg-gradient-to-r from-muted/50 to-muted/30">
           <div className="flex items-start gap-2 min-w-0">
-            <div className="p-2 rounded-lg bg-blue-600 text-white shrink-0">
+            <div className="p-2 rounded-lg bg-primary text-primary-foreground shrink-0">
               <MessageCircle size={22} aria-hidden />
             </div>
             <div className="min-w-0">
@@ -338,7 +338,7 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
             <button
               type="button"
               onClick={handleGoToChat}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 shadow-sm"
             >
               채팅 관리로 이동
             </button>

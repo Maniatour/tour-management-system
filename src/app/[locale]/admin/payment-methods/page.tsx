@@ -153,7 +153,7 @@ export default function PaymentMethodsPage() {
       {/* 헤더 - 모바일 컴팩트 */}
       <div className="mb-4 sm:mb-6 lg:mb-8">
         <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-          <CreditCard className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 flex-shrink-0" />
+          <CreditCard className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
           <h1 className="text-lg sm:text-2xl font-bold text-gray-900">결제 방법 관리</h1>
         </div>
         <p className="text-gray-600 text-xs sm:text-sm hidden sm:block">
@@ -165,8 +165,8 @@ export default function PaymentMethodsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
         <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
           <div className="flex items-center gap-2 sm:block sm:ml-0">
-            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg w-9 h-9 sm:w-auto sm:h-auto flex items-center justify-center">
-              <BarChart3 className="h-4 w-4 sm:h-6 sm:w-6 text-blue-600" />
+            <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg w-9 h-9 sm:w-auto sm:h-auto flex items-center justify-center">
+              <BarChart3 className="h-4 w-4 sm:h-6 sm:w-6 text-primary" />
             </div>
             <div className="min-w-0">
               <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">전체</p>
@@ -252,7 +252,7 @@ export default function PaymentMethodsPage() {
               <div key={type} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0 ${
-                    type === 'card' ? 'bg-blue-500' :
+                    type === 'card' ? 'bg-primary/50' :
                     type === 'cash' ? 'bg-green-500' :
                     type === 'transfer' ? 'bg-purple-500' :
                     type === 'mobile' ? 'bg-orange-500' : 'bg-gray-500'
@@ -271,12 +271,12 @@ export default function PaymentMethodsPage() {
         <div className="p-3 sm:p-4 lg:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+              <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
               <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">구글 시트 동기화</h2>
             </div>
             <button
               onClick={() => setShowSyncForm(!showSyncForm)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex-shrink-0"
             >
               {showSyncForm ? '숨기기' : '동기화 설정'}
             </button>
@@ -293,7 +293,7 @@ export default function PaymentMethodsPage() {
                   value={syncFormData.spreadsheetId}
                   onChange={(e) => setSyncFormData(prev => ({ ...prev, spreadsheetId: e.target.value }))}
                   placeholder="스프레드시트 ID"
-                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -303,7 +303,7 @@ export default function PaymentMethodsPage() {
                   value={syncFormData.sheetName}
                   onChange={(e) => setSyncFormData(prev => ({ ...prev, sheetName: e.target.value }))}
                   placeholder="시트 이름"
-                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>

@@ -65,7 +65,7 @@ export default function OptionsSection({
                               [optionId]: e.target.value
                             }
                           }))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                          className="h-4 w-4 text-primary focus:ring-ring border-gray-300"
                         />
                         <span className="text-sm text-gray-900">{choice.name}</span>
                       </div>
@@ -88,7 +88,7 @@ export default function OptionsSection({
                                 }
                               }))
                             }}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           />
                         </div>
                         <div>
@@ -107,7 +107,7 @@ export default function OptionsSection({
                                 }
                               }))
                             }}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           />
                         </div>
                         <div>
@@ -126,7 +126,7 @@ export default function OptionsSection({
                                 }
                               }))
                             }}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           />
                         </div>
                       </div>

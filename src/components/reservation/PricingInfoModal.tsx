@@ -1197,7 +1197,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         <div className="p-3 sm:p-4">
           {loading ? (
             <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
               <span className="ml-2 text-sm text-gray-600">가격 정보를 불러오는 중...</span>
             </div>
           ) : error ? (
@@ -1206,7 +1206,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
               <p className="text-sm text-gray-600">{error}</p>
               <button
                 onClick={loadPricingData}
-                className="mt-3 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                className="mt-3 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
               >
                 다시 시도
               </button>
@@ -1322,7 +1322,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     </div>
                     <div className="border-t pt-1 flex justify-between items-center">
                       <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
-                      <span className="text-sm font-bold text-blue-600">${(editData?.product_price_total || 0).toFixed(2)}</span>
+                      <span className="text-sm font-bold text-primary">${(editData?.product_price_total || 0).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -1385,7 +1385,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       ))}
                     </select>
                     {editData?.coupon_code && (
-                      <div className="mt-1 text-xs text-blue-600">
+                      <div className="mt-1 text-xs text-primary">
                         할인: ${Math.abs(editData?.coupon_discount || 0).toFixed(2)}
                       </div>
                     )}
@@ -1480,7 +1480,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         type="checkbox"
                         checked={editData?.is_private_tour || false}
                         onChange={(e) => handlePrivateTourChange(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                        className="w-4 h-4 text-primary border-gray-300 rounded"
                       />
                       프라이빗 투어
                     </label>
@@ -1657,8 +1657,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       )}
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between">
-                        <span className="font-bold text-blue-800">고객 총 결제 금액</span>
-                        <span className="font-bold text-blue-600">${displayCustomerNet.toFixed(2)}</span>
+                        <span className="font-bold text-primary">고객 총 결제 금액</span>
+                        <span className="font-bold text-primary">${displayCustomerNet.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
@@ -1671,7 +1671,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     <div className="space-y-1">
                       <div className="flex justify-between pb-2 border-b border-gray-100">
                         <span className="font-semibold text-gray-900">총 결제 예정 금액</span>
-                        <span className="font-bold text-blue-700">${displayCustomerNet.toFixed(2)}</span>
+                        <span className="font-bold text-primary">${displayCustomerNet.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">고객 실제 지불액 (보증금)</span>
@@ -1702,7 +1702,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between">
                         <span className="font-semibold text-gray-900">총 실제 지불 합</span>
-                        <span className="font-bold text-blue-600">
+                        <span className="font-bold text-primary">
                           ${((editData?.deposit_amount || 0) + (editData?.balance_amount || 0)).toFixed(2)}
                         </span>
                       </div>
@@ -1802,7 +1802,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                                 handleInputChange('channel_settlement_amount', roundUsd2(n))
                               }
                             }}
-                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right font-semibold text-blue-600"
+                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right font-semibold text-primary"
                             step="0.01"
                           />
                         </div>

@@ -658,7 +658,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 type="button"
                 onClick={() => handleGmailSync(false)}
                 disabled={gmailSyncing}
-                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 touch-manipulation"
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 disabled:opacity-50 touch-manipulation"
               >
                 {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Mail className="w-4 h-4 shrink-0" />}
                 지금 동기화
@@ -683,7 +683,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             </div>
             <a
               href={gmailStartAuthUrl}
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 touch-manipulation"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 touch-manipulation"
             >
               <Mail className="w-4 h-4 shrink-0" />
               Gmail 연결
@@ -698,7 +698,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <button
             type="button"
             onClick={() => setPasteOpen(true)}
-            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 active:bg-blue-800 touch-manipulation"
+            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 active:bg-blue-800 touch-manipulation"
           >
             <FileText className="w-4 h-4 shrink-0" />
             이메일 붙여넣기
@@ -768,7 +768,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 type="button"
                 onClick={handlePasteSubmit}
                 disabled={pasteSubmitting}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary text-primary-foreground text-sm rounded-md hover:bg-primary/90 disabled:opacity-50"
               >
                 {pasteSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 가져오기
@@ -791,7 +791,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           onDrop={(e) => handleTabDrop(e, 'all')}
           className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors touch-manipulation ${
             activeTab === 'all'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+              ? 'border-primary text-primary bg-primary/5/50'
               : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
@@ -806,7 +806,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           title="항목을 이 탭에 드래그하면 예약 접수로 분류됩니다"
           className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
             activeTab === 'booking'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+              ? 'border-primary text-primary bg-primary/5/50'
               : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
@@ -842,7 +842,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             value={searchQuery}
             onChange={(e) => setListUi((prev) => ({ ...prev, searchQuery: e.target.value }))}
             placeholder="제목, 발신자, 고객명·날짜 등 검색..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             aria-label="이메일 목록 검색"
           />
         </div>
@@ -851,7 +851,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <select
             value={platformFilter}
             onChange={(e) => setListUi((prev) => ({ ...prev, platformFilter: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-ring focus:border-ring"
             aria-label="플랫폼 필터"
           >
             {PLATFORM_FILTER_OPTIONS.map((opt) => (
@@ -915,7 +915,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             onClick={() => {
               setListUi((prev) => ({ ...prev, noDateFilter: false, dateEnd: todayLocal() }))
             }}
-            className="min-h-[44px] text-sm text-blue-600 hover:underline py-2 touch-manipulation"
+            className="min-h-[44px] text-sm text-primary hover:underline py-2 touch-manipulation"
           >
             오늘 기준으로
           </button>
@@ -924,7 +924,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-gray-600">
@@ -951,7 +951,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             onClick={() => {
               setListUi((prev) => ({ ...prev, searchQuery: '', platformFilter: '' }))
             }}
-            className="mt-3 text-sm text-blue-600 hover:underline"
+            className="mt-3 text-sm text-primary hover:underline"
           >
             검색·필터 초기화
           </button>
@@ -1028,7 +1028,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                         {summary(row.extracted_data)}
                       </td>
                       <td className="px-4 py-3">
-                        {isPatching ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                        {isPatching ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                       </td>
                     </tr>
                   )
@@ -1074,7 +1074,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       )}
                     </div>
                     <div className="shrink-0 pt-1">
-                      {isPatching ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
+                      {isPatching ? <Loader2 className="w-5 h-5 animate-spin text-primary" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
                     </div>
                   </div>
                 </div>

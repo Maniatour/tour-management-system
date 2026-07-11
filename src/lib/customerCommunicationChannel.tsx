@@ -102,7 +102,7 @@ type ChannelVisual = {
 export const CUSTOMER_COMMUNICATION_CHANNEL_VISUAL: Record<CustomerCommunicationChannel, ChannelVisual> = {
   no_reply: { Icon: MessageCircleOff, toneClass: 'text-gray-400' },
   platform: { Icon: Globe, toneClass: 'text-indigo-600' },
-  email: { Icon: Mail, toneClass: 'text-blue-600' },
+  email: { Icon: Mail, toneClass: 'text-primary' },
   whatsapp: { Icon: WhatsAppIcon, toneClass: 'text-green-600' },
   text_message: { Icon: Smartphone, toneClass: 'text-violet-600' },
   kakaotalk: { Icon: KakaoTalkIcon, toneClass: 'text-[#3C1E1E]' },

@@ -283,12 +283,12 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
 
   return (
     <div className="space-y-4">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2 flex items-center">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
+        <h3 className="font-semibold text-foreground mb-2 flex items-center">
           <Folder className="w-5 h-5 mr-2" />
           {getText('구글 드라이브 연동', 'Google Drive Integration')}
         </h3>
-        <p className="text-sm text-blue-800 mb-4">
+        <p className="text-sm text-primary mb-4">
           {getText(
             '구글 드라이브에 있는 영수증 이미지를 Supabase로 가져옵니다. 파일명 형식은 "ID.Image.xxxxxx.jpg"여야 합니다.',
             'Import receipt images from Google Drive to Supabase. File names must be in the format "ID.Image.xxxxxx.jpg".'
@@ -301,12 +301,12 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
             placeholder={getText('구글 드라이브 폴더 ID 입력...', 'Enter Google Drive folder ID...')}
-            className="flex-1 px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="flex-1 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
           />
           <button
             onClick={fetchReceiptsFromDrive}
             disabled={loadingList || !folderId.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             {loadingList ? (
               <>
@@ -322,7 +322,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
           </button>
         </div>
 
-        <p className="text-xs text-blue-700 mt-2">
+        <p className="text-xs text-primary mt-2">
           💡 {getText(
             '구글 드라이브 폴더의 공유 링크에서 폴더 ID를 추출하세요. 예: https://drive.google.com/drive/folders/FOLDER_ID',
             'Extract folder ID from Google Drive folder share link. Example: https://drive.google.com/drive/folders/FOLDER_ID'
@@ -395,7 +395,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
                     <button
                       onClick={() => importReceipts([receipt.fileId])}
                       disabled={importing}
-                      className="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                      className="ml-2 px-3 py-1 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                     >
                       <Upload className="w-3 h-3 mr-1" />
                       {getText('가져오기', 'Import')}
@@ -410,12 +410,12 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
 
       {/* 진행 상황 표시 */}
       {importProgress && importing && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-muted/50 border border-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-900">
+            <span className="text-sm font-medium text-foreground">
               {getText('처리 중...', 'Processing...')}
             </span>
-            <span className="text-sm text-blue-700">
+            <span className="text-sm text-primary">
               {Math.round((importProgress.processed / importProgress.total) * 100)}%
             </span>
           </div>
@@ -425,7 +425,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
               style={{ width: `${Math.round((importProgress.processed / importProgress.total) * 100)}%` }}
             />
           </div>
-          <p className="text-xs text-blue-700 mt-2">
+          <p className="text-xs text-primary mt-2">
             {importProgress.processed} / {importProgress.total} {getText('파일 처리됨', 'files processed')} 
             {importProgress.currentBatch > 0 && ` (배치 ${importProgress.currentBatch})`}
           </p>

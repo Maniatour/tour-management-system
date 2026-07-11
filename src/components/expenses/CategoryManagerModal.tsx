@@ -94,7 +94,7 @@ function NormalizeRow({ item, onUpdate, saving }: NormalizeRowProps) {
           />
         ) : (
           <div className="flex items-center gap-2">
-            <span className={`text-sm ${isNormalized ? 'text-blue-600 font-medium' : 'text-gray-700'}`}>
+            <span className={`text-sm ${isNormalized ? 'text-primary font-medium' : 'text-gray-700'}`}>
               {item.normalized}
             </span>
             {isNormalized && (
@@ -110,7 +110,7 @@ function NormalizeRow({ item, onUpdate, saving }: NormalizeRowProps) {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-300"
+              className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90 disabled:bg-gray-300"
             >
               저장
             </button>
@@ -126,7 +126,7 @@ function NormalizeRow({ item, onUpdate, saving }: NormalizeRowProps) {
           <button
             onClick={() => setIsEditing(true)}
             disabled={saving}
-            className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-300"
+            className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90 disabled:bg-gray-300"
           >
             {isNormalized ? '수정' : '정규화'}
           </button>
@@ -1005,7 +1005,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b bg-gray-50">
           <div className="flex items-center gap-3">
-            <Settings className="w-6 h-6 text-blue-600" />
+            <Settings className="w-6 h-6 text-primary" />
             <div>
               <h2 className="text-xl font-bold text-gray-900">카테고리 매니저</h2>
               <p className="text-sm text-gray-600">지출 카테고리를 세금 보고용 표준 카테고리로 매핑합니다</p>
@@ -1023,7 +1023,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               onClick={() => setActiveTab('mappings')}
               className={`px-6 py-3 text-sm font-medium border-b-2 ${
                 activeTab === 'mappings'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1033,7 +1033,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               onClick={() => setActiveTab('categories')}
               className={`px-6 py-3 text-sm font-medium border-b-2 ${
                 activeTab === 'categories'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1043,7 +1043,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               onClick={() => setActiveTab('normalize')}
               className={`px-6 py-3 text-sm font-medium border-b-2 ${
                 activeTab === 'normalize'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1062,7 +1062,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 placeholder="검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-ring"
               />
             </div>
             <button
@@ -1079,7 +1079,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : standardCategories.length === 0 ? (
             <div className="text-center py-12">
@@ -1134,7 +1134,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                     sourceTable: item.source_table as CategoryMappingSourceTable,
                                   })
                                 }
-                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline text-left"
+                                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline text-left"
                                 title="지출 상세 보기 · 개별 카테고리 지정"
                               >
                                 {item.paid_for}
@@ -1148,7 +1148,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                 type="button"
                                 onClick={() => setCategorySelectModalOpen(idx)}
                                 disabled={saving}
-                                className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                className="px-4 py-2 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                               >
                                 카테고리 선택
                               </button>
@@ -1189,7 +1189,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                     sourceTable: mapping.source_table as CategoryMappingSourceTable,
                                   })
                                 }
-                                className="text-blue-600 hover:text-blue-800 hover:underline text-left"
+                                className="text-primary hover:text-primary/80 hover:underline text-left"
                                 title="지출 상세 보기 · 개별 카테고리 지정"
                               >
                                 {mapping.original_value}
@@ -1232,7 +1232,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => setEditingMappingId(mapping.id)}
-                                  className="p-1 text-blue-500 hover:bg-blue-50 rounded"
+                                  className="p-1 text-primary hover:bg-muted/50 rounded"
                                   title="수정"
                                 >
                                   <Pencil size={16} />
@@ -1268,7 +1268,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               <div className="flex justify-end">
                 <button
                   onClick={() => setShowAddCategory(!showAddCategory)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                 >
                   <Plus size={16} />
                   새 카테고리 추가
@@ -1276,7 +1276,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               </div>
 
               {showAddCategory && (
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <div className="bg-primary/5 p-4 rounded-lg border border-border">
                   <h4 className="font-medium mb-3">새 표준 카테고리</h4>
                   <div className="grid grid-cols-2 gap-4 mb-3">
                     <input
@@ -1326,7 +1326,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                     </button>
                     <button
                       onClick={handleAddCategory}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                     >
                       추가
                     </button>
@@ -1371,7 +1371,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                       return (
                         <React.Fragment key={cat.id}>
                           {/* 메인 카테고리 */}
-                          <tr className={`hover:bg-gray-50 ${cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'}`}>
+                          <tr className={`hover:bg-gray-50 ${cat.is_active ? 'bg-primary/5' : 'bg-gray-100 opacity-90'}`}>
                             <td className="px-4 py-3 text-sm font-medium text-gray-700 min-w-[calc(8.5rem+2ch)]">{cat.id}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name_ko || '-'}</td>
@@ -1399,7 +1399,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                 <button
                                   type="button"
                                   onClick={() => setStandardCategoryEditor({ type: 'edit', id: cat.id })}
-                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                  className="p-1.5 text-primary hover:bg-muted/50 rounded"
                                   title="수정"
                                   aria-label="수정"
                                 >
@@ -1450,7 +1450,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                   <button
                                     type="button"
                                     onClick={() => setStandardCategoryEditor({ type: 'edit', id: subCat.id })}
-                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                    className="p-1.5 text-primary hover:bg-muted/50 rounded"
                                     title="수정"
                                     aria-label="수정"
                                   >
@@ -1521,7 +1521,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 <button
                   onClick={() => loadNormalizeData()}
                   disabled={normalizeLoading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-300"
                 >
                   <RefreshCw size={16} className={normalizeLoading ? 'animate-spin' : ''} />
                   새로고침
@@ -1531,7 +1531,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               {/* 정규화 데이터 테이블 */}
               {normalizeLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : normalizeData.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
@@ -1641,8 +1641,8 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                           <React.Fragment key={cat.id}>
                             <tr
                               className={`${
-                                cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'
-                              } ${leafMain && !saving ? 'cursor-pointer hover:bg-blue-100/90' : ''} ${
+                                cat.is_active ? 'bg-primary/5' : 'bg-gray-100 opacity-90'
+                              } ${leafMain && !saving ? 'cursor-pointer hover:bg-muted/90' : ''} ${
                                 saving ? 'opacity-50' : ''
                               }`}
                               onClick={() => {
@@ -1685,7 +1685,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                             {subCats.map((subCat) => (
                               <tr
                                 key={subCat.id}
-                                className={`hover:bg-blue-50/90 ${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''} ${
+                                className={`hover:bg-muted/50/90 ${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''} ${
                                   saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                                 }`}
                                 onClick={() => {
@@ -1729,7 +1729,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                     <span className="text-gray-500">비활성</span>
                                   )}
                                 </td>
-                                <td className="px-3 py-2 text-blue-600 font-medium whitespace-nowrap">행 클릭</td>
+                                <td className="px-3 py-2 text-primary font-medium whitespace-nowrap">행 클릭</td>
                               </tr>
                             ))}
                             {subCats.length > 0 && (
@@ -1844,8 +1844,8 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                           <React.Fragment key={cat.id}>
                             <tr
                               className={`${
-                                cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'
-                              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-blue-100/80'} ${
+                                cat.is_active ? 'bg-primary/5' : 'bg-gray-100 opacity-90'
+                              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/80'} ${
                                 mainRowRing ? 'ring-2 ring-inset ring-blue-600' : ''
                               }`}
                               onClick={() => {
@@ -1896,7 +1896,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                 <tr
                                   key={subCat.id}
                                   className={`${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''} ${
-                                    saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-blue-50/90'
+                                    saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50/90'
                                   } ${subRing ? 'ring-2 ring-inset ring-blue-600' : ''}`}
                                   onClick={() => {
                                     if (saving) return
@@ -1939,7 +1939,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                       <span className="text-gray-500">비활성</span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-2 text-blue-600 font-medium whitespace-nowrap">서브</td>
+                                  <td className="px-3 py-2 text-primary font-medium whitespace-nowrap">서브</td>
                                 </tr>
                               )
                             })}
@@ -1995,7 +1995,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                     handleUpdateMapping(editingMappingId, editMainCat, editSubCat)
                   }}
                   disabled={saving || !editMainCat}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   {saving ? '저장 중...' : '저장'}
                 </button>
@@ -2192,7 +2192,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                     type="button"
                     onClick={() => void handleSaveStandardCategory()}
                     disabled={saving}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm"
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-300 text-sm"
                   >
                     {saving ? '저장 중…' : '저장'}
                   </button>

@@ -122,7 +122,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
               placeholder="팀원 이름, 이메일, 포지션으로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
         </div>
@@ -131,7 +131,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
               <span className="ml-2 text-gray-600">팀원 목록을 불러오는 중...</span>
             </div>
           ) : error ? (
@@ -139,7 +139,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
               <p className="text-red-600 mb-4">{error}</p>
               <button
                 onClick={fetchTeamMembers}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 다시 시도
               </button>
@@ -155,11 +155,11 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
                 <button
                   key={member.email}
                   onClick={() => handleStartSimulation(member)}
-                  className="w-full p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 transition-colors"
+                  className="w-full p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-border transition-colors"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <span className="text-blue-600 font-medium text-sm">
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                      <span className="text-primary font-medium text-sm">
                         {member.name_ko.charAt(0)}
                       </span>
                     </div>
@@ -170,7 +170,7 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
                       <p className="text-xs text-gray-500 truncate">
                         {member.email}
                       </p>
-                      <p className="text-xs text-blue-600 font-medium">
+                      <p className="text-xs text-primary font-medium">
                         {member.position}
                       </p>
                     </div>

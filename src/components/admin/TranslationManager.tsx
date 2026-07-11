@@ -305,7 +305,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
         <h3 className="text-xl font-semibold">{t('translationManageTitle')}</h3>
         <button
           onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center space-x-2"
         >
           <Plus size={20} />
           <span>{t('addNewKey')}</span>
@@ -320,13 +320,13 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
             placeholder={t('searchPlaceholderKeys')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
           />
         </div>
         <select
           value={selectedNamespace}
           onChange={(e) => setSelectedNamespace(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
         >
           {namespaces.map(ns => (
             <option key={ns} value={ns}>{ns === 'all' ? t('all') : ns}</option>
@@ -425,7 +425,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
                             <div className="flex space-x-1 ml-2 flex-shrink-0">
                               <button
                                 onClick={() => startEdit(translation.id, loc)}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-primary hover:text-foreground"
                               >
                                 <Edit2 size={14} />
                               </button>
@@ -467,7 +467,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
                   value={newNamespace}
                   onChange={(e) => setNewNamespace(e.target.value)}
                   placeholder={t('namespacePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
@@ -477,7 +477,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
                   value={newKeyPath}
                   onChange={(e) => setNewKeyPath(e.target.value)}
                   placeholder={t('keyPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div className="border-t pt-4">
@@ -494,7 +494,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
                           [loc]: e.target.value
                         }))}
                         placeholder={t('translationPlaceholder', { locale: loc.toUpperCase() })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                       />
                     </div>
                   ))}
@@ -507,7 +507,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={handleAddTranslation}
-                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+                className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
               >
                 {t('add')}
               </button>

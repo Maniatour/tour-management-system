@@ -831,7 +831,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   )
 
   const fieldClass =
-    'mt-1.5 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
+    'mt-1.5 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20'
   const sectionCard =
     'rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5'
   const sectionHeading =
@@ -858,7 +858,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                 id="vehicle-edit-modal-title"
                 className="flex items-center gap-2.5 text-base font-semibold text-gray-900 sm:text-lg"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-700 ring-1 ring-blue-600/15">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-primary ring-1 ring-blue-600/15">
                   <Car className="h-4 w-4" />
                 </span>
                 <span className="truncate">
@@ -903,7 +903,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                 {/* 기본 정보 */}
                 <section className={sectionCard}>
                   <h4 className={sectionHeading}>
-                    <Car className="h-4 w-4 shrink-0 text-blue-600" />
+                    <Car className="h-4 w-4 shrink-0 text-primary" />
                     기본 정보
                   </h4>
                   <div className="space-y-3 sm:space-y-4">
@@ -914,7 +914,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       <label
                         className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
                           formData.vehicle_category === 'company'
-                            ? 'border-blue-500 bg-blue-50/90 text-blue-900 shadow-sm'
+                            ? 'border-primary bg-primary/5/90 text-foreground shadow-sm'
                             : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
                         }`}
                       >
@@ -931,7 +931,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       <label
                         className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
                           formData.vehicle_category === 'rental'
-                            ? 'border-blue-500 bg-blue-50/90 text-blue-900 shadow-sm'
+                            ? 'border-primary bg-primary/5/90 text-foreground shadow-sm'
                             : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
                         }`}
                       >
@@ -1465,7 +1465,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       name="is_installment"
                       checked={formData.is_installment}
                       onChange={handleInputChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                     />
                     <label className="ml-2 block text-sm text-gray-900">할부 여부</label>
                   </div>
@@ -1581,7 +1581,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       <button
                         type="button"
                         onClick={() => setShowPhotoGallery(true)}
-                        className="inline-flex items-center rounded-md border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-700 shadow-sm hover:bg-blue-50"
+                        className="inline-flex items-center rounded-md border border-border bg-white px-2 py-1 text-xs font-medium text-primary shadow-sm hover:bg-muted/50"
                       >
                         <Images className="mr-1 h-3.5 w-3.5" />
                         사진 갤러리
@@ -1725,7 +1725,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           <div className="flex shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-slate-50/90 px-4 py-3 sm:px-5">
               <button
                 type="submit"
-                className="inline-flex justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 저장
               </button>
@@ -1764,7 +1764,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                     key={template.id}
                     className={`relative cursor-pointer rounded-lg overflow-hidden border-2 ${
                       selectedTemplate?.id === template.id
-                        ? 'border-blue-500'
+                        ? 'border-primary'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                     onClick={() => handleTemplateSelect(template)}
@@ -1779,7 +1779,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                         {template.photo_name || template.vehicle_model}
                       </p>
                       {template.is_default && (
-                        <span className="mt-0.5 inline-block rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-800">
+                        <span className="mt-0.5 inline-block rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                           기본
                         </span>
                       )}

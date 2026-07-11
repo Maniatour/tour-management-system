@@ -34,6 +34,23 @@ module.exports = {
           DEFAULT: 'var(--accent)',
           foreground: 'var(--accent-foreground)',
         },
+        booking: {
+          DEFAULT: 'var(--booking)',
+          foreground: 'var(--booking-foreground)',
+          hover: 'var(--booking-hover)',
+        },
+        success: {
+          DEFAULT: 'var(--success)',
+          foreground: 'var(--success-foreground)',
+        },
+        warning: {
+          DEFAULT: 'var(--warning)',
+          foreground: 'var(--warning-foreground)',
+        },
+        danger: {
+          DEFAULT: 'var(--danger)',
+          foreground: 'var(--danger-foreground)',
+        },
         popover: {
           DEFAULT: 'var(--popover)',
           foreground: 'var(--popover-foreground)',
@@ -53,10 +70,30 @@ module.exports = {
           ring: 'var(--sidebar-ring)',
         },
       },
+      fontFamily: {
+        sans: ['var(--font-inter)', 'var(--font-sans)', 'system-ui', 'sans-serif'],
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        btn: 'var(--radius-btn)',
+        input: 'var(--radius-input)',
+        card: 'var(--radius-card)',
+        feature: 'var(--radius-feature)',
+      },
+      boxShadow: {
+        xs: 'var(--shadow-xs)',
+        card: 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
+        elevated: 'var(--shadow-md)',
+      },
+      spacing: {
+        'section': 'var(--section-py)',
+        'section-md': 'var(--section-py-md)',
+        'section-lg': 'var(--section-py-lg)',
+        'section-compact': 'var(--section-py-compact)',
+        'section-compact-md': 'var(--section-py-compact-md)',
       },
       screens: {
         /** 입장권 부킹 테이블 — 1920 뷰포트에서 보조 열 표시 */

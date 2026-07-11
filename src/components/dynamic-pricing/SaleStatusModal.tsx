@@ -336,7 +336,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                       onClick={() => handleChoiceSelect(choice.id)}
                       className={`w-full flex items-center justify-between p-3 bg-white rounded-lg border-2 transition-all ${
                         selectedChoiceId === choice.id
-                          ? 'border-blue-500 bg-blue-50'
+                          ? 'border-primary bg-primary/5'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -352,10 +352,10 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                       </div>
                       <div className="flex items-center space-x-2">
                         {selectedChoiceId === choice.id && (
-                          <span className="text-xs text-blue-600 font-medium">{t('selectedLegend')}</span>
+                          <span className="text-xs text-primary font-medium">{t('selectedLegend')}</span>
                         )}
                         <ChevronRight className={`h-4 w-4 transition-transform ${
-                          selectedChoiceId === choice.id ? 'text-blue-600 rotate-90' : 'text-gray-400'
+                          selectedChoiceId === choice.id ? 'text-primary rotate-90' : 'text-gray-400'
                         }`} />
                       </div>
                     </button>
@@ -432,7 +432,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
         <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 transition-colors"
           >
             {t('close')}
           </button>

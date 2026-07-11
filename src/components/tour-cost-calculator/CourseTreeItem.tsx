@@ -62,7 +62,7 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
     <div>
       <div 
         className={`flex items-center gap-1.5 px-2 py-1 border rounded hover:bg-gray-50 ${
-          isSelected ? 'bg-blue-50 border-blue-500' : 'border-gray-200'
+          isSelected ? 'bg-primary/5 border-primary' : 'border-gray-200'
         }`}
         style={{ marginLeft: `${level * 12}px` }}
       >
@@ -97,7 +97,7 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
               onSelect(course)
             }
           }}
-          className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer flex-shrink-0"
+          className="w-3.5 h-3.5 text-primary rounded cursor-pointer flex-shrink-0"
           onClick={(e) => e.stopPropagation()}
         />
         
@@ -105,9 +105,9 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
         <div className="flex items-center flex-shrink-0">
           {hasChildren ? (
             isExpanded ? (
-              <FolderOpen className="w-3 h-3 text-blue-500" />
+              <FolderOpen className="w-3 h-3 text-primary" />
             ) : (
-              <Folder className="w-3 h-3 text-blue-500" />
+              <Folder className="w-3 h-3 text-primary" />
             )
           ) : (
             <MapPin className="w-3 h-3 text-gray-400" />

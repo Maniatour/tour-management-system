@@ -55,7 +55,7 @@ export function getTicketBookingStatusBadgeClass(status: string | null | undefin
     case 'canceled':
       return 'bg-red-100 text-red-800'
     case 'completed':
-      return 'bg-blue-100 text-blue-800'
+      return 'bg-primary/10 text-primary'
     case 'credit':
       return 'bg-cyan-100 text-cyan-800'
     case 'cancellation_requested':

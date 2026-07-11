@@ -7,6 +7,7 @@ import { formatInclusionList } from '@/lib/formatInclusionList'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
 import { useProductDetailTrustBadges } from '@/components/product/useProductDetailTrustBadges'
+import PriceDisplay from '@/components/customer/ui/PriceDisplay'
 import { cn } from '@/lib/utils'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 
@@ -56,14 +57,13 @@ export default function ProductDetailBookingPanelContent({
   return (
     <>
       <CustomerPageZone zone="detail-sidebar-price" className={cn('mb-4', isMobile && 'mb-4')}>
-        <div className="text-center">
-          <p className="text-xs font-medium cp-ui-muted sm:text-sm">{t('fromPrice')}</p>
-          <div className="mt-0.5 flex items-baseline justify-center gap-1 sm:mt-1">
-            <span className={cn('font-bold tracking-tight cp-ui-price', isMobile ? 'text-3xl' : 'text-4xl')}>
-              ${totalPrice}
-            </span>
-            <span className="text-sm font-medium cp-ui-muted sm:text-base">{t('perPerson')}</span>
-          </div>
+        <div className="flex justify-center text-center">
+          <PriceDisplay
+            amount={totalPrice}
+            prefixLabel={t('fromPrice')}
+            suffixLabel={t('perPerson')}
+            size={isMobile ? 'md' : 'lg'}
+          />
           {!isMobile && (
             <p className="mt-1 text-xs cp-ui-muted">{t('totalPrice')}: ${totalPrice}</p>
           )}
@@ -139,7 +139,7 @@ export default function ProductDetailBookingPanelContent({
                   id={`choice-${group.choice_id}-${variant}`}
                   value={selectedOptions[group.choice_id] || ''}
                   onChange={(e) => onOptionChange(group.choice_id, e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-[#0B5FFF] focus:outline-none focus:ring-2 focus:ring-[#0B5FFF]/20"
+                  className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 >
                   {group.options.map((option) => (
                     <option key={option.option_id} value={option.option_id}>

@@ -54,7 +54,7 @@ export default function CustomerPageDetailFieldSlotsForm({
                     onChange={(e) =>
                       onBindingChange(slot.slotId, e.target.value as DetailBindingKey)
                     }
-                    className="text-[11px] border border-blue-200 rounded-md px-2 py-1 bg-blue-50 text-blue-900 max-w-full min-w-[14rem]"
+                    className="text-[11px] border border-border rounded-md px-2 py-1 bg-primary/5 text-foreground max-w-full min-w-[14rem]"
                     aria-label={`${slot.label} 연결 컬럼`}
                   >
                     {slot.options.map((option) => (
@@ -74,7 +74,7 @@ export default function CustomerPageDetailFieldSlotsForm({
                       onChange={(e) =>
                         onVisibilityChange({ ...visibility, [slot.slotId]: e.target.checked })
                       }
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary"
                     />
                     고객 페이지 표시
                   </label>

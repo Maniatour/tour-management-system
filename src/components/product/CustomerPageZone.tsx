@@ -64,7 +64,7 @@ export default function CustomerPageZone({
         <button
           type="button"
           onClick={handleEditClick}
-          className="customer-page-zone-edit-btn absolute top-2 right-2 z-[100] inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-semibold leading-none text-white shadow-lg hover:bg-blue-700 pointer-events-auto opacity-100"
+          className="customer-page-zone-edit-btn pointer-events-auto absolute right-2 top-2 z-[100] inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold leading-none text-primary-foreground opacity-100 shadow-lg hover:bg-primary/90"
           title={editConfig ? `${editConfig.label} 수정` : `${zone} 수정`}
         >
           <Pencil className="h-3.5 w-3.5 shrink-0" />

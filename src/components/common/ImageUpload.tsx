@@ -194,7 +194,7 @@ export default function ImageUpload({
       <div
         className={`
           relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-          ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+          ${dragOver ? 'border-primary bg-primary/5' : 'border-gray-300 hover:border-gray-400'}
           ${uploading ? 'opacity-50 pointer-events-none' : ''}
         `}
         onClick={() => fileInputRef.current?.click()}
@@ -212,7 +212,7 @@ export default function ImageUpload({
         
         {uploading ? (
           <div className="flex flex-col items-center space-y-2">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
             <p className="text-sm text-gray-600">업로드 중...</p>
           </div>
         ) : (
@@ -220,7 +220,7 @@ export default function ImageUpload({
             <ImageIcon className="w-8 h-8 text-gray-400" />
             <div>
               <p className="text-sm text-gray-600">
-                <span className="text-blue-500 font-medium">클릭</span>하거나 파일을 드래그하여 업로드
+                <span className="text-primary font-medium">클릭</span>하거나 파일을 드래그하여 업로드
               </p>
               <p className="text-xs text-gray-500 mt-1">
                 JPEG, PNG, GIF, WebP (최대 5MB)

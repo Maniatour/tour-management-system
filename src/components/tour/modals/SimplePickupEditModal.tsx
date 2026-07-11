@@ -109,7 +109,7 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
               type="time"
               value={pickupTime}
               onChange={(e) => setPickupTime(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               disabled={loading}
             />
           </div>
@@ -123,7 +123,7 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
             <select
               value={pickupHotel}
               onChange={(e) => setPickupHotel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               disabled={loading}
             >
               <option value="">호텔 선택</option>
@@ -145,7 +145,7 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
               handleClose()
             }}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring disabled:opacity-50"
           >
             취소
           </button>
@@ -155,7 +155,7 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
               handleSave()
             }}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring disabled:opacity-50"
           >
             {loading ? '저장 중...' : '저장'}
           </button>

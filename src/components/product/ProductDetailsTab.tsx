@@ -2984,7 +2984,7 @@ export default function ProductDetailsTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">Loading...</span>
       </div>
     )
@@ -3008,7 +3008,7 @@ export default function ProductDetailsTab({
                   onClick={() => handleLanguageChange(lang)}
                   className={`px-2 py-1 text-xs rounded ${
                     (formData.currentLanguage || 'ko') === lang
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -3071,7 +3071,7 @@ export default function ProductDetailsTab({
                 </p>
               )}
               <div className="flex gap-1">
-                <button onClick={() => setCompletionFilter('all')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterAll')}</button>
+                <button onClick={() => setCompletionFilter('all')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}>{t('filterAll')}</button>
                 <button onClick={() => setCompletionFilter('incomplete')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'incomplete' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterIncomplete')}</button>
                 <button onClick={() => setCompletionFilter('empty')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'empty' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterEmpty')}</button>
               </div>
@@ -3111,7 +3111,7 @@ export default function ProductDetailsTab({
                         onClick={() => toggleGroupSelection(group.id)}
                         className="p-1 rounded hover:bg-gray-200"
                       >
-                        {allSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : someSelected ? <div className="h-4 w-4 rounded border-2 border-blue-600 bg-blue-100" /> : <Square className="h-4 w-4 text-gray-400" />}
+                        {allSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : someSelected ? <div className="h-4 w-4 rounded border-2 border-primary bg-primary/10" /> : <Square className="h-4 w-4 text-gray-400" />}
                       </button>
                     </div>
                     {expandedGroups[group.id] && (
@@ -3128,7 +3128,7 @@ export default function ProductDetailsTab({
                           return (
                             <div
                               key={channel.id}
-                              className={`rounded border p-2 ${hasAny ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}
+                              className={`rounded border p-2 ${hasAny ? 'border-border bg-primary/5' : 'border-gray-200'}`}
                             >
                               <div className="flex items-center gap-2 mb-1.5">
                                 <span className="text-sm font-medium text-gray-800">{channel.name}</span>
@@ -3150,7 +3150,7 @@ export default function ProductDetailsTab({
                                         type="checkbox"
                                         checked={checked}
                                         onChange={() => toggleChannelVariant(channel.id, variant.variant_key)}
-                                        className="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded"
+                                        className="h-3.5 w-3.5 text-primary border-gray-300 rounded"
                                       />
                                       <span>
                                         {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
@@ -3241,7 +3241,7 @@ export default function ProductDetailsTab({
                               setPreviewEditModalOpen(true)
                             }
                           }}
-                          className="text-left border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+                          className="text-left border border-gray-200 rounded-lg p-3 hover:border-border hover:bg-muted/50 transition-colors cursor-pointer"
                         >
                           <div className="flex items-center justify-between mb-1 gap-2">
                             <div className="flex flex-wrap items-center gap-2 min-w-0">
@@ -3265,7 +3265,7 @@ export default function ProductDetailsTab({
                                   고객 페이지 미노출
                                 </span>
                               )}
-                              <span className="text-[11px] text-blue-600">클릭해서 수정</span>
+                              <span className="text-[11px] text-primary">클릭해서 수정</span>
                             </span>
                           </div>
                           <div className="text-gray-700 whitespace-pre-wrap text-xs leading-5 max-h-24 overflow-hidden">
@@ -3281,7 +3281,7 @@ export default function ProductDetailsTab({
                   <button
                     onClick={saveSelectedChannelsDetails}
                     disabled={saving || selectedPairCount === 0}
-                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="h-4 w-4 mr-2" />
                     {saving ? t('saveLoading') : t('saveSelectedChannels')}
@@ -3356,7 +3356,7 @@ export default function ProductDetailsTab({
               type="button"
               onClick={(e) => handleSave(e)}
               disabled={saving || isNewProduct}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? t('saveLoading') : t('save')}
@@ -3404,7 +3404,7 @@ export default function ProductDetailsTab({
               <button
                 type="button"
                 onClick={() => previewEditingField && openCopyModal(previewEditingField)}
-                className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 Duplicate to channels
               </button>
@@ -3455,7 +3455,7 @@ export default function ProductDetailsTab({
                       return { ...prev, [currentLang]: cur }
                     })
                   }}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
                 />
                 <span className="text-sm text-gray-800 leading-snug">
                   <span className="font-medium">고객 상품 페이지에 표시</span>
@@ -3487,7 +3487,7 @@ export default function ProductDetailsTab({
                 type="button"
                 onClick={() => void saveDetailsFromModal()}
                 disabled={saving || isNewProduct}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? t('saveLoading') : t('save')}
               </button>
@@ -3593,7 +3593,7 @@ export default function ProductDetailsTab({
                 type="button"
                 onClick={() => void saveDetailsFromModal()}
                 disabled={saving || isNewProduct}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 text-sm"
               >
                 {saving ? t('saveLoading') : t('save')}
               </button>
@@ -3648,7 +3648,7 @@ export default function ProductDetailsTab({
                   }
                   className={`flex-1 py-2 px-2 text-xs font-medium rounded-md transition-colors ${
                     groupLayoutDraft.mode === 'by_type'
-                      ? 'bg-white text-blue-700 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -3671,7 +3671,7 @@ export default function ProductDetailsTab({
                   }}
                   className={`flex-1 py-2 px-2 text-xs font-medium rounded-md transition-colors ${
                     groupLayoutDraft.mode === 'custom'
-                      ? 'bg-white text-blue-700 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -3704,7 +3704,7 @@ export default function ProductDetailsTab({
                       <button
                         type="button"
                         onClick={addAnotherCustomGroup}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 shrink-0"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-border bg-primary/5 text-primary hover:bg-muted shrink-0"
                       >
                         <Plus className="h-3.5 w-3.5" />
                         그룹 추가
@@ -3749,7 +3749,7 @@ export default function ProductDetailsTab({
                     <button
                       type="button"
                       onClick={addAnotherCustomGroup}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-blue-700 border border-dashed border-blue-200 rounded-lg bg-blue-50/50 hover:bg-blue-50"
+                      className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-primary border border-dashed border-border rounded-lg bg-primary/5/50 hover:bg-muted/50"
                     >
                       <Plus className="h-4 w-4" />
                       그룹 더 추가
@@ -3828,7 +3828,7 @@ export default function ProductDetailsTab({
                   <button
                     type="button"
                     onClick={addAnotherCustomGroup}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-primary/5 text-primary hover:bg-muted"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     사용자 정의로 전환하고 그룹 추가
@@ -3875,7 +3875,7 @@ export default function ProductDetailsTab({
                     }, 3000)
                   })()
                 }}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingChannelGroupLayout ? '저장 중…' : '저장'}
               </button>
@@ -3965,7 +3965,7 @@ export default function ProductDetailsTab({
                                         }
                                       }))
                                     }}
-                                    className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    className="h-3.5 w-3.5 text-primary focus:ring-ring border-gray-300 rounded"
                                   />
                                   <span>
                                     {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
@@ -4010,7 +4010,7 @@ export default function ProductDetailsTab({
                   }
                   void copyFieldToChannels(copyFieldName, pairs)
                 }}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90"
               >
                 {t('copyExecute')}
               </button>

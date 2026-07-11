@@ -170,7 +170,7 @@ const ParentSelectionTreeItem = ({
     <div className={`${indentClass}`}>
       <div 
         className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-gray-50 ${
-          isSelected ? 'bg-blue-50 border-l-2 border-blue-500' : ''
+          isSelected ? 'bg-primary/5 border-l-2 border-primary' : ''
         } ${isCurrentCourse ? 'opacity-50 cursor-not-allowed' : ''}`}
         onClick={() => {
           if (!isCurrentCourse) {
@@ -209,16 +209,16 @@ const ParentSelectionTreeItem = ({
             }
           }}
           disabled={isCurrentCourse}
-          className="w-4 h-4 text-blue-600"
+          className="w-4 h-4 text-primary"
         />
         
         {/* 폴더/파일 아이콘 */}
         <div className="flex items-center gap-1">
           {hasChildren ? (
             isExpanded ? (
-              <FolderOpen className="w-4 h-4 text-blue-500" />
+              <FolderOpen className="w-4 h-4 text-primary" />
             ) : (
-              <Folder className="w-4 h-4 text-blue-500" />
+              <Folder className="w-4 h-4 text-primary" />
             )
           ) : (
             <MapPin className="w-4 h-4 text-gray-400" />
@@ -773,7 +773,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     value=""
                     checked={!formData.parent_id}
                     onChange={() => updateFormData({ parent_id: '' })}
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-primary"
                   />
                   <Globe className="w-4 h-4 text-green-500" />
                   <span className="text-sm font-medium text-gray-900">{t('topLevel')}</span>
@@ -820,7 +820,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       type="text"
                       value={formData.team_name_ko}
                       onChange={(e) => updateFormData({ team_name_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder={t('placeholderTeamNameKo')}
                     />
                   </div>
@@ -832,7 +832,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       type="text"
                       value={formData.team_name_en}
                       onChange={(e) => updateFormData({ team_name_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder={t('placeholderTeamNameEn')}
                     />
                   </div>
@@ -850,7 +850,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <textarea
                       value={formData.team_description_ko}
                       onChange={(e) => updateFormData({ team_description_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       rows={3}
                       placeholder={t('placeholderTeamDescKo')}
                     />
@@ -862,7 +862,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <textarea
                       value={formData.team_description_en}
                       onChange={(e) => updateFormData({ team_description_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       rows={3}
                       placeholder={t('placeholderTeamDescEn')}
                     />
@@ -887,7 +887,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       type="text"
                       value={formData.customer_name_ko}
                       onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder={t('placeholderCustomerNameKo')}
                     />
                   </div>
@@ -899,7 +899,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       type="text"
                       value={formData.customer_name_en}
                       onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder={t('placeholderCustomerNameEn')}
                     />
                   </div>
@@ -917,7 +917,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <textarea
                       value={formData.customer_description_ko}
                       onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       rows={3}
                       placeholder={t('placeholderCustomerDescKo')}
                     />
@@ -929,7 +929,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <textarea
                       value={formData.customer_description_en}
                       onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       rows={3}
                       placeholder={t('placeholderCustomerDescEn')}
                     />
@@ -946,7 +946,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               <textarea
                 value={formData.internal_note}
                 onChange={(e) => updateFormData({ internal_note: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 rows={3}
                 placeholder={t('placeholderInternalNote')}
               />
@@ -990,8 +990,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       }}
                       className={`px-3 py-1.5 text-sm rounded-lg border-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                         isSelected
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-muted/50'
                       }`}
                     >
                       {shortName}
@@ -1025,7 +1025,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             setLocationPickerType('start')
                             setShowLocationPicker(true)
                           }}
-                          className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          className="p-1.5 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center justify-center"
                           title={t('selectOnMap')}
                         >
                           <Search className="w-3 h-3" />
@@ -1043,7 +1043,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                               ...(value === '' && formData.start_longitude === '' ? { location: '' } : {})
                             })
                           }}
-                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                           placeholder={t('latitude')}
                         />
                         <input
@@ -1057,7 +1057,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                               ...(value === '' && formData.start_latitude === '' ? { location: '' } : {})
                             })
                           }}
-                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                           placeholder={t('longitude')}
                         />
                       </div>
@@ -1074,7 +1074,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             setLocationPickerType('end')
                             setShowLocationPicker(true)
                           }}
-                          className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          className="p-1.5 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center justify-center"
                           title={t('selectOnMap')}
                         >
                           <Search className="w-3 h-3" />
@@ -1092,7 +1092,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                               ...(value === '' && formData.end_longitude === '' ? { location: '' } : {})
                             })
                           }}
-                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                           placeholder={t('latitude')}
                         />
                         <input
@@ -1106,7 +1106,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                               ...(value === '' && formData.end_latitude === '' ? { location: '' } : {})
                             })
                           }}
-                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                           placeholder={t('longitude')}
                         />
                       </div>
@@ -1126,7 +1126,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           setLocationPickerType('single')
                           setShowLocationPicker(true)
                         }}
-                        className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                        className="p-1.5 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center justify-center"
                         title={t('selectOnMap')}
                       >
                         <Search className="w-3 h-3" />
@@ -1146,7 +1146,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             ...(shouldClearLocation ? { location: '' } : {})
                           })
                         }}
-                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                         placeholder={t('latitude')}
                       />
                       <input
@@ -1162,7 +1162,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             ...(shouldClearLocation ? { location: '' } : {})
                           })
                         }}
-                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                         placeholder={t('longitude')}
                       />
                     </div>
@@ -1183,7 +1183,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 type="number"
                 value={formData.duration_hours}
                 onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="60"
               />
             </div>
@@ -1207,7 +1207,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.1"
                       value={formData.distance}
                       onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="5.2"
                     />
                   </div>
@@ -1233,7 +1233,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <select
                       value={formData.difficulty_level}
                       onChange={(e) => updateFormData({ difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       <option value="easy">{t('difficultyEasy')}</option>
                       <option value="medium">{t('difficultyMedium')}</option>
@@ -1258,7 +1258,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     value="none"
                     checked={formData.price_type === 'none'}
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 focus:ring-ring"
                   />
                   <span className="text-sm text-gray-700">{t('noPrice')}</span>
                 </label>
@@ -1269,7 +1269,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     value="per_person"
                     checked={formData.price_type === 'per_person'}
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 focus:ring-ring"
                   />
                   <span className="text-sm text-gray-700">{t('perPerson')}</span>
                 </label>
@@ -1280,7 +1280,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     value="per_vehicle"
                     checked={formData.price_type === 'per_vehicle'}
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
-                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-primary border-gray-300 focus:ring-ring"
                   />
                   <span className="text-sm text-gray-700">{t('perVehicle')}</span>
                 </label>
@@ -1303,7 +1303,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_adult}
                       onChange={(e) => updateFormData({ price_adult: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1316,7 +1316,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_child}
                       onChange={(e) => updateFormData({ price_child: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1329,7 +1329,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_infant}
                       onChange={(e) => updateFormData({ price_infant: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1353,7 +1353,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_minivan}
                       onChange={(e) => updateFormData({ price_minivan: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1366,7 +1366,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_9seater}
                       onChange={(e) => updateFormData({ price_9seater: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1379,7 +1379,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       step="0.01"
                       value={formData.price_13seater}
                       onChange={(e) => updateFormData({ price_13seater: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder="0"
                     />
                   </div>
@@ -1392,7 +1392,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 type="checkbox"
                 checked={formData.is_active}
                 onChange={(e) => updateFormData({ is_active: e.target.checked })}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
               />
               <label className="ml-2 text-sm font-medium text-gray-700">
                 {t('active')}
@@ -1416,7 +1416,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 <div
                   className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
                     dragActive
-                      ? 'border-blue-500 bg-blue-50'
+                      ? 'border-primary bg-primary/5'
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
                   onDragEnter={handleDrag}
@@ -1437,7 +1437,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+                      className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 whitespace-nowrap"
                     >
                       {uploading ? t('uploading') : t('selectFile')}
                     </button>
@@ -1519,7 +1519,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           <button
             onClick={handleSave}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             {loading ? t('saving') : (course?.id && course.id !== '' ? t('edit') : t('add'))}
           </button>

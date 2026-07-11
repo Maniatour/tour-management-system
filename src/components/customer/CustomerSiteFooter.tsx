@@ -89,17 +89,17 @@ export default function CustomerSiteFooter({ locale, forceShow = false }: Custom
 
         <div className="mt-10 grid gap-4 border-t border-slate-800 pt-8 text-sm text-slate-400 sm:grid-cols-3">
           <div className="flex items-start gap-3">
-            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" aria-hidden />
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
             <span>{t('address')}</span>
           </div>
           <div className="flex items-start gap-3">
-            <Phone className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" aria-hidden />
+            <Phone className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
             <a href={`tel:${t('phoneValue')}`} className="transition-colors hover:text-white">
               {t('phoneDisplay')}
             </a>
           </div>
           <div className="flex items-start gap-3">
-            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" aria-hidden />
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
             <a href={`mailto:${t('emailValue')}`} className="transition-colors hover:text-white">
               {t('emailDisplay')}
             </a>

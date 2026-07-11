@@ -127,7 +127,7 @@ export default function PositionSimulatorPage() {
         return {
           title: 'Office Manager',
           description: '사무실 매니저 - 관리자 권한',
-          color: 'bg-blue-100 text-blue-800',
+          color: 'bg-primary/10 text-primary',
           icon: Users,
           pages: [
             { name: '어드민 페이지', url: 'admin', description: '관리 기능' },
@@ -183,7 +183,7 @@ export default function PositionSimulatorPage() {
     return (
       <div className="flex items-center justify-center min-h-[40vh] sm:min-h-screen">
         <div className="text-center px-4">
-          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-blue-600 mx-auto mb-3 sm:mb-4"></div>
+          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-primary mx-auto mb-3 sm:mb-4"></div>
           <p className="text-sm sm:text-base text-gray-600">Position 시뮬레이터를 불러오는 중...</p>
         </div>
       </div>
@@ -199,9 +199,9 @@ export default function PositionSimulatorPage() {
 
       {/* 현재 시뮬레이션 상태 */}
       {isSimulating && simulatedUser && (
-        <Card className="mb-4 sm:mb-8 border-blue-200 bg-blue-50">
+        <Card className="mb-4 sm:mb-8 border-border bg-primary/5">
           <CardHeader className="p-3 sm:p-6 pb-2">
-            <CardTitle className="flex items-center text-blue-800 text-sm sm:text-base">
+            <CardTitle className="flex items-center text-primary text-sm sm:text-base">
               <Play className="w-4 h-4 sm:w-5 sm:h-5 mr-2 shrink-0" />
               현재 시뮬레이션 중
             </CardTitle>
@@ -211,7 +211,7 @@ export default function PositionSimulatorPage() {
               <div className="min-w-0">
                 <p className="font-medium text-sm sm:text-base truncate">{simulatedUser.name_ko} ({simulatedUser.email})</p>
                 <div className="flex flex-wrap gap-1.5 mt-1 text-xs sm:text-sm text-gray-600">
-                  <Badge className="bg-blue-100 text-blue-800 text-[10px] sm:text-xs">Position: {simulatedUser.position}</Badge>
+                  <Badge className="bg-primary/10 text-primary text-[10px] sm:text-xs">Position: {simulatedUser.position}</Badge>
                   <Badge className="bg-green-100 text-green-800 text-[10px] sm:text-xs">Role: {simulatedUser.role}</Badge>
                 </div>
               </div>
@@ -232,7 +232,7 @@ export default function PositionSimulatorPage() {
           const isCurrentlySimulating = simulatedUser?.email === member.email
 
           return (
-            <Card key={member.email} className={isCurrentlySimulating ? 'border-blue-300 bg-blue-50' : ''}>
+            <Card key={member.email} className={isCurrentlySimulating ? 'border-border bg-primary/5' : ''}>
               <CardHeader className="p-3 sm:p-6 pb-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0">

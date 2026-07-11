@@ -210,7 +210,7 @@ export default function AudioPlayer({
                 togglePlayPause()
               }}
               disabled={isLoading}
-              className="p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="p-1.5 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             >
               {isLoading ? (
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -296,7 +296,7 @@ export default function AudioPlayer({
                     {onEdit && (
                       <button
                         onClick={onEdit}
-                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        className="p-1 text-gray-400 hover:text-primary transition-colors"
                         title="편집"
                       >
                         <Edit className="w-3.5 h-3.5" />

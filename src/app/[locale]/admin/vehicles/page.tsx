@@ -697,7 +697,7 @@ export default function VehiclesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -714,7 +714,7 @@ export default function VehiclesPage() {
           <button
             type="button"
             onClick={handleAddVehicle}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-primary hover:bg-primary/90"
           >
             <Plus size={16} />
             차량 추가
@@ -740,7 +740,7 @@ export default function VehiclesPage() {
               onClick={() => setActiveTab('company')}
               className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'company'
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  ? 'bg-primary/10 text-primary border border-border'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -750,7 +750,7 @@ export default function VehiclesPage() {
               onClick={() => setActiveTab('rental_active')}
               className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'rental_active'
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  ? 'bg-primary/10 text-primary border border-border'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -764,7 +764,7 @@ export default function VehiclesPage() {
               onClick={() => setActiveTab('rental_returned')}
               className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'rental_returned'
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  ? 'bg-primary/10 text-primary border border-border'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -781,7 +781,7 @@ export default function VehiclesPage() {
               }}
               className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md flex items-center gap-1.5 sm:gap-2 ${
                 activeTab === 'vehicle_types'
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  ? 'bg-primary/10 text-primary border border-border'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -798,7 +798,7 @@ export default function VehiclesPage() {
               placeholder="ID, 차량 번호, 차종, VIN/RN, Rental Agreement #, 렌터카 회사, 닉네임..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+              className="w-full pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm sm:text-base"
             />
           </div>
         </div>
@@ -972,7 +972,7 @@ export default function VehiclesPage() {
                   <div className="flex space-x-1">
                     <button
                       onClick={() => handleEditVehicle(vehicle)}
-                      className="p-1.5 text-gray-400 hover:text-blue-600"
+                      className="p-1.5 text-gray-400 hover:text-primary"
                       title="수정"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -1019,7 +1019,7 @@ export default function VehiclesPage() {
           <p className="mt-1 text-sm text-gray-500 mb-4">차종을 관리하려면 위의 "차종 관리" 버튼을 클릭하세요.</p>
           <button
             onClick={() => setIsVehicleTypeModalOpen(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90"
           >
             <Settings className="w-4 h-4 mr-2" />
             차종 관리 열기

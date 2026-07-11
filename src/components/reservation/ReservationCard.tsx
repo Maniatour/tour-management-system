@@ -107,7 +107,7 @@ export default function ReservationCard({
             </button>
             <button
               onClick={handleEdit}
-              className="p-1 text-gray-400 hover:text-blue-600"
+              className="p-1 text-gray-400 hover:text-primary"
               title="편집"
             >
               <Edit size={16} />
@@ -176,7 +176,7 @@ export default function ReservationCard({
           <div className="flex items-center space-x-1">
             <button
               onClick={handlePricingInfo}
-              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              className="px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-blue-200"
             >
               가격 정보
             </button>

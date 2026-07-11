@@ -267,7 +267,7 @@ export default function ReservationOptionsSection({
     return (
       <div className={wrapperClass || 'p-3'}>
         <div className="flex items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
           <span className="ml-2 text-xs text-gray-600">{t('loadingOptions')}</span>
         </div>
       </div>
@@ -293,7 +293,7 @@ export default function ReservationOptionsSection({
         <button
           type="button"
           onClick={handleOpenAddModal}
-          className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
+          className="inline-flex items-center gap-1 px-2 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
         >
           <Plus size={14} />
           {t('addOption')}
@@ -321,7 +321,7 @@ export default function ReservationOptionsSection({
                 <select
                   value={formData.option_id || ''}
                   onChange={(e) => handleSelectOption(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   disabled={optionsLoading}
                 >
                   <option value="">{optionsLoading ? '로딩 중...' : '— 옵션 선택 —'}</option>
@@ -347,7 +347,7 @@ export default function ReservationOptionsSection({
                       total_price: (prev.price ?? 0) * ea,
                     }))
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -365,7 +365,7 @@ export default function ReservationOptionsSection({
                       total_price: price * (prev.ea ?? 1),
                     }))
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -379,7 +379,7 @@ export default function ReservationOptionsSection({
                 <select
                   value={formData.status || 'active'}
                   onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as 'active' | 'cancelled' | 'refunded' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="active">{t('statusActive')}</option>
                   <option value="cancelled">{t('statusCancelled')}</option>
@@ -392,7 +392,7 @@ export default function ReservationOptionsSection({
                   type="text"
                   value={formData.note || ''}
                   onChange={(e) => setFormData((prev) => ({ ...prev, note: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="메모 입력"
                 />
               </div>
@@ -408,7 +408,7 @@ export default function ReservationOptionsSection({
               <button
                 type="button"
                 onClick={handleAddOption}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+                className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium transition-colors"
               >
                 <Plus size={16} className="mr-1.5" />
                 {t('addOption')}
@@ -441,7 +441,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -461,7 +461,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -482,7 +482,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -498,7 +498,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                     </div>
                     <div>
@@ -511,7 +511,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       >
                         <option value="active">활성</option>
                         <option value="cancelled">취소</option>
@@ -529,7 +529,7 @@ export default function ReservationOptionsSection({
                             prev.map(o => o.id === option.id ? updatedOption : o)
                           )
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                     </div>
                   </div>
@@ -588,7 +588,7 @@ export default function ReservationOptionsSection({
                     <button
                       type="button"
                       onClick={() => setEditingOption(option.id)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                      className="p-2 text-primary hover:bg-muted/50 rounded-lg"
                       title="편집"
                     >
                       <Edit2 size={16} />

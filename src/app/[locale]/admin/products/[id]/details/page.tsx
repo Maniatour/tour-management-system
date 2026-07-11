@@ -221,9 +221,9 @@ export default function ProductDetailsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">{tD('loading')}</p>
         </div>
       </div>
@@ -232,11 +232,11 @@ export default function ProductDetailsPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
           <p className="mt-4 text-red-600">{error}</p>
-          <Link href="/admin/products" className="mt-4 inline-block text-blue-600 hover:underline">
+          <Link href="/admin/products" className="mt-4 inline-block text-primary hover:underline">
             {tD('backToList')}
           </Link>
         </div>
@@ -245,7 +245,7 @@ export default function ProductDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -288,7 +288,7 @@ export default function ProductDetailsPage() {
                     type="text"
                     value={formData.slogan1}
                     onChange={(e) => handleInputChange('slogan1', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderSlogan1')}
                   />
                 </div>
@@ -300,7 +300,7 @@ export default function ProductDetailsPage() {
                     type="text"
                     value={formData.slogan2}
                     onChange={(e) => handleInputChange('slogan2', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderSlogan2')}
                   />
                 </div>
@@ -312,7 +312,7 @@ export default function ProductDetailsPage() {
                     type="text"
                     value={formData.slogan3}
                     onChange={(e) => handleInputChange('slogan3', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderSlogan3')}
                   />
                 </div>
@@ -328,7 +328,7 @@ export default function ProductDetailsPage() {
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={tD('placeholderDescription')}
               />
             </div>
@@ -376,7 +376,7 @@ export default function ProductDetailsPage() {
                     value={formData.pickup_drop_info}
                     onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderPickupDrop')}
                   />
                 </div>
@@ -389,7 +389,7 @@ export default function ProductDetailsPage() {
                     value={formData.luggage_info}
                     onChange={(e) => handleInputChange('luggage_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderLuggage')}
                   />
                 </div>
@@ -402,7 +402,7 @@ export default function ProductDetailsPage() {
                     value={formData.tour_operation_info}
                     onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderTourOperation')}
                   />
                 </div>
@@ -415,7 +415,7 @@ export default function ProductDetailsPage() {
                     value={formData.preparation_info}
                     onChange={(e) => handleInputChange('preparation_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderPreparation')}
                   />
                 </div>
@@ -437,7 +437,7 @@ export default function ProductDetailsPage() {
                     value={formData.small_group_info}
                     onChange={(e) => handleInputChange('small_group_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderSmallGroup')}
                   />
                 </div>
@@ -450,7 +450,7 @@ export default function ProductDetailsPage() {
                     value={formData.companion_info}
                     onChange={(e) => handleInputChange('companion_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderCompanion')}
                   />
                 </div>
@@ -472,7 +472,7 @@ export default function ProductDetailsPage() {
                     value={formData.exclusive_booking_info}
                     onChange={(e) => handleInputChange('exclusive_booking_info', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderExclusiveBooking')}
                   />
                 </div>
@@ -485,7 +485,7 @@ export default function ProductDetailsPage() {
                     value={formData.cancellation_policy}
                     onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder={tD('placeholderCancellation')}
                   />
                 </div>
@@ -506,7 +506,7 @@ export default function ProductDetailsPage() {
                   value={formData.chat_announcement}
                   onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder={tD('placeholderChatAnnouncement')}
                 />
                 <p className="mt-2 text-sm text-gray-500">
@@ -521,7 +521,7 @@ export default function ProductDetailsPage() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? t('saving') : t('save')}

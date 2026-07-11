@@ -76,7 +76,7 @@ export default function RootPage() {
   // 리다이렉트 중 로딩 표시
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
     </div>
   )
 }

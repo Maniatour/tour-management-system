@@ -345,7 +345,7 @@ export default function ProductFaqTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">Loading...</span>
       </div>
     )
@@ -373,7 +373,7 @@ export default function ProductFaqTab({
             onClick={() => setShowEnglishFields(!showEnglishFields)}
             className={`px-3 py-2 text-sm rounded-lg border ${
               showEnglishFields 
-                ? 'bg-blue-600 text-white border-blue-600' 
+                ? 'bg-primary text-primary-foreground border-primary' 
                 : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
             }`}
           >
@@ -417,7 +417,7 @@ export default function ProductFaqTab({
             type="button"
             onClick={handleAddFaq}
             disabled={isNewProduct}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4 mr-2" />
             FAQ 추가
@@ -547,7 +547,7 @@ export default function ProductFaqTab({
                         e.stopPropagation()
                         handleEditFaq(faq)
                       }}
-                      className="p-1 text-gray-400 hover:text-blue-600"
+                      className="p-1 text-gray-400 hover:text-primary"
                     >
                       <Edit className="h-4 w-4" />
                     </button>
@@ -657,7 +657,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
             onClick={() => setShowEnglishFields(!showEnglishFields)}
             className={`px-3 py-1 text-sm rounded border ${
               showEnglishFields 
-                ? 'bg-blue-600 text-white border-blue-600' 
+                ? 'bg-primary text-primary-foreground border-primary' 
                 : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
             }`}
           >
@@ -675,7 +675,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
                 type="text"
                 value={showEnglishFields ? (formData.question_en || '') : formData.question}
                 onChange={(e) => handleInputChange(showEnglishFields ? 'question_en' : 'question', e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={showEnglishFields ? "Enter frequently asked question in English" : "자주 묻는 질문을 입력해주세요"}
                 required={!showEnglishFields}
               />
@@ -709,7 +709,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
                 value={showEnglishFields ? (formData.answer_en || '') : formData.answer}
                 onChange={(e) => handleInputChange(showEnglishFields ? 'answer_en' : 'answer', e.target.value)}
                 rows={6}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={showEnglishFields ? "Enter answer in English" : "질문에 대한 답변을 입력해주세요"}
                 required={!showEnglishFields}
               />
@@ -739,7 +739,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
               id="is_active"
               checked={formData.is_active}
               onChange={(e) => handleInputChange('is_active', e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
             />
             <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
               활성화
@@ -758,7 +758,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? '저장 중...' : '저장'}

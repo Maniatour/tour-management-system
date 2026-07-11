@@ -165,7 +165,7 @@ const TourCourseCard = ({
             </span>
             <button
               onClick={() => onViewDetails(course)}
-              className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"
+              className="p-2 bg-primary/10 text-primary rounded-lg hover:bg-blue-200"
               title="상세 보기"
             >
               <Eye className="w-4 h-4" />
@@ -300,7 +300,7 @@ export default function GuideTourCoursesPage() {
   if (coursesLoading || productsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -321,7 +321,7 @@ export default function GuideTourCoursesPage() {
             <select
               value={selectedProduct || ''}
               onChange={(e) => setSelectedProduct(e.target.value || null)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">전체 상품</option>
               {(products ?? []).map((product) => (
@@ -341,7 +341,7 @@ export default function GuideTourCoursesPage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="투어 코스명, 위치로 검색..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>

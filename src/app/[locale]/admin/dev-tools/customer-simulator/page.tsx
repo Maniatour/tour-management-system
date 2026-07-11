@@ -103,9 +103,9 @@ export default function CustomerSimulatorPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-sm text-gray-600">불러오는 중...</p>
         </div>
       </div>
@@ -113,7 +113,7 @@ export default function CustomerSimulatorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {/* 헤더 */}
         <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6 mb-4 sm:mb-6">
@@ -135,7 +135,7 @@ export default function CustomerSimulatorPage() {
             {/* 시뮬레이션 상태 표시 */}
             {isSimulating && simulatedUser && (
               <div className="flex flex-wrap items-center gap-2">
-                <div className="bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full text-xs sm:text-sm font-medium truncate max-w-[180px] sm:max-w-none">
+                <div className="bg-primary/10 text-primary px-2.5 py-1 rounded-full text-xs sm:text-sm font-medium truncate max-w-[180px] sm:max-w-none">
                   <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 inline mr-1" />
                   시뮬레이션 중: {simulatedUser.name_ko}
                 </div>
@@ -160,7 +160,7 @@ export default function CustomerSimulatorPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="고객 이름, 이메일, 전화번호로 검색..."
-              className="w-full pl-9 sm:pl-10 pr-2.5 sm:pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 sm:pl-10 pr-2.5 sm:pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function CustomerSimulatorPage() {
                       <button
                         onClick={() => handleStartSimulation(customer)}
                         disabled={isSimulating && simulatedUser?.email === customer.email}
-                        className="bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-xs sm:text-sm"
+                        className="bg-primary text-primary-foreground px-3 py-1.5 sm:px-4 sm:py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-xs sm:text-sm"
                       >
                         <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
                         시뮬레이션 시작
@@ -243,23 +243,23 @@ export default function CustomerSimulatorPage() {
 
         {/* 시뮬레이션 안내 */}
         {isSimulating && simulatedUser && (
-          <div className="mt-4 sm:mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+          <div className="mt-4 sm:mt-6 bg-muted/50 border border-border rounded-lg p-3 sm:p-4">
             <div className="flex items-start gap-2 sm:gap-3">
               <div className="flex-shrink-0">
-                <Play className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                <Play className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-xs sm:text-sm font-medium text-blue-800">
+                <h3 className="text-xs sm:text-sm font-medium text-primary">
                   고객 시뮬레이션 활성화
                 </h3>
-                <div className="mt-1.5 sm:mt-2 text-[10px] sm:text-sm text-blue-700">
+                <div className="mt-1.5 sm:mt-2 text-[10px] sm:text-sm text-primary">
                   <p>현재 <strong>{simulatedUser.name_ko}</strong> 고객의 관점에서 시스템을 사용하고 있습니다.</p>
                   <p className="mt-0.5 sm:mt-1">고객 대시보드, 내 정보, 내 예약 페이지에 접근할 수 있습니다.</p>
                 </div>
                 <div className="mt-2 sm:mt-3 flex flex-wrap gap-1.5 sm:gap-2">
                   <button
                     onClick={() => router.push(`/${locale}/dashboard`)}
-                    className="bg-blue-600 text-white px-2.5 py-1 sm:px-3 rounded text-xs sm:text-sm hover:bg-blue-700"
+                    className="bg-primary text-primary-foreground px-2.5 py-1 sm:px-3 rounded text-xs sm:text-sm hover:bg-primary/90"
                   >
                     고객 대시보드
                   </button>

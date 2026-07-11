@@ -134,7 +134,7 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
   const getActionColor = (action: string) => {
     switch (action) {
       case 'created': return 'bg-green-100 text-green-800'
-      case 'updated': return 'bg-blue-100 text-blue-800'
+      case 'updated': return 'bg-primary/10 text-primary'
       case 'deactivated': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
@@ -153,7 +153,7 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            <History className="h-6 w-6 text-blue-600" />
+            <History className="h-6 w-6 text-primary" />
             <div>
               <h3 className="text-lg font-semibold text-gray-900">가이드비 변경 이력</h3>
               <p className="text-sm text-gray-600">{productName}</p>
@@ -171,7 +171,7 @@ export default function GuideCostHistory({ isOpen, onClose, productId, productNa
         <div className="p-6 overflow-y-auto max-h-[60vh]">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-8">

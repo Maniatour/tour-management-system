@@ -449,7 +449,7 @@ export default function PreTourContactSmsPreviewModal({
                 type="button"
                 onClick={() => void handleSaveContacts()}
                 disabled={savingContacts}
-                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               >
                 {savingContacts ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

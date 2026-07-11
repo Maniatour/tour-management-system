@@ -165,9 +165,9 @@ export default function PassUploadPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">{tPass('loading')}</p>
         </div>
       </div>
@@ -176,13 +176,13 @@ export default function PassUploadPage() {
 
   if (!authUser) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600">{tPass('loginRequired')}</p>
           <button
             onClick={() => router.push(`/${locale}/auth?redirectTo=/${locale}/dashboard/pass-upload`)}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             {tPass('goToDashboard')}
           </button>
@@ -192,7 +192,7 @@ export default function PassUploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen app-page-bg py-8">
       <div className="max-w-4xl mx-auto px-4">
         {/* 헤더 */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -205,12 +205,12 @@ export default function PassUploadPage() {
         </div>
 
         {/* 안내 사항 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+        <div className="bg-muted/50 border border-border rounded-lg p-6 mb-6">
           <div className="flex items-start space-x-3">
-            <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h3 className="font-semibold text-blue-900 mb-2">{tPass('uploadGuide')}</h3>
-              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <h3 className="font-semibold text-foreground mb-2">{tPass('uploadGuide')}</h3>
+              <ul className="text-sm text-primary space-y-1 list-disc list-inside">
                 <li>{tPass('passPhoto')}: {tPass('passPhotoDesc')}</li>
                 <li>{tPass('idPhoto')}: {tPass('idPhotoDesc')}</li>
                 <li>{tPass('fileFormat')}</li>
@@ -278,7 +278,7 @@ export default function PassUploadPage() {
                 <span className="sr-only">{tPass('uploadPassPhoto')}</span>
                 <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
                   uploading 
-                    ? 'border-blue-400 bg-blue-50' 
+                    ? 'border-blue-400 bg-primary/5' 
                     : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
                 }`}>
                   <input
@@ -293,7 +293,7 @@ export default function PassUploadPage() {
                   />
                   {uploading ? (
                     <div className="space-y-2">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                       <p className="text-sm text-gray-600">{tPass('uploading')}</p>
                     </div>
                   ) : (
@@ -356,7 +356,7 @@ export default function PassUploadPage() {
                 <span className="sr-only">{tPass('uploadIdPhoto')}</span>
                 <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
                   uploading 
-                    ? 'border-blue-400 bg-blue-50' 
+                    ? 'border-blue-400 bg-primary/5' 
                     : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
                 }`}>
                   <input
@@ -371,7 +371,7 @@ export default function PassUploadPage() {
                   />
                   {uploading ? (
                     <div className="space-y-2">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                       <p className="text-sm text-gray-600">{tPass('uploading')}</p>
                     </div>
                   ) : (
@@ -411,7 +411,7 @@ export default function PassUploadPage() {
               disabled={!passPhotoUrl || !idPhotoUrl || saving}
               className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                 passPhotoUrl && idPhotoUrl && !saving
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >

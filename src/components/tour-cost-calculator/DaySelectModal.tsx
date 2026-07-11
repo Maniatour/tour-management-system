@@ -33,7 +33,7 @@ const DaySelectModal: React.FC<DaySelectModalProps> = ({
                 onSelectDay(editingDayIndex, `${day}일`)
                 onClose()
               }}
-              className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-500 transition-colors"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-muted/50 hover:border-primary transition-colors"
             >
               {day}{locale === 'ko' ? '일' : ''}
             </button>

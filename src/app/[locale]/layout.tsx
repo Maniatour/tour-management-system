@@ -54,7 +54,7 @@ export default async function LocaleLayout({
         <FloatingChatProvider>
           <LazyStripeErrorHandler />
           <LazyModalBackdropGuard />
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen app-page-bg">
             {children}
             <LazyFloatingChatContainer />
           </div>
@@ -70,7 +70,7 @@ export default async function LocaleLayout({
         <FloatingChatProvider>
           <LazyStripeErrorHandler />
           <LazyModalBackdropGuard />
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen app-page-bg">
             <LazyNavigation />
             {children}
             <LazyFloatingChatContainer />
@@ -94,7 +94,7 @@ export default async function LocaleLayout({
             <LazyNavigation />
             <div className="flex flex-col lg:flex-row">
               <LazySidebar />
-              <main className="flex-1 px-2 pt-4 lg:px-6 lg:pt-6 main-safe-area">
+              <main className="flex-1 px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6 main-safe-area">
                 {children}
               </main>
             </div>

@@ -339,7 +339,7 @@ export default function AdminReports() {
             type="button"
             onClick={handleGenerateReport}
             disabled={isGeneratingReport}
-            className="bg-blue-600 text-white px-3 py-2.5 sm:px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 text-sm min-h-[44px] sm:min-h-0"
+            className="bg-primary text-primary-foreground px-3 py-2.5 sm:px-4 rounded-lg hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50 text-sm min-h-[44px] sm:min-h-0"
           >
             {isGeneratingReport ? (
               <>
@@ -376,7 +376,7 @@ export default function AdminReports() {
                 onClick={() => handlePeriodChange(period)}
                 className={`px-3 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md transition-colors min-h-[40px] sm:min-h-0 ${
                   reportPeriod === period
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -438,7 +438,7 @@ export default function AdminReports() {
               <button
                 type="button"
                 onClick={handleCustomSearch}
-                className="w-full sm:w-auto px-4 py-2.5 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 min-h-[44px]"
+                className="w-full sm:w-auto px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 min-h-[44px]"
               >
                 <Search size={16} />
                 <span>검색</span>
@@ -471,7 +471,7 @@ export default function AdminReports() {
                 onClick={() => setActiveTab(key as ReportTab)}
                 className={`flex shrink-0 items-center gap-1.5 sm:gap-2 py-3 sm:py-4 px-2 sm:px-3 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap min-h-[44px] sm:min-h-[48px] ${
                   activeTab === key
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >

@@ -274,7 +274,7 @@ function ResidentCheckInner() {
           )}
         </div>
 
-        <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-5 text-sm text-slate-800">
+        <div className="rounded-xl border border-border/60 bg-primary/5/80 p-5 text-sm text-slate-800">
           <p className="font-semibold text-blue-950">{t('npsTitle')}</p>
           <p className="mt-2 leading-relaxed">
             {t('npsBody')}

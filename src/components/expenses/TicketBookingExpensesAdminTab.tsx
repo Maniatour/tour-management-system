@@ -285,7 +285,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
         <label className="inline-flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
           <input
             type="checkbox"
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="rounded border-gray-300 text-primary focus:ring-ring"
             checked={unmatchedOnly}
             onChange={(e) => setUnmatchedOnly(e.target.checked)}
           />
@@ -359,7 +359,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                     {r.tour_id ? (
                       <Link
                         href={`/${locale}/admin/tours/${r.tour_id}`}
-                        className="text-blue-600 hover:underline font-medium"
+                        className="text-primary hover:underline font-medium"
                       >
                         {t('openTour')}
                       </Link>
@@ -369,7 +369,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                   </td>
                   <td className="px-2 py-2 max-w-[10rem] truncate">
                     {r.reservation_id ? (
-                      <Link href={`/${locale}/admin/reservations/${r.reservation_id}`} className="text-blue-600 hover:underline">
+                      <Link href={`/${locale}/admin/reservations/${r.reservation_id}`} className="text-primary hover:underline">
                         {r.reservation_id.slice(0, 8)}…
                       </Link>
                     ) : (
@@ -390,7 +390,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                     <button
                       type="button"
                       onClick={() => void openTicketEdit(r.id)}
-                      className="text-blue-600 hover:underline text-xs font-medium"
+                      className="text-primary hover:underline text-xs font-medium"
                     >
                       {t('editRow')}
                     </button>

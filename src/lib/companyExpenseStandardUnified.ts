@@ -292,7 +292,7 @@ const UNIFIED_SELECT_GROUP_CHROME: Record<string, string> = {
   CAT014: 'bg-yellow-100 text-yellow-950',
   CAT015: 'bg-purple-100 text-purple-950',
   CAT016: 'bg-red-100 text-red-950',
-  CAT017: 'bg-blue-100 text-blue-950',
+  CAT017: 'bg-primary/10 text-blue-950',
   CAT018: 'bg-neutral-200 text-neutral-900',
   CAT019: 'bg-zinc-200 text-zinc-900',
   CAT020: 'bg-emerald-100 text-emerald-950',

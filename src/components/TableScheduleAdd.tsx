@@ -1826,7 +1826,7 @@ export default function TableScheduleAdd({
             onClick={() => setShowEnglishFields(!showEnglishFields)}
             className={`px-3 py-1 text-sm rounded-lg border ${
               showEnglishFields 
-                ? 'bg-blue-600 text-white border-blue-600' 
+                ? 'bg-primary text-primary-foreground border-primary' 
                 : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
             }`}
           >
@@ -1853,7 +1853,7 @@ export default function TableScheduleAdd({
               onSchedulesChange(updatedSchedules)
             }}
             disabled={schedules.length === 0}
-            className="flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+            className="flex items-center px-3 py-1 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 text-sm"
             title="모든 스케줄의 시간을 소요시간 기준으로 자동 계산"
           >
             <Calendar className="h-4 w-4 mr-1" />
@@ -1898,7 +1898,7 @@ export default function TableScheduleAdd({
               onSave()
             }}
             disabled={saving || schedules.length === 0}
-            className="flex items-center px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+            className="flex items-center px-4 py-1 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 text-sm"
           >
             <Save className="h-4 w-4 mr-1" />
             {saving ? '저장 중...' : '모두 저장'}
@@ -1975,9 +1975,9 @@ export default function TableScheduleAdd({
               className={`flex gap-2 items-center p-2 border rounded-lg transition-all duration-200 ${
                 draggedIndex === index ? 'opacity-50 scale-95 shadow-lg' : ''
               } ${
-                dragOverIndex === index ? 'bg-blue-50 border-blue-400 border-2 shadow-md transform scale-105' : 'border-gray-200'
+                dragOverIndex === index ? 'bg-primary/5 border-blue-400 border-2 shadow-md transform scale-105' : 'border-gray-200'
               } ${
-                draggedIndex !== null && draggedIndex !== index && dragOverIndex === index ? 'border-dashed border-blue-500 bg-blue-100' : ''
+                draggedIndex !== null && draggedIndex !== index && dragOverIndex === index ? 'border-dashed border-primary bg-primary/10' : ''
               }`}
               draggable
               onDragStart={(e) => handleDragStart(e, index)}
@@ -2030,7 +2030,7 @@ export default function TableScheduleAdd({
 
               {/* 순서 */}
               <div className="w-[40px] flex justify-center items-center">
-                <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
+                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
                   {schedule.order_index || index + 1}
                 </div>
               </div>
@@ -2041,7 +2041,7 @@ export default function TableScheduleAdd({
                   type="number"
                   value={schedule.day_number}
                   onChange={(e) => updateSchedule(index, 'day_number', parseInt(e.target.value))}
-                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   min="1"
                 />
               </div>
@@ -2064,7 +2064,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="선택사항"
                 />
               </div>
@@ -2087,7 +2087,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="선택사항"
                 />
               </div>
@@ -2126,7 +2126,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   min="5"
                   step="5"
                   placeholder="분"
@@ -2149,7 +2149,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2174,9 +2174,9 @@ export default function TableScheduleAdd({
                           })
                         }
                       }}
-                      className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                      className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-ring ${
                         (titleInputMode[index] || 'text') === 'tour_course'
-                          ? 'bg-blue-100 border-blue-300 text-blue-700'
+                          ? 'bg-primary/10 border-border text-primary'
                           : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
                       }`}
                       title={(titleInputMode[index] || 'text') === 'text' ? '투어 코스 선택 모드로 전환' : '텍스트 입력 모드로 전환'}
@@ -2197,7 +2197,7 @@ export default function TableScheduleAdd({
                           updateSchedule(index, 'title_ko', e.target.value)
                         }
                       }}
-                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder={showEnglishFields ? "English title" : "한국어 제목"}
                     />
                   ) : (
@@ -2214,7 +2214,7 @@ export default function TableScheduleAdd({
                           })
                         }
                       }}
-                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                     >
                       <option value="">투어 코스 선택</option>
                       {loadingTourCourses ? (
@@ -2239,10 +2239,10 @@ export default function TableScheduleAdd({
                       setTextModalIndex(index)
                       setShowTextModal(true)
                     }}
-                    className={`w-[100px] h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                    className={`w-[100px] h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-ring text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
                       (showEnglishFields ? !schedule.description_en : !schedule.description_ko) 
                         ? 'bg-red-50 border-red-300 text-red-700' 
-                        : 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'bg-primary/5 border-border text-primary'
                     }`}
                   >
                     <span className="truncate font-medium">
@@ -2262,7 +2262,7 @@ export default function TableScheduleAdd({
                     setTextModalIndex(index)
                     setShowTextModal(true)
                   }}
-                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-ring text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
                     (showEnglishFields ? !schedule.guide_notes_en : !schedule.guide_notes_ko) 
                       ? 'bg-red-50 border-red-300 text-red-700' 
                       : 'bg-green-50 border-green-300 text-green-700'
@@ -2297,9 +2297,9 @@ export default function TableScheduleAdd({
                     })
                     updateSchedule(index, 'two_guide_schedule', nextValue)
                   }}
-                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-ring text-center font-medium transition-colors ${
                     schedule.two_guide_schedule === 'guide' 
-                      ? 'bg-blue-100 border-blue-400 text-blue-800' 
+                      ? 'bg-primary/10 border-blue-400 text-primary' 
                       : schedule.two_guide_schedule === 'assistant'
                       ? 'bg-purple-100 border-purple-400 text-purple-800'
                       : 'bg-gray-100 border-gray-300 text-gray-600'
@@ -2335,9 +2335,9 @@ export default function TableScheduleAdd({
                     })
                     updateSchedule(index, 'guide_driver_schedule', nextValue)
                   }}
-                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-ring text-center font-medium transition-colors ${
                     schedule.guide_driver_schedule === 'guide' 
-                      ? 'bg-blue-100 border-blue-400 text-blue-800' 
+                      ? 'bg-primary/10 border-blue-400 text-primary' 
                       : schedule.guide_driver_schedule === 'assistant'
                       ? 'bg-orange-100 border-orange-400 text-orange-800'
                       : 'bg-gray-100 border-gray-300 text-gray-600'
@@ -2364,7 +2364,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2381,7 +2381,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2398,7 +2398,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2415,7 +2415,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2432,7 +2432,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring"
                 />
               </div>
 
@@ -2444,7 +2444,7 @@ export default function TableScheduleAdd({
                   onChange={(e) => {
                     updateSchedule(index, 'location_ko', e.target.value)
                   }}
-                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="위치명"
                 />
               </div>
@@ -2458,7 +2458,7 @@ export default function TableScheduleAdd({
                   onChange={(e) => {
                     updateSchedule(index, 'latitude', e.target.value ? parseFloat(e.target.value) : null)
                   }}
-                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="위도"
                 />
               </div>
@@ -2472,7 +2472,7 @@ export default function TableScheduleAdd({
                   onChange={(e) => {
                     updateSchedule(index, 'longitude', e.target.value ? parseFloat(e.target.value) : null)
                   }}
-                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="경도"
                 />
               </div>
@@ -2486,7 +2486,7 @@ export default function TableScheduleAdd({
                     onChange={(e) => {
                       updateSchedule(index, 'google_maps_link', e.target.value)
                     }}
-                    className="flex-1 h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="flex-1 h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="구글맵 링크"
                   />
                   <button
@@ -2496,7 +2496,7 @@ export default function TableScheduleAdd({
                       setMapModalIndex(index)
                       setShowMapModal(true)
                     }}
-                    className="w-8 h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded flex items-center justify-center"
+                    className="w-8 h-8 text-primary hover:text-primary/80 hover:bg-muted/50 rounded flex items-center justify-center"
                   >
                     <MapPin className="h-4 w-4" />
                   </button>
@@ -2583,7 +2583,7 @@ export default function TableScheduleAdd({
                 <div
                   className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                     dragOver 
-                      ? 'border-blue-500 bg-blue-50' 
+                      ? 'border-primary bg-primary/5' 
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
                   onDragOver={(e) => handleDragOver(e, thumbnailIndex!)}
@@ -2603,7 +2603,7 @@ export default function TableScheduleAdd({
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingThumbnail}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
                   >
                     {uploadingThumbnail ? (
                       <>
@@ -2651,7 +2651,7 @@ export default function TableScheduleAdd({
                     value={schedules[thumbnailIndex]?.thumbnail_url || ''}
                     onChange={(e) => updateSchedule(thumbnailIndex, 'thumbnail_url', e.target.value)}
                     placeholder="https://example.com/image.jpg"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 
@@ -2706,7 +2706,7 @@ export default function TableScheduleAdd({
                   <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
                     {loadingBucketImages ? (
                       <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         <span className="ml-2 text-gray-600">이미지 로딩 중...</span>
                       </div>
                     ) : bucketImages.length > 0 ? (
@@ -2726,7 +2726,7 @@ export default function TableScheduleAdd({
                               alt={image.name}
                               width={80}
                               height={80}
-                              className="w-full h-20 object-cover rounded border hover:border-blue-500 transition-colors"
+                              className="w-full h-20 object-cover rounded border hover:border-primary transition-colors"
                             />
                             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded flex items-center justify-center">
                               <Copy className="h-4 w-4 text-white opacity-0 group-hover:opacity-100" />
@@ -2821,7 +2821,7 @@ export default function TableScheduleAdd({
                   setShowTextModal(false)
                   setTextModalIndex(null)
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 저장
               </button>
@@ -2884,11 +2884,11 @@ export default function TableScheduleAdd({
                       }
                     }}
                     placeholder="장소명, 주소, 좌표, Plus Code 등으로 검색하세요..."
-                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                   {isMapSearchLoading && (
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     </div>
                   )}
                 </div>
@@ -2903,7 +2903,7 @@ export default function TableScheduleAdd({
                         className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                       >
                         <div className="flex items-start gap-3">
-                          <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-gray-900 truncate">
                               {suggestion.name}
@@ -2923,7 +2923,7 @@ export default function TableScheduleAdd({
                               )}
                               {suggestion.types && suggestion.types.includes('plus_code') && (
                                 <div className="flex items-center gap-1">
-                                  <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">Plus Code</span>
+                                  <span className="text-xs bg-primary/10 text-primary px-1 rounded">Plus Code</span>
                                 </div>
                               )}
                               {suggestion.types && suggestion.types.includes('geocode') && (
@@ -2945,15 +2945,15 @@ export default function TableScheduleAdd({
 
               {/* 선택된 위치 정보 */}
               {(mapSearchQuery || selectedAddress) && (
-                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="mb-3 p-3 bg-muted/50 border border-border rounded-lg">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <MapPin className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-blue-900">{mapSearchQuery || '저장된 위치'}</span>
+                        <MapPin className="w-4 h-4 text-primary" />
+                        <span className="font-medium text-foreground">{mapSearchQuery || '저장된 위치'}</span>
                       </div>
-                      <div className="text-sm text-blue-700 mb-2">{selectedAddress}</div>
-                      <div className="text-xs text-blue-600">
+                      <div className="text-sm text-primary mb-2">{selectedAddress}</div>
+                      <div className="text-xs text-primary">
                         좌표: {(document.getElementById('latitude') as HTMLInputElement)?.value || 'N/A'}, {(document.getElementById('longitude') as HTMLInputElement)?.value || 'N/A'}
                       </div>
                     </div>
@@ -2962,7 +2962,7 @@ export default function TableScheduleAdd({
                       href={selectedGoogleMapLink} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"
+                        className="flex items-center gap-1 text-primary hover:text-primary/80 text-sm"
                     >
                         <ExternalLink className="w-3 h-3" />
                         구글 맵
@@ -2984,11 +2984,11 @@ export default function TableScheduleAdd({
 
             {/* 선택된 위치 정보 */}
             {(selectedAddress || modalLatitude) && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 className="text-sm font-medium text-blue-900 mb-1">선택된 위치</h4>
-                <p className="text-sm text-blue-800">{selectedAddress}</p>
+              <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-border">
+                <h4 className="text-sm font-medium text-foreground mb-1">선택된 위치</h4>
+                <p className="text-sm text-primary">{selectedAddress}</p>
                 {(modalLatitude || modalLongitude) && (
-                  <p className="text-xs text-blue-600 mt-1">
+                  <p className="text-xs text-primary mt-1">
                     좌표: {modalLatitude || '위도 없음'}, {modalLongitude || '경도 없음'}
                   </p>
                 )}
@@ -3006,7 +3006,7 @@ export default function TableScheduleAdd({
                   id="latitude"
                   value={modalLatitude}
                   onChange={(e) => setModalLatitude(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: 36.1699"
                 />
               </div>
@@ -3020,7 +3020,7 @@ export default function TableScheduleAdd({
                   id="longitude"
                   value={modalLongitude}
                   onChange={(e) => setModalLongitude(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: -115.1398"
                 />
               </div>
@@ -3030,7 +3030,7 @@ export default function TableScheduleAdd({
             {showNearbyPlaces && nearbyPlaces.length > 0 && (
               <div className="mb-6">
                 <h4 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
-                  <MapPin className="w-4 h-4 mr-2 text-blue-600" />
+                  <MapPin className="w-4 h-4 mr-2 text-primary" />
                   주변 장소 ({nearbyPlaces.length}개)
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto">
@@ -3038,9 +3038,9 @@ export default function TableScheduleAdd({
                     <div 
                       key={place.placeId}
                       onClick={() => selectNearbyPlace(place)}
-                      className="flex items-center space-x-3 p-3 bg-gray-50 hover:bg-blue-50 rounded-lg cursor-pointer border border-gray-200 hover:border-blue-300 transition-colors"
+                      className="flex items-center space-x-3 p-3 bg-gray-50 hover:bg-muted/50 rounded-lg cursor-pointer border border-gray-200 hover:border-border transition-colors"
                     >
-                      <div className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      <div className="flex-shrink-0 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">
                         {index + 1}
                       </div>
                       <div className="flex-grow min-w-0">
@@ -3130,7 +3130,7 @@ export default function TableScheduleAdd({
                     alert('위도와 경도를 모두 입력해주세요.')
                   }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 좌표 적용
               </button>
@@ -3167,7 +3167,7 @@ export default function TableScheduleAdd({
               <select
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">제품을 선택하세요</option>
                 {availableProducts.map((product) => (

@@ -466,7 +466,7 @@ const TICKET_TABLE_CLIP = 'block min-w-0 max-w-full truncate'
 /** 데스크톱 행 Cancel Due 날짜별 배경·호버 (테이블·상세 모달 공통) */
 const TICKET_TABLE_CANCEL_DUE_BG = [
   'bg-white',
-  'bg-blue-50',
+  'bg-primary/5',
   'bg-green-50',
   'bg-yellow-50',
   'bg-purple-50',
@@ -476,7 +476,7 @@ const TICKET_TABLE_CANCEL_DUE_BG = [
 ] as const
 const TICKET_TABLE_CANCEL_DUE_HOVER = [
   'hover:bg-gray-50',
-  'hover:bg-blue-100',
+  'hover:bg-muted',
   'hover:bg-green-100',
   'hover:bg-yellow-100',
   'hover:bg-purple-100',
@@ -560,7 +560,7 @@ function TicketInvoiceDraftInput({
       type="text"
       value={value}
       onChange={(e) => setValue(e.target.value)}
-      className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
       placeholder="Invoice 번호"
       autoFocus
       disabled={disabled}
@@ -623,7 +623,7 @@ function TicketInvoiceInlineCell({
           e.currentTarget.blur();
         }
       }}
-      className={`w-full min-w-[3.5rem] max-w-[6.5rem] rounded border px-1.5 py-0.5 tabular-nums text-[11px] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 ${
+      className={`w-full min-w-[3.5rem] max-w-[6.5rem] rounded border px-1.5 py-0.5 tabular-nums text-[11px] focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60 ${
         value.trim() ? 'border-gray-200 text-gray-900' : 'border-gray-200 text-gray-400'
       }`}
       placeholder="—"
@@ -3277,7 +3277,7 @@ export default function TicketBookingList() {
               e.stopPropagation();
               handleEdit(booking);
             }}
-            className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}
+            className={`${btn} bg-primary text-primary-foreground hover:bg-primary/90`}
             title={locale === 'ko' ? '편집' : 'Edit'}
           >
             {locale === 'ko' ? '편집' : 'Edit'}
@@ -5267,7 +5267,7 @@ export default function TicketBookingList() {
               </div>
               <button
                 type="button"
-                className="text-left text-xs font-medium text-blue-600 hover:underline"
+                className="text-left text-xs font-medium text-primary hover:underline"
                 onClick={(e) => {
                   e.stopPropagation();
                   setAxesDialogBooking(booking);
@@ -5537,7 +5537,7 @@ export default function TicketBookingList() {
               <span className="inline-flex items-center gap-1">
                 체크인
                 {interactive && sortField === 'date' ? (
-                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                  <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                 ) : null}
               </span>
             </th>
@@ -5561,7 +5561,7 @@ export default function TicketBookingList() {
               <span className="inline-flex items-center gap-1">
                 제출일
                 {interactive && sortField === 'submit_on' ? (
-                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                  <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                 ) : null}
               </span>
             </th>
@@ -5941,7 +5941,7 @@ export default function TicketBookingList() {
           e.stopPropagation();
           openInvoiceAttachmentView(booking);
         }}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-primary"
         title="Invoice 인보이스 사진"
       >
         {(() => {
@@ -5950,7 +5950,7 @@ export default function TicketBookingList() {
             inv &&
             (invoiceAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
           return has ? (
-            <Paperclip className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+            <Paperclip className="h-5 w-5 shrink-0 text-primary" aria-hidden />
           ) : (
             <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
           );
@@ -5996,7 +5996,7 @@ export default function TicketBookingList() {
           role="status"
           aria-live="polite"
         >
-          <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" aria-hidden />
+          <span className="inline-block h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden />
           <span>추가 정보 불러오는 중…</span>
         </div>
       )}
@@ -6010,7 +6010,7 @@ export default function TicketBookingList() {
               onClick={() => setViewMode('card')}
               className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title="카드 뷰"
@@ -6021,7 +6021,7 @@ export default function TicketBookingList() {
               onClick={() => setViewMode('calendar')}
               className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'calendar'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title="달력 뷰"
@@ -6032,7 +6032,7 @@ export default function TicketBookingList() {
               onClick={() => setViewMode('table')}
               className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title="테이블 뷰"
@@ -6088,7 +6088,7 @@ export default function TicketBookingList() {
               setEditingBooking(null);
               setShowForm(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium transition-colors flex-shrink-0"
           >
             <Plus size={16} />
             <span className="hidden sm:inline">{t('addNewBooking')}</span>
@@ -6111,7 +6111,7 @@ export default function TicketBookingList() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`${t('search')}...`}
-                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
               />
             </div>
           </div>
@@ -6153,7 +6153,7 @@ export default function TicketBookingList() {
             <select
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
             >
               <option value="all">{t('allBookings')}</option>
               <option value="connected">{t('tourConnected')}</option>
@@ -6168,7 +6168,7 @@ export default function TicketBookingList() {
             <select
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
             >
               <option value="all">{t('allVendors')}</option>
               {companyFilter !== 'all' &&
@@ -6199,7 +6199,7 @@ export default function TicketBookingList() {
                   aria-pressed={dateRangeBasis === 'check_in'}
                   className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
                     dateRangeBasis === 'check_in'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6211,7 +6211,7 @@ export default function TicketBookingList() {
                   aria-pressed={dateRangeBasis === 'submit_on'}
                   className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
                     dateRangeBasis === 'submit_on'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6227,7 +6227,7 @@ export default function TicketBookingList() {
                   value={checkInDateFrom}
                   onChange={(e) => setCheckInDateFrom(e.target.value)}
                   aria-label={t('dateRangeStart')}
-                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
                 />
               </div>
               <span className="text-gray-400 text-xs shrink-0">–</span>
@@ -6238,7 +6238,7 @@ export default function TicketBookingList() {
                   onChange={(e) => setCheckInDateTo(e.target.value)}
                   aria-label={t('dateRangeEnd')}
                   min={checkInDateFrom || undefined}
-                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
                 />
               </div>
             </div>
@@ -6263,7 +6263,7 @@ export default function TicketBookingList() {
                     aria-label={t('checkInYearPresetAria', { year })}
                     className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
                       active
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -6291,7 +6291,7 @@ export default function TicketBookingList() {
                 }}
                 className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                   futureEventFilter
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -6401,7 +6401,7 @@ export default function TicketBookingList() {
                   onClick={() => setTicketTableLayout('flat')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     ticketTableLayout === 'flat'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6412,7 +6412,7 @@ export default function TicketBookingList() {
                   onClick={() => setTicketTableLayout('byRn')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     ticketTableLayout === 'byRn'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6423,7 +6423,7 @@ export default function TicketBookingList() {
                   onClick={() => setTicketTableLayout('byTour')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     ticketTableLayout === 'byTour'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6437,7 +6437,7 @@ export default function TicketBookingList() {
                   }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     ticketTableLayout === 'byDate'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -6755,7 +6755,7 @@ export default function TicketBookingList() {
                         </h4>
                         <button
                           onClick={goToToday}
-                          className="text-xs sm:text-sm text-blue-600 hover:text-blue-800 mt-0.5 sm:mt-1"
+                          className="text-xs sm:text-sm text-primary hover:text-primary/80 mt-0.5 sm:mt-1"
                         >
                           {t('goToToday')}
                         </button>
@@ -6890,7 +6890,7 @@ export default function TicketBookingList() {
                                   <div
                                     className={`absolute left-1 top-1 z-[15] text-xs sm:text-sm font-medium leading-none ${
                                       isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                                    } ${isToday ? 'text-blue-600' : ''}`}
+                                    } ${isToday ? 'text-primary' : ''}`}
                                   >
                                     {date.getDate()}
                                   </div>
@@ -6902,7 +6902,7 @@ export default function TicketBookingList() {
                                         className={`text-[11px] sm:text-sm font-semibold leading-tight ${
                                           sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
                                             ? 'text-red-600'
-                                            : 'text-blue-700'
+                                            : 'text-primary'
                                         }`}
                                       >
                                         {t('tourPeopleReservationsSummary', {
@@ -7195,10 +7195,10 @@ export default function TicketBookingList() {
                       <div className="mt-3">
                         <div className="text-sm font-medium text-gray-700 mb-2">{t('supplierCategory')}</div>
                         <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-primary">
                             {t('seeCanyonConnected')}
                           </span>
-                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-600">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary">
                             {t('seeCanyonNotConnected')}
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-200 text-green-800">
@@ -7282,7 +7282,7 @@ export default function TicketBookingList() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">총액</span>
-                          <span className="font-medium text-blue-600">${booking.total_price}</span>
+                          <span className="font-medium text-primary">${booking.total_price}</span>
                         </div>
                         <div className="col-span-2 flex justify-between sm:col-span-1">
                           <span className="text-gray-500">Invoice#</span>
@@ -7406,7 +7406,7 @@ export default function TicketBookingList() {
                     setListPageSize(Number(e.target.value));
                     setListPage(1);
                   }}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring sm:text-sm"
                 >
                   <option value={25}>{ticketTableLayout === 'byDate' ? '25일' : '25건'}</option>
                   <option value={50}>{ticketTableLayout === 'byDate' ? '50일' : '50건'}</option>
@@ -7894,9 +7894,9 @@ export default function TicketBookingList() {
               type="button"
               disabled={attachmentModalBusy}
               onClick={() => setInvoiceModalPasteTarget('invoice')}
-              className={`mt-2 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm text-gray-600 transition-colors hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-50 ${
+              className={`mt-2 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm text-gray-600 transition-colors hover:border-blue-400 hover:bg-muted/50/50 disabled:opacity-50 ${
                 invoiceModalPasteTarget === 'invoice'
-                  ? 'border-blue-500 bg-blue-50/70 ring-2 ring-blue-400/60 ring-offset-2'
+                  ? 'border-primary bg-primary/5/70 ring-2 ring-blue-400/60 ring-offset-2'
                   : 'border-gray-300 bg-gray-50'
               }`}
             >
@@ -7915,7 +7915,7 @@ export default function TicketBookingList() {
               type="button"
               disabled={attachmentModalBusy}
               onClick={() => invoicePhotoInputRef.current?.click()}
-              className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
+              className="mt-2 text-xs font-medium text-primary hover:text-primary/80 hover:underline disabled:opacity-50"
             >
               PC에서 인보이스 파일 선택…
             </button>
@@ -7937,7 +7937,7 @@ export default function TicketBookingList() {
                             href={url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="break-all text-sm text-blue-600 hover:underline"
+                            className="break-all text-sm text-primary hover:underline"
                           >
                             {url.split('/').pop() || url}
                           </a>
@@ -8016,7 +8016,7 @@ export default function TicketBookingList() {
                               href={url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="break-all text-sm text-blue-600 hover:underline"
+                              className="break-all text-sm text-primary hover:underline"
                             >
                               {url.split('/').pop() || url}
                             </a>
@@ -8053,7 +8053,7 @@ export default function TicketBookingList() {
                 type="button"
                 disabled={attachmentModalBusy}
                 onClick={() => void saveInvoiceQuick()}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               >
                 {invoiceQuickSaving ? '저장 중…' : '저장 (Invoice # · 첨부)'}
               </button>
@@ -8177,7 +8177,7 @@ export default function TicketBookingList() {
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="min-w-0 flex-1 break-all text-sm text-blue-700 hover:underline"
+                        className="min-w-0 flex-1 break-all text-sm text-primary hover:underline"
                       >
                         {url.split('/').pop() || url}
                       </a>
@@ -8225,7 +8225,7 @@ export default function TicketBookingList() {
                   href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                  className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
                 >
                   새 탭에서 열기
                 </a>

@@ -206,7 +206,7 @@ export default function PhotoUploadModal({
 
         <div
           className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 ${
-            dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+            dragActive ? 'border-primary bg-primary/5' : 'border-gray-300'
           }`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
@@ -223,7 +223,7 @@ export default function PhotoUploadModal({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 mx-auto"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 mx-auto"
           >
             <Upload className="w-4 h-4" />
             {uploading ? '업로드 중...' : '파일 선택'}

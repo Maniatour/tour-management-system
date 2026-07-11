@@ -1,0 +1,14 @@
+---
+description: TypeScript validation workflow
+alwaysApply: true
+---
+
+Do not run a full TypeScript type check after every small change.
+
+Use editor diagnostics while editing.
+
+Run `npm run typecheck` only once after completing a meaningful group of changes.
+
+Do not repeatedly run the same type check.
+
+Do not run `next build` unless explicitly requested.

@@ -11,10 +11,8 @@ import {
   CheckCircle2,
   Settings,
   Shield,
-  HelpCircle,
   type LucideIcon,
 } from 'lucide-react'
-import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
@@ -55,7 +53,6 @@ type ProductDetailTabId =
   | 'included'
   | 'logistics'
   | 'policy'
-  | 'faq'
 
 type ProductDetailTabPanelProps = {
   productId: string
@@ -79,11 +76,11 @@ const VALID_TABS: ProductDetailTabId[] = [
   'included',
   'logistics',
   'policy',
-  'faq',
 ]
 
 const LEGACY_TAB_MAP: Record<string, ProductDetailTabId> = {
   details: 'basic',
+  faq: 'overview',
 }
 
 function normalizeTabId(tab: string | null): ProductDetailTabId | null {
@@ -104,7 +101,6 @@ type TabConfig = {
     | 'detailTabIncluded'
     | 'detailTabLogistics'
     | 'detailTabPolicy'
-    | 'tabFaq'
   icon: LucideIcon
   iconBg: string
   iconColor: string
@@ -114,7 +110,6 @@ type TabConfig = {
     | 'detail-tab-itinerary'
     | 'detail-tab-schedule'
     | 'detail-tab-details'
-    | 'detail-tab-faq'
 }
 
 const TAB_CONFIG: TabConfig[] = [
@@ -122,9 +117,9 @@ const TAB_CONFIG: TabConfig[] = [
     id: 'overview',
     labelKey: 'tabOverview',
     icon: BookOpen,
-    iconBg: 'bg-blue-100',
-    iconColor: 'text-blue-600',
-    activeLabel: 'text-blue-700',
+    iconBg: 'bg-booking/10',
+    iconColor: 'text-booking',
+    activeLabel: 'text-booking',
     zone: 'detail-tab-overview',
   },
   {
@@ -180,15 +175,6 @@ const TAB_CONFIG: TabConfig[] = [
     iconColor: 'text-rose-600',
     activeLabel: 'text-rose-700',
     zone: 'detail-tab-details',
-  },
-  {
-    id: 'faq',
-    labelKey: 'tabFaq',
-    icon: HelpCircle,
-    iconBg: 'bg-sky-100',
-    iconColor: 'text-sky-600',
-    activeLabel: 'text-sky-700',
-    zone: 'detail-tab-faq',
   },
 ]
 
@@ -303,13 +289,6 @@ export default function ProductDetailTabPanel({
               tagLabelMap={tagLabelMap}
               section={activeTab as ProductDetailSection}
             />
-          </CustomerPageZone>
-        )
-
-      case 'faq':
-        return (
-          <CustomerPageZone zone="detail-tab-faq">
-            <ProductFaqDisplay productId={productId} />
           </CustomerPageZone>
         )
 

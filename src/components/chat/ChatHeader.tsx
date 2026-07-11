@@ -91,7 +91,7 @@ export default function ChatHeader({
           {headingText}
         </div>
         <span
-          className="flex-shrink-0 tabular-nums rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold shadow-sm"
+          className="flex-shrink-0 tabular-nums rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold shadow-sm"
           title={countLabel}
           aria-label={countLabel}
         >
@@ -114,7 +114,7 @@ export default function ChatHeader({
               </button>
               <button
                 onClick={onShowPickupSchedule}
-                className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
+                className="p-2 bg-primary/10 text-primary rounded border border-border hover:bg-blue-200"
                 title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
               >
                 <Calendar size={18} />
@@ -172,7 +172,7 @@ export default function ChatHeader({
               </button>
               <button
                 onClick={onShowPickupSchedule}
-                className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
+                className="p-2 bg-primary/10 text-primary rounded border border-border hover:bg-blue-200"
                 title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
               >
                 <Calendar size={18} />
@@ -262,7 +262,7 @@ export default function ChatHeader({
           </button>
           <button
             onClick={onShowPickupSchedule}
-            className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
+            className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-primary/10 text-primary rounded border border-border hover:bg-blue-200 flex items-center justify-center"
             title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
           >
             <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
@@ -370,7 +370,7 @@ export default function ChatHeader({
                 </button>
                 <button
                   onClick={onShowPickupSchedule}
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg border border-blue-200 hover:bg-blue-200 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary rounded-lg border border-border hover:bg-blue-200 transition-colors"
                 >
                   <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
                     <Calendar size={20} />
@@ -507,7 +507,7 @@ export default function ChatHeader({
               disabled={isPushLoading}
               className={`p-1.5 lg:p-2 rounded transition-colors ${
                 isPushSubscribed
-                  ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                  ? 'text-primary hover:text-primary/80 hover:bg-muted/50'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
               title={selectedLanguage === 'ko' 

@@ -467,7 +467,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
               <div className="flex justify-end">
                 <button
                   onClick={() => setShowDriveImporter(!showDriveImporter)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center"
                 >
                   <Folder className="w-4 h-4 mr-2" />
                   {getText('구글 드라이브에서 가져오기', 'Import from Google Drive')}
@@ -765,7 +765,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
                             disabled={busy}
-                            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                            className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                           >
                             <Camera className="w-4 h-4 mr-2" />
                             {getText('카메라', 'Camera')}

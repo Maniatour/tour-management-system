@@ -247,7 +247,7 @@ export const PricingListView = memo(function PricingListView({
               onClick={() => setDateFilter('past')}
               className={`px-2 py-1 text-xs rounded transition-colors ${
                 dateFilter === 'past'
-                  ? 'bg-white text-blue-700 shadow border border-gray-200'
+                  ? 'bg-white text-primary shadow border border-gray-200'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -258,7 +258,7 @@ export const PricingListView = memo(function PricingListView({
               onClick={() => setDateFilter('future')}
               className={`px-2 py-1 text-xs rounded transition-colors ${
                 dateFilter === 'future'
-                  ? 'bg-white text-blue-700 shadow border border-gray-200'
+                  ? 'bg-white text-primary shadow border border-gray-200'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -286,7 +286,7 @@ export const PricingListView = memo(function PricingListView({
                 <h4 className="text-sm font-semibold text-gray-900">
                   {formatDate(date)}
                 </h4>
-                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+                <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-[10px] rounded">
                   {t('rulesCount', { count: rules.length })}
                 </span>
               </div>
@@ -395,7 +395,7 @@ export const PricingListView = memo(function PricingListView({
                               <>
                                 <button
                                   onClick={() => handleStartEdit(ruleForEdit, choiceId, choiceData)}
-                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                                   title="편집"
                                 >
                                   <Edit className="h-3 w-3" />
@@ -462,7 +462,7 @@ export const PricingListView = memo(function PricingListView({
                                 <div className="flex flex-wrap gap-x-2 gap-y-0">
                                   <span><span className="text-gray-500">{t('salePrice')}</span> <span className="font-medium">{salePrice > 0 ? formatPrice(salePrice) : '-'}</span></span>
                                   <span><span className="text-gray-500">불포함</span> <span className="font-medium">{hasNotIncludedPrice ? formatPrice(notIncludedPrice) : '-'}</span></span>
-                                  <span><span className="text-gray-500">손님가</span> <span className="font-medium text-blue-600">{customerPrice > 0 ? formatPrice(customerPrice) : '-'}</span></span>
+                                  <span><span className="text-gray-500">손님가</span> <span className="font-medium text-primary">{customerPrice > 0 ? formatPrice(customerPrice) : '-'}</span></span>
                                   <span><span className="text-gray-500">Net</span> <span className="font-medium text-green-600">{netPrice > 0 ? formatPrice(netPrice) : '-'}</span></span>
                                 </div>
                               </div>
@@ -481,7 +481,7 @@ export const PricingListView = memo(function PricingListView({
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <div className="text-xs font-medium text-gray-800">{t('basePrice')}</div>
                           <div className="flex items-center space-x-0.5">
-                            <button onClick={() => onEditRule(rule)} className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="편집"><Edit className="h-3 w-3" /></button>
+                            <button onClick={() => onEditRule(rule)} className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded transition-colors" title="편집"><Edit className="h-3 w-3" /></button>
                             <button onClick={() => onDeleteRule(rule.id)} className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title={t('delete')}><Trash2 className="h-3 w-3" /></button>
                           </div>
                         </div>

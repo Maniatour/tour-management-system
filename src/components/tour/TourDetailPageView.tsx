@@ -1901,7 +1901,7 @@ export function TourDetailPageView({
   // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
   if (loading || tourData.pageLoading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen app-page-bg">
         {/* 헤더 스켈레톤 */}
         <div className="bg-white shadow-sm border-b">
           <div className="px-2 sm:px-6 py-2 sm:py-4">
@@ -1993,7 +1993,7 @@ export function TourDetailPageView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       {/* 헤더 */}
       <TourHeader
         tour={tourData.tour}
@@ -2402,7 +2402,7 @@ export function TourDetailPageView({
         {/* 플로팅 메뉴 버튼 */}
         <button
           onClick={() => setShowFloatingMenu(!showFloatingMenu)}
-          className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+          className="w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors flex items-center justify-center"
         >
           {showFloatingMenu ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -2444,11 +2444,11 @@ export function TourDetailPageView({
                     }}
                     className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                       isActive
-                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        ? 'bg-primary/5 text-primary font-medium'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
+                    <Icon size={18} className={isActive ? 'text-primary' : 'text-gray-500'} />
                     <span>{section.label}</span>
                   </button>
                 )

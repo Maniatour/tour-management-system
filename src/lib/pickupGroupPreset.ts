@@ -284,6 +284,17 @@ export function presetDisplayName(
   return preset.name_ko
 }
 
+/** 투어 상세 등 좁은 UI용: "8호텔 그룹" → "8호텔" */
+export function presetShortDisplayName(
+  preset: PickupGroupPresetRow,
+  locale: string
+): string {
+  return presetDisplayName(preset, locale)
+    .replace(/\s*그룹\s*/g, '')
+    .replace(/\s*Group\s*/gi, '')
+    .trim()
+}
+
 /** 현재 pickup_hotels 정수 group_number 대표 호텔로 프리셋 대표 슬롯 채우기 */
 export function inferRepresentativesFromHotels(
   groupCount: number,

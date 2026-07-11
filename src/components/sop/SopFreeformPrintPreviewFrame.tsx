@@ -41,7 +41,7 @@ const SopFreeformPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function 
         >
           {html ? (
             <div
-              className="prose prose-sm max-w-none text-black [&_a]:text-blue-600 [&_img]:max-w-full"
+              className="prose prose-sm max-w-none text-black [&_a]:text-primary [&_img]:max-w-full"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           ) : (

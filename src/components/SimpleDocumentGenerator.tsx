@@ -951,10 +951,10 @@ export default function SimpleDocumentGenerator({
       </div>
       
       {generating && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-muted/50 border border-border rounded-lg p-4">
           <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <span className="text-blue-700">문서를 자동 생성하고 있습니다...</span>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+            <span className="text-primary">문서를 자동 생성하고 있습니다...</span>
           </div>
         </div>
       )}
@@ -963,7 +963,7 @@ export default function SimpleDocumentGenerator({
         {/* 투어 바우처 */}
         <div className="border rounded-lg p-4 bg-white">
           <div className="flex items-center gap-2 mb-3">
-            <FileText className="w-5 h-5 text-blue-600" />
+            <FileText className="w-5 h-5 text-primary" />
             <h4 className="font-medium text-gray-900">투어 바우처</h4>
             {(generatedContent.voucher.ko || generatedContent.voucher.en) && (
               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -975,14 +975,14 @@ export default function SimpleDocumentGenerator({
               <button
                 onClick={() => generateDocument('voucher', false, 'ko')}
                 disabled={generating}
-                className="flex-1 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
+                className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 text-sm"
               >
                 {generating ? '생성 중...' : '한국어 생성'}
               </button>
               <button
                 onClick={() => generateDocument('voucher', false, 'en')}
                 disabled={generating}
-                className="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 text-sm"
+                className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 text-sm"
               >
                 {generating ? '생성 중...' : 'English 생성'}
               </button>
@@ -1184,7 +1184,7 @@ export default function SimpleDocumentGenerator({
                       onClick={() => setPreviewLanguage('ko')}
                       className={`px-3 py-1 rounded text-sm ${
                         previewLanguage === 'ko' 
-                          ? 'bg-blue-600 text-white' 
+                          ? 'bg-primary text-primary-foreground' 
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
@@ -1194,7 +1194,7 @@ export default function SimpleDocumentGenerator({
                       onClick={() => setPreviewLanguage('en')}
                       className={`px-3 py-1 rounded text-sm ${
                         previewLanguage === 'en' 
-                          ? 'bg-blue-600 text-white' 
+                          ? 'bg-primary text-primary-foreground' 
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >

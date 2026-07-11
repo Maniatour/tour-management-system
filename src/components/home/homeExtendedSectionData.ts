@@ -40,12 +40,16 @@ export function getDemoFaq(t: (key: string) => string): FaqItem[] {
   ]
 }
 
-export const GALLERY_GRADIENTS = [
-  'from-sky-400 to-blue-600',
-  'from-amber-400 to-orange-600',
-  'from-emerald-400 to-teal-600',
-  'from-violet-400 to-purple-600',
-  'from-rose-400 to-pink-600',
-  'from-cyan-400 to-blue-500',
-]
+/** Neutral editorial placeholders when CMS has no gallery images yet */
+export const GALLERY_PLACEHOLDER_CLASSES = [
+  'bg-muted/50 border border-border/60',
+  'bg-muted/40 border border-border/50',
+  'bg-muted/60 border border-border/60',
+  'bg-muted/45 border border-border/55',
+  'bg-muted/55 border border-border/60',
+  'bg-muted/50 border border-border/50',
+] as const
+
+/** @deprecated Use GALLERY_PLACEHOLDER_CLASSES */
+export const GALLERY_GRADIENTS = GALLERY_PLACEHOLDER_CLASSES
 

@@ -236,7 +236,7 @@ export default function JsonSyncManager({ locale: _locale }: JsonSyncManagerProp
           <button
             onClick={syncToDatabase}
             disabled={loading || missingCount === 0}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center space-x-2 disabled:opacity-50"
           >
             <Upload size={20} />
             <span>{t('syncButton', { count: missingCount })}</span>
@@ -245,21 +245,21 @@ export default function JsonSyncManager({ locale: _locale }: JsonSyncManagerProp
       </div>
 
       {syncStatus && (
-        <div className={`p-4 rounded-lg ${syncStatusError ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+        <div className={`p-4 rounded-lg ${syncStatusError ? 'bg-red-50 text-red-700' : 'bg-primary/5 text-primary'}`}>
           {syncStatus}
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0">
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+            <div className="w-8 h-8 bg-primary/50 rounded-full flex items-center justify-center text-white font-bold">
               i
             </div>
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-blue-900 mb-1">{t('editSyncedTitle')}</h4>
-            <p className="text-sm text-blue-700">
+            <h4 className="text-sm font-medium text-foreground mb-1">{t('editSyncedTitle')}</h4>
+            <p className="text-sm text-primary">
               {t('editSyncedDesc')}
             </p>
           </div>
@@ -314,7 +314,7 @@ export default function JsonSyncManager({ locale: _locale }: JsonSyncManagerProp
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6">
             <div className="flex items-center space-x-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <span>{t('processing')}</span>
             </div>
           </div>

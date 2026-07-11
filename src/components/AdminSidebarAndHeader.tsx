@@ -533,7 +533,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               {/* 시스템 제목 */}
               <button
                 onClick={() => router.push(`/${locale}/admin`)}
-                className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate hover:text-blue-600"
+                className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate hover:text-primary"
                 title="대시보드로 이동"
               >
                 {t('systemTitle')}
@@ -591,7 +591,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     onClick={() => {
                       router.push(`/${locale}/admin/reservations?add=true`)
                     }}
-                    className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10 flex items-center space-x-1"
+                    className="relative z-10 flex cursor-pointer items-center space-x-1 rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
                   >
                     <Plus size={14} />
                     <span>{tAdmin('addReservation')}</span>
@@ -612,7 +612,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <div className="flex items-center space-x-2">
                   {/* 경과 시간 표시 (출근 중일 때만) */}
                   {currentSession && currentSession.check_in_time && !currentSession.check_out_time && (
-                    <div className="flex items-center space-x-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">
+                    <div className="flex items-center space-x-1 rounded-lg bg-primary/10 px-2 py-1 text-primary">
                       <Clock className="w-3 h-3" />
                       <span className="text-xs sm:text-sm font-mono font-medium">
                         {elapsedTime}
@@ -656,7 +656,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   <div className="relative hidden sm:inline-block">
                     <Link
                       href={`/${locale}/admin/team-board`}
-                      className="inline-flex items-center justify-center w-9 h-9 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="inline-flex items-center justify-center w-9 h-9 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                       title="팀 보드로 이동"
                     >
                       <BookOpen className="w-5 h-5" />
@@ -692,7 +692,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                   className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
                     <span className="text-white text-sm font-medium">
                       {(authUser?.name || authUser?.email?.split('@')[0] || t('user')).charAt(0).toUpperCase()}
                     </span>
@@ -735,7 +735,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           </p>
                           <p className="text-xs text-gray-500">{authUser?.email || t('noEmailInfo')}</p>
                           {userRole && (
-                            <p className="text-xs text-blue-600 font-medium mt-1">
+                            <p className="text-xs text-primary font-medium mt-1">
                               {isSimulating ? (
                                 <span className="text-orange-600">{t('simulating')} ({userRole === 'admin' ? t('admin') : 
                                  userRole === 'manager' ? t('manager') : 
@@ -801,7 +801,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                                 setShowSimulationModal(true)
                                 handleUserMenuClick()
                               }}
-                              className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                              className="w-full px-4 py-2 text-left text-sm text-primary hover:bg-muted/50 flex items-center"
                             >
                               <UserCheck className="w-4 h-4 mr-2" />
                               {t('guideSimulation')}
@@ -915,7 +915,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 flex-shrink-0">
           <button
             onClick={() => { router.push(`/${locale}/admin`); setSidebarOpen(false) }}
-            className="text-left text-xl font-bold text-gray-900 hover:text-blue-600"
+            className="text-left text-xl font-bold text-gray-900 hover:text-primary"
             title="대시보드로 이동"
           >
             {t('systemTitle')}
@@ -945,7 +945,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   href={item.href}
                   className={`flex items-center px-3 py-1 text-sm font-medium rounded-lg mb-0.5 transition-colors ${
                     isActive
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-primary/10 text-primary'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                   onClick={() => setSidebarOpen(false)}
@@ -1010,7 +1010,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-4 py-2'
                   } ${
                     isActive
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-primary/10 text-primary'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
@@ -1084,9 +1084,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <div className="text-center">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                 {attendanceAction === 'checkin' ? (
-                  <CheckCircle className="h-6 w-6 text-blue-600" />
+                  <CheckCircle className="h-6 w-6 text-primary" />
                 ) : (
                   <XCircle className="h-6 w-6 text-red-600" />
                 )}

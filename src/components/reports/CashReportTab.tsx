@@ -539,7 +539,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -575,9 +575,9 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
             </div>
           </div>
         </div>
-        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
+        <div className="bg-primary/5 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
-            <DollarSign className="h-8 w-8 text-blue-600" />
+            <DollarSign className="h-8 w-8 text-primary" />
             <div>
               <p className="text-sm text-gray-600">순 현금 흐름</p>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">

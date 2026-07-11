@@ -383,7 +383,7 @@ export default function TourConnectionSection({
   const getTourStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-primary/10 text-primary'
       case 'in_progress':
         return 'bg-yellow-100 text-yellow-800'
       case 'completed':
@@ -485,7 +485,7 @@ export default function TourConnectionSection({
               type="button"
               onClick={handleCreateTour}
               disabled={creatingTour}
-              className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {creatingTour ? (
                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-b-transparent" aria-hidden />
@@ -511,7 +511,7 @@ export default function TourConnectionSection({
           <button
             onClick={handleCreateTour}
             disabled={creatingTour}
-            className="flex items-center px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            className="flex items-center px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
             {creatingTour ? (
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1"></div>
@@ -533,7 +533,7 @@ export default function TourConnectionSection({
           <button
             onClick={handleCreateTour}
             disabled={creatingTour}
-            className="flex items-center mx-auto px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            className="flex items-center mx-auto px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
             {creatingTour ? (
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></div>
@@ -675,7 +675,7 @@ export default function TourConnectionSection({
                     href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
                   >
                     {t('card.openTourInNewTab')}
                   </a>

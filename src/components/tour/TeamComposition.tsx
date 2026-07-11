@@ -139,7 +139,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                 onClick={() => onTeamTypeChange('1guide')}
                 className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
                   teamType === '1guide' 
-                    ? 'bg-blue-100 text-blue-800' 
+                    ? 'bg-primary/10 text-primary' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -151,7 +151,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                 onClick={() => onTeamTypeChange('2guide')}
                 className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
                   teamType === '2guide' 
-                    ? 'bg-blue-100 text-blue-800' 
+                    ? 'bg-primary/10 text-primary' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -163,7 +163,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                 onClick={() => onTeamTypeChange('guide+driver')}
                 className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
                   teamType === 'guide+driver' 
-                    ? 'bg-blue-100 text-blue-800' 
+                    ? 'bg-primary/10 text-primary' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -196,7 +196,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                         value={guideFee || ''}
                         onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
                         className={`text-xs border rounded px-2 py-1 w-20 ${
-                          isGuideFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 
+                          isGuideFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                           isGuideFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
                           'text-gray-900 border-gray-300'
                         }`}
@@ -207,7 +207,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                       />
                       <span className="text-xs text-gray-500">$</span>
                       {isGuideFeeFromDefault && (
-                        <span className="text-xs text-blue-600" title="기본값">
+                        <span className="text-xs text-primary" title="기본값">
                           📋
                         </span>
                       )}
@@ -246,7 +246,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                         value={assistantFee || ''}
                         onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
                         className={`text-xs border rounded px-2 py-1 w-20 ${
-                          isAssistantFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 
+                          isAssistantFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                           isAssistantFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
                           'text-gray-900 border-gray-300'
                         }`}
@@ -257,7 +257,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                       />
                       <span className="text-xs text-gray-500">$</span>
                       {isAssistantFeeFromDefault && (
-                        <span className="text-xs text-blue-600" title="기본값">
+                        <span className="text-xs text-primary" title="기본값">
                           📋
                         </span>
                       )}
@@ -284,7 +284,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                     {guideFee > 0 && (
                       <span className={`flex items-center space-x-1 ${
                         isGuideFeeFromTour ? 'text-green-600' : 
-                        isGuideFeeFromDefault ? 'text-blue-600' : 
+                        isGuideFeeFromDefault ? 'text-primary' : 
                         'text-gray-600'
                       }`}>
                         <span>${guideFee}</span>
@@ -302,7 +302,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                     {assistantFee > 0 && (
                       <span className={`flex items-center space-x-1 ${
                         isAssistantFeeFromTour ? 'text-green-600' : 
-                        isAssistantFeeFromDefault ? 'text-blue-600' : 
+                        isAssistantFeeFromDefault ? 'text-primary' : 
                         'text-gray-600'
                       }`}>
                         <span>${assistantFee}</span>

@@ -49,7 +49,7 @@ export default function PickupHotelModal({
               placeholder="호텔명 또는 픽업 위치로 검색..."
               value={hotelSearchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
           
@@ -61,7 +61,7 @@ export default function PickupHotelModal({
                   onClick={() => onHotelSelect(hotel.id)}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedReservation.pickup_hotel === hotel.id
-                      ? 'border-blue-500 bg-blue-50 text-blue-900'
+                      ? 'border-primary bg-primary/5 text-foreground'
                       : 'border-gray-200 hover:bg-gray-50'
                   }`}
                 >
@@ -82,7 +82,7 @@ export default function PickupHotelModal({
           <div className="flex justify-end space-x-3 mt-6">
             <button
               onClick={onCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
             >
               취소
             </button>

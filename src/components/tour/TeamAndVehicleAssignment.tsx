@@ -122,7 +122,7 @@ function MemberSelectWithTabs({
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="w-full text-left text-sm border border-gray-300 rounded px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between gap-2"
+        className="w-full text-left text-sm border border-gray-300 rounded px-3 py-2 bg-white focus:ring-2 focus:ring-ring focus:border-ring flex items-center justify-between gap-2"
       >
         <span className={value ? 'text-gray-900' : 'text-gray-500'}>{displayText}</span>
         <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -134,14 +134,14 @@ function MemberSelectWithTabs({
             <button
               type="button"
               onClick={() => setTab('active')}
-              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'active' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'active' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               {t('memberTabActive')}
             </button>
             <button
               type="button"
               onClick={() => setTab('inactive')}
-              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'inactive' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'inactive' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               {t('memberTabInactive')}
             </button>
@@ -152,7 +152,7 @@ function MemberSelectWithTabs({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="이름/닉네임/이메일 검색"
-              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-ring focus:border-ring"
             />
           </div>
           {/* 선택 해제 */}
@@ -173,7 +173,7 @@ function MemberSelectWithTabs({
                   key={member.email}
                   type="button"
                   onClick={() => { onChange(member.email); setIsOpen(false); setSearchQuery(''); }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${value === member.email ? 'bg-blue-50 text-blue-800' : 'text-gray-900'}`}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${value === member.email ? 'bg-primary/5 text-primary' : 'text-gray-900'}`}
                 >
                   {getDisplayName(member)}
                 </button>
@@ -348,7 +348,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${
                 isSaving || !hasChanges()
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-2 focus:ring-ring'
               }`}
             >
               <Save size={16} />
@@ -375,7 +375,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 onClick={() => onTeamTypeChange('1guide')}
                 className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
                   teamType === '1guide' 
-                    ? 'bg-blue-100 text-blue-800 border border-blue-300' 
+                    ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
@@ -387,7 +387,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 onClick={() => onTeamTypeChange('2guide')}
                 className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
                   teamType === '2guide' 
-                    ? 'bg-blue-100 text-blue-800 border border-blue-300' 
+                    ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
@@ -399,7 +399,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 onClick={() => onTeamTypeChange('guide+driver')}
                 className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
                   teamType === 'guide+driver' 
-                    ? 'bg-blue-100 text-blue-800 border border-blue-300' 
+                    ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
@@ -427,7 +427,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     value={Number.isFinite(guideFee) ? guideFee : ''}
                     onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
                     className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
-                      isGuideFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 
+                      isGuideFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                       isGuideFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
                       'text-gray-900 border-gray-300'
                     }`}
@@ -438,7 +438,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   />
                   <span className="absolute left-2 text-sm text-gray-500 pointer-events-none">$</span>
                   {isGuideFeeFromDefault && (
-                    <span className="text-sm text-blue-600" title="기본값">
+                    <span className="text-sm text-primary" title="기본값">
                       📋
                     </span>
                   )}
@@ -471,7 +471,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       value={Number.isFinite(assistantFee) ? assistantFee : ''}
                       onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
                       className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
-                        isAssistantFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 
+                        isAssistantFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                         isAssistantFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
                         'text-gray-900 border-gray-300'
                       }`}
@@ -482,7 +482,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     />
                     <span className="absolute left-2 text-sm text-gray-500 pointer-events-none">$</span>
                     {isAssistantFeeFromDefault && (
-                      <span className="text-sm text-blue-600" title="기본값">
+                      <span className="text-sm text-primary" title="기본값">
                         📋
                       </span>
                     )}
@@ -501,7 +501,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 <select
                   value={selectedVehicleId || ''}
                   onChange={(e) => onVehicleSelect(e.target.value)}
-                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-ring focus:border-ring"
                   disabled={vehiclesLoading}
                 >
                   <option value="">{t('selectVehicle')}</option>
@@ -572,7 +572,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       {guideFee > 0 && (
                         <span className={`flex items-center space-x-1 ${
                           isGuideFeeFromTour ? 'text-green-600' : 
-                          isGuideFeeFromDefault ? 'text-blue-600' : 
+                          isGuideFeeFromDefault ? 'text-primary' : 
                           'text-gray-600'
                         }`}>
                           <span>${guideFee}</span>
@@ -590,7 +590,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       {assistantFee > 0 && (
                         <span className={`flex items-center space-x-1 ${
                           isAssistantFeeFromTour ? 'text-green-600' : 
-                          isAssistantFeeFromDefault ? 'text-blue-600' : 
+                          isAssistantFeeFromDefault ? 'text-primary' : 
                           'text-gray-600'
                         }`}>
                           <span>${assistantFee}</span>

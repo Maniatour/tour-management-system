@@ -67,7 +67,7 @@ function kindBadgeClass(kind: SiteAccessNode['kind']): string {
     case 'cluster':
       return 'bg-slate-100 text-slate-800 border-slate-200'
     case 'page':
-      return 'bg-blue-50 text-blue-800 border-blue-200'
+      return 'bg-primary/5 text-primary border-border'
     case 'tab':
       return 'bg-violet-50 text-violet-800 border-violet-200'
     case 'modal':
@@ -263,7 +263,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
               {href && (
                 <Link
                   href={href}
-                  className="inline-flex items-center gap-0.5 font-mono text-xs text-blue-600 hover:underline"
+                  className="inline-flex items-center gap-0.5 font-mono text-xs text-primary hover:underline"
                 >
                   {href}
                   <ExternalLink className="h-3 w-3" />
@@ -381,7 +381,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
                   const rowEditable = editMode && canEdit && node.kind !== 'cluster'
 
                   return (
-                    <tr key={node.id} className="hover:bg-blue-50/30">
+                    <tr key={node.id} className="hover:bg-muted/50/30">
                       <td
                         className="sticky left-0 z-10 border-r border-gray-100 bg-white py-1.5 pr-2"
                         style={{ paddingLeft: `${indentPx}px` }}
@@ -403,7 +403,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
                         style={{ paddingLeft: `${indentPx}px` }}
                       >
                         {href ? (
-                          <Link href={href} className="break-all text-blue-600 hover:underline">
+                          <Link href={href} className="break-all text-primary hover:underline">
                             {pathStr}
                           </Link>
                         ) : (

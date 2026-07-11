@@ -32,7 +32,7 @@ function ToursViewSkeleton({ label }: { label: string }) {
   return (
     <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-gray-200 bg-white">
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="h-9 w-9 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+        <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         <p className="text-sm text-gray-500">{label}</p>
       </div>
     </div>
@@ -433,7 +433,7 @@ export default function AdminTours() {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'completed':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-primary/10 text-primary'
       case 'cancelled':
       case 'canceled':
         return 'bg-red-100 text-red-800'
@@ -1099,7 +1099,7 @@ export default function AdminTours() {
           role="status"
           aria-live="polite"
         >
-          <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" aria-hidden />
+          <span className="inline-block h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden />
           <span>투어 데이터 불러오는 중…</span>
         </div>
       )}
@@ -1112,7 +1112,7 @@ export default function AdminTours() {
               onClick={() => setViewMode('list')}
               className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'list' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1123,7 +1123,7 @@ export default function AdminTours() {
               onClick={() => setViewMode('calendar')}
               className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'calendar' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1134,7 +1134,7 @@ export default function AdminTours() {
               onClick={() => setViewMode('schedule')}
               className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'schedule' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1157,7 +1157,7 @@ export default function AdminTours() {
             <button
               type="button"
               onClick={() => setShowNewTourModal(true)}
-              className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
             >
               <Plus size={16} />
               <span className="hidden sm:inline">{t('addTour')}</span>
@@ -1198,7 +1198,7 @@ export default function AdminTours() {
               placeholder={t('calendar.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
             />
           </div>
           
@@ -1207,7 +1207,7 @@ export default function AdminTours() {
             <button
               type="button"
               onClick={() => setShowStatusFilter(!showStatusFilter)}
-              className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0 bg-white hover:bg-gray-50 flex items-center justify-between min-w-[120px]"
+              className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm shrink-0 bg-white hover:bg-gray-50 flex items-center justify-between min-w-[120px]"
             >
               <span>
                 {selectedStatuses.includes('all') 
@@ -1277,7 +1277,7 @@ export default function AdminTours() {
             <select
               value={asGuideEmail}
               onChange={(e) => setAsGuideEmail(e.target.value)}
-              className="w-full sm:w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
+              className="w-full sm:w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm shrink-0"
             >
               <option value="">{t('calendar.allGuides')}</option>
               {guideOptions.map((m) => (
@@ -1323,7 +1323,7 @@ export default function AdminTours() {
           {!calendarDataReady && (
             <div className="flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent mx-auto mb-3"></div>
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto mb-3"></div>
                 <p className="text-sm text-gray-600">{t('calendar.loading') || '달력 로딩 중...'}</p>
               </div>
             </div>
@@ -1384,7 +1384,7 @@ export default function AdminTours() {
                 type="button"
                 onClick={() => setListViewDateFilter('month')}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium ${
-                  listViewDateFilter === 'month' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  listViewDateFilter === 'month' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
                 이번 달 보기
@@ -1393,7 +1393,7 @@ export default function AdminTours() {
                 type="button"
                 onClick={() => setListViewDateFilter('all')}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium ${
-                  listViewDateFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  listViewDateFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
                 전체 날짜 보기
@@ -1402,7 +1402,7 @@ export default function AdminTours() {
                 type="button"
                 onClick={() => setListViewDateFilter('scheduled')}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium ${
-                  listViewDateFilter === 'scheduled' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  listViewDateFilter === 'scheduled' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
                 오늘 포함 예정 투어 보기
@@ -1446,7 +1446,7 @@ export default function AdminTours() {
                   </div>
                   <div className="ml-auto flex items-center gap-2">
                     {navigatingToTour === tour.id && (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     )}
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusBadgeClasses(tour.status || tour.tour_status)}`}>
                       {(tour.status || tour.tour_status) || '-'}
@@ -1461,18 +1461,18 @@ export default function AdminTours() {
                     value={tour.assignment_status || 'pending'}
                     onChange={(e) => handleAssignmentStatusChange(tour.id, e.target.value)}
                     disabled={updatingAssignment === tour.id}
-                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <option value="pending">대기</option>
                     <option value="confirmed">확정</option>
                   </select>
                   {updatingAssignment === tour.id && (
-                    <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600"></div>
+                    <div className="animate-spin rounded-full h-3 w-3 border-b border-primary"></div>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="inline-flex items-center px-2 py-0.5 border border-blue-200 rounded text-xs text-blue-700 bg-blue-50">
+                  <span className="inline-flex items-center px-2 py-0.5 border border-border rounded text-xs text-primary bg-primary/5">
                     {tour.guide_name || '-'}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 border border-emerald-200 rounded text-xs text-emerald-700 bg-emerald-50">
@@ -1519,7 +1519,7 @@ export default function AdminTours() {
                 href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />

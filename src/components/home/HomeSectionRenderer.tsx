@@ -21,6 +21,7 @@ import HomeNewsletterSectionView from '@/components/home/HomeNewsletterSectionVi
 import HomePromoSectionView from '@/components/home/HomePromoSectionView'
 import HomeRichTextSectionView from '@/components/home/HomeRichTextSectionView'
 import type { PopularProductView } from '@/components/home/HomePopularToursBlock'
+import type { CategoryTagItem, FeatureItem, StatItem } from '@/components/home/homeSectionTypes'
 import type { CategoriesStructureVariant } from '@/lib/customerPageHomeStructure'
 import type { HeroStructureVariant } from '@/lib/customerPageHomeStructure'
 import type { StatsStructureVariant } from '@/lib/customerPageHomeStructure'
@@ -33,17 +34,6 @@ import {
   getSectionProductName,
   getSectionProductPrice,
 } from '@/lib/customerPageHomeSectionDisplay'
-
-type CategoryTagItem = {
-  labelKey: string
-  tagQuery: string
-  emoji: string
-  gradient: string
-  hoverGradient: string
-}
-
-type StatItem = { number: string; label: string }
-type FeatureItem = { icon: import('lucide-react').LucideIcon; title: string; description: string }
 
 type HomeSectionRendererProps = {
   section: HomePageSectionEntry
@@ -178,6 +168,7 @@ export default function HomeSectionRenderer(props: HomeSectionRendererProps) {
         <HomeReviewsSectionView
           variant={resolveSectionStructureVariant(section, globalStructure) as import('@/components/home/HomeReviewsSectionView').ReviewsStructureVariant}
           t={t}
+          locale={locale}
           zoneId={zoneId}
           itemCount={section.config.itemCount ?? getCatalogItem('reviews').defaultConfig.itemCount ?? 3}
           {...(section.config.title?.trim() ? { titleOverride: section.config.title.trim() } : {})}

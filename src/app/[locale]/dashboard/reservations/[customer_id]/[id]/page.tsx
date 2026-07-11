@@ -237,7 +237,7 @@ export default function CustomerReservations() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="container mx-auto px-0 sm:px-4 py-0 sm:py-6">
         <CustomerReservationListHeader
           filter={filter}
@@ -275,7 +275,7 @@ export default function CustomerReservations() {
               <button
                 type="button"
                 onClick={() => router.push(`/${locale}/products`)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
               >
                 {t('viewTourProducts')}
               </button>

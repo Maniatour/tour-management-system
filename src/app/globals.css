@@ -8,7 +8,39 @@
 :root {
   --header-height: 4rem;   /* 64px, h-16 */
   --footer-height: 4rem;   /* 64px, 모바일 하단 네비 */
-  --mobile-page-x: 0.5rem; /* 8px, 모바일 좌우 여백 */
+  --mobile-page-x: 1rem;   /* 16px — matches px-4 container gutter */
+
+  /* ── Kovegas design foundation: radius ── */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-btn: var(--radius-lg);
+  --radius-input: var(--radius-lg);
+  --radius-card: var(--radius-xl);
+  --radius-feature: var(--radius-2xl);
+
+  /* ── shadows ── */
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.05);
+  --shadow-card: var(--shadow-sm);
+  --shadow-card-hover: var(--shadow-lg);
+
+  /* ── section spacing ── */
+  --section-py: 4rem;
+  --section-py-md: 6rem;
+  --section-py-lg: 7rem;
+  --section-py-compact: 2.5rem;
+  --section-py-compact-md: 4rem;
+
+  /* ── brand booking accent (sunset coral) ── */
+  --booking: oklch(0.68 0.18 45);
+  --booking-foreground: oklch(0.99 0 0);
+  --booking-hover: oklch(0.62 0.18 45);
 }
 
 /* 모바일 최적화 */
@@ -16,6 +48,7 @@
   html {
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
+    font-family: var(--font-inter), var(--font-sans), system-ui, sans-serif;
     @apply font-sans;
   }
 
@@ -23,38 +56,45 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    font-family: inherit;
     @apply bg-background text-foreground;
   }
   .theme {
-    --font-heading: var(--font-sans);
-    --font-sans: var(--font-sans);
+    --font-heading: var(--font-inter), var(--font-sans), system-ui, sans-serif;
+    --font-sans: var(--font-inter), var(--font-sans), system-ui, sans-serif;
   }
   :root {
     --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --foreground: oklch(0.21 0.03 264);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.21 0.03 264);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.21 0.03 264);
+    --primary: oklch(0.21 0.03 264);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --secondary: oklch(0.96 0.02 85);
+    --secondary-foreground: oklch(0.21 0.03 264);
+    --muted: oklch(0.96 0.02 85);
+    --muted-foreground: oklch(0.48 0.02 264);
+    --accent: var(--booking);
+    --accent-foreground: var(--booking-foreground);
+    --success: oklch(0.55 0.14 155);
+    --success-foreground: oklch(0.99 0 0);
+    --warning: oklch(0.78 0.12 85);
+    --warning-foreground: oklch(0.28 0.04 85);
+    --danger: oklch(0.55 0.22 25);
+    --danger-foreground: oklch(0.99 0 0);
+    --destructive: var(--danger);
+    --destructive-foreground: var(--danger-foreground);
+    --border: oklch(0.9 0.01 264);
+    --input: oklch(0.9 0.01 264);
+    --ring: oklch(0.68 0.18 45);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
+    --radius: var(--radius-lg);
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -81,6 +121,15 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --destructive-foreground: oklch(0.985 0 0);
+    --success: oklch(0.62 0.14 155);
+    --success-foreground: oklch(0.99 0 0);
+    --warning: oklch(0.72 0.12 85);
+    --warning-foreground: oklch(0.2 0.04 85);
+    --danger: oklch(0.62 0.2 25);
+    --danger-foreground: oklch(0.99 0 0);
+    --booking: oklch(0.72 0.16 45);
+    --booking-foreground: oklch(0.15 0.03 264);
+    --booking-hover: oklch(0.66 0.16 45);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -101,6 +150,38 @@
   * {
     @apply border-border;
     outline-color: color-mix(in oklch, var(--ring) 50%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Kovegas typography scale */
+  .text-display {
+    @apply text-4xl font-semibold tracking-tight leading-[1.05] md:text-6xl lg:text-7xl;
+  }
+
+  .text-page-title {
+    @apply text-3xl font-semibold tracking-tight md:text-5xl;
+  }
+
+  .text-section-title {
+    @apply text-2xl font-semibold tracking-tight md:text-4xl;
+  }
+
+  .text-card-title {
+    @apply text-lg font-semibold md:text-xl;
+  }
+
+  .text-body {
+    @apply text-base leading-7 text-muted-foreground md:text-lg;
+  }
+
+  .text-label {
+    @apply text-xs font-medium tracking-wide sm:text-sm;
+  }
+
+  /* Site-wide focus ring */
+  .app-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
   }
 }
 
@@ -190,10 +271,73 @@
     max-width: 28rem;
     max-height: 90vh;
     overflow-y: auto;
-    background-color: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e5e7eb;
+    background-color: var(--card);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Site-wide app primitives (admin, guide, dashboard, auth) ── */
+  .app-input {
+    @apply flex h-10 w-full rounded-input border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-textarea {
+    @apply flex min-h-[80px] w-full rounded-input border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-select {
+    @apply flex h-10 w-full items-center justify-between rounded-input border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-panel {
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    background-color: var(--card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .app-panel-muted {
+    border-radius: var(--radius-card);
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+  }
+
+  .app-info-box {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background-color: color-mix(in oklch, var(--muted) 50%, transparent);
+    padding: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .app-info-box {
+      padding: 1rem;
+    }
+  }
+
+  .app-btn-primary {
+    @apply inline-flex items-center justify-center rounded-btn bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-btn-primary:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--primary) 90%, transparent);
+  }
+
+  .app-btn-secondary {
+    @apply inline-flex items-center justify-center rounded-btn border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-link {
+    @apply text-primary transition-colors;
+  }
+
+  .app-link:hover {
+    color: color-mix(in oklch, var(--primary) 80%, transparent);
+  }
+
+  .app-page-bg {
+    background-color: color-mix(in oklch, var(--muted) 30%, transparent);
   }
 
 }
@@ -826,23 +970,43 @@
 }
 
 /* 고객 페이지 zone UI 편집 — CSS 변수 기반 */
+.customer-page-theme-root {
+  --cp-ui-text: var(--foreground);
+  --cp-ui-muted: var(--muted-foreground);
+  --cp-ui-surface: var(--card);
+  --cp-ui-surface-foreground: var(--foreground);
+  --cp-ui-surface-muted: var(--muted-foreground);
+  --cp-ui-background: var(--background);
+  --cp-ui-accent: var(--cp-global-accent, var(--booking));
+  --cp-ui-accent-hover: var(--booking-hover);
+  --cp-ui-accent-text: var(--booking-foreground);
+  --cp-ui-radius: var(--radius-card);
+  --cp-ui-btn-radius: var(--radius-btn);
+  --cp-ui-border: var(--border);
+  --cp-ui-shadow: var(--shadow-card);
+}
+
+.customer-page-zone.cp-ui-styled-zone {
+  color: var(--cp-ui-text, var(--foreground));
+}
+
 .cp-ui-muted {
-  color: var(--cp-ui-muted, currentColor);
+  color: var(--cp-ui-muted, var(--muted-foreground));
 }
 
 .cp-ui-stat-number {
-  color: var(--cp-ui-accent, #2563eb);
+  color: var(--cp-ui-accent, var(--booking));
 }
 
 .cp-ui-icon-accent {
-  color: var(--cp-ui-icon, var(--cp-ui-accent, #2563eb));
+  color: var(--cp-ui-icon, var(--cp-ui-accent, var(--booking)));
 }
 
 .cp-ui-btn-primary {
-  background-color: var(--cp-ui-btn-bg, var(--cp-ui-accent, #2563eb));
-  color: var(--cp-ui-btn-color, var(--cp-ui-accent-text, #ffffff));
-  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-btn-border, var(--cp-ui-accent, #2563eb));
-  border-radius: var(--cp-ui-btn-radius, var(--cp-ui-radius, 0.75rem));
+  background-color: var(--cp-ui-btn-bg, var(--cp-ui-accent, var(--booking)));
+  color: var(--cp-ui-btn-color, var(--cp-ui-accent-text, var(--booking-foreground)));
+  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-btn-border, var(--cp-ui-accent, var(--booking)));
+  border-radius: var(--cp-ui-btn-radius, var(--radius-btn));
   padding: var(--cp-ui-btn-padding-y, 0.75rem) var(--cp-ui-btn-padding-x, 1.25rem);
   font-size: var(--cp-ui-btn-font-size, inherit);
   font-weight: var(--cp-ui-font-weight, 600);
@@ -850,32 +1014,43 @@
 }
 
 .cp-ui-btn-primary:hover {
-  background-color: var(--cp-ui-btn-bg-hover, var(--cp-ui-accent-hover, #1d4ed8));
-  color: var(--cp-ui-btn-color-hover, var(--cp-ui-accent-text, #ffffff));
+  background-color: var(--cp-ui-btn-bg-hover, var(--cp-ui-accent-hover, var(--booking-hover)));
+  color: var(--cp-ui-btn-color-hover, var(--cp-ui-accent-text, var(--booking-foreground)));
 }
 
 .cp-ui-btn-secondary {
-  background-color: var(--cp-ui-surface, rgba(255, 255, 255, 0.2));
-  color: var(--cp-ui-text, #ffffff);
+  background-color: color-mix(
+    in srgb,
+    var(--cp-ui-text, var(--foreground)) 8%,
+    var(--cp-ui-surface, var(--background))
+  );
+  color: var(--cp-ui-text, var(--foreground));
+  border: 1px solid color-mix(in srgb, var(--cp-ui-text, var(--foreground)) 16%, transparent);
+  border-radius: var(--cp-ui-btn-radius, var(--radius-btn));
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .cp-ui-btn-secondary:hover {
-  filter: brightness(1.08);
+  background-color: color-mix(
+    in srgb,
+    var(--cp-ui-text, var(--foreground)) 12%,
+    var(--cp-ui-surface, var(--background))
+  );
 }
 
 .cp-ui-btn-outline {
-  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-btn-border, var(--cp-ui-border, var(--cp-ui-accent, #2563eb)));
-  color: var(--cp-ui-btn-color, var(--cp-ui-accent, #2563eb));
+  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-btn-border, var(--cp-ui-border, var(--cp-ui-accent, var(--booking))));
+  color: var(--cp-ui-btn-color, var(--cp-ui-accent, var(--booking)));
   background-color: var(--cp-ui-btn-bg, transparent);
-  border-radius: var(--cp-ui-btn-radius, var(--cp-ui-radius, 0.75rem));
+  border-radius: var(--cp-ui-btn-radius, var(--radius-btn));
   padding: var(--cp-ui-btn-padding-y, 0.75rem) var(--cp-ui-btn-padding-x, 1.25rem);
   font-size: var(--cp-ui-btn-font-size, inherit);
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .cp-ui-btn-outline:hover {
-  background-color: var(--cp-ui-btn-bg-hover, var(--cp-ui-accent, #2563eb));
-  color: var(--cp-ui-btn-color-hover, var(--cp-ui-accent-text, #ffffff));
+  background-color: var(--cp-ui-btn-bg-hover, var(--cp-ui-accent, var(--booking)));
+  color: var(--cp-ui-btn-color-hover, var(--cp-ui-accent-text, var(--booking-foreground)));
 }
 
 .cp-ui-hero-overlay {
@@ -888,15 +1063,20 @@
     var(--cp-ui-surface, #ffffff) calc(var(--cp-ui-surface-opacity, 1) * 100%),
     transparent
   );
-  border-radius: var(--cp-ui-radius, 0.75rem);
+  color: var(--cp-ui-surface-foreground, var(--foreground));
+  border-radius: var(--cp-ui-radius, var(--radius-card));
   border-width: var(--cp-ui-border-width, 1px);
   border-style: solid;
-  border-color: var(--cp-ui-border, #e5e7eb);
-  box-shadow: var(--cp-ui-shadow, 0 1px 2px 0 rgb(0 0 0 / 0.05));
+  border-color: var(--cp-ui-border, var(--border));
+  box-shadow: var(--cp-ui-shadow, var(--shadow-card));
+}
+
+.cp-ui-card-surface .cp-ui-muted {
+  color: var(--cp-ui-surface-muted, var(--muted-foreground));
 }
 
 .cp-ui-price {
-  color: var(--cp-ui-accent, #2563eb);
+  color: var(--cp-ui-accent, var(--booking));
 }
 
 .cp-ui-styled-zone {
@@ -928,7 +1108,7 @@
 }
 
 .cp-ui-link {
-  color: var(--cp-ui-link-color, var(--cp-ui-accent, #2563eb));
+  color: var(--cp-ui-link-color, var(--cp-ui-accent, var(--booking)));
   transition: color 0.15s ease;
   font-weight: var(--cp-ui-link-weight, inherit);
   text-decoration: var(--cp-ui-link-decoration, none);
@@ -936,7 +1116,7 @@
 }
 
 .cp-ui-link:hover {
-  color: var(--cp-ui-accent-hover, #1d4ed8);
+  color: var(--cp-ui-accent-hover, var(--booking-hover));
 }
 
 .customer-page-zone.cp-ui-styled-zone h1 {
@@ -946,14 +1126,14 @@
 }
 
 .cp-ui-badge {
-  background-color: color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 12%, transparent);
-  color: var(--cp-ui-accent, #0b5fff);
+  background-color: color-mix(in srgb, var(--cp-ui-accent, var(--booking)) 12%, transparent);
+  color: var(--cp-ui-accent, var(--booking));
 }
 
 .cp-ui-tab-active {
-  border-bottom-color: var(--cp-ui-accent, #0b5fff) !important;
+  border-bottom-color: var(--cp-ui-accent, var(--booking)) !important;
   background-color: var(--cp-ui-surface, #ffffff);
-  color: var(--cp-ui-accent, #0b5fff) !important;
+  color: var(--cp-ui-accent, var(--booking)) !important;
 }
 
 .cp-ui-tab-inactive {
@@ -971,14 +1151,19 @@
     var(--cp-ui-surface, #ffffff) calc(var(--cp-ui-surface-opacity, 1) * 100%),
     transparent
   );
-  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-border, #e2e8f0);
-  border-radius: var(--cp-ui-radius, 0.75rem);
+  color: var(--cp-ui-surface-foreground, var(--foreground));
+  border: var(--cp-ui-border-width, 1px) solid var(--cp-ui-border, var(--border));
+  border-radius: var(--cp-ui-radius, var(--radius-card));
   box-shadow: var(--cp-ui-shadow, none);
   backdrop-filter: blur(var(--cp-ui-backdrop-blur, 0));
 }
 
+.cp-ui-panel-surface .cp-ui-muted {
+  color: var(--cp-ui-surface-muted, var(--muted-foreground));
+}
+
 .cp-ui-icon {
-  color: var(--cp-ui-icon, var(--cp-ui-accent, #2563eb));
+  color: var(--cp-ui-icon, var(--cp-ui-accent, var(--booking)));
 }
 
 .cp-home-scroll-row {
@@ -998,17 +1183,18 @@
 }
 
 .cp-home-stats-band {
-  background: color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 8%, var(--cp-ui-surface, #ffffff));
-  border-block: 1px solid color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 15%, transparent);
+  background: color-mix(in srgb, var(--cp-ui-accent, var(--booking)) 8%, var(--cp-ui-surface, #ffffff));
+  border-block: 1px solid color-mix(in srgb, var(--cp-ui-accent, var(--booking)) 15%, transparent);
 }
 
 .cp-home-cta-band {
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 12%, var(--cp-ui-surface, #ffffff)),
-    color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 4%, var(--cp-ui-surface, #ffffff))
+    var(--cp-ui-background, #1e3a8a),
+    color-mix(in srgb, var(--cp-ui-background, #1e3a8a) 82%, #000000)
   );
-  border: 1px solid color-mix(in srgb, var(--cp-ui-accent, #0b5fff) 18%, transparent);
+  color: var(--cp-ui-text, var(--foreground));
+  border: 1px solid color-mix(in srgb, var(--cp-ui-text, var(--foreground)) 18%, transparent);
 }
 
 .sop-search-active {

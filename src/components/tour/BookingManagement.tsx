@@ -168,13 +168,13 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.bookings && connectionStatus.hotelBookings} section={t('section')} />
             {loadingStates.bookings && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 ml-2"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary ml-2"></div>
             )}
           </h2>
           <div className="flex flex-wrap gap-2 justify-end">
             <button
               onClick={onAddTicketBooking}
-              className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center space-x-1"
+              className="px-3 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 flex items-center space-x-1"
             >
               <Plus size={12} />
               <span>{t('addTicket')}</span>
@@ -343,7 +343,7 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                     {/* 호텔 부킹 제목과 예약번호 */}
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center space-x-2">
-                        <Hotel className="h-3 w-3 text-blue-600" />
+                        <Hotel className="h-3 w-3 text-primary" />
                         <span className="font-medium text-sm">
                           {booking.hotel} ({booking.room_type}, {booking.rooms} {t('rooms')})
                         </span>

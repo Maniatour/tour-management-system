@@ -248,7 +248,7 @@ export default function TourScheduleSection({
       // 2가이드일 때는 two_guide_schedule 컬럼 값에 따라 색깔 결정
       if (schedule.two_guide_schedule) {
         return schedule.two_guide_schedule === 'guide' ? 'bg-red-50 border-red-300 border-2' : 
-               schedule.two_guide_schedule === 'assistant' ? 'bg-blue-50 border-blue-300 border-2' : 
+               schedule.two_guide_schedule === 'assistant' ? 'border-primary bg-primary/5 border-2' : 
                'bg-gray-50 border-gray-200'
       }
     } else if (teamType === 'guide+driver') {
@@ -256,7 +256,7 @@ export default function TourScheduleSection({
       // assistant = 파란색, guide = 빨간색
       if (schedule.guide_driver_schedule) {
         return schedule.guide_driver_schedule === 'guide' ? 'bg-red-50 border-red-300 border-2' : 
-               schedule.guide_driver_schedule === 'assistant' ? 'bg-blue-50 border-blue-300 border-2' : 
+               schedule.guide_driver_schedule === 'assistant' ? 'border-primary bg-primary/5 border-2' : 
                'bg-gray-50 border-gray-200'
       }
     }
@@ -271,7 +271,7 @@ export default function TourScheduleSection({
     } else if (schedule.is_transport) {
       return <Car className="h-4 w-4 text-green-600" />
     } else {
-      return <Clock className="h-4 w-4 text-blue-600" />
+      return <Clock className="h-4 w-4 text-primary" />
     }
   }
 
@@ -285,7 +285,7 @@ export default function TourScheduleSection({
                    schedule.two_guide_schedule
       // guide = 빨간색, assistant = 파란색
       const color = schedule.two_guide_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
-                   schedule.two_guide_schedule === 'assistant' ? 'bg-blue-100 text-blue-800' : 
+                   schedule.two_guide_schedule === 'assistant' ? 'bg-primary/10 text-primary' : 
                    'bg-gray-100 text-gray-800'
       labels.push({ text: label, color })
     }
@@ -296,7 +296,7 @@ export default function TourScheduleSection({
                    schedule.guide_driver_schedule
       // guide = 빨간색, assistant (드라이버) = 파란색
       const color = schedule.guide_driver_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
-                   schedule.guide_driver_schedule === 'assistant' ? 'bg-blue-100 text-blue-800' : 
+                   schedule.guide_driver_schedule === 'assistant' ? 'bg-primary/10 text-primary' : 
                    'bg-gray-100 text-gray-800'
       labels.push({ text: label, color })
     }
@@ -479,7 +479,7 @@ export default function TourScheduleSection({
               onClick={() => setShowOnlyMySchedules(false)}
               className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
                 !showOnlyMySchedules
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -489,7 +489,7 @@ export default function TourScheduleSection({
               onClick={() => setShowOnlyMySchedules(true)}
               className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
                 showOnlyMySchedules
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -551,7 +551,7 @@ export default function TourScheduleSection({
               <div key={dayNum} className="space-y-3">
                 {/* 일차 헤더 */}
                 <div className="flex items-center space-x-3 sm:space-x-4 mb-4">
-                  <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl text-sm sm:text-base font-bold flex-shrink-0 shadow-md">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground sm:h-12 sm:w-12 sm:text-base">
                     {dayNum}
                   </div>
                   <div>
@@ -625,7 +625,7 @@ export default function TourScheduleSection({
                                     e.stopPropagation()
                                     window.open(schedule.google_maps_link!, '_blank')
                                   }}
-                                  className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center group"
+                                  className="group flex items-center justify-center rounded-lg bg-primary p-2 text-primary-foreground shadow-md transition-all duration-200 hover:bg-primary/90 hover:shadow-lg"
                                   title={getText('구글맵으로 열기', 'Open in Google Maps')}
                                 >
                                   <Map className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
@@ -641,11 +641,11 @@ export default function TourScheduleSection({
                           
                           {/* 다음 목적지 표시 (자신의 일정 보기 모드일 때만) */}
                           {showOnlyMySchedules && nextDestination && (
-                            <div className="mt-4 pt-4 border-t-2 border-blue-200 bg-blue-50/50 rounded-lg p-3 sm:p-4">
+                            <div className="mt-4 rounded-lg border-t-2 border-border bg-muted/30 p-3 pt-4 sm:p-4">
                               {/* 첫 번째 줄: 다음 목적지 라벨과 구글맵 버튼 */}
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center space-x-2">
-                                  <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                  <MapPin className="w-4 h-4 text-primary flex-shrink-0" />
                                   <span className="text-gray-600 font-medium text-xs sm:text-sm flex-shrink-0">
                                     {getText('다음 목적지:', 'Next Destination:')}
                                   </span>
@@ -662,7 +662,7 @@ export default function TourScheduleSection({
                                         window.open(googleMapsUrl, '_blank')
                                       }
                                     }}
-                                    className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center group"
+                                    className="group flex items-center justify-center rounded-lg bg-primary p-2 text-primary-foreground shadow-md transition-all duration-200 hover:bg-primary/90 hover:shadow-lg"
                                     title={getText('구글맵으로 보기', 'View in Google Maps')}
                                   >
                                     <Map className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
@@ -671,15 +671,15 @@ export default function TourScheduleSection({
                               </div>
                               {/* 제목 - 별도 줄 */}
                               <div className="mb-2">
-                                <span className="text-blue-800 font-bold text-sm sm:text-base break-words">
+                                <span className="text-primary font-bold text-sm sm:text-base break-words">
                                   {getLocalizedText(nextDestination.title_ko, nextDestination.title_en, '')}
                                 </span>
                               </div>
                               {/* 주소 - 별도 줄 */}
                               {nextDestination.location_ko || nextDestination.location_en ? (
                                 <div className="flex items-start gap-2">
-                                  <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                  <span className="text-blue-700 text-xs sm:text-sm break-words font-medium">
+                                  <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                                  <span className="text-primary text-xs sm:text-sm break-words font-medium">
                                     {getLocalizedText(nextDestination.location_ko, nextDestination.location_en, '')}
                                   </span>
                                 </div>

@@ -240,7 +240,7 @@ export default function AdminOffSchedulePage() {
   // }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen app-page-bg py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white rounded-lg shadow-sm">
           <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
@@ -260,7 +260,7 @@ export default function AdminOffSchedulePage() {
                   <select
                     value={filter}
                     onChange={(e) => setFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   >
                     <option value="all">전체</option>
                     <option value="pending">대기중</option>
@@ -274,7 +274,7 @@ export default function AdminOffSchedulePage() {
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                     placeholder="날짜별 필터"
                   />
                 </div>
@@ -292,7 +292,7 @@ export default function AdminOffSchedulePage() {
                 {/* 추가 버튼 */}
                 <button
                   onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center justify-center px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  className="flex items-center justify-center px-3 sm:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
                 >
                   <Plus className="w-4 h-4 mr-1 sm:mr-2" />
                   <span className="hidden sm:inline">Off 스케줄 추가</span>

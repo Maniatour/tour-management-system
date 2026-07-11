@@ -207,8 +207,8 @@ export default function TicketBookingQtyTimeChangeModal({
               </p>
             ) : null}
             {projectedExpense != null ? (
-              <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-950">
-                <span className="text-blue-800">변경 수량 기준 예상 금액</span>{' '}
+              <div className="mt-2 rounded-md border border-border bg-primary/5 px-3 py-2 text-xs text-blue-950">
+                <span className="text-primary">변경 수량 기준 예상 금액</span>{' '}
                 <span className="font-semibold tabular-nums">${formatMoneyUsd(projectedExpense)}</span>
               </div>
             ) : null}
@@ -218,7 +218,7 @@ export default function TicketBookingQtyTimeChangeModal({
               {t('time')} <span className="font-normal text-gray-400">(요청)</span> *
             </label>
             <select
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={time}
               onChange={(e) => setTime(e.target.value)}
               disabled={!!saving}
@@ -266,7 +266,7 @@ export default function TicketBookingQtyTimeChangeModal({
             </button>
             <button
               type="submit"
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               disabled={!!saving}
             >
               {saving ? '저장 중…' : '변경 요청 보내기'}

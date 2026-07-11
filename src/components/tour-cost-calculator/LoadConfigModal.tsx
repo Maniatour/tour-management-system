@@ -72,7 +72,7 @@ const LoadConfigModal: React.FC<LoadConfigModalProps> = ({
                         e.stopPropagation()
                         onLoad(config.id)
                       }}
-                      className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                      className="px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors"
                     >
                       {locale === 'ko' ? '불러오기' : 'Load'}
                     </button>

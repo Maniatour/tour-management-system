@@ -70,7 +70,7 @@ export default function AuthPage() {
   if (loading || (user && !userRole)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -123,7 +123,7 @@ export default function AuthPage() {
           <div className="mt-6 text-center">
             <button
               onClick={() => setMode('reset')}
-              className="text-sm text-blue-600 hover:text-blue-500"
+              className="text-sm text-primary hover:text-primary"
             >
               {t('auth.forgotPassword')}
             </button>

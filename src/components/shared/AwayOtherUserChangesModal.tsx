@@ -33,7 +33,7 @@ function actionBadgeClass(action: string): string {
   const a = (action || '').toUpperCase()
   if (a === 'INSERT') return 'bg-emerald-100 text-emerald-800'
   if (a === 'DELETE') return 'bg-red-100 text-red-800'
-  return 'bg-blue-100 text-blue-800'
+  return 'bg-primary/10 text-primary'
 }
 
 export default function AwayOtherUserChangesModal({
@@ -150,7 +150,7 @@ export default function AwayOtherUserChangesModal({
           <button
             type="button"
             onClick={close}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
           >
             {t('confirm')}
           </button>
@@ -179,7 +179,7 @@ function ChangeLink({ item, locale }: { item: AwayChangeItem; locale: string }) 
     return (
       <Link
         href={`${prefix}/reservations/${encodeURIComponent(item.recordId)}`}
-        className="text-sm font-medium text-blue-600 hover:underline"
+        className="text-sm font-medium text-primary hover:underline"
       >
         {t('openReservation')}
       </Link>
@@ -189,14 +189,14 @@ function ChangeLink({ item, locale }: { item: AwayChangeItem; locale: string }) 
     return (
       <Link
         href={`${prefix}/tours/${encodeURIComponent(item.recordId)}`}
-        className="text-sm font-medium text-blue-600 hover:underline"
+        className="text-sm font-medium text-primary hover:underline"
       >
         {t('openTour')}
       </Link>
     )
   }
   return (
-    <Link href={`${prefix}/booking`} className="text-sm font-medium text-blue-600 hover:underline">
+    <Link href={`${prefix}/booking`} className="text-sm font-medium text-primary hover:underline">
       {t('openBooking')}
     </Link>
   )

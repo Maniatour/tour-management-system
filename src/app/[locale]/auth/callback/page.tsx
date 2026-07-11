@@ -11,7 +11,7 @@ function AuthCallbackLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center max-w-sm px-4">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto" />
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto" />
         <p className="mt-4 text-gray-600">로그인 처리 중...</p>
       </div>
     </div>
@@ -98,7 +98,7 @@ function AuthCallbackContent() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center max-w-sm px-4">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto" />
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto" />
         <p className="mt-4 text-gray-600">
           {error ? <span className="text-red-600">{error}</span> : '로그인 처리 중...'}
         </p>

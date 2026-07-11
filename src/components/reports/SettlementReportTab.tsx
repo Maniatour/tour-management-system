@@ -149,7 +149,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -180,9 +180,9 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
             </div>
           </div>
         </div>
-        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
+        <div className="bg-primary/5 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
-            <Receipt className="h-8 w-8 text-blue-600" />
+            <Receipt className="h-8 w-8 text-primary" />
             <div>
               <p className="text-sm text-gray-600">순이익</p>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.profit.net.toLocaleString()}</p>
@@ -243,7 +243,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
       </div>
 
       {/* 정산 요약 */}
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-4 sm:p-6 rounded-lg text-white">
+      <div className="bg-gradient-to-br from-primary to-primary p-4 sm:p-6 rounded-lg text-white">
         <h3 className="text-base sm:text-lg font-semibold mb-4">정산 요약</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>

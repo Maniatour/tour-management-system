@@ -140,7 +140,7 @@ export default function GuideTourMaterialsPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">데이터를 불러오는 중...</p>
         </div>
       </div>
@@ -160,7 +160,7 @@ export default function GuideTourMaterialsPage() {
               placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
         </div>
@@ -205,7 +205,7 @@ export default function GuideTourMaterialsPage() {
                                 className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
                                   currentTrack?.src === getFileUrl(material.file_path) && isPlaying
                                     ? 'bg-red-600 text-white hover:bg-red-700'
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 }`}
                                 title={currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? '재생 중' : '재생'}
                               >
@@ -274,7 +274,7 @@ export default function GuideTourMaterialsPage() {
                                   {material.tags.map((tag, index) => (
                                     <span 
                                       key={index}
-                                      className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                      className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full"
                                     >
                                       {tag}
                                     </span>

@@ -40,8 +40,8 @@ export default function CustomerReservationPickupSection({
                         </h4>
                         
                         {/* 자신의 픽업 정보 */}
-                        <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                          <h5 className="font-semibold text-blue-800 mb-3 flex items-center">
+                        <div className="bg-primary/5 p-4 rounded-lg mb-4">
+                          <h5 className="font-semibold text-primary mb-3 flex items-center">
                             <User className="w-4 h-4 mr-1" />
                             {t('myPickup')}
                           </h5>
@@ -56,11 +56,11 @@ export default function CustomerReservationPickupSection({
                                 return pickupTime ? (
                                   <>
                                     <p className="text-sm text-gray-700">
-                                      <span className={`font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                      <span className={`font-semibold ${isBefore48H ? 'text-orange-600' : 'text-primary'}`}>
                                         {formatTimeToAMPM(pickupTime)}
                                       </span>
                                       {tourDate && (
-                                        <span className={`ml-2 font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                        <span className={`ml-2 font-semibold ${isBefore48H ? 'text-orange-600' : 'text-primary'}`}>
                                           ({calculatePickupDate(pickupTime, tourDate)})
                                         </span>
                                       )}
@@ -119,7 +119,7 @@ export default function CustomerReservationPickupSection({
                                           href={pickupHotelData.link}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="inline-flex items-center text-blue-600 hover:text-blue-800 text-xs"
+                                      className="inline-flex items-center text-primary hover:text-primary/80 text-xs"
                                     >
                                       <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
@@ -215,7 +215,7 @@ export default function CustomerReservationPickupSection({
                             <div className="space-y-3">
                               {pickupSchedule?.allPickups!.map((pickup) => (
                                 <div key={pickup.reservation_id} className={`p-3 rounded-md border-l-4 ${
-                                  pickup.reservation_id === reservation.id ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'
+                                  pickup.reservation_id === reservation.id ? 'border-primary bg-primary/5' : 'border-gray-300 bg-gray-50'
                                 }`}>
                                   <div className="space-y-2">
                                     {/* 첫 번째 줄: 픽업 시간과 날짜 */}
@@ -224,10 +224,10 @@ export default function CustomerReservationPickupSection({
                                       const isBefore48H = tourDate ? isBefore48Hours(tourDate) : false
                                       return (
                                         <div className="flex items-center gap-2 flex-wrap">
-                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-primary'}`}>
                                             {formatTimeToAMPM(pickup.pickup_time)}
                                           </span>
-                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-primary'}`}>
                                             {pickup.tour_date && calculatePickupDate(pickup.pickup_time, pickup.tour_date)}
                                           </span>
                                           {isBefore48H && (
@@ -264,7 +264,7 @@ export default function CustomerReservationPickupSection({
                                           href={pickup.link || `https://maps.google.com/maps?q=${encodeURIComponent(pickup.hotel + (pickup.address ? ', ' + pickup.address : ''))}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-xs"
+                                        className="inline-flex items-center text-primary hover:text-primary/80 text-xs"
                                         >
                                           <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                             <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
@@ -272,7 +272,7 @@ export default function CustomerReservationPickupSection({
                                           {t('viewOnMap')}
                                         </a>
                                       {pickup.reservation_id === reservation.id && (
-                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
                                           {t('myReservation')}
                                         </span>
                                       )}

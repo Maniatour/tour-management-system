@@ -213,7 +213,7 @@ export default function PricingHistoryModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center space-x-3">
-            <History className="h-6 w-6 text-blue-600" />
+            <History className="h-6 w-6 text-primary" />
             <div>
               <h3 className="text-lg font-semibold text-gray-900">{t('priceHistoryTitle')}</h3>
               <p className="text-sm text-gray-600">
@@ -233,7 +233,7 @@ export default function PricingHistoryModal({
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -299,7 +299,7 @@ export default function PricingHistoryModal({
                                       </span>
                                       {totalChange !== null && totalChange !== 0 && (
                                         <div className={`flex items-center space-x-1 ${
-                                          totalChange > 0 ? 'text-red-600' : 'text-blue-600'
+                                          totalChange > 0 ? 'text-red-600' : 'text-primary'
                                         }`}>
                                           {totalChange > 0 ? (
                                             <TrendingUp className="h-3 w-3" />
@@ -326,7 +326,7 @@ export default function PricingHistoryModal({
                                         </span>
                                         {adultChange !== null && adultChange !== 0 && (
                                           <div className={`flex items-center space-x-1 ${
-                                            adultChange > 0 ? 'text-red-600' : 'text-blue-600'
+                                            adultChange > 0 ? 'text-red-600' : 'text-primary'
                                           }`}>
                                             {adultChange > 0 ? (
                                               <TrendingUp className="h-3 w-3" />
@@ -348,7 +348,7 @@ export default function PricingHistoryModal({
                                         </span>
                                         {childChange !== null && childChange !== 0 && (
                                           <div className={`flex items-center space-x-1 ${
-                                            childChange > 0 ? 'text-red-600' : 'text-blue-600'
+                                            childChange > 0 ? 'text-red-600' : 'text-primary'
                                           }`}>
                                             {childChange > 0 ? (
                                               <TrendingUp className="h-3 w-3" />
@@ -370,7 +370,7 @@ export default function PricingHistoryModal({
                                         </span>
                                         {infantChange !== null && infantChange !== 0 && (
                                           <div className={`flex items-center space-x-1 ${
-                                            infantChange > 0 ? 'text-red-600' : 'text-blue-600'
+                                            infantChange > 0 ? 'text-red-600' : 'text-primary'
                                           }`}>
                                             {infantChange > 0 ? (
                                               <TrendingUp className="h-3 w-3" />

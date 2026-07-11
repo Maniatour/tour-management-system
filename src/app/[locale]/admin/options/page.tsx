@@ -282,7 +282,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
   const getCategoryColor = (category: string) => {
     // 미리 정의된 카테고리에 대한 색상 매핑
     const categoryColors: Record<string, string> = {
-      'guide': 'bg-blue-100 text-blue-800',
+      'guide': 'bg-primary/10 text-primary',
       'transportation': 'bg-green-100 text-green-800',
       'meal': 'bg-orange-100 text-orange-800',
       'insurance': 'bg-purple-100 text-purple-800',
@@ -312,7 +312,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
         {activeTab === 'options' && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center space-x-2"
           >
             <Plus size={20} />
             <span>{t('addOption')}</span>
@@ -327,7 +327,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
             onClick={() => setActiveTab('options')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'options'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
@@ -337,7 +337,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
             onClick={() => setActiveTab('choices')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'choices'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
@@ -357,7 +357,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
           placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         />
       </div>
 
@@ -370,7 +370,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
               onClick={() => setSelectedCategory(category)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 selectedCategory === category
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -413,8 +413,8 @@ export default function AdminOptions({}: AdminOptionsProps) {
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Settings className="h-5 w-5 text-blue-600" />
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Settings className="h-5 w-5 text-primary" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-gray-900 truncate">{getOptionDisplayName(option)}</h3>
@@ -423,7 +423,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
                 <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setEditingOption(option)}
-                    className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                    className="p-1 text-primary hover:text-foreground hover:bg-muted/50 rounded"
                     title="편집"
                   >
                     <Edit size={14} />
@@ -725,7 +725,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               required
             />
           </div>
@@ -738,7 +738,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 type="text"
                 value={formData.name_ko}
                 onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={locale === 'ko' ? '한글 옵션명' : 'Korean option name'}
               />
             </div>
@@ -748,7 +748,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 type="text"
                 value={formData.name_en}
                 onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={locale === 'ko' ? '영어 옵션명' : 'English option name'}
               />
             </div>
@@ -771,7 +771,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                   onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 200)}
                   onKeyDown={handleCategoryKeyDown}
                   placeholder="카테고리 입력 또는 선택"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
                 {showCategorySuggestions && (
@@ -785,7 +785,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                             key={cat}
                             className={`px-2 py-1 cursor-pointer text-sm ${
                               index === selectedCategoryIndex 
-                                ? 'bg-blue-100 text-blue-900' 
+                                ? 'bg-primary/10 text-foreground' 
                                 : 'hover:bg-gray-100'
                             }`}
                             onClick={() => {
@@ -820,7 +820,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               <select
                 value={formData.price_type}
                 onChange={(e) => setFormData({ ...formData, price_type: e.target.value as 'perPerson' | 'perTour' | 'perHour' | 'fixed' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="perPerson">{t('priceTypes.perPerson')}</option>
                 <option value="perTour">{t('priceTypes.perTour')}</option>
@@ -835,7 +835,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'seasonal' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="active">{t('status.active')}</option>
                 <option value="inactive">{t('status.inactive')}</option>
@@ -851,7 +851,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="내부용 설명"
             />
           </div>
@@ -864,7 +864,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 value={formData.description_ko}
                 onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="한글 설명"
               />
             </div>
@@ -874,7 +874,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 value={formData.description_en}
                 onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="English description"
               />
             </div>
@@ -895,7 +895,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                   })}
                   min="0"
                   step="0.01"
-                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -913,7 +913,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                   })}
                   min="0"
                   step="0.01"
-                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -931,7 +931,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                   })}
                   min="0"
                   step="0.01"
-                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -961,7 +961,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               type="text"
               value={formData.image_alt}
               onChange={(e) => setFormData({ ...formData, image_alt: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="이미지 설명"
             />
           </div>
@@ -976,12 +976,12 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={t('form.addTagPlaceholder')}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 {t('form.addTag')}
               </button>
@@ -990,13 +990,13 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               {formData.tags.map((tag: string, index: number) => (
                 <span
                   key={index}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary"
                 >
                   {tag}
                   <button
                     type="button"
                     onClick={() => removeTag(tag)}
-                    className="ml-2 text-blue-600 hover:text-blue-800"
+                    className="ml-2 text-primary hover:text-primary/80"
                   >
                     ×
                   </button>
@@ -1008,7 +1008,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                      <div className="flex space-x-3 pt-4">
              <button
                type="submit"
-               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+               className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
              >
                {isCopying ? '복사하기' : (option ? tCommon('edit') : tCommon('add'))}
              </button>

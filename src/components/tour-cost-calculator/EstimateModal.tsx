@@ -2483,7 +2483,7 @@ export default function EstimateModal({
                     // 드롭다운 클릭을 위해 약간의 지연
                     setTimeout(() => setShowCustomerDropdown(false), 200)
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   placeholder="고객 이름, 이메일, 전화번호로 검색..."
                 />
                 {showCustomerDropdown && customerSearch && filteredCustomers.length > 0 && (
@@ -2495,7 +2495,7 @@ export default function EstimateModal({
                           e.preventDefault()
                           handleCustomerSelect(c)
                         }}
-                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        className="px-3 py-2 hover:bg-muted/50 cursor-pointer border-b border-gray-100 last:border-b-0"
                       >
                         <div className="font-medium text-gray-900">{c.name || '이름 없음'}</div>
                         {c.email && (
@@ -2517,7 +2517,7 @@ export default function EstimateModal({
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(stripSpacesFromContactInput(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   placeholder="customer@example.com"
                   required
                 />
@@ -2530,7 +2530,7 @@ export default function EstimateModal({
                   type="tel"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(stripSpacesFromContactInput(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   placeholder="전화번호"
                 />
               </div>
@@ -2542,18 +2542,18 @@ export default function EstimateModal({
                   type="date"
                   value={estimateDate}
                   onChange={(e) => setEstimateDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                 />
               </div>
               {isCharterGuide && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                  <div className="text-sm font-medium text-blue-900 mb-1">
+                <div className="rounded-lg border border-border bg-primary/5 p-3">
+                  <div className="text-sm font-medium text-foreground mb-1">
                     {locale === 'en' ? 'Tour type' : '투어 유형'}
                   </div>
-                  <div className="text-base font-semibold text-blue-800">
+                  <div className="text-base font-semibold text-primary">
                     {locale === 'en' ? 'Charter vehicle dedicated guide' : '차량 대절 전담 가이드'}
                   </div>
-                  <div className="text-xs text-blue-700 mt-1">
+                  <div className="text-xs text-primary mt-1">
                     {locale === 'en' ? 'Date' : '날짜'}: {estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : '—'}
                   </div>
                 </div>
@@ -2600,9 +2600,9 @@ export default function EstimateModal({
                   <span className="text-sm font-medium text-gray-700">팁 (15%)</span>
                   <span className="text-sm font-medium text-gray-900">{formatUSD(tipAmount)}</span>
                 </div>
-                <div className="flex justify-between py-3 bg-blue-50 rounded-lg px-3 mt-2">
+                <div className="flex justify-between py-3 bg-primary/5 rounded-lg px-3 mt-2">
                   <span className="text-base font-bold text-gray-900">팁 포함 판매가</span>
-                  <span className="text-base font-bold text-blue-600">{formatUSD(sellingPriceWithTip)}</span>
+                  <span className="text-base font-bold text-primary">{formatUSD(sellingPriceWithTip)}</span>
                 </div>
               </div>
             </div>
@@ -2781,7 +2781,7 @@ export default function EstimateModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               placeholder="추가 메모를 입력하세요..."
             />
           </div>
@@ -2815,7 +2815,7 @@ export default function EstimateModal({
           <button
             onClick={handleSendEmail}
             disabled={sending || !customerEmail}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <Send className="h-4 w-4" />
             {sending ? '발송 중...' : '이메일 발송'}

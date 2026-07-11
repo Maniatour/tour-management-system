@@ -744,7 +744,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('sectionTitle')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.sectionTitle} />
@@ -763,7 +763,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderInternalKo')}
                 required
               />
@@ -777,7 +777,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.nameEn || ''}
                 onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderInternalEn')}
               />
             </div>
@@ -799,7 +799,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.customerNameKo || ''}
                 onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderCustomerKo')}
               />
             </div>
@@ -817,7 +817,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.customerNameEn || ''}
                 onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderCustomerEn')}
               />
             </div>
@@ -835,7 +835,7 @@ export default function BasicInfoTab({
               type="text"
               value={formData.productCode || ''}
               onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder={tBasic('productCodePlaceholder')}
               required
             />
@@ -851,7 +851,7 @@ export default function BasicInfoTab({
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               required
             >
               <option value="draft">{tProducts('status.draft')}</option>
@@ -871,7 +871,7 @@ export default function BasicInfoTab({
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value, subCategory: '' })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               >
                 <option value="">{tBasic('categorySelect')}</option>
@@ -899,7 +899,7 @@ export default function BasicInfoTab({
                 onChange={(e) => {
                   setFormData({ ...formData, subCategory: e.target.value })
                 }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               >
                 <option value="">{tBasic('subCategorySelect')}</option>
@@ -942,7 +942,7 @@ export default function BasicInfoTab({
           <textarea
             value={formData.description || ''}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('descriptionPlaceholder')}
             rows={3}
           />
@@ -959,7 +959,7 @@ export default function BasicInfoTab({
               <textarea
                 value={formData.summaryKo || ''}
                 onChange={(e) => setFormData({ ...formData, summaryKo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('productSummaryPlaceholderKo')}
                 rows={3}
               />
@@ -972,7 +972,7 @@ export default function BasicInfoTab({
               <textarea
                 value={formData.summaryEn || ''}
                 onChange={(e) => setFormData({ ...formData, summaryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('productSummaryPlaceholderEn')}
                 rows={3}
               />
@@ -986,7 +986,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('departureArrival')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.departureArrival} />
@@ -1007,7 +1007,7 @@ export default function BasicInfoTab({
                     departureCity: e.target.value,
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderDepartureCity')}
                 required
               />
@@ -1020,7 +1020,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.departureCityEn || ''}
                 onChange={(e) => setFormData({ ...formData, departureCityEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Departure city"
               />
             </div>
@@ -1040,7 +1040,7 @@ export default function BasicInfoTab({
                     arrivalCity: e.target.value,
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('placeholderArrivalCity')}
                 required
               />
@@ -1053,7 +1053,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.arrivalCityEn || ''}
                 onChange={(e) => setFormData({ ...formData, arrivalCityEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Arrival city"
               />
             </div>
@@ -1073,7 +1073,7 @@ export default function BasicInfoTab({
                     departureCountry: e.target.value,
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('countrySelect')}
                 required
               />
@@ -1086,7 +1086,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.departureCountryEn || ''}
                 onChange={(e) => setFormData({ ...formData, departureCountryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Departure country"
               />
             </div>
@@ -1106,7 +1106,7 @@ export default function BasicInfoTab({
                     arrivalCountry: e.target.value,
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={tBasic('countrySelect')}
                 required
               />
@@ -1119,7 +1119,7 @@ export default function BasicInfoTab({
                 type="text"
                 value={formData.arrivalCountryEn || ''}
                 onChange={(e) => setFormData({ ...formData, arrivalCountryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Arrival country"
               />
             </div>
@@ -1131,7 +1131,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('tourInfo')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.tourInfo} />
@@ -1156,7 +1156,7 @@ export default function BasicInfoTab({
                   key={method.value} 
                   className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border-2 transition-all text-xs ${
                     isChecked 
-                      ? 'border-blue-500 bg-blue-50' 
+                      ? 'border-primary bg-primary/5' 
                       : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1177,10 +1177,10 @@ export default function BasicInfoTab({
                         })
                       }
                     }}
-                    className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-3 w-3 text-primary focus:ring-ring border-gray-300 rounded"
                   />
-                  <Icon className="w-4 h-4 text-blue-600" />
-                  <span className={`text-xs font-medium ${isChecked ? 'text-blue-700' : 'text-gray-700'}`}>
+                  <Icon className="w-4 h-4 text-primary" />
+                  <span className={`text-xs font-medium ${isChecked ? 'text-primary' : 'text-gray-700'}`}>
                     {tBasic(method.labelKey as any)}
                   </span>
                 </label>
@@ -1205,7 +1205,7 @@ export default function BasicInfoTab({
                     setFormData({ ...formData, languages: languages.filter(lang => lang !== 'ko') });
                   }
                 }}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               {tBasic('langKo')}
             </label>
@@ -1221,7 +1221,7 @@ export default function BasicInfoTab({
                     setFormData({ ...formData, languages: languages.filter(lang => lang !== 'en') });
                   }
                 }}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               {tBasic('langEn')}
             </label>
@@ -1242,7 +1242,7 @@ export default function BasicInfoTab({
                     setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'private') });
                   }
                 }}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               {tBasic('privateGroup')}
             </label>
@@ -1258,7 +1258,7 @@ export default function BasicInfoTab({
                     setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'small') });
                   }
                 }}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               Small Group (소규모 그룹)
             </label>
@@ -1274,7 +1274,7 @@ export default function BasicInfoTab({
                     setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'big') });
                   }
                 }}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               {tBasic('bigGroup')}
             </label>
@@ -1287,7 +1287,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('ageSection')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.ageSection} />
@@ -1300,7 +1300,7 @@ export default function BasicInfoTab({
             min="0"
             value={formData.adultAge || ''}
             onChange={(e) => setFormData({ ...formData, adultAge: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('placeholderAge')}
             required
           />
@@ -1313,7 +1313,7 @@ export default function BasicInfoTab({
             min="0"
             value={formData.childAgeMin || ''}
             onChange={(e) => setFormData({ ...formData, childAgeMin: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('placeholderAge')}
             required
           />
@@ -1326,7 +1326,7 @@ export default function BasicInfoTab({
             min="0"
             value={formData.childAgeMax || ''}
             onChange={(e) => setFormData({ ...formData, childAgeMax: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('placeholderAge')}
             required
           />
@@ -1339,7 +1339,7 @@ export default function BasicInfoTab({
             min="0"
             value={formData.infantAge || ''}
             onChange={(e) => setFormData({ ...formData, infantAge: parseInt(e.target.value) || 0 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('placeholderAge')}
             required
           />
@@ -1352,7 +1352,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('priceSection')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.priceSection} />
@@ -1377,7 +1377,7 @@ export default function BasicInfoTab({
                     value="separate"
                     checked={(formData.homepagePricingType || 'separate') === 'separate'}
                     onChange={(e) => setFormData({ ...formData, homepagePricingType: e.target.value as 'single' | 'separate' })}
-                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300"
                   />
                   <span className="text-sm text-gray-700">{tBasic('separatePricing')}</span>
                 </label>
@@ -1401,7 +1401,7 @@ export default function BasicInfoTab({
                         basePriceInfant: currentAdultPrice
                       });
                     }}
-                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    className="mr-2 h-4 w-4 text-primary focus:ring-ring border-gray-300"
                   />
                   <span className="text-sm text-gray-700">{tBasic('singlePricing')}</span>
                 </label>
@@ -1438,11 +1438,11 @@ export default function BasicInfoTab({
                       basePriceInfant: price
                     });
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="0"
                   required
                 />
-                <p className="text-xs text-blue-600 mt-1">{tBasic('samePriceForAll')}</p>
+                <p className="text-xs text-primary mt-1">{tBasic('samePriceForAll')}</p>
               </div>
             ) : (
               // 분리 가격 모드
@@ -1473,7 +1473,7 @@ export default function BasicInfoTab({
                         basePriceAdult: adultPrice
                       });
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder="0"
                     required
                   />
@@ -1504,7 +1504,7 @@ export default function BasicInfoTab({
                         basePriceChild: childPrice
                       });
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder="0"
                     required
                   />
@@ -1535,7 +1535,7 @@ export default function BasicInfoTab({
                         basePriceInfant: infantPrice
                       });
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder="0"
                     required
                   />
@@ -1545,7 +1545,7 @@ export default function BasicInfoTab({
           </div>
           {/* 가격 미리보기 */}
           {!isNewProduct && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="mt-3 p-3 bg-muted/50 border border-border rounded-lg">
               <div className="space-y-3 text-sm">
                 {/* 기본 가격 */}
                 <div className="grid grid-cols-3 gap-3 font-medium">
@@ -1584,7 +1584,7 @@ export default function BasicInfoTab({
                 ) : choicesGroups.length > 0 ? (
                   <div className="space-y-3">
                     {choicesGroups.map((group) => (
-                      <div key={group.id} className="bg-white rounded p-3 border border-blue-100">
+                      <div key={group.id} className="bg-white rounded p-3 border border-border/60">
                         <div className="font-medium text-gray-800 mb-2">
                           {group.choice_group_ko || group.choice_group}
                         </div>
@@ -1599,12 +1599,12 @@ export default function BasicInfoTab({
                                 <div 
                                   key={option.id} 
                                   className={`flex items-center justify-between ${
-                                    option.is_default ? 'text-blue-600 font-semibold' : 'text-gray-600'
+                                    option.is_default ? 'text-primary font-semibold' : 'text-gray-600'
                                   }`}
                                 >
                                   <span className="flex items-center">
                                     {option.option_name_ko || option.option_name}
-                                    {option.is_default && <span className="ml-1 text-xs text-blue-500">{tBasic('defaultOption')}</span>}
+                                    {option.is_default && <span className="ml-1 text-xs text-primary">{tBasic('defaultOption')}</span>}
                                   </span>
                                   <span className="text-xs">
                                     ${option.adult_price.toFixed(2)} + ${baseAdultPrice.toFixed(2)} = <span className="font-semibold">${optionTotal.toFixed(2)}</span>
@@ -1632,7 +1632,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('productTags')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.productTags} />
@@ -1648,7 +1648,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-blue-600" />
+            <Info className="h-5 w-5 mr-2 text-primary" />
             {tBasic('additionalInfo')}
           </h3>
           <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.additionalInfo} />
@@ -1668,7 +1668,7 @@ export default function BasicInfoTab({
                 setFormData({ ...formData, duration: value });
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             placeholder={tBasic('totalTourHoursPlaceholder')}
             required
           />
@@ -1682,7 +1682,7 @@ export default function BasicInfoTab({
             min="1"
             value={formData.maxParticipants}
             onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) || 1 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             required
           />
         </div>
@@ -1696,7 +1696,7 @@ export default function BasicInfoTab({
               type="time"
               value={newDepartureTime}
               onChange={(e) => setNewDepartureTime(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent flex-1"
               placeholder={tBasic('departureTimeSelect')}
             />
             <button
@@ -1705,7 +1705,7 @@ export default function BasicInfoTab({
               disabled={!newDepartureTime || (formData.tourDepartureTimes?.includes(newDepartureTime) ?? false)}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 newDepartureTime && !(formData.tourDepartureTimes?.includes(newDepartureTime) ?? false)
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
@@ -1719,7 +1719,7 @@ export default function BasicInfoTab({
               <p className="text-xs text-gray-600">{tBasic('selectedDepartureTimes')}</p>
               <div className="flex flex-wrap gap-2">
                 {formData.tourDepartureTimes.map((time, index) => (
-                  <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                  <div key={index} className="flex items-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm">
                     <span>{time}</span>
                     <button
                       type="button"
@@ -1744,7 +1744,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Info className="h-5 w-5 text-blue-600" />
+            <Info className="h-5 w-5 text-primary" />
             <h3 className="text-lg font-semibold text-gray-900">{tBasic('saveSectionTitle')}</h3>
           </div>
           <button
@@ -1754,7 +1754,7 @@ export default function BasicInfoTab({
             className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
               saving
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
             }`}
           >
             {saving ? (

@@ -668,13 +668,13 @@ export default function ReservationOptionsHistoryTab() {
                       }
                     }}
                     placeholder={t('searchPlaceholder')}
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={applySearch}
-                  className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                 >
                   <Search className="w-4 h-4" />
                   {t('search')}
@@ -791,7 +791,7 @@ export default function ReservationOptionsHistoryTab() {
           <p className="text-xs text-gray-600">
             {t('summaryLoaded', { total: allRows.length })}
             {filteredRows.length !== allRows.length && (
-              <span className="ml-1 text-blue-700">{t('summaryFiltered', { n: filteredRows.length })}</span>
+              <span className="ml-1 text-primary">{t('summaryFiltered', { n: filteredRows.length })}</span>
             )}
           </p>
           <div className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-sm">
@@ -801,7 +801,7 @@ export default function ReservationOptionsHistoryTab() {
             </div>
             <div>
               <div className="text-xs font-medium text-gray-500">{t('statsQtyActive')}</div>
-              <div className="tabular-nums font-semibold text-blue-700">{fmtQty.format(amountStats.qtyActive)}</div>
+              <div className="tabular-nums font-semibold text-primary">{fmtQty.format(amountStats.qtyActive)}</div>
             </div>
             <div>
               <div className="text-xs font-medium text-gray-500">{t('statsQtyAll')}</div>
@@ -887,7 +887,7 @@ export default function ReservationOptionsHistoryTab() {
                   <div className="text-xs truncate">
                     <Link
                       href={`/${locale}/admin/reservations/${r.reservation_id}`}
-                      className="text-blue-600 hover:underline font-mono"
+                      className="text-primary hover:underline font-mono"
                     >
                       {r.reservation_id}
                     </Link>
@@ -1046,7 +1046,7 @@ export default function ReservationOptionsHistoryTab() {
                       <td className="px-3 py-2 align-middle">
                         <Link
                           href={`/${locale}/admin/reservations/${r.reservation_id}`}
-                          className="text-blue-600 hover:underline font-mono text-xs"
+                          className="text-primary hover:underline font-mono text-xs"
                         >
                           {r.reservation_id}
                         </Link>

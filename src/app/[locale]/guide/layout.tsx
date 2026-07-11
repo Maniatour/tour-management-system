@@ -410,10 +410,10 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
   if (isLoading || !isInitialized || isSimulationRestoring) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen app-page-bg flex flex-col">
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-gray-600">Loading...</p>
           </div>
         </div>
@@ -427,7 +427,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
   if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-screen app-page-bg flex flex-col">
         <div className="flex flex-1 items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
@@ -448,7 +448,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/auth`)
             }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
           >
             로그인 페이지로 이동
           </button>
@@ -464,7 +464,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
          guideEmail={currentUser.email}
          locale={locale === 'en' ? 'en' : 'ko'}
        >
-       <div className="min-h-screen bg-gray-50 flex flex-col">
+       <div className="min-h-screen app-page-bg flex flex-col">
          <GuideOfflineBanner />
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
@@ -507,8 +507,8 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
             }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/tours') && pathname.includes('calendar')
-                ? 'text-blue-600'
-                : 'text-gray-600 hover:text-blue-600'
+                ? 'text-primary'
+                : 'text-gray-600 hover:text-primary'
             }`}
           >
             <Calendar className="w-5 h-5 mb-1" />
@@ -557,8 +557,8 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
             }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/tour-materials')
-                ? 'text-blue-600'
-                : 'text-gray-600 hover:text-blue-600'
+                ? 'text-primary'
+                : 'text-gray-600 hover:text-primary'
             }`}
           >
             <FileText className="w-5 h-5 mb-1" />

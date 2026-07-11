@@ -507,7 +507,7 @@ export default function ReservationFormNew({
               type="text"
               value={formData.pickup_hotel || ''}
               onChange={(e) => handleInputChange('pickup_hotel', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="픽업 호텔을 입력하세요"
             />
           </div>
@@ -517,7 +517,7 @@ export default function ReservationFormNew({
               type="text"
               value={formData.pickup_time || ''}
               onChange={(e) => handleInputChange('pickup_time', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="픽업 시간을 입력하세요"
             />
           </div>
@@ -536,7 +536,7 @@ export default function ReservationFormNew({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">초이스 총액</label>
-            <div className="text-lg font-semibold text-blue-600">
+            <div className="text-lg font-semibold text-primary">
               ${choicesTotal.toLocaleString()}
             </div>
           </div>
@@ -560,7 +560,7 @@ export default function ReservationFormNew({
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90"
         >
           {reservation ? '수정' : '생성'}
         </button>

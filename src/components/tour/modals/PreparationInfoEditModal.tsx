@@ -97,7 +97,7 @@ export default function PreparationInfoEditModal({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             rows={8}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-ring focus:border-ring"
             placeholder="준비물·주의사항을 입력하세요"
           />
           {error && (
@@ -116,7 +116,7 @@ export default function PreparationInfoEditModal({
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
           >
             {saving ? (
               <>

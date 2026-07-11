@@ -275,7 +275,7 @@ export default function TourMaterialsManagementPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">데이터를 불러오는 중...</p>
         </div>
       </div>
@@ -294,7 +294,7 @@ export default function TourMaterialsManagementPage() {
           <div className="flex flex-wrap gap-2 sm:gap-3 flex-shrink-0">
             <button
               onClick={() => setShowUploadModal(true)}
-              className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               title="자료 업로드"
             >
               <Upload className="w-4 h-4 flex-shrink-0" />
@@ -337,7 +337,7 @@ export default function TourMaterialsManagementPage() {
                   placeholder="검색..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>
@@ -345,7 +345,7 @@ export default function TourMaterialsManagementPage() {
               <select
                 value={selectedAttraction}
                 onChange={(e) => setSelectedAttraction(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">모든 관광지</option>
                 {attractions.map(attraction => (
@@ -358,7 +358,7 @@ export default function TourMaterialsManagementPage() {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="">모든 카테고리</option>
                   {categories.map(category => (
@@ -383,7 +383,7 @@ export default function TourMaterialsManagementPage() {
                   <p className="text-gray-600 mb-4">새로운 투어 자료를 업로드해보세요.</p>
                   <button
                     onClick={() => setShowUploadModal(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
                   >
                     자료 업로드
                   </button>
@@ -417,7 +417,7 @@ export default function TourMaterialsManagementPage() {
                                   className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
                                     currentTrack?.src === getFileUrl(material.file_path) && isPlaying
                                       ? 'bg-red-600 text-white hover:bg-red-700'
-                                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
                                   }`}
                                   title={currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? '재생 중' : '재생'}
                                 >
@@ -486,7 +486,7 @@ export default function TourMaterialsManagementPage() {
                                     {material.tags.map((tag: string, index: number) => (
                                       <span 
                                         key={index}
-                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                        className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full"
                                       >
                                         {tag}
                                       </span>
@@ -505,7 +505,7 @@ export default function TourMaterialsManagementPage() {
                                   </button>
                                   <button 
                                     onClick={() => handleEdit(material)}
-                                    className="flex items-center space-x-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                    className="flex items-center space-x-1 px-2 py-1 text-xs text-primary hover:text-primary/80 hover:bg-muted/50 rounded transition-colors"
                                   >
                                     <Edit className="w-3 h-3" />
                                     <span>수정</span>
@@ -567,7 +567,7 @@ export default function TourMaterialsManagementPage() {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-blue-600">
+                          <button className="p-2 text-gray-400 hover:text-primary">
                             <Edit className="w-4 h-4" />
                           </button>
                           <button className="p-2 text-gray-400 hover:text-red-600">
@@ -612,7 +612,7 @@ export default function TourMaterialsManagementPage() {
                               <MapPin className="w-3 h-3" />
                               <span>{attraction.location || '위치 정보 없음'}</span>
                             </span>
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                            <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs">
                               {attraction.category || '카테고리 없음'}
                             </span>
                             <span className="flex items-center space-x-1">
@@ -622,7 +622,7 @@ export default function TourMaterialsManagementPage() {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-blue-600">
+                          <button className="p-2 text-gray-400 hover:text-primary">
                             <Edit className="w-4 h-4" />
                           </button>
                           <button className="p-2 text-gray-400 hover:text-red-600">

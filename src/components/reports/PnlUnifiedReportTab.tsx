@@ -1331,7 +1331,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     return (
       <>
         <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
         </div>
         {expenseDetailDialogs}
       </>
@@ -1545,7 +1545,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           {formatMoney(totalExcl)}). 아래{' '}
           <button
             type="button"
-            className="text-blue-800 font-medium hover:underline underline-offset-2"
+            className="text-primary font-medium hover:underline underline-offset-2"
             onClick={() => {
               document.getElementById('pnl-excluded-section')?.scrollIntoView({ behavior: 'smooth' })
             }}
@@ -1554,7 +1554,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           </button>
           에서 건별로 볼 수 있습니다.
         </p>
-        <p className="text-xs text-blue-900/90 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-3">
+        <p className="text-xs text-foreground/90 bg-primary/5 border border-border/60 rounded-md px-3 py-2 mb-3">
           금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달에서 출처를 다중 선택해 목록을
           좁힐 수 있고, 원문·출처별로 <strong>표준 카테고리(리프) 매핑</strong>을 저장할 수 있습니다. 하단에서 지출
           금액·분류·PNL 제외 등을 수정할 수 있습니다(입장권·투어 호텔 부킹은 PNL 제외 옵션 없음).
@@ -1639,7 +1639,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
                               title="이 달·이 표준 분류 상세"
                               className={`w-full min-h-[36px] rounded px-1 py-1 -mx-1 transition-colors ${
                                 v !== 0
-                                  ? 'text-blue-800 hover:bg-blue-50 hover:underline underline-offset-2'
+                                  ? 'text-primary hover:bg-muted/50 hover:underline underline-offset-2'
                                   : 'text-gray-400 hover:bg-slate-100'
                               }`}
                               onClick={() => {
@@ -1665,7 +1665,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
                         <button
                           type="button"
                           title="이 행·기간 전체 상세"
-                          className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-900 hover:bg-blue-50 hover:underline underline-offset-2"
+                          className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-foreground hover:bg-muted/50 hover:underline underline-offset-2"
                           onClick={() => {
                             setDetailDrill({
                               mode: 'row',
@@ -1692,7 +1692,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
                       <button
                         type="button"
                         title="이 달·전체 카테고리 상세"
-                        className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-900 hover:bg-blue-50 hover:underline underline-offset-2"
+                        className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-foreground hover:bg-muted/50 hover:underline underline-offset-2"
                         onClick={() => {
                           setDetailDrill({ mode: 'col', month: ym })
                           setDetailOpen(true)
@@ -1706,7 +1706,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
                     <button
                       type="button"
                       title="기간 전체 상세"
-                      className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-950 hover:bg-blue-100/80 hover:underline underline-offset-2 font-semibold"
+                      className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-950 hover:bg-muted/80 hover:underline underline-offset-2 font-semibold"
                       onClick={() => {
                         setDetailDrill({ mode: 'grand' })
                         setDetailOpen(true)

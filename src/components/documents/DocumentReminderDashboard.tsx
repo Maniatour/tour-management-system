@@ -180,7 +180,7 @@ MANIA TOUR
 
   const getReminderTypeColor = (type: string) => {
     switch (type) {
-      case '30_days': return 'text-blue-600 bg-blue-100'
+      case '30_days': return 'text-primary bg-primary/10'
       case '7_days': return 'text-yellow-600 bg-yellow-100'
       case 'expired': return 'text-red-600 bg-red-100'
       default: return 'text-gray-600 bg-gray-100'
@@ -220,7 +220,7 @@ MANIA TOUR
           {onClose && (
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
             >
               <XCircle className="w-5 h-5" />
             </button>
@@ -279,7 +279,7 @@ MANIA TOUR
               onClick={() => setFilter(status)}
               className={`px-3 py-1 text-sm rounded-full ${
                 filter === status
-                  ? 'bg-blue-100 text-blue-800'
+                  ? 'bg-primary/10 text-primary'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -293,7 +293,7 @@ MANIA TOUR
         {/* 알림 목록 */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <span className="ml-3 text-gray-600">알림을 불러오는 중...</span>
           </div>
         ) : filteredReminders.length === 0 ? (
@@ -363,7 +363,7 @@ MANIA TOUR
                       <button
                         onClick={() => sendReminder(reminder.id)}
                         disabled={sendingReminder === reminder.id}
-                        className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                        className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
                       >
                         <Send className="w-4 h-4" />
                         <span>발송</span>

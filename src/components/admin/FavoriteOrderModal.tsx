@@ -168,7 +168,7 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : favoriteProducts.length === 0 ? (
             <div className="text-center py-12">
@@ -189,8 +189,8 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
                   onDragEnd={handleDragEnd}
                   className={`
                     flex items-center space-x-4 p-4 border rounded-lg transition-all
-                    ${draggedIndex === index ? 'opacity-50 bg-blue-50' : ''}
-                    ${dragOverIndex === index ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}
+                    ${draggedIndex === index ? 'opacity-50 bg-primary/5' : ''}
+                    ${dragOverIndex === index ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'}
                     ${saving ? 'opacity-50 pointer-events-none' : 'cursor-move'}
                   `}
                 >
@@ -200,7 +200,7 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
                   </div>
 
                   {/* 순서 번호 */}
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-semibold text-sm">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
                     {index + 1}
                   </div>
 

@@ -33,13 +33,13 @@ export default function PrivateTourModal({
           
           <div className="mb-6">
             <p className="text-gray-700 mb-4">
-              이 투어를 <span className="font-semibold text-blue-600">
+              이 투어를 <span className="font-semibold text-primary">
                 {pendingValue ? '단독투어' : '일반투어'}
               </span>로 변경하시겠습니까?
             </p>
             
             {pendingValue && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="bg-muted/50 border border-border rounded-lg p-4 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
                     <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
@@ -47,8 +47,8 @@ export default function PrivateTourModal({
                     </svg>
                   </div>
                   <div className="ml-3">
-                    <h4 className="text-sm font-medium text-blue-800">단독투어 안내</h4>
-                    <p className="text-sm text-blue-700 mt-1">
+                    <h4 className="text-sm font-medium text-primary">단독투어 안내</h4>
+                    <p className="text-sm text-primary mt-1">
                       단독투어로 설정하면 이 투어는 개별 고객을 위한 전용 투어가 됩니다.
                     </p>
                   </div>
@@ -78,7 +78,7 @@ export default function PrivateTourModal({
           <div className="flex justify-end space-x-3">
             <button
               onClick={onCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
             >
               취소
             </button>
@@ -86,7 +86,7 @@ export default function PrivateTourModal({
               onClick={onConfirm}
               className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                 pendingValue
-                  ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                  ? 'bg-primary hover:bg-primary/90 focus:ring-ring'
                   : 'bg-gray-600 hover:bg-gray-700 focus:ring-gray-500'
               }`}
             >

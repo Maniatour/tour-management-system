@@ -1602,7 +1602,7 @@ export default function PaymentMethodManager({
       {/* 헤더 - 모바일 컴팩트 */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-          <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 flex-shrink-0" />
+          <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-primary flex-shrink-0" />
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">결제 방법 관리</h3>
         </div>
         <div className="flex flex-wrap gap-2 flex-shrink-0 justify-end">
@@ -1641,7 +1641,7 @@ export default function PaymentMethodManager({
                 resetForm()
                 setShowAllUsers(false)
               }}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               <Plus size={14} className="sm:w-4 sm:h-4" />
               <span>추가</span>
@@ -1732,7 +1732,7 @@ export default function PaymentMethodManager({
             <select
               value={filters.status}
               onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">전체</option>
               <option value="active">활성</option>
@@ -1746,7 +1746,7 @@ export default function PaymentMethodManager({
             <select
               value={filters.method_type}
               onChange={(e) => setFilters(prev => ({ ...prev, method_type: e.target.value }))}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">전체</option>
               <option value="card">카드</option>
@@ -1765,7 +1765,7 @@ export default function PaymentMethodManager({
                 value={filters.search}
                 onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
                 placeholder="방법명, ID, 사용자 검색"
-                className="w-full pl-8 sm:pl-10 pr-2 sm:pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-8 sm:pl-10 pr-2 sm:pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -1809,7 +1809,7 @@ export default function PaymentMethodManager({
                   value={formData.id}
                   onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value.trim() }))}
                   placeholder="PAYM033"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -1830,7 +1830,7 @@ export default function PaymentMethodManager({
                   value={formData.method}
                   onChange={(e) => setFormData(prev => ({ ...prev, method: e.target.value }))}
                   placeholder="CC 4052"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -1843,7 +1843,7 @@ export default function PaymentMethodManager({
                 <select
                   value={formData.method_type}
                   onChange={(e) => setFormData(prev => ({ ...prev, method_type: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 >
                   <option value="card">카드</option>
@@ -1872,7 +1872,7 @@ export default function PaymentMethodManager({
                     onChange={(e) => setFormTeamMemberSearch(e.target.value)}
                     placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
                     autoComplete="off"
-                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
@@ -1896,7 +1896,7 @@ export default function PaymentMethodManager({
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleUserSelection(email)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                             />
                             <span className="text-sm text-gray-700">
                               <span className="font-medium">{name_ko}</span>
@@ -1919,7 +1919,7 @@ export default function PaymentMethodManager({
                             <button
                               type="button"
                               onClick={() => setShowAllUsers(true)}
-                              className="w-full text-left text-sm text-blue-600 hover:text-blue-800 py-2 px-2 rounded hover:bg-blue-50 transition-colors"
+                              className="w-full text-left text-sm text-primary hover:text-primary/80 py-2 px-2 rounded hover:bg-muted/50 transition-colors"
                             >
                               더보기 ({formInactiveTeamMembers.length}명)
                             </button>
@@ -1938,7 +1938,7 @@ export default function PaymentMethodManager({
                                       type="checkbox"
                                       checked={isSelected}
                                       onChange={() => toggleUserSelection(email)}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                                     />
                                     <span className="text-sm text-gray-600">
                                       <span className="font-medium">{name_ko}</span>
@@ -1975,7 +1975,7 @@ export default function PaymentMethodManager({
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="active">활성</option>
                   <option value="inactive">비활성</option>
@@ -2012,7 +2012,7 @@ export default function PaymentMethodManager({
                     placeholder="5000"
                     min="0"
                     step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
 
@@ -2025,7 +2025,7 @@ export default function PaymentMethodManager({
                     onChange={(e) => setFormData(prev => ({ ...prev, card_number_last4: e.target.value }))}
                     placeholder="4052"
                     maxLength={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
 
@@ -2035,7 +2035,7 @@ export default function PaymentMethodManager({
                   <select
                     value={formData.card_type}
                     onChange={(e) => setFormData(prev => ({ ...prev, card_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   >
                     <option value="">선택해주세요</option>
                     <option value="visa">Visa</option>
@@ -2055,7 +2055,7 @@ export default function PaymentMethodManager({
                     value={formData.card_holder_name}
                     onChange={(e) => setFormData(prev => ({ ...prev, card_holder_name: e.target.value }))}
                     placeholder="홍길동"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
 
@@ -2066,7 +2066,7 @@ export default function PaymentMethodManager({
                     <select
                       value={formData.expiry_month}
                       onChange={(e) => setFormData(prev => ({ ...prev, expiry_month: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       <option value="">월 선택</option>
                       {Array.from({ length: 12 }, (_, i) => {
@@ -2081,7 +2081,7 @@ export default function PaymentMethodManager({
                     <select
                       value={formData.expiry_year}
                       onChange={(e) => setFormData(prev => ({ ...prev, expiry_year: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       <option value="">년 선택</option>
                       {Array.from({ length: 20 }, (_, i) => {
@@ -2106,7 +2106,7 @@ export default function PaymentMethodManager({
                     placeholder="100000"
                     min="0"
                     step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
 
@@ -2120,7 +2120,7 @@ export default function PaymentMethodManager({
                     placeholder="10000"
                     min="0"
                     step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
               </div>
@@ -2137,7 +2137,7 @@ export default function PaymentMethodManager({
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
                 placeholder="메모를 입력하세요"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
 
@@ -2161,7 +2161,7 @@ export default function PaymentMethodManager({
             <button
               type="submit"
               form="payment-method-form"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               {editingMethod ? '수정' : '등록'}
             </button>
@@ -2201,7 +2201,7 @@ export default function PaymentMethodManager({
                   e.stopPropagation()
                   addBulkRow()
                 }}
-                className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex items-center space-x-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 <Plus size={16} />
                 <span>행 추가</span>
@@ -2373,7 +2373,7 @@ export default function PaymentMethodManager({
                   addBulkEditRow()
                 }}
                 disabled={bulkEditLoading}
-                className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                className="flex items-center space-x-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               >
                 <Plus size={16} />
                 <span>행 추가</span>
@@ -2588,7 +2588,7 @@ export default function PaymentMethodManager({
                         placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
                         autoComplete="off"
                         autoFocus
-                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-ring"
                       />
                     </div>
 
@@ -2619,7 +2619,7 @@ export default function PaymentMethodManager({
                                           toggleBulkUserSelection(bulkUserSelectIndex, email)
                                         }
                                       }}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                                     />
                                     <span className="text-sm text-gray-700">
                                       <span className="font-medium">{name_ko}</span>
@@ -2659,7 +2659,7 @@ export default function PaymentMethodManager({
                                           toggleBulkUserSelection(bulkUserSelectIndex, email)
                                         }
                                       }}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                                     />
                                     <span className="text-sm text-gray-600">
                                       <span className="font-medium">{name_ko}</span>
@@ -2689,7 +2689,7 @@ export default function PaymentMethodManager({
             <button
               type="button"
               onClick={() => setBulkUserSelectIndex(null)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               확인
             </button>
@@ -2727,7 +2727,7 @@ export default function PaymentMethodManager({
                         placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
                         autoComplete="off"
                         autoFocus
-                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-ring"
                       />
                     </div>
 
@@ -2757,7 +2757,7 @@ export default function PaymentMethodManager({
                                           toggleBulkEditUserSelection(bulkEditUserSelectIndex, email)
                                         }
                                       }}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                                     />
                                     <span className="text-sm text-gray-700">
                                       <span className="font-medium">{name_ko}</span>
@@ -2796,7 +2796,7 @@ export default function PaymentMethodManager({
                                           toggleBulkEditUserSelection(bulkEditUserSelectIndex, email)
                                         }
                                       }}
-                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                                     />
                                     <span className="text-sm text-gray-600">
                                       <span className="font-medium">{name_ko}</span>
@@ -2826,7 +2826,7 @@ export default function PaymentMethodManager({
             <button
               type="button"
               onClick={() => setBulkEditUserSelectIndex(null)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               확인
             </button>
@@ -2837,7 +2837,7 @@ export default function PaymentMethodManager({
       {/* 결제 방법 목록 - 모바일 컴팩트 */}
       {loading ? (
         <div className="text-center py-6 sm:py-8">
-          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-primary mx-auto"></div>
           <p className="text-gray-500 mt-2 text-sm">로딩중...</p>
         </div>
       ) : methods.length > 0 ? (
@@ -2850,7 +2850,7 @@ export default function PaymentMethodManager({
                     type="checkbox"
                     checked={allVisibleSelected}
                     onChange={toggleSelectAllVisible}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring"
                   />
                   <span>현재 목록 전체 선택 ({methods.length}개)</span>
                 </label>
@@ -3000,9 +3000,9 @@ export default function PaymentMethodManager({
                       >
                         방법명
                         {tableMethodNameSort === 'asc' ? (
-                          <ArrowUp className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                          <ArrowUp className="h-3.5 w-3.5 text-primary" aria-hidden />
                         ) : (
-                          <ArrowDown className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                          <ArrowDown className="h-3.5 w-3.5 text-primary" aria-hidden />
                         )}
                       </button>
                     </th>
@@ -3019,9 +3019,9 @@ export default function PaymentMethodManager({
                       >
                         {t('referenceCount')}
                         {tableReferenceSort === 'asc' ? (
-                          <ArrowUp className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                          <ArrowUp className="h-3.5 w-3.5 text-primary" aria-hidden />
                         ) : tableReferenceSort === 'desc' ? (
-                          <ArrowDown className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                          <ArrowDown className="h-3.5 w-3.5 text-primary" aria-hidden />
                         ) : null}
                       </button>
                     </th>
@@ -3050,7 +3050,7 @@ export default function PaymentMethodManager({
                           type="checkbox"
                           checked={selectedMethodIds.includes(method.id)}
                           onChange={() => toggleMethodSelected(method.id)}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring"
                           aria-label={`선택 ${method.id}`}
                         />
                       </td>
@@ -3061,7 +3061,7 @@ export default function PaymentMethodManager({
                         <button
                           type="button"
                           onClick={() => setUsageModalMethod(method)}
-                          className="font-medium text-left text-blue-700 hover:text-blue-900 hover:underline truncate max-w-full"
+                          className="font-medium text-left text-primary hover:text-primary/80 hover:underline truncate max-w-full"
                         >
                           {paymentMethodUiLabel(method)}
                         </button>
@@ -3148,7 +3148,7 @@ export default function PaymentMethodManager({
                           <button
                             type="button"
                             onClick={() => handleEditMethod(method)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            className="p-1.5 text-gray-500 hover:text-primary hover:bg-muted/50 rounded-lg"
                             title="수정"
                           >
                             <Edit size={16} />
@@ -3177,11 +3177,11 @@ export default function PaymentMethodManager({
               <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
-                    <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
+                    <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary flex-shrink-0" />
                     <button
                       type="button"
                       onClick={() => setUsageModalMethod(method)}
-                      className="font-semibold text-xs sm:text-sm text-left text-blue-700 hover:text-blue-900 hover:underline truncate"
+                      className="font-semibold text-xs sm:text-sm text-left text-primary hover:text-primary/80 hover:underline truncate"
                     >
                       {paymentMethodUiLabel(method)}
                     </button>
@@ -3196,7 +3196,7 @@ export default function PaymentMethodManager({
                         e.stopPropagation()
                         handleToggleStatus(method)
                       }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex-shrink-0 ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 flex-shrink-0 ${
                         method.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
                       }`}
                       title={method.status === 'active' ? '비활성화' : '활성화'}
@@ -3215,7 +3215,7 @@ export default function PaymentMethodManager({
                       e.stopPropagation()
                       handleEditMethod(method)
                     }}
-                    className="p-2 sm:p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    className="p-2 sm:p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 flex items-center justify-center text-gray-500 hover:text-primary hover:bg-muted/50 rounded-lg transition-colors"
                     title="수정"
                   >
                     <Edit size={16} className="sm:w-3 sm:h-3" />

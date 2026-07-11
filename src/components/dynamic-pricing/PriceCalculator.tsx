@@ -309,8 +309,8 @@ export const PriceCalculator = memo(function PriceCalculator({
                              const combination = choiceCombinations.find(c => c.id === choiceId);
                              const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
                              const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
-                             const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
-                             const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                             const rowClass = isLowerAntelope ? 'bg-primary/5' : 'bg-green-50';
+                             const textClass = isLowerAntelope ? 'text-primary' : 'text-green-700';
                              
                              // 최종 가격 (마크업 적용 후) - 단일 가격 모드면 성인 가격만 사용
                              const totalPrice = isSinglePrice 
@@ -406,7 +406,7 @@ export const PriceCalculator = memo(function PriceCalculator({
                                        )}
                                      </td>
                                    )}
-                                   <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                   <td className="py-1 px-2 text-right font-bold text-primary">
                                      {isSinglePrice ? (
                                        <div>{formatPrice((totalPrice || 0) + (showNotIncludedColumn ? notIncludedAmount : 0))}</div>
                                      ) : (
@@ -469,8 +469,8 @@ export const PriceCalculator = memo(function PriceCalculator({
                          // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
                          const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
                          const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
-                         const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
-                         const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                         const rowClass = isLowerAntelope ? 'bg-primary/5' : 'bg-green-50';
+                         const textClass = isLowerAntelope ? 'text-primary' : 'text-green-700';
                          
                          return (
                            <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
@@ -506,7 +506,7 @@ export const PriceCalculator = memo(function PriceCalculator({
 
              {/* Net Price (할인가격 - 커미션) - 항상 표시 */}
              <div>
-               <h5 className="text-sm font-semibold text-blue-600 mb-3">
+               <h5 className="text-sm font-semibold text-primary mb-3">
                  {t('netPriceFormula')}
                </h5>
                <div className="overflow-x-auto">
@@ -528,7 +528,7 @@ export const PriceCalculator = memo(function PriceCalculator({
                    const useColumnFormat = !isSinglePrice && !commissionBasePriceOnly && notIncludedType === 'none' && !showNotIncludedColumn;
                    
                    return (
-                     <table className="w-full text-xs bg-blue-50">
+                     <table className="w-full text-xs bg-primary/5">
                        <thead>
                          <tr className="border-b border-gray-200">
                            <th className="text-left py-1 px-2 font-medium text-gray-700">{t('choice')}</th>
@@ -659,8 +659,8 @@ export const PriceCalculator = memo(function PriceCalculator({
                            // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
                            const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
                            const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
-                           const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
-                           const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                           const rowClass = isLowerAntelope ? 'bg-primary/5' : 'bg-green-50';
+                           const textClass = isLowerAntelope ? 'text-primary' : 'text-green-700';
                            
                            if (useColumnFormat) {
                              // 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
@@ -669,13 +669,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                                  <td className={`py-1 px-2 font-medium ${textClass}`}>
                                    {combinationName}
                                  </td>
-                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                 <td className="py-1 px-2 text-right font-bold text-primary">
                                    {formatPrice(netAdultPrice ?? 0)}
                                  </td>
-                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                 <td className="py-1 px-2 text-right font-bold text-primary">
                                    {formatPrice(netChildPrice ?? 0)}
                                  </td>
-                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                 <td className="py-1 px-2 text-right font-bold text-primary">
                                    {formatPrice(netInfantPrice ?? 0)}
                                  </td>
                                </tr>
@@ -988,27 +988,27 @@ export const PriceCalculator = memo(function PriceCalculator({
               </div>
 
               {/* 커미션 계산 방식 */}
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                <h5 className="text-xs font-semibold text-blue-900 mb-2 flex items-center">
+              <div className="bg-muted/50 border border-border rounded-md p-3">
+                <h5 className="text-xs font-semibold text-foreground mb-2 flex items-center">
                   <span className="mr-1">📋</span>
                   {t('channelCommissionTitle', { name: selectedChannel.name })}
                 </h5>
-                <div className="text-xs text-blue-800 space-y-1.5">
+                <div className="text-xs text-primary space-y-1.5">
                   {selectedChannel.commission_base_price_only ? (
                     <>
-                      <div className="font-medium text-blue-900">✓ {t('commissionOnSaleOnly')}</div>
-                      <div className="pl-2 border-l-2 border-blue-300">
+                      <div className="font-medium text-foreground">✓ {t('commissionOnSaleOnly')}</div>
+                      <div className="pl-2 border-l-2 border-border">
                         <div>• {t('commissionOnSaleOnlyDesc')}</div>
                         <div>• {t('commissionOnSaleOnlyNote')}</div>
-                        <div className="mt-1 text-blue-700">
+                        <div className="mt-1 text-primary">
                           {t('commissionExample')}
                         </div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="font-medium text-blue-900">✓ {t('commissionOnTotalDesc')}</div>
-                      <div className="pl-2 border-l-2 border-blue-300">
+                      <div className="font-medium text-foreground">✓ {t('commissionOnTotalDesc')}</div>
+                      <div className="pl-2 border-l-2 border-border">
                         <div>• {t('commissionOnTotalDesc')}</div>
                         <div>• {t('commissionOnTotalDesc2')}</div>
                       </div>

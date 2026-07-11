@@ -72,7 +72,7 @@ export const getStatusColor = (status: string | null) => {
   
   const normalizedStatus = status.toLowerCase()
   switch (normalizedStatus) {
-    case 'recruiting': return 'bg-blue-100 text-blue-800'
+    case 'recruiting': return 'bg-primary/10 text-primary'
     case 'confirm':
     case 'confirmed': return 'bg-green-100 text-green-800'
     case 'cancel':
@@ -267,7 +267,7 @@ export const safeJsonParse = (data: string | object | null | undefined, fallback
 
 // 투어 상태 옵션들 (데이터베이스에 저장되는 실제 값 사용)
 export const tourStatusOptions = [
-  { value: 'Recruiting', label: '모집중', color: 'bg-blue-100 text-blue-800' },
+  { value: 'Recruiting', label: '모집중', color: 'bg-primary/10 text-primary' },
   { value: 'Confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
   { value: 'Canceled - No Minimum', label: '취소 - 최소인원 미달', color: 'bg-red-100 text-red-800' },
   { value: 'Canceled - by customer', label: '취소 - 고객 요청', color: 'bg-red-100 text-red-800' },

@@ -84,7 +84,7 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
 
   const getScheduleColor = (schedule: ScheduleItem) => {
     if (schedule.is_meal) return 'bg-orange-50 text-orange-800 border-orange-200'
-    if (schedule.is_transport) return 'bg-blue-50 text-blue-800 border-blue-200'
+    if (schedule.is_transport) return 'bg-primary/5 text-primary border-border'
     if (schedule.is_break) return 'bg-green-50 text-green-800 border-green-200'
     return 'bg-gray-50 text-gray-800 border-gray-200'
   }
@@ -109,7 +109,7 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">일정을 불러오는 중...</span>
       </div>
     )

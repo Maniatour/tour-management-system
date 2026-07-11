@@ -113,9 +113,9 @@ const HOTEL_TABLE_GROUP_STYLES: Array<{
   mobileHeader: string;
 }> = [
   {
-    headerRow: 'bg-blue-100 border-y border-blue-200 shadow-sm',
-    mobileSection: 'rounded-xl border-2 border-blue-200 bg-blue-50/40 shadow-md overflow-hidden',
-    mobileHeader: 'bg-blue-100 border-b-2 border-blue-300 px-3 py-2.5',
+    headerRow: 'bg-primary/10 border-y border-border shadow-sm',
+    mobileSection: 'rounded-xl border-2 border-border bg-primary/5/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-primary/10 border-b-2 border-border px-3 py-2.5',
   },
   {
     headerRow: 'bg-emerald-100 border-y border-emerald-200 shadow-sm',
@@ -903,7 +903,7 @@ export default function TourHotelBookingList() {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'confirmed': return 'bg-green-100 text-green-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
+      case 'completed': return 'bg-primary/10 text-primary';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -1175,7 +1175,7 @@ export default function TourHotelBookingList() {
         <button
           type="button"
           onClick={() => openTourDetailModal(g)}
-          className="text-left hover:text-blue-800 hover:underline decoration-blue-400 underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+          className="text-left hover:text-primary/80 hover:underline decoration-blue-400 underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
           title={locale === 'ko' ? '클릭하여 투어 상세 보기' : 'Click to view tour details'}
         >
           {inner}
@@ -1213,7 +1213,7 @@ export default function TourHotelBookingList() {
             e.stopPropagation();
             handleEdit(booking);
           }}
-          className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}
+          className={`${btn} bg-primary text-primary-foreground hover:bg-primary/90`}
           title={locale === 'ko' ? '편집' : 'Edit'}
         >
           {t('edit')}
@@ -1277,7 +1277,7 @@ export default function TourHotelBookingList() {
           <span className="inline-flex items-center gap-1">
             {t('checkInDate')}
             {sortField === 'date' ? (
-              <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+              <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
             ) : null}
           </span>
         </th>
@@ -1299,7 +1299,7 @@ export default function TourHotelBookingList() {
           <span className="inline-flex items-center gap-1">
             {locale === 'ko' ? '제출일' : 'Submitted'}
             {sortField === 'submit_on' ? (
-              <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+              <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
             ) : null}
           </span>
         </th>
@@ -1481,7 +1481,7 @@ export default function TourHotelBookingList() {
                 setListPageSize(Number(e.target.value));
                 setListPage(1);
               }}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring sm:text-sm"
             >
               <option value={25}>{hotelTableLayout === 'byDate' ? '25일' : '25건'}</option>
               <option value={50}>{hotelTableLayout === 'byDate' ? '50일' : '50건'}</option>
@@ -1573,7 +1573,7 @@ export default function TourHotelBookingList() {
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded-md transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title={locale === 'ko' ? '카드 뷰' : 'Card view'}
@@ -1584,7 +1584,7 @@ export default function TourHotelBookingList() {
               onClick={() => setViewMode('calendar')}
               className={`p-1.5 rounded-md transition-colors ${
                 viewMode === 'calendar'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title={locale === 'ko' ? '달력 뷰' : 'Calendar view'}
@@ -1595,7 +1595,7 @@ export default function TourHotelBookingList() {
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded-md transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
               title={locale === 'ko' ? '테이블 뷰' : 'Table view'}
@@ -1608,7 +1608,7 @@ export default function TourHotelBookingList() {
               setEditingBooking(null);
               setShowForm(true);
             }}
-            className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
+            className="px-2 sm:px-4 py-1.5 sm:py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-xs sm:text-base flex items-center space-x-1"
           >
             <Plus size={14} />
             <span className="hidden sm:inline">{t('addNewBooking')}</span>
@@ -1631,7 +1631,7 @@ export default function TourHotelBookingList() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`${t('search')}...`}
-                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
               />
             </div>
           </div>
@@ -1643,7 +1643,7 @@ export default function TourHotelBookingList() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
             >
               <option value="all">{t('allStatus')}</option>
               <option value="pending">{t('pending')}</option>
@@ -1665,7 +1665,7 @@ export default function TourHotelBookingList() {
                   value={checkInDateFrom}
                   onChange={(e) => setCheckInDateFrom(e.target.value)}
                   aria-label={t('dateRangeStart')}
-                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
                 />
               </div>
               <span className="text-gray-400 text-xs shrink-0">–</span>
@@ -1676,7 +1676,7 @@ export default function TourHotelBookingList() {
                   onChange={(e) => setCheckInDateTo(e.target.value)}
                   aria-label={t('dateRangeEnd')}
                   min={checkInDateFrom || undefined}
-                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
                 />
               </div>
             </div>
@@ -1701,7 +1701,7 @@ export default function TourHotelBookingList() {
                     aria-label={t('checkInYearPresetAria', { year })}
                     className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
                       active
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -1808,7 +1808,7 @@ export default function TourHotelBookingList() {
                         </h4>
                         <button
                           onClick={goToToday}
-                          className="text-sm text-blue-600 hover:text-blue-800 mt-1"
+                          className="text-sm text-primary hover:text-primary/80 mt-1"
                         >
                           {t('goToToday')}
                         </button>
@@ -1857,14 +1857,14 @@ export default function TourHotelBookingList() {
                           >
                             <div className={`text-sm font-medium mb-1 ${
                               isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                            } ${isToday ? 'text-blue-600' : ''}`}>
+                            } ${isToday ? 'text-primary' : ''}`}>
                               {date.getDate()}
                         </div>
                             
                              {/* 호텔 부킹 정보 라벨 */}
                              {dayBookings.length > 0 && (
                                <div className="space-y-0.5">
-                                 <div className="text-xs text-blue-600 font-semibold">
+                                 <div className="text-xs text-primary font-semibold">
                                    {t('totalRooms')} {totalRooms}
                                  </div>
                                 {(() => {
@@ -1956,7 +1956,7 @@ export default function TourHotelBookingList() {
                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
                            {t('cancelled')}
                          </span>
-                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary">
                            {t('completed')}
                          </span>
                        </div>
@@ -2011,7 +2011,7 @@ export default function TourHotelBookingList() {
                     onClick={() => setHotelTableLayout(layout)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                       hotelTableLayout === layout
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'text-gray-600 hover:bg-gray-50'
                     }`}
                   >
@@ -2159,7 +2159,7 @@ export default function TourHotelBookingList() {
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">{t('totalPrice')}</span>
-                        <span className="font-medium text-blue-600">${booking.total_price}</span>
+                        <span className="font-medium text-primary">${booking.total_price}</span>
                       </div>
                     </div>
 
@@ -2335,7 +2335,7 @@ export default function TourHotelBookingList() {
                     href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
                   >
                     {tRes('card.openTourInNewTab')}
                   </a>
@@ -2418,7 +2418,7 @@ export default function TourHotelBookingList() {
                         </div>
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-500">{t('totalPrice')}</span>
-                          <span className="font-medium text-blue-600">${booking.total_price}</span>
+                          <span className="font-medium text-primary">${booking.total_price}</span>
                         </div>
                       </div>
 

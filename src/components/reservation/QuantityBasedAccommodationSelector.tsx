@@ -199,8 +199,8 @@ export default function QuantityBasedAccommodationSelector({
         <p className="mt-1 text-sm text-gray-600">{choice.description}</p>
         
         {/* 예약 인원 정보 */}
-        <div className="mt-3 bg-blue-50 p-3 rounded-lg">
-          <p className="text-sm font-medium text-blue-900">
+        <div className="mt-3 bg-primary/5 p-3 rounded-lg">
+          <p className="text-sm font-medium text-foreground">
             예약 인원: 성인 {adults}명, 아동 {children}명, 유아 {infants}명 (총 {totalPeople}명)
           </p>
         </div>
@@ -211,7 +211,7 @@ export default function QuantityBasedAccommodationSelector({
         <button
           type="button"
           onClick={suggestOptimalCombination}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
         >
           최적 조합 자동 선택
         </button>
@@ -228,7 +228,7 @@ export default function QuantityBasedAccommodationSelector({
               key={option.id}
               className={`border rounded-lg p-4 transition-all ${
                 isSelected 
-                  ? 'border-blue-500 bg-blue-50' 
+                  ? 'border-primary bg-primary/5' 
                   : 'border-gray-200 hover:border-gray-300'
               }`}
             >
@@ -239,7 +239,7 @@ export default function QuantityBasedAccommodationSelector({
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => handleOptionToggle(option)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                   />
                   <div className="ml-3">
                     <h4 className="text-sm font-medium text-gray-900">

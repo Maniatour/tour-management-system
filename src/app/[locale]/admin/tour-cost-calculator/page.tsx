@@ -1787,7 +1787,7 @@ export default function TourCostCalculatorPage() {
     <div className="container mx-auto px-3 sm:px-4 py-3 max-w-7xl min-w-0">
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-2">
-          <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0" />
+          <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-primary flex-shrink-0" />
           <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{t('title')}</h1>
         </div>
         <p className="text-xs sm:text-sm text-gray-600">{t('subtitle')}</p>
@@ -1807,7 +1807,7 @@ export default function TourCostCalculatorPage() {
                 }}
                 className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg border-2 transition-colors text-sm sm:text-base ${
                   tourType === 'product'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-primary bg-primary/5 text-primary'
                     : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                 }`}
               >
@@ -1821,7 +1821,7 @@ export default function TourCostCalculatorPage() {
                 }}
                 className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg border-2 transition-colors text-sm sm:text-base ${
                   tourType === 'custom'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-primary bg-primary/5 text-primary'
                     : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                 }`}
               >
@@ -1835,7 +1835,7 @@ export default function TourCostCalculatorPage() {
                 }}
                 className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg border-2 transition-colors text-sm sm:text-base ${
                   tourType === 'charter_guide'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    ? 'border-primary bg-primary/5 text-primary'
                     : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                 }`}
               >
@@ -1851,7 +1851,7 @@ export default function TourCostCalculatorPage() {
                 <select
                   value={selectedProductId}
                   onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
+                  className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-base sm:text-sm"
                 >
                   <option value="">{t('selectProductPlaceholder')}</option>
                   {products.map(product => (
@@ -1901,7 +1901,7 @@ export default function TourCostCalculatorPage() {
                     setEditingCourse(null)
                     setShowCourseEditModal(true)
                   }}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-xs sm:text-sm"
                 >
                   <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
                   <span className="truncate">{t('addNew')}</span>
@@ -1916,7 +1916,7 @@ export default function TourCostCalculatorPage() {
                   placeholder={t('searchCoursePlaceholder')}
                   value={courseSearchTerm}
                   onChange={(e) => setCourseSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base sm:text-sm"
+                  className="w-full pl-10 pr-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-base sm:text-sm"
                 />
               </div>
             </div>
@@ -2061,7 +2061,7 @@ export default function TourCostCalculatorPage() {
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
                                 className={`flex items-center gap-2 py-1 px-2 border-t first:border-t-0 bg-white cursor-move min-w-[520px] ${
-                                  snapshot.isDragging ? 'shadow-lg border-blue-500 z-50 opacity-100' : 'border-gray-100 hover:bg-gray-50'
+                                  snapshot.isDragging ? 'shadow-lg border-primary z-50 opacity-100' : 'border-gray-100 hover:bg-gray-50'
                                 }`}
                                 style={provided.draggableProps.style as CSSProperties | undefined}
                               >
@@ -2073,7 +2073,7 @@ export default function TourCostCalculatorPage() {
                                 </div>
 
                                 {/* 순서 번호 */}
-                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-semibold text-[10px]">
+                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[10px]">
                                   {index + 1}
                                 </div>
 
@@ -2198,7 +2198,7 @@ export default function TourCostCalculatorPage() {
               {!map && (
                 <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                   <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
                     <p>{t('loadingMap')}</p>
                   </div>
                 </div>
@@ -2209,7 +2209,7 @@ export default function TourCostCalculatorPage() {
               <button
                 onClick={calculateRoute}
                 disabled={selectedCourses.size < 2 || isCalculatingRoute || selectedCoursesOrder.length < 2}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm whitespace-nowrap"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm whitespace-nowrap"
               >
                 {isCalculatingRoute ? (
                   <>
@@ -2233,21 +2233,21 @@ export default function TourCostCalculatorPage() {
                   step="0.1"
                   value={mileage || ''}
                   onChange={(e) => setMileage(e.target.value ? parseFloat(e.target.value) : null)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-base"
                   placeholder={t('manualOrAuto')}
                 />
               </div>
             </div>
             {travelTime !== null && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="mt-4 p-3 bg-muted/50 border border-border rounded-lg">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-900">{t('travelTimeTotal')}</span>
-                  <span className="text-sm font-semibold text-blue-700">
+                  <Clock className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">{t('travelTimeTotal')}</span>
+                  <span className="text-sm font-semibold text-primary">
                     {travelTime.toFixed(1)} {t('hours')}
                   </span>
                   {travelTime >= 1 && (
-                    <span className="text-xs text-blue-600">
+                    <span className="text-xs text-primary">
                       ({t('hoursMinutes', { h: Math.floor(travelTime), m: Math.round((travelTime % 1) * 60) })})
                     </span>
                   )}
@@ -2412,7 +2412,7 @@ export default function TourCostCalculatorPage() {
                       setCustomMarginRate(MARGIN_RATES[e.target.value as MarginType].default)
                     }
                   }}
-                  className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                 >
                   <option value="default">{t('defaultMargin')}</option>
                   <option value="low_season">{t('lowSeason')}</option>
@@ -2427,7 +2427,7 @@ export default function TourCostCalculatorPage() {
                     step="0.1"
                     value={customMarginRate}
                     onChange={(e) => setCustomMarginRate(parseFloat(e.target.value) || 15)}
-                    className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     placeholder="10-20"
                   />
                 )}
@@ -2455,7 +2455,7 @@ export default function TourCostCalculatorPage() {
                         }
                       }}
                       onFocus={() => setShowCustomerDropdown(true)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder={t('searchByNameOrEmail')}
                     />
                     {customerSearch && (
@@ -2522,7 +2522,7 @@ export default function TourCostCalculatorPage() {
                     min="1"
                     value={participantCount}
                     onChange={(e) => setParticipantCount(parseInt(e.target.value) || 1)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div>
@@ -2535,7 +2535,7 @@ export default function TourCostCalculatorPage() {
                   <select
                     value={vehicleType}
                     onChange={(e) => setVehicleType(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                   >
                     {vehicleSettings.map((s) => (
                       <option key={s.id || s.vehicle_type} value={s.vehicle_type}>
@@ -2558,13 +2558,13 @@ export default function TourCostCalculatorPage() {
                       if (v === '') setManualFuelCost(null)
                       else setManualFuelCost(parseFloat(v) ?? 0)
                     }}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div className="flex items-end col-span-2 sm:col-span-1">
                   <button
                     onClick={() => setShowVehicleSettingsModal(true)}
-                    className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                    className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-primary hover:text-primary/80 hover:bg-muted/50 rounded transition-colors border border-border"
                   >
                     <Settings className="w-3 h-3 flex-shrink-0" />
                     <span>{t('vehicleSettings')}</span>
@@ -2589,7 +2589,7 @@ export default function TourCostCalculatorPage() {
                       step="0.1"
                       value={totalHours}
                       onChange={(e) => setTotalHours(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     />
                   </div>
                   <div>
@@ -2602,7 +2602,7 @@ export default function TourCostCalculatorPage() {
                       step="0.01"
                       value={guideHourlyRate}
                       onChange={(e) => setGuideHourlyRate(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                     />
                   </div>
                   <div>
@@ -2615,7 +2615,7 @@ export default function TourCostCalculatorPage() {
                       step="0.01"
                       value={guideFee || ''}
                       onChange={(e) => setGuideFee(e.target.value ? parseFloat(e.target.value) : null)}
-                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                       placeholder={t('placeholderDirectInput')}
                     />
                   </div>
@@ -2634,7 +2634,7 @@ export default function TourCostCalculatorPage() {
                     onClick={() => {
                       setOtherExpenses([...otherExpenses, { id: crypto.randomUUID(), name: '', amount: 0 }])
                     }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
                   >
                     <Plus className="w-3 h-3" />
                     {t('add')}
@@ -2653,7 +2653,7 @@ export default function TourCostCalculatorPage() {
                             setOtherExpenses(updated)
                           }}
                           placeholder={t('itemName')}
-                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         />
                         <input
                           type="number"
@@ -2666,7 +2666,7 @@ export default function TourCostCalculatorPage() {
                             setOtherExpenses(updated)
                           }}
                           placeholder={t('amount')}
-                          className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         />
                         <button
                           onClick={() => {
@@ -2702,7 +2702,7 @@ export default function TourCostCalculatorPage() {
                 <div className="flex justify-between mb-2">
                   <button
                     onClick={() => setShowEntranceFeeDetailModal(true)}
-                    className="text-gray-600 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                    className="text-gray-600 hover:text-primary hover:underline cursor-pointer text-left"
                   >
                     {t('entranceFeesTotal')}
                   </button>
@@ -2731,7 +2731,7 @@ export default function TourCostCalculatorPage() {
               <div className="border-b pb-4">
                 <div className="flex justify-between text-lg font-bold">
                   <span>{t('totalCost')}</span>
-                  <span className="text-blue-600">${totalCost.toFixed(2)}</span>
+                  <span className="text-primary">${totalCost.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -2836,7 +2836,7 @@ export default function TourCostCalculatorPage() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-semibold text-blue-600">
+                                  <span className="font-semibold text-primary">
                                     ${parseFloat(invoice.total || 0).toFixed(2)}
                                   </span>
                                   {invoice.pdf_url && (
@@ -2844,7 +2844,7 @@ export default function TourCostCalculatorPage() {
                                       href={invoice.pdf_url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="p-1 text-blue-600 hover:text-blue-700"
+                                      className="p-1 text-primary hover:text-primary/80"
                                       title={t('viewPdf')}
                                       onClick={(e) => e.stopPropagation()}
                                     >
@@ -2903,7 +2903,7 @@ export default function TourCostCalculatorPage() {
                                       href={estimate.pdf_url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="p-1 text-blue-600 hover:text-blue-700"
+                                      className="p-1 text-primary hover:text-primary/80"
                                       title={t('viewPdf')}
                                       onClick={(e) => e.stopPropagation()}
                                     >
@@ -2937,7 +2937,7 @@ export default function TourCostCalculatorPage() {
                   <button
                     onClick={() => setShowEstimateModal(true)}
                     disabled={tourType !== 'charter_guide' && selectedCoursesOrder.length === 0}
-                    className="w-full flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    className="w-full flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
                     <FileText className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
                     <span>Estimate</span>

@@ -184,14 +184,14 @@ export default function ExpensePaymentMethodNormalizePage() {
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
             <Link
               href={`/${locale}/admin/expenses`}
-              className="text-blue-600 hover:underline"
+              className="text-primary hover:underline"
             >
               ← {t('backToExpenses')}
             </Link>
             <span className="text-gray-300">|</span>
             <Link
               href={`/${locale}/admin/payment-methods`}
-              className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
             >
               <CreditCard className="h-4 w-4" />
               {t('paymentMethodAdmin')}
@@ -230,7 +230,7 @@ export default function ExpensePaymentMethodNormalizePage() {
         </div>
       )}
 
-      <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-950">
+      <div className="mb-4 rounded-lg border border-border/60 bg-primary/5/80 p-4 text-sm text-blue-950">
         <div className="flex gap-2 font-medium">
           <HelpCircle className="h-5 w-5 flex-shrink-0" />
           {t('hintTitle')}
@@ -373,7 +373,7 @@ export default function ExpensePaymentMethodNormalizePage() {
                         type="button"
                         disabled={!needsApply || !sel || applyingKey === k}
                         onClick={() => void applyMapping(r)}
-                        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {r.raw}
                         <ArrowRight className="h-3 w-3" />

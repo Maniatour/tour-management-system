@@ -103,7 +103,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
           {/* 헤더 */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 z-10">
             <div className="flex items-center gap-2 min-w-0">
-              <Mail className="h-6 w-6 text-blue-600 shrink-0" aria-hidden />
+              <Mail className="h-6 w-6 text-primary shrink-0" aria-hidden />
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">자동 이메일 리포트 설정</h2>
             </div>
             <button
@@ -118,7 +118,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
           <div className="p-6">
             {loadingSchedules ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -149,7 +149,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
                                   : [...prev, updatedSchedule]
                               )
                             }}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                            className="rounded border-gray-300 text-primary focus:ring-ring focus:ring-2"
                           />
                           <span className="text-sm text-gray-700">활성화</span>
                         </label>
@@ -173,7 +173,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
                                       : [...prev, updatedSchedule]
                                   )
                                 }}
-                                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent"
                               />
                             </div>
                           </div>

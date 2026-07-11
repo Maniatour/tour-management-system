@@ -72,12 +72,12 @@ export default function VoiceCallModal({
             callStatus === 'connected' 
               ? 'bg-green-100 animate-pulse' 
               : callStatus === 'ringing'
-              ? 'bg-blue-100 animate-pulse'
+              ? 'bg-primary/10 animate-pulse'
               : 'bg-gray-100'
           }`}>
             <Phone 
               size={40} 
-              className={callStatus === 'connected' ? 'text-green-600' : callStatus === 'ringing' ? 'text-blue-600' : 'text-gray-600'}
+              className={callStatus === 'connected' ? 'text-green-600' : callStatus === 'ringing' ? 'text-primary' : 'text-gray-600'}
             />
           </div>
           

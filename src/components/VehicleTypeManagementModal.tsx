@@ -581,7 +581,7 @@ export default function VehicleTypeManagementModal({
                         {onVehicleTypeSelect && (
                           <button
                             onClick={() => handleSelectVehicleType(type)}
-                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-sm font-medium hover:bg-blue-200"
+                            className="px-3 py-1 bg-primary/10 text-primary rounded-md text-sm font-medium hover:bg-blue-200"
                           >
                             <Check className="w-4 h-4 mr-1 inline" />
                             선택
@@ -599,7 +599,7 @@ export default function VehicleTypeManagementModal({
                         </button>
                         <button
                           onClick={() => openEditModal(type)}
-                          className="p-2 text-gray-400 hover:text-blue-600"
+                          className="p-2 text-gray-400 hover:text-primary"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
@@ -620,7 +620,7 @@ export default function VehicleTypeManagementModal({
             <div className="flex justify-end">
               <button
                 onClick={() => openEditModal()}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 차종 추가
@@ -657,7 +657,7 @@ export default function VehicleTypeManagementModal({
                       value={formData.name}
                       onChange={handleInputChange}
                       required
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                       placeholder="예: Ford Transit 12 passenger"
                     />
                   </div>
@@ -673,7 +673,7 @@ export default function VehicleTypeManagementModal({
                         value={formData.brand}
                         onChange={handleInputChange}
                         required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                         placeholder="예: Ford"
                       />
                     </div>
@@ -687,7 +687,7 @@ export default function VehicleTypeManagementModal({
                         value={formData.model}
                         onChange={handleInputChange}
                         required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                         placeholder="예: Transit"
                       />
                     </div>
@@ -705,7 +705,7 @@ export default function VehicleTypeManagementModal({
                         onChange={handleInputChange}
                         required
                         min="1"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                       />
                     </div>
                     <div>
@@ -717,7 +717,7 @@ export default function VehicleTypeManagementModal({
                         value={formData.vehicle_category}
                         onChange={handleInputChange}
                         required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                       >
                         <option value="rental">렌탈</option>
                         <option value="company">회사차</option>
@@ -734,7 +734,7 @@ export default function VehicleTypeManagementModal({
                       value={formData.pickup_access_class}
                       onChange={handleInputChange}
                       required
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                     >
                       {PICKUP_ACCESS_CLASSES.map((accessClass) => (
                         <option key={accessClass} value={accessClass}>
@@ -753,7 +753,7 @@ export default function VehicleTypeManagementModal({
                       value={formData.description}
                       onChange={handleInputChange}
                       rows={3}
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                       placeholder="차종에 대한 추가 설명"
                     />
                   </div>
@@ -865,7 +865,7 @@ export default function VehicleTypeManagementModal({
                         value={formData.display_order}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                       />
                     </div>
                     <div className="flex items-center">
@@ -874,7 +874,7 @@ export default function VehicleTypeManagementModal({
                         name="is_active"
                         checked={formData.is_active}
                         onChange={handleInputChange}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                       />
                       <label className="ml-2 block text-sm text-gray-900">
                         활성 상태
@@ -892,7 +892,7 @@ export default function VehicleTypeManagementModal({
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90"
                     >
                       {editingType ? '수정' : '추가'}
                     </button>

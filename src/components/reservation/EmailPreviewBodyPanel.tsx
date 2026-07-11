@@ -61,7 +61,7 @@ export default function EmailPreviewBodyPanel({
             onClick={() => setView('html')}
             className={`shrink-0 px-3 py-2 text-xs font-medium sm:text-sm ${
               view === 'html'
-                ? 'border-b-2 border-blue-600 bg-white text-blue-600'
+                ? 'border-b-2 border-primary bg-white text-primary'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
@@ -72,7 +72,7 @@ export default function EmailPreviewBodyPanel({
             onClick={() => setView('text')}
             className={`inline-flex shrink-0 items-center gap-1.5 px-3 py-2 text-xs font-medium sm:text-sm ${
               view === 'text'
-                ? 'border-b-2 border-blue-600 bg-white text-blue-600'
+                ? 'border-b-2 border-primary bg-white text-primary'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >

@@ -360,7 +360,7 @@ export default function PickupGroupPresetManager({
                     <button
                       type="button"
                       onClick={() => void openEdit(p)}
-                      className="px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                      className="px-2 py-1 text-sm text-primary hover:bg-muted/50 rounded"
                     >
                       {isEn ? 'Edit' : '수정'}
                     </button>
@@ -412,7 +412,7 @@ export default function PickupGroupPresetManager({
                   type="button"
                   onClick={() => void saveEditing()}
                   disabled={saving}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg flex items-center gap-1 disabled:opacity-50"
+                  className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg flex items-center gap-1 disabled:opacity-50"
                 >
                   {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {isEn ? 'Save' : '저장'}

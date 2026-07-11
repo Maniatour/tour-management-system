@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Heart, Share2 } from 'lucide-react'
+import { Heart, Mountain, Share2 } from 'lucide-react'
 import type { ProductMedia, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import { cn } from '@/lib/utils'
@@ -137,7 +137,7 @@ export default function ProductDetailImageGallery({
                   className={cn(
                     'relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-all sm:h-20 sm:w-20 sm:rounded-xl',
                     selectedImageIndex === index
-                      ? 'border-[#0B5FFF] opacity-100'
+                      ? 'border-booking opacity-100'
                       : 'border-transparent opacity-70 hover:opacity-100'
                   )}
                   aria-label={`${isEnglish ? 'Select image' : '이미지 선택'} ${index + 1}`}
@@ -157,13 +157,11 @@ export default function ProductDetailImageGallery({
       ) : (
         <>
           <div className="relative h-56 bg-slate-100 sm:h-96 md:h-[420px]">
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-              <div className="text-center px-6">
-                <div className="mb-4 text-6xl" aria-hidden>
-                  🏔️
-                </div>
-                <div className="text-lg font-semibold text-slate-700">{displayName}</div>
-                <div className="mt-2 text-sm text-slate-500">
+            <div className="flex h-full w-full items-center justify-center bg-muted/50">
+              <div className="px-6 text-center">
+                <Mountain className="mx-auto mb-4 h-12 w-12 text-muted-foreground" aria-hidden />
+                <div className="text-lg font-semibold text-foreground">{displayName}</div>
+                <div className="mt-2 text-sm text-muted-foreground">
                   {isEnglish ? 'Image coming soon' : '이미지 준비 중'}
                 </div>
               </div>

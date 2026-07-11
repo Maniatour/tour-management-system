@@ -69,12 +69,12 @@ export default function FilterControls({
                 placeholder="예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색..."
                 value={searchTerm}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
               />
             </div>
             <button
               onClick={onAddReservation}
-              className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
+              className="bg-primary text-primary-foreground px-2 sm:px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
             >
               <Plus size={14} />
               <span className="hidden sm:inline">{t('addReservation')}</span>
@@ -93,7 +93,7 @@ export default function FilterControls({
             <select
               value={selectedStatus}
               onChange={(e) => onStatusChange(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
             >
               <option value="all">모든 상태</option>
               <option value="pending">대기중</option>
@@ -106,7 +106,7 @@ export default function FilterControls({
             <select
               value={selectedChannel}
               onChange={(e) => onChannelChange(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
             >
               <option value="all">모든 채널</option>
               {channels.map((channel) => (
@@ -118,7 +118,7 @@ export default function FilterControls({
               type="date"
               value={dateRange.start}
               onChange={(e) => onDateRangeChange({ ...dateRange, start: e.target.value })}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
               placeholder="시작일"
             />
             
@@ -126,7 +126,7 @@ export default function FilterControls({
               type="date"
               value={dateRange.end}
               onChange={(e) => onDateRangeChange({ ...dateRange, end: e.target.value })}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
               placeholder="종료일"
             />
           </div>
@@ -138,7 +138,7 @@ export default function FilterControls({
               <select
                 value={sortBy}
                 onChange={(e) => onSortByChange(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
-                className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs flex-1"
+                className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs flex-1"
               >
                 <option value="created_at">등록일</option>
                 <option value="tour_date">투어 날짜</option>
@@ -147,7 +147,7 @@ export default function FilterControls({
               </select>
               <button
                 onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
-                className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
+                className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-ring focus:border-transparent text-xs"
               >
                 {sortOrder === 'asc' ? '↑' : '↓'}
               </button>
@@ -157,7 +157,7 @@ export default function FilterControls({
               onClick={() => onGroupByDateChange(!groupByDate)}
               className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 groupByDate 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -167,7 +167,7 @@ export default function FilterControls({
             <select
               value={itemsPerPage}
               onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs"
             >
               <option value={10}>10개</option>
               <option value={20}>20개</option>
@@ -177,7 +177,7 @@ export default function FilterControls({
             
             <button
               onClick={onReset}
-              className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-ring focus:border-transparent"
             >
               초기화
             </button>

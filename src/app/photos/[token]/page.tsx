@@ -1022,9 +1022,9 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
 
   if (loading || !resolvedParams) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading photos...</p>
         </div>
       </div>
@@ -1033,7 +1033,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="text-red-500 mb-4">
             <ImageIcon size={64} className="mx-auto" />
@@ -1046,14 +1046,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       {/* Announcement 모달 */}
       {showAnnouncementModal && announcements.length > 0 && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900 flex items-center">
-                <Info size={20} className="mr-2 text-blue-600" />
+                <Info size={20} className="mr-2 text-primary" />
                 공지사항 / Announcements
               </h3>
               <button
@@ -1078,7 +1078,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end">
               <button
                 onClick={() => setShowAnnouncementModal(false)}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 확인
               </button>
@@ -1093,7 +1093,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900 flex items-center">
-                <Info size={20} className="mr-2 text-blue-600" />
+                <Info size={20} className="mr-2 text-primary" />
                 {language === 'ko' ? '투어 사진 공유 페이지 안내' : 'Tour Photo Sharing Guide'}
               </h3>
               <button
@@ -1173,7 +1173,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               </button>
               <button
                 onClick={() => setShowPhotoGuideModal(false)}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 {language === 'ko' ? '확인' : 'OK'}
               </button>
@@ -1269,7 +1269,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             <div 
               className={`px-4 sm:px-6 pb-4 sm:pb-6 border-t border-gray-200 ${
                 dragOver 
-                  ? 'bg-blue-50' 
+                  ? 'bg-primary/5' 
                   : ''
               }`}
               onDragOver={handleDragOver}
@@ -1279,7 +1279,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               <div className="text-center pt-4">
                 <div className={`inline-block p-6 border-2 border-dashed rounded-lg transition-colors ${
                   dragOver 
-                    ? 'border-blue-500 bg-blue-50' 
+                    ? 'border-primary bg-primary/5' 
                     : 'border-gray-300'
                 }`}>
                   <Upload size={40} className="mx-auto text-gray-400 mb-3 sm:mb-4 sm:w-12 sm:h-12" />
@@ -1303,7 +1303,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                     className={`inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-medium transition-colors ${
                       uploading || !tourId
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer'
                     }`}
                   >
                     {uploading ? (
@@ -1348,7 +1348,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                   type="checkbox"
                   checked={selectedPhotos.size === photos.length && photos.length > 0}
                   onChange={handleSelectAll}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded border-gray-300 text-primary focus:ring-ring"
                 />
                 <span className="ml-2 text-xs sm:text-sm text-gray-700">
                   {language === 'ko' ? '전체 선택' : 'Select All'}
@@ -1375,7 +1375,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                   <button
                     onClick={downloadSelectedPhotos}
                     disabled={selectedPhotos.size === 0 || downloading}
-                    className="flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="flex items-center justify-center px-3 sm:px-4 py-2 text-xs sm:text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     <Download size={14} className="mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">
@@ -1530,14 +1530,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                         handleSelectPhoto(photo.id)
                       }}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-blue-600 bg-white rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                      className="w-5 h-5 text-primary bg-white rounded border-gray-300 focus:ring-ring cursor-pointer"
                     />
                   </label>
                 </div>
 
                 {/* 선택 표시 오버레이 */}
                 {selectedPhotos.has(photo.id) && (
-                  <div className="absolute inset-0 bg-blue-500 bg-opacity-30 border-2 border-blue-600 rounded-lg z-0"></div>
+                  <div className="absolute inset-0 bg-primary/50 bg-opacity-30 border-2 border-primary rounded-lg z-0"></div>
                 )}
 
                 {/* 파일 정보 */}
@@ -1577,7 +1577,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             <div className="p-4 max-h-96 overflow-y-auto">
               {loadingCustomers ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : customers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
@@ -1590,12 +1590,12 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                       key={customer.id}
                       onClick={() => handleDownloadWithCustomer(customer.id, customer.name)}
                       disabled={downloading}
-                      className="w-full p-3 text-left border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full p-3 text-left border rounded-lg hover:bg-muted/50 hover:border-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-gray-900">{customer.name}</span>
                         {downloading && (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                         )}
                       </div>
                     </button>
@@ -1636,7 +1636,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             <div className="p-4 max-h-96 overflow-y-auto">
               {loadingCustomers ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : customers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">

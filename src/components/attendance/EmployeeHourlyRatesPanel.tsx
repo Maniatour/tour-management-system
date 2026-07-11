@@ -194,7 +194,7 @@ export default function EmployeeHourlyRatesPanel({ variant = 'inline' }: Employe
       </p>
 
       {message && (
-        <div className="mb-3 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">{message}</div>
+        <div className="mb-3 text-sm text-primary bg-primary/5 border border-border/60 rounded-md px-3 py-2">{message}</div>
       )}
 
       <form

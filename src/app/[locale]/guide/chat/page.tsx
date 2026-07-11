@@ -599,7 +599,7 @@ export default function GuideChatPage() {
             {activeTab === 'team' && (
               <button
                 onClick={() => setShowCreateRoom(true)}
-                className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                 title={t('createRoom')}
               >
                 <Plus size={16} />
@@ -617,7 +617,7 @@ export default function GuideChatPage() {
               }}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                 activeTab === 'team'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -631,7 +631,7 @@ export default function GuideChatPage() {
               }}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                 activeTab === 'tour'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -648,7 +648,7 @@ export default function GuideChatPage() {
                 placeholder={activeTab === 'team' ? t('searchTeam') : t('searchTour')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             
@@ -656,7 +656,7 @@ export default function GuideChatPage() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="all">{t('roomType.all')}</option>
                 <option value="general">{t('roomType.general')}</option>
@@ -682,7 +682,7 @@ export default function GuideChatPage() {
                 onClick={() => selectRoom(room)}
                 className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                   selectedRoom?.id === room.id 
-                    ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                    ? 'bg-primary/5 border-l-2 border-l-blue-500' 
                     : room.unread_count > 0 
                       ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
                       : ''
@@ -708,7 +708,7 @@ export default function GuideChatPage() {
                           room.room_type === 'announcement' 
                             ? 'bg-yellow-100 text-yellow-800'
                             : room.room_type === 'department'
-                            ? 'bg-blue-100 text-blue-800'
+                            ? 'bg-primary/10 text-primary'
                             : room.room_type === 'project'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
@@ -879,13 +879,13 @@ export default function GuideChatPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder={t('messagePlaceholder')}
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-sm lg:text-base"
                   disabled={sending}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending}
-                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
+                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
                   <span className="hidden lg:inline">{sending ? t('sending') : t('send')}</span>
                   <span className="lg:hidden">{sending ? '...' : t('send')}</span>
@@ -919,7 +919,7 @@ export default function GuideChatPage() {
                   type="text"
                   value={newRoomData.room_name}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder={t('roomNamePlaceholder')}
                 />
               </div>
@@ -931,7 +931,7 @@ export default function GuideChatPage() {
                 <select
                   value={newRoomData.room_type}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_type: e.target.value as 'general' | 'department' | 'project' | 'announcement' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="general">{t('general')}</option>
                   <option value="department">{t('department')}</option>
@@ -947,7 +947,7 @@ export default function GuideChatPage() {
                 <textarea
                   value={newRoomData.description}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   rows={3}
                   placeholder={t('roomDescriptionPlaceholder')}
                 />
@@ -964,7 +964,7 @@ export default function GuideChatPage() {
               <button
                 onClick={createRoom}
                 disabled={!newRoomData.room_name.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {t('create')}
               </button>

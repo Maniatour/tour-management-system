@@ -295,7 +295,7 @@ export const DAY_COLORS: Record<number, string> = {
   3: 'text-gray-600', // 수요일
   4: 'text-gray-600', // 목요일
   5: 'text-gray-600', // 금요일
-  6: 'text-blue-600'  // 토요일
+  6: 'text-primary'  // 토요일
 };
 
 // 실시간 가격 계산 결과

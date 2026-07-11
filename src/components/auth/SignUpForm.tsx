@@ -98,7 +98,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
           </p>
           <button
             onClick={onSwitchToLogin}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+            className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors"
           >
             로그인 페이지로 이동
           </button>
@@ -133,7 +133,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
                 {...register('name')}
                 type="text"
                 id="name"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="이름을 입력하세요"
               />
             </div>
@@ -152,7 +152,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
                 {...register('email')}
                 type="email"
                 id="email"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="이메일을 입력하세요"
               />
             </div>
@@ -171,7 +171,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
                 {...register('password')}
                 type={showPassword ? 'text' : 'password'}
                 id="password"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="비밀번호를 입력하세요"
               />
               <button
@@ -197,7 +197,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
                 {...register('confirmPassword')}
                 type={showConfirmPassword ? 'text' : 'password'}
                 id="confirmPassword"
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="비밀번호를 다시 입력하세요"
               />
               <button
@@ -216,7 +216,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? '회원가입 중...' : '회원가입'}
           </button>
@@ -235,7 +235,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
           <button
             onClick={handleGoogleSignIn}
             disabled={isLoading}
-            className="mt-4 w-full bg-white text-gray-700 py-3 px-4 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            className="mt-4 w-full bg-white text-gray-700 py-3 px-4 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path
@@ -264,7 +264,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
             이미 계정이 있으신가요?{' '}
             <button
               onClick={onSwitchToLogin}
-              className="text-blue-600 hover:text-blue-500 font-medium"
+              className="text-primary hover:text-primary font-medium"
             >
               로그인
             </button>

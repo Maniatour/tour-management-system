@@ -156,7 +156,7 @@ export default function CustomerPageZoneUiStyleForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-500 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+      <p className="text-xs text-gray-500 rounded-lg bg-primary/5 border border-border/60 px-3 py-2">
         프리셋·타이포·레이아웃·색상·버튼·효과를 zone별로 자유롭게 조합할 수 있습니다. 저장 즉시
         고객 페이지에 반영됩니다.
       </p>

@@ -18,6 +18,7 @@ export type CustomerPageZone =
   | 'detail-highlights'
   | 'detail-mobile-booking'
   | 'detail-mobile-sticky-cta'
+  | 'detail-reviews-section'
   | 'detail-faq-section'
   | 'detail-tabs'
   | 'detail-tab-overview'

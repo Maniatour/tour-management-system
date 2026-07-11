@@ -1644,20 +1644,20 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         {/* 헤더 */}
         <div className="flex items-center justify-between gap-2 p-4 sm:p-6 border-b border-gray-200 shrink-0">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
-            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 shrink-0" />
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
             <h2 className="text-base sm:text-xl font-bold text-gray-900 truncate">보너스 계산기</h2>
             <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-50 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('individual')}
-                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'individual' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'individual' ? 'bg-white text-primary shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
               >
                 개인 보너스
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('all')}
-                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'all' ? 'bg-white text-primary shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
               >
                 전체 보너스
               </button>
@@ -1667,7 +1667,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             <button
               type="button"
               onClick={handlePrint}
-              className="no-print p-2 -m-2 text-gray-500 hover:text-blue-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
+              className="no-print p-2 -m-2 text-gray-500 hover:text-primary transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
               aria-label="프린트"
               title="프린트"
             >
@@ -1700,7 +1700,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <select
                         value={selectedEmployee}
                         onChange={(e) => setSelectedEmployee(e.target.value)}
-                        className="flex-1 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="flex-1 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       >
                         <option value="">직원을 선택하세요</option>
                         {teamMembers.map((member) => (
@@ -1717,7 +1717,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             onClick={() => setMonthPeriod(m)}
                             className={`min-h-[36px] px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
                               selectedMonth === m
-                                ? 'bg-blue-600 text-white border border-blue-600'
+                                ? 'bg-primary text-primary-foreground border border-primary'
                                 : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                             }`}
                           >
@@ -1741,7 +1741,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           onClick={() => setMonthPeriod(m)}
                           className={`min-h-[36px] px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
                             selectedMonth === m
-                              ? 'bg-blue-600 text-white border border-blue-600'
+                              ? 'bg-primary text-primary-foreground border border-primary'
                               : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                           }`}
                         >
@@ -1756,14 +1756,14 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <button
                         type="button"
                         onClick={() => setCalculationMethod(1)}
-                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 1 ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 1 ? 'bg-white text-primary shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
                       >
                         계산법 1
                       </button>
                       <button
                         type="button"
                         onClick={() => setCalculationMethod(2)}
-                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 2 ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 2 ? 'bg-white text-primary shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
                       >
                         계산법 2
                       </button>
@@ -1786,7 +1786,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div>
@@ -1798,7 +1798,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
               </div>
@@ -1825,7 +1825,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       if (Number.isNaN(v) || v < 0) setBonusPercent(0)
                       else if (v > 100) setBonusPercent(100)
                     }}
-                    className="w-full sm:w-24 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full sm:w-24 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                   <span className="text-xs sm:text-sm text-gray-600">% (비거주자 옵션 총합 대비, 가이드·드라이버 각각)</span>
                 </div>
@@ -1841,7 +1841,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <DollarSign className="w-3 h-3 inline mr-1" />
                       총 비거주자 옵션:
                     </span>
-                    <span className="text-sm font-bold text-blue-600">
+                    <span className="text-sm font-bold text-primary">
                       ${formatCurrency(totalNonResidentOption)}
                     </span>
                   </div>
@@ -1899,7 +1899,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             <>
               {loadingAllBonus ? (
                 <div className="text-center py-8">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   <p className="mt-2 text-gray-600">전체 보너스 집계 중...</p>
                 </div>
               ) : calculationMethod === 2 && method2Data ? (
@@ -1934,7 +1934,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             1참여당 금액 = {method2Data.totalEligibleTours > 0 ? (
                               <>
                                 ${formatCurrency(method2Data.bonusPool)} ÷ {method2Data.totalEligibleTours} ={' '}
-                                <div className="inline-flex items-center min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-white">
+                                <div className="inline-flex items-center min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-primary bg-white">
                                   <span className="pl-2 text-gray-500 shrink-0">$</span>
                                   <input
                                     type="number"
@@ -1996,7 +1996,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                               <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900 text-left">{row.eligibleTourCount}회</td>
                               <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-green-600 text-left font-medium">${formatCurrency(rowBonus)}</td>
                               <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center w-24 sm:w-28 min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-white">
+                                <div className="flex items-center w-24 sm:w-28 min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-primary bg-white">
                                   <span className="pl-2 text-sm text-gray-500 shrink-0">$</span>
                                   <input
                                     type="number"
@@ -2063,7 +2063,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                               <td className="px-3 py-1.5 text-gray-900">{companion}</td>
                                               <td className="px-3 py-1.5 text-gray-900 text-left">${formatCurrency(t.non_resident_option_total)}</td>
                                               <td className="px-3 py-1.5">
-                                                <Link href={`/${locale}/admin/tours/${t.tour_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                                <Link href={`/${locale}/admin/tours/${t.tour_id}`} className="text-primary hover:underline flex items-center gap-1">
                                                   <LinkIcon className="w-3 h-3" /> 투어 보기
                                                 </Link>
                                               </td>
@@ -2280,7 +2280,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                               <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-purple-600 text-left font-medium">
                                 ${formatCurrency(row.driver_bonus)}
                               </td>
-                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-blue-600 text-left font-bold">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-primary text-left font-bold">
                                 ${formatCurrency(row.guide_bonus + row.driver_bonus)}
                               </td>
                               <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-left">
@@ -2380,7 +2380,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           <td className="px-2 sm:px-3 py-2 text-sm font-bold text-purple-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.driver_bonus, 0))}
                           </td>
-                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-blue-600 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-primary text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.guide_bonus + r.driver_bonus, 0))}
                           </td>
                           <td className="px-2 sm:px-3 py-2 text-sm font-bold text-left">
@@ -2411,7 +2411,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           {/* 투어 목록 테이블 (개인 보너스) */}
           {viewMode === 'individual' && loading ? (
             <div className="text-center py-8">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="mt-2 text-gray-600">데이터를 불러오는 중...</p>
             </div>
           ) : viewMode === 'individual' && tourBonuses.length > 0 ? (
@@ -2482,7 +2482,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                         <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900" onClick={e => e.stopPropagation()}>
                           <Link 
                             href={`/${locale}/admin/tours/${tour.tour_id}`}
-                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center"
+                            className="text-primary hover:text-primary/80 hover:underline cursor-pointer flex items-center"
                           >
                             <LinkIcon className="w-3 h-3 mr-1" />
                             {tour.tour_name}
@@ -2514,7 +2514,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 const val = parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0
                                 updateBonus(tour.tour_id, 'guide', Math.round(val * 100) / 100)
                               }}
-                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-green-600 font-medium"
+                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring text-green-600 font-medium"
                               placeholder="0.00"
                             />
                           </div>
@@ -2533,7 +2533,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 const val = parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0
                                 updateBonus(tour.tour_id, 'driver', Math.round(val * 100) / 100)
                               }}
-                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-purple-600 font-medium"
+                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring text-purple-600 font-medium"
                               placeholder="0.00"
                             />
                           </div>
@@ -2550,7 +2550,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             {tour.reviews.length > 0 && (
                               <button
                                 onClick={() => setSelectedTourForReview(tour)}
-                                className="ml-2 p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="ml-2 p-1 text-primary hover:bg-muted/50 rounded transition-colors"
                                 title="후기 상세보기"
                               >
                                 <Eye className="w-4 h-4" />
@@ -2567,7 +2567,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 updateBonus(tour.tour_id, 'driver', tourBonus.driver_bonus)
                               }
                             }}
-                            className="min-h-[44px] sm:min-h-0 text-xs text-blue-600 hover:text-blue-800 px-2"
+                            className="min-h-[44px] sm:min-h-0 text-xs text-primary hover:text-primary/80 px-2"
                             disabled
                           >
                             -
@@ -2579,7 +2579,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           <td colSpan={11} className="px-3 sm:px-4 py-3">
                             {loadingTourDetails === tour.tour_id ? (
                               <div className="flex items-center gap-2 text-sm text-gray-500">
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
                                 비거주자 옵션 상세 조회 중...
                               </div>
                             ) : (tourOptionDetails[tour.tour_id]?.length ? (
@@ -2677,7 +2677,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               <button
                 onClick={saveBonuses}
                 disabled={saving}
-                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Save className="w-4 h-4 mr-2" />
                 {saving ? '저장 중...' : '보너스 저장'}

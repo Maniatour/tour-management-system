@@ -164,7 +164,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
                 type="text"
                 value={formData.name_ko}
                 onChange={(e) => setFormData(prev => ({ ...prev, name_ko: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: 경복궁"
               />
             </div>
@@ -176,7 +176,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
                 type="text"
                 value={formData.name_en}
                 onChange={(e) => setFormData(prev => ({ ...prev, name_en: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: Gyeongbokgung Palace"
               />
             </div>
@@ -192,7 +192,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
                 value={formData.description_ko}
                 onChange={(e) => setFormData(prev => ({ ...prev, description_ko: e.target.value }))}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="관광지에 대한 한국어 설명을 입력하세요"
               />
             </div>
@@ -204,7 +204,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
                 value={formData.description_en}
                 onChange={(e) => setFormData(prev => ({ ...prev, description_en: e.target.value }))}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Enter English description of the attraction"
               />
             </div>
@@ -220,7 +220,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
                 type="text"
                 value={formData.location}
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: 서울특별시 종로구"
               />
             </div>
@@ -231,7 +231,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
               <select
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">카테고리 선택</option>
                 <option value="문화재">문화재</option>
@@ -257,7 +257,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
               max="480"
               value={formData.visit_duration}
               onChange={(e) => setFormData(prev => ({ ...prev, visit_duration: parseInt(e.target.value) || 60 }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="60"
             />
           </div>
@@ -274,7 +274,7 @@ export default function AttractionModal({ isOpen, onClose, onSuccess, attraction
           <button
             onClick={handleSave}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>}
             <span>{loading ? '저장 중...' : (isEditMode ? '수정' : '생성')}</span>

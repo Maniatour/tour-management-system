@@ -315,7 +315,7 @@ function DbFormulaMoneyCell(props: {
           }
         }}
         className={`tabular-nums leading-tight text-right text-gray-900 ${
-          inlineEdit?.canEdit && !busy ? 'cursor-cell hover:bg-blue-50/80 rounded px-0.5 -mx-0.5' : ''
+          inlineEdit?.canEdit && !busy ? 'cursor-cell hover:bg-muted/50/80 rounded px-0.5 -mx-0.5' : ''
         }`}
       >
         {busy ? <span className="opacity-50">{top}</span> : top}
@@ -938,7 +938,7 @@ function BalanceRow(props: BalanceRowProps) {
       >
         <button
           type="button"
-          className="text-left font-medium text-gray-900 hover:text-blue-600 hover:underline line-clamp-2"
+          className="text-left font-medium text-gray-900 hover:text-primary hover:underline line-clamp-2"
           onClick={() => {
             const c = customers.find((x) => x.id === reservation.customerId)
             if (c) onCustomerClick(c)
@@ -1020,7 +1020,7 @@ function BalanceRow(props: BalanceRowProps) {
       </td>
 
       <td
-        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-blue-50/25"
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-primary/5/25"
         title={dbTitle(
           rpCol('product_price_total'),
           productSumDisplay.correctedFromDb
@@ -1438,7 +1438,7 @@ function BalanceRow(props: BalanceRowProps) {
             <button
               type="button"
               title={t('actions.price')}
-              className="p-1 rounded-md bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+              className="p-1 rounded-md bg-primary/5 text-primary border border-border hover:bg-muted"
               onClick={() => onPricingInfoClick(reservation)}
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1458,7 +1458,7 @@ function BalanceRow(props: BalanceRowProps) {
             <button
               type="button"
               title={t('card.paymentHistoryTitle')}
-              className="p-1 rounded-md bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+              className="p-1 rounded-md bg-primary/5 text-primary border border-border hover:bg-muted"
               onClick={() => onPaymentClick(reservation)}
             >
               <DollarSign className="w-3 h-3" />
@@ -1524,7 +1524,7 @@ function BalanceRow(props: BalanceRowProps) {
                     </button>
                   )}
                   <div className="border-t border-gray-100 my-0.5" />
-                  <button type="button" className="w-full text-left px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50" onClick={() => onEmailLogsClick(reservation.id)}>
+                  <button type="button" className="w-full text-left px-2 py-1 text-[10px] text-primary hover:bg-muted/50" onClick={() => onEmailLogsClick(reservation.id)}>
                     {t('card.emailLogs')}
                   </button>
                 </div>
@@ -1915,7 +1915,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             </th>
             <th
               colSpan={PRICING_FLOW_COLUMN_COUNT}
-              className="px-0.5 py-1 text-center border-r border-gray-200 bg-blue-50/80"
+              className="px-0.5 py-1 text-center border-r border-gray-200 bg-primary/5/80"
             >
               {sec('pricingFlow')}
             </th>
@@ -1976,7 +1976,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             </th>
 
             <th
-              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-blue-50/40"
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-primary/5/40"
               title={dbTitle(rpCol('product_price_total'), t('actionRequired.balanceTable.cols.flowOtaProductSumHint'))}
             >
               {s('flowOtaProductSum')}

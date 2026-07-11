@@ -498,7 +498,7 @@ export default function ProductSelector({
             placeholder="상품명, 카테고리, 초성으로 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs placeholder:text-xs"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-xs placeholder:text-xs"
             disabled={disabled}
           />
         </div>
@@ -507,7 +507,7 @@ export default function ProductSelector({
         {searchTerm && (
           <button
             onClick={clearFilters}
-            className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-300 rounded-lg hover:bg-blue-50"
+            className="px-3 py-2 text-sm text-primary hover:text-primary/80 border border-border rounded-lg hover:bg-muted/50"
             disabled={disabled}
           >
             초기화
@@ -535,7 +535,7 @@ export default function ProductSelector({
                     onClick={(e) => toggleCategory(category, e)}
                     className={`px-2 py-1.5 text-xs font-medium border-b-2 transition-colors ${
                       selectedCategory === category
-                        ? 'border-blue-500 text-blue-600 bg-white'
+                        ? 'border-primary text-primary bg-white'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
@@ -577,10 +577,10 @@ export default function ProductSelector({
                   {productsBySubCategory[selectedSubCategory]?.map(product => (
                     <div
                       key={product.id}
-                      className={`px-3 py-2 cursor-pointer hover:bg-blue-50 border-l-4 transition-colors ${
+                      className={`px-3 py-2 cursor-pointer hover:bg-muted/50 border-l-4 transition-colors ${
                         selectedProduct?.id === product.id 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-transparent hover:border-blue-200'
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-transparent hover:border-border'
                       }`}
                       onClick={(e) => handleProductClick(product, e)}
                     >
@@ -591,7 +591,7 @@ export default function ProductSelector({
                           </div>
                         </div>
                         {selectedProduct?.id === product.id && (
-                          <Check className="w-4 h-4 text-blue-500" />
+                          <Check className="w-4 h-4 text-primary" />
                         )}
                       </div>
                     </div>
@@ -603,10 +603,10 @@ export default function ProductSelector({
                   {productsByCategory[selectedCategory]?.map(product => (
                     <div
                       key={product.id}
-                      className={`px-3 py-2 cursor-pointer hover:bg-blue-50 border-l-4 transition-colors ${
+                      className={`px-3 py-2 cursor-pointer hover:bg-muted/50 border-l-4 transition-colors ${
                         selectedProduct?.id === product.id 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-transparent hover:border-blue-200'
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-transparent hover:border-border'
                       }`}
                       onClick={(e) => handleProductClick(product, e)}
                     >
@@ -617,7 +617,7 @@ export default function ProductSelector({
                           </div>
                         </div>
                         {selectedProduct?.id === product.id && (
-                          <Check className="w-4 h-4 text-blue-500" />
+                          <Check className="w-4 h-4 text-primary" />
                         )}
                       </div>
                     </div>
@@ -629,10 +629,10 @@ export default function ProductSelector({
                   {filteredProducts.map(product => (
                     <div
                       key={product.id}
-                      className={`px-3 py-2 cursor-pointer hover:bg-blue-50 border-l-4 transition-colors ${
+                      className={`px-3 py-2 cursor-pointer hover:bg-muted/50 border-l-4 transition-colors ${
                         selectedProduct?.id === product.id 
-                          ? 'border-blue-500 bg-blue-50' 
-                          : 'border-transparent hover:border-blue-200'
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-transparent hover:border-border'
                       }`}
                       onClick={(e) => handleProductClick(product, e)}
                     >
@@ -643,7 +643,7 @@ export default function ProductSelector({
                           </div>
                         </div>
                         {selectedProduct?.id === product.id && (
-                          <Check className="w-4 h-4 text-blue-500" />
+                          <Check className="w-4 h-4 text-primary" />
                         )}
                       </div>
                     </div>
@@ -657,22 +657,22 @@ export default function ProductSelector({
 
       {/* 선택된 상품 정보 - 컴팩트 */}
       {selectedProduct && showSelectedProduct && (
-        <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="px-3 py-2 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-600 font-medium">선택된 상품:</span>
-              <span className="text-sm text-blue-900 font-medium">
+              <span className="text-xs text-primary font-medium">선택된 상품:</span>
+              <span className="text-sm text-foreground font-medium">
                 {getProductName(selectedProduct)}
               </span>
               {selectedProduct.sub_category && (
-                <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
                   {selectedProduct.sub_category}
                 </span>
               )}
             </div>
             <button
               onClick={clearSelection}
-              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+              className="text-xs text-primary hover:text-primary/80 px-2 py-1 hover:bg-muted rounded"
               disabled={disabled}
             >
               해제
@@ -696,7 +696,7 @@ export default function ProductSelector({
                   key={choice.id}
                   className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
                     selectedChoiceId === choice.id 
-                      ? 'border-blue-500 bg-blue-50' 
+                      ? 'border-primary bg-primary/5' 
                       : 'border-gray-200'
                   }`}
                   onClick={() => handleChoiceClick(choice)}
@@ -714,7 +714,7 @@ export default function ProductSelector({
                       </div>
                     </div>
                     {selectedChoiceId === choice.id && (
-                      <Check className="w-5 h-5 text-blue-500" />
+                      <Check className="w-5 h-5 text-primary" />
                     )}
                   </div>
                 </div>

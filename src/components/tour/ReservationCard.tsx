@@ -934,7 +934,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       case 'confirmed':
         return 'bg-green-100 text-green-800'
       case 'recruiting':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-primary/10 text-primary'
       case 'cancelled':
         return 'bg-red-100 text-red-800'
       case 'no_show':
@@ -956,7 +956,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       case 'confirmed':
         return <CheckCircle2 className="w-4 h-4 text-green-600" />
       case 'recruiting':
-        return <Circle className="w-4 h-4 text-blue-600" />
+        return <Circle className="w-4 h-4 text-primary" />
       case 'cancelled':
         return <XCircle className="w-4 h-4 text-red-600" />
       case 'no_show':
@@ -1007,7 +1007,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     if (name === '🏜️ U') return { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' }
 
     const colorPalette = [
-      { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+      { bg: 'bg-primary/10', text: 'text-primary', border: 'border-border' },
       { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200' },
       { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' },
       { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-200' },
@@ -1574,7 +1574,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   if (residentStatus === 'us_resident') {
                     return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
                   } else if (residentStatus === 'non_resident') {
-                    return <Plane className="h-4 w-4 text-blue-600 cursor-pointer hover:scale-110 transition-transform" />
+                    return <Plane className="h-4 w-4 text-primary cursor-pointer hover:scale-110 transition-transform" />
                   } else if (residentStatus === 'non_resident_with_pass') {
                     return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
                   } else {
@@ -1629,7 +1629,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           ) : null}
           
           {/* 총 인원수 뱃지 - 숫자만 표시 */}
-          <div className="flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+          <div className="flex items-center space-x-1 bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-medium">
             <Users size={12} />
             <span>
               {(() => {
@@ -1711,12 +1711,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                           }
                         }}
                         className={`w-full flex items-center space-x-2 px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
-                          option.value === reservation.status ? 'bg-blue-50 font-semibold' : ''
+                          option.value === reservation.status ? 'bg-primary/5 font-semibold' : ''
                         }`}
                       >
                         {option.icon}
                         <span>{option.label}</span>
-                        {option.value === reservation.status && <Check className="w-3 h-3 text-blue-600 ml-auto" />}
+                        {option.value === reservation.status && <Check className="w-3 h-3 text-primary ml-auto" />}
                       </button>
                     ))}
                   </div>
@@ -1737,7 +1737,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   className="inline-flex items-center gap-1 min-w-0"
                   title={tCard('registrationDateIconTitle')}
                 >
-                  <CalendarPlus className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden />
+                  <CalendarPlus className="w-3.5 h-3.5 text-primary shrink-0" aria-hidden />
                   <span className="tabular-nums">
                     {formatCalendarDay(
                       (reservation as { created_at?: string | null }).created_at ?? null
@@ -1767,7 +1767,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                       e.stopPropagation()
                       setShowSimplePickupModal(true)
                     }}
-                    className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                    className="p-1 text-primary hover:text-primary hover:bg-muted/50 rounded transition-colors"
                     title="픽업 시간 수정"
                   >
                     <Clock size={12} />
@@ -1780,7 +1780,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                       setShowSimplePickupModal(true)
                     }
                   }}
-                  className={isStaff ? 'cursor-pointer hover:text-blue-700' : ''}
+                  className={isStaff ? 'cursor-pointer hover:text-primary' : ''}
                 >
                   {getPickupTime()}
                 </span>
@@ -2110,7 +2110,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                         e.stopPropagation()
                         onReassign(reservation.id, fromTourId)
                       }}
-                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                      className="p-1 text-primary hover:bg-muted/50 rounded"
                       title="다른 투어로 재배정"
                     >
                       <ArrowRightLeft size={14} />
@@ -2127,7 +2127,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       {showTourInfo && reservation.tour_id && (
         <div className="mt-2 flex items-center space-x-2">
           {/* 투어 정보 */}
-          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+          <span className="text-xs text-primary bg-primary/5 px-2 py-1 rounded">
             투어 배정됨
           </span>
         </div>
@@ -2234,8 +2234,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
              <div className="space-y-4">
                {/* 총 인원 표시 */}
-               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                 <div className="text-sm font-medium text-blue-900">
+               <div className="bg-muted/50 border border-border rounded-lg p-3">
+                 <div className="text-sm font-medium text-foreground">
                    총 인원: {(reservation.adults || 0) + 
                      ((reservation.children || (reservation as any).child || 0) as number) + 
                      ((reservation.infants || (reservation as any).infant || 0) as number)}명
@@ -2298,7 +2298,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     }))
                   }}
                    min="0"
-                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                  />
                </div>
 
@@ -2410,7 +2410,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                  </button>
                  <button
                    onClick={handleSaveResidentStatusCounts}
-                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 transition-colors"
                  >
                    저장
                  </button>

@@ -107,8 +107,8 @@ export function SearchablePickupHotelSelect({
                   setSearch('')
                   setOpen(false)
                 }}
-                className={`w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 ${
-                  value === h.id ? 'bg-blue-50/80' : ''
+                className={`w-full text-left px-3 py-2 hover:bg-muted/50 border-b border-gray-100 last:border-b-0 ${
+                  value === h.id ? 'bg-primary/5/80' : ''
                 }`}
               >
                 <div className="text-sm font-medium text-gray-900 truncate">{h.hotel}</div>

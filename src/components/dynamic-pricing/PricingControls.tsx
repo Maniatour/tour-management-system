@@ -46,19 +46,19 @@ export const PricingControls = memo(function PricingControls({
     if (saveMessage.toLowerCase().includes(t('failKeyword').toLowerCase())) {
       return 'text-red-700 bg-red-50 border-red-200';
     }
-    return 'text-blue-700 bg-blue-50 border-blue-200';
+    return 'text-primary bg-muted/50 border-border';
   };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
       {/* 데이터 준비 중: 저장 버튼 클릭 직후 ~ 규칙 데이터 생성 완료까지 */}
       {savePhase === 'preparing' && (
-        <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
+        <div className="mb-4 p-3 rounded-md border border-border bg-primary/5">
           <div className="flex items-center space-x-2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-            <span className="text-sm font-medium text-blue-700">{t('dataPreparing')}</span>
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-sm font-medium text-primary">{t('dataPreparing')}</span>
           </div>
-          <p className="mt-1 text-xs text-blue-600">{t('preparingChoiceMerge')}</p>
+          <p className="mt-1 text-xs text-primary">{t('preparingChoiceMerge')}</p>
         </div>
       )}
 
@@ -73,17 +73,17 @@ export const PricingControls = memo(function PricingControls({
 
       {/* 배치 저장 중: 진행 게이지 (데이터 준비 완료 후 바로 표시) */}
       {(savePhase === 'saving' || batchProgress) && (
-        <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
+        <div className="mb-4 p-3 rounded-md border border-border bg-primary/5">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-700">
+            <span className="text-sm font-medium text-primary">
               {batchProgress ? t('batchSaving') : t('batchSaveInProgress')}
             </span>
             {batchProgress ? (
-              <span className="text-sm text-blue-600">
+              <span className="text-sm text-primary">
                 {batchProgress.completed}/{batchProgress.total}
               </span>
             ) : (
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
             )}
           </div>
           {batchProgress && (
@@ -96,7 +96,7 @@ export const PricingControls = memo(function PricingControls({
                   }}
                 />
               </div>
-              <div className="mt-1 text-xs text-blue-600">
+              <div className="mt-1 text-xs text-primary">
                 {Math.round((batchProgress.completed / batchProgress.total) * 100)}% {t('percentComplete')}
               </div>
             </>
@@ -112,7 +112,7 @@ export const PricingControls = memo(function PricingControls({
             className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
               isBusy || !canSave
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
             }`}
           >
             {isBusy ? (

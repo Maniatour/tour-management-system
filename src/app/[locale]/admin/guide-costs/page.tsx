@@ -709,7 +709,7 @@ export default function GuideCostManagementPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -759,7 +759,7 @@ export default function GuideCostManagementPage() {
                 ) : (
                   <button
                     onClick={startGlobalEdit}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium"
                   >
                     <Edit size={14} />
                     <span>전체 편집</span>
@@ -775,8 +775,8 @@ export default function GuideCostManagementPage() {
           </div>
         )}
         {isGlobalEditMode && (
-          <div className="mt-3 p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
+          <div className="mt-3 p-3 sm:p-4 bg-muted/50 border border-border rounded-lg">
+            <p className="text-sm text-primary">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
           </div>
         )}
       </div>
@@ -794,14 +794,14 @@ export default function GuideCostManagementPage() {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="가이드비 변경 사항이나 특이사항을 입력하세요..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[80px] sm:min-h-[100px] text-sm"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring resize-y min-h-[80px] sm:min-h-[100px] text-sm"
           rows={3}
         />
         <div className="mt-2 flex justify-end">
           <button
             onClick={saveNote}
             disabled={noteSaving}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 text-sm font-medium"
           >
             <Save size={14} />
             <span>{noteSaving ? '저장 중...' : '노트 저장'}</span>
@@ -828,7 +828,7 @@ export default function GuideCostManagementPage() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => openHistoryModal(product.id, product.name)}
-                    className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                    className="p-1.5 text-gray-400 hover:text-primary rounded"
                     title="변경 이력"
                   >
                     <History size={14} />
@@ -836,7 +836,7 @@ export default function GuideCostManagementPage() {
                   {isAdmin && !isGlobalEditMode && !isEditing && (
                     <button
                       onClick={() => startRowEdit(product.id, costsByType)}
-                      className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                      className="p-1.5 text-gray-400 hover:text-primary rounded"
                       title="편집"
                     >
                       <Edit size={14} />
@@ -1099,7 +1099,7 @@ export default function GuideCostManagementPage() {
                         </div>
                         <button
                           onClick={() => openHistoryModal(product.id, product.name)}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
+                          className="p-1 text-gray-400 hover:text-primary transition-colors flex-shrink-0"
                           title="변경 이력 보기"
                         >
                           <History size={14} />
@@ -1127,7 +1127,7 @@ export default function GuideCostManagementPage() {
                                 }
                               }
                             }))}
-                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                           />
                         </div>
                       ) : editingProductId === product.id ? (
@@ -1142,7 +1142,7 @@ export default function GuideCostManagementPage() {
                               ...prev, 
                               '1_guide': { ...prev['1_guide'], guide_fee: Number(e.target.value) }
                             }))}
-                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                           />
                         </div>
                       ) : costsByType['1_guide'] ? (
@@ -1189,7 +1189,7 @@ export default function GuideCostManagementPage() {
                                   }
                                 }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="flex items-center space-x-1">
@@ -1210,7 +1210,7 @@ export default function GuideCostManagementPage() {
                                   }
                                 }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="text-xs font-medium text-green-600">
@@ -1231,7 +1231,7 @@ export default function GuideCostManagementPage() {
                                 ...prev, 
                                 '2_guides': { ...prev['2_guides'], guide_fee: Number(e.target.value) }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="flex items-center space-x-2">
@@ -1246,7 +1246,7 @@ export default function GuideCostManagementPage() {
                                 ...prev, 
                                 '2_guides': { ...prev['2_guides'], assistant_fee: Number(e.target.value) }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="text-xs font-medium text-green-600">
@@ -1301,7 +1301,7 @@ export default function GuideCostManagementPage() {
                                   }
                                 }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="flex items-center space-x-1">
@@ -1322,7 +1322,7 @@ export default function GuideCostManagementPage() {
                                   }
                                 }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="text-xs font-medium text-green-600">
@@ -1343,7 +1343,7 @@ export default function GuideCostManagementPage() {
                                 ...prev, 
                                 'guide_driver': { ...prev['guide_driver'], guide_fee: Number(e.target.value) }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="flex items-center space-x-2">
@@ -1358,7 +1358,7 @@ export default function GuideCostManagementPage() {
                                 ...prev, 
                                 'guide_driver': { ...prev['guide_driver'], driver_fee: Number(e.target.value) }
                               }))}
-                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                             />
                           </div>
                           <div className="text-xs font-medium text-green-600">
@@ -1409,7 +1409,7 @@ export default function GuideCostManagementPage() {
                               }
                             }))
                           }}
-                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                         />
                       ) : editingProductId === product.id ? (
                         <input
@@ -1421,7 +1421,7 @@ export default function GuideCostManagementPage() {
                             '2_guides': { ...prev['2_guides'], effective_from: e.target.value },
                             'guide_driver': { ...prev['guide_driver'], effective_from: e.target.value }
                           }))}
-                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                         />
                       ) : (
                         <div className="flex items-center space-x-1">
@@ -1449,7 +1449,7 @@ export default function GuideCostManagementPage() {
                               }
                             }))
                           }}
-                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                         />
                       ) : editingProductId === product.id ? (
                         <input
@@ -1461,7 +1461,7 @@ export default function GuideCostManagementPage() {
                             '2_guides': { ...prev['2_guides'], effective_to: e.target.value },
                             'guide_driver': { ...prev['guide_driver'], effective_to: e.target.value }
                           }))}
-                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring"
                         />
                       ) : (
                         <div className="flex items-center space-x-1">
@@ -1494,7 +1494,7 @@ export default function GuideCostManagementPage() {
                 <select
                   value={formData.teamType}
                   onChange={(e) => setFormData(prev => ({ ...prev, teamType: e.target.value as '1_guide' | '2_guides' | 'guide_driver' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                   disabled={!!editingCost}
                 >
                   <option value="1_guide">1가이드</option>
@@ -1512,7 +1512,7 @@ export default function GuideCostManagementPage() {
                   step="0.01"
                   value={formData.guideFee}
                   onChange={(e) => setFormData(prev => ({ ...prev, guideFee: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                   required
                 />
               </div>
@@ -1526,7 +1526,7 @@ export default function GuideCostManagementPage() {
                   step="0.01"
                   value={formData.assistantFee}
                   onChange={(e) => setFormData(prev => ({ ...prev, assistantFee: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                 />
               </div>
 
@@ -1539,7 +1539,7 @@ export default function GuideCostManagementPage() {
                   step="0.01"
                   value={formData.driverFee}
                   onChange={(e) => setFormData(prev => ({ ...prev, driverFee: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                 />
               </div>
 
@@ -1551,7 +1551,7 @@ export default function GuideCostManagementPage() {
                     type="date"
                     value={formData.effectiveFrom}
                     onChange={(e) => setFormData(prev => ({ ...prev, effectiveFrom: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                     required
                   />
                 </div>
@@ -1561,7 +1561,7 @@ export default function GuideCostManagementPage() {
                     type="date"
                     value={formData.effectiveTo}
                     onChange={(e) => setFormData(prev => ({ ...prev, effectiveTo: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                   />
                 </div>
               </div>
@@ -1581,7 +1581,7 @@ export default function GuideCostManagementPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {saving ? '저장 중...' : (editingCost ? '수정' : '설정')}
               </button>

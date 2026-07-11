@@ -223,10 +223,13 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
     return vendors.find((v) => v.id === mergeTargetId)?.name.trim() ?? ''
   }, [mergeNameMode, mergeCustomName, mergeTargetId, vendors])
 
-  const mergePreviewNames = useMemo(() => {
+  const mergePreviewVendors = useMemo(() => {
     const target = mergeTargetName
     if (!target) return []
-    return selectedVendors.map((v) => v.name.trim()).filter((name) => name && name !== target)
+    return selectedVendors.filter((v) => {
+      const name = v.name.trim()
+      return name && name !== target
+    })
   }, [selectedVendors, mergeTargetName])
 
   const canConfirmMerge =
@@ -462,7 +465,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
       return
     }
 
-    const sourceNames = mergePreviewNames
+    const sourceNames = mergePreviewVendors.map((v) => v.name.trim())
     if (sourceNames.length === 0) {
       alert('병합할 다른 항목이 없습니다. 다른 이름을 선택하거나 입력하세요.')
       return
@@ -1018,16 +1021,16 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
               </div>
             )}
 
-            {mergeTargetName && mergePreviewNames.length > 0 && (
+            {mergeTargetName && mergePreviewVendors.length > 0 && (
               <ul className="text-xs text-muted-foreground space-y-0.5 pt-1 rounded-md border bg-muted/30 px-3 py-2">
-                {mergePreviewNames.map((name) => (
-                  <li key={name}>
-                    · {name} → {mergeTargetName}
+                {mergePreviewVendors.map((v) => (
+                  <li key={v.id}>
+                    · {v.name.trim()} → {mergeTargetName}
                   </li>
                 ))}
               </ul>
             )}
-            {mergeTargetName && mergePreviewNames.length === 0 && (
+            {mergeTargetName && mergePreviewVendors.length === 0 && (
               <p className="text-xs text-amber-700 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                 선택한 항목과 동일한 이름입니다. 다른 이름을 선택하거나 입력하세요.
               </p>
@@ -1040,7 +1043,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
             <Button
               type="button"
               onClick={() => void handleMerge()}
-              disabled={saving || !canConfirmMerge || mergePreviewNames.length === 0}
+              disabled={saving || !canConfirmMerge || mergePreviewVendors.length === 0}
             >
               병합
             </Button>

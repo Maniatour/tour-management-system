@@ -373,7 +373,7 @@ export default function ReservationDetailsPage() {
     if (loading || loadingReservation) {
       return (
         <div className="bg-white rounded-lg shadow p-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
       )
@@ -475,7 +475,7 @@ export default function ReservationDetailsPage() {
       {/* 초기화가 완료되지 않았을 때 로딩 화면 표시 */}
       {!isInitialized ? (
         <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
         </div>
       ) : !isStaff ? (
         // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
@@ -499,7 +499,7 @@ export default function ReservationDetailsPage() {
             {/* 플로팅 메뉴 버튼 */}
             <button
               onClick={() => setShowFloatingMenu(!showFloatingMenu)}
-              className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+              className="w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors flex items-center justify-center"
             >
               {showFloatingMenu ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -537,11 +537,11 @@ export default function ReservationDetailsPage() {
                         }}
                         className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                           isActive
-                            ? 'bg-blue-50 text-blue-600 font-medium'
+                            ? 'bg-primary/5 text-primary font-medium'
                             : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
+                        <Icon size={18} className={isActive ? 'text-primary' : 'text-gray-500'} />
                         <span>{section.label}</span>
                       </button>
                     )

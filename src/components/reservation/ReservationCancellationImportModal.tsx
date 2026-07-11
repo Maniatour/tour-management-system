@@ -477,7 +477,7 @@ export function ReservationCancellationImportModal({
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
           {loading && (
             <div className="flex justify-center py-10">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           )}
           {!loading && fetchError && (
@@ -520,7 +520,7 @@ export function ReservationCancellationImportModal({
                           onClick={() => setEmailBodyTab('friendly')}
                           className={`px-3 py-2 text-xs sm:text-sm font-medium shrink-0 ${
                             emailBodyTab === 'friendly'
-                              ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
+                              ? 'text-primary border-b-2 border-primary bg-white'
                               : 'text-gray-600 hover:text-gray-900'
                           }`}
                         >
@@ -531,7 +531,7 @@ export function ReservationCancellationImportModal({
                           onClick={() => setEmailBodyTab('source')}
                           className={`px-3 py-2 text-xs sm:text-sm font-medium shrink-0 ${
                             emailBodyTab === 'source'
-                              ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
+                              ? 'text-primary border-b-2 border-primary bg-white'
                               : 'text-gray-600 hover:text-gray-900'
                           }`}
                         >
@@ -616,7 +616,7 @@ export function ReservationCancellationImportModal({
                               href={`/${locale}/admin/reservations/${m.id}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-700 font-medium text-sm hover:underline"
+                              className="text-primary font-medium text-sm hover:underline"
                             >
                               예약 상세 열기
                             </a>
@@ -671,7 +671,7 @@ export function ReservationCancellationImportModal({
                   onClick={() => void handleReparse()}
                   disabled={reparsing || !isPending}
                   title={isPending ? '저장된 이메일 본문으로 추출을 다시 실행합니다.' : '처리 대기 중인 항목만 재파싱할 수 있습니다.'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 text-blue-800 bg-blue-50/80 rounded-md text-sm hover:bg-blue-100 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border text-primary bg-primary/5/80 rounded-md text-sm hover:bg-muted disabled:opacity-50"
                 >
                   {reparsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   본문 다시 파싱

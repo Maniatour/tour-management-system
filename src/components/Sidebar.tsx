@@ -108,7 +108,7 @@ const Sidebar = () => {
                     isCollapsed ? 'justify-center' : 'space-x-3'
                   } ${
                     isActive
-                      ? 'border border-blue-200 bg-blue-100 text-blue-700'
+                      ? 'border border-border bg-primary/10 text-primary'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >

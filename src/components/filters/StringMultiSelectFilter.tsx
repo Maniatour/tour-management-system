@@ -119,8 +119,8 @@ export default function StringMultiSelectFilter({
     ? 'block text-[10px] font-medium text-gray-600 mb-0 leading-tight truncate'
     : 'block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1'
   const btnCls = compact
-    ? 'flex h-7 w-full items-center justify-between gap-0.5 rounded-md border border-gray-300 bg-white px-1.5 py-0 text-left text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500'
-    : 'flex w-full items-center justify-between gap-1 rounded-lg border border-gray-300 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-left text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500'
+    ? 'flex h-7 w-full items-center justify-between gap-0.5 rounded-md border border-gray-300 bg-white px-1.5 py-0 text-left text-[11px] focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500'
+    : 'flex w-full items-center justify-between gap-1 rounded-lg border border-gray-300 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-left text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500'
 
   return (
     <div ref={rootRef} className={`relative min-w-0 ${className ?? ''}`}>
@@ -157,7 +157,7 @@ export default function StringMultiSelectFilter({
           <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{groupLabel}</span>
             <div className="flex gap-2 text-[10px] font-medium">
-              <button type="button" className="text-blue-600 hover:underline" onClick={selectAllVisible}>
+              <button type="button" className="text-primary hover:underline" onClick={selectAllVisible}>
                 {allLabel ?? 'All'}
               </button>
               <button type="button" className="text-gray-600 hover:underline" onClick={clearAll}>
@@ -173,7 +173,7 @@ export default function StringMultiSelectFilter({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -187,7 +187,7 @@ export default function StringMultiSelectFilter({
                 <label
                   key={opt.value}
                   className={`flex cursor-pointer items-start gap-2 px-2 py-1.5 text-xs hover:bg-gray-50 ${
-                    checked ? 'bg-blue-50/80' : ''
+                    checked ? 'bg-primary/5/80' : ''
                   }`}
                 >
                   <input

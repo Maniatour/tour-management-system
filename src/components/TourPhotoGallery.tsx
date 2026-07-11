@@ -730,14 +730,14 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                 <div className="flex border rounded">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-1.5 ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                    className={`p-1.5 ${viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}
                     title={t.gridView}
                   >
                     <Grid3X3 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-1.5 ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                    className={`p-1.5 ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}
                     title={t.listView}
                   >
                     <List className="w-3.5 h-3.5" />
@@ -767,7 +767,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                 }}
                 className={`px-2 py-1 rounded text-xs transition-colors ${
                   bulkDownloadMode 
-                    ? 'bg-blue-500 text-white' 
+                    ? 'bg-primary text-primary-foreground' 
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
                 >
@@ -843,7 +843,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             {loading ? (
               <div className="flex items-center justify-center h-64">
                 <div className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   <span className="text-gray-600">{t.loading}</span>
                 </div>
               </div>
@@ -873,7 +873,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       <div className="absolute top-2 left-2 z-10">
                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                           selectedPhotos.has(photo.id) 
-                            ? 'bg-blue-500 border-blue-500' 
+                            ? 'bg-primary/50 border-primary' 
                             : 'bg-white border-gray-300'
                         }`}>
                           {selectedPhotos.has(photo.id) && (
@@ -1050,7 +1050,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             <div className="p-4 max-h-96 overflow-y-auto">
               {loadingCustomers ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : customers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
@@ -1063,12 +1063,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       key={customer.id}
                       onClick={() => handleHideRequest(customer.id, customer.name)}
                       disabled={hidingPhotos}
-                      className="w-full p-3 text-left border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full p-3 text-left border rounded-lg hover:bg-muted/50 hover:border-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-gray-900">{customer.name}</span>
                         {hidingPhotos && (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                         )}
                       </div>
                     </button>
@@ -1164,7 +1164,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             <div className="p-4 max-h-96 overflow-y-auto">
               {loadingCustomers ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : customers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
@@ -1282,7 +1282,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             <div className="p-4 max-h-96 overflow-y-auto">
               {loadingCustomers ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
               ) : customers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">

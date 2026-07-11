@@ -1229,7 +1229,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             <button
               type="button"
               onClick={() => setShowTemplateInfoModal(true)}
-              className="ml-1 sm:ml-2 inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
+              className="ml-1 sm:ml-2 inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 text-primary hover:text-primary/80 hover:bg-muted rounded-full transition-colors"
               title="템플릿 설명 보기"
             >
               <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -1251,7 +1251,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           </button>
           <button
             onClick={addChoiceGroup}
-            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 shadow-sm"
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 shadow-sm"
           >
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
             그룹 추가
@@ -1271,7 +1271,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       {/* 초이스 그룹 목록 */}
       {loading ? (
         <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="mt-2 text-gray-600">초이스를 불러오는 중...</p>
         </div>
       ) : (
@@ -1281,7 +1281,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               key={choice.id} 
               className={`border border-gray-200 rounded-lg p-3 sm:p-4 transition-all ${
                 draggedGroupIndex === groupIndex ? 'opacity-50' : ''
-              } ${draggedGroupIndex !== null && draggedGroupIndex !== groupIndex ? 'hover:border-blue-300' : ''}`}
+              } ${draggedGroupIndex !== null && draggedGroupIndex !== groupIndex ? 'hover:border-border' : ''}`}
               onDragOver={(e) => {
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'move'
@@ -1324,7 +1324,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         type="checkbox"
                         checked={choice.is_required}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'is_required', e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                       />
                       <span className="ml-1.5 text-xs sm:text-sm font-medium text-gray-700">필수</span>
                     </label>
@@ -1351,7 +1351,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         type="text"
                         value={choice.choice_group_ko}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                         placeholder="예: 숙박 선택"
                       />
                     </div>
@@ -1363,7 +1363,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         type="text"
                         value={choice.choice_group_en || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                         placeholder="예: Accommodation"
                       />
                     </div>
@@ -1373,7 +1373,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         <button
                           type="button"
                           onClick={() => setShowTypeInfoModal(true)}
-                          className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
+                          className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-primary hover:bg-muted/50 rounded-full transition-colors"
                         >
                           <Info className="w-3 h-3" />
                         </button>
@@ -1381,7 +1381,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       <select
                         value={choice.choice_type}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_type', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                       >
                         <option value="single">단일 선택</option>
                         <option value="multiple">다중 선택</option>
@@ -1392,18 +1392,18 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                   
                   {/* 초이스 그룹 설명 표시 */}
                   {(choice.description_ko || choice.description_en) && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 sm:p-3">
+                    <div className="bg-primary/5 border border-border/60 rounded-lg p-2.5 sm:p-3">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {choice.description_ko && (
                           <div>
-                            <p className="text-[10px] font-semibold text-blue-900 mb-0.5 uppercase tracking-wider">설명 (KO)</p>
-                            <p className="text-xs sm:text-sm text-blue-800 whitespace-pre-wrap">{choice.description_ko}</p>
+                            <p className="text-[10px] font-semibold text-foreground mb-0.5 uppercase tracking-wider">설명 (KO)</p>
+                            <p className="text-xs sm:text-sm text-primary whitespace-pre-wrap">{choice.description_ko}</p>
                           </div>
                         )}
                         {choice.description_en && (
                           <div>
-                            <p className="text-[10px] font-semibold text-blue-900 mb-0.5 uppercase tracking-wider">설명 (EN)</p>
-                            <p className="text-xs sm:text-sm text-blue-800 whitespace-pre-wrap">{choice.description_en}</p>
+                            <p className="text-[10px] font-semibold text-foreground mb-0.5 uppercase tracking-wider">설명 (EN)</p>
+                            <p className="text-xs sm:text-sm text-primary whitespace-pre-wrap">{choice.description_en}</p>
                           </div>
                         )}
                       </div>
@@ -1418,7 +1418,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       <textarea
                         value={choice.description_ko || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'description_ko', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                         placeholder="설명을 입력하세요 (한국어)"
                         rows={2}
                       />
@@ -1430,7 +1430,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       <textarea
                         value={choice.description_en || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'description_en', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                         placeholder="Description (English)"
                         rows={2}
                       />
@@ -1443,7 +1443,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               <div className="space-y-3 mt-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                   <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Settings className="w-4 h-4 text-blue-500" />
+                    <Settings className="w-4 h-4 text-primary" />
                     초이스 목록
                   </h4>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1465,7 +1465,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                     </button>
                     <button
                       onClick={() => addChoiceOption(groupIndex)}
-                      className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100"
+                      className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-primary bg-primary/5 hover:bg-muted rounded border border-border/60"
                     >
                       <Plus className="w-3 h-3 mr-1" />
                       항목 추가
@@ -1522,7 +1522,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              }`}
                            />
                            {dragOverStates[`${groupIndex}-${option.id}`] && (
-                             <div className="absolute inset-0 bg-blue-500 bg-opacity-30 flex items-center justify-center z-10">
+                             <div className="absolute inset-0 bg-primary/50 bg-opacity-30 flex items-center justify-center z-10">
                                <p className="text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg">이미지 놓기</p>
                              </div>
                            )}
@@ -1548,7 +1548,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                    document.getElementById(`file-upload-${groupIndex}-${option.id}`)?.click()
                                  }
                                }}
-                               className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                               className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-md"
                                title="이미지 변경"
                              >
                                <Upload className="w-4 h-4" />
@@ -1569,7 +1569,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                          <div 
                            className={`w-full h-full border-2 border-dashed transition-all flex items-center justify-center ${
                              dragOverStates[`${groupIndex}-${option.id}`]
-                               ? 'border-blue-400 bg-blue-50'
+                               ? 'border-blue-400 bg-primary/5'
                                : 'border-gray-200 bg-gray-50'
                            } ${uploadingImages[`${groupIndex}-${option.id}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
                            onDragOver={(e) => {
@@ -1616,8 +1616,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                            />
                            {uploadingImages[`${groupIndex}-${option.id}`] ? (
                              <div className="flex flex-col items-center justify-center">
-                               <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                               <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
+                               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                               <p className="text-sm text-primary font-medium">업로드 중...</p>
                              </div>
                            ) : (
                              <div className="flex flex-col items-center justify-center">
@@ -1629,7 +1629,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                          </div>
                        )}
                        {/* 번호 뱃지 */}
-                       <div className="absolute top-2 left-2 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg flex items-center justify-center text-sm font-bold shadow-lg">
+                       <div className="absolute top-2 left-2 w-8 h-8 bg-gradient-to-br from-primary to-primary text-white rounded-lg flex items-center justify-center text-sm font-bold shadow-lg">
                          {actualIndex + 1}
                        </div>
                      </div>
@@ -1651,7 +1651,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  moveChoiceOption(groupIndex, actualIndex, 'up')
                                }}
                                disabled={isFirst}
-                               className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                               className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
                                  isFirst ? 'opacity-30 cursor-not-allowed' : ''
                                }`}
                                title="위로 이동"
@@ -1666,7 +1666,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  moveChoiceOption(groupIndex, actualIndex, 'down')
                                }}
                                disabled={isLast}
-                               className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                               className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
                                  isLast ? 'opacity-30 cursor-not-allowed' : ''
                                }`}
                                title="아래로 이동"
@@ -1674,14 +1674,14 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                <ChevronDown size={12} />
                              </button>
                            </div>
-                           <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
+                           <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 hover:border-border transition-colors cursor-pointer">
                              <input
                                type="checkbox"
                                checked={option.is_default}
                                onChange={(e) => {
                                  updateChoiceOption(groupIndex, option.id, 'is_default', e.target.checked)
                                }}
-                               className="mr-1 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
+                               className="mr-1 w-3 h-3 text-primary rounded focus:ring-ring"
                              />
                              기본값
                            </label>
@@ -1741,7 +1741,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  updateChoiceOption(groupIndex, option.id, 'option_name_ko', e.target.value)
                                }}
                                placeholder="초이스명 (한국어)"
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                              />
                              <label className="block text-xs font-medium text-gray-600">영어</label>
                              <input
@@ -1751,7 +1751,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  updateChoiceOption(groupIndex, option.id, 'option_name', e.target.value)
                                }}
                                placeholder="초이스명 (영어)"
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                              />
                            </div>
 
@@ -1765,7 +1765,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                }}
                                placeholder="설명 (한국어)"
                                rows={2}
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
                              />
                              <label className="block text-xs font-medium text-gray-600">설명 (영어)</label>
                              <textarea
@@ -1775,7 +1775,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                }}
                                placeholder="Description (English)"
                                rows={2}
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
                              />
                            </div>
 
@@ -1784,7 +1784,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <label className="block text-xs font-medium text-gray-600">
                                가격
                                {homepagePricingType === 'single' && (
-                                 <span className="ml-2 text-xs text-blue-600 font-normal">(단일 가격)</span>
+                                 <span className="ml-2 text-xs text-primary font-normal">(단일 가격)</span>
                                )}
                              </label>
                              {homepagePricingType === 'single' ? (
@@ -1802,7 +1802,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                      updateChoiceOption(groupIndex, option.id, 'infant_price', price)
                                    }}
                                    placeholder="0"
-                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                  />
                                  <p className="text-xs text-gray-500 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
                                </div>
@@ -1818,7 +1818,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                        updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)
                                      }}
                                      placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                    />
                                  </div>
                                  <div>
@@ -1830,7 +1830,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                        updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)
                                      }}
                                      placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                    />
                                  </div>
                                  <div>
@@ -1842,7 +1842,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                        updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)
                                      }}
                                      placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                    />
                                  </div>
                                </div>
@@ -1854,7 +1854,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                      <label className="block text-xs text-gray-500">수용</label>
                                      <div className="relative inline-block">
                                        <Info 
-                                         className="w-3.5 h-3.5 text-gray-400 hover:text-blue-500 cursor-help transition-colors" 
+                                         className="w-3.5 h-3.5 text-gray-400 hover:text-primary cursor-help transition-colors" 
                                          onMouseEnter={(e) => {
                                            const tooltip = e.currentTarget.parentElement?.querySelector('[data-tooltip]') as HTMLElement;
                                            if (tooltip) {
@@ -1936,18 +1936,18 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                        updateChoiceOption(groupIndex, option.id, 'capacity', parseInt(e.target.value) || 1)
                                      }}
                                      placeholder="1"
-                                     className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                     className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                    />
                                  </div>
                                )}
-                               <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
+                               <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-border transition-colors cursor-pointer">
                                  <input
                                    type="checkbox"
                                    checked={option.is_active}
                                    onChange={(e) => {
                                      updateChoiceOption(groupIndex, option.id, 'is_active', e.target.checked)
                                    }}
-                                   className="mr-2 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
+                                   className="mr-2 w-3 h-3 text-primary rounded focus:ring-ring"
                                  />
                                  활성
                                </label>
@@ -1978,7 +1978,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         <button
           onClick={saveChoices}
           disabled={saving}
-          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 disabled:opacity-50"
         >
           <Save className="w-4 h-4 mr-2" />
           {saving ? '저장 중...' : '초이스 저장'}
@@ -2128,7 +2128,7 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
               <button
                 key={template.template_group}
                 onClick={() => onSelectTemplate(template.template_group)}
-                className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 transition-colors"
+                className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-border transition-colors"
               >
                 <div className="flex justify-between items-center">
                   <div>
@@ -2192,7 +2192,7 @@ function ImportModal({ importData, setImportData, onImport, onClose }: ImportMod
           </button>
           <button
             onClick={onImport}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90"
           >
             가져오기
           </button>
@@ -2241,7 +2241,7 @@ function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProdu
           <button
             onClick={onCopyTo}
             disabled={!selectedTargetProductId}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             복사
           </button>
@@ -2298,7 +2298,7 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
                 type="checkbox"
                 checked={selectedChoiceIds.size === productChoices.length && productChoices.length > 0}
                 onChange={handleToggleAll}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
               />
               <span className="ml-2 text-sm font-medium text-gray-700">
                 전체 선택 ({selectedCount}/{productChoices.length})
@@ -2323,7 +2323,7 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
                       type="checkbox"
                       checked={selectedChoiceIds.has(choice.id)}
                       onChange={() => handleToggleChoice(choice.id)}
-                      className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="mt-1 w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                     />
                     <div className="ml-3 flex-1">
                       <div className="font-medium text-gray-900">
@@ -2333,7 +2333,7 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
                         타입: {choice.choice_type === 'single' ? '단일 선택' : choice.choice_type === 'multiple' ? '다중 선택' : '수량 선택'} | 
                         초이스 {choice.options?.length || 0}개
                         {choice.is_required && (
-                          <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded">필수</span>
+                          <span className="ml-2 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded">필수</span>
                         )}
                       </div>
                     </div>
@@ -2394,8 +2394,8 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
           {/* 템플릿 개요 */}
           <div className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center mb-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                <FileText className="w-4 h-4 text-blue-600" />
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center mr-3">
+                <FileText className="w-4 h-4 text-primary" />
               </div>
               <h4 className="text-lg font-semibold text-gray-900">템플릿이란?</h4>
             </div>
@@ -2403,8 +2403,8 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
               <p className="text-gray-700">
                 템플릿은 <strong>재사용 가능한 초이스 그룹</strong>입니다. 한 번 만들어두면 여러 상품에서 동일한 초이스 그룹을 빠르게 불러와 사용할 수 있습니다.
               </p>
-              <div className="bg-blue-50 p-3 rounded-md">
-                <p className="text-sm text-blue-800">
+              <div className="bg-primary/5 p-3 rounded-md">
+                <p className="text-sm text-primary">
                   <strong>예시:</strong> "숙박 선택" 템플릿을 만들어두면, 여러 투어 상품에서 동일한 숙박 옵션을 쉽게 추가할 수 있습니다.
                 </p>
               </div>
@@ -2550,8 +2550,8 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
           {/* 단일 선택 */}
           <div className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center mb-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                <span className="text-blue-600 font-semibold text-sm">1</span>
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center mr-3">
+                <span className="text-primary font-semibold text-sm">1</span>
               </div>
               <h4 className="text-lg font-semibold text-gray-900">단일 선택 (Single Choice)</h4>
             </div>
@@ -2567,8 +2567,8 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
                   <li>• 교통편 선택 (버스, 기차, 항공)</li>
                 </ul>
               </div>
-              <div className="bg-blue-50 p-3 rounded-md">
-                <p className="text-sm text-blue-800">
+              <div className="bg-primary/5 p-3 rounded-md">
+                <p className="text-sm text-primary">
                   <strong>특징:</strong> 라디오 버튼 형태로 표시되며, 하나의 초이스만 선택 가능합니다.
                 </p>
               </div>

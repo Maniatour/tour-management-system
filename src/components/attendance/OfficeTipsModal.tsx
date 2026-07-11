@@ -713,7 +713,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleStaff(m.email)}
-                        className="rounded border-gray-300 text-blue-600"
+                        className="rounded border-gray-300 text-primary"
                       />
                       <span className="text-sm text-gray-700">{m.name_ko || m.email}</span>
                     </label>
@@ -971,7 +971,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             {saving ? (t('saving') || '저장 중...') : (t('save') || '저장')}

@@ -1,4 +1,4 @@
-import { markdownToHtml, markdownToHeadingHtml } from '@/components/LightRichEditor'
+import { markdownToHtml, markdownToHeadingHtml } from '@/lib/markdownToHtml'
 import SopCategoryToolbar from '@/components/sop/SopCategoryToolbar'
 import SopSectionToolbar from '@/components/sop/SopSectionToolbar'
 import SopSectionBodyToolbar from '@/components/sop/SopSectionBodyToolbar'

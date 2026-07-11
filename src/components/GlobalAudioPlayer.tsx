@@ -170,7 +170,7 @@ export default function GlobalAudioPlayer() {
             
             <button
               onClick={isPlaying ? pauseTrack : resumeTrack}
-              className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
+              className="p-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 transition-colors"
               title={isPlaying ? '일시정지' : '재생'}
             >
               {isPlaying ? <Pause size={16} /> : <Play size={16} />}

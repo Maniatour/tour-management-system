@@ -143,7 +143,7 @@ export default function LegalPagesHubPanel({ open, onOpenChange, locale, isEn }:
         >
           <DialogHeader className="border-b border-gray-200 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-left text-lg">
-              <FileText className="h-5 w-5 text-[#0B5FFF]" aria-hidden />
+              <FileText className="h-5 w-5 text-booking" aria-hidden />
               {isEn ? 'Legal & policy pages' : '법적 고지 · 정책 페이지'}
             </DialogTitle>
             <p className="text-left text-sm font-normal text-gray-600">
@@ -187,7 +187,7 @@ export default function LegalPagesHubPanel({ open, onOpenChange, locale, isEn }:
                         setEditLocale(isEn ? 'en' : 'ko')
                         setMessage(null)
                       }}
-                      className="flex h-full w-full flex-col rounded-xl border border-gray-200 bg-slate-50/60 p-4 text-left transition hover:border-[#0B5FFF]/30 hover:bg-white hover:shadow-md"
+                      className="flex h-full w-full flex-col rounded-xl border border-gray-200 bg-slate-50/60 p-4 text-left transition hover:border-booking/30 hover:bg-white hover:shadow-md"
                     >
                       <span className="text-sm font-semibold text-gray-900">
                         {isEn ? entry.title_en : entry.title_ko}
@@ -195,7 +195,7 @@ export default function LegalPagesHubPanel({ open, onOpenChange, locale, isEn }:
                       <span className="mt-1 text-xs text-gray-600">
                         {isEn ? entry.description_en : entry.description_ko}
                       </span>
-                      <span className="mt-3 text-[11px] font-medium uppercase tracking-wide text-[#0B5FFF]">
+                      <span className="mt-3 text-[11px] font-medium uppercase tracking-wide text-booking">
                         {isEn ? 'Open editor' : '에디터 열기'}
                       </span>
                     </button>
@@ -239,7 +239,7 @@ export default function LegalPagesHubPanel({ open, onOpenChange, locale, isEn }:
                       className={cn(
                         'rounded-md px-3 py-1.5 text-xs font-medium transition',
                         editLocale === lang
-                          ? 'bg-white text-[#0B5FFF] shadow-sm'
+                          ? 'bg-white text-booking shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
                       )}
                     >

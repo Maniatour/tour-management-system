@@ -1004,7 +1004,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
     switch (severity) {
       case 'high': return 'text-red-600 bg-red-50'
       case 'medium': return 'text-yellow-600 bg-yellow-50'
-      case 'low': return 'text-blue-600 bg-blue-50'
+      case 'low': return 'text-primary bg-primary/5'
       default: return 'text-gray-600 bg-gray-50'
     }
   }
@@ -1024,9 +1024,9 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+      <div className="min-h-screen app-page-bg p-3 sm:p-6">
         <div className="text-center py-8 sm:py-12">
-          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-3 sm:mt-4 text-sm sm:text-base text-gray-600">데이터를 검수하는 중...</p>
         </div>
       </div>
@@ -1034,7 +1034,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+    <div className="min-h-screen app-page-bg p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* 헤더 */}
         <div className="mb-4 sm:mb-8">
@@ -1052,14 +1052,14 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   onClick={() => setNavUi((prev) => ({ ...prev, activeTab: tab.key }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
                     activeTab === tab.key
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   {tab.label}
                   {tab.count > 0 && (
                     <span className={`ml-1 sm:ml-2 py-0.5 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-xs font-medium ${
-                      activeTab === tab.key ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                      activeTab === tab.key ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600'
                     }`}>
                       {tab.count}
                     </span>
@@ -1088,7 +1088,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'all' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'all'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1098,7 +1098,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'language' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'language'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1108,7 +1108,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'email' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'email'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1118,7 +1118,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'phone' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'phone'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1128,7 +1128,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'channel' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'channel'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1144,7 +1144,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'all' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'all'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1154,7 +1154,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing1' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing1'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1164,7 +1164,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing2' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing2'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1174,7 +1174,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing3' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing3'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1184,7 +1184,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing4' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing4'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1194,7 +1194,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing5' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing5'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1204,7 +1204,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing6' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing6'
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        ? 'bg-primary/10 text-primary border border-border'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                     }`}
                   >
@@ -1222,7 +1222,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'all' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'all'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1232,7 +1232,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'pickup' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'pickup'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1242,7 +1242,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'channel_rn' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'channel_rn'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1252,7 +1252,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'status' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'status'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1262,7 +1262,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'tour_id' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'tour_id'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1272,7 +1272,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'choices' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'choices'
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          ? 'bg-primary/10 text-primary border border-border'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
                       }`}
                     >
@@ -1286,7 +1286,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     <select
                       value={statusFilter}
                       onChange={(e) => setNavUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
-                      className="px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
+                      className="px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring min-w-0"
                     >
                       <option value="all">전체 상태</option>
                       <option value="Canceled">Canceled</option>
@@ -1402,7 +1402,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     <div className="flex items-center shrink-0">
                       <button
                         onClick={() => handleEditItem(issue.data)}
-                        className="inline-flex items-center px-2.5 sm:px-3 py-1 sm:py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="inline-flex items-center px-2.5 sm:px-3 py-1 sm:py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
                       >
                         수정
                       </button>
@@ -1458,7 +1458,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1467,7 +1467,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="email"
                 value={formData.email || ''}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1476,7 +1476,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="tel"
                 value={formData.phone || ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1484,7 +1484,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
               <select
                 value={formData.language || ''}
                 onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">언어 선택</option>
                 <option value="ko">한국어</option>
@@ -1504,7 +1504,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.name_ko || ''}
                 onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1513,7 +1513,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.name_en || ''}
                 onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1522,7 +1522,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="tel"
                 value={formData.phone || ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1531,7 +1531,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={Array.isArray(formData.languages) ? formData.languages.join(', ') : formData.languages || ''}
                 onChange={(e) => setFormData({ ...formData, languages: e.target.value.split(',').map(lang => lang.trim()).filter(lang => lang) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="ko, en, ja"
               />
             </div>
@@ -1546,7 +1546,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1555,7 +1555,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.name_en || ''}
                 onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1564,7 +1564,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.product_code || ''}
                 onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1573,7 +1573,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="text"
                 value={formData.category || ''}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -1582,7 +1582,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
                 type="number"
                 value={formData.base_price || ''}
                 onChange={(e) => setFormData({ ...formData, base_price: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
           </>
@@ -1615,7 +1615,7 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
               </button>
               <button
                 type="submit"
-                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 저장
               </button>

@@ -76,7 +76,7 @@ function ReservationsFilters({
           <select
             value={selectedStatus}
             onChange={(e) => onStatusChange(e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
           >
             <option value="all">{t('filters.allStatus')}</option>
             <option value="pending">{t('filters.pending')}</option>
@@ -93,7 +93,7 @@ function ReservationsFilters({
           <select
             value={selectedChannel}
             onChange={(e) => onChannelChange(e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
           >
             <option value="all">{t('filters.allChannel')}</option>
             {channels?.map((channel) => (
@@ -107,7 +107,7 @@ function ReservationsFilters({
             type="date"
             value={dateRange.start}
             onChange={(e) => onDateRangeChange({ ...dateRange, start: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
           />
         </div>
         <div>
@@ -116,7 +116,7 @@ function ReservationsFilters({
             type="date"
             value={dateRange.end}
             onChange={(e) => onDateRangeChange({ ...dateRange, end: e.target.value })}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
           />
         </div>
       </div>
@@ -129,7 +129,7 @@ function ReservationsFilters({
             <select
               value={itemsPerPage}
               onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
             >
               <option value={10}>10{t('pagination.itemsPerPage')}</option>
               <option value={20}>20{t('pagination.itemsPerPage')}</option>
@@ -159,7 +159,7 @@ function ReservationsFilters({
                 <select
                   value={sortBy}
                   onChange={(e) => onSortByChange(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
-                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 >
                   <option value="created_at">{t('sorting.registrationDate')}</option>
                   <option value="tour_date">{t('sorting.tourDate')}</option>
@@ -180,7 +180,7 @@ function ReservationsFilters({
               <select
                 value={itemsPerPage}
                 onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
               >
                 <option value={10}>10{t('pagination.itemsPerPage')}</option>
                 <option value={20}>20{t('pagination.itemsPerPage')}</option>
@@ -194,7 +194,7 @@ function ReservationsFilters({
               type="button"
               onClick={() => onGroupByDateChange(!groupByDate)}
               className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                groupByDate ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                groupByDate ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
               {groupByDate ? t('grouping.on') : t('grouping.off')}
@@ -220,7 +220,7 @@ function ReservationsFilters({
           <button
             type="button"
             onClick={openModal}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
           >
             <SlidersHorizontal className="w-4 h-4" />
             <span>{t('filter')}</span>
@@ -240,7 +240,7 @@ function ReservationsFilters({
             <button
               type="button"
               onClick={closeModal}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 text-sm font-medium"
             >
               {t('apply')}
             </button>

@@ -510,7 +510,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="text"
                 value={formData.name_ko}
                 onChange={(e) => setFormData({...formData, name_ko: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 required
               />
             </div>
@@ -523,7 +523,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="text"
                 value={formData.name_en || ''}
                 onChange={(e) => setFormData({...formData, name_en: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
               />
             </div>
           </div>
@@ -537,7 +537,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="text"
                 value={formData.nick_name || ''}
                 onChange={(e) => setFormData({...formData, nick_name: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 placeholder="예: 홍길동 → 길동"
               />
             </div>
@@ -549,7 +549,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
               <select
                 value={formData.position || ''}
                 onChange={(e) => setFormData({...formData, position: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
               >
                 <option value="">직책 선택 (Select position)</option>
                 {TEAM_POSITION_OPTIONS.map(({ value, labelKo, labelEn }) => (
@@ -570,7 +570,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value.toLowerCase()})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 required
               />
             </div>
@@ -583,7 +583,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 value={formData.home_address || ''}
                 onChange={(e) => setFormData({ ...formData, home_address: e.target.value })}
                 rows={3}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm resize-y min-h-[4rem]"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm resize-y min-h-[4rem]"
                 placeholder="자택 주소를 입력하세요"
               />
             </div>
@@ -598,7 +598,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="tel"
                 value={formData.phone || ''}
                 onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 placeholder="전화번호를 입력하세요 (선택사항)"
               />
             </div>
@@ -611,7 +611,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 type="text"
                 value={formData.emergency_contact || ''}
                 onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
               />
             </div>
           </div>
@@ -651,7 +651,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   }}
                   className={`px-3 py-2 text-sm rounded-md border transition-colors ${
                     (formData.languages || []).includes(language.value)
-                      ? 'bg-blue-500 text-white border-blue-500'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -676,7 +676,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="date"
                   value={formData.date_of_birth || ''}
                   onChange={(e) => setFormData({...formData, date_of_birth: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -688,7 +688,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="date"
                   value={formData.hire_date || ''}
                   onChange={(e) => setFormData({...formData, hire_date: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -700,7 +700,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.ssn || ''}
                   onChange={(e) => setFormData({...formData, ssn: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
             </div>
@@ -721,7 +721,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.personal_car_model || ''}
                   onChange={(e) => setFormData({...formData, personal_car_model: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -735,7 +735,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   max="2030"
                   value={formData.car_year || ''}
                   onChange={(e) => setFormData({...formData, car_year: e.target.value ? parseInt(e.target.value) : null})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -747,7 +747,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.car_plate || ''}
                   onChange={(e) => setFormData({...formData, car_plate: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
             </div>
@@ -768,7 +768,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.bank_name || ''}
                   onChange={(e) => setFormData({...formData, bank_name: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -780,7 +780,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.account_holder || ''}
                   onChange={(e) => setFormData({...formData, account_holder: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -792,7 +792,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.bank_number || ''}
                   onChange={(e) => setFormData({...formData, bank_number: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               
@@ -804,7 +804,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   type="text"
                   value={formData.routing_number || ''}
                   onChange={(e) => setFormData({...formData, routing_number: e.target.value})}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
             </div>
@@ -826,7 +826,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                     id="cpr"
                     checked={formData.cpr || false}
                     onChange={(e) => setFormData({...formData, cpr: e.target.checked})}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-primary focus:ring-ring"
                   />
                   <label htmlFor="cpr" className="text-sm font-medium text-gray-700">
                     CPR 자격증
@@ -843,7 +843,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                         type="date"
                         value={formData.cpr_acquired || ''}
                         onChange={(e) => setFormData({...formData, cpr_acquired: e.target.value})}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                       />
                     </div>
                     
@@ -855,7 +855,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                         type="date"
                         value={formData.cpr_expired || ''}
                         onChange={(e) => setFormData({...formData, cpr_expired: e.target.value})}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                       />
                     </div>
                   </div>
@@ -870,7 +870,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                     id="medical_report"
                     checked={formData.medical_report || false}
                     onChange={(e) => setFormData({...formData, medical_report: e.target.checked})}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-primary focus:ring-ring"
                   />
                   <label htmlFor="medical_report" className="text-sm font-medium text-gray-700">
                     의료 보고서
@@ -887,7 +887,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                         type="date"
                         value={formData.medical_acquired || ''}
                         onChange={(e) => setFormData({...formData, medical_acquired: e.target.value})}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                       />
                     </div>
                     
@@ -899,7 +899,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                         type="date"
                         value={formData.medical_expired || ''}
                         onChange={(e) => setFormData({...formData, medical_expired: e.target.value})}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
                       />
                     </div>
                   </div>
@@ -913,7 +913,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 id="cdl_driver_license"
                 checked={formData.cdl_driver_license || false}
                 onChange={(e) => setFormData({ ...formData, cdl_driver_license: e.target.checked })}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-300 text-primary focus:ring-ring"
               />
               <label htmlFor="cdl_driver_license" className="text-sm font-medium text-gray-700">
                 CDL 운전면허 (Commercial Driver&apos;s License)
@@ -994,7 +994,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                            className="p-1.5 text-primary hover:bg-muted/50 rounded"
                             title="다운로드"
                           >
                             <Download className="w-4 h-4" />
@@ -1057,7 +1057,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
               </button>
               <button
                 type="submit"
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
               >
                 {member ? '수정' : '추가'}
               </button>

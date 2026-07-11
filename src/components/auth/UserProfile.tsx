@@ -56,7 +56,7 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
           </p>
           <p className="text-xs text-gray-500">{authUser.email}</p>
           {userRole && (
-            <p className="text-xs text-blue-600 font-medium">
+            <p className="text-xs text-primary font-medium">
               {getRoleDisplayName(userRole)}
             </p>
           )}
@@ -81,7 +81,7 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
                 </p>
                 <p className="text-xs text-gray-500">{authUser.email}</p>
                 {userRole && (
-                  <p className="text-xs text-blue-600 font-medium mt-1">
+                  <p className="text-xs text-primary font-medium mt-1">
                     {getRoleDisplayName(userRole)}
                   </p>
                 )}

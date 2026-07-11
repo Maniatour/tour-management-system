@@ -129,7 +129,7 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
       <DialogContent className="max-w-[min(100vw,56rem)] max-h-[min(90vh,900px)] flex flex-col gap-0 p-0 sm:max-w-5xl">
         <DialogHeader className="px-4 pt-4 pb-2 sm:px-6 sm:pt-6 border-b">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg pr-6">
-            <BarChart3 className="h-5 w-5 text-blue-600 shrink-0" />
+            <BarChart3 className="h-5 w-5 text-primary shrink-0" />
             {t('title')}
           </DialogTitle>
           <DialogDescription className="text-left text-xs sm:text-sm">
@@ -141,7 +141,7 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
           {t('methodNote')}
         </div>
 
-        <p className="px-4 pt-2 sm:px-6 text-[11px] sm:text-xs text-blue-800/80">{t('rowClickHint')}</p>
+        <p className="px-4 pt-2 sm:px-6 text-[11px] sm:text-xs text-primary/80">{t('rowClickHint')}</p>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-6 sm:py-3">
           {loading && (

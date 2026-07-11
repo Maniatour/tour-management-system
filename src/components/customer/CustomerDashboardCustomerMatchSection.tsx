@@ -42,9 +42,9 @@ export default function CustomerDashboardCustomerMatchSection({
         <Search className="w-5 h-5 mr-2" />
         {t('searchTitle')}
       </h2>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <p className="text-blue-800 text-sm font-medium mb-2">💡 {t('otaHintTitle')}</p>
-        <p className="text-blue-700 text-sm">{t('otaHintBody')}</p>
+      <div className="bg-muted/50 border border-border rounded-lg p-4 mb-6">
+        <p className="text-primary text-sm font-medium mb-2">💡 {t('otaHintTitle')}</p>
+        <p className="text-primary text-sm">{t('otaHintBody')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -55,7 +55,7 @@ export default function CustomerDashboardCustomerMatchSection({
             value={searchForm.phone}
             onChange={(e) => onSearchFormChange('phone', e.target.value)}
             placeholder={t('phonePlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
@@ -65,7 +65,7 @@ export default function CustomerDashboardCustomerMatchSection({
             value={searchForm.email}
             onChange={(e) => onSearchFormChange('email', e.target.value)}
             placeholder={t('emailPlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
@@ -74,7 +74,7 @@ export default function CustomerDashboardCustomerMatchSection({
             type="date"
             value={searchForm.tourDate}
             onChange={(e) => onSearchFormChange('tourDate', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
@@ -84,7 +84,7 @@ export default function CustomerDashboardCustomerMatchSection({
             value={searchForm.productName}
             onChange={(e) => onSearchFormChange('productName', e.target.value)}
             placeholder={t('productNamePlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
@@ -93,7 +93,7 @@ export default function CustomerDashboardCustomerMatchSection({
         type="button"
         onClick={onSearch}
         disabled={isSearching}
-        className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+        className="bg-primary text-primary-foreground px-6 py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
       >
         {isSearching ? (
           <>

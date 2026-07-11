@@ -771,7 +771,7 @@ export function ToursNeedCheckModal({
                           <button
                             type="button"
                             onClick={() => openReservationDetailPreview(r.reservationId)}
-                            className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                            className="text-[11px] font-medium text-primary hover:text-primary/80"
                           >
                             {isKo ? '예약 상세' : 'Reservation detail'}
                           </button>
@@ -834,7 +834,7 @@ export function ToursNeedCheckModal({
                                     <button
                                       type="button"
                                       onClick={() => openTourDetailPreview(c.tourId)}
-                                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                                      className="text-[11px] font-medium text-primary hover:text-primary/80"
                                     >
                                       {t('needCheckDuplicateOpenTour')}
                                     </button>
@@ -936,7 +936,7 @@ export function ToursNeedCheckModal({
                             <button
                               type="button"
                               onClick={() => openReservationDetailPreview(r.reservationId)}
-                              className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                              className="text-[11px] font-medium text-primary hover:text-primary/80"
                             >
                               {isKo ? '예약 상세' : 'Reservation detail'}
                             </button>
@@ -1041,7 +1041,7 @@ export function ToursNeedCheckModal({
                                         <button
                                           type="button"
                                           onClick={() => openTourDetailPreview(p.tourId)}
-                                          className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                                          className="text-[11px] font-medium text-primary hover:text-primary/80"
                                         >
                                           {t('needCheckDuplicateOpenTour')}
                                         </button>
@@ -1106,7 +1106,7 @@ export function ToursNeedCheckModal({
                             <button
                               type="button"
                               onClick={() => openTourDetailPreview(t.id)}
-                              className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                              className="text-xs font-medium text-primary hover:text-primary/80"
                             >
                               {isKo ? '투어 상세' : 'Tour detail'}
                             </button>
@@ -1159,7 +1159,7 @@ export function ToursNeedCheckModal({
                                               <button
                                                 type="button"
                                                 onClick={() => openReservationDetailPreview(r.reservationId)}
-                                                className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                                                className="text-[11px] font-medium text-primary hover:text-primary/80"
                                               >
                                                 {isKo ? '예약 상세' : 'Reservation detail'}
                                               </button>
@@ -1216,7 +1216,7 @@ export function ToursNeedCheckModal({
                       <button
                         type="button"
                         onClick={() => openTourDetailPreview(t.id)}
-                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                        className="text-xs font-medium text-primary hover:text-primary/80"
                       >
                         {isKo ? '상세' : 'Open'}
                       </button>
@@ -1243,7 +1243,7 @@ export function ToursNeedCheckModal({
                     href={`/${locale}/admin/tours/${previewTourId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-blue-700 hover:bg-gray-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-primary hover:bg-gray-50"
                   >
                     {isKo ? '새 탭' : 'New tab'}
                     <ExternalLink size={12} aria-hidden />
@@ -1251,7 +1251,7 @@ export function ToursNeedCheckModal({
                   <button
                     type="button"
                     onClick={() => onTourClick(previewTourId)}
-                    className="px-2.5 py-1 rounded-md text-xs font-medium border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                    className="px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-primary/5 text-primary hover:bg-muted"
                   >
                     {isKo ? '페이지로 이동' : 'Open page'}
                   </button>

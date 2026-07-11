@@ -802,7 +802,7 @@ export default function CategoryMappingExpenseDetailDialog({
                     return (
                       <tr
                         key={line.id}
-                        className={`border-b border-border/60 align-top ${checked ? 'bg-blue-50/50' : ''}`}
+                        className={`border-b border-border/60 align-top ${checked ? 'bg-primary/5/50' : ''}`}
                       >
                         <td className="py-2 pr-1">
                           <Checkbox

@@ -59,7 +59,7 @@ export default function ReservationExpenseTabPanel() {
                 onClick={() => setSubTab(tab.id)}
                 className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors ${
                   active
-                    ? 'border-blue-600 text-blue-700 bg-blue-50/80'
+                    ? 'border-primary text-primary bg-primary/5/80'
                     : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >

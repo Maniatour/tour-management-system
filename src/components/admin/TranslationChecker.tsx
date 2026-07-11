@@ -140,7 +140,7 @@ export default function TranslationChecker({ locale: _locale }: TranslationCheck
         <button
           onClick={checkTranslations}
           disabled={isChecking}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center space-x-2 disabled:opacity-50"
         >
           <RefreshCw size={20} className={isChecking ? 'animate-spin' : ''} />
           <span>체크 시작</span>
@@ -148,7 +148,7 @@ export default function TranslationChecker({ locale: _locale }: TranslationCheck
       </div>
 
       {summary.total > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-muted/50 border border-border rounded-lg p-4">
           <div className="grid grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-gray-600">전체 키</p>

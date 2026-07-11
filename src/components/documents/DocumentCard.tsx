@@ -128,7 +128,7 @@ export default function DocumentCard({
             <div className="relative flex-shrink-0">
               <button
                 onClick={() => setShowActions(!showActions)}
-                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
               >
                 <MoreVertical className="w-4 h-4" />
               </button>
@@ -258,14 +258,14 @@ export default function DocumentCard({
             <div className="flex items-center gap-0.5 sm:gap-2 flex-shrink-0 sm:ml-auto">
               <button
                 onClick={onDownload}
-                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
                 title="다운로드"
               >
                 <Download className="w-4 h-4" />
               </button>
               <button
                 onClick={onEdit}
-                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
                 title="편집"
               >
                 <Edit className="w-4 h-4" />

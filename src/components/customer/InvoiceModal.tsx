@@ -1570,13 +1570,13 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setLocale('ko')}
-                className={`px-3 py-1 rounded text-sm ${locale === 'ko' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                className={`px-3 py-1 rounded text-sm ${locale === 'ko' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}
               >
                 한국어
               </button>
               <button
                 onClick={() => setLocale('en')}
-                className={`px-3 py-1 rounded text-sm ${locale === 'en' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                className={`px-3 py-1 rounded text-sm ${locale === 'en' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}
               >
                 English
               </button>
@@ -1684,7 +1684,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                           <div className="relative add-menu-container">
                             <button
                               onClick={() => setShowAddMenu(showAddMenu === item.id ? null : item.id)}
-                              className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded hover:bg-blue-50"
+                              className="p-1.5 text-gray-400 hover:text-primary transition-colors rounded hover:bg-muted/50"
                               title={locale === 'ko' ? '항목 추가' : 'Add Item'}
                             >
                               <Plus size={14} />
@@ -1716,9 +1716,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                     handleAddTextItem()
                                     setShowAddMenu(null)
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center space-x-2 border-t border-gray-100"
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-muted/50 hover:text-primary transition-colors flex items-center space-x-2 border-t border-gray-100"
                                 >
-                                  <FileText size={14} className="text-blue-600" />
+                                  <FileText size={14} className="text-primary" />
                                   <span>{locale === 'ko' ? '텍스트 추가' : 'Add Text'}</span>
                                 </button>
                                 {item.itemType === 'product' && (
@@ -1897,7 +1897,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                         }
                                       }}
                                       placeholder={locale === 'ko' ? '입력, 선택 또는 검색' : 'Type, select or search for item'}
-                                      className="w-full pl-8 pr-8 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      className="w-full pl-8 pr-8 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     />
                                     <button
                                       onClick={() => {
@@ -1944,7 +1944,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                                 setItemSearchQueries(prev => ({ ...prev, [item.id]: productName || '' }))
                                                 setItemDropdownOpen(prev => ({ ...prev, [item.id]: false }))
                                               }}
-                                              className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
+                                              className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50"
                                             >
                                               {productName}
                                             </button>
@@ -2005,7 +2005,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                 </div>
                               )}
                               {item.choiceInfo && (
-                                <div className="text-xs text-blue-600 mt-1">
+                                <div className="text-xs text-primary mt-1">
                                   {item.choiceInfo}
                                 </div>
                               )}
@@ -2069,7 +2069,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                               ? '이 줄 금액에 할인 적용'
                               : 'Apply invoice discount to this line'
                           }
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-primary focus:ring-ring"
                         />
                       </td>
 
@@ -2118,7 +2118,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                   return next
                                 })
                               }}
-                              className="w-24 pl-6 pr-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-blue-500"
+                              className="w-24 pl-6 pr-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-ring"
                             />
                           </div>
                         </div>
@@ -2156,7 +2156,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                             setTaxPercent(10)
                           }
                         }}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-gray-300 text-primary focus:ring-ring"
                       />
                       <label className="text-sm font-medium">
                         {locale === 'ko' ? '세금 적용' : 'Apply Tax'}
@@ -2199,7 +2199,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                             setDiscountAmount(0)
                           }
                         }}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-gray-300 text-primary focus:ring-ring"
                       />
                       <label className="text-sm font-medium">
                         {locale === 'ko' ? '할인 적용' : 'Apply Discount'}
@@ -2280,7 +2280,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                         type="checkbox"
                         checked={applyProcessingFee}
                         onChange={(e) => setApplyProcessingFee(e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-gray-300 text-primary focus:ring-ring"
                       />
                       <label className="text-sm font-medium">
                         {locale === 'ko' ? '신용카드 처리 수수료 적용 (5%)' : 'Apply Credit Card Processing Fee (5%)'}
@@ -2294,11 +2294,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                     )}
                   </td>
                 </tr>
-                <tr className="bg-blue-50">
+                <tr className="bg-primary/5">
                   <td colSpan={7} className="px-4 py-3 text-lg font-bold text-gray-900 text-right">
                     {locale === 'ko' ? '총액' : 'Total'}
                   </td>
-                  <td className="px-4 py-3 text-lg font-bold text-blue-600 text-right">
+                  <td className="px-4 py-3 text-lg font-bold text-primary text-right">
                     <div className="flex flex-col items-end">
                       <span>{formatUSD(total)}</span>
                       {showKRW && (
@@ -2351,7 +2351,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                               console.error('환율 새로고침 실패:', error)
                             }
                           }}
-                          className="ml-2 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          className="ml-2 rounded px-2 py-1 text-xs text-primary transition-colors bg-primary/10 hover:bg-primary/20"
                           title={locale === 'ko' ? '환율 새로고침' : 'Refresh exchange rate'}
                         >
                           🔄
@@ -2418,7 +2418,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             <button
               onClick={handleSendEmail}
               disabled={sending || !hasInvoiceValidLines(invoiceItems)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send className="h-4 w-4" />
               <span>{sending ? (locale === 'ko' ? '발송 중...' : 'Sending...') : (locale === 'ko' ? '이메일 발송' : 'Send Email')}</span>

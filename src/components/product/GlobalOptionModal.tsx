@@ -84,7 +84,7 @@ export default function GlobalOptionModal({
             <div className="text-gray-500 mb-4">등록된 글로벌 옵션이 없습니다.</div>
             <Link
               href={`/${locale}/admin/options`}
-              className="text-blue-600 hover:text-blue-800 underline"
+              className="text-primary hover:text-primary/80 underline"
             >
               옵션 관리 페이지에서 옵션을 등록해주세요
             </Link>
@@ -128,7 +128,7 @@ export default function GlobalOptionModal({
                 <div className="text-gray-500 mb-4">검색 결과가 없습니다.</div>
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="text-blue-600 hover:text-blue-800 underline"
+                  className="text-primary hover:text-primary/80 underline"
                 >
                   검색 초기화
                 </button>
@@ -203,7 +203,7 @@ export default function GlobalOptionModal({
                         {option.tags.slice(0, 3).map((tag, index) => (
                           <span
                             key={index}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
                           >
                             {tag}
                           </span>

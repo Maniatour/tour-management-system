@@ -70,7 +70,7 @@ export default function WeeklyStats({
           <button
             type="button"
             onClick={() => handleWeekChange(0)}
-            className="rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+            className="rounded bg-primary/50 px-3 py-1 text-sm text-white hover:bg-primary/90"
           >
             이번 주
           </button>
@@ -96,9 +96,9 @@ export default function WeeklyStats({
       {!isCollapsed && (
         <div className="space-y-4 p-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg bg-blue-50 p-3">
-              <div className="text-sm font-medium text-blue-600">총 예약 수</div>
-              <div className="text-2xl font-bold text-blue-800">{weeklyStats.totalReservations}</div>
+            <div className="rounded-lg bg-primary/5 p-3">
+              <div className="text-sm font-medium text-primary">총 예약 수</div>
+              <div className="text-2xl font-bold text-primary">{weeklyStats.totalReservations}</div>
             </div>
             <div className="rounded-lg bg-green-50 p-3">
               <div className="text-sm font-medium text-green-600">총 인원</div>

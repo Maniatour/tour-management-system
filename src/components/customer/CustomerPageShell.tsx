@@ -40,7 +40,7 @@ export default function CustomerPageShell({
   return (
     <div className={`customer-page-shell flex min-h-full flex-col ${className}`.trim()}>
       <div className="flex-1">{children}</div>
-      <div className="-mx-2 mt-8 lg:-mx-6" data-customer-site-footer>
+      <div className="-mx-4 mt-8 sm:-mx-6 lg:-mx-8" data-customer-site-footer>
         <CustomerSiteFooter locale={locale} forceShow />
       </div>
     </div>

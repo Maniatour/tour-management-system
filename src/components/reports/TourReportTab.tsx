@@ -196,7 +196,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -209,9 +209,9 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
     <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
+        <div className="bg-primary/5 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
-            <Calendar className="h-8 w-8 text-blue-600" />
+            <Calendar className="h-8 w-8 text-primary" />
             <div>
               <p className="text-sm text-gray-600">총 투어</p>
               <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
@@ -276,7 +276,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
                   <td className="px-4 py-3 text-sm font-medium">{(tour.totalPeople || 0).toLocaleString()}명</td>
                   <td className="px-4 py-3 text-sm font-medium text-green-600">${tour.revenue.toLocaleString()}</td>
                   <td className="px-4 py-3 text-sm text-red-600">${tour.expenses.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-blue-600">${tour.netProfit.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-primary">${tour.netProfit.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

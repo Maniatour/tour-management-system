@@ -44,7 +44,7 @@ export default function ProductOptionsSection({
         <select
           value={formData.productId}
           onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
           required
         >
           <option value="">상품을 선택하세요</option>
@@ -92,7 +92,7 @@ export default function ProductOptionsSection({
                               }
                             }
                           }))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                          className="h-4 w-4 text-primary focus:ring-ring border-gray-300"
                         />
                         <span className="text-sm text-gray-900">{option.name}</span>
                       </div>
@@ -115,7 +115,7 @@ export default function ProductOptionsSection({
                                   }
                                 }))
                               }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                             />
                           </div>
                           <div>
@@ -134,7 +134,7 @@ export default function ProductOptionsSection({
                                   }
                                 }))
                               }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                             />
                           </div>
                           <div>
@@ -153,7 +153,7 @@ export default function ProductOptionsSection({
                                   }
                                 }))
                               }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                             />
                           </div>
                         </div>

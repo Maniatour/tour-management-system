@@ -951,7 +951,7 @@ export default function CustomerReceiptModal({
                 <div className="w-full mb-4 space-y-2">
                   <span className="text-sm font-medium text-gray-700">{headerLabel.selectCustomers}</span>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => setSelectedReservationIds(new Set(list.map((d) => d.reservation.id)))} className="text-xs text-blue-600 hover:underline">
+                    <button type="button" onClick={() => setSelectedReservationIds(new Set(list.map((d) => d.reservation.id)))} className="text-xs text-primary hover:underline">
                       {headerLabel.selectAll}
                     </button>
                     <span className="text-gray-300">|</span>
@@ -971,7 +971,7 @@ export default function CustomerReceiptModal({
                             else next.delete(d.reservation.id)
                             setSelectedReservationIds(next)
                           }}
-                          className="rounded text-blue-600"
+                          className="rounded text-primary"
                         />
                         <span className="text-sm truncate">{d.customer.name || '—'}</span>
                       </label>
@@ -1065,7 +1065,7 @@ export default function CustomerReceiptModal({
                         <div className="text-right text-xs text-gray-600">
                           <p>{COMPANY.lic}</p>
                           <p>{COMPANY.email}</p>
-                          <p className="text-blue-600 underline">{COMPANY.website}</p>
+                          <p className="text-primary underline">{COMPANY.website}</p>
                           <p>{COMPANY.phone}</p>
                         </div>
                       </div>
@@ -1243,7 +1243,7 @@ export default function CustomerReceiptModal({
                                   KRW)
                                 </span>
                               </td>
-                              <td className="px-1.5 py-1 text-right text-blue-600 font-semibold whitespace-nowrap" colSpan={3}>
+                              <td className="px-1.5 py-1 text-right text-primary font-semibold whitespace-nowrap" colSpan={3}>
                                 {formatKRW(convertToKRW(customerTotalPayment, exchangeRate))}
                               </td>
                             </tr>
@@ -1287,7 +1287,7 @@ export default function CustomerReceiptModal({
                     name="print-layout"
                     checked={printLayout === 'letter'}
                     onChange={() => setPrintLayout('letter')}
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-primary"
                   />
                   <span className="text-sm">{headerLabel.printOptionLetter}</span>
                 </label>
@@ -1297,7 +1297,7 @@ export default function CustomerReceiptModal({
                     name="print-layout"
                     checked={printLayout === 'half'}
                     onChange={() => setPrintLayout('half')}
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-primary"
                   />
                   <span className="text-sm">{headerLabel.printOptionHalf}</span>
                 </label>
@@ -1334,7 +1334,7 @@ export default function CustomerReceiptModal({
                         type="button"
                         onClick={() => void refreshExchangeRate(true)}
                         disabled={rateRefreshing}
-                        className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                        className="px-2 py-1 text-xs bg-primary/10 hover:bg-blue-200 text-primary rounded transition-colors disabled:opacity-50 flex items-center gap-1"
                         title={headerLabel.refreshExchangeRate}
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${rateRefreshing ? 'animate-spin' : ''}`} />
@@ -1348,7 +1348,7 @@ export default function CustomerReceiptModal({
                 type="button"
                 onClick={() => (list.length === 1 ? handlePrint(list[0]) : handlePrint())}
                 disabled={isBatch && selectedReservationIds.size === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <Printer className="w-4 h-4" />
                 {headerLabel.print}

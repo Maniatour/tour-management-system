@@ -94,7 +94,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -103,8 +103,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={cn("font-sans", customerPageFontVariables)}>
-      <body className={inter.className}>
+    <html lang="ko" className={cn(inter.className, "font-sans", customerPageFontVariables)}>
+      <body className={cn(inter.className, 'antialiased')}>
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
         {process.env.NODE_ENV === "development" ? (

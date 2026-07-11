@@ -191,7 +191,7 @@ export default function CustomerPageZoneAdminEmbed({
               onClick={() => setSubTab(tab.id)}
               className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
                 subTab === tab.id
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >

@@ -496,7 +496,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
                           setHeaderColor(color.class)
                           setShowColorPicker(false)
                         }}
-                        className={`p-2 rounded text-xs hover:bg-gray-100 transition-colors ${color.class.includes('blue') ? 'text-blue-600' : 
+                        className={`p-2 rounded text-xs hover:bg-gray-100 transition-colors ${color.class.includes('blue') ? 'text-primary' : 
                           color.class.includes('green') ? 'text-green-600' : 
                           color.class.includes('red') ? 'text-red-600' : 
                           color.class.includes('yellow') ? 'text-yellow-600' : 

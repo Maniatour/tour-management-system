@@ -632,7 +632,7 @@ export default function ConsultationManagementPage() {
             {activeTab === 'templates' && (
               <button
                 onClick={() => setShowTemplateModal(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2"
               >
                 <Plus size={20} />
                 {locale === 'ko' ? '새 Q & A 추가' : 'Add New Q & A'}
@@ -642,7 +642,7 @@ export default function ConsultationManagementPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowWorkflowTemplateModal(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2"
                 >
                   <FileText size={20} />
                   {locale === 'ko' ? '템플릿 사용' : 'Use Template'}
@@ -678,7 +678,7 @@ export default function ConsultationManagementPage() {
                 onClick={() => setListUi((prev) => ({ ...prev, activeTab: tab.id as typeof prev.activeTab }))}
                 className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm ${
                   activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -704,7 +704,7 @@ export default function ConsultationManagementPage() {
                   placeholder={locale === 'ko' ? '템플릿 검색...' : 'Search templates...'}
                   value={searchTerm}
                   onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
 
@@ -786,7 +786,7 @@ export default function ConsultationManagementPage() {
                          }}
                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                            expandedProductCategories.includes(category)
-                             ? 'bg-blue-500 text-white shadow-md'
+                             ? 'bg-primary text-primary-foreground shadow-md'
                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                          }`}
                        >
@@ -831,7 +831,7 @@ export default function ConsultationManagementPage() {
                                groupedProducts[category]?.[subCategory]?.every(product => selectedProducts.includes(product.id))
                                  ? 'bg-blue-400 text-white shadow-md'
                                  : groupedProducts[category]?.[subCategory]?.some(product => selectedProducts.includes(product.id))
-                                 ? 'bg-blue-200 text-blue-800 shadow-sm'
+                                 ? 'bg-blue-200 text-primary shadow-sm'
                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                              }`}
                            >
@@ -868,7 +868,7 @@ export default function ConsultationManagementPage() {
                              }}
                              className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                                selectedProducts.includes(product.id)
-                                 ? 'bg-blue-500 text-white shadow-md'
+                                 ? 'bg-primary text-primary-foreground shadow-md'
                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                              }`}
                            >
@@ -881,8 +881,8 @@ export default function ConsultationManagementPage() {
                  )}
 
                  {selectedProducts.length > 0 && (
-                   <div className="mt-3 p-2 bg-blue-50 rounded-lg">
-                     <div className="text-xs text-blue-700 font-medium">
+                   <div className="mt-3 p-2 bg-primary/5 rounded-lg">
+                     <div className="text-xs text-primary font-medium">
                        Selected: {selectedProducts.length} {locale === 'ko' ? '상품' : 'products'}
                      </div>
                    </div>
@@ -1089,7 +1089,7 @@ export default function ConsultationManagementPage() {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => copyTemplateKo(template)}
-                        className="p-2 rounded-lg hover:bg-gray-100 text-blue-500"
+                        className="p-2 rounded-lg hover:bg-gray-100 text-primary"
                         title="Copy Korean answer"
                       >
                         <Copy size={16} />
@@ -1136,7 +1136,7 @@ export default function ConsultationManagementPage() {
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   {/* 한국어 질문 */}
                   <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                    <div className="text-xs font-medium text-blue-600 mb-1">🇰🇷 한국어</div>
+                    <div className="text-xs font-medium text-primary mb-1">🇰🇷 한국어</div>
                     {template.question_ko || '질문이 없습니다.'}
                   </div>
                   {/* 영어 질문 */}
@@ -1149,8 +1149,8 @@ export default function ConsultationManagementPage() {
                 {/* 답변 내용 - 좌우 배치 */}
                 <div className="grid grid-cols-2 gap-4">
                   {/* 한국어 답변 */}
-                  <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
-                    <div className="text-xs font-medium text-blue-600 mb-1">🇰🇷 한국어</div>
+                  <div className="text-sm text-gray-600 bg-primary/5 p-3 rounded-lg border-l-4 border-blue-400">
+                    <div className="text-xs font-medium text-primary mb-1">🇰🇷 한국어</div>
                     {template.answer_ko || '답변이 없습니다.'}
                   </div>
                   {/* 영어 답변 */}
@@ -1168,7 +1168,7 @@ export default function ConsultationManagementPage() {
                       {template.tags.map(tag => (
                         <span
                           key={tag}
-                          className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full"
                         >
                           {tag}
                         </span>
@@ -1190,7 +1190,7 @@ export default function ConsultationManagementPage() {
                 </p>
                 <button
                   onClick={() => setShowTemplateModal(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
                 >
                   {locale === 'ko' ? '첫 번째 템플릿 추가' : 'Add First Template'}
                 </button>
@@ -1233,7 +1233,7 @@ export default function ConsultationManagementPage() {
                             {locale === 'ko' ? workflow.name_ko : workflow.name_en}
                           </h3>
                           {workflow.is_default && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                            <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full">
                               {locale === 'ko' ? '기본 워크플로우' : 'Default Workflow'}
                             </span>
                           )}
@@ -1250,7 +1250,7 @@ export default function ConsultationManagementPage() {
                             </span>
                           )}
                           {workflow.product && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                            <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full">
                               {workflow.product.name_ko}
                             </span>
                           )}
@@ -1280,7 +1280,7 @@ export default function ConsultationManagementPage() {
                       {/* Manual view button */}
                       <button
                         onClick={() => showWorkflowDiagramModal(workflow, 'manual')}
-                        className="p-2 rounded-lg hover:bg-gray-100 text-blue-500"
+                        className="p-2 rounded-lg hover:bg-gray-100 text-primary"
                         title="View workflow manual"
                       >
                         <GitBranch size={16} />
@@ -1364,7 +1364,7 @@ export default function ConsultationManagementPage() {
                             key={step.id}
                             className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-sm"
                           >
-                            <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
+                            <span className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium">
                               {step.step_order}
                             </span>
                             <span className="text-gray-700">{locale === 'ko' ? step.step_name_ko : step.step_name_en}</span>
@@ -1429,7 +1429,7 @@ export default function ConsultationManagementPage() {
                   </div>
                   <button
                     onClick={() => window.location.reload()}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mr-2"
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 mr-2"
                   >
                     페이지 새로고침
                   </button>
@@ -1766,7 +1766,7 @@ function TemplateModal({
                          }}
                          className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                            expandedModalProductCategories.includes(category)
-                             ? 'bg-blue-500 text-white shadow-md'
+                             ? 'bg-primary text-primary-foreground shadow-md'
                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                          }`}
                        >
@@ -1821,7 +1821,7 @@ function TemplateModal({
                                  ? 'bg-blue-400 text-white shadow-md'
                                  : products.filter(p => p.category === category && (p.sub_category || '기타') === subCategory)
                                  .some(product => formData.product_ids.includes(product.id))
-                                 ? 'bg-blue-200 text-blue-800 shadow-sm'
+                                 ? 'bg-blue-200 text-primary shadow-sm'
                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                              }`}
                            >
@@ -1851,7 +1851,7 @@ function TemplateModal({
                              }}
                              className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                                formData.product_ids.includes(product.id)
-                                 ? 'bg-blue-500 text-white shadow-sm'
+                                 ? 'bg-primary text-primary-foreground shadow-sm'
                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                              }`}
                            >
@@ -1864,8 +1864,8 @@ function TemplateModal({
                  )}
 
                  {formData.product_ids.length > 0 && (
-                   <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-                     <div className="text-xs text-blue-700 font-medium">
+                   <div className="mt-2 p-2 bg-primary/5 rounded-lg">
+                     <div className="text-xs text-primary font-medium">
                        선택됨: {formData.product_ids.length}개 상품
                      </div>
                    </div>
@@ -1970,7 +1970,7 @@ function TemplateModal({
                   type="text"
                   value={formData.question_ko}
                   onChange={(e) => setFormData({ ...formData, question_ko: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -1981,7 +1981,7 @@ function TemplateModal({
                   type="text"
                   value={formData.question_en}
                   onChange={(e) => setFormData({ ...formData, question_en: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -1995,7 +1995,7 @@ function TemplateModal({
                   value={formData.answer_ko}
                   onChange={(e) => setFormData({ ...formData, answer_ko: e.target.value })}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -2006,7 +2006,7 @@ function TemplateModal({
                   value={formData.answer_en}
                   onChange={(e) => setFormData({ ...formData, answer_en: e.target.value })}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -2019,7 +2019,7 @@ function TemplateModal({
                 <select
                   value={formData.template_type || ''}
                   onChange={(e) => setFormData({ ...formData, template_type: e.target.value as TemplateType })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="faq">FAQ</option>
                   <option value="greeting">Greeting</option>
@@ -2036,7 +2036,7 @@ function TemplateModal({
                   value={formData.tags}
                   onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
                   placeholder="e.g., price, cancellation, reservation"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>
@@ -2076,7 +2076,7 @@ function TemplateModal({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {isSubmitting ? 'Saving...' : 'Save'}
               </button>
@@ -2108,7 +2108,7 @@ function DeleteModal({
           <p className="mb-2">Are you sure you want to delete the following template?</p>
           <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-lg">
             <div>
-              <p className="text-sm font-medium text-blue-800">🇰🇷 {locale === 'ko' ? template.question_ko : template.question_en}</p>
+              <p className="text-sm font-medium text-primary">🇰🇷 {locale === 'ko' ? template.question_ko : template.question_en}</p>
             </div>
             <div>
               <p className="text-sm font-medium text-green-800">🇺🇸 {locale === 'ko' ? template.question_en : template.question_ko}</p>
@@ -2349,7 +2349,7 @@ function WorkflowModal({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-muted/50 to-muted/30">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
               <Workflow className="w-4 h-4 text-white" />
@@ -2391,7 +2391,7 @@ function WorkflowModal({
                       type="text"
                       value={formData.name_ko}
                       onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                       placeholder="워크플로우 이름을 입력하세요"
                       required
                     />
@@ -2405,7 +2405,7 @@ function WorkflowModal({
                       type="text"
                       value={formData.name_en}
                       onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                       placeholder="Enter workflow name"
                       required
                     />
@@ -2429,7 +2429,7 @@ function WorkflowModal({
                       value={formData.description_ko}
                       onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
                       placeholder="워크플로우에 대한 설명을 입력하세요"
                     />
                   </div>
@@ -2442,7 +2442,7 @@ function WorkflowModal({
                       value={formData.description_en}
                       onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
                       placeholder="Enter workflow description"
                     />
                   </div>
@@ -2464,7 +2464,7 @@ function WorkflowModal({
                     <select
                       value={formData.category_id || ''}
                       onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                     >
                       <option value="">{locale === 'ko' ? '카테고리 선택' : 'Select Category'}</option>
                       {categories.map(category => (
@@ -2482,7 +2482,7 @@ function WorkflowModal({
                     <select
                       value={formData.product_id || ''}
                       onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                     >
                       <option value="">{locale === 'ko' ? '상품 선택' : 'Select Product'}</option>
                       {products.map(product => (
@@ -2500,7 +2500,7 @@ function WorkflowModal({
                     <select
                       value={formData.channel_id || ''}
                       onChange={(e) => setFormData({ ...formData, channel_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                     >
                       <option value="">{locale === 'ko' ? '채널 선택' : 'Select Channel'}</option>
                       {channels.map(channel => (
@@ -2558,7 +2558,7 @@ function WorkflowModal({
                             type="text"
                             value={step.step_name_ko}
                             onChange={(e) => updateStep(index, 'step_name_ko', e.target.value)}
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-white"
                             placeholder="단계 이름을 입력하세요"
                             required
                           />
@@ -2571,7 +2571,7 @@ function WorkflowModal({
                             type="text"
                             value={step.step_name_en}
                             onChange={(e) => updateStep(index, 'step_name_en', e.target.value)}
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-white"
                             placeholder="Enter step name"
                             required
                           />
@@ -2586,7 +2586,7 @@ function WorkflowModal({
                           <select
                             value={step.step_type || ''}
                             onChange={(e) => updateStep(index, 'step_type', e.target.value)}
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-white"
                           >
                             <option value="action">액션</option>
                             <option value="decision">결정</option>
@@ -2602,7 +2602,7 @@ function WorkflowModal({
                           <select
                             value={step.action_type || ''}
                             onChange={(e) => updateStep(index, 'action_type', e.target.value)}
-                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-white"
                           >
                             <option value="send_template">템플릿 전송</option>
                             <option value="ask_question">질문하기</option>
@@ -2638,7 +2638,7 @@ function WorkflowModal({
                       value={formData.tags}
                       onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
                       placeholder="예: 일반문의, 예약문의"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                     />
                   </div>
                   
@@ -2648,7 +2648,7 @@ function WorkflowModal({
                         type="checkbox"
                         checked={formData.is_active}
                         onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring focus:ring-2"
                       />
                       <span className="text-sm font-medium text-gray-700">활성화</span>
                     </label>
@@ -2658,7 +2658,7 @@ function WorkflowModal({
                         type="checkbox"
                         checked={formData.is_default}
                         onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        className="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-ring focus:ring-2"
                       />
                       <span className="text-sm font-medium text-gray-700">기본 워크플로우</span>
                     </label>

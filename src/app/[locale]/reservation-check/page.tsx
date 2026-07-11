@@ -151,7 +151,7 @@ function ReservationCheckPageInner() {
       case 'cancelled':
         return 'bg-red-100 text-red-800'
       case 'completed':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-primary/10 text-primary'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -217,7 +217,7 @@ function ReservationCheckPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-muted/30">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="reservation-check" />}
       <CustomerPageZoneLayoutRenderer
@@ -245,7 +245,7 @@ function ReservationCheckPageInner() {
           if (zoneId === 'reservation-check-form') {
             return (
               <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <CustomerPageZone zone="reservation-check-form" className="cp-ui-panel-surface rounded-lg shadow-sm p-6 mb-8">
+                <CustomerPageZone zone="reservation-check-form" className="cp-ui-panel-surface rounded-card border border-border/60 p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4">{t('formTitle')}</h2>
           <div className="space-y-4">
             <div>
@@ -257,7 +257,7 @@ function ReservationCheckPageInner() {
                 value={reservationId}
                 onChange={(e) => setReservationId(e.target.value)}
                 placeholder={t('reservationIdPlaceholder')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-input px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -267,7 +267,7 @@ function ReservationCheckPageInner() {
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
                 placeholder={t('emailPlaceholder')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-input px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-ring"
               />
             </div>
             <button
@@ -300,22 +300,22 @@ function ReservationCheckPageInner() {
         </CustomerPageZone>
 
         {reservation && (
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+          <div className="overflow-hidden rounded-card border border-border/60 bg-card">
+            <div className="border-b border-border/60 bg-primary px-6 py-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-white">{reservation.product.customer_name_ko}</h2>
-                  <p className="text-blue-100">
+                  <h2 className="text-xl font-bold text-primary-foreground">{reservation.product.customer_name_ko}</h2>
+                  <p className="text-primary-foreground/80">
                     {t('reservationId')}: {reservation.id}
                   </p>
                 </div>
                 <div className="text-right">
                   <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(reservation.status)}`}
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${getStatusColor(reservation.status)}`}
                   >
                     {getStatusLabel(reservation.status)}
                   </span>
-                  <div className="text-white text-lg font-semibold mt-1">${reservation.total_price}</div>
+                  <div className="mt-1 text-lg font-semibold text-primary-foreground">${reservation.total_price}</div>
                 </div>
               </div>
             </div>
@@ -326,7 +326,7 @@ function ReservationCheckPageInner() {
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('tourInfo')}</h3>
                   <div className="space-y-3">
                     <div className="flex items-center">
-                      <Calendar className="h-5 w-5 text-blue-500 mr-3" />
+                      <Calendar className="mr-3 h-5 w-5 text-booking" />
                       <div>
                         <span className="text-sm text-gray-600">{t('tourDate')}</span>
                         <p className="font-medium">{reservation.tour_date}</p>
@@ -407,7 +407,7 @@ function ReservationCheckPageInner() {
                           </p>
                         </div>
                         {option.option.option_price && (
-                          <span className="font-semibold text-blue-600">+${option.option.option_price}</span>
+                          <span className="font-semibold text-booking">+${option.option.option_price}</span>
                         )}
                       </div>
                     ))}

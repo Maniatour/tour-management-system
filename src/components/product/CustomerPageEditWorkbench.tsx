@@ -646,7 +646,7 @@ function CustomerPageEditWorkbenchInner({
               href={previewUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1.5 rounded-md hover:bg-white/80"
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 px-2 py-1.5 rounded-md hover:bg-white/80"
             >
               새 탭
               <ExternalLink className="h-3.5 w-3.5" />
@@ -665,9 +665,9 @@ function CustomerPageEditWorkbenchInner({
         </div>
 
         {selectedZone && selectedConfig && (
-          <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-blue-100 bg-blue-50 shrink-0">
-            <Pencil className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-            <span className="text-xs text-blue-900">
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/60 bg-primary/5 shrink-0">
+            <Pencil className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="text-xs text-foreground">
               현재 편집
               {editingProductLabel ? (
                 <>
@@ -697,8 +697,8 @@ function CustomerPageEditWorkbenchInner({
               onClick={() => handlePageTabChange(id)}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
                 pageId === id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:border-border'
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -820,7 +820,7 @@ function CustomerPageEditWorkbenchInner({
         </div>
 
         {!selectedZone && !iframeLoading && (
-          <div className="shrink-0 border-b border-blue-100 bg-blue-50 px-4 py-2.5 text-center text-xs font-medium leading-relaxed text-blue-900">
+          <div className="shrink-0 border-b border-border/60 bg-primary/5 px-4 py-2.5 text-center text-xs font-medium leading-relaxed text-foreground">
             {pageId === 'home'
               ? '「템플릿」으로 한 번에 꾸미거나, 상단의 테마·섹션·미리보기 「수정」으로 세부 조정하세요'
               : '상단 「템플릿」·「테마」 또는 미리보기 영역의 「수정」 버튼을 사용하세요'}
@@ -835,7 +835,7 @@ function CustomerPageEditWorkbenchInner({
         >
           {iframeLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100/80">
-              <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+              <Loader2 className="h-8 w-8 text-primary animate-spin" />
             </div>
           )}
           <div className={iframeShellClass}>
@@ -1002,7 +1002,7 @@ export default function CustomerPageEditWorkbench(props: CustomerPageEditWorkben
     <Suspense
       fallback={
         <div className="flex h-[calc(100vh-4rem)] min-h-[520px] items-center justify-center rounded-lg border border-gray-200 bg-white">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       }
     >

@@ -852,7 +852,7 @@ export default function TourPhotoUpload({
       
       {bucketStatus === 'checking' && (
         <div className="flex items-center space-x-3 p-4 bg-gray-100 rounded-lg">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
           <span className="text-gray-700">Storage bucket 상태 확인 중...</span>
         </div>
       )}
@@ -921,7 +921,7 @@ export default function TourPhotoUpload({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || bucketStatus !== 'exists'}
-            className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             title={
               bucketStatus !== 'exists' 
                 ? 'Storage bucket이 생성되지 않았습니다' 
@@ -962,7 +962,7 @@ export default function TourPhotoUpload({
           bucketStatus !== 'exists'
             ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
             : dragOver 
-              ? 'border-blue-500 bg-blue-50' 
+              ? 'border-primary bg-primary/5' 
               : 'border-gray-300 hover:border-gray-400'
         }`}
         onDragOver={bucketStatus === 'exists' ? handleDragOver : undefined}
@@ -1134,7 +1134,7 @@ export default function TourPhotoUpload({
                 <p>{formatFileSize(photo.file_size)}</p>
                 <p>{new Date(photo.created_at).toLocaleString()}</p>
                 {photo.uploaded_by_name && (
-                  <p className="text-blue-600 font-medium mt-0.5">
+                  <p className="text-primary font-medium mt-0.5">
                     업로드: {photo.uploaded_by_name}
                   </p>
                 )}
@@ -1160,7 +1160,7 @@ export default function TourPhotoUpload({
 
       {uploading && (
         <div className="text-center py-8 text-gray-500">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p>{t('uploading')}</p>
           <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto px-2">{t('uploadProgressBackgroundNote')}</p>
         </div>
@@ -1276,7 +1276,7 @@ export default function TourPhotoUpload({
                 <div className="flex space-x-2">
                   <button
                     onClick={() => copyShareLink(selectedPhoto.share_token)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
                   >
                     공유 링크 복사
                   </button>
@@ -1395,7 +1395,7 @@ SELECT 'tour-photos bucket created successfully!' as status;`}
                 <div className="flex items-center justify-between pt-4">
                   <button
                     onClick={checkBucketStatus}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
                   >
                     설정 완료 후 확인
                   </button>

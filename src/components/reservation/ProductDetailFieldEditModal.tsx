@@ -337,7 +337,7 @@ export default function ProductDetailFieldEditModal({
             <button
               type="button"
               onClick={openCopyModal}
-              className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+              className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Duplicate to channels
             </button>
@@ -385,7 +385,7 @@ export default function ProductDetailFieldEditModal({
                 type="checkbox"
                 checked={showOnCustomerPage}
                 onChange={(e) => setShowOnCustomerPage(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
               />
               <span className="text-sm text-gray-800 leading-snug">
                 <span className="font-medium">고객 상품 페이지에 표시</span>
@@ -420,7 +420,7 @@ export default function ProductDetailFieldEditModal({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
             >
               {saving ? (
                 <>
@@ -566,7 +566,7 @@ export default function ProductDetailFieldEditModal({
                           [ch.id]: e.target.checked,
                         }))
                       }
-                      className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                      className="h-4 w-4 text-primary rounded border-gray-300"
                     />
                     <span className="text-sm text-gray-800">{ch.name}</span>
                   </label>

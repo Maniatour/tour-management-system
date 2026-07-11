@@ -30,7 +30,7 @@ export default function CustomerDashboardHeader({
         </div>
         {isSimulating && simulatedUserName && (
           <div className="flex items-center space-x-2">
-            <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+            <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium">
               {tCommon('simulating')}: {simulatedUserName}
             </div>
             <div className="flex space-x-1">

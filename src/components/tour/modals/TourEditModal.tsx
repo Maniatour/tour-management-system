@@ -146,7 +146,7 @@ export default function TourEditModal({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={locale === 'ko' ? '상품명 검색...' : 'Search products...'}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-ring"
               />
 
               {/* 상품 목록 */}
@@ -172,14 +172,14 @@ export default function TourEditModal({
                           onClick={() => setSelectedProductId(product.id)}
                           className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
                             selectedProductId === product.id
-                              ? 'bg-blue-50 border-l-4 border-blue-500'
+                              ? 'bg-primary/5 border-l-4 border-primary'
                               : ''
                           }`}
                         >
                           <div className="flex items-center">
                             <div className={`w-4 h-4 rounded-full border-2 mr-3 flex items-center justify-center ${
                               selectedProductId === product.id
-                                ? 'border-blue-500 bg-blue-500'
+                                ? 'border-primary bg-primary/50'
                                 : 'border-gray-300'
                             }`}>
                               {selectedProductId === product.id && (
@@ -219,7 +219,7 @@ export default function TourEditModal({
           <button
             onClick={handleSave}
             disabled={saving || selectedProductId === tour.product_id}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving 
               ? (locale === 'ko' ? '저장 중...' : 'Saving...')

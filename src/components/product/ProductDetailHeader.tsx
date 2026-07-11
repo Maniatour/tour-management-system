@@ -6,6 +6,9 @@ import { useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
 import { useProductDetailTrustBadges } from '@/components/product/useProductDetailTrustBadges'
+import PriceDisplay from '@/components/customer/ui/PriceDisplay'
+import ReviewSummary from '@/components/customer/ui/ReviewSummary'
+import { Button } from '@/components/ui/button'
 
 type ProductDetailHeaderProps = {
   locale: string
@@ -15,6 +18,8 @@ type ProductDetailHeaderProps = {
   durationLabel?: string
   groupSize?: string | null
   totalPrice?: number
+  reviewRating?: number
+  reviewCount?: number
   onBookNow?: () => void
 }
 
@@ -26,6 +31,8 @@ export default function ProductDetailHeader({
   durationLabel,
   groupSize,
   totalPrice,
+  reviewRating,
+  reviewCount,
   onBookNow,
 }: ProductDetailHeaderProps) {
   const t = useTranslations('productDetail')
@@ -50,7 +57,7 @@ export default function ProductDetailHeader({
               </span>
               {primaryTag && (
                 <CustomerPageZone zone="detail-overview-tags">
-                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 sm:px-3 sm:py-1 sm:text-sm">
+                  <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-[11px] font-semibold text-success sm:px-3 sm:py-1 sm:text-sm">
                     {primaryTag}
                   </span>
                 </CustomerPageZone>
@@ -60,6 +67,15 @@ export default function ProductDetailHeader({
             <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
               {displayName}
             </h1>
+
+            {reviewRating != null && reviewCount != null ? (
+              <ReviewSummary
+                rating={reviewRating}
+                reviewCount={reviewCount}
+                reviewsLabel={t('reviewCount', { count: reviewCount })}
+                className="mt-3 sm:mt-4"
+              />
+            ) : null}
 
             {(durationLabel || groupSize) && (
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs cp-ui-muted sm:mt-4 sm:gap-4 sm:text-base">
@@ -83,19 +99,22 @@ export default function ProductDetailHeader({
 
           {typeof totalPrice === 'number' && onBookNow && (
             <CustomerPageZone zone="detail-header-price" className="hidden shrink-0 lg:block">
-            <div className="rounded-2xl cp-ui-panel-surface p-5 lg:min-w-[280px]">
-              <p className="text-sm font-medium cp-ui-muted">{t('fromPrice')}</p>
-              <p className="mt-1 text-3xl font-bold cp-ui-price">
-                ${totalPrice}
-                <span className="ml-1 text-base font-medium cp-ui-muted">{t('perPerson')}</span>
-              </p>
-              <button
+            <div className="rounded-feature cp-ui-panel-surface p-5 lg:min-w-[280px]">
+              <PriceDisplay
+                amount={totalPrice}
+                prefixLabel={t('fromPrice')}
+                suffixLabel={t('perPerson')}
+                size="lg"
+              />
+              <Button
                 type="button"
+                variant="booking"
+                size="booking"
+                className="mt-4 w-full"
                 onClick={onBookNow}
-                className="cp-ui-btn-primary mt-4 w-full rounded-xl py-3.5 text-base font-semibold shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
               >
                 {t('checkAvailability')}
-              </button>
+              </Button>
             </div>
             </CustomerPageZone>
           )}

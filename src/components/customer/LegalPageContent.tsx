@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { markdownToHtml } from '@/components/LightRichEditor'
+import { markdownToHtml } from '@/lib/markdownToHtml'
 import type { LegalPageContent as LegalPageContentType } from '@/lib/legalContent'
 import {
   LEGAL_PAGE_SLUGS,
@@ -28,19 +28,19 @@ export default function LegalPageContent({
     <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
       <Link
         href={`/${locale}`}
-        className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-[#0B5FFF]"
+        className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-booking"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />
         {labels.backToHome}
       </Link>
 
       <article
-        className="prose prose-slate max-w-none text-base leading-relaxed prose-headings:scroll-mt-24 prose-headings:font-semibold prose-headings:text-slate-900 prose-p:text-slate-600 prose-li:text-slate-600 prose-a:text-[#0B5FFF] prose-strong:text-slate-900 [&_img]:rounded-xl"
+        className="prose prose-slate max-w-none text-base leading-relaxed prose-headings:scroll-mt-24 prose-headings:font-semibold prose-headings:text-foreground prose-p:text-muted-foreground prose-li:text-muted-foreground prose-a:text-booking prose-strong:text-foreground [&_img]:rounded-xl"
         dangerouslySetInnerHTML={{ __html: markdownToHtml(content.body) }}
       />
 
-      <aside className="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <aside className="mt-12 rounded-feature border border-border/60 bg-muted/30 p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           {labels.relatedPolicies}
         </h2>
         <ul className="mt-4 flex flex-wrap gap-3">
@@ -48,7 +48,7 @@ export default function LegalPageContent({
             <li key={relatedSlug}>
               <Link
                 href={buildLegalPageHref(locale, relatedSlug)}
-                className="inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-[#0B5FFF]/30 hover:text-[#0B5FFF]"
+                className="inline-flex rounded-btn border border-border/60 bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-booking/30 hover:text-booking"
               >
                 {labels[LEGAL_LABEL_KEYS[relatedSlug]]}
               </Link>

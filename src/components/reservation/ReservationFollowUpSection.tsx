@@ -819,13 +819,13 @@ export default function ReservationFollowUpSection({
                       : '또는 취소 사유를 직접 입력 (선택)'
                   }
                   rows={2}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 <button
                   type="button"
                   onClick={saveCancellationReason}
                   disabled={saving}
-                  className="shrink-0 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium flex items-center gap-1"
+                  className="shrink-0 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 text-sm font-medium flex items-center gap-1"
                 >
                   <Send className="w-4 h-4" />
                   {isEn ? 'Save' : '저장'}
@@ -842,7 +842,7 @@ export default function ReservationFollowUpSection({
               <button
                 type="button"
                 onClick={() => setShowContactForm((v) => !v)}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
                 {isEn ? 'Add' : '내용 추가'}
@@ -860,7 +860,7 @@ export default function ReservationFollowUpSection({
                       : '연락 내용을 입력하세요 (전화, 이메일, 환불 안내 등)'
                   }
                   rows={2}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring"
                 />
                 <button
                   type="button"

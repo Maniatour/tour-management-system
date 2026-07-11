@@ -8257,7 +8257,7 @@ export default function StatementReconciliationTab() {
                   {' '}
                   <button
                     type="button"
-                    className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                    className="text-primary underline underline-offset-2 hover:text-foreground"
                     onClick={() => setImportManageOpen(true)}
                   >
                     업로드 관리
@@ -8840,7 +8840,7 @@ export default function StatementReconciliationTab() {
                                     </div>
                                     <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-x-1 sm:gap-x-2 gap-y-0.5 border-t border-slate-200/60 pt-0.5 sm:pt-1 text-[10px] sm:text-[11px] text-slate-500">
                                       <span className="inline-flex items-center gap-0.5">
-                                        <Save className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-blue-600" aria-hidden />
+                                        <Save className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-primary" aria-hidden />
                                         <span className="truncate max-w-[4.5rem] sm:max-w-none">{displayNameForEmail(expenseMatch.matched_by)}</span>
                                       </span>
                                       <button
@@ -9884,7 +9884,7 @@ export default function StatementReconciliationTab() {
                                         </td>
                                         <td className="px-2 py-1.5">
                                           {c.amount_diff < 0.02 ? (
-                                            <span className="rounded bg-blue-100 px-1.5 py-0.5 font-medium text-blue-800">
+                                            <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
                                               같은 금액
                                             </span>
                                           ) : (
@@ -11049,7 +11049,7 @@ export default function StatementReconciliationTab() {
                 {matchHistoryTarget ? (
                   <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                     <div className="inline-flex items-center gap-1 text-slate-700">
-                      <Save className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                      <Save className="h-3.5 w-3.5 text-primary" aria-hidden />
                       저장: {displayNameForEmail(matchHistoryTarget.match.matched_by)} ·{' '}
                       {formatReconciliationTimestamp(matchHistoryTarget.match.matched_at)}
                     </div>
@@ -11069,7 +11069,7 @@ export default function StatementReconciliationTab() {
                   const isUpdate = ev.action === 'updated'
                   const isDelete = ev.action === 'deleted'
                   const Icon = isUpdate || isDelete ? Pencil : Save
-                  const iconClass = isUpdate || isDelete ? 'text-red-600' : 'text-blue-600'
+                  const iconClass = isUpdate || isDelete ? 'text-red-600' : 'text-primary'
                   const actionLabel = ev.action === 'created' ? '저장' : ev.action === 'updated' ? '수정' : '해제'
                   return (
                     <div key={ev.id} className="rounded border border-slate-200 bg-white px-3 py-2 text-xs">

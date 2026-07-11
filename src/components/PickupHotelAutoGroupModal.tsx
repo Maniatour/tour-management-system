@@ -192,7 +192,7 @@ export default function PickupHotelAutoGroupModal({
                     const n = parseInt(e.target.value, 10)
                     if (!Number.isNaN(n)) setSpotCount(Math.min(99, Math.max(1, n)))
                   }}
-                  className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -203,7 +203,7 @@ export default function PickupHotelAutoGroupModal({
                     onClick={() => setSpotCount(n)}
                     className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                       spotCount === n
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-primary text-primary-foreground border-primary'
                         : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                     }`}
                   >
@@ -407,7 +407,7 @@ export default function PickupHotelAutoGroupModal({
                   setSelectedRepIds([])
                   setStep('representatives')
                 }}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
               >
                 {isEn ? 'Next' : '다음'}
                 <ChevronRight size={16} />
@@ -418,7 +418,7 @@ export default function PickupHotelAutoGroupModal({
                 type="button"
                 disabled={!canProceedFromReps}
                 onClick={goToPreview}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
               >
                 {isEn ? 'Preview grouping' : '그룹화 미리보기'}
                 <ChevronRight size={16} />

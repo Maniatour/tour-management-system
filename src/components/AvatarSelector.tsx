@@ -76,7 +76,7 @@ export default function AvatarSelector({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center space-x-2">
-            <User className="w-5 h-5 text-blue-600" />
+            <User className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold text-gray-900">{t.title}</h2>
           </div>
           <button
@@ -107,7 +107,7 @@ export default function AvatarSelector({
                     isUsed
                       ? 'border-red-300 opacity-50 cursor-not-allowed'
                       : isSelected
-                      ? 'border-blue-500 ring-2 ring-blue-200'
+                      ? 'border-primary ring-2 ring-ring/30'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                   title={isUsed ? t.inUse : t.selectThis}
@@ -125,8 +125,8 @@ export default function AvatarSelector({
                     </div>
                   )}
                   {isSelected && !isUsed && (
-                    <div className="absolute inset-0 bg-blue-500 bg-opacity-20 flex items-center justify-center">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                    <div className="absolute inset-0 bg-primary/50 bg-opacity-20 flex items-center justify-center">
+                      <div className="w-6 h-6 bg-primary/50 rounded-full flex items-center justify-center">
                         <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
@@ -143,7 +143,7 @@ export default function AvatarSelector({
         <div className="p-4 border-t bg-gray-50">
           <div className="flex items-center justify-center space-x-3 mb-4">
             <div className="text-sm text-gray-600">{language === 'ko' ? '선택된 아바타:' : 'Selected Avatar:'}</div>
-            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-blue-500">
+            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary">
               <img
                 src={selectedAvatar}
                 alt="Selected"
@@ -162,7 +162,7 @@ export default function AvatarSelector({
             </button>
             <button
               onClick={handleSelect}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               {t.select}
             </button>

@@ -157,7 +157,7 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">미디어를 불러오는 중...</span>
       </div>
     )
@@ -267,7 +267,7 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
                   href={media.file_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                  className="px-3 py-1 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90"
                 >
                   다운로드
                 </a>

@@ -70,13 +70,13 @@ export default function CancellationReasonModal({
               onChange={(e) => setReason(e.target.value)}
               placeholder={isEn ? 'Or enter cancellation reason' : '또는 취소 사유를 직접 입력 (선택)'}
               rows={2}
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-ring"
             />
             <button
               type="button"
               onClick={() => void onSubmit(reason)}
               disabled={submitDisabled}
-              className="flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
               {isEn ? 'Save' : '저장'}

@@ -255,7 +255,7 @@ export default function PaymentProcessor({
                 key={method.id}
                 className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                   selectedMethod === method.id
-                    ? 'border-blue-500 bg-blue-50'
+                    ? 'border-primary bg-primary/5'
                     : method.available
                       ? 'border-gray-200 hover:border-gray-300'
                       : 'border-gray-200 bg-gray-50 cursor-not-allowed'
@@ -292,7 +292,7 @@ export default function PaymentProcessor({
                 value={cardDetails.number}
                 onChange={(e) => setCardDetails(prev => ({ ...prev, number: e.target.value }))}
                 placeholder="1234 5678 9012 3456"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -303,7 +303,7 @@ export default function PaymentProcessor({
                   value={cardDetails.expiry}
                   onChange={(e) => setCardDetails(prev => ({ ...prev, expiry: e.target.value }))}
                   placeholder="MM/YY"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -313,7 +313,7 @@ export default function PaymentProcessor({
                   value={cardDetails.cvv}
                   onChange={(e) => setCardDetails(prev => ({ ...prev, cvv: e.target.value }))}
                   placeholder="123"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>
@@ -324,7 +324,7 @@ export default function PaymentProcessor({
                 value={cardDetails.name}
                 onChange={(e) => setCardDetails(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="홍길동"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -353,10 +353,10 @@ export default function PaymentProcessor({
       </div>
 
       {/* 보안 정보 */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <div className="flex items-center">
-          <Lock className="h-5 w-5 text-blue-600 mr-2" />
-          <span className="text-sm text-blue-800">
+          <Lock className="h-5 w-5 text-primary mr-2" />
+          <span className="text-sm text-primary">
             모든 결제 정보는 SSL로 암호화되어 안전하게 전송됩니다.
           </span>
         </div>
@@ -366,7 +366,7 @@ export default function PaymentProcessor({
 
   const renderProcessing = () => (
     <div className="text-center py-12">
-      <Loader className="h-12 w-12 mx-auto mb-4 text-blue-600 animate-spin" />
+      <Loader className="h-12 w-12 mx-auto mb-4 text-primary animate-spin" />
       <h3 className="text-lg font-semibold text-gray-900 mb-2">결제 처리 중...</h3>
       <p className="text-gray-600">잠시만 기다려주세요. 결제가 진행되고 있습니다.</p>
     </div>
@@ -411,7 +411,7 @@ export default function PaymentProcessor({
               setStep('method')
               setResult(null)
             }}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors"
           >
             다시 시도
           </button>
@@ -437,7 +437,7 @@ export default function PaymentProcessor({
           <button
             onClick={handlePayment}
             disabled={processing}
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center"
+            className="bg-primary text-primary-foreground px-8 py-3 rounded-lg hover:bg-primary/90 transition-colors font-medium flex items-center"
           >
             <CreditCard className="h-5 w-5 mr-2" />
             ${paymentData.amount} 결제하기

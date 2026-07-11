@@ -46,7 +46,7 @@ export default function AdminPwaInstallFab({ locale }: AdminPwaInstallFabProps) 
         className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-800 shadow-md hover:bg-gray-50 active:bg-gray-100"
         aria-label={language === 'ko' ? '앱 설치 또는 홈 화면에 추가' : 'Install app or add to home screen'}
       >
-        <Download size={16} className="text-blue-600 shrink-0" />
+        <Download size={16} className="text-primary shrink-0" />
         <span>{language === 'ko' ? '앱 설치' : 'Install'}</span>
       </button>
     </div>

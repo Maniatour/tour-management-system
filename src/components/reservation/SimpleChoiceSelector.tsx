@@ -533,7 +533,7 @@ export default function SimpleChoiceSelector({
                     key={option.id}
                     className={`border rounded-lg p-3 transition-all duration-200 cursor-pointer ${
                       currentQuantity > 0 
-                        ? 'border-blue-500 bg-blue-50' 
+                        ? 'border-primary bg-primary/5' 
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                     onClick={() => {
@@ -644,7 +644,7 @@ export default function SimpleChoiceSelector({
                             </span>
                           )}
                           {currentQuantity > 0 && (
-                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">
+                            <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full">
                               선택됨
                             </span>
                           )}
@@ -693,7 +693,7 @@ export default function SimpleChoiceSelector({
                             >
                               −
                             </button>
-                            <span className="text-xs font-medium text-blue-600 min-w-[16px] text-center">
+                            <span className="text-xs font-medium text-primary min-w-[16px] text-center">
                               {currentQuantity}
                             </span>
                             <button
@@ -791,7 +791,7 @@ export default function SimpleChoiceSelector({
                               }}
                               onClick={(e) => e.stopPropagation()}
                               onFocus={(e) => e.stopPropagation()}
-                              className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500"
+                              className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-ring"
                               step="0.01"
                               min="0"
                             />

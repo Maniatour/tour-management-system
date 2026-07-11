@@ -76,7 +76,7 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
       
       {/* 모바일 요약 정보 및 액션 버튼들 */}
       <div className="flex items-center justify-between">
-        <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200 text-blue-700 text-xs font-semibold">
+        <div className="bg-primary/5 rounded px-2 py-1 border border-border text-primary text-xs font-semibold">
           {getTotalAssignedPeople} / {getTotalPeopleNonCancelled} / {getTotalCancelledPeople}
         </div>
         <div className="flex items-center space-x-1">
@@ -99,7 +99,7 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
           )}
           <button 
             onClick={onEditClick}
-            className="p-1.5 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200"
+            className="p-1.5 text-primary bg-primary/10 rounded-lg hover:bg-blue-200"
           >
             <Edit size={16} />
           </button>

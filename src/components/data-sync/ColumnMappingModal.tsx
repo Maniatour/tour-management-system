@@ -64,21 +64,21 @@ export default function ColumnMappingModal({
         
         {tableColumns.length === 0 ? (
           <div className="flex items-center justify-center py-8">
-            <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
+            <RefreshCw className="h-5 w-5 animate-spin text-primary mr-2" />
             <span className="text-gray-600">실제 데이터베이스에서 테이블 스키마를 불러오는 중...</span>
           </div>
         ) : (
           <div className="space-y-6">
             {/* 헤더 정보 */}
-            <div className="bg-blue-50 p-4 rounded-lg">
+            <div className="bg-primary/5 p-4 rounded-lg">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="font-medium text-blue-800">선택된 테이블:</span>
-                  <span className="ml-2 text-blue-600">{selectedTable}</span>
+                  <span className="font-medium text-primary">선택된 테이블:</span>
+                  <span className="ml-2 text-primary">{selectedTable}</span>
                 </div>
                 <div>
-                  <span className="font-medium text-blue-800">데이터베이스 컬럼 수:</span>
-                  <span className="ml-2 text-blue-600">{tableColumns.length}개</span>
+                  <span className="font-medium text-primary">데이터베이스 컬럼 수:</span>
+                  <span className="ml-2 text-primary">{tableColumns.length}개</span>
                   {tableColumns.length > 0 && (
                     <span className="ml-2 text-xs text-green-600">
                       (실시간 조회)
@@ -86,12 +86,12 @@ export default function ColumnMappingModal({
                   )}
                 </div>
                 <div>
-                  <span className="font-medium text-blue-800">시트 컬럼 수:</span>
-                  <span className="ml-2 text-blue-600">{sheetInfo.find(s => s.name === selectedSheet)?.columns.length || 0}개</span>
+                  <span className="font-medium text-primary">시트 컬럼 수:</span>
+                  <span className="ml-2 text-primary">{sheetInfo.find(s => s.name === selectedSheet)?.columns.length || 0}개</span>
                 </div>
                 <div>
-                  <span className="font-medium text-blue-800">매핑된 컬럼:</span>
-                  <span className="ml-2 text-blue-600">{Object.keys(localMapping).length}개</span>
+                  <span className="font-medium text-primary">매핑된 컬럼:</span>
+                  <span className="ml-2 text-primary">{Object.keys(localMapping).length}개</span>
                 </div>
               </div>
             </div>
@@ -112,7 +112,7 @@ export default function ColumnMappingModal({
                     <div className="grid grid-cols-12 gap-4 items-center">
                       <div className="col-span-4">
                         <div className="flex items-center">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                          <div className="w-2 h-2 bg-primary/50 rounded-full mr-2"></div>
                           <div className="flex flex-col">
                             <span className="text-sm font-medium text-gray-900">{dbColumn.name}</span>
                             <span className="text-xs text-gray-500">
@@ -168,7 +168,7 @@ export default function ColumnMappingModal({
                                 setOpenRecommendationIndex(null)
                               }
                             }}
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring"
                           >
                             <option value="">매핑하지 않음</option>
                             {sheetInfo.find(s => s.name === selectedSheet)?.columns.map((sheetColumn) => (
@@ -216,7 +216,7 @@ export default function ColumnMappingModal({
                                     }}
                                     className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center"
                                   >
-                                    <span className="text-blue-600 font-medium">{suggestion}</span>
+                                    <span className="text-primary font-medium">{suggestion}</span>
                                   </button>
                                 ))}
                               </div>
@@ -266,7 +266,7 @@ export default function ColumnMappingModal({
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               저장
             </button>

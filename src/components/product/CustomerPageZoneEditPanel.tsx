@@ -860,7 +860,7 @@ export default function CustomerPageZoneEditPanel({
               onClick={() => setEditTab('content')}
               className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 editTab === 'content'
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
@@ -871,7 +871,7 @@ export default function CustomerPageZoneEditPanel({
               onClick={() => setEditTab('ui')}
               className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 editTab === 'ui'
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
@@ -941,7 +941,7 @@ export default function CustomerPageZoneEditPanel({
               <button
                 type="button"
                 onClick={() => setPickedField(null)}
-                className="mb-3 text-xs text-blue-600 hover:text-blue-800"
+                className="mb-3 text-xs text-primary hover:text-primary/80"
               >
                 ← 필드 목록으로
               </button>
@@ -1036,7 +1036,7 @@ export default function CustomerPageZoneEditPanel({
               else if (config.editType === 'translation-fields') void handleSaveTranslations()
               else void handleSaveDetails()
             }}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             저장
@@ -1079,7 +1079,7 @@ function FieldPickerPanel({
           key={field}
           type="button"
           onClick={() => onPick(field)}
-          className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-sm text-gray-800 transition-colors"
+          className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 hover:border-border hover:bg-muted/50 text-sm text-gray-800 transition-colors"
         >
           {DETAIL_FIELD_LABELS[field]}
         </button>
@@ -1248,7 +1248,7 @@ function DetailFieldsForm({
                 onChange={(e) =>
                   onVisibilityChange({ ...visibility, [field]: e.target.checked })
                 }
-                className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                className="h-3.5 w-3.5 rounded border-gray-300 text-primary"
               />
               고객 페이지 표시
             </label>

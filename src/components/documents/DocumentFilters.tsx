@@ -63,7 +63,7 @@ export default function DocumentFilters({
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         >
           <option value="all">모든 카테고리</option>
           <option value="uncategorized">미분류</option>
@@ -80,7 +80,7 @@ export default function DocumentFilters({
         <select
           value={expiryFilter}
           onChange={(e) => setExpiryFilter(e.target.value)}
-          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         >
           <option value="all">모든 상태</option>
           <option value="active">활성</option>
@@ -94,7 +94,7 @@ export default function DocumentFilters({
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as 'title' | 'expiry_date' | 'created_at')}
-          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         >
           <option value="expiry_date">만료일</option>
           <option value="title">제목</option>
@@ -102,7 +102,7 @@ export default function DocumentFilters({
         </select>
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-          className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring rounded"
           aria-label={sortOrder === 'asc' ? '오름차순' : '내림차순'}
         >
           {sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
@@ -113,7 +113,7 @@ export default function DocumentFilters({
         <button
           onClick={() => setViewMode('grid')}
           className={`p-1.5 sm:p-2 rounded ${
-            viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+            viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-gray-500 hover:text-gray-700'
           }`}
           aria-label="그리드 보기"
         >
@@ -122,7 +122,7 @@ export default function DocumentFilters({
         <button
           onClick={() => setViewMode('list')}
           className={`p-1.5 sm:p-2 rounded ${
-            viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+            viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-gray-500 hover:text-gray-700'
           }`}
           aria-label="목록 보기"
         >
@@ -144,7 +144,7 @@ export default function DocumentFilters({
               placeholder="문서 검색..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
           <button

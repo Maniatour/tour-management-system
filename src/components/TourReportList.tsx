@@ -215,7 +215,7 @@ export default function TourReportList({
     return (
       <div className="flex items-center justify-center p-8">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p>리포트를 불러오는 중...</p>
         </div>
       </div>
@@ -477,8 +477,8 @@ export default function TourReportList({
                 <div className="space-y-2">
                   {report.guest_comments && (
                     <div>
-                      <p className="text-sm font-medium text-blue-600 mb-1">고객 코멘트:</p>
-                      <p className="text-sm text-gray-700 bg-blue-50 p-2 rounded">{report.guest_comments}</p>
+                      <p className="text-sm font-medium text-primary mb-1">고객 코멘트:</p>
+                      <p className="text-sm text-gray-700 bg-primary/5 p-2 rounded">{report.guest_comments}</p>
                     </div>
                   )}
                   {report.suggestions_followup && (

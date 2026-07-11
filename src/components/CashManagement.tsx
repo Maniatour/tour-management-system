@@ -1232,9 +1232,9 @@ export default function CashManagement() {
           </CardHeader>
           <CardContent className="p-3 sm:p-4 lg:p-6">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 flex-shrink-0" />
+              <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-primary flex-shrink-0" />
               <div className="min-w-0">
-                <div className="text-xl sm:text-3xl font-bold text-blue-600 truncate">
+                <div className="text-xl sm:text-3xl font-bold text-primary truncate">
                   ${(startDate || endDate ? periodDeposits : totalDeposits).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 {startDate || endDate ? (
@@ -1300,7 +1300,7 @@ export default function CashManagement() {
               </Button>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto text-sm bg-blue-600 hover:bg-blue-700 text-white border-0">
+                <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto text-sm bg-primary hover:bg-primary/90 text-white border-0">
                   <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
                   거래 추가
                 </Button>
@@ -1547,7 +1547,7 @@ export default function CashManagement() {
                               </Badge>
                             </div>
                           </div>
-                          <p className={`text-lg font-bold ${transaction.transaction_type === 'deposit' ? 'text-blue-600' : 'text-red-600'}`}>
+                          <p className={`text-lg font-bold ${transaction.transaction_type === 'deposit' ? 'text-primary' : 'text-red-600'}`}>
                             {transaction.transaction_type === 'deposit' ? '+' : '-'}
                             ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
@@ -1747,7 +1747,7 @@ export default function CashManagement() {
                             })()}
                           </TableCell>
                           <TableCell className="font-medium py-1 text-sm">
-                            <span className={transaction.transaction_type === 'deposit' ? 'text-blue-600' : 'text-red-600'}>
+                            <span className={transaction.transaction_type === 'deposit' ? 'text-primary' : 'text-red-600'}>
                               {transaction.transaction_type === 'deposit' ? '+' : '-'}
                               ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
@@ -1759,7 +1759,7 @@ export default function CashManagement() {
                                   setSelectedReservationId(transaction.reference_id)
                                   setShowReservationModal(true)
                                 }}
-                                className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                className="text-primary hover:text-primary/80 hover:underline cursor-pointer"
                                 title="예약 상세 보기"
                               >
                                 {transaction.description || (transaction.source === 'payment_records' ? `예약 결제 (${transaction.reference_id})` : `예약 지출 (${transaction.reference_id})`)}

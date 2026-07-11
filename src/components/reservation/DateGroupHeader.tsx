@@ -119,12 +119,12 @@ function RegCancelTotalBadges({
       aria-label={groupAriaLabel}
     >
       <span
-        className={`${badgeBase} bg-blue-100 text-blue-900 ring-1 ring-blue-200/60 ${reg === 0 ? 'opacity-55' : ''}`}
+        className={`${badgeBase} bg-primary/10 text-foreground ring-1 ring-ring/30/60 ${reg === 0 ? 'opacity-55' : ''}`}
       >
         <UserPlus className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
         <span>{formatRegPeople(reg, peopleSuffix)}</span>
         {regBookingSuffix ? (
-          <span className="text-[10px] font-medium text-blue-800/85 opacity-90">· {regBookingSuffix}</span>
+          <span className="text-[10px] font-medium text-primary/85 opacity-90">· {regBookingSuffix}</span>
         ) : null}
       </span>
       <span
@@ -353,7 +353,7 @@ function DateGroupHeaderInner({
       >
         <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3 flex-1 min-w-0">
           <div className="flex items-center space-x-1 sm:space-x-3 min-w-0">
-            <Calendar className="h-3 w-3 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+            <Calendar className="h-3 w-3 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
             <h3 className="text-xs sm:text-lg font-semibold text-gray-900">
               {formattedTitleDate} {t('groupingLabels.activityOn')}
             </h3>
@@ -408,7 +408,7 @@ function DateGroupHeaderInner({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
             <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
               {t('stats.byProduct')} {t('peopleLabel')}

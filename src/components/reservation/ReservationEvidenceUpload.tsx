@@ -206,7 +206,7 @@ export default function ReservationEvidenceUpload({
           tabIndex={0}
           onPaste={handlePaste}
           role="button"
-          className="inline-flex items-center px-2 py-1.5 rounded border border-dashed border-gray-300 bg-gray-50/80 text-[10px] sm:text-xs text-gray-600 cursor-text focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-300 min-w-[140px]"
+          className="inline-flex items-center px-2 py-1.5 rounded border border-dashed border-gray-300 bg-gray-50/80 text-[10px] sm:text-xs text-gray-600 cursor-text focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring min-w-[140px]"
           title={locale === 'ko' ? '클릭한 뒤 Ctrl+V로 붙여넣기' : 'Click then Ctrl+V to paste'}
         >
           {locale === 'ko' ? '여기 클릭 후 Ctrl+V 붙여넣기' : 'Click here, then Ctrl+V to paste'}

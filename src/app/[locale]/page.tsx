@@ -123,90 +123,18 @@ function HomePageInner() {
   ]
 
   const categoryTags = [
-    {
-      labelKey: 'antelopeCanyon',
-      tagQuery: '앤텔롭',
-      emoji: '🏜️',
-      gradient: 'from-yellow-50 to-orange-50',
-      hoverGradient: 'hover:from-yellow-100 hover:to-orange-100'
-    },
-    {
-      labelKey: 'grandCanyon',
-      tagQuery: '그랜드캐년',
-      emoji: '🏔️',
-      gradient: 'from-orange-50 to-red-50',
-      hoverGradient: 'hover:from-orange-100 hover:to-red-100'
-    },
-    {
-      labelKey: 'suburbanTour',
-      tagQuery: '근교',
-      emoji: '🗺️',
-      gradient: 'from-green-50 to-emerald-50',
-      hoverGradient: 'hover:from-green-100 hover:to-emerald-100'
-    },
-    {
-      labelKey: 'dayTour',
-      tagQuery: '당일',
-      emoji: '🛣️',
-      gradient: 'from-blue-50 to-cyan-50',
-      hoverGradient: 'hover:from-blue-100 hover:to-cyan-100'
-    },
-    {
-      labelKey: 'accommodationTour',
-      tagQuery: '숙박',
-      emoji: '🏕️',
-      gradient: 'from-purple-50 to-pink-50',
-      hoverGradient: 'hover:from-purple-100 hover:to-pink-100'
-    },
-    {
-      labelKey: 'cityTour',
-      tagQuery: '시티',
-      emoji: '🏙️',
-      gradient: 'from-indigo-50 to-blue-50',
-      hoverGradient: 'hover:from-indigo-100 hover:to-blue-100'
-    },
-    {
-      labelKey: 'helicopterTour',
-      tagQuery: '헬기',
-      emoji: '🚁',
-      gradient: 'from-red-50 to-pink-50',
-      hoverGradient: 'hover:from-red-100 hover:to-pink-100'
-    },
-    {
-      labelKey: 'lightAircraftTour',
-      tagQuery: '경비행기',
-      emoji: '✈️',
-      gradient: 'from-sky-50 to-blue-50',
-      hoverGradient: 'hover:from-sky-100 hover:to-blue-100'
-    },
-    {
-      labelKey: 'busTour',
-      tagQuery: '버스',
-      emoji: '🚌',
-      gradient: 'from-yellow-50 to-orange-50',
-      hoverGradient: 'hover:from-yellow-100 hover:to-orange-100'
-    },
-    {
-      labelKey: 'premiumTour',
-      tagQuery: '프리미엄',
-      emoji: '⭐',
-      gradient: 'from-amber-50 to-yellow-50',
-      hoverGradient: 'hover:from-amber-100 hover:to-yellow-100'
-    },
-    {
-      labelKey: 'performanceTicket',
-      tagQuery: '공연',
-      emoji: '🎫',
-      gradient: 'from-orange-50 to-red-50',
-      hoverGradient: 'hover:from-orange-100 hover:to-red-100'
-    },
-    {
-      labelKey: 'attraction',
-      tagQuery: '어트랙션',
-      emoji: '🎪',
-      gradient: 'from-purple-50 to-pink-50',
-      hoverGradient: 'hover:from-purple-100 hover:to-pink-100'
-    }
+    { labelKey: 'antelopeCanyon', tagQuery: '앤텔롭' },
+    { labelKey: 'grandCanyon', tagQuery: '그랜드캐년' },
+    { labelKey: 'suburbanTour', tagQuery: '근교' },
+    { labelKey: 'dayTour', tagQuery: '당일' },
+    { labelKey: 'accommodationTour', tagQuery: '숙박' },
+    { labelKey: 'cityTour', tagQuery: '시티' },
+    { labelKey: 'helicopterTour', tagQuery: '헬기' },
+    { labelKey: 'lightAircraftTour', tagQuery: '경비행기' },
+    { labelKey: 'busTour', tagQuery: '버스' },
+    { labelKey: 'premiumTour', tagQuery: '프리미엄' },
+    { labelKey: 'performanceTicket', tagQuery: '공연' },
+    { labelKey: 'attraction', tagQuery: '어트랙션' },
   ]
 
   const orderedHomeSections = useCustomerPageHomeLayoutSections(isPreview && isEditMode)

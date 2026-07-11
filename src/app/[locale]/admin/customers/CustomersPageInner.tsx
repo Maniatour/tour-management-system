@@ -1352,7 +1352,7 @@ export default function AdminCustomers() {
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
         <button
           onClick={openForm}
-          className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
+          className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
         >
           <Plus size={16} />
           <span className="hidden sm:inline">{t('addCustomer')}</span>
@@ -1369,7 +1369,7 @@ export default function AdminCustomers() {
             placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         />
         </div>
         
@@ -1381,7 +1381,7 @@ export default function AdminCustomers() {
               onClick={() => setStatusFilter('all')}
               className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
                 statusFilter === 'all'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -1419,7 +1419,7 @@ export default function AdminCustomers() {
                 setSortField(field as keyof Customer)
                 setSortDirection(direction as 'asc' | 'desc')
               }}
-              className="px-2 py-1.5 md:px-3 md:py-2 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-auto md:w-auto"
+              className="px-2 py-1.5 md:px-3 md:py-2 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-ring focus:border-transparent w-auto md:w-auto"
             >
               <option value="created_at-desc">{t('sortOptions.newest')}</option>
               <option value="created_at-asc">{t('sortOptions.oldest')}</option>
@@ -1435,7 +1435,7 @@ export default function AdminCustomers() {
       {/* 고객 목록 */}
       {loading ? (
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">{t('loading')}</p>
         </div>
       ) : (
@@ -1791,17 +1791,17 @@ export default function AdminCustomers() {
                                   // 예약 관리 페이지로 이동 (고객 ID로 필터링)
                                   router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
                                 }}
-                                className="w-full hover:bg-blue-50 p-2 rounded-lg transition-colors group border border-blue-200 bg-blue-50/30"
+                                className="w-full hover:bg-muted/50 p-2 rounded-lg transition-colors group border border-border bg-primary/5/30"
                                 title={t('customerCard.viewReservations')}
                               >
                                 <div className="flex items-center justify-between mb-1">
-                                  <div className="flex items-center space-x-2 text-xs text-blue-700">
-                                    <Calendar className="h-3 w-3 group-hover:text-blue-800" />
-                                    <span className="group-hover:text-blue-800 font-semibold">{info.bookingCount}{t('stats.bookings')}</span>
-                                    <User className="h-3 w-3 group-hover:text-blue-800" />
-                                    <span className="group-hover:text-blue-800 font-semibold">{info.totalParticipants}{t('stats.participants')}</span>
+                                  <div className="flex items-center space-x-2 text-xs text-primary">
+                                    <Calendar className="h-3 w-3 group-hover:text-primary/80" />
+                                    <span className="group-hover:text-primary/80 font-semibold">{info.bookingCount}{t('stats.bookings')}</span>
+                                    <User className="h-3 w-3 group-hover:text-primary/80" />
+                                    <span className="group-hover:text-primary/80 font-semibold">{info.totalParticipants}{t('stats.participants')}</span>
                                   </div>
-                                  <span className="text-blue-600 text-xs group-hover:text-blue-800 font-semibold">→</span>
+                                  <span className="text-primary text-xs group-hover:text-primary/80 font-semibold">→</span>
                                 </div>
                                 
                                 {/* 예약 상세 정보 */}
@@ -1884,7 +1884,7 @@ export default function AdminCustomers() {
                               e.stopPropagation() // 카드 클릭 이벤트 방지
                               handleCreateInvoice(customer)
                             }}
-                            className="flex items-center justify-center space-x-0.5 py-1 px-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded-md transition-colors duration-200"
+                            className="flex items-center justify-center space-x-0.5 py-1 px-1.5 bg-primary hover:bg-primary/90 text-white text-[10px] font-medium rounded-md transition-colors duration-200"
                             title={t('customerCard.createInvoice')}
                           >
                             <Receipt className="h-2.5 w-2.5" />
@@ -1953,7 +1953,7 @@ export default function AdminCustomers() {
                     onClick={() => setCurrentPage(pageNum)}
                     className={`px-3 py-2 text-sm border rounded-lg ${
                       currentPage === pageNum
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-primary text-primary-foreground border-primary'
                         : 'border-gray-300 hover:bg-gray-50'
                     }`}
                   >
@@ -2147,7 +2147,7 @@ export default function AdminCustomers() {
                                 </p>
                               </div>
                               <div className="text-right">
-                                <p className="font-bold text-lg text-blue-600">${parseFloat(invoice.total).toFixed(2)}</p>
+                                <p className="font-bold text-lg text-primary">${parseFloat(invoice.total).toFixed(2)}</p>
                                 <p className="text-xs text-gray-500">
                                   {invoice.status === 'sent' ? (locale === 'ko' ? '발송됨' : 'Sent') :
                                    invoice.status === 'paid' ? (locale === 'ko' ? '결제완료' : 'Paid') :
@@ -2366,7 +2366,7 @@ function PassUploadModal({
             disabled={!passPhotoUrl || !idPhotoUrl}
             className={`px-4 py-2 text-white rounded-lg transition-colors ${
               passPhotoUrl && idPhotoUrl
-                ? 'bg-blue-600 hover:bg-blue-700'
+                ? 'bg-primary hover:bg-primary/90'
                 : 'bg-gray-300 cursor-not-allowed'
             }`}
           >
@@ -2453,13 +2453,13 @@ function FileUploadInput({
         htmlFor={`file-upload-${label}`}
         className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
           uploading 
-            ? 'border-blue-400 bg-blue-50' 
+            ? 'border-blue-400 bg-primary/5' 
             : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
         }`}
       >
         {uploading ? (
           <div className="flex flex-col items-center space-y-2">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <span className="text-sm text-gray-600">업로드 중...</span>
           </div>
         ) : (
@@ -2761,7 +2761,7 @@ function CustomerForm({
                 ...formData, 
                 status: formData.status === 'active' ? 'inactive' : 'active'
               })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                 formData.status === 'active' ? 'bg-blue-600' : 'bg-gray-200'
               }`}
             >
@@ -2772,7 +2772,7 @@ function CustomerForm({
               />
             </button>
             <span className={`text-sm font-medium ${
-              formData.status === 'active' ? 'text-blue-600' : 'text-gray-500'
+              formData.status === 'active' ? 'text-primary' : 'text-gray-500'
             }`}>
               {formData.status === 'active' ? t('form.fields.active') : t('form.fields.inactive')}
             </span>
@@ -2794,7 +2794,7 @@ function CustomerForm({
                     value={customerSearch}
                     onChange={(e) => handleCustomerSearchChange(e.target.value)}
                     onFocus={() => setShowCustomerDropdown(customerSearch.length > 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder={t('form.search.placeholder')}
                     required
                   />
@@ -2806,7 +2806,7 @@ function CustomerForm({
                         <div
                           key={customer.id}
                           onClick={() => handleCustomerSelect(customer)}
-                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          className="px-3 py-2 hover:bg-muted/50 cursor-pointer border-b border-gray-100 last:border-b-0"
                         >
                           <div className="flex items-center justify-between">
                             <div className="font-medium text-gray-900">{customer.name}</div>
@@ -2847,7 +2847,7 @@ function CustomerForm({
                   type="tel"
                   value={formData.phone || ''}
                   onChange={(e) => setFormData({...formData, phone: stripSpacesFromContactInput(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder={t('form.fields.phonePlaceholder')}
                 />
               </div>
@@ -2889,7 +2889,7 @@ function CustomerForm({
                     return ''
                   })()}
                   onChange={(e) => setFormData({...formData, language: e.target.value})}
-                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="">{t('form.languages.select')}</option>
                   <option value="KR">{t('form.languages.korean')}</option>
@@ -2953,7 +2953,7 @@ function CustomerForm({
                     ...formData, 
                     resident_status: e.target.value === '' ? null : e.target.value as 'us_resident' | 'non_resident' | 'non_resident_with_pass'
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="">정보 없음</option>
                   <option value="us_resident">미국 거주자</option>
@@ -2970,7 +2970,7 @@ function CustomerForm({
                   type="tel"
                   value={formData.emergency_contact || ''}
                   onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder={t('form.fields.emergencyContactPlaceholder')}
                 />
               </div>
@@ -3059,7 +3059,7 @@ function CustomerForm({
                       onClick={() => setSelectedChannelType(type as 'ota' | 'self' | 'partner')}
                       className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                         selectedChannelType === type
-                          ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                          ? 'bg-white text-primary border-b-2 border-primary'
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
@@ -3073,7 +3073,7 @@ function CustomerForm({
                   <select
                     value={formData.channel_id || ''}
                     onChange={(e) => setFormData({...formData, channel_id: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   >
                     <option value="">{t('form.fields.channelSelect')}</option>
                     {channels
@@ -3099,7 +3099,7 @@ function CustomerForm({
                 type="email"
                 value={formData.email || ''}
                 onChange={(e) => setFormData({...formData, email: stripSpacesFromContactInput(e.target.value)})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('form.fields.emailPlaceholder')}
               />
             </div>
@@ -3112,7 +3112,7 @@ function CustomerForm({
                 type="text"
                 value={formData.address || ''}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={t('form.fields.addressPlaceholder')}
               />
             </div>
@@ -3127,7 +3127,7 @@ function CustomerForm({
               value={formData.special_requests || ''}
               onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder={t('form.fields.specialRequestsPlaceholder')}
             />
           </div>
@@ -3163,7 +3163,7 @@ function CustomerForm({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 {customer ? t('form.buttons.edit') : t('form.buttons.add')}
             </button>
@@ -3194,7 +3194,7 @@ function CustomerForm({
               </button>
             </div>
 
-            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <div className="mb-4 p-4 bg-primary/5 rounded-lg">
               <p className="text-sm text-gray-700 mb-2">
                 <strong>입력한 정보:</strong>
               </p>
@@ -3281,7 +3281,7 @@ function CustomerForm({
                         </div>
                       </div>
                       <div className="flex-shrink-0">
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
                           선택
                         </span>
                       </div>
@@ -3315,7 +3315,7 @@ function CustomerForm({
                   setSimilarCustomers([])
                   setPendingFormData(null)
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 새로 추가하기
               </button>

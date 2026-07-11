@@ -3,14 +3,15 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
+import { Button } from '@/components/ui/button'
 
 export function ProductDetailLoadingState() {
   const t = useTranslations('productDetail')
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
+    <div className="flex min-h-screen items-center justify-center bg-muted/30">
       <div className="text-center">
-        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#0B5FFF]" />
-        <p className="text-slate-600">{t('loadingProduct')}</p>
+        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-booking" />
+        <p className="text-muted-foreground">{t('loadingProduct')}</p>
       </div>
     </div>
   )
@@ -25,7 +26,7 @@ export function ProductDetailErrorState({ error }: ProductDetailErrorStateProps)
   const locale = useLocale()
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
+    <div className="flex min-h-screen items-center justify-center bg-muted/30">
       <div className="max-w-md px-6 text-center">
         <div className="mb-4 text-red-500">
           <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -37,15 +38,14 @@ export function ProductDetailErrorState({ error }: ProductDetailErrorStateProps)
             />
           </svg>
         </div>
-        <h2 className="mb-2 text-xl font-semibold text-slate-900">{t('errorTitle')}</h2>
-        <p className="mb-6 text-slate-600">{error || t('productNotFound')}</p>
-        <Link
-          href={`/${locale}/products`}
-          className="inline-flex items-center rounded-xl bg-[#0B5FFF] px-5 py-3 font-medium text-white transition-colors hover:bg-[#0952e0]"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
-          {t('backToProductList')}
-        </Link>
+        <h2 className="mb-2 text-xl font-semibold text-foreground">{t('errorTitle')}</h2>
+        <p className="mb-6 text-muted-foreground">{error || t('productNotFound')}</p>
+        <Button variant="booking" size="booking" asChild>
+          <Link href={`/${locale}/products`}>
+            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
+            {t('backToProductList')}
+          </Link>
+        </Button>
       </div>
     </div>
   )

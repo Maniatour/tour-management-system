@@ -497,7 +497,7 @@ export default function TourPrintModal({
                 type="button"
                 onClick={() => setPrintLang('ko')}
                 className={`px-3 py-1.5 font-medium transition-colors ${
-                  isKo ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 한글
@@ -506,7 +506,7 @@ export default function TourPrintModal({
                 type="button"
                 onClick={() => setPrintLang('en')}
                 className={`px-3 py-1.5 font-medium transition-colors ${
-                  !isKo ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  !isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 English
@@ -683,7 +683,7 @@ export default function TourPrintModal({
           <button
             type="button"
             onClick={handlePrint}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
           >
             <Printer className="w-4 h-4" />
             {L.print}

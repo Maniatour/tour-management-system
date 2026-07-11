@@ -153,6 +153,12 @@ const PAGE_ZONE_BLOCKS: Record<ZoneLayoutPageId, PageZoneBlockDef[]> = {
       icon: '📑',
     },
     {
+      zoneId: 'detail-reviews-section',
+      label: '리뷰 섹션',
+      description: '게스트 리뷰 (데이터 있을 때만 표시)',
+      icon: '⭐',
+    },
+    {
       zoneId: 'detail-faq-section',
       label: 'FAQ 섹션',
       description: '자주 묻는 질문',

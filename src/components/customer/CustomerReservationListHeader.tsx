@@ -50,14 +50,14 @@ export default function CustomerReservationListHeader({
           </div>
           {isSimulating && simulatedUserName && (
             <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs sm:text-sm font-medium text-center">
+              <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs sm:text-sm font-medium text-center">
                 {t('simulating')}: {simulatedUserName}
               </div>
               <div className="flex flex-wrap gap-1 sm:gap-1">
                 <button
                   type="button"
                   onClick={onGoDashboard}
-                  className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700 flex-1 sm:flex-none"
+                  className="bg-primary text-primary-foreground px-2 py-1 rounded text-xs hover:bg-primary/90 flex-1 sm:flex-none"
                 >
                   {t('dashboard')}
                 </button>
@@ -97,7 +97,7 @@ export default function CustomerReservationListHeader({
                 onClick={() => onFilterChange(option.value)}
                 className={`px-3 py-1 text-sm rounded-full transition-colors whitespace-nowrap flex-shrink-0 ${
                   filter === option.value
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >

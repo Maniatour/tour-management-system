@@ -461,7 +461,7 @@ export default function AdminChannels() {
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -471,7 +471,7 @@ export default function AdminChannels() {
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -515,7 +515,7 @@ export default function AdminChannels() {
           )}
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
           >
             <Plus size={16} />
             <span>{t('addChannel')}</span>
@@ -531,7 +531,7 @@ export default function AdminChannels() {
           placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         />
       </div>
 
@@ -539,8 +539,8 @@ export default function AdminChannels() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4 border">
           <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Globe className="h-6 w-6 text-blue-600" />
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Globe className="h-6 w-6 text-primary" />
             </div>
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">전체</p>
@@ -561,8 +561,8 @@ export default function AdminChannels() {
         </div>
         <div className="bg-white rounded-lg shadow p-4 border">
           <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Globe className="h-6 w-6 text-blue-600" />
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Globe className="h-6 w-6 text-primary" />
             </div>
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">OTA</p>
@@ -593,7 +593,7 @@ export default function AdminChannels() {
             }}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'all'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
@@ -619,7 +619,7 @@ export default function AdminChannels() {
             }}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'ota'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
@@ -708,15 +708,15 @@ export default function AdminChannels() {
                               const parent = target.parentElement
                               if (parent) {
                                 const fallback = document.createElement('div')
-                                fallback.className = 'h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center'
-                                fallback.innerHTML = '<svg class="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg>'
+                                fallback.className = 'h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center'
+                                fallback.innerHTML = '<svg class="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg>'
                                 parent.appendChild(fallback)
                               }
                             }}
                           />
                         ) : (
-                          <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center">
-                            <Globe className="h-4 w-4 text-blue-600" />
+                          <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Globe className="h-4 w-4 text-primary" />
                           </div>
                         )}
                       </div>
@@ -725,7 +725,7 @@ export default function AdminChannels() {
                           type="text"
                           value={bulkEditData[channel.id]?.name ?? channel.name}
                           onChange={(e) => handleBulkFieldChange(channel.id, 'name', e.target.value)}
-                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
@@ -738,7 +738,7 @@ export default function AdminChannels() {
                       <select
                         value={bulkEditData[channel.id]?.type ?? channel.type ?? ''}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'type', e.target.value)}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <option value="">선택</option>
@@ -748,7 +748,7 @@ export default function AdminChannels() {
                       </select>
                     ) : (
                       <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                        channel.type === 'ota' ? 'bg-blue-100 text-blue-800' :
+                        channel.type === 'ota' ? 'bg-primary/10 text-primary' :
                         channel.type === 'self' ? 'bg-green-100 text-green-800' :
                         channel.type === 'partner' ? 'bg-purple-100 text-purple-800' :
                         'bg-gray-100 text-gray-800'
@@ -763,7 +763,7 @@ export default function AdminChannels() {
                         type="text"
                         value={bulkEditData[channel.id]?.description ?? channel.description ?? ''}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'description', e.target.value)}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
@@ -778,7 +778,7 @@ export default function AdminChannels() {
                         type="url"
                         value={bulkEditData[channel.id]?.customer_website ?? channel.customer_website ?? ''}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'customer_website', e.target.value)}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                         placeholder="https://..."
                       />
@@ -788,7 +788,7 @@ export default function AdminChannels() {
                           href={channel.customer_website} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 truncate max-w-[120px] block"
+                          className="text-primary hover:text-primary/80 truncate max-w-[120px] block"
                           onClick={(e) => e.stopPropagation()}
                           title={channel.customer_website}
                         >
@@ -805,7 +805,7 @@ export default function AdminChannels() {
                         type="url"
                         value={bulkEditData[channel.id]?.admin_website ?? channel.admin_website ?? ''}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'admin_website', e.target.value)}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                         placeholder="https://..."
                       />
@@ -815,7 +815,7 @@ export default function AdminChannels() {
                           href={channel.admin_website} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 truncate max-w-[120px] block"
+                          className="text-primary hover:text-primary/80 truncate max-w-[120px] block"
                           onClick={(e) => e.stopPropagation()}
                           title={channel.admin_website}
                         >
@@ -847,7 +847,7 @@ export default function AdminChannels() {
                         type="number"
                         value={bulkEditData[channel.id]?.commission_rate ?? channel.commission_rate ?? 0}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'commission_rate', Number(e.target.value) || 0)}
-                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                         min="0"
                         max="100"
@@ -862,7 +862,7 @@ export default function AdminChannels() {
                       <select
                         value={bulkEditData[channel.id]?.pricing_type ?? channel.pricing_type ?? 'separate'}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'pricing_type', e.target.value)}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <option value="separate">분리</option>
@@ -870,7 +870,7 @@ export default function AdminChannels() {
                       </select>
                     ) : (
                       <span className={`inline-flex items-center px-1 py-0.5 rounded text-xs font-medium ${
-                        channel.pricing_type === 'single' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        channel.pricing_type === 'single' ? 'bg-purple-100 text-purple-800' : 'bg-primary/10 text-primary'
                       }`}>
                         {channel.pricing_type === 'single' ? '단일' : '분리'}
                       </span>
@@ -882,7 +882,7 @@ export default function AdminChannels() {
                         type="checkbox"
                         checked={bulkEditData[channel.id]?.commission_base_price_only ?? channel.commission_base_price_only ?? false}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'commission_base_price_only', e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
@@ -900,7 +900,7 @@ export default function AdminChannels() {
                           type="text"
                           value={bulkEditData[channel.id]?.manager_name ?? channel.manager_name ?? ''}
                           onChange={(e) => handleBulkFieldChange(channel.id, 'manager_name', e.target.value)}
-                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           onClick={(e) => e.stopPropagation()}
                           placeholder="이름"
                         />
@@ -908,7 +908,7 @@ export default function AdminChannels() {
                           type="text"
                           value={bulkEditData[channel.id]?.manager_contact ?? channel.manager_contact ?? ''}
                           onChange={(e) => handleBulkFieldChange(channel.id, 'manager_contact', e.target.value)}
-                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                           onClick={(e) => e.stopPropagation()}
                           placeholder="연락처"
                         />
@@ -934,7 +934,7 @@ export default function AdminChannels() {
                         href={channel.contract_url} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-primary hover:text-primary/80"
                         onClick={(e) => e.stopPropagation()}
                       >
                         ✓
@@ -948,7 +948,7 @@ export default function AdminChannels() {
                       <select
                         value={bulkEditData[channel.id]?.is_active !== undefined ? (bulkEditData[channel.id].is_active ? 'active' : 'inactive') : (channel.is_active ? 'active' : 'inactive')}
                         onChange={(e) => handleBulkFieldChange(channel.id, 'is_active', e.target.value === 'active')}
-                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <option value="active">활성</option>
@@ -985,7 +985,7 @@ export default function AdminChannels() {
                         </button>
                         <button
                           onClick={() => setEditingChannel(channel)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-primary hover:text-foreground"
                           title="편집"
                         >
                           <Edit size={14} />
@@ -1080,7 +1080,7 @@ export default function AdminChannels() {
                     
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">수수료</span>
-                      <span className="font-medium text-blue-600">{channel.commission_rate || 0}%</span>
+                      <span className="font-medium text-primary">{channel.commission_rate || 0}%</span>
                     </div>
                     
                     {/* 웹사이트 정보 */}
@@ -1093,7 +1093,7 @@ export default function AdminChannels() {
                               href={channel.customer_website} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
+                              className="font-medium text-primary hover:text-primary/80 truncate max-w-32"
                             >
                               {channel.customer_website}
                             </a>
@@ -1106,7 +1106,7 @@ export default function AdminChannels() {
                               href={channel.admin_website} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
+                              className="font-medium text-primary hover:text-primary/80 truncate max-w-32"
                             >
                               {channel.admin_website}
                             </a>
@@ -1142,7 +1142,7 @@ export default function AdminChannels() {
                               href={channel.contract_url} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="font-medium text-blue-600 hover:text-blue-800 text-xs"
+                              className="font-medium text-primary hover:text-primary/80 text-xs"
                             >
                               보기
                             </a>
@@ -1406,7 +1406,7 @@ function VariantEditForm({ variant, onSave, onCancel }: VariantEditFormProps) {
       <div className="flex space-x-2 pt-2">
         <button
           type="submit"
-          className="flex-1 bg-blue-600 text-white px-3 py-1 text-sm rounded hover:bg-blue-700"
+          className="flex-1 bg-primary text-primary-foreground px-3 py-1 text-sm rounded hover:bg-primary/90"
         >
           저장
         </button>
@@ -1732,7 +1732,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
               placeholder="상품명, 설명, 카테고리로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
             {searchTerm && (
               <button
@@ -1801,7 +1801,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
                             {/* 서브카테고리 헤더 */}
                             <button
                               onClick={() => toggleSubCategory(category, subCategory)}
-                              className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 transition-colors"
+                              className="w-full flex items-center justify-between p-3 bg-primary/5 hover:bg-muted transition-colors"
                             >
                               <div className="flex items-center space-x-2">
                                 {isSubCategoryExpanded ? (
@@ -1834,7 +1834,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
                                           type="checkbox"
                                           checked={isSelected}
                                           onChange={() => toggleProductSelection(product.id)}
-                                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                          className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                                         />
                                         <div 
                                           className="flex-1 font-medium text-gray-900 cursor-pointer"
@@ -1879,7 +1879,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
                                             }
                                             await handleAddVariant(product.id)
                                           }}
-                                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                          className="p-1 text-primary hover:bg-muted/50 rounded"
                                           title="Variant 추가"
                                         >
                                           <Plus className="h-4 w-4" />
@@ -1918,7 +1918,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
                                                       <div className="flex space-x-1">
                                                         <button
                                                           onClick={() => setEditingVariant({ productId: product.id, variant })}
-                                                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                                          className="p-1 text-primary hover:bg-muted/50 rounded"
                                                           title="편집"
                                                         >
                                                           <Edit className="h-3 w-3" />

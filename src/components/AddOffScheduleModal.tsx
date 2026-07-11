@@ -173,7 +173,7 @@ export default function AddOffScheduleModal({
               <select
                 value={selectedMember}
                 onChange={(e) => setSelectedMember(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               >
                 <option value="">팀원을 선택하세요</option>
@@ -220,7 +220,7 @@ export default function AddOffScheduleModal({
                           value={item.date}
                           onChange={(e) => updateOffDate(item.id, e.target.value)}
                           min={dayjs().format('YYYY-MM-DD')}
-                          className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                           required
                         />
                         <span className="text-sm text-gray-500">
@@ -251,7 +251,7 @@ export default function AddOffScheduleModal({
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Off 신청 사유를 입력하세요 (모든 날짜에 공통으로 적용됩니다)"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                 required
               />
             </div>
@@ -268,7 +268,7 @@ export default function AddOffScheduleModal({
             <button
               type="submit"
               disabled={isLoading || offDates.length === 0}
-              className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors flex items-center"
+              className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors flex items-center"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />

@@ -198,7 +198,7 @@ export const ADMIN_HEADER_QUICK_BUTTON_CLASS: Record<string, string> = {
   'hq-customers':
     'px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10',
   'hq-reservations':
-    'px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'px-3 py-1.5 text-sm border rounded-md text-primary border-primary hover:bg-primary/90 hover:text-white transition-colors cursor-pointer relative z-10',
   'hq-booking':
     'px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer relative z-10',
   'hq-tours':

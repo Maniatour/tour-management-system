@@ -446,7 +446,7 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
   const getActionColor = (action: string) => {
     switch (action) {
       case 'created': return 'bg-green-100 text-green-800';
-      case 'updated': return 'bg-blue-100 text-blue-800';
+      case 'updated': return 'bg-primary/10 text-primary';
       case 'cancelled': return 'bg-red-100 text-red-800';
       case 'confirmed': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -1073,7 +1073,7 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
                                 Array.isArray(d?.uploaded_file_urls) && d.uploaded_file_urls.length > 0;
                               return has ? (
                                 <Paperclip
-                                  className="mx-auto h-5 w-5 shrink-0 text-blue-600"
+                                  className="mx-auto h-5 w-5 shrink-0 text-primary"
                                   aria-hidden
                                 />
                               ) : (

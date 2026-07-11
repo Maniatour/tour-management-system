@@ -1496,7 +1496,7 @@ export default function PickupScheduleAutoGenerateModal({
           <div className="w-1/3 border-r overflow-y-auto p-4">
             <div className="space-y-3">
               {/* 시작점 카드 */}
-              <div className="border rounded-lg p-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:bg-gradient-to-r hover:from-blue-100 hover:to-blue-200 transition-colors border-blue-300">
+              <div className="border rounded-lg p-3 bg-gradient-to-r from-muted/50 to-muted hover:bg-gradient-to-r hover:from-blue-100 hover:to-blue-200 transition-colors border-border">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="flex items-center justify-center w-6 h-6 bg-blue-700 text-white rounded-full text-xs font-bold">
@@ -1512,11 +1512,11 @@ export default function PickupScheduleAutoGenerateModal({
                       </span>
                     )}
                   </div>
-                  <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">
+                  <span className="text-xs bg-blue-200 text-primary px-2 py-1 rounded font-semibold">
                     START
                   </span>
                 </div>
-                <div className="text-sm font-semibold text-blue-700 mb-1">
+                <div className="text-sm font-semibold text-primary mb-1">
                   {startPointHotel.hotel}
                 </div>
                 <div className="text-xs text-gray-500 mb-2">
@@ -1542,7 +1542,7 @@ export default function PickupScheduleAutoGenerateModal({
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
-                      <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white rounded-full text-xs font-bold">
+                      <span className="flex items-center justify-center w-6 h-6 bg-primary text-primary-foreground rounded-full text-xs font-bold">
                         {item.order}
                       </span>
                       <span className="text-sm font-medium text-gray-900">
@@ -1578,7 +1578,7 @@ export default function PickupScheduleAutoGenerateModal({
                       </span>
                     )}
                   </div>
-                  <div className="text-sm font-semibold text-blue-600 mb-1">
+                  <div className="text-sm font-semibold text-primary mb-1">
                     {item.hotel.hotel}
                   </div>
                   {item.hotel.pick_up_location && (
@@ -1622,7 +1622,7 @@ export default function PickupScheduleAutoGenerateModal({
             {!mapLoaded && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                 <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
                   <p className="text-sm text-gray-600">{t('autoGenLoadingMap')}</p>
                 </div>
               </div>
@@ -1686,7 +1686,7 @@ export default function PickupScheduleAutoGenerateModal({
             <button
               onClick={handleSave}
               disabled={loading || pickupSchedule.length === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {loading ? (
                 <>

@@ -129,7 +129,7 @@ export default function ParticipantsSection({
                 }))
               }}
               min="1"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
               required
             />
           </div>
@@ -147,7 +147,7 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
             />
           </div>
           <div>
@@ -164,7 +164,7 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
             />
           </div>
           <div>
@@ -250,7 +250,7 @@ export default function ParticipantsSection({
                     },
                   })
                 }}
-                className="w-16 shrink-0 px-1.5 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-xs text-center"
+                className="w-16 shrink-0 px-1.5 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring text-xs text-center"
               />
               <input
                 type="number"
@@ -292,7 +292,7 @@ export default function ParticipantsSection({
           value={formData.eventNote}
           onChange={(e) => setFormData({ ...formData, eventNote: e.target.value })}
           rows={6}
-          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
           placeholder={t('form.eventNotePlaceholder')}
         />
       </div>

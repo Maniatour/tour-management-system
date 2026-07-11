@@ -113,7 +113,7 @@ export function ExpensePaidToCombobox({
             <li>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left text-blue-700 hover:bg-gray-50"
+                className="w-full px-3 py-1.5 text-left text-primary hover:bg-gray-50"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   const next = query.trim()

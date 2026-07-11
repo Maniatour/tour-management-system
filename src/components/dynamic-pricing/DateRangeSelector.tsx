@@ -162,7 +162,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
             onClick={() => setSelectionMode('calendar')}
             className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
               selectionMode === 'calendar'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                ? 'bg-primary/10 text-primary border border-border'
                 : 'bg-gray-100 text-gray-700 border border-gray-200'
             }`}
           >
@@ -173,7 +173,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
             onClick={() => setSelectionMode('input')}
             className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
               selectionMode === 'input'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                ? 'bg-primary/10 text-primary border border-border'
                 : 'bg-gray-100 text-gray-700 border border-gray-200'
             }`}
           >
@@ -196,7 +196,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                 onClick={() => toggleDay(dayOfWeek)}
                 className={`px-3 py-2 text-sm rounded-md border transition-colors ${
                   isSelected
-                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                    ? 'bg-primary/10 text-primary border-border'
                     : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -235,7 +235,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
               <div
                 key={index}
                 className={`text-center text-sm font-medium py-2 ${
-                  index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-gray-600'
+                  index === 0 ? 'text-red-600' : index === 6 ? 'text-primary' : 'text-gray-600'
                 }`}
               >
                 {dayName}
@@ -285,9 +285,9 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                       : disableDateSelection
                       ? 'text-gray-700 hover:bg-gray-50'
                       : isStartDate || isEndDate
-                      ? 'bg-blue-500 text-white font-semibold'
+                      ? 'bg-primary text-primary-foreground font-semibold'
                       : isInRange
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-primary/10 text-primary'
                       : isToday
                       ? 'bg-gray-100 text-gray-900 font-semibold'
                       : 'text-gray-700 hover:bg-gray-100'
@@ -337,7 +337,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                     });
                   }
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             <div>
@@ -358,7 +358,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                     });
                   }
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
           </div>
@@ -367,11 +367,11 @@ export const DateRangeSelector = memo(function DateRangeSelector({
 
       {/* 선택된 날짜 정보 */}
       {(startDate || endDate) && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="text-sm font-medium text-blue-700 mb-1">
+        <div className="bg-muted/50 border border-border rounded-lg p-3">
+          <div className="text-sm font-medium text-primary mb-1">
             선택된 날짜 범위:
           </div>
-          <div className="text-sm text-blue-600">
+          <div className="text-sm text-primary">
             {startDate && (
               <span>
                 {formatDate(startDate)}
@@ -380,7 +380,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
             )}
           </div>
           {selectedDays.length > 0 && (
-            <div className="text-sm text-blue-600 mt-1">
+            <div className="text-sm text-primary mt-1">
               적용 요일: {selectedDays.map(day => DAY_NAMES[day]).join(', ')}
             </div>
           )}

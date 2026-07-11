@@ -17,7 +17,7 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
   return (
     <SiteAccessMatrixPatchProvider>
       <AdminPageTitle locale={locale} />
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen app-page-bg">
             <AdminSidebarAndHeader locale={locale}>{children}</AdminSidebarAndHeader>
             <AdminPwaInstallFab locale={locale} />
             <MobileFooter locale={locale} />

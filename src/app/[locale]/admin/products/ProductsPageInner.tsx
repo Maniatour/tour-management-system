@@ -513,7 +513,7 @@ export default function AdminProducts() {
   // 카테고리별 색상 매핑
   const getCategoryColor = (category: string) => {
     const categoryColors: { [key: string]: { bg: string; text: string; border: string } } = {
-      tour: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+      tour: { bg: 'bg-primary/10', text: 'text-primary', border: 'border-border' },
       service: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' },
       hotel: { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' },
       transportation: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
@@ -803,7 +803,7 @@ export default function AdminProducts() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex items-center space-x-3">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
           <div className="text-gray-500">{tCommon('loading')}</div>
         </div>
       </div>
@@ -818,7 +818,7 @@ export default function AdminProducts() {
           <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
           <Link
             href={`/${locale}/admin/products/new`}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md text-sm font-medium hover:bg-primary/90"
           >
             {t('addProduct')}
           </Link>
@@ -837,7 +837,7 @@ export default function AdminProducts() {
           <div className="space-y-2">
             <button
               onClick={fetchProducts}
-              className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md text-sm font-medium hover:bg-primary/90"
             >
               {t('retry')}
             </button>
@@ -870,7 +870,7 @@ export default function AdminProducts() {
           </button>
           <Link
             href={`/${locale}/admin/products/new`}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
           >
             <Plus size={16} />
             <span>{t('addProduct')}</span>
@@ -893,14 +893,14 @@ export default function AdminProducts() {
                       onClick={() => handleCategorySelect(category.value)}
                       className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
                         selectedCategory === category.value
-                          ? 'border-blue-500 text-blue-600'
+                          ? 'border-primary text-primary'
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                       }`}
                     >
                       <span>{category.label}</span>
                       <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                         selectedCategory === category.value
-                          ? 'bg-blue-100 text-blue-600'
+                          ? 'bg-primary/10 text-primary'
                           : 'bg-gray-100 text-gray-500'
                       }`}>
                         {category.count}
@@ -917,7 +917,7 @@ export default function AdminProducts() {
                     placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
         />
       </div>
                         </div>
@@ -934,14 +934,14 @@ export default function AdminProducts() {
                     onClick={() => setSelectedSubCategory(subCategory.value)}
                     className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
                       selectedSubCategory === subCategory.value
-                        ? 'border-blue-500 text-blue-600'
+                        ? 'border-primary text-primary'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
                     <span>{subCategory.label}</span>
                     <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                       selectedSubCategory === subCategory.value
-                        ? 'bg-blue-100 text-blue-600'
+                        ? 'bg-primary/10 text-primary'
                         : 'bg-gray-100 text-gray-500'
                     }`}>
                       {subCategory.count}
@@ -1002,7 +1002,7 @@ export default function AdminProducts() {
             {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
               <button
                 onClick={clearFilters}
-                className="text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
+                className="text-primary hover:text-primary/80 underline whitespace-nowrap"
               >
                 {t('clearFilters')}
               </button>
@@ -1034,7 +1034,7 @@ export default function AdminProducts() {
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={t('cardView')}
@@ -1045,7 +1045,7 @@ export default function AdminProducts() {
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={t('tableView')}
@@ -1068,7 +1068,7 @@ export default function AdminProducts() {
           </p>
           <button
             onClick={clearFilters}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
           >
             {t('clearFilters')}
           </button>
@@ -1204,7 +1204,7 @@ export default function AdminProducts() {
                               type="text"
                               value={editingValue}
                               onChange={(e) => setEditingValue(e.target.value)}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -1237,7 +1237,7 @@ export default function AdminProducts() {
                             <div className="flex-1 min-w-0">
                               <Link 
                                 href={`/${locale}/admin/products/${product.id}`}
-                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline block truncate"
+                                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline block truncate"
                               >
                                 {locale === 'en' ? (product.name_en || product.name) : product.name}
                               </Link>
@@ -1249,7 +1249,7 @@ export default function AdminProducts() {
                             </div>
                             <button
                               onClick={() => startEdit(product.id, 'name', locale === 'en' ? (product.name_en || product.name) : product.name)}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary transition-opacity"
                               title={t('editProductName')}
                             >
                               <Edit2 size={14} />
@@ -1274,7 +1274,7 @@ export default function AdminProducts() {
                                     saveEdit(product.id, 'category', e.target.value)
                                   }
                                 }}
-                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                                 autoFocus={editingField?.fieldName === 'category'}
                               >
                                 <option value="">{t('selectNone')}</option>
@@ -1296,7 +1296,7 @@ export default function AdminProducts() {
                                     saveEdit(product.id, 'sub_category', e.target.value)
                                   }
                                 }}
-                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                                 autoFocus={editingField?.fieldName === 'sub_category'}
                                 disabled={!product.category && editingField?.fieldName !== 'sub_category'}
                               >
@@ -1343,7 +1343,7 @@ export default function AdminProducts() {
                             )}
                             <button
                               onClick={() => startEdit(product.id, 'category', product.category || '')}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary transition-opacity"
                               title={t('editCategory')}
                             >
                               <Edit2 size={14} />
@@ -1412,7 +1412,7 @@ export default function AdminProducts() {
                                 step="0.01"
                                 value={editingValue}
                                 onChange={(e) => setEditingValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                                 autoFocus
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -1448,7 +1448,7 @@ export default function AdminProducts() {
                             </span>
                             <button
                               onClick={() => startEdit(product.id, 'base_price', product.base_price || 0)}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary transition-opacity"
                               title={t('editPrice')}
                             >
                               <Edit2 size={14} />
@@ -1475,7 +1475,7 @@ export default function AdminProducts() {
                             <div className="space-y-1">
                               {displayCombinations.map((combo) => (
                                 <div key={combo.id} className="text-xs">
-                                  <span className="text-blue-600 font-semibold">
+                                  <span className="text-primary font-semibold">
                                     ${combo.totalPrice > 0 ? combo.totalPrice.toFixed(2) : '0.00'}
                                   </span>
                                 </div>
@@ -1553,7 +1553,7 @@ export default function AdminProducts() {
                               type="text"
                               value={editingValue}
                               onChange={(e) => setEditingValue(e.target.value)}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -1588,7 +1588,7 @@ export default function AdminProducts() {
                             </span>
                             <button
                               onClick={() => startEdit(product.id, 'duration', product.duration || '')}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary transition-opacity"
                               title={t('editDuration')}
                             >
                               <Edit2 size={14} />
@@ -1607,7 +1607,7 @@ export default function AdminProducts() {
                                 type="number"
                                 value={editingValue}
                                 onChange={(e) => setEditingValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-ring"
                                 autoFocus
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
@@ -1644,7 +1644,7 @@ export default function AdminProducts() {
                             </span>
                             <button
                               onClick={() => startEdit(product.id, 'max_participants', product.max_participants || 0)}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary transition-opacity"
                               title={t('editMaxParticipants')}
                             >
                               <Edit2 size={14} />
@@ -1683,7 +1683,7 @@ export default function AdminProducts() {
                               handleStatusToggle(product.id, productStatus)
                             }}
                             disabled={isUpdating}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                               productStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
                             } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                             title={productStatus === 'active' ? t('deactivate') : t('activate')}

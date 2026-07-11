@@ -27,9 +27,9 @@ export default function OptionsManualModal({
         </div>
         
         <div className="space-y-4 text-sm text-gray-700">
-          <div className="bg-blue-50 p-3 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">✅ 필수 옵션 (택일)</h4>
-            <p className="text-blue-800">
+          <div className="bg-primary/5 p-3 rounded-lg">
+            <h4 className="font-medium text-foreground mb-2">✅ 필수 옵션 (택일)</h4>
+            <p className="text-primary">
               고객이 반드시 선택해야 하는 옵션입니다.<br/>
               <strong>예시:</strong> 숙박 선택, 캐년 입장권 선택
             </p>
@@ -63,7 +63,7 @@ export default function OptionsManualModal({
         <div className="mt-6 flex justify-end">
           <button
             onClick={onClose}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
           >
             확인
           </button>

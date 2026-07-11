@@ -186,7 +186,7 @@ function rowBackgroundForLegacyStatus(status: string): string {
   if (st === 'pending') return 'bg-yellow-50/90'
   if (st === 'confirmed') return 'bg-green-50/90'
   if (st === 'cancelled' || st === 'canceled') return 'bg-red-50/90'
-  if (st === 'completed') return 'bg-blue-50/90'
+  if (st === 'completed') return 'bg-primary/5/90'
   if (st === 'credit') return 'bg-cyan-50/90'
   return 'bg-gray-50/90'
 }
@@ -293,7 +293,7 @@ export default function TicketBookingReservationDetailModal({
                     aria-pressed={detailListView === 'table'}
                     className={`touch-manipulation rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
                       detailListView === 'table'
-                        ? 'bg-white text-blue-700 shadow-sm'
+                        ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
@@ -306,7 +306,7 @@ export default function TicketBookingReservationDetailModal({
                     aria-pressed={detailListView === 'card'}
                     className={`touch-manipulation rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
                       detailListView === 'card'
-                        ? 'bg-white text-blue-700 shadow-sm'
+                        ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
@@ -639,7 +639,7 @@ export default function TicketBookingReservationDetailModal({
                                                     onEdit(booking)
                                                     onOpenChange(false)
                                                   }}
-                                                  className="rounded bg-blue-600 px-2 py-0.5 text-[10px] text-white hover:bg-blue-700"
+                                                  className="rounded bg-blue-600 px-2 py-0.5 text-[10px] text-white hover:bg-primary/90"
                                                 >
                                                   {locale === 'en' ? 'Edit' : '편집'}
                                                 </button>

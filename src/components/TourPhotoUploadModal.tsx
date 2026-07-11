@@ -278,7 +278,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                     placeholder="투어명으로 검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div>
@@ -286,14 +286,14 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                     type="date"
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
               </div>
 
               {loading ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
                   <p className="text-gray-600">투어 목록을 불러오는 중...</p>
                 </div>
               ) : (
@@ -333,7 +333,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                         <div className="ml-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
-                            tour.tour_status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                            tour.tour_status === 'confirmed' ? 'bg-primary/10 text-primary' :
                             tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
@@ -357,11 +357,11 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
             // 사진 업로드 단계
             <div className="space-y-6">
               {/* 선택된 투어 정보 */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-blue-900 mb-2">
+              <div className="bg-muted/50 border border-border rounded-lg p-4">
+                <h4 className="font-semibold text-foreground mb-2">
                   {locale === 'en' ? (selectedTour.product_name_en || selectedTour.product_name || selectedTour.product_id) : (selectedTour.product_name || selectedTour.product_id)}
                 </h4>
-                <div className="flex flex-wrap gap-4 text-sm text-blue-700">
+                <div className="flex flex-wrap gap-4 text-sm text-primary">
                   <span className="flex items-center">
                     <Calendar className="w-4 h-4 mr-1" />
                     {formatDateWithDay(selectedTour.tour_date)}
@@ -377,7 +377,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                 </div>
                 <button
                   onClick={() => setSelectedTour(null)}
-                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline"
+                  className="mt-2 text-sm text-primary hover:text-primary/80 underline"
                 >
                   다른 투어 선택
                 </button>
@@ -393,7 +393,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                   multiple
                   accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
                   onChange={handleFileSelect}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   여러 장의 사진을 한 번에 선택할 수 있습니다

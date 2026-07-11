@@ -170,7 +170,7 @@ export default function DocumentCategoryModal({
             </h2>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
             >
               <X className="w-5 h-5" />
             </button>
@@ -187,7 +187,7 @@ export default function DocumentCategoryModal({
                   type="text"
                   value={formData.name_ko}
                   onChange={(e) => setFormData(prev => ({ ...prev, name_ko: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: 계약/협약"
                   required
                 />
@@ -201,7 +201,7 @@ export default function DocumentCategoryModal({
                   type="text"
                   value={formData.name_en}
                   onChange={(e) => setFormData(prev => ({ ...prev, name_en: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: Contracts/Agreements"
                   required
                 />
@@ -218,7 +218,7 @@ export default function DocumentCategoryModal({
                   value={formData.description_ko}
                   onChange={(e) => setFormData(prev => ({ ...prev, description_ko: e.target.value }))}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="카테고리에 대한 설명을 입력하세요"
                 />
               </div>
@@ -231,7 +231,7 @@ export default function DocumentCategoryModal({
                   value={formData.description_en}
                   onChange={(e) => setFormData(prev => ({ ...prev, description_en: e.target.value }))}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="Enter description for this category"
                 />
               </div>
@@ -270,7 +270,7 @@ export default function DocumentCategoryModal({
                     onClick={() => setFormData(prev => ({ ...prev, icon }))}
                     className={`p-2 rounded border ${
                       formData.icon === icon 
-                        ? 'border-blue-500 bg-blue-50' 
+                        ? 'border-primary bg-primary/5' 
                         : 'border-gray-300 hover:border-gray-400'
                     }`}
                   >
@@ -290,7 +290,7 @@ export default function DocumentCategoryModal({
                 min="0"
                 value={formData.sort_order}
                 onChange={(e) => setFormData(prev => ({ ...prev, sort_order: parseInt(e.target.value) || 0 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
 
@@ -301,7 +301,7 @@ export default function DocumentCategoryModal({
                 id="is_active"
                 checked={formData.is_active}
                 onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
               />
               <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
                 활성 상태
@@ -328,14 +328,14 @@ export default function DocumentCategoryModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   {loading ? (
                     <>

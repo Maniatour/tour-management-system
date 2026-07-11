@@ -196,7 +196,7 @@ export default function TicketBookingsNeedCheckModal({
               onClick={() => setTab('no_tour')}
               className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:text-sm ${
                 tab === 'no_tour'
-                  ? 'bg-white text-blue-700 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -224,7 +224,7 @@ export default function TicketBookingsNeedCheckModal({
                 onClick={() => setNoTourSub('upcoming2w')}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${
                   noTourSub === 'upcoming2w'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -235,7 +235,7 @@ export default function TicketBookingsNeedCheckModal({
                 type="button"
                 onClick={() => setNoTourSub('all')}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${
-                  noTourSub === 'all' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                  noTourSub === 'all' ? 'bg-primary text-primary-foreground' : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 {t('ticketNeedCheckNoTourSubAll')}
@@ -245,7 +245,7 @@ export default function TicketBookingsNeedCheckModal({
                 type="button"
                 onClick={() => setNoTourSub('past')}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${
-                  noTourSub === 'past' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                  noTourSub === 'past' ? 'bg-primary text-primary-foreground' : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 {t('ticketNeedCheckNoTourSubPast')}
@@ -280,7 +280,7 @@ export default function TicketBookingsNeedCheckModal({
                       <button
                         type="button"
                         onClick={() => setCheckInSort((o) => (o === 'asc' ? 'desc' : 'asc'))}
-                        className="inline-flex items-center gap-1 rounded hover:text-blue-700"
+                        className="inline-flex items-center gap-1 rounded hover:text-primary"
                       >
                         {t('ticketNeedCheckColCheckIn')}
                         <span className="tabular-nums text-gray-400" aria-hidden>
@@ -348,7 +348,7 @@ export default function TicketBookingsNeedCheckModal({
                               onEdit(b);
                               onClose();
                             }}
-                            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-primary/90"
                           >
                             {t('ticketNeedCheckOpenEdit')}
                           </button>

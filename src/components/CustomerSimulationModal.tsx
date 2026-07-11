@@ -166,7 +166,7 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
               placeholder="고객 이름, 이메일, 전화번호로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
         </div>
@@ -182,7 +182,7 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
         <div className="overflow-y-auto max-h-96">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <span className="ml-2 text-gray-600">{t('loadingCustomerList')}</span>
             </div>
           ) : filteredCustomers.length === 0 ? (

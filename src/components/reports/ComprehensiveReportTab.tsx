@@ -570,7 +570,7 @@ export default function ComprehensiveReportTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -587,7 +587,7 @@ export default function ComprehensiveReportTab({
     <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 카드 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-4 sm:p-6 rounded-lg text-white">
+        <div className="bg-gradient-to-br from-primary to-primary p-4 sm:p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-sm font-medium">총 예약</p>
@@ -688,7 +688,7 @@ export default function ComprehensiveReportTab({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-600">순이익</span>
-              <span className="font-semibold text-blue-600">${stats.tours.netProfit.toLocaleString()}</span>
+              <span className="font-semibold text-primary">${stats.tours.netProfit.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -751,7 +751,7 @@ export default function ComprehensiveReportTab({
                     onClick={() => handleCategoryClick(item.category)}
                     className="w-full flex justify-between items-center text-sm p-2 rounded hover:bg-gray-100 transition-colors text-left"
                   >
-                    <span className="text-gray-600 hover:text-blue-600">{item.category}</span>
+                    <span className="text-gray-600 hover:text-primary">{item.category}</span>
                     <span className="font-medium">${item.amount.toLocaleString()}</span>
                   </button>
                 ))}

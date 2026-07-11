@@ -228,7 +228,7 @@ export default function CategoryManagementModal({
         <div className="mb-6">
           <button
             onClick={startCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             <Plus className="w-4 h-4" />
             새 카테고리 추가
@@ -242,7 +242,7 @@ export default function CategoryManagementModal({
               key={category.id}
               className={`border rounded-lg p-4 cursor-pointer transition-all ${
                 selectedCategoryId === category.id 
-                  ? 'border-blue-500 bg-blue-50' 
+                  ? 'border-primary bg-primary/5' 
                   : 'border-gray-200 hover:border-gray-300'
               }`}
               onClick={() => onCategorySelect(category)}
@@ -261,7 +261,7 @@ export default function CategoryManagementModal({
                       e.stopPropagation()
                       startEdit(category)
                     }}
-                    className="p-1 text-gray-400 hover:text-blue-600"
+                    className="p-1 text-gray-400 hover:text-primary"
                   >
                     <Edit className="w-4 h-4" />
                   </button>
@@ -300,7 +300,7 @@ export default function CategoryManagementModal({
                   type="text"
                   value={formData.name_ko}
                   onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: 투어 포인트"
                 />
               </div>
@@ -313,7 +313,7 @@ export default function CategoryManagementModal({
                   type="text"
                   value={formData.name_en}
                   onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: Tour Point"
                 />
               </div>
@@ -325,7 +325,7 @@ export default function CategoryManagementModal({
                 <textarea
                   value={formData.description_ko}
                   onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   rows={2}
                   placeholder="카테고리 설명을 입력하세요"
                 />
@@ -338,7 +338,7 @@ export default function CategoryManagementModal({
                 <textarea
                   value={formData.description_en}
                   onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   rows={2}
                   placeholder="Category description"
                 />
@@ -369,7 +369,7 @@ export default function CategoryManagementModal({
                 <select
                   value={formData.icon}
                   onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   {ICON_OPTIONS.map((icon) => (
                     <option key={icon} value={icon}>
@@ -387,7 +387,7 @@ export default function CategoryManagementModal({
                   type="number"
                   value={formData.sort_order}
                   onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   min="0"
                 />
               </div>
@@ -397,7 +397,7 @@ export default function CategoryManagementModal({
               <button
                 onClick={saveCategory}
                 disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
                 저장

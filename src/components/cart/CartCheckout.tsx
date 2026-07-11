@@ -154,10 +154,10 @@ function CheckoutPaymentForm({
             )}
           </div>
         </div>
-        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="mt-4 bg-muted/50 border border-border rounded-lg p-3">
           <div className="flex items-start">
-            <Lock className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-            <span className="text-xs text-blue-800">
+            <Lock className="h-4 w-4 text-primary mr-2 mt-0.5 flex-shrink-0" />
+            <span className="text-xs text-primary">
               {translate('카드 정보는 Stripe를 통해 안전하게 처리됩니다. 서버에 저장되지 않습니다.', 'Card information is securely processed through Stripe. It is not stored on our servers.')}
             </span>
           </div>
@@ -168,7 +168,7 @@ function CheckoutPaymentForm({
             disabled={!stripe || processing}
             className={`w-full flex items-center justify-center px-6 py-2 rounded-lg font-medium transition-colors ${
               stripe && !processing
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
             }`}
           >
@@ -584,7 +584,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                     setCouponError('')
                   }}
                   placeholder={translate('쿠폰 코드 입력', 'Enter coupon code')}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter') {
                       handleApplyCoupon()
@@ -597,7 +597,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     validatingCoupon || !couponCode.trim()
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
                   }`}
                 >
                   {validatingCoupon ? (
@@ -643,7 +643,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
               )}
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
                 <span className="text-gray-900">{translate('총 결제 금액', 'Total')}</span>
-                <span className="text-blue-600">${finalAmount.toFixed(2)}</span>
+                <span className="text-primary">${finalAmount.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -654,7 +654,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
             <select
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="card">{translate('신용카드', 'Credit Card')}</option>
               <option value="bank_transfer">{translate('은행 이체', 'Bank Transfer')}</option>
@@ -684,10 +684,10 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
 
           {/* 은행 이체 안내 */}
           {paymentMethod === 'bank_transfer' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-muted/50 border border-border rounded-lg p-4">
               <div className="flex items-center">
-                <CreditCard className="h-5 w-5 text-blue-600 mr-2" />
-                <span className="text-sm text-blue-800">
+                <CreditCard className="h-5 w-5 text-primary mr-2" />
+                <span className="text-sm text-primary">
                   {translate('은행 이체 정보는 예약 확정 후 별도로 안내드립니다.', 'Bank transfer information will be sent separately after your reservation is confirmed.')}
                 </span>
               </div>
@@ -696,7 +696,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                   await handlePaymentComplete({ success: true, transactionId: null })
                 }}
                 disabled={loading}
-                className="w-full mt-4 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center"
+                className="w-full mt-4 bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors font-medium flex items-center justify-center"
               >
                 {loading ? (
                   <>

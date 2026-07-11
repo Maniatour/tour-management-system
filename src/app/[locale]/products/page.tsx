@@ -1,14 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Search, Users, Calendar, Heart, Loader2, ChevronDown, ChevronUp, Grid3x3, List, MapPin } from 'lucide-react'
-import { 
-  MdDirectionsCar,      // 밴
-  MdDirectionsBus,      // 버스
-  MdFlightTakeoff,      // 경비행기
-  MdLocalTaxi          // 리무진
-} from 'react-icons/md'
-import { FaHelicopter } from 'react-icons/fa'
+import { Search, Users, Calendar, Heart, Loader2, ChevronDown, ChevronUp, Grid3x3, List, MapPin, Mountain, Tag } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -35,6 +28,8 @@ import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/produ
 import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import PriceDisplay from '@/components/customer/ui/PriceDisplay'
+import { getTransportationIcon } from '@/lib/transportationIcons'
 
 interface Product {
   id: string
@@ -269,24 +264,6 @@ export default function ProductsPage() {
     if (!Array.isArray(methods)) return false
     if (methods.length === 0) return false
     return methods.some(m => m && typeof m === 'string' && m.trim().length > 0)
-  }
-
-  // 운송수단 아이콘 매핑 함수
-  const getTransportationIcon = (method: string) => {
-    const iconMap: Record<string, { icon: React.ComponentType<{ className?: string }>, label: string }> = {
-      minivan: { icon: MdDirectionsCar, label: locale === 'en' ? 'Minivan' : '미니밴' },
-      van: { icon: MdDirectionsCar, label: locale === 'en' ? 'Van' : '밴' },
-      bus: { icon: MdDirectionsBus, label: locale === 'en' ? 'Bus' : '버스' },
-      helicopter: { icon: FaHelicopter, label: locale === 'en' ? 'Helicopter' : '헬리콥터' },
-      light_aircraft: { icon: MdFlightTakeoff, label: locale === 'en' ? 'Light Aircraft' : '경비행기' },
-      aircraft: { icon: MdFlightTakeoff, label: locale === 'en' ? 'Aircraft' : '비행기' },
-      limousine: { icon: MdLocalTaxi, label: locale === 'en' ? 'Limousine' : '리무진' },
-      car: { icon: MdDirectionsCar, label: locale === 'en' ? 'Car' : '승용차' },
-      suv: { icon: MdDirectionsCar, label: locale === 'en' ? 'SUV' : 'SUV' },
-    }
-    
-    const normalizedMethod = method.toLowerCase().trim()
-    return iconMap[normalizedMethod] || { icon: MdDirectionsCar, label: method }
   }
 
   // 실제 상품 데이터에서 카테고리 추출
@@ -542,11 +519,11 @@ export default function ProductsPage() {
                     <div className="mb-3 flex flex-wrap gap-2">
                       {validMethods.map((method, badgeIndex) => {
                         const trimmedMethod = method.trim()
-                        const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
+                        const { icon: Icon, label } = getTransportationIcon(trimmedMethod, locale)
                         return (
                           <div
                             key={`transport-badge-${trimmedMethod}-${badgeIndex}`}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-booking"
                             title={label}
                           >
                             <Icon className="w-3.5 h-3.5" />
@@ -606,12 +583,11 @@ export default function ProductsPage() {
           return (
             <ListZone zone="listing-card-price">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-lg font-bold cp-ui-price">
-                    ${getListPrice(product)} {t('startingFrom')}
-                  </div>
-                  <div className="text-sm cp-ui-muted">{t('perAdult')}</div>
-                </div>
+                <PriceDisplay
+                  amount={getListPrice(product)}
+                  suffixLabel={t('perAdult')}
+                  size="md"
+                />
               </div>
             </ListZone>
           )
@@ -625,7 +601,7 @@ export default function ProductsPage() {
       key={product.id}
       zone="listing-card"
       suppressEditButton
-      className="cp-ui-card-surface rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow"
+      className="cp-ui-card-surface rounded-card shadow-card border overflow-hidden hover:shadow-card-hover transition-shadow"
     >
       {showListingCardImage && (
         <ListZone zone="listing-card-image">
@@ -644,13 +620,13 @@ export default function ProductsPage() {
                 unoptimized={process.env.NODE_ENV === 'development'}
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+              <div className="flex h-full w-full items-center justify-center bg-muted/50">
                 <div className="text-center">
-                  <div className="text-4xl mb-2">🏔️</div>
-                  <div className="text-sm font-medium text-gray-600">
+                  <Mountain className="mx-auto mb-2 h-10 w-10 text-muted-foreground" aria-hidden />
+                  <div className="text-sm font-medium text-foreground">
                     {getCustomerDisplayName(product)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{t('imagePreparing')}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('imagePreparing')}</div>
                 </div>
               </div>
             )}
@@ -669,14 +645,14 @@ export default function ProductsPage() {
                   )
                   return validMethods.slice(0, 3).map((method, idx) => {
                     const trimmedMethod = method.trim()
-                    const { icon: Icon, label } = getTransportationIcon(trimmedMethod)
+                    const { icon: Icon, label } = getTransportationIcon(trimmedMethod, locale)
                     return (
                       <div
                         key={`transport-${trimmedMethod}-${idx}`}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm shadow-md border border-white/50 hover:bg-white transition-colors"
                         title={label}
                       >
-                        <Icon className="w-4 h-4 text-blue-700" />
+                        <Icon className="h-4 w-4 text-booking" />
                       </div>
                     )
                   })
@@ -714,7 +690,7 @@ export default function ProductsPage() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-muted/30">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-listing" />}
       <CustomerPageZoneLayoutRenderer
@@ -735,7 +711,7 @@ export default function ProductsPage() {
           if (zoneId === 'listing-page-filters') {
             return (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-                <CustomerPageZone zone="listing-page-filters" className="cp-ui-panel-surface rounded-lg shadow-sm border p-6 mb-4">
+                <CustomerPageZone zone="listing-page-filters" className="cp-ui-panel-surface rounded-card border border-border/60 p-6 mb-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {/* 검색 */}
             <div className="relative">
@@ -745,7 +721,7 @@ export default function ProductsPage() {
                 placeholder={t('searchProducts')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
 
@@ -753,7 +729,7 @@ export default function ProductsPage() {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               {categories.map(category => (
                 <option key={category.value} value={category.value}>
@@ -766,7 +742,7 @@ export default function ProductsPage() {
             <select
               value={selectedTag}
               onChange={(e) => setSelectedTag(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               {tags.map(tag => (
                 <option key={tag.value} value={tag.value}>
@@ -779,7 +755,7 @@ export default function ProductsPage() {
             <select
               value={priceRange}
               onChange={(e) => setPriceRange(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               {priceRanges.map(range => (
                 <option key={range.value} value={range.value}>
@@ -793,19 +769,20 @@ export default function ProductsPage() {
           <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
             <Link
               href={`/${locale}/products/tags`}
-              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-booking hover:text-booking/80"
             >
-              🏷️ {t('viewByTags')}
+              <Tag className="h-4 w-4" aria-hidden />
+              {t('viewByTags')}
             </Link>
             
             {/* 뷰 모드 토글 */}
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+            <div className="flex items-center gap-2 rounded-lg bg-muted p-1">
               <button
                 onClick={() => setViewMode('grouped')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   viewMode === 'grouped'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-card text-booking shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title={t('groupedView')}
               >
@@ -814,10 +791,10 @@ export default function ProductsPage() {
               </button>
               <button
                 onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   viewMode === 'grid'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-card text-booking shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title={t('gridView')}
               >
@@ -837,8 +814,8 @@ export default function ProductsPage() {
                 <CustomerPageZone zone="listing-page-results" className="block">
         {loading && (
           <div className="flex justify-center items-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">{t('loadingProducts')}</span>
+            <Loader2 className="h-8 w-8 animate-spin text-booking" />
+            <span className="ml-2 text-muted-foreground">{t('loadingProducts')}</span>
           </div>
         )}
 
@@ -848,7 +825,7 @@ export default function ProductsPage() {
             <div className="text-red-600 mb-4">{error}</div>
             <button 
               onClick={() => window.location.reload()} 
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              className="cp-ui-btn-primary rounded-btn px-4 py-2"
             >
 {t('tryAgain')}
             </button>
@@ -867,17 +844,16 @@ export default function ProductsPage() {
                     const isExpanded = expandedCategories.has(category)
                     
                     return (
-                      <div key={category} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                        {/* 카테고리 헤더 */}
+                      <div key={category} className="overflow-hidden rounded-card border border-border/60 bg-card">
                         <button
                           onClick={() => toggleCategory(category)}
-                          className="w-full px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-colors flex items-center justify-between"
+                          className="flex w-full items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50"
                         >
                           <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-gray-900">
+                            <h2 className="text-xl font-bold text-foreground">
                               {getCategoryLabel(category)}
                             </h2>
-                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700">
+                            <span className="rounded-full bg-booking/10 px-3 py-1 text-sm font-medium text-booking">
                               {categoryProducts.length} {t('items')}
                             </span>
                           </div>
@@ -910,17 +886,16 @@ export default function ProductsPage() {
                                     }
                                     
                                     return (
-                                      <div key={subCategoryKey} className="border-l-4 border-blue-200 bg-gray-50 rounded-r-lg overflow-hidden">
-                                        {/* 서브카테고리 헤더 */}
+                                      <div key={subCategoryKey} className="overflow-hidden rounded-r-lg border-l-4 border-booking/30 bg-muted/30">
                                         <button
                                           onClick={() => toggleSubCategory(category, subCategory)}
-                                          className="w-full px-5 py-3 bg-gradient-to-r from-gray-50 to-blue-50 hover:from-gray-100 hover:to-blue-100 transition-colors flex items-center justify-between"
+                                          className="flex w-full items-center justify-between px-5 py-3 transition-colors hover:bg-muted/50"
                                         >
                                           <div className="flex items-center gap-3">
-                                            <h3 className="text-lg font-semibold text-gray-800">
+                                            <h3 className="text-lg font-semibold text-foreground">
                                               {subCategory}
                                             </h3>
-                                            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                            <span className="rounded-full bg-booking/10 px-2.5 py-1 text-xs font-medium text-booking">
                                               {subCategoryProducts.length} {t('items')}
                                             </span>
                                           </div>

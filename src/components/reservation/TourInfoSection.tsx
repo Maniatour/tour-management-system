@@ -47,7 +47,7 @@ export default function TourInfoSection({
             type="date"
             value={formData.tourDate}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourDate: e.target.value }))}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
             required
           />
         </div>
@@ -57,7 +57,7 @@ export default function TourInfoSection({
             type="time"
             value={formData.tourTime}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourTime: sanitizeTimeInput(e.target.value) }))}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
           />
         </div>
       </div>
@@ -73,7 +73,7 @@ export default function TourInfoSection({
             type="time"
             value={formData.pickUpTime}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, pickUpTime: sanitizeTimeInput(e.target.value) }))}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
           />
         </div>
       </div>
@@ -90,7 +90,7 @@ export default function TourInfoSection({
             }}
             onFocus={() => setFormData((prev: any) => ({ ...prev, showPickupHotelDropdown: true }))}
             placeholder="픽업 호텔을 검색하세요"
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
           />
 
           <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -111,7 +111,7 @@ export default function TourInfoSection({
                 .map((hotel) => (
                   <div
                     key={hotel.id}
-                    className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    className="px-3 py-2 hover:bg-muted/50 cursor-pointer border-b border-gray-100 last:border-b-0"
                     onClick={() => {
                       setFormData((prev: any) => ({
                         ...prev,

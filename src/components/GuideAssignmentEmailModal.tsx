@@ -137,7 +137,7 @@ export default function GuideAssignmentEmailModal({
       <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div className="flex items-center gap-2">
-            <Mail className="h-5 w-5 text-blue-600" />
+            <Mail className="h-5 w-5 text-primary" />
             <h3 className="text-lg font-semibold text-gray-900">가이드 배정 안내 이메일</h3>
           </div>
           <button
@@ -218,7 +218,7 @@ export default function GuideAssignmentEmailModal({
                 <label className="mb-1 block text-xs font-medium text-gray-700">이메일 미리보기</label>
                 {loadingPreview ? (
                   <div className="flex h-48 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
-                    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
                 ) : preview ? (
                   <div className="space-y-2">
@@ -261,7 +261,7 @@ export default function GuideAssignmentEmailModal({
                 !selectedGroupKey ||
                 sentGroupKeys.has(selectedGroupKey ?? '')
               }
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-primary/90 disabled:opacity-50"
             >
               {sending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

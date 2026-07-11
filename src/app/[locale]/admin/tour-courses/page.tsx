@@ -410,7 +410,7 @@ export default function TourCoursesPage() {
     
     // 카테고리별 색상 매핑
     if (categoryLower.includes('시티') || categoryLower.includes('city')) {
-      return 'bg-blue-100 text-blue-800'
+      return 'bg-primary/10 text-primary'
     } else if (categoryLower.includes('어드벤처') || categoryLower.includes('adventure') || categoryLower.includes('액티비티') || categoryLower.includes('activity')) {
       return 'bg-orange-100 text-orange-800'
     } else if (categoryLower.includes('포인트') || categoryLower.includes('point')) {
@@ -503,7 +503,7 @@ export default function TourCoursesPage() {
                   </span>
                 )}
                 {course.duration_hours !== null && course.duration_hours !== undefined && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                     {t('minutes', { count: course.duration_hours })}
                   </span>
                 )}
@@ -526,7 +526,7 @@ export default function TourCoursesPage() {
                   e.stopPropagation()
                   startEdit(course)
                 }}
-                className="p-0.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded touch-manipulation"
+                className="p-0.5 text-gray-400 hover:text-primary hover:bg-muted/50 rounded touch-manipulation"
                 title={t('edit')}
               >
                 <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -577,7 +577,7 @@ export default function TourCoursesPage() {
                 </span>
               )}
               {course.duration_hours !== null && course.duration_hours !== undefined && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                   {t('minutes', { count: course.duration_hours })}
                 </span>
               )}
@@ -650,7 +650,7 @@ export default function TourCoursesPage() {
           </button>
           <button
             onClick={() => setShowCategoryModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium"
           >
             <Settings size={16} />
             {t('categoryManagement')}
@@ -669,7 +669,7 @@ export default function TourCoursesPage() {
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm sm:text-base"
               />
             </div>
           </div>
@@ -677,7 +677,7 @@ export default function TourCoursesPage() {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
             >
               <option value="all">{t('allCategories')}</option>
               {Array.isArray(categories) && categories.map((category: TourCourseCategory) => (
@@ -689,7 +689,7 @@ export default function TourCoursesPage() {
             <select
               value={difficultyFilter}
               onChange={(e) => setDifficultyFilter(e.target.value)}
-              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
             >
               <option value="all">{t('allDifficulties')}</option>
               <option value="easy">{t('difficulty.easy')}</option>
@@ -744,12 +744,12 @@ export default function TourCoursesPage() {
                       </p>
                     )}
                     {selectedCourse.customer_name_ko && (
-                      <p className="text-sm text-blue-600 mb-1">
+                      <p className="text-sm text-primary mb-1">
                         {t('customerLabelKo')}: {selectedCourse.customer_name_ko}
                       </p>
                     )}
                     {selectedCourse.customer_name_en && (
-                      <p className="text-sm text-blue-600">
+                      <p className="text-sm text-primary">
                         {t('customerLabelEn')}: {selectedCourse.customer_name_en}
                       </p>
                     )}
@@ -800,7 +800,7 @@ export default function TourCoursesPage() {
                   {selectedCourse.customer_description_ko && (
                     <div className="text-sm">
                       <div className="font-medium text-gray-700 mb-1">{t('customerDescKo')}</div>
-                      <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
+                      <div className="text-gray-600 bg-primary/5 p-2 rounded text-xs">
                         {selectedCourse.customer_description_ko}
                       </div>
                     </div>
@@ -808,7 +808,7 @@ export default function TourCoursesPage() {
                   {selectedCourse.customer_description_en && (
                     <div className="text-sm">
                       <div className="font-medium text-gray-700 mb-1">{t('customerDescEn')}</div>
-                      <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
+                      <div className="text-gray-600 bg-primary/5 p-2 rounded text-xs">
                         {selectedCourse.customer_description_en}
                       </div>
                     </div>
@@ -921,7 +921,7 @@ export default function TourCoursesPage() {
                   <div className="flex gap-2 pt-2 border-t border-gray-200">
                     <button
                       onClick={() => startEdit(selectedCourse)}
-                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm"
                     >
                       {t('edit')}
                     </button>
@@ -1004,9 +1004,9 @@ export default function TourCoursesPage() {
               </div>
 
               <div className="space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">{t('newFeatures')}</h3>
-                  <ul className="space-y-2 text-blue-800">
+                <div className="bg-muted/50 border border-border rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-foreground mb-2">{t('newFeatures')}</h3>
+                  <ul className="space-y-2 text-primary">
                     <li>• {t('helpFeature1')}</li>
                     <li>• {t('helpFeature2')}</li>
                     <li>• {t('helpFeature3')}</li>

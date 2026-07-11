@@ -578,7 +578,7 @@ export default function FinancialAccountLinkedCardsModal({
             <strong>Super 권한</strong>이 필요합니다. 카드명·가이드·메모까지 함께 고치려면{' '}
             <button
               type="button"
-              className="text-blue-600 underline hover:text-blue-800"
+              className="text-primary underline hover:text-primary/80"
               onClick={() => {
                 onOpenChange(false)
                 onOpenFlatLinkModal?.()
@@ -713,7 +713,7 @@ export default function FinancialAccountLinkedCardsModal({
                   <button
                     type="button"
                     disabled={saving || creatingNewCard}
-                    className="text-xs font-medium text-blue-700 hover:text-blue-900 underline disabled:opacity-50 disabled:no-underline"
+                    className="text-xs font-medium text-primary hover:text-primary/80 underline disabled:opacity-50 disabled:no-underline"
                     onClick={() => {
                       if (newCardOpenForAccountId === acc.id) {
                         setNewCardOpenForAccountId(null)
@@ -850,7 +850,7 @@ export default function FinancialAccountLinkedCardsModal({
               등록된 결제수단이 없습니다.{' '}
               <Link
                 href={paymentMethodsHref}
-                className="text-blue-600 font-medium underline"
+                className="text-primary font-medium underline"
                 onClick={() => onOpenChange(false)}
               >
                 결제 방법 관리

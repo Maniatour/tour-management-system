@@ -330,7 +330,7 @@ export default function OptionsTab({
                       }`}
                     />
                     {dragOverStates[option.id] && (
-                      <div className="absolute inset-0 bg-blue-500 bg-opacity-30 flex items-center justify-center z-10">
+                      <div className="absolute inset-0 bg-primary/50 bg-opacity-30 flex items-center justify-center z-10">
                         <p className="text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg">이미지 놓기</p>
                       </div>
                     )}
@@ -356,7 +356,7 @@ export default function OptionsTab({
                             document.getElementById(`file-upload-${option.id}`)?.click()
                           }
                         }}
-                        className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                        className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-md"
                         title="이미지 변경"
                       >
                         <Upload className="w-4 h-4" />
@@ -376,7 +376,7 @@ export default function OptionsTab({
                   <div 
                     className={`w-full h-full border-2 border-dashed transition-all flex items-center justify-center ${
                       dragOverStates[option.id]
-                        ? 'border-blue-400 bg-blue-50'
+                        ? 'border-blue-400 bg-primary/5'
                         : 'border-gray-200 bg-gray-50'
                     } ${uploadingImages[option.id] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
                     onDragOver={(e) => {
@@ -423,8 +423,8 @@ export default function OptionsTab({
                     />
                     {uploadingImages[option.id] ? (
                       <div className="flex flex-col items-center justify-center">
-                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                        <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
+                        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                        <p className="text-sm text-primary font-medium">업로드 중...</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center">

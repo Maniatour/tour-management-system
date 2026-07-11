@@ -362,7 +362,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
               <select
                 value={formData.platform}
                 onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                className="w-full px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                className="w-full px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                 required
               >
                 <option value="">플랫폼 선택</option>
@@ -410,7 +410,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
                 onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                 placeholder="후기 내용을 입력하세요..."
                 rows={3}
-                className="w-full px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                className="w-full px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring resize-none"
               />
             </div>
 
@@ -471,7 +471,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
                   type="checkbox"
                   checked={formData.has_photo}
                   onChange={(e) => setFormData({ ...formData, has_photo: e.target.checked })}
-                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary border-gray-300 rounded focus:ring-ring"
                 />
                 <span className="ml-2 text-xs sm:text-sm text-gray-700 flex items-center">
                   <ImageIcon className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
@@ -496,7 +496,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
                 <button
                   type="submit"
                   onClick={(e) => e.stopPropagation()}
-                  className="w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   {editingReview ? '수정' : '추가'}
                 </button>
@@ -511,7 +511,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
       <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${compact ? 'p-2 sm:p-3' : 'p-3 sm:p-4 lg:p-6'}`}>
         <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-4'}`}>
           <h3 className={`text-gray-900 flex items-center ${compact ? 'text-xs font-medium' : 'text-base sm:text-lg font-semibold'}`}>
-            <MessageSquare className={`text-blue-600 ${compact ? 'w-3.5 h-3.5 mr-1.5' : 'w-4 h-4 sm:w-5 sm:h-5 mr-2'}`} />
+            <MessageSquare className={`text-primary ${compact ? 'w-3.5 h-3.5 mr-1.5' : 'w-4 h-4 sm:w-5 sm:h-5 mr-2'}`} />
             후기 관리
           </h3>
           <button
@@ -521,7 +521,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
               e.stopPropagation()
               setShowAddForm(true)
             }}
-            className={`flex items-center text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors justify-center ${compact ? 'px-2 py-1 text-xs font-medium' : 'px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium w-full sm:w-auto'}`}
+            className={`flex items-center text-white bg-blue-600 rounded-lg hover:bg-primary/90 transition-colors justify-center ${compact ? 'px-2 py-1 text-xs font-medium' : 'px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium w-full sm:w-auto'}`}
           >
             <Plus className={compact ? 'w-3 h-3 mr-1' : 'w-3 h-3 sm:w-4 sm:h-4 mr-1'} />
             후기 추가
@@ -531,7 +531,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
       {/* 후기 목록 */}
       {loading ? (
         <div className="text-center py-8">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           <p className="mt-2 text-gray-600">로딩 중...</p>
         </div>
       ) : reviews.length === 0 ? (
@@ -555,7 +555,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
                       </span>
                       {renderStars(review.rating)}
                       {review.has_photo && (
-                        <span className="flex items-center text-xs text-blue-600 whitespace-nowrap">
+                        <span className="flex items-center text-xs text-primary whitespace-nowrap">
                           <ImageIcon className="w-3 h-3 mr-1" />
                           투어 사진 첨부됨
                         </span>
@@ -594,7 +594,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
                 <div className="flex items-center space-x-2 sm:ml-4 flex-shrink-0 self-start sm:self-center">
                   <button
                     onClick={() => handleEdit(review)}
-                    className="p-1 sm:p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    className="p-1 sm:p-1.5 text-primary hover:bg-muted/50 rounded transition-colors"
                     title="수정"
                   >
                     <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />

@@ -17,7 +17,7 @@ function AdminAuthLoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="text-center">
-        <div className="mx-auto h-32 w-32 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="mx-auto h-32 w-32 animate-spin rounded-full border-b-2 border-primary" />
         <p className="mt-4 text-gray-600">인증 확인 중...</p>
       </div>
     </div>
@@ -113,7 +113,7 @@ function AdminAuthGuardContent({
           <button
             type="button"
             onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
@@ -132,7 +132,7 @@ function AdminAuthGuardContent({
           </p>
           <button
             onClick={() => router.push(`/${locale}/auth`)}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
@@ -151,7 +151,7 @@ function AdminAuthGuardContent({
           </p>
           <button
             onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
@@ -175,7 +175,7 @@ function AdminAuthGuardContent({
           </p>
           <button
             onClick={() => router.push(`/${locale}/guide`)}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uAC00\uC774\uB4DC \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>

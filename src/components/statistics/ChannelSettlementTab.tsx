@@ -1931,7 +1931,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   if (reservationsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -1945,7 +1945,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           <span className="text-xs sm:text-sm font-medium text-gray-700">채널 필터:</span>
           <button
             onClick={() => setIsChannelModalOpen(true)}
-            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium text-blue-700 transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-primary/5 hover:bg-muted border border-border rounded-md sm:rounded-lg text-xs sm:text-sm font-medium text-primary transition-colors flex items-center gap-1.5"
           >
             <span className="truncate max-w-[140px] sm:max-w-none">{selectedChannelName}</span>
             <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
@@ -1988,8 +1988,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
               <div className="flex items-center gap-2 sm:gap-3">
-                <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
-                  <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+                <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
+                  <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">예약 건수</p>
@@ -2048,7 +2048,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   onClick={() => setChannelUi((u) => ({ ...u, activeDetailTab: 'reservations' }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'reservations'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -2058,7 +2058,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   onClick={() => setChannelUi((u) => ({ ...u, activeDetailTab: 'tours' }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'tours'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -2654,7 +2654,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
                 {toursLoading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : channelGroups.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">
@@ -3342,7 +3342,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   }}
                   className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
                     !channelFilter
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      ? 'border-primary bg-primary/5 text-primary'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -3366,7 +3366,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                           }}
                           className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
                             channelFilter === channel.id
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              ? 'border-primary bg-primary/5 text-primary'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >

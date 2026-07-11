@@ -514,7 +514,7 @@ export default function TicketInvoiceUploadModal({
         </div>
 
         <div className="mt-4">
-          <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-sm text-gray-600 hover:border-blue-400 hover:bg-blue-50/40">
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-sm text-gray-600 hover:border-blue-400 hover:bg-muted/50/40">
             <FileUp className="mb-2 h-8 w-8 text-gray-400" />
             <span className="font-medium text-gray-800">인보이스 이미지 선택</span>
             <span className="mt-1 text-xs text-gray-500">
@@ -798,7 +798,7 @@ export default function TicketInvoiceUploadModal({
                               }
                             }}
                             disabled={fieldDisabled}
-                            className="w-full min-w-[6rem] rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+                            className="w-full min-w-[6rem] rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
                             aria-label={`RN# ${b.company ?? b.id}`}
                           />
                         </td>
@@ -816,7 +816,7 @@ export default function TicketInvoiceUploadModal({
                             }
                             onBlur={(e) => void saveNoteIfChanged(b, e.target.value)}
                             disabled={fieldDisabled}
-                            className="w-full resize-y rounded border border-gray-200 bg-white px-1.5 py-1 text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+                            className="w-full resize-y rounded border border-gray-200 bg-white px-1.5 py-1 text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
                             aria-label={`메모 ${b.company ?? b.id}`}
                           />
                           {rowBusy ? (
@@ -870,7 +870,7 @@ export default function TicketInvoiceUploadModal({
             disabled={
               applyBusy || ocrPhase === 'running' || !!rowSavingId || !parsedEffective.invoiceNumber.trim()
             }
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             {applyBusy ? '저장 중…' : 'Invoice # 적용'}
           </button>

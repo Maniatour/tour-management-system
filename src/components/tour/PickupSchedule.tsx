@@ -10,7 +10,7 @@ import {
   isPickupRedirected,
   getMainGroupFromHotelId,
   getPickupModeForGroup,
-  presetDisplayName,
+  presetShortDisplayName,
   formatPickupHotelDisplayLine,
   getGroupRepresentativeHotelId,
   type PickupResolveContext,
@@ -138,7 +138,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
         className="flex items-center gap-1 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className={`text-[10px] font-medium ${!isRep ? 'text-blue-700' : 'text-gray-400'}`}>
+        <span className={`text-[10px] font-medium ${!isRep ? 'text-primary' : 'text-gray-400'}`}>
           {t('pickupModeRequested')}
         </span>
         <button
@@ -377,7 +377,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       const title = locale === 'ko'
         ? `${tCommon('statusNonResident')}: ${status.nonResident}명`
         : `${tCommon('statusNonResident')}: ${status.nonResident}`
-      return <span title={title}><Plane className="h-3 w-3 text-blue-600" /></span>
+      return <span title={title}><Plane className="h-3 w-3 text-primary" /></span>
     } else {
       const title = locale === 'ko'
         ? `${tCommon('statusNonResidentWithPass')}: ${status.nonResidentWithPass}명`
@@ -662,10 +662,10 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                   {t('groupLabel', { n: cardMainGroup })}
                 </span>
               )}
-              <span className="text-sm font-medium text-blue-600">{earliestTime}</span>
+              <span className="text-sm font-medium text-primary">{earliestTime}</span>
               <span className="text-gray-300">|</span>
               <span className="font-medium text-sm">{hotelName}</span>
-              <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
                 <Users size={14} />
                 <span>{totalPeople}</span>
               </span>
@@ -678,7 +678,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                       hotelInfo?.google_maps_link || (hotelInfo as { link?: string }).link || ''
                     )
                   }
-                  className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                  className="text-primary hover:text-primary/80 transition-colors p-1"
                   title="구글 맵에서 보기"
                 >
                   <Map size={16} />
@@ -752,7 +752,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                       <span className="text-gray-400">
                         ({status.usResident > 0 && <span className="text-green-600">{status.usResident}</span>}
                         {status.usResident > 0 && (status.nonResident > 0 || status.nonResidentWithPass > 0) && <span className="text-gray-400">/</span>}
-                        {status.nonResident > 0 && <span className="text-blue-600">{status.nonResident}</span>}
+                        {status.nonResident > 0 && <span className="text-primary">{status.nonResident}</span>}
                         {status.nonResident > 0 && status.nonResidentWithPass > 0 && <span className="text-gray-400">/</span>}
                         {status.nonResidentWithPass > 0 && <span className="text-purple-600">{status.nonResidentWithPass}</span>})
                       </span>
@@ -851,14 +851,14 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
           className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           onClick={() => onToggleSection('pickup-schedule')}
         >
-          <h2 className="text-md font-semibold text-gray-900 flex items-center min-w-0 shrink-0">
+          <h2 className="text-md font-semibold text-gray-900 flex items-center min-w-0">
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
           </h2>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0 justify-end">
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0 justify-end" onClick={(e) => e.stopPropagation()}>
               {onPickupPresetChange && (
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center shrink-0">
                   <label htmlFor="pickup-preset-select" className="sr-only">
                     {t('pickupPresetLabel')}
                   </label>
@@ -875,13 +875,13 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         setRepresentativePickupSaving(false)
                       }
                     }}
-                    className="text-xs border border-gray-300 rounded-md py-1 pl-2 pr-7 max-w-[140px] sm:max-w-[180px] truncate bg-white disabled:opacity-50"
+                    className="w-[4.75rem] text-xs border border-gray-300 rounded-md py-1 pl-1.5 pr-5 bg-white disabled:opacity-50"
                     title={t('pickupPresetHint')}
                   >
                     <option value="">{t('pickupModeRequested')}</option>
                     {pickupPresets.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {presetDisplayName(p, locale)}
+                        {presetShortDisplayName(p, locale)}
                       </option>
                     ))}
                   </select>
@@ -890,7 +890,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEmailStatusHelpModal(true)}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
                 title={t('emailStatusHelpTitle')}
               >
                 <HelpCircle size={18} />
@@ -898,7 +898,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               <button
                 type="button"
                 onClick={onAutoGenerate}
-                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                className="px-2.5 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 shrink-0"
               >
                 {t('autoGenerate')}
               </button>
@@ -907,7 +907,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                   type="button"
                   onClick={onPreviewEmail}
                   disabled={reservationsWithPickupTime === 0}
-                  className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="px-2.5 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
                   title={
                     reservationsWithPickupTime === 0
                       ? t('emailDisabledNoPickupTime')
@@ -920,9 +920,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               )}
             </div>
             {expandedSections.has('pickup-schedule') ? (
-              <ChevronUp className="w-5 h-5 text-gray-500" />
+              <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
             ) : (
-              <ChevronDown className="w-5 h-5 text-gray-500" />
+              <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
             )}
           </div>
         </div>
@@ -941,7 +941,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <FaEnvelope className="w-5 h-5 text-blue-600" />
+                  <FaEnvelope className="w-5 h-5 text-primary" />
                   {t('emailStatusModalTitle')}
                 </h2>
                 <button
@@ -993,11 +993,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 </div>
 
                 {/* 전달 완료 */}
-                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <FaCheckCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 p-3 bg-muted/50 border border-border rounded-lg">
+                  <FaCheckCircle size={20} className="text-primary flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-blue-900 mb-1">{t('delivered')}</h3>
-                    <p className="text-sm text-blue-800">
+                    <h3 className="font-semibold text-foreground mb-1">{t('delivered')}</h3>
+                    <p className="text-sm text-primary">
                       {t('deliveredDesc')}
                     </p>
                   </div>
@@ -1035,7 +1035,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={() => setShowEmailStatusHelpModal(false)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   {t('confirm')}
                 </button>

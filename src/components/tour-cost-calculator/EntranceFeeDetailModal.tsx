@@ -101,7 +101,7 @@ const EntranceFeeDetailModal: React.FC<EntranceFeeDetailModalProps> = ({
                       <td colSpan={4} className="py-3 px-3 text-right font-semibold text-gray-900">
                         {locale === 'ko' ? '입장료 합계' : 'Entrance Fee Total'}
                       </td>
-                      <td className="py-3 px-3 text-right font-bold text-lg text-blue-600">
+                      <td className="py-3 px-3 text-right font-bold text-lg text-primary">
                         ${entranceFees.toFixed(2)}
                       </td>
                     </tr>

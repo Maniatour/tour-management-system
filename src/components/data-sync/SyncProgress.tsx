@@ -50,9 +50,9 @@ export default function SyncProgress({
 
       {/* 실시간 통계 */}
       <div className="grid grid-cols-4 gap-4 mb-4">
-        <div className="bg-blue-50 p-3 rounded-lg text-center">
-          <div className="text-2xl font-bold text-blue-600">{realTimeStats.processed}</div>
-          <div className="text-sm text-blue-800">처리됨</div>
+        <div className="bg-primary/5 p-3 rounded-lg text-center">
+          <div className="text-2xl font-bold text-primary">{realTimeStats.processed}</div>
+          <div className="text-sm text-primary">처리됨</div>
         </div>
         <div className="bg-green-50 p-3 rounded-lg text-center">
           <div className="text-2xl font-bold text-green-600">{realTimeStats.inserted}</div>

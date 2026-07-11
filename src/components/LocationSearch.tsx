@@ -271,7 +271,7 @@ export default function LocationSearch({
             }
           }}
           placeholder={placeholder}
-          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
         />
         {selectedLocation && (
           <button
@@ -295,7 +295,7 @@ export default function LocationSearch({
               className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
             >
               <div className="flex items-start gap-3">
-                <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900 truncate">{suggestion.name}</div>
                   <div className="text-sm text-gray-600 truncate">{suggestion.address}</div>
@@ -314,12 +314,12 @@ export default function LocationSearch({
       )}
 
       {selectedLocation && selectedLocation.placeId && (
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-2 p-3 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <div className="font-medium text-blue-900">{selectedLocation.name}</div>
-              <div className="text-sm text-blue-700 truncate">{selectedLocation.address}</div>
-              <div className="text-xs text-blue-600 mt-1">
+              <div className="font-medium text-foreground">{selectedLocation.name}</div>
+              <div className="text-sm text-primary truncate">{selectedLocation.address}</div>
+              <div className="text-xs text-primary mt-1">
                 {selectedLocation.latitude.toFixed(6)}, {selectedLocation.longitude.toFixed(6)}
               </div>
             </div>
@@ -328,7 +328,7 @@ export default function LocationSearch({
                 href={selectedLocation.googleMapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 flex-shrink-0"
+                className="text-primary hover:text-primary/80 flex-shrink-0"
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
@@ -339,7 +339,7 @@ export default function LocationSearch({
 
       {isLoading && (
         <div className="absolute right-10 top-1/2 transform -translate-y-1/2">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
         </div>
       )}
     </div>

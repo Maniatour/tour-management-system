@@ -296,7 +296,7 @@ export default function SimpleReservationForm({
             type="text"
             value={formData.customerName}
             onChange={(e) => setFormData(prev => ({ ...prev, customerName: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
@@ -308,7 +308,7 @@ export default function SimpleReservationForm({
             type="email"
             value={formData.customerEmail}
             onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: stripSpacesFromContactInput(e.target.value) }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
@@ -320,7 +320,7 @@ export default function SimpleReservationForm({
             type="tel"
             value={formData.customerPhone}
             onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: stripSpacesFromContactInput(e.target.value) }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
@@ -337,7 +337,7 @@ export default function SimpleReservationForm({
             min="1"
             value={formData.adults}
             onChange={(e) => setFormData(prev => ({ ...prev, adults: parseInt(e.target.value) || 1 }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
@@ -350,7 +350,7 @@ export default function SimpleReservationForm({
             min="0"
             value={formData.children}
             onChange={(e) => setFormData(prev => ({ ...prev, children: parseInt(e.target.value) || 0 }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
@@ -362,7 +362,7 @@ export default function SimpleReservationForm({
             min="0"
             value={formData.infants}
             onChange={(e) => setFormData(prev => ({ ...prev, infants: parseInt(e.target.value) || 0 }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
@@ -376,7 +376,7 @@ export default function SimpleReservationForm({
           <select
             value={formData.productId}
             onChange={(e) => setFormData(prev => ({ ...prev, productId: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           >
             <option value="">상품을 선택하세요</option>
@@ -395,7 +395,7 @@ export default function SimpleReservationForm({
             type="date"
             value={formData.tourDate}
             onChange={(e) => setFormData(prev => ({ ...prev, tourDate: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
@@ -406,7 +406,7 @@ export default function SimpleReservationForm({
           <select
             value={formData.channelId}
             onChange={(e) => setFormData(prev => ({ ...prev, channelId: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             required
           >
             <option value="">채널을 선택하세요</option>
@@ -443,7 +443,7 @@ export default function SimpleReservationForm({
           value={formData.notes}
           onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
@@ -459,7 +459,7 @@ export default function SimpleReservationForm({
         <button
           type="submit"
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         >
           {loading ? '저장 중...' : '저장'}
         </button>

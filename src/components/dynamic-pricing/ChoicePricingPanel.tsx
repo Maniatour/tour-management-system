@@ -42,7 +42,7 @@ export const ChoicePricingPanel = memo(function ChoicePricingPanel({
           </div>
           <button
             onClick={onToggleCombinationPricing}
-            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
           >
             <ToggleRight className="h-4 w-4" />
             <span>초이스 가격 설정</span>
@@ -108,7 +108,7 @@ export const ChoicePricingPanel = memo(function ChoicePricingPanel({
                         type="number"
                         value={combination.adult_price}
                         onChange={(e) => onUpdatePrice(combination.id, 'adult_price', Number(e.target.value))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="0"
                       />
                     </div>
@@ -125,7 +125,7 @@ export const ChoicePricingPanel = memo(function ChoicePricingPanel({
                         type="number"
                         value={combination.child_price}
                         onChange={(e) => onUpdatePrice(combination.id, 'child_price', Number(e.target.value))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="0"
                       />
                     </div>
@@ -142,7 +142,7 @@ export const ChoicePricingPanel = memo(function ChoicePricingPanel({
                         type="number"
                         value={combination.infant_price}
                         onChange={(e) => onUpdatePrice(combination.id, 'infant_price', Number(e.target.value))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="0"
                       />
                     </div>

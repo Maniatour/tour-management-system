@@ -23,7 +23,7 @@ const getWeatherIconComponent = (weatherMain: string, weatherDescription: string
     return <CloudSnow className="w-6 h-6 text-blue-400" />
   }
   if (description.includes('rain') || description.includes('shower')) {
-    return <CloudRain className="w-6 h-6 text-blue-500" />
+    return <CloudRain className="w-6 h-6 text-primary" />
   }
   if (description.includes('drizzle')) {
     return <CloudDrizzle className="w-6 h-6 text-blue-400" />
@@ -48,7 +48,7 @@ const getWeatherIconComponent = (weatherMain: string, weatherDescription: string
     case 'drizzle':
       return <CloudDrizzle className="w-6 h-6 text-blue-400" />
     case 'rain':
-      return <CloudRain className="w-6 h-6 text-blue-500" />
+      return <CloudRain className="w-6 h-6 text-primary" />
     case 'snow':
       return <CloudSnow className="w-6 h-6 text-blue-400" />
     case 'clear':
@@ -397,7 +397,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
                 </span>
               </div>
               <div className="flex items-center">
-                <Droplets className="h-3 w-3 text-blue-500 mr-1" />
+                <Droplets className="h-3 w-3 text-primary mr-1" />
                 <span className="text-xs text-gray-600">
                   {locationData.weather.humidity ? `${locationData.weather.humidity}%` : 'N/A'}
                 </span>

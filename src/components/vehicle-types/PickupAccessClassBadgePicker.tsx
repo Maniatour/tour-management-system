@@ -82,7 +82,7 @@ export default function PickupAccessClassBadgePicker({
                 type="button"
                 onClick={() => void handleSelect(accessClass)}
                 className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                  selected ? 'bg-blue-50 text-blue-800' : 'hover:bg-gray-50 text-gray-800'
+                  selected ? 'bg-primary/5 text-primary' : 'hover:bg-gray-50 text-gray-800'
                 }`}
               >
                 <span

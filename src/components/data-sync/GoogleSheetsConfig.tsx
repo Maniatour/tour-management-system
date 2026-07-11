@@ -34,8 +34,8 @@ export default function GoogleSheetsConfig({
         <FileSpreadsheet className="h-5 w-5 mr-2" />
         구글 시트 설정
       </h2>
-      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-800">
+      <div className="mb-4 p-3 bg-muted/50 border border-border rounded-lg">
+        <p className="text-sm text-primary">
           <strong>📋 필터링:</strong> 첫 글자가 &apos;S&apos;로 시작하는 시트만 표시됩니다.
         </p>
       </div>
@@ -72,7 +72,7 @@ export default function GoogleSheetsConfig({
         <button
           onClick={onGetSheetInfo}
           disabled={loading}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
+          className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
         >
           <FileSpreadsheet className="h-5 w-5 mr-2" />
           {loading ? t('loading') : '시트 정보 가져오기'}

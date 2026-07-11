@@ -17,12 +17,12 @@ function ZoneBlock({
     <div
       className={`relative rounded-md border-2 transition-all ${
         active
-          ? 'border-blue-500 bg-blue-50/80 shadow-[0_0_0_4px_rgba(59,130,246,0.25)] z-10'
+          ? 'border-primary bg-primary/5/80 shadow-[0_0_0_4px_rgba(59,130,246,0.25)] z-10'
           : 'border-gray-200 bg-gray-50/80 opacity-70'
       } ${className}`}
     >
       {active && label && (
-        <span className="absolute -top-2.5 left-2 z-20 inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+        <span className="absolute -top-2.5 left-2 z-20 inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground shadow">
           <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
           {label}
         </span>
@@ -60,7 +60,7 @@ function ListingWireframe({ target }: { target: CustomerPreviewTarget }) {
           #태그
         </ZoneBlock>
         <ZoneBlock active={isActive(target, 'listing-card-price')} label="시작 가격" className="h-8 px-2 flex items-center justify-between text-xs">
-          <span className="font-bold text-blue-700">$000~</span>
+          <span className="font-bold text-primary">$000~</span>
           <span className="text-[10px] text-gray-400">예약하기</span>
         </ZoneBlock>
       </ZoneBlock>
@@ -98,7 +98,7 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
               <span
                 key={id}
                 className={`px-2 py-1 rounded border ${
-                  tab === id ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-400'
+                  tab === id ? 'border-primary bg-primary/5 text-primary font-medium' : 'border-gray-200 text-gray-400'
                 }`}
               >
                 {label}
@@ -146,7 +146,7 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
           </ZoneBlock>
         </div>
         <ZoneBlock active={isActive(target, 'detail-sidebar')} label="예약 패널" className="p-2 space-y-2 min-h-[200px]">
-          <ZoneBlock active={isActive(target, 'detail-sidebar-price')} label="가격" className="h-10 text-xs px-2 flex items-center justify-center font-bold text-blue-700">
+          <ZoneBlock active={isActive(target, 'detail-sidebar-price')} label="가격" className="h-10 text-xs px-2 flex items-center justify-center font-bold text-primary">
             $ 총액
           </ZoneBlock>
           <ZoneBlock active={isActive(target, 'detail-sidebar-options')} label="옵션 선택" className="h-16 text-[10px] px-2 flex items-center text-gray-500">
@@ -155,7 +155,7 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
           <ZoneBlock active={isActive(target, 'detail-sidebar-included')} label="포함·불포함" className="h-12 text-[10px] px-2 flex items-center text-gray-500">
             포함 · 불포함 요약
           </ZoneBlock>
-          <div className="h-8 rounded bg-blue-600 text-[10px] text-white flex items-center justify-center">예약하기</div>
+          <div className="flex h-8 items-center justify-center rounded bg-primary text-[10px] text-primary-foreground">예약하기</div>
         </ZoneBlock>
       </div>
     </div>

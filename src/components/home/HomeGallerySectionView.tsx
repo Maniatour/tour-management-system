@@ -1,7 +1,7 @@
 'use client'
 
 import CustomerPageZone from '@/components/product/CustomerPageZone'
-import { GALLERY_GRADIENTS } from '@/components/home/homeExtendedSectionData'
+import { GALLERY_PLACEHOLDER_CLASSES } from '@/components/home/homeExtendedSectionData'
 
 export type GalleryStructureVariant = 'grid-four' | 'masonry' | 'horizontal-scroll' | 'featured-plus-grid'
 
@@ -30,7 +30,7 @@ export default function HomeGallerySectionView({
             {Array.from({ length: count }).map((_, i) => (
               <div
                 key={i}
-                className={`shrink-0 w-48 h-32 rounded-2xl bg-gradient-to-br ${GALLERY_GRADIENTS[i % GALLERY_GRADIENTS.length]}`}
+                className={`shrink-0 h-32 w-48 rounded-feature ${GALLERY_PLACEHOLDER_CLASSES[i % GALLERY_PLACEHOLDER_CLASSES.length]}`}
               />
             ))}
           </div>
@@ -46,13 +46,13 @@ export default function HomeGallerySectionView({
           <h2 className="text-2xl font-bold mb-6">{title}</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <div
-              className={`min-h-56 rounded-2xl bg-gradient-to-br ${GALLERY_GRADIENTS[0]} md:row-span-2`}
+              className={`min-h-56 rounded-feature md:row-span-2 ${GALLERY_PLACEHOLDER_CLASSES[0]}`}
             />
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: Math.min(4, count - 1) }).map((_, i) => (
                 <div
                   key={i}
-                  className={`aspect-square rounded-xl bg-gradient-to-br ${GALLERY_GRADIENTS[(i + 1) % GALLERY_GRADIENTS.length]}`}
+                  className={`aspect-square rounded-xl ${GALLERY_PLACEHOLDER_CLASSES[(i + 1) % GALLERY_PLACEHOLDER_CLASSES.length]}`}
                 />
               ))}
             </div>
@@ -71,7 +71,7 @@ export default function HomeGallerySectionView({
             {Array.from({ length: count }).map((_, i) => (
               <div
                 key={i}
-                className={`break-inside-avoid rounded-xl bg-gradient-to-br ${GALLERY_GRADIENTS[i % GALLERY_GRADIENTS.length]} ${i % 3 === 0 ? 'h-40' : 'h-28'}`}
+                className={`break-inside-avoid rounded-xl ${GALLERY_PLACEHOLDER_CLASSES[i % GALLERY_PLACEHOLDER_CLASSES.length]} ${i % 3 === 0 ? 'h-40' : 'h-28'}`}
               />
             ))}
           </div>
@@ -89,7 +89,7 @@ export default function HomeGallerySectionView({
           {Array.from({ length: count }).map((_, i) => (
             <div
               key={i}
-              className={`aspect-[4/3] rounded-xl bg-gradient-to-br ${GALLERY_GRADIENTS[i % GALLERY_GRADIENTS.length]}`}
+              className={`aspect-[4/3] rounded-xl ${GALLERY_PLACEHOLDER_CLASSES[i % GALLERY_PLACEHOLDER_CLASSES.length]}`}
             />
           ))}
         </div>

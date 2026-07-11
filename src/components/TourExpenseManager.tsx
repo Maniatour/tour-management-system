@@ -2189,7 +2189,7 @@ export default function TourExpenseManager({
                   }
                 }}
                 disabled={uploading}
-                className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 title={t('camera')}
               >
                 <Camera size={20} />
@@ -2237,7 +2237,7 @@ export default function TourExpenseManager({
               })
               setShowAddForm(true)
             }}
-            className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             title={t('addExpense')}
           >
             <Plus size={20} />
@@ -2410,9 +2410,9 @@ export default function TourExpenseManager({
             className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
           >
             <div className="flex items-center space-x-3">
-              <div className={`w-3 h-3 rounded-full ${financialStats.profit >= 0 ? 'bg-blue-500' : 'bg-orange-500'}`}></div>
+              <div className={`w-3 h-3 rounded-full ${financialStats.profit >= 0 ? 'bg-primary/50' : 'bg-orange-500'}`}></div>
               <span className="font-medium text-gray-900">{t('profit')}</span>
-              <span className={`text-lg font-bold ${financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+              <span className={`text-lg font-bold ${financialStats.profit >= 0 ? 'text-primary' : 'text-orange-600'}`}>
                 {formatCurrency(financialStats.profit)}
               </span>
             </div>
@@ -2433,7 +2433,7 @@ export default function TourExpenseManager({
                 <hr className="my-2" />
                 <div className="flex items-center justify-between font-bold">
                   <span>{t('profit')}</span>
-                  <span className={financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}>
+                  <span className={financialStats.profit >= 0 ? 'text-primary' : 'text-orange-600'}>
                     {formatCurrency(financialStats.profit)}
                   </span>
                 </div>
@@ -2522,7 +2522,7 @@ export default function TourExpenseManager({
           <div className="mb-4 flex justify-end">
             <button
               onClick={() => setShowDriveImporter(!showDriveImporter)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
             >
               <Folder className="w-4 h-4" />
               <span>구글 드라이브에서 영수증 가져오기</span>
@@ -2545,7 +2545,7 @@ export default function TourExpenseManager({
       {/* 지출 목록 */}
       {loading ? (
         <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="text-gray-500 mt-2">Loading...</p>
         </div>
       ) : expenses.length > 0 ? (
@@ -2602,7 +2602,7 @@ export default function TourExpenseManager({
                   {/* 수정 버튼 */}
                   <button
                     onClick={() => handleEditExpense(expense)}
-                    className="p-1 text-gray-600 hover:text-blue-600"
+                    className="p-1 text-gray-600 hover:text-primary"
                     title="수정"
                   >
                     <Edit size={14} />
@@ -2634,7 +2634,7 @@ export default function TourExpenseManager({
                 </div>
                 <div className="flex items-center space-x-2">
                   {expense.payment_method && (
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
+                    <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs">
                       {paymentMethodMap[expense.payment_method] || expense.payment_method}
                     </span>
                   )}
@@ -2668,7 +2668,7 @@ export default function TourExpenseManager({
                             paidFor: getExpensePaidForLabel(expense.paid_for),
                           })
                         }}
-                        className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                        className="p-1 text-primary hover:text-primary/80 hover:bg-muted/50 rounded"
                         title="영수증 보기"
                       >
                         <Receipt size={14} />
@@ -2723,7 +2723,7 @@ export default function TourExpenseManager({
             <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
               <div className="flex items-start justify-between gap-3 p-3 sm:p-4 border-b shrink-0">
                 <div className="flex items-start gap-2 min-w-0">
-                  <Receipt className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                  <Receipt className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-gray-900">
                       {t('receiptViewerTitle', { label: viewingReceipt.paidFor })}
@@ -2789,7 +2789,7 @@ export default function TourExpenseManager({
                       href={viewingReceipt.imageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                      className="inline-flex items-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       <ImageIcon className="w-3.5 h-3.5" />
                       {t('openInNewWindow')}
@@ -2892,7 +2892,7 @@ export default function TourExpenseManager({
                                         setOcrShowCustomPaidTo(true)
                                       }
                                     }}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                   >
                                     <option value="">{t('selectPaidTo')}</option>
                                     {paidToOptions.map((paidTo) => (
@@ -2920,7 +2920,7 @@ export default function TourExpenseManager({
                                         )
                                       }
                                       placeholder={t('enterNewPaidTo')}
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                     />
                                   )}
                                 </div>
@@ -2953,14 +2953,14 @@ export default function TourExpenseManager({
                                         }}
                                         className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                           ocrMatches.draft.paid_for === 'Entrance Fee'
-                                            ? 'border-blue-500 bg-blue-50'
+                                            ? 'border-primary bg-primary/5'
                                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                         }`}
                                       >
                                         <Ticket
                                           className={`w-6 h-6 mb-1 ${
                                             ocrMatches.draft.paid_for === 'Entrance Fee'
-                                              ? 'text-blue-600'
+                                              ? 'text-primary'
                                               : 'text-gray-600'
                                           }`}
                                         />
@@ -2988,14 +2988,14 @@ export default function TourExpenseManager({
                                         }}
                                         className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                           ocrMatches.draft.paid_for === 'Gas'
-                                            ? 'border-blue-500 bg-blue-50'
+                                            ? 'border-primary bg-primary/5'
                                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                         }`}
                                       >
                                         <Fuel
                                           className={`w-6 h-6 mb-1 ${
                                             ocrMatches.draft.paid_for === 'Gas'
-                                              ? 'text-blue-600'
+                                              ? 'text-primary'
                                               : 'text-gray-600'
                                           }`}
                                         />
@@ -3023,14 +3023,14 @@ export default function TourExpenseManager({
                                         }}
                                         className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                           ocrMatches.draft.paid_for === 'Meals'
-                                            ? 'border-blue-500 bg-blue-50'
+                                            ? 'border-primary bg-primary/5'
                                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                         }`}
                                       >
                                         <UtensilsCrossed
                                           className={`w-6 h-6 mb-1 ${
                                             ocrMatches.draft.paid_for === 'Meals'
-                                              ? 'text-blue-600'
+                                              ? 'text-primary'
                                               : 'text-gray-600'
                                           }`}
                                         />
@@ -3042,13 +3042,13 @@ export default function TourExpenseManager({
                                       onClick={() => setOcrShowMoreCategories(!ocrShowMoreCategories)}
                                       className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                         ocrShowMoreCategories
-                                          ? 'border-blue-500 bg-blue-50'
+                                          ? 'border-primary bg-primary/5'
                                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                       }`}
                                     >
                                       <MoreHorizontal
                                         className={`w-6 h-6 mb-1 ${
-                                          ocrShowMoreCategories ? 'text-blue-600' : 'text-gray-600'
+                                          ocrShowMoreCategories ? 'text-primary' : 'text-gray-600'
                                         }`}
                                       />
                                       <span className="text-xs text-center text-gray-700">More</span>
@@ -3098,13 +3098,13 @@ export default function TourExpenseManager({
                                               }}
                                               className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                                 isSelected
-                                                  ? 'border-blue-500 bg-blue-50'
+                                                  ? 'border-primary bg-primary/5'
                                                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                               }`}
                                             >
                                               <IconComponent
                                                 className={`w-6 h-6 mb-1 ${
-                                                  isSelected ? 'text-blue-600' : 'text-gray-600'
+                                                  isSelected ? 'text-primary' : 'text-gray-600'
                                                 }`}
                                               />
                                               <span className="text-xs text-center text-gray-700 break-words">
@@ -3134,7 +3134,7 @@ export default function TourExpenseManager({
                                       )
                                       setOcrShowCustomPaidFor(false)
                                     }}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                   >
                                     <option value="">{t('selectOptions.pleaseSelect')}</option>
                                     {categories.map((category) => (
@@ -3146,7 +3146,7 @@ export default function TourExpenseManager({
                                   <button
                                     type="button"
                                     onClick={() => setOcrShowCustomPaidFor(!ocrShowCustomPaidFor)}
-                                    className="text-sm text-blue-600 hover:text-blue-800"
+                                    className="text-sm text-primary hover:text-primary/80"
                                   >
                                     {ocrShowCustomPaidFor
                                       ? t('selectFromExisting')
@@ -3170,7 +3170,7 @@ export default function TourExpenseManager({
                                         )
                                       }
                                       placeholder={t('newPaidForPlaceholder')}
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                     />
                                   )}
                                 </div>
@@ -3200,7 +3200,7 @@ export default function TourExpenseManager({
                                         : prev
                                     )
                                   }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                 />
                               </div>
                               <div>
@@ -3214,7 +3214,7 @@ export default function TourExpenseManager({
                                       onClick={() => handleOcrPaymentMethodTabChange('own')}
                                       className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                                         ocrPaymentMethodTab === 'own'
-                                          ? 'bg-white text-blue-700 shadow-sm'
+                                          ? 'bg-white text-primary shadow-sm'
                                           : 'text-gray-600 hover:text-gray-900'
                                       }`}
                                     >
@@ -3225,7 +3225,7 @@ export default function TourExpenseManager({
                                       onClick={() => handleOcrPaymentMethodTabChange('other')}
                                       className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                                         ocrPaymentMethodTab === 'other'
-                                          ? 'bg-white text-blue-700 shadow-sm'
+                                          ? 'bg-white text-primary shadow-sm'
                                           : 'text-gray-600 hover:text-gray-900'
                                       }`}
                                     >
@@ -3282,7 +3282,7 @@ export default function TourExpenseManager({
                                         : prev
                                     )
                                   }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                 />
                               </div>
                               <div>
@@ -3299,7 +3299,7 @@ export default function TourExpenseManager({
                                     )
                                   }
                                   rows={3}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                                 />
                               </div>
                             </div>
@@ -3372,7 +3372,7 @@ export default function TourExpenseManager({
                               {canSeeReceiptOcrRulesLink ? (
                                 <Link
                                   href={`/${locale}/admin/receipt-ocr-parse-rules`}
-                                  className="text-blue-600 hover:text-blue-800 underline"
+                                  className="text-primary hover:text-primary/80 underline"
                                 >
                                   {t('receiptOcrManageParseRules')}
                                 </Link>
@@ -3389,7 +3389,7 @@ export default function TourExpenseManager({
                               <button
                                 type="button"
                                 onClick={handleApplyOcrToForm}
-                                className="flex-1 sm:flex-none min-w-[10rem] px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                className="flex-1 sm:flex-none min-w-[10rem] px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                               >
                                 {t('receiptOcrApplyToForm')}
                               </button>
@@ -3486,7 +3486,7 @@ export default function TourExpenseManager({
                           setShowCustomPaidTo(true)
                         }
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="">{t('selectPaidTo')}</option>
                       {paidToOptions.map((paidTo) => (
@@ -3508,7 +3508,7 @@ export default function TourExpenseManager({
                           setFormData(prev => ({ ...prev, custom_paid_to: inputValue }))
                         }}
                         placeholder={t('enterNewPaidTo')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                     )}
                   </div>
@@ -3536,11 +3536,11 @@ export default function TourExpenseManager({
                           }}
                           className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                             formData.paid_for === 'Entrance Fee'
-                              ? 'border-blue-500 bg-blue-50'
+                              ? 'border-primary bg-primary/5'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
-                          <Ticket className={`w-6 h-6 mb-1 ${formData.paid_for === 'Entrance Fee' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <Ticket className={`w-6 h-6 mb-1 ${formData.paid_for === 'Entrance Fee' ? 'text-primary' : 'text-gray-600'}`} />
                           <span className="text-xs text-center text-gray-700">Entrance Fee</span>
                         </button>
                       )}
@@ -3559,11 +3559,11 @@ export default function TourExpenseManager({
                           }}
                           className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                             formData.paid_for === 'Gas'
-                              ? 'border-blue-500 bg-blue-50'
+                              ? 'border-primary bg-primary/5'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
-                          <Fuel className={`w-6 h-6 mb-1 ${formData.paid_for === 'Gas' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <Fuel className={`w-6 h-6 mb-1 ${formData.paid_for === 'Gas' ? 'text-primary' : 'text-gray-600'}`} />
                           <span className="text-xs text-center text-gray-700">Gas</span>
                         </button>
                       )}
@@ -3582,11 +3582,11 @@ export default function TourExpenseManager({
                           }}
                           className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                             formData.paid_for === 'Meals'
-                              ? 'border-blue-500 bg-blue-50'
+                              ? 'border-primary bg-primary/5'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
-                          <UtensilsCrossed className={`w-6 h-6 mb-1 ${formData.paid_for === 'Meals' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <UtensilsCrossed className={`w-6 h-6 mb-1 ${formData.paid_for === 'Meals' ? 'text-primary' : 'text-gray-600'}`} />
                           <span className="text-xs text-center text-gray-700">Meals</span>
                         </button>
                       )}
@@ -3597,11 +3597,11 @@ export default function TourExpenseManager({
                         onClick={() => setShowMoreCategories(!showMoreCategories)}
                         className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                           showMoreCategories
-                            ? 'border-blue-500 bg-blue-50'
+                            ? 'border-primary bg-primary/5'
                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        <MoreHorizontal className={`w-6 h-6 mb-1 ${showMoreCategories ? 'text-blue-600' : 'text-gray-600'}`} />
+                        <MoreHorizontal className={`w-6 h-6 mb-1 ${showMoreCategories ? 'text-primary' : 'text-gray-600'}`} />
                         <span className="text-xs text-center text-gray-700">More</span>
                       </button>
                     </div>
@@ -3646,11 +3646,11 @@ export default function TourExpenseManager({
                                 }}
                                 className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
                                   isSelected
-                                    ? 'border-blue-500 bg-blue-50'
+                                    ? 'border-primary bg-primary/5'
                                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                 }`}
                               >
-                                <IconComponent className={`w-6 h-6 mb-1 ${isSelected ? 'text-blue-600' : 'text-gray-600'}`} />
+                                <IconComponent className={`w-6 h-6 mb-1 ${isSelected ? 'text-primary' : 'text-gray-600'}`} />
                                 <span className="text-xs text-center text-gray-700 break-words">{category.name}</span>
                               </button>
                             )
@@ -3666,7 +3666,7 @@ export default function TourExpenseManager({
                         setFormData(prev => ({ ...prev, paid_for: e.target.value }))
                         setShowCustomPaidFor(false)
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       required
                     >
                       <option value="">{t('selectOptions.pleaseSelect')}</option>
@@ -3679,7 +3679,7 @@ export default function TourExpenseManager({
                     <button
                       type="button"
                       onClick={() => setShowCustomPaidFor(!showCustomPaidFor)}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-sm text-primary hover:text-primary/80"
                     >
                       {showCustomPaidFor ? t('selectFromExisting') : t('enterDirectly')}
                     </button>
@@ -3689,7 +3689,7 @@ export default function TourExpenseManager({
                         value={formData.custom_paid_for ?? ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
                         placeholder={t('newPaidForPlaceholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                     )}
                   </div>
@@ -3715,7 +3715,7 @@ export default function TourExpenseManager({
                       }))
                     }
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   />
                 </div>
@@ -3731,7 +3731,7 @@ export default function TourExpenseManager({
                         onClick={() => handlePaymentMethodTabChange('own')}
                         className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           paymentMethodTab === 'own'
-                            ? 'bg-white text-blue-700 shadow-sm'
+                            ? 'bg-white text-primary shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
                         }`}
                       >
@@ -3742,7 +3742,7 @@ export default function TourExpenseManager({
                         onClick={() => handlePaymentMethodTabChange('other')}
                         className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           paymentMethodTab === 'other'
-                            ? 'bg-white text-blue-700 shadow-sm'
+                            ? 'bg-white text-primary shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
                         }`}
                       >
@@ -3778,7 +3778,7 @@ export default function TourExpenseManager({
                   onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
                   placeholder={t('memoPlaceholder')}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
 
@@ -3824,7 +3824,7 @@ export default function TourExpenseManager({
                               }))
                             }
                             placeholder="0"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           />
                         </div>
                         <div>
@@ -3833,7 +3833,7 @@ export default function TourExpenseManager({
                             type="date"
                             value={formData.reimbursed_on}
                             onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           />
                         </div>
                       </div>
@@ -3844,7 +3844,7 @@ export default function TourExpenseManager({
                           value={formData.reimbursement_note}
                           onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
                           placeholder={t('reimbursementNotePlaceholder')}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                       </div>
                     </>
@@ -3860,7 +3860,7 @@ export default function TourExpenseManager({
                 <div
                   className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
                     dragOver 
-                      ? 'border-blue-500 bg-blue-50' 
+                      ? 'border-primary bg-primary/5' 
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
                   onDragOver={(e) => {
@@ -3966,7 +3966,7 @@ export default function TourExpenseManager({
                         }
                       }}
                       disabled={uploading}
-                      className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <ImageIcon size={16} />
                       {t('camera')}
@@ -4003,7 +4003,7 @@ export default function TourExpenseManager({
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
                 >
                   {uploading 
                     ? (editingExpense ? '수정 중...' : t('buttons.registering'))
@@ -4048,7 +4048,7 @@ export default function TourExpenseManager({
                 type="button"
                 onClick={captureReceiptWebcamFrame}
                 disabled={uploading}
-                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {t('webcamCapture')}
               </button>

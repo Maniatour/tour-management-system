@@ -250,7 +250,7 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
         <div className="p-3 text-sm text-slate-700 space-y-2">
           {phase === 'syncing' && (
             <div className="flex items-start gap-2">
-              <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0 mt-0.5" aria-hidden />
+              <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0 mt-0.5" aria-hidden />
               <div>
                 <p className="font-medium text-slate-900">
                   {fullSync ? '전체 재동기화 중…' : '받은편지함 동기화 중…'}

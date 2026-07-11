@@ -2,7 +2,7 @@
  * 상품 세부정보를 HTML로 렌더링하는 유틸리티 함수들
  */
 
-import { markdownToHtml } from '@/components/LightRichEditor'
+import { markdownToHtml } from '@/lib/markdownToHtml'
 
 export interface ProductDetails {
   slogan1?: string

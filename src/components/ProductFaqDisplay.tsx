@@ -71,7 +71,7 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">FAQ를 불러오는 중...</span>
       </div>
     )
@@ -101,7 +101,7 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
               aria-expanded={expandedFaqs.has(faq.id)}
             >
               <div className="flex min-w-0 items-start gap-2 sm:gap-3">
-                <span className="mt-0.5 shrink-0 rounded-md bg-[#0B5FFF]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#0B5FFF] sm:rounded-lg sm:px-2 sm:py-1 sm:text-xs">
+                <span className="mt-0.5 shrink-0 rounded-md bg-booking/10 px-1.5 py-0.5 text-[10px] font-bold text-booking sm:rounded-lg sm:px-2 sm:py-1 sm:text-xs">
                   Q{index + 1}
                 </span>
                 <h4 className="text-sm font-semibold text-slate-900 sm:text-base">{faq.question}</h4>

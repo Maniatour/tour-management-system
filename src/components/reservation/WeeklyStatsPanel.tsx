@@ -212,20 +212,20 @@ export default function WeeklyStatsPanel({
   const regCancelChartHeightPx = regCancelGranularity === 'month' ? 300 : 240
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-lg">
+    <div className="bg-muted/50 border border-border rounded-lg">
       {/* 주간 네비게이션 헤더 - 초컴팩트 모바일 최적화 */}
-      <div className="p-2 sm:p-4 border-b border-blue-200">
+      <div className="p-2 sm:p-4 border-b border-border">
         {/* 1줄: 구간 제목·날짜 + 주 이동·접기 (모바일에서도 같은 줄 우선) */}
         <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
           <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
-            <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
+            <h3 className="text-sm sm:text-lg font-semibold text-foreground whitespace-nowrap">
               {currentWeek === 0
                 ? t('stats.regCancelWeekHeadingRecent')
                 : currentWeek < 0
                   ? t('stats.regCancelWeekHeadingPast', { days: Math.abs(currentWeek) * 7 })
                   : t('stats.regCancelWeekHeadingFuture', { days: currentWeek * 7 })}
             </h3>
-            <div className="text-xs sm:text-sm text-blue-700 tabular-nums min-w-0">
+            <div className="text-xs sm:text-sm text-primary tabular-nums min-w-0">
               {formatWeekRange(currentWeek).display}
             </div>
           </div>
@@ -236,7 +236,7 @@ export default function WeeklyStatsPanel({
                 onInitialLoadChange(false)
                 onWeekChange(currentWeek - 1)
               }}
-              className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
+              className="px-1.5 py-1 text-xs font-medium text-primary bg-white border border-border rounded hover:bg-muted/50"
             >
               ←
             </button>
@@ -248,8 +248,8 @@ export default function WeeklyStatsPanel({
               }}
               className={`px-1.5 py-1 text-xs font-medium rounded ${
                 currentWeek === 0 && !isInitialLoad
-                  ? 'text-white bg-blue-600 border border-blue-600'
-                  : 'text-blue-700 bg-white border border-blue-300 hover:bg-blue-50'
+                  ? 'text-white bg-blue-600 border border-primary'
+                  : 'text-primary bg-white border border-border hover:bg-muted/50'
               }`}
             >
               {t('pagination.thisWeek')}
@@ -260,7 +260,7 @@ export default function WeeklyStatsPanel({
                 onInitialLoadChange(false)
                 onWeekChange(currentWeek + 1)
               }}
-              className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
+              className="px-1.5 py-1 text-xs font-medium text-primary bg-white border border-border rounded hover:bg-muted/50"
             >
               →
             </button>
@@ -270,7 +270,7 @@ export default function WeeklyStatsPanel({
               <button
                 type="button"
                 onClick={onToggleStatsCollapsed}
-                className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
+                className="p-1 text-primary hover:bg-muted rounded transition-colors"
                 title={isWeeklyStatsCollapsed ? t('stats.weeklyStatsToggleExpand') : t('stats.weeklyStatsToggleCollapse')}
               >
                 <svg
@@ -287,8 +287,8 @@ export default function WeeklyStatsPanel({
         </div>
 
         {/* 2줄: 기간 합계(등록·취소·순) — + / − / = 한 줄에만 */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
-          <span className="shrink-0 tabular-nums font-semibold text-blue-800">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-foreground">
+          <span className="shrink-0 tabular-nums font-semibold text-primary">
             {weekHeaderSummary.calendarDayCount}
             {t('stats.weekSummaryDays')}:
           </span>
@@ -369,8 +369,8 @@ export default function WeeklyStatsPanel({
         </div>
 
         {/* 3줄: 일평균(등록·취소·순) — 동일 +/−/= 아이콘은 이 줄에만 배치(중복 인상 제거) */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
-          <span className="shrink-0 font-semibold text-blue-900/90 tabular-nums" title={t('stats.weekSummaryAvgRowLabel', { days: weekHeaderSummary.calendarDayCount })}>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-foreground">
+          <span className="shrink-0 font-semibold text-foreground/90 tabular-nums" title={t('stats.weekSummaryAvgRowLabel', { days: weekHeaderSummary.calendarDayCount })}>
             {t('stats.weekSummaryAvgShort')}:
           </span>
           <span
@@ -457,9 +457,9 @@ export default function WeeklyStatsPanel({
         !isWeeklyStatsCollapsed && (
         <div className="p-2 sm:p-4">
           {regCancelChartData.length > 0 && (
-            <div className="mb-3 sm:mb-4 rounded-lg border border-blue-200 bg-white p-2 sm:p-3 shadow-sm">
+            <div className="mb-3 sm:mb-4 rounded-lg border border-border bg-white p-2 sm:p-3 shadow-sm">
               <h5 className="text-xs font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
                 {t('stats.weeklyRegCancelChartTitle')}
@@ -473,8 +473,8 @@ export default function WeeklyStatsPanel({
                       onClick={() => onRegCancelGranularityChange(g)}
                       className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
                         regCancelGranularity === g
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'border border-blue-300 bg-white text-blue-700 hover:bg-blue-50'
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'border border-border bg-white text-primary hover:bg-muted/50'
                       }`}
                     >
                       {g === 'week'
@@ -494,21 +494,21 @@ export default function WeeklyStatsPanel({
                   <button
                     type="button"
                     onClick={() => onRegCancelMonthOffsetChange((n) => n - 1)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     ←
                   </button>
                   <button
                     type="button"
                     onClick={() => onRegCancelMonthOffsetChange(0)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     {t('pagination.reset')}
                   </button>
                   <button
                     type="button"
                     onClick={() => onRegCancelMonthOffsetChange((n) => n + 1)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     →
                   </button>
@@ -519,21 +519,21 @@ export default function WeeklyStatsPanel({
                   <button
                     type="button"
                     onClick={() => onRegCancelYearOffsetChange((n) => n - 1)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     ←
                   </button>
                   <button
                     type="button"
                     onClick={() => onRegCancelYearOffsetChange(0)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     {t('pagination.reset')}
                   </button>
                   <button
                     type="button"
                     onClick={() => onRegCancelYearOffsetChange((n) => n + 1)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                    className="rounded border border-border bg-white px-2 py-0.5 text-xs text-primary hover:bg-muted/50"
                   >
                     →
                   </button>
@@ -806,7 +806,7 @@ export default function WeeklyStatsPanel({
             {/* 상품별: 등록·취소·순 */}
             <div className="rounded border border-gray-200 bg-white p-2 shadow-sm sm:p-3">
               <h5 className="mb-1.5 flex items-center text-xs font-semibold text-gray-800">
-                <svg className="mr-1 h-3 w-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="mr-1 h-3 w-3 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
                 {t('stats.byProduct')}

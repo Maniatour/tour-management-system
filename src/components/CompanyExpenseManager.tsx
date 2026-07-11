@@ -1496,7 +1496,7 @@ export default function CompanyExpenseManager({
       pending: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
       approved: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       rejected: { color: 'bg-red-100 text-red-800', icon: XCircle },
-      paid: { color: 'bg-blue-100 text-blue-800', icon: DollarSign }
+      paid: { color: 'bg-primary/10 text-primary', icon: DollarSign }
     }
     
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
@@ -2066,7 +2066,7 @@ export default function CompanyExpenseManager({
                     applySearch()
                   }
                 }}
-                className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             <Button
@@ -2096,7 +2096,7 @@ export default function CompanyExpenseManager({
             className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-gray-300 flex items-center justify-center gap-1.5 sm:gap-2"
             onClick={() => setVehicleRepairReportOpen(true)}
           >
-            <BarChart3 className="w-4 h-4 text-blue-700" />
+            <BarChart3 className="w-4 h-4 text-primary" />
             {t('vehicleRepairReport.openButton')}
           </Button>
           <Button
@@ -2137,7 +2137,7 @@ export default function CompanyExpenseManager({
                   resetForm()
                   setEditingExpense(null)
                 }}
-                className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white border-0 rounded-lg flex items-center justify-center gap-1.5 sm:gap-2"
+                className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 bg-primary hover:bg-primary/90 text-white border-0 rounded-lg flex items-center justify-center gap-1.5 sm:gap-2"
               >
                 <Plus className="w-4 h-4" />
                 {t('addExpense')}
@@ -2541,8 +2541,8 @@ export default function CompanyExpenseManager({
                     isUploading 
                       ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
                       : isDragOver 
-                        ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer' 
-                        : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                        ? 'border-primary bg-primary/10 scale-105 cursor-pointer' 
+                        : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
                   }`}
                   onDragOver={!isUploading ? handleDragOver : undefined}
                   onDragEnter={!isUploading ? handleDragEnter : undefined}
@@ -2555,19 +2555,19 @@ export default function CompanyExpenseManager({
                   <div className="flex flex-col items-center space-y-2">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                       isUploading 
-                        ? 'bg-blue-100' 
+                        ? 'bg-primary/10' 
                         : isDragOver 
                           ? 'bg-blue-200' 
                           : 'bg-gray-100'
                     }`}>
                       {isUploading ? (
                         <div className="animate-spin">
-                          <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         </div>
                       ) : isDragOver ? (
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
                       ) : (
@@ -2578,7 +2578,7 @@ export default function CompanyExpenseManager({
                     </div>
                     <div>
                       <p className={`text-sm font-medium transition-colors ${
-                        isDragOver ? 'text-blue-900' : 'text-gray-900'
+                        isDragOver ? 'text-foreground' : 'text-gray-900'
                       }`}>
                         {isUploading 
                           ? '파일 업로드 중...' 
@@ -2613,13 +2613,13 @@ export default function CompanyExpenseManager({
                         {formData.uploaded_files.map((file, index) => (
                           <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
                             <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                              <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
                                 {file.type.startsWith('image/') ? (
-                                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                   </svg>
                                 ) : (
-                                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                   </svg>
                                 )}
@@ -2856,7 +2856,7 @@ export default function CompanyExpenseManager({
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-ring bg-white"
               />
             </div>
             <div className="min-w-0">
@@ -2871,7 +2871,7 @@ export default function CompanyExpenseManager({
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-ring bg-white"
               />
             </div>
           </div>
@@ -2888,7 +2888,7 @@ export default function CompanyExpenseManager({
                   aria-label={t('filters.submitYearPresetAria', { year })}
                   className={`h-7 min-w-[2.5rem] px-2 text-[11px] rounded-md border transition-colors ${
                     isSubmitYearFilterActive(year)
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                   }`}
                 >
@@ -2914,7 +2914,7 @@ export default function CompanyExpenseManager({
                       : t('filters.statementMatchUnmatchedHint')
                     : undefined
                 }
-                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-ring bg-white"
               >
                 <option value="all">{t('filters.statementMatchAll')}</option>
                 <option value="unmatched">{t('filters.statementMatchUnmatched')}</option>
@@ -2933,7 +2933,7 @@ export default function CompanyExpenseManager({
                 onChange={(e) =>
                   setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
                 }
-                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 bg-white"
+                className="h-7 w-full px-1.5 text-[11px] border border-gray-300 rounded-md focus:ring-1 focus:ring-ring bg-white"
               >
                 <option value="all">{tTour('reimbursementFilterAll')}</option>
                 <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
@@ -3090,7 +3090,7 @@ export default function CompanyExpenseManager({
         )}
           {loading ? (
             <div className="text-center py-6 sm:py-8">
-              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
+              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-primary mx-auto" />
               <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
             </div>
           ) : expenses.length === 0 ? (
@@ -3157,7 +3157,7 @@ export default function CompanyExpenseManager({
                       <span className="min-w-0 text-right">
                         <button
                           type="button"
-                          className="truncate max-w-full text-left text-blue-700 underline-offset-2 hover:underline"
+                          className="truncate max-w-full text-left text-primary underline-offset-2 hover:underline"
                           onClick={(e) => {
                             e.stopPropagation()
                             openListQuickStandard(expense)
@@ -3170,7 +3170,7 @@ export default function CompanyExpenseManager({
                       <span className="min-w-0 text-right">
                         <button
                           type="button"
-                          className="truncate max-w-full text-left text-blue-700 underline-offset-2 hover:underline"
+                          className="truncate max-w-full text-left text-primary underline-offset-2 hover:underline"
                           onClick={(e) => {
                             e.stopPropagation()
                             openListQuickPayment(expense)
@@ -3196,7 +3196,7 @@ export default function CompanyExpenseManager({
                         {hasUsableVehicleId(expense.vehicle_id) ? (
                           <button
                             type="button"
-                            className="truncate flex-1 min-w-0 text-left text-blue-700 underline-offset-2 hover:underline"
+                            className="truncate flex-1 min-w-0 text-left text-primary underline-offset-2 hover:underline"
                             title={t('listQuickEdit.openVehicleHint')}
                             onClick={(e) => {
                               e.stopPropagation()

@@ -81,7 +81,7 @@ export default function RouteTransitionProgress() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-0.5 bg-blue-100/80"
+      className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-0.5 bg-primary/10/80"
     >
       <div
         className="h-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.45)] transition-[width] duration-200 ease-out"

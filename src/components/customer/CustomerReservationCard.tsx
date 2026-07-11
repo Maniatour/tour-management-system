@@ -52,7 +52,7 @@ export default function CustomerReservationCard({
       case 'confirmed': return 'bg-green-100 text-green-800'
       case 'inquiry': return 'bg-sky-100 text-sky-900'
       case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'completed': return 'bg-blue-100 text-blue-800'
+      case 'completed': return 'bg-primary/10 text-primary'
       case 'cancelled': return 'bg-red-100 text-red-800'
       case 'no_show': return 'bg-orange-100 text-orange-800'
       default: return 'bg-gray-100 text-gray-800'
@@ -137,7 +137,7 @@ export default function CustomerReservationCard({
                                return (
                                  <span
                                    key={`${choice.choice_id}-${choice.option_id}-${index}`}
-                                   className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                   className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
                                  >
                                    {optionName}
                                  </span>
@@ -257,7 +257,7 @@ export default function CustomerReservationCard({
                               <span className="text-sm">{channel.name}</span>
                             </div>
                   {reservation.channel_rn && (
-                                  <span className="text-sm ml-2 text-blue-600 font-medium print:ml-0 print:block">
+                                  <span className="text-sm ml-2 text-primary font-medium print:ml-0 print:block">
                                     (#{reservation.channel_rn})
                       </span>
                                 )}
@@ -267,7 +267,7 @@ export default function CustomerReservationCard({
                               <span className="text-sm">{t('channelNotFoundWithId', { id: reservation.channel_id })}</span>
                             )}
                             {!channel && !reservation.channel_id && reservation.channel_rn && (
-                              <span className="text-sm text-blue-600 font-medium">
+                              <span className="text-sm text-primary font-medium">
                                 {t('channelReservationNumber', { number: reservation.channel_rn })}
                       </span>
                             )}
@@ -285,9 +285,9 @@ export default function CustomerReservationCard({
                     <div className="flex items-center text-gray-600">
                       <Clock className="w-4 h-4 mr-2" />
                       <span className="text-sm">
-                        {t('pickup')}: <span className="font-semibold text-blue-600">{formatTimeToAMPM(reservation.pickup_time)}</span>
+                        {t('pickup')}: <span className="font-semibold text-primary">{formatTimeToAMPM(reservation.pickup_time)}</span>
                         {reservation.tour_date && (
-                          <span className="ml-1 font-semibold text-blue-600">
+                          <span className="ml-1 font-semibold text-primary">
                             ({calculatePickupDate(reservation.pickup_time, reservation.tour_date)})
                           </span>
                         )}

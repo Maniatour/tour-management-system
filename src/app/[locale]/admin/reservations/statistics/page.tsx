@@ -561,7 +561,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   if (isCheckingPermission || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -586,7 +586,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">통계 리포트</h1>
         <button
           onClick={refreshReservations}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium w-fit"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium w-fit"
         >
           <BarChart3 size={16} />
           <span>데이터 새로고침</span>
@@ -615,7 +615,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   onClick={() => setActiveTab(key as TabType)}
                   className={`flex items-center gap-1 sm:gap-2 py-3 px-2 sm:px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
                     activeTab === key
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -642,7 +642,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="고객명, 채널RN, 상품명, 날짜 검색..."
-                  className="w-full pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                 />
               </div>
               {searchQuery && (
@@ -669,7 +669,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
               <select
                 value={selectedChannelId}
                 onChange={(e) => setSelectedChannelId(e.target.value)}
-                className="w-full sm:min-w-[180px] px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full sm:min-w-[180px] px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
               >
                 <option value="">모든 채널</option>
                 {channels?.map(channel => (
@@ -701,7 +701,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                     }}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md transition-colors whitespace-nowrap ${
                       isSelected
-                        ? 'bg-blue-500 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -727,7 +727,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('daily_yesterday')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('daily_yesterday') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('daily_yesterday') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   어제
@@ -735,7 +735,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('daily_today')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('daily_today') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('daily_today') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   오늘
@@ -743,7 +743,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('monthly_this')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('monthly_this') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('monthly_this') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   이번 달
@@ -751,7 +751,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('monthly_last')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('monthly_last') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('monthly_last') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   지난 달
@@ -759,7 +759,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('yearly_2026')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('yearly_2026') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('yearly_2026') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   2026
@@ -767,7 +767,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('yearly_2025')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('yearly_2025') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('yearly_2025') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   2025
@@ -775,7 +775,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('yearly_2024')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('yearly_2024') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('yearly_2024') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   2024
@@ -783,7 +783,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   onClick={() => applyPreset('yearly_2023')}
                   className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                    isPresetActive('yearly_2023') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    isPresetActive('yearly_2023') ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   2023
@@ -809,7 +809,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                     }
                   }
                 }}
-                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-[140px]"
+                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring flex-1 min-w-0 max-w-[140px]"
               />
               <span className="text-gray-400">~</span>
               <input
@@ -817,7 +817,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-[140px]"
+                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-ring flex-1 min-w-0 max-w-[140px]"
               />
             </div>
           </div>
@@ -832,8 +832,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
-              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+            <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
+              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 예약</p>
@@ -894,7 +894,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
               onClick={() => setSelectedChart(key as ChartType)}
               className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
-                  ? 'bg-blue-500 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -927,7 +927,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                     <div className="w-20 sm:w-32 text-xs sm:text-sm text-gray-600 truncate flex-shrink-0">{item.name}</div>
                     <div className="flex-1 min-w-0 bg-gray-200 rounded-full h-5 sm:h-6 relative">
                       <div 
-                        className="bg-blue-500 h-5 sm:h-6 rounded-full flex items-center justify-end pr-1 sm:pr-2 min-w-[2rem]"
+                        className="bg-primary/50 h-5 sm:h-6 rounded-full flex items-center justify-end pr-1 sm:pr-2 min-w-[2rem]"
                         style={{ width: `${Math.min((item.value / Math.max(...chartData.map(d => d.value))) * 100, 100)}%` }}
                       >
                         <span className="text-white text-[10px] sm:text-xs font-medium">{item.value}</span>

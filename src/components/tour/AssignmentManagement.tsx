@@ -411,7 +411,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     
     const statusLower = status.toLowerCase()
     if (statusLower.includes('confirmed')) return 'bg-green-100 text-green-800'
-    if (statusLower.includes('recruiting')) return 'bg-blue-100 text-blue-800'
+    if (statusLower.includes('recruiting')) return 'bg-primary/10 text-primary'
     if (statusLower.includes('cancel')) return 'bg-red-100 text-red-800'
     if (statusLower.includes('pending')) return 'bg-yellow-100 text-yellow-800'
     return 'bg-gray-100 text-gray-800'
@@ -487,7 +487,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           <h2 className="text-lg font-semibold text-gray-900">{t('title')}</h2>
           <div className="flex items-center space-x-2">
             {loadingStates.reservations && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
             )}
             {isExpanded ? (
               <ChevronUp className="w-5 h-5 text-gray-500" />
@@ -504,7 +504,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
                   onClick={onAssignAllReservations}
-                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                  className="px-3 py-1 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90"
                 >
                   {t('assignAllPending')}
                 </button>
@@ -681,7 +681,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                                  {reservations.length} {t('reservations')}
                                </span>
                                {totalPeople > 0 && (
-                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                                    👥 <span>{totalPeople}</span>
                                  </span>
                                )}
@@ -689,7 +689,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                              {onNavigateToTour && tourId !== 'unknown' && (
                                <button
                                  onClick={() => onNavigateToTour(tourId)}
-                                 className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors w-full sm:w-auto"
+                                 className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors w-full sm:w-auto"
                                  title={t('tourNavigate')}
                                >
                                  {t('tourNavigate')}

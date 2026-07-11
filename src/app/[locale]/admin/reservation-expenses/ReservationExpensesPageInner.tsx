@@ -86,7 +86,7 @@ export default function ReservationExpensesPage() {
       {/* 헤더 */}
       <div className="mb-8">
         <div className="flex items-center space-x-3 mb-4">
-          <DollarSign className="h-8 w-8 text-blue-600" />
+          <DollarSign className="h-8 w-8 text-primary" />
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
         </div>
         <p className="text-gray-600">
@@ -98,8 +98,8 @@ export default function ReservationExpensesPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-blue-600" />
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <BarChart3 className="h-6 w-6 text-primary" />
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">{t('stats.total')}</p>
@@ -150,12 +150,12 @@ export default function ReservationExpensesPage() {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Upload className="h-5 w-5 text-blue-600" />
+              <Upload className="h-5 w-5 text-primary" />
               <h2 className="text-lg font-semibold text-gray-900">{t('sync.title')}</h2>
             </div>
             <button
               onClick={() => setShowSyncForm(!showSyncForm)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               {showSyncForm ? t('sync.hide') : t('sync.showSettings')}
             </button>
@@ -174,7 +174,7 @@ export default function ReservationExpensesPage() {
                   value={syncFormData.spreadsheetId}
                   onChange={(e) => setSyncFormData(prev => ({ ...prev, spreadsheetId: e.target.value }))}
                   placeholder={t('sync.spreadsheetIdPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               <div>
@@ -186,7 +186,7 @@ export default function ReservationExpensesPage() {
                   value={syncFormData.sheetName}
                   onChange={(e) => setSyncFormData(prev => ({ ...prev, sheetName: e.target.value }))}
                   placeholder={t('sync.sheetNamePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
             </div>

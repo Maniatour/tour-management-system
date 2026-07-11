@@ -76,12 +76,12 @@ export default function ReservationFilters({
             placeholder="예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색..."
             value={searchTerm}
             onChange={handleSearchChange}
-            className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+            className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
           />
         </div>
         <button
           onClick={onAddReservation}
-          className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
+          className="bg-primary text-primary-foreground px-2 sm:px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
         >
           <span className="hidden sm:inline">{t('addReservation')}</span>
           <span className="sm:hidden">추가</span>
@@ -94,7 +94,7 @@ export default function ReservationFilters({
         <select
           value={selectedStatus}
           onChange={handleStatusChange}
-          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
         >
           <option value="all">모든 상태</option>
           <option value="confirmed">확정</option>
@@ -107,7 +107,7 @@ export default function ReservationFilters({
         <select
           value={selectedChannel}
           onChange={handleChannelChange}
-          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
         >
           <option value="all">모든 채널</option>
           {channels.map(channel => (
@@ -121,7 +121,7 @@ export default function ReservationFilters({
         <select
           value={sortBy}
           onChange={handleSortByChange}
-          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
         >
           <option value="created_at">생성일</option>
           <option value="tour_date">투어일</option>
@@ -142,7 +142,7 @@ export default function ReservationFilters({
           onClick={onGroupByDateToggle}
           className={`px-2 py-1.5 border rounded-md text-xs sm:text-sm ${
             groupByDate 
-              ? 'bg-blue-500 text-white border-blue-500' 
+              ? 'bg-primary text-primary-foreground border-primary' 
               : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
           }`}
         >
@@ -165,14 +165,14 @@ export default function ReservationFilters({
           type="date"
           value={dateRange.start}
           onChange={handleDateRangeChange('start')}
-          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
         />
         <span className="text-gray-500">~</span>
         <input
           type="date"
           value={dateRange.end}
           onChange={handleDateRangeChange('end')}
-          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+          className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-xs sm:text-sm"
         />
       </div>
     </div>

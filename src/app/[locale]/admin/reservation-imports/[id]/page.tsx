@@ -477,7 +477,7 @@ export default function ReservationImportDetailPage() {
   if (loading || dataLoading || !row) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -485,7 +485,7 @@ export default function ReservationImportDetailPage() {
   if (isCancellationRequestEmailSubject(row.subject)) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <p className="text-sm text-gray-600">취소 메일은 목록에서 모달로 열립니다…</p>
       </div>
     )
@@ -501,7 +501,7 @@ export default function ReservationImportDetailPage() {
         <button
           type="button"
           onClick={() => router.push(`/${locale}/admin/reservation-imports`)}
-          className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+          className="flex items-center gap-1 text-sm text-primary hover:underline"
         >
           <ArrowLeft className="w-4 h-4" /> 목록으로
         </button>
@@ -641,7 +641,7 @@ export default function ReservationImportDetailPage() {
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ext.pickup_hotel)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+                      className="text-xs text-primary hover:underline mt-1 inline-block"
                     >
                       Open in Google Maps
                     </a>
@@ -696,14 +696,14 @@ export default function ReservationImportDetailPage() {
                     <button
                       type="button"
                       onClick={() => setEmailBodyView('preview')}
-                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
                     >
                       미리보기
                     </button>
                     <button
                       type="button"
                       onClick={() => setEmailBodyView('code')}
-                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
                     >
                       코드
                     </button>
@@ -744,7 +744,7 @@ export default function ReservationImportDetailPage() {
             onClick={handleReparse}
             disabled={reparsing || !hasReparseableBody}
             title="저장된 이메일 본문으로 추출 로직을 다시 실행합니다. 예약을 이미 만든 경우에도 가져오기 레코드의 추출 데이터만 갱신됩니다."
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 text-blue-800 bg-blue-50/80 rounded-md text-sm hover:bg-blue-100 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border text-primary bg-primary/5/80 rounded-md text-sm hover:bg-muted disabled:opacity-50"
           >
             {reparsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             본문 다시 파싱
@@ -838,7 +838,7 @@ export default function ReservationImportDetailPage() {
               {row.reservation_id ? (
                 <a
                   href={`/${locale}/admin/reservations/${row.reservation_id}`}
-                  className="text-sm text-blue-600 hover:underline mr-auto"
+                  className="text-sm text-primary hover:underline mr-auto"
                 >
                   생성된 예약 보기 →
                 </a>

@@ -267,7 +267,7 @@ export default function SuppliersPage() {
             setEditingSupplier(null);
             setShowSupplierModal(true);
           }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           공급업체 추가
@@ -298,7 +298,7 @@ export default function SuppliersPage() {
                       setSelectedSupplier(supplier);
                       setShowProductModal(true);
                     }}
-                    className="text-blue-600 hover:text-blue-800 p-2"
+                    className="text-primary hover:text-primary/80 p-2"
                     title="상품 관리"
                   >
                     <Eye className="w-4 h-4" />
@@ -343,12 +343,12 @@ export default function SuppliersPage() {
                     ${pendingAmount.toLocaleString()}
                   </div>
                 </div>
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center gap-2 text-blue-600 mb-1">
+                <div className="bg-primary/5 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 text-primary mb-1">
                     <Calendar className="w-4 h-4" />
                     <span className="text-sm">상품 수</span>
                   </div>
-                  <div className="text-2xl font-bold text-blue-700">
+                  <div className="text-2xl font-bold text-primary">
                     {products.length}개
                   </div>
                 </div>
@@ -369,7 +369,7 @@ export default function SuppliersPage() {
                             </span>
                           )}
                           {(product.markup_percent > 0 || product.markup_amount > 0) && (
-                            <span className="text-sm text-blue-600 ml-2">
+                            <span className="text-sm text-primary ml-2">
                               (마크업: {product.markup_percent > 0 ? `${product.markup_percent}%` : ''} {product.markup_amount > 0 ? `+$${product.markup_amount}` : ''})
                             </span>
                           )}
@@ -475,7 +475,7 @@ function SupplierModal({
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               required
             />
           </div>
@@ -488,7 +488,7 @@ function SupplierModal({
               type="text"
               value={formData.contact_person}
               onChange={(e) => setFormData({...formData, contact_person: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
@@ -500,7 +500,7 @@ function SupplierModal({
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData({...formData, phone: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
@@ -512,7 +512,7 @@ function SupplierModal({
               type="email"
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
@@ -523,7 +523,7 @@ function SupplierModal({
             <textarea
               value={formData.address}
               onChange={(e) => setFormData({...formData, address: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               rows={3}
             />
           </div>
@@ -535,7 +535,7 @@ function SupplierModal({
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({...formData, notes: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               rows={2}
             />
           </div>
@@ -556,7 +556,7 @@ function SupplierModal({
           <div className="flex gap-2 pt-4">
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+              className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
             >
               {supplier ? '수정' : '추가'}
             </button>
@@ -604,7 +604,7 @@ function ProductModal({
                 setEditingProduct(null);
                 setShowProductForm(true);
               }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               상품 추가
@@ -641,7 +641,7 @@ function ProductModal({
                       </span>
                     )}
                     {(product.markup_percent > 0 || product.markup_amount > 0) && (
-                      <span className="ml-2 text-blue-600">
+                      <span className="ml-2 text-primary">
                         (마크업: {product.markup_percent > 0 ? `${product.markup_percent}%` : ''} {product.markup_amount > 0 ? `+$${product.markup_amount}` : ''})
                       </span>
                     )}
@@ -1014,12 +1014,12 @@ function ProductFormModal({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     공급 타입
                   </label>
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="p-3 bg-muted/50 border border-border rounded-lg">
                     <div className="text-sm text-gray-700">
                       {supplyType === 'choice' ? (
-                        <span className="font-medium text-blue-700">입장권(선택 옵션) 공급 - {selectedChoiceOption?.name_ko || selectedChoiceOption?.name || '옵션 미선택'}</span>
+                        <span className="font-medium text-primary">입장권(선택 옵션) 공급 - {selectedChoiceOption?.name_ko || selectedChoiceOption?.name || '옵션 미선택'}</span>
                       ) : (
-                        <span className="font-medium text-blue-700">상품 전체 공급</span>
+                        <span className="font-medium text-primary">상품 전체 공급</span>
                       )}
                       {productHasChoices && supplyType === 'product' && (
                         <div className="text-xs text-gray-600 mt-1">아래 옵션에서 특정 입장권을 선택할 수 있습니다.</div>
@@ -1038,7 +1038,7 @@ function ProductFormModal({
                   type="text"
                   value={formData.ticket_name}
                   onChange={(e) => setFormData({...formData, ticket_name: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
                   required
                 />
               </div>
@@ -1056,7 +1056,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.adult_supplier_price}
                       onChange={(e) => setFormData({...formData, adult_supplier_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       required
                     />
                   </div>
@@ -1067,7 +1067,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.child_supplier_price}
                       onChange={(e) => setFormData({...formData, child_supplier_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       required
                     />
                   </div>
@@ -1078,7 +1078,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.infant_supplier_price}
                       onChange={(e) => setFormData({...formData, infant_supplier_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       required
                     />
                   </div>
@@ -1098,7 +1098,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.adult_season_price}
                       onChange={(e) => setFormData({...formData, adult_season_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div>
@@ -1108,7 +1108,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.child_season_price}
                       onChange={(e) => setFormData({...formData, child_season_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div>
@@ -1118,7 +1118,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.infant_season_price}
                       onChange={(e) => setFormData({...formData, infant_season_price: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                 </div>
@@ -1137,7 +1137,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.markup_amount}
                       onChange={(e) => setFormData({...formData, markup_amount: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div>
@@ -1147,7 +1147,7 @@ function ProductFormModal({
                       step="0.01"
                       value={formData.markup_percent}
                       onChange={(e) => setFormData({...formData, markup_percent: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                 </div>
@@ -1169,7 +1169,7 @@ function ProductFormModal({
                           newTimes[index] = e.target.value;
                           setFormData({...formData, entry_times: newTimes});
                         }}
-                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                       <button
                         type="button"
@@ -1211,7 +1211,7 @@ function ProductFormModal({
                           newDates[index] = {...newDates[index], start: e.target.value};
                           setFormData({...formData, season_dates: newDates});
                         }}
-                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         placeholder="시작일"
                       />
                       <span className="flex items-center text-gray-500 text-sm">~</span>
@@ -1223,7 +1223,7 @@ function ProductFormModal({
                           newDates[index] = {...newDates[index], end: e.target.value};
                           setFormData({...formData, season_dates: newDates});
                         }}
-                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         placeholder="종료일"
                       />
                       <button
@@ -1268,7 +1268,7 @@ function ProductFormModal({
               <div className="flex gap-2 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+                  className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
                 >
                   {product ? '수정' : '추가'}
                 </button>

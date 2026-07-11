@@ -635,9 +635,9 @@ export default function CustomerDashboard() {
 
   if (loading) {
         return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loading')}</p>
             </div>
           </div>
@@ -645,7 +645,7 @@ export default function CustomerDashboard() {
   }
 
         return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="container mx-auto px-4 py-6">
         <CustomerDashboardHeader
           isSimulating={isSimulating}
@@ -730,7 +730,7 @@ export default function CustomerDashboard() {
               <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
                 <Link
                   href={`/${locale}/dashboard/profile`}
-                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                  className="text-primary hover:text-primary/80 text-sm font-medium"
                 >
                   {t('editInfo')} →
                 </Link>
@@ -796,7 +796,7 @@ export default function CustomerDashboard() {
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                             reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
                             reservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            reservation.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                            reservation.status === 'completed' ? 'bg-primary/10 text-primary' :
                             'bg-red-100 text-red-800'
                           }`}>
                             {reservation.status === 'confirmed' ? t('confirmed') :

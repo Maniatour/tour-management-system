@@ -356,7 +356,7 @@ function LedgerDuplicateRowMobileCard({
       </div>
 
       {editing && editDraft ? (
-        <div className="border-t border-blue-100 pt-2">
+        <div className="border-t border-border/60 pt-2">
           <UnifiedExpenseInlineEditForm
             row={row}
             draft={editDraft}
@@ -658,7 +658,7 @@ export default function CompanyExpenseDuplicateCheckModal({
             </DialogTitle>
             {mode === 'ledger' ? (
               <details className="sm:hidden text-xs text-slate-600 group">
-                <summary className="cursor-pointer list-none text-blue-700 font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                <summary className="cursor-pointer list-none text-primary font-medium marker:content-none [&::-webkit-details-marker]:hidden">
                   점검 기준 안내
                   <span className="inline-block ml-1 transition group-open:rotate-180">▾</span>
                 </summary>
@@ -793,7 +793,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                 조건에 맞는 중복 의심 그룹이 없습니다. 등록일·검색을 바꾸거나{' '}
                 <button
                   type="button"
-                  className="text-blue-700 underline font-medium"
+                  className="text-primary underline font-medium"
                   onClick={() => {
                     setLedgerDateFrom('')
                     setLedgerDateTo('')
@@ -1075,7 +1075,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                                 </td>
                               </tr>
                               {editingSourceKey === row.source_key && editDraft ? (
-                                <tr className="bg-blue-50/40 border-b border-amber-100/90">
+                                <tr className="bg-primary/5/40 border-b border-amber-100/90">
                                   <td colSpan={LEDGER_TABLE_COL_COUNT} className="py-2 px-2">
                                     <UnifiedExpenseInlineEditForm
                                       row={row}
@@ -1192,7 +1192,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                 href={`/${locale}/admin/tours/${tourDetailModalId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />
@@ -1223,7 +1223,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                 href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />

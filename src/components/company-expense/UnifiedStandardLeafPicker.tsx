@@ -311,7 +311,7 @@ export function UnifiedStandardLeafPicker({
                             className={cn(
                               'w-full border-0 py-2 pr-3 text-left text-sm hover:bg-gray-50',
                               leafIndentClass(row.depth),
-                              selected && 'bg-blue-50'
+                              selected && 'bg-primary/5'
                             )}
                             onClick={() => pick(it.id)}
                           >

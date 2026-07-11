@@ -223,9 +223,9 @@ export default function DocumentsPage() {
   
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
@@ -233,13 +233,13 @@ export default function DocumentsPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* 헤더 */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="text-blue-600">
+              <div className="text-primary">
                 {documentInfo.icon}
               </div>
               <div>
@@ -278,7 +278,7 @@ export default function DocumentsPage() {
             <div className="text-center">
               <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <label className="cursor-pointer">
-                <span className="text-lg text-blue-600 hover:text-blue-800 font-medium">
+                <span className="text-lg text-primary hover:text-primary/80 font-medium">
                   파일을 선택하거나 드래그하여 업로드
                 </span>
                 <input
@@ -294,7 +294,7 @@ export default function DocumentsPage() {
               </p>
               {uploading && (
                 <div className="mt-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
                   <p className="text-sm text-gray-600 mt-2">업로드 중...</p>
                 </div>
               )}
@@ -320,7 +320,7 @@ export default function DocumentsPage() {
               {documents.map((doc) => (
                 <div key={doc.id} className="p-6 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className="text-blue-600">
+                    <div className="text-primary">
                       {documentType === 'medical' ? (
                         <FileText className="w-8 h-8" />
                       ) : (
@@ -345,7 +345,7 @@ export default function DocumentsPage() {
                       href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/uploads/${doc.file_path}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
+                      className="p-2 text-gray-600 hover:text-primary transition-colors"
                       title="다운로드"
                     >
                       <Download className="w-5 h-5" />

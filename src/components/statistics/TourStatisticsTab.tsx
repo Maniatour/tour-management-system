@@ -166,7 +166,7 @@ function ticketEaVsPeopleColorClasses(
     return variant === 'button' ? 'text-red-600 hover:text-red-800' : 'text-red-600'
   }
   if (t === p) {
-    return variant === 'button' ? 'text-blue-600 hover:text-blue-800' : 'text-blue-600'
+    return variant === 'button' ? 'text-primary hover:text-primary/80' : 'text-primary'
   }
   return variant === 'button' ? 'text-green-600 hover:text-green-800' : 'text-green-600'
 }
@@ -179,7 +179,7 @@ function aggregatedTicketEaVsPeopleColorClass(
 ): string {
   if (!hasComparedRows) return 'text-gray-900'
   if (ticketEaSum > peopleSum) return 'text-red-600'
-  if (ticketEaSum === peopleSum) return 'text-blue-600'
+  if (ticketEaSum === peopleSum) return 'text-primary'
   return 'text-green-600'
 }
 
@@ -213,7 +213,7 @@ function TourStatisticsTourDetailModal({
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
             >
               새 탭에서 열기
               <ExternalLink size={14} aria-hidden />
@@ -1372,7 +1372,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">
             {isCalculating ? '투어 통계를 계산 중입니다...' : '데이터를 불러오는 중입니다...'}
           </p>
@@ -1388,8 +1388,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
         <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
-              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+            <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
+              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 투어 수</p>
@@ -1535,7 +1535,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                     onClick={() =>
                       setFilters((f) => ({ ...f, selectedProducts: [...sortedTourProductNames] }))
                     }
-                    className="text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-40"
+                    className="text-primary hover:text-primary/80 hover:underline disabled:opacity-40"
                     disabled={sortedTourProductNames.length === 0}
                   >
                     모두 선택
@@ -1567,7 +1567,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                       <label
                         key={name}
                         htmlFor={inputId}
-                        className={`flex items-start gap-2 cursor-pointer rounded-md px-2 py-1 text-sm leading-snug hover:bg-gray-50 ${checked ? 'bg-blue-50/60' : ''}`}
+                        className={`flex items-start gap-2 cursor-pointer rounded-md px-2 py-1 text-sm leading-snug hover:bg-gray-50 ${checked ? 'bg-primary/5/60' : ''}`}
                       >
                         <input
                           id={inputId}
@@ -1588,7 +1588,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                               }))
                             }
                           }}
-                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
                         />
                         <span className="min-w-0 break-words text-gray-800">{name}</span>
                       </label>
@@ -1607,8 +1607,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-4 flex-1 auto-rows-fr">
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4">
                   <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
-                    <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
-                      <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+                    <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
+                      <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                     </div>
                     <div className="min-w-0 text-center">
                       <p className="text-xs sm:text-sm font-medium text-gray-600">총 투어 수</p>
@@ -1715,7 +1715,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 }
                 className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                   selectedChart === key
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -1769,14 +1769,14 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                           perPersonMetric: key as TourStatsFiltersState['perPersonMetric'],
                         }))
                       }
-                      className={`px-2 py-1 text-xs ${perPersonMetric === key ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
+                      className={`px-2 py-1 text-xs ${perPersonMetric === key ? 'bg-primary text-primary-foreground' : 'text-gray-700'}`}
                     >{label}</button>
                   ))}
                 </div>
                 <div className="flex gap-1.5">
                   <button 
                     onClick={() => generateTourStatisticsPDF({ data: tourStatisticsData, dateRange })}
-                    className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-sm"
+                    className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-xs sm:text-sm"
                   >
                     <Download size={14} />
                     <span>리포트</span>
@@ -1928,7 +1928,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 <select
                   value={selectedVehicle}
                   onChange={(e) => setFilters((f) => ({ ...f, selectedVehicle: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring"
                 >
                   <option value="all">전체 차량</option>
                   {tourStatisticsData.vehicleStats.map((vehicle, index) => (
@@ -1969,11 +1969,11 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 <div key={index} className="bg-white p-4 rounded-lg border border-gray-200">
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center space-x-3">
-                      <Car className="h-5 w-5 text-blue-600" />
+                      <Car className="h-5 w-5 text-primary" />
                       <h4 className="font-semibold text-gray-900">{vehicle.vehicleType}</h4>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-bold text-blue-600">${vehicle.totalGasCost.toLocaleString()}</p>
+                      <p className="text-lg font-bold text-primary">${vehicle.totalGasCost.toLocaleString()}</p>
                       <p className="text-sm text-gray-500">총 가스비</p>
                     </div>
                   </div>
@@ -2001,7 +2001,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
-                        className="bg-blue-500 h-2 rounded-full"
+                        className="bg-primary/50 h-2 rounded-full"
                         style={{ 
                           width: `${Math.min((vehicle.totalPeople / Math.max(...vehicleGasComparison.map(v => v.totalPeople))) * 100, 100)}%` 
                         }}
@@ -2034,7 +2034,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                         dailyMetric: key as TourStatsFiltersState['dailyMetric'],
                       }))
                     }
-                    className={`px-3 py-1 text-sm rounded-md ${dailyMetric === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+                    className={`px-3 py-1 text-sm rounded-md ${dailyMetric === key ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700'}`}
                   >{label}</button>
                 ))}
                 <button 
@@ -2163,7 +2163,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                           onClick={() =>
                             setTourDetailModal({ tourId: tour.tourId, productName: tour.productName })
                           }
-                          className="flex items-center gap-0.5 text-left text-blue-600 hover:text-blue-800 hover:underline transition-colors max-w-full"
+                          className="flex items-center gap-0.5 text-left text-primary hover:text-primary/80 hover:underline transition-colors max-w-full"
                           title="투어 상세 보기"
                         >
                           <span className="truncate">{tour.productName}</span>
@@ -2231,7 +2231,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                               <button
                                 type="button"
                                 onClick={() => openTicketBookingReservationDetail(tour.tourId)}
-                                className={`text-left hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded ${ticketEaVsPeopleColorClasses(
+                                className={`text-left hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 rounded ${ticketEaVsPeopleColorClasses(
                                   tour.ticketBookingsEa ?? 0,
                                   tour.totalPeople ?? 0,
                                   tour.productName,
@@ -2263,7 +2263,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                     <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-center">
                       <button
                         onClick={() => toggleExpenseDetails(tour.tourId, tour.tourDate)}
-                        className="flex items-center justify-center gap-0.5 hover:text-blue-700 transition-colors text-blue-600 mx-auto"
+                        className="flex items-center justify-center gap-0.5 hover:text-primary transition-colors text-primary mx-auto"
                         title="상세 내역 보기"
                       >
                         <Eye size={12} />
@@ -2591,7 +2591,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                             </div>
                           ) : (
                             <div className="text-center py-4">
-                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
                               <p className="text-sm text-gray-500 mt-2">상세 내역을 불러오는 중...</p>
                             </div>
                           )}

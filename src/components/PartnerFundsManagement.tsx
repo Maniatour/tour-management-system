@@ -388,7 +388,7 @@ export default function PartnerFundsManagement() {
             <CardTitle className="text-sm font-medium text-gray-600">Joey 밸런스</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
+            <div className="text-2xl font-bold text-primary">
               ${balance.partner1Net.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="mt-2 space-y-1 text-sm">
@@ -599,7 +599,7 @@ export default function PartnerFundsManagement() {
                                             type="button"
                                             variant={row.partner === 'partner1' ? 'default' : 'outline'}
                                             size="sm"
-                                            className={`flex-1 text-xs px-2 ${row.partner === 'partner1' ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : ''}`}
+                                            className={`flex-1 text-xs px-2 ${row.partner === 'partner1' ? 'bg-primary hover:bg-primary/90 text-white border-primary' : ''}`}
                                             onClick={() => handleUpdateBulkRow(index, 'partner', 'partner1')}
                                           >
                                             Joey
@@ -711,7 +711,7 @@ export default function PartnerFundsManagement() {
                           description: ''
                         })
                       }}
-                      className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+                      className="bg-primary hover:bg-primary/90 text-white border-0"
                     >
                       <Plus className="w-4 h-4 mr-2" />
                       거래 추가
@@ -752,7 +752,7 @@ export default function PartnerFundsManagement() {
                             <Button
                               type="button"
                               variant={transactionForm.partner === 'partner1' ? 'default' : 'outline'}
-                              className={`flex-1 ${transactionForm.partner === 'partner1' ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' : ''}`}
+                              className={`flex-1 ${transactionForm.partner === 'partner1' ? 'bg-primary hover:bg-primary/90 text-white border-primary' : ''}`}
                               onClick={() => setTransactionForm({ ...transactionForm, partner: 'partner1' })}
                             >
                               Joey
@@ -1119,7 +1119,7 @@ export default function PartnerFundsManagement() {
                       }
                       const actionColors = {
                         created: 'bg-green-100 text-green-800',
-                        updated: 'bg-blue-100 text-blue-800',
+                        updated: 'bg-primary/10 text-primary',
                         deleted: 'bg-red-100 text-red-800'
                       }
                       

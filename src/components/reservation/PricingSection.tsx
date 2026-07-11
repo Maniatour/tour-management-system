@@ -2860,7 +2860,7 @@ export default function PricingSection({
                         markPricingEdited('pricingAdults', 'productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, pricingAdults: v })
                       }}
-                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right text-gray-900 focus:ring-1 focus:ring-blue-500"
+                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right text-gray-900 focus:ring-1 focus:ring-ring"
                     />
                     <span className="text-gray-500">명</span>
                   </div>
@@ -2909,7 +2909,7 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-ring"
                       step="0.01"
                       placeholder="0"
                     />
@@ -2947,7 +2947,7 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-ring"
                       step="0.01"
                       placeholder="0"
                     />
@@ -2956,7 +2956,7 @@ export default function PricingSection({
                   <div className="flex items-center space-x-1">
                     <span className="text-xs text-gray-500 w-16"></span>
                     <span className="text-xs text-gray-500">=</span>
-                    <span className="font-medium text-xs text-blue-600">
+                    <span className="font-medium text-xs text-primary">
                       ${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}
                     </span>
                   </div>
@@ -3018,7 +3018,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-ring"
                         step="0.01"
                         placeholder="0"
                       />
@@ -3056,7 +3056,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-ring"
                         step="0.01"
                         placeholder="0"
                       />
@@ -3068,7 +3068,7 @@ export default function PricingSection({
               )}
               <div className="border-t pt-1 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
-                <span className="text-sm font-bold text-blue-600">
+                <span className="text-sm font-bold text-primary">
                   ${(() => {
                     // 판매가 + 불포함 가격 = 상품 가격 합계
                     const salePriceTotal = formData.productPriceTotal || 0
@@ -3178,7 +3178,7 @@ export default function PricingSection({
                       type="button"
                       onClick={autoSelectCoupon}
                       disabled={hasDbReservationPricingRow}
-                      className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                      className="text-xs bg-primary/10 text-primary px-2 py-1 rounded hover:bg-blue-200 transition-colors disabled:opacity-50 disabled:pointer-events-none"
                       title={
                         hasDbReservationPricingRow
                           ? '예약에 저장된 가격(reservation_pricing)이 있을 때는 자동 선택을 사용할 수 없습니다'
@@ -3251,7 +3251,7 @@ export default function PricingSection({
                       }
                     })
                   }}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-ring"
                 >
                   <option value="">쿠폰 선택</option>
                   {couponsForSelectOptions.map((coupon) => {
@@ -3279,7 +3279,7 @@ export default function PricingSection({
                   )
                   if (selectedCoupon) {
                     return (
-                      <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      <div className="mt-1 text-xs text-primary bg-primary/5 px-2 py-1 rounded">
                         선택된 쿠폰: {selectedCoupon.coupon_code} (할인: ${formData.couponDiscount.toFixed(2)})
                       </div>
                     )
@@ -3305,7 +3305,7 @@ export default function PricingSection({
                         markPricingEdited('additionalDiscount', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })
                       }}
-                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                       step="0.01"
                     />
                   </div>
@@ -3321,7 +3321,7 @@ export default function PricingSection({
                         markPricingEdited('additionalCost', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })
                       }}
-                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                       step="0.01"
                     />
                   </div>
@@ -3340,7 +3340,7 @@ export default function PricingSection({
                         markPricingEdited('tax', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, tax: Number(e.target.value) || 0 })
                       }}
-                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                       step="0.01"
                     />
                   </div>
@@ -3362,7 +3362,7 @@ export default function PricingSection({
                           cardFee: nextVal === null ? prev.cardFee : nextVal,
                         }))
                       }}
-                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                       step="0.01"
                     />
                   </div>
@@ -3387,7 +3387,7 @@ export default function PricingSection({
                             prepaymentCost: Number.isFinite(v) ? v : 0,
                           }))
                         }}
-                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         step="0.01"
                         placeholder="0"
                       />
@@ -3408,7 +3408,7 @@ export default function PricingSection({
                             prepaymentTip: Number.isFinite(v) ? v : 0,
                           }))
                         }}
-                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         step="0.01"
                         placeholder="0"
                       />
@@ -3441,7 +3441,7 @@ export default function PricingSection({
                       markPricingEdited('refundAmount', 'totalPrice', 'onSiteBalanceAmount')
                       setFormData({ ...formData, refundAmount: Number(e.target.value) || 0 })
                     }}
-                    className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                     step="0.01"
                     min="0"
                   />
@@ -3453,7 +3453,7 @@ export default function PricingSection({
                   value={formData.refundReason ?? ''}
                   onChange={(e) => setFormData({ ...formData, refundReason: e.target.value })}
                   rows={3}
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                   placeholder="예: 일정 변경, 고객 취소"
                 />
               </div>
@@ -3655,7 +3655,7 @@ export default function PricingSection({
               {/* 고객 총 결제: 진행 예약은 산식, 취소 건은 DB total_price(폼 totalPrice) 직접 수정 가능 */}
               <div className="flex justify-between items-center mb-1.5">
                 <span
-                  className="text-sm font-bold text-blue-800 cursor-help"
+                  className="text-sm font-bold text-primary cursor-help"
                   title={
                     isReservationCancelled
                       ? isKorean
@@ -3753,7 +3753,7 @@ export default function PricingSection({
                 >
                   {isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}
                 </span>
-                <span className={`text-xs font-bold text-blue-700 ${priceTextClass('totalPrice')}`}>
+                <span className={`text-xs font-bold text-primary ${priceTextClass('totalPrice')}`}>
                   ${effectiveTotalCustomerPayment().toFixed(2)}
                 </span>
               </div>
@@ -3801,7 +3801,7 @@ export default function PricingSection({
                           balanceAmount: calculatedBalance,
                         }))
                       }}
-                      className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('depositAmount')}`}
+                      className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('depositAmount')}`}
                       step="0.01"
                       min="0"
                       placeholder="0"
@@ -3890,7 +3890,7 @@ export default function PricingSection({
                       markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
                       setFormData({ ...formData, onSiteBalanceAmount: finalValue, balanceAmount: finalValue })
                     }}
-                    className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('onSiteBalanceAmount')}`}
+                    className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('onSiteBalanceAmount')}`}
                     step="0.01"
                     placeholder="0"
                   />
@@ -4089,7 +4089,7 @@ export default function PricingSection({
                         
                         setChannelPaymentAmountInput('')
                       }}
-                      className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('onlinePaymentAmount')}`}
+                      className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('onlinePaymentAmount')}`}
                       step="0.01"
                       placeholder="0"
                     />
@@ -4142,7 +4142,7 @@ export default function PricingSection({
                               commission_amount: calculatedAmount,
                             }))
                           }}
-                          className="w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                          className="w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right"
                           step="0.01"
                           min="0"
                           max="100"
@@ -4200,7 +4200,7 @@ export default function PricingSection({
                           }))
                           setCommissionAmountInput('')
                         }}
-                        className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')}`}
+                        className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('commission_amount')}`}
                         step="0.01"
                         min="0"
                         placeholder="0"
@@ -4229,7 +4229,7 @@ export default function PricingSection({
                                 commission_percent: newPercent,
                               }))
                             }}
-                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right"
                             step="0.01"
                             min="0"
                             max="100"
@@ -4283,7 +4283,7 @@ export default function PricingSection({
                             }))
                             setCommissionAmountInput('')
                           }}
-                          className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                          className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           step="0.01"
                           min="0"
                           placeholder="0"
@@ -4348,7 +4348,7 @@ export default function PricingSection({
                       }
                       setChannelSettlementAmountInput('')
                     }}
-                    className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('channel_settlement_amount')}`}
+                    className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring text-right ${priceTextClass('channel_settlement_amount')}`}
                     step="0.01"
                     placeholder="0"
                   />
@@ -4617,17 +4617,17 @@ export default function PricingSection({
       {/* 정산 섹션 - 예약이 있을 때만 표시 */}
       {reservationId && (
         <div className="mt-4">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 shadow-sm">
+          <div className="bg-gradient-to-r from-muted/50 to-muted/30 border border-border rounded-lg p-3 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-1.5">
-                <Calculator className="h-4 w-4 text-blue-600" />
-                <h4 className="text-sm font-semibold text-blue-900">정산 정보</h4>
+                <Calculator className="h-4 w-4 text-primary" />
+                <h4 className="text-sm font-semibold text-foreground">정산 정보</h4>
               </div>
               <div className="flex items-center space-x-2">
                 {loadingExpenses && (
                   <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    <span className="text-xs text-blue-600">지출 조회 중...</span>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    <span className="text-xs text-primary">지출 조회 중...</span>
                   </div>
                 )}
                 <button
@@ -4636,7 +4636,7 @@ export default function PricingSection({
                     void fetchTourExpenses()
                   }}
                   disabled={loadingExpenses}
-                  className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  className="p-1 text-primary hover:text-primary/80 disabled:opacity-50"
                   title="지출 정보 새로고침"
                 >
                   <RefreshCw className={`h-4 w-4 ${loadingExpenses ? 'animate-spin' : ''}`} />
@@ -4823,7 +4823,7 @@ export default function PricingSection({
             })()}
 
             {/* 수익률 표시 + 수익 발생 뱃지 */}
-            <div className="mt-3 pt-3 border-t border-blue-200">
+            <div className="mt-3 pt-3 border-t border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center space-x-1.5">
@@ -4911,7 +4911,7 @@ export default function PricingSection({
               </div>
             </div>
             <div className="px-4 py-3 border-t border-gray-200 text-right">
-              <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700" onClick={() => setShowHelp(false)}>닫기</button>
+              <button className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90" onClick={() => setShowHelp(false)}>닫기</button>
             </div>
           </div>
         </div>

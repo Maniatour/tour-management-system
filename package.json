@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
-    "type-check": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit",
+    "type-check": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit -p tsconfig.typecheck.json",
     "type-check:pages": "node --max-old-space-size=8192 scripts/typecheck-pages.cjs",
     "type-check:batch": "node --max-old-space-size=8192 scripts/typecheck-batch.cjs",
     "clean": "rm -rf .next out dist",

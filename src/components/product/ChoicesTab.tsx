@@ -440,7 +440,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         <div className="flex space-x-2">
           <button
             onClick={addGroup}
-            className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            className="flex items-center px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
           >
             <Plus className="w-4 h-4 mr-1" />
             그룹 추가
@@ -526,7 +526,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         value={group.name}
                         onChange={(e) => updateGroup(group.id, { name: e.target.value })}
                         placeholder="예: 앤텔롭 캐년 선택"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div>
@@ -538,7 +538,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                         value={group.name_ko || ''}
                         onChange={(e) => updateGroup(group.id, { name_ko: e.target.value })}
                         placeholder="예: 앤텔롭 캐년 선택"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                   </div>
@@ -550,7 +550,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       value={group.description || ''}
                       onChange={(e) => updateGroup(group.id, { description: e.target.value })}
                       placeholder="그룹에 대한 설명을 입력하세요"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                       rows={2}
                     />
                   </div>
@@ -594,7 +594,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                             value={choice.name}
                             onChange={(e) => updateChoice(group.id, choice.id, { name: e.target.value })}
                             placeholder="예: Lower Antelope Canyon"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                           />
                         </div>
 
@@ -608,7 +608,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                             value={choice.name_ko || ''}
                             onChange={(e) => updateChoice(group.id, choice.id, { name_ko: e.target.value })}
                             placeholder="예: 로어 앤텔로프 캐니언"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                           />
                         </div>
 
@@ -621,7 +621,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                             type="number"
                             value={choice.adult_price}
                             onChange={(e) => updateChoice(group.id, choice.id, { adult_price: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                             step="0.01"
                             min="0"
                             placeholder="0"
@@ -637,7 +637,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                             type="number"
                             value={choice.child_price}
                             onChange={(e) => updateChoice(group.id, choice.id, { child_price: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                             step="0.01"
                             min="0"
                             placeholder="0"
@@ -653,7 +653,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                             type="number"
                             value={choice.infant_price}
                             onChange={(e) => updateChoice(group.id, choice.id, { infant_price: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                             step="0.01"
                             min="0"
                             placeholder="0"
@@ -694,7 +694,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                           value={choice.description || ''}
                           onChange={(e) => updateChoice(group.id, choice.id, { description: e.target.value })}
                           placeholder="초이스에 대한 설명을 입력하세요"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                           rows={2}
                         />
                       </div>
@@ -720,7 +720,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 <select
                   value={selectedProductId}
                   onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                 >
                   <option value="">상품을 선택하세요</option>
                   {products.map((product) => (
@@ -766,7 +766,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 <select
                   value={selectedTargetProductId}
                   onChange={(e) => setSelectedTargetProductId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                 >
                   <option value="">상품을 선택하세요</option>
                   {products.map((product) => (
@@ -813,7 +813,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                   value={importData}
                   onChange={(e) => setImportData(e.target.value)}
                   placeholder="내보낸 JSON 데이터를 여기에 붙여넣으세요"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-ring"
                   rows={10}
                 />
               </div>

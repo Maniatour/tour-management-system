@@ -334,7 +334,7 @@ export default function GuideTeamBoard() {
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'daily':
-        return 'text-blue-600 bg-blue-100'
+        return 'text-primary bg-primary/10'
       case 'monthly':
         return 'text-purple-600 bg-purple-100'
       case 'yearly':
@@ -372,7 +372,7 @@ export default function GuideTeamBoard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loadingTeamBoard')}</p>
         </div>
       </div>
@@ -407,7 +407,7 @@ export default function GuideTeamBoard() {
               onClick={() => setActiveTab('todos')}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === 'todos'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -420,7 +420,7 @@ export default function GuideTeamBoard() {
               onClick={() => setActiveTab('announcements')}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === 'announcements'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -433,7 +433,7 @@ export default function GuideTeamBoard() {
               onClick={() => setActiveTab('issues')}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === 'issues'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -537,7 +537,7 @@ export default function GuideTeamBoard() {
                 <h2 className="text-lg font-semibold text-gray-900">{getText('전달사항', 'Announcements')}</h2>
                 <button
                   onClick={() => setShowNewAnnouncement(true)}
-                  className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex items-center px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   {getText('추가', 'Add')}
@@ -549,7 +549,7 @@ export default function GuideTeamBoard() {
                   {announcements.map((announcement) => (
                     <div
                       key={announcement.id}
-                      className="border border-blue-200 rounded-lg p-4 bg-blue-50"
+                      className="border border-border rounded-lg p-4 bg-primary/5"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -569,7 +569,7 @@ export default function GuideTeamBoard() {
                         </div>
                         <button
                           onClick={() => handleAnnouncementAck(announcement.id)}
-                          className="ml-4 px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                          className="ml-4 px-3 py-1 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 transition-colors"
                         >
                           {getText('확인', 'Acknowledge')}
                         </button>
@@ -684,7 +684,7 @@ export default function GuideTeamBoard() {
                       type="text"
                       value={newAnnouncement.title}
                       onChange={(e) => setNewAnnouncement({ ...newAnnouncement, title: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder={getText('공지 제목', 'Announcement title')}
                       required
                     />
@@ -695,7 +695,7 @@ export default function GuideTeamBoard() {
                     <textarea
                       value={newAnnouncement.content}
                       onChange={(e) => setNewAnnouncement({ ...newAnnouncement, content: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                       rows={3}
                       placeholder={getText('공지 내용', 'Announcement content')}
                       required
@@ -709,7 +709,7 @@ export default function GuideTeamBoard() {
                         type="text"
                         value={newAnnouncement.tags}
                         onChange={(e) => setNewAnnouncement({ ...newAnnouncement, tags: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                         placeholder={getText('예: 긴급, 회의', 'e.g.: urgent, meeting')}
                       />
                     </div>
@@ -728,7 +728,7 @@ export default function GuideTeamBoard() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'individual'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -743,7 +743,7 @@ export default function GuideTeamBoard() {
                           }}
                           className={`px-4 py-2 rounded text-sm font-medium ${
                             taskRecipientMode === 'group'
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
@@ -764,7 +764,7 @@ export default function GuideTeamBoard() {
                                  onClick={() => setActivePositionTab(position)}
                                  className={`px-2 py-2 text-xs font-medium border-r last:border-r-0 transition-colors whitespace-nowrap ${
                                    activePositionTab === position
-                                     ? 'bg-blue-600 text-white'
+                                     ? 'bg-primary text-primary-foreground'
                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                  }`}
                                >
@@ -795,7 +795,7 @@ export default function GuideTeamBoard() {
                                     }}
                                     className={`px-2 py-1 text-xs rounded transition-colors ${
                                       selectedTaskIndividuals.includes(member.email)
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-primary text-primary-foreground'
                                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                     }`}
                                   >
@@ -832,7 +832,7 @@ export default function GuideTeamBoard() {
                                 }}
                                 className={`w-full text-left px-2 py-1 text-xs font-medium rounded transition-colors ${
                                   selectedTaskPositions.includes(position)
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
@@ -878,7 +878,7 @@ export default function GuideTeamBoard() {
                   <div className="flex space-x-3 pt-4">
                     <button
                       type="submit"
-                      className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                      className="flex-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
                     >
                       {getText('추가하기', 'Add')}
                     </button>

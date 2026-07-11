@@ -65,7 +65,7 @@ function PageHeaderIconDemo({ children }: { children: ReactNode }) {
 function MessageCountBadgeDemo({ value = '128' }: { value?: string }) {
   return (
     <span
-      className="inline-flex flex-shrink-0 tabular-nums rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold shadow-sm"
+      className="inline-flex flex-shrink-0 tabular-nums rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold shadow-sm"
       aria-hidden
     >
       {value}
@@ -114,7 +114,7 @@ export default function PublicChatTutorialOverlay({
       content: (
         <ul className="space-y-3">
           <TutorialRow
-            visual={<MessageSquare size={20} className="text-blue-600" />}
+            visual={<MessageSquare size={20} className="text-primary" />}
             text={t('step0Row1')}
           />
           <li className="text-sm text-gray-700 leading-relaxed pl-1">{t('step0Row2')}</li>
@@ -148,7 +148,7 @@ export default function PublicChatTutorialOverlay({
             visual={
               <>
                 <PageHeaderIconDemo>
-                  <Bell size={16} className="text-blue-600" />
+                  <Bell size={16} className="text-primary" />
                 </PageHeaderIconDemo>
                 <PageHeaderIconDemo>
                   <BellOff size={16} />
@@ -206,7 +206,7 @@ export default function PublicChatTutorialOverlay({
           />
           <TutorialRow
             visual={
-              <ToolbarIconDemo className="bg-blue-100 text-blue-800 border-blue-200">
+              <ToolbarIconDemo className="bg-primary/10 text-primary border-border">
                 <Calendar size={18} />
               </ToolbarIconDemo>
             }
@@ -307,7 +307,7 @@ export default function PublicChatTutorialOverlay({
                 <span className="inline-flex min-w-[120px] h-9 rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-400 items-center">
                   ···
                 </span>
-                <span className="inline-flex px-3 py-2 bg-blue-600 text-white rounded-lg items-center gap-1 text-sm font-medium">
+                <span className="inline-flex px-3 py-2 bg-primary text-primary-foreground rounded-lg items-center gap-1 text-sm font-medium">
                   <Send size={14} />
                   {t('send')}
                 </span>
@@ -336,8 +336,8 @@ export default function PublicChatTutorialOverlay({
       aria-labelledby="public-chat-tutorial-title"
     >
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[85vh] overflow-hidden flex flex-col border border-gray-200">
-        <div className="flex items-center justify-between px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-          <p className="text-xs font-medium text-blue-800 tabular-nums">
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-gradient-to-r from-muted/50 to-muted/30">
+          <p className="text-xs font-medium text-primary tabular-nums">
             {t('guideProgress', { step: step + 1, total: steps.length })}
           </p>
           <button
@@ -378,7 +378,7 @@ export default function PublicChatTutorialOverlay({
               <button
                 type="button"
                 onClick={() => setStep((s) => Math.min(last, s + 1))}
-                className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {t('next')}
                 <ChevronRight size={16} />
@@ -387,7 +387,7 @@ export default function PublicChatTutorialOverlay({
               <button
                 type="button"
                 onClick={handleFinish}
-                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium"
+                className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium"
               >
                 {t('gotIt')}
               </button>

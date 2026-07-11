@@ -269,7 +269,7 @@ export default function AttendanceEditModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center min-w-0">
-            <Clock className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
+            <Clock className="w-5 h-5 mr-2 text-primary shrink-0" />
             <span className="truncate">출퇴근 시간 수정</span>
           </h2>
           <button
@@ -305,7 +305,7 @@ export default function AttendanceEditModal({
                 type="date"
                 value={formData.check_in_date}
                 onChange={(e) => handleInputChange('check_in_date', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             <div>
@@ -316,7 +316,7 @@ export default function AttendanceEditModal({
                 type="time"
                 value={formData.check_in_time}
                 onChange={(e) => handleInputChange('check_in_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
           </div>
@@ -331,7 +331,7 @@ export default function AttendanceEditModal({
                 type="date"
                 value={formData.check_out_date}
                 onChange={(e) => handleInputChange('check_out_date', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             <div>
@@ -342,15 +342,15 @@ export default function AttendanceEditModal({
                 type="time"
                 value={formData.check_out_time}
                 onChange={(e) => handleInputChange('check_out_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
           </div>
 
            {/* 근무 시간 미리보기 */}
            {formData.check_in_date && formData.check_in_time && formData.check_out_date && formData.check_out_time && (
-             <div className="bg-blue-50 p-3 rounded-lg">
-               <div className="text-sm text-blue-800">
+             <div className="bg-primary/5 p-3 rounded-lg">
+               <div className="text-sm text-primary">
                  예상 근무 시간: {(() => {
                    const checkInUTC = convertToUTC(formData.check_in_date, formData.check_in_time)
                    const checkOutUTC = convertToUTC(formData.check_out_date, formData.check_out_time)
@@ -366,7 +366,7 @@ export default function AttendanceEditModal({
                    return '계산 중...'
                  })()}
                </div>
-               <div className="text-xs text-blue-600 mt-1">
+               <div className="text-xs text-primary mt-1">
                  출근: {formData.check_in_date} {formData.check_in_time} (라스베가스) → 퇴근: {formData.check_out_date} {formData.check_out_time} (라스베가스)
                </div>
                <div className="text-xs text-gray-500 mt-1">
@@ -384,7 +384,7 @@ export default function AttendanceEditModal({
               value={formData.notes}
               onChange={(e) => handleInputChange('notes', e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               placeholder="수정 사유나 특이사항을 입력하세요..."
             />
           </div>
@@ -411,7 +411,7 @@ export default function AttendanceEditModal({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center touch-manipulation"
+                className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center touch-manipulation"
               >
                 {isLoading ? (
                   <>

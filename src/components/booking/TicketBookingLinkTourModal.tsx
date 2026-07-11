@@ -183,7 +183,7 @@ export default function TicketBookingLinkTourModal({
             </button>
             <button
               type="submit"
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               disabled={saving || loading || !selectedTourId}
             >
               {saving ? (isKo ? '저장 중…' : 'Saving…') : isKo ? '연결' : 'Link'}

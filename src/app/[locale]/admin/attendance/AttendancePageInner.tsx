@@ -770,7 +770,7 @@ export default function AttendancePage() {
   const getDateBackgroundColor = (date: string) => {
     // 날짜별로 고유한 색상 배열 생성
     const colors = [
-      'bg-blue-50 hover:bg-blue-100',      // 연한 파란색
+      'bg-primary/5 hover:bg-muted',      // 연한 파란색
       'bg-green-50 hover:bg-green-100',    // 연한 초록색
       'bg-yellow-50 hover:bg-yellow-100',  // 연한 노란색
       'bg-purple-50 hover:bg-purple-100',  // 연한 보라색
@@ -898,7 +898,7 @@ export default function AttendancePage() {
     return (
       <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-sm sm:text-base text-gray-600">{t('loading')}</p>
         </div>
       </div>
@@ -945,7 +945,7 @@ export default function AttendancePage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Clock className="w-6 h-6 sm:w-7 sm:h-7 text-blue-600 shrink-0" />
+              <Clock className="w-6 h-6 sm:w-7 sm:h-7 text-primary shrink-0" />
               <span className="truncate">{t('title')}</span>
             </h1>
             <p className="text-gray-600 mt-1 text-sm sm:text-base">
@@ -962,7 +962,7 @@ export default function AttendancePage() {
                 <select
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full sm:w-auto min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full sm:w-auto min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                 >
                   {teamMembers.map((member) => (
                     <option key={member.email} value={member.email}>
@@ -976,7 +976,7 @@ export default function AttendancePage() {
               {t('currentTime')}: {new Date().toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', { timeZone: 'Asia/Seoul' })} ({t('korea')}) | 
               {new Date().toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', { timeZone: 'America/Los_Angeles' })} ({t('lasVegas')})
             </div>
-            <div className="text-xs text-blue-600 mt-1 hidden sm:block">
+            <div className="text-xs text-primary mt-1 hidden sm:block">
               💡 {t('crossDayHint')}
             </div>
           </div>
@@ -986,7 +986,7 @@ export default function AttendancePage() {
                 {isAdmin && (
                   <button
                     onClick={() => setIsAddFormOpen(true)}
-                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
+                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-primary rounded-lg hover:bg-primary/90 transition-colors min-w-[3rem]"
                   >
                     <Plus className="w-4 h-4 shrink-0" />
                     <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
@@ -1035,7 +1035,7 @@ export default function AttendancePage() {
                     </button>
                     <button
                       onClick={() => setIsTotalEmployeesModalOpen(true)}
-                      className="relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
+                      className="relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-primary rounded-lg hover:bg-primary/90 transition-colors min-w-[3rem]"
                     >
                       {totalEmployeesOverdueCount > 0 && (
                         <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
@@ -1191,17 +1191,17 @@ export default function AttendancePage() {
       {/* 월별 통계 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center min-w-0">
-          <BarChart3 className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
+          <BarChart3 className="w-5 h-5 mr-2 text-primary shrink-0" />
           <span className="truncate">{isAdmin ? t('monthlyStatsAdmin', { name: teamMembers.find(m => m.email === selectedEmployee)?.name_ko || t('selectedEmployeeLabel'), month: selectedMonth }) : t('monthlyStatsUser', { month: selectedMonth })}</span>
         </h2>
         
         {attendanceRecords.length > 0 ? (
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
-            <div className="text-center p-3 sm:p-4 bg-blue-50 rounded-lg min-w-0">
-              <div className="text-lg sm:text-2xl font-bold text-blue-600">
+            <div className="text-center p-3 sm:p-4 bg-primary/5 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-primary">
                 {monthlyStatsByCheckIn.totalWorkHours.toFixed(1)}{t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-blue-800">{t('totalWorkHoursLabel')}</div>
+              <div className="text-xs sm:text-sm text-primary">{t('totalWorkHoursLabel')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-green-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-green-600">
@@ -1287,7 +1287,7 @@ export default function AttendancePage() {
                       return (
                         <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
                           <div className="text-gray-600">{d.fullDate}</div>
-                          <div className="font-medium text-blue-600">{t('chartYLabel')}: {d.hours === 0 ? '0시간 0분' : formatWorkHours(d.hours)}</div>
+                          <div className="font-medium text-primary">{t('chartYLabel')}: {d.hours === 0 ? '0시간 0분' : formatWorkHours(d.hours)}</div>
                         </div>
                       )
                     }}
@@ -1310,7 +1310,7 @@ export default function AttendancePage() {
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
           />
         </div>
 
@@ -1361,7 +1361,7 @@ export default function AttendancePage() {
                   {canEditAttendance && (
                     <button
                       onClick={() => handleEditRecord(record)}
-                      className="mt-3 flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
+                      className="mt-3 flex items-center text-sm font-medium text-primary hover:text-primary/80"
                     >
                       <Edit className="w-4 h-4 mr-1 shrink-0" />
                       {t('edit')}
@@ -1445,7 +1445,7 @@ export default function AttendancePage() {
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <button
                             onClick={() => handleEditRecord(record)}
-                            className="text-blue-600 hover:text-blue-900 flex items-center"
+                            className="text-primary hover:text-foreground flex items-center"
                           >
                             <Edit className="w-4 h-4 mr-1" />
                             {t('edit')}

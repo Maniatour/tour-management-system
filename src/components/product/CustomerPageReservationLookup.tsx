@@ -82,7 +82,7 @@ export default function CustomerPageReservationLookup({ locale }: CustomerPageRe
           type="button"
           onClick={() => void handleSearch()}
           disabled={loading || !query.trim()}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           검색
@@ -109,7 +109,7 @@ export default function CustomerPageReservationLookup({ locale }: CustomerPageRe
                 href={`/${locale}/admin/reservations/${row.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="shrink-0 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                className="shrink-0 text-xs text-primary hover:text-primary/80 font-medium"
               >
                 상세 열기
               </Link>

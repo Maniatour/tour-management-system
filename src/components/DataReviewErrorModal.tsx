@@ -73,9 +73,9 @@ export default function DataReviewErrorModal({ isOpen, onClose, reservation }: D
           </div>
 
           {/* 권장 사항 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">권장 사항</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
+          <div className="bg-muted/50 border border-border rounded-lg p-4">
+            <h4 className="font-medium text-foreground mb-2">권장 사항</h4>
+            <ul className="text-sm text-primary space-y-1">
               <li>• 누락된 필수 필드를 채워주세요</li>
               <li>• 존재하지 않는 ID는 올바른 ID로 변경해주세요</li>
               <li>• 날짜 형식이 올바른지 확인해주세요</li>

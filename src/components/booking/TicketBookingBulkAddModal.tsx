@@ -374,7 +374,7 @@ export default function TicketBookingBulkAddModal({
             <button
               type="submit"
               disabled={saving || previewCount === 0}
-              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? t('bulkAddSaving') : t('bulkAddSubmit')}
             </button>

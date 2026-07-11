@@ -175,7 +175,7 @@ export default function VehicleAssignmentModal({
           <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
             <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
               <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 <span className="ml-3 text-gray-600">차량 목록을 불러오는 중...</span>
               </div>
             </div>
@@ -260,7 +260,7 @@ export default function VehicleAssignmentModal({
                 <select
                   value={selectedVehicle}
                   onChange={(e) => setSelectedVehicle(e.target.value)}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                 >
                   <option value="">차량을 선택하세요</option>
                   {vehicles
@@ -278,7 +278,7 @@ export default function VehicleAssignmentModal({
 
               {/* 선택된 차량 정보 */}
               {selectedVehicleData && (
-                <div className="bg-blue-50 rounded-lg p-4">
+                <div className="bg-primary/5 rounded-lg p-4">
                   <h4 className="font-medium text-gray-900 mb-2 flex items-center">
                     <Car className="w-4 h-4 mr-2" />
                     선택된 차량 정보
@@ -341,7 +341,7 @@ export default function VehicleAssignmentModal({
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                   />
                 </div>
 
@@ -354,7 +354,7 @@ export default function VehicleAssignmentModal({
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                   />
                 </div>
 
@@ -368,7 +368,7 @@ export default function VehicleAssignmentModal({
                     value={driverName}
                     onChange={(e) => setDriverName(e.target.value)}
                     placeholder="운전자 이름을 입력하세요"
-                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                   />
                 </div>
 
@@ -382,7 +382,7 @@ export default function VehicleAssignmentModal({
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="차량 배정 관련 메모를 입력하세요"
                     rows={3}
-                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-ring focus:border-primary"
                   />
                 </div>
               </div>
@@ -408,7 +408,7 @@ export default function VehicleAssignmentModal({
             <button
               onClick={handleSave}
               disabled={!selectedVehicle || saving}
-              className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? '저장 중...' : tourData?.tour_car_id ? '수정' : '배정'}
             </button>

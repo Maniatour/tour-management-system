@@ -14,7 +14,7 @@ const StatementReconciliationTab = dynamic(
     ssr: false,
     loading: () => (
       <div className="flex items-center justify-center py-24">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
       </div>
     ),
   }
@@ -74,7 +74,7 @@ export default function StatementReconciliationPage() {
   if (isCheckingPermission) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
       </div>
     )
   }
@@ -122,7 +122,7 @@ export default function StatementReconciliationPage() {
         </div>
         <Link
           href={`/${locale}/admin/reservations/statistics`}
-          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 shrink-0"
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary bg-muted/50 border border-border rounded-lg hover:bg-muted shrink-0"
         >
           <BarChart3 className="h-4 w-4" aria-hidden />
           예약 통계 리포트

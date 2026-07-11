@@ -255,7 +255,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
     if (residentStatus === 'us_resident') {
       return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
     } else if (residentStatus === 'non_resident') {
-      return <Plane className="h-4 w-4 text-blue-600 cursor-pointer hover:scale-110 transition-transform" />
+      return <Plane className="h-4 w-4 text-primary cursor-pointer hover:scale-110 transition-transform" />
     } else if (residentStatus === 'non_resident_with_pass') {
       return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
     } else if (residentStatus === 'non_resident_under_16') {
@@ -305,8 +305,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
 
             <div className="space-y-4">
               {/* 총 인원 표시 */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <div className="text-sm font-medium text-blue-900">
+              <div className="bg-muted/50 border border-border rounded-lg p-3">
+                <div className="text-sm font-medium text-foreground">
                   {t('total')}: {totalPeople}{locale === 'ko' ? '명' : ` ${t('people')}`}
                 </div>
               </div>
@@ -367,7 +367,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                     }))
                   }}
                   min="0"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
 
@@ -482,7 +482,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                 </button>
                 <button
                   onClick={handleSave}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   {locale === 'ko' ? '저장' : 'Save'}
                 </button>

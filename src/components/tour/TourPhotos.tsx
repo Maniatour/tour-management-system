@@ -119,25 +119,25 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
         
         {/* 공유 링크 섹션 */}
         {photoCount > 0 && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="mb-4 p-3 bg-muted/50 border border-border rounded-lg">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-2">
-                  <Share2 size={16} className="text-blue-600" />
-                  <span className="text-sm font-medium text-blue-900">투어 사진 공유 링크</span>
-                  <span className="text-xs text-blue-600">({photoCount}장)</span>
+                  <Share2 size={16} className="text-primary" />
+                  <span className="text-sm font-medium text-foreground">투어 사진 공유 링크</span>
+                  <span className="text-xs text-primary">({photoCount}장)</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <input
                     type="text"
                     value={shareUrl}
                     readOnly
-                    className="flex-1 px-3 py-1.5 text-sm bg-white border border-blue-300 rounded-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-1.5 text-sm bg-white border border-border rounded-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
                     onClick={(e) => (e.target as HTMLInputElement).select()}
                   />
                   <button
                     onClick={handleCopyLink}
-                    className="flex items-center px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                    className="flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm"
                     title="링크 복사"
                   >
                     {copied ? (
@@ -154,7 +154,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                   </button>
                   <button
                     onClick={handleOpenLink}
-                    className="flex items-center px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                    className="flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm"
                     title="새 창에서 열기"
                   >
                     <ExternalLink size={16} />

@@ -45,7 +45,7 @@ const TemplateLoadModal: React.FC<TemplateLoadModalProps> = ({
         </h3>
         {loadingTemplates ? (
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-3"></div>
             <p className="text-gray-500">
               {locale === 'ko' ? '템플릿을 불러오는 중...' : 'Loading templates...'}
             </p>
@@ -100,7 +100,7 @@ const TemplateLoadModal: React.FC<TemplateLoadModalProps> = ({
                 <div className="flex gap-2 ml-3">
                   <button
                     onClick={() => onLoad(template)}
-                    className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
+                    className="px-3 py-1.5 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors text-sm font-medium whitespace-nowrap"
                     title={locale === 'ko' ? '템플릿 불러오기' : 'Load Template'}
                   >
                     {locale === 'ko' ? '불러오기' : 'Load'}
@@ -134,7 +134,7 @@ const TemplateLoadModal: React.FC<TemplateLoadModalProps> = ({
           {!loadingTemplates && savedConfigurations.length > 0 && (
             <button
               onClick={onRefresh}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+              className="px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-blue-200 transition-colors text-sm"
               title={locale === 'ko' ? '템플릿 목록 새로고침' : 'Refresh Template List'}
             >
               {locale === 'ko' ? '새로고침' : 'Refresh'}

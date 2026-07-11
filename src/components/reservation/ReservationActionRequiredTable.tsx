@@ -259,7 +259,7 @@ function CustomerCell({
     <td className="px-2 py-2 max-w-[10rem]">
       <button
         type="button"
-        className="text-left font-medium text-gray-900 hover:text-blue-600 hover:underline"
+        className="text-left font-medium text-gray-900 hover:text-primary hover:underline"
         onClick={() => {
           const customer = customers.find((c) => c.id === reservation.customerId)
           if (customer) onCustomerClick(customer)
@@ -280,7 +280,7 @@ function CustomerCell({
             </span>
           )}
           {(reservation.infant ?? 0) > 0 && (
-            <span className="text-blue-600">
+            <span className="text-primary">
               {' '}
               {reservation.infant}
               {t('card.infantShort')}
@@ -346,7 +346,7 @@ function PickupCell({
         {puTime ? (
           <button
             type="button"
-            className="text-left hover:text-blue-600 hover:underline"
+            className="text-left hover:text-primary hover:underline"
             onClick={(e) => onPickupTimeClick(reservation, e)}
           >
             {puDate} {puTime}
@@ -359,7 +359,7 @@ function PickupCell({
         <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
         <button
           type="button"
-          className="text-left text-xs leading-snug hover:text-blue-600 hover:underline line-clamp-2"
+          className="text-left text-xs leading-snug hover:text-primary hover:underline line-clamp-2"
           onClick={(e) => onPickupHotelClick(reservation, e)}
         >
           {reservation.pickUpHotel
@@ -422,7 +422,7 @@ function ActionsCell(row: TableRowProps) {
         <button
           type="button"
           title={t('actions.price')}
-          className="p-1.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+          className="p-1.5 rounded-md bg-primary/5 text-primary border border-border hover:bg-muted"
           onClick={() => onPricingInfoClick(reservation)}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -442,7 +442,7 @@ function ActionsCell(row: TableRowProps) {
         <button
           type="button"
           title={t('card.paymentHistoryTitle')}
-          className="p-1.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+          className="p-1.5 rounded-md bg-primary/5 text-primary border border-border hover:bg-muted"
           onClick={() => onPaymentClick(reservation)}
         >
           <DollarSign className="w-3.5 h-3.5" />
@@ -518,7 +518,7 @@ function ActionsCell(row: TableRowProps) {
               <div className="border-t border-gray-100 my-1" />
               <button
                 type="button"
-                className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50"
+                className="w-full text-left px-3 py-1.5 text-xs text-primary hover:bg-muted/50"
                 onClick={() => onEmailLogsClick(reservation.id)}
               >
                 {t('card.emailLogs')}

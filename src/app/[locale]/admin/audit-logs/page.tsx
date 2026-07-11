@@ -184,7 +184,7 @@ export default function AdminAuditLogs() {
   const getActionColor = (action: string) => {
     switch (action) {
       case 'INSERT': return 'bg-green-100 text-green-800'
-      case 'UPDATE': return 'bg-blue-100 text-blue-800'
+      case 'UPDATE': return 'bg-primary/10 text-primary'
       case 'DELETE': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
@@ -217,7 +217,7 @@ export default function AdminAuditLogs() {
         <div className="text-xs sm:text-sm">
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            className="text-primary hover:text-primary/80 flex items-center gap-1"
           >
             <Eye size={12} className="shrink-0" />
             <span className="hidden sm:inline">새로 생성된 데이터 보기</span>
@@ -239,7 +239,7 @@ export default function AdminAuditLogs() {
         <div className="text-xs sm:text-sm">
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            className="text-primary hover:text-primary/80 flex items-center gap-1"
           >
             <Eye size={12} className="shrink-0" />
             <span className="hidden sm:inline">변경사항 보기 ({log.changed_fields.length}개 필드)</span>
@@ -272,7 +272,7 @@ export default function AdminAuditLogs() {
         <div className="text-xs sm:text-sm">
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            className="text-primary hover:text-primary/80 flex items-center gap-1"
           >
             <Eye size={12} className="shrink-0" />
             <span className="hidden sm:inline">삭제된 데이터 보기</span>
@@ -357,7 +357,7 @@ export default function AdminAuditLogs() {
             <select
               value={selectedTable}
               onChange={(e) => setListUi((prev) => ({ ...prev, selectedTable: e.target.value }))}
-              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="all">모든 테이블</option>
               <option value="customers">고객</option>
@@ -380,7 +380,7 @@ export default function AdminAuditLogs() {
             <select
               value={selectedAction}
               onChange={(e) => setListUi((prev) => ({ ...prev, selectedAction: e.target.value }))}
-              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="all">모든 액션</option>
               <option value="INSERT">생성</option>
@@ -401,7 +401,7 @@ export default function AdminAuditLogs() {
                   dateRange: { ...prev.dateRange, start: e.target.value },
                 }))
               }
-              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
 
@@ -417,7 +417,7 @@ export default function AdminAuditLogs() {
                   dateRange: { ...prev.dateRange, end: e.target.value }
                 }))
               }
-              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
         </div>
@@ -425,7 +425,7 @@ export default function AdminAuditLogs() {
         <div className="flex flex-wrap gap-2 sm:space-x-3 mt-3 sm:mt-4">
           <button
             onClick={applyFilters}
-            className="bg-blue-600 text-white px-3 sm:px-4 py-1.5 sm:py-2 text-sm rounded-lg hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-3 sm:px-4 py-1.5 sm:py-2 text-sm rounded-lg hover:bg-primary/90"
           >
             필터 적용
           </button>
@@ -452,7 +452,7 @@ export default function AdminAuditLogs() {
                 placeholder="검색..."
                 value={searchTerm}
                 onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
-                className="flex-1 min-w-0 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 min-w-0 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -488,7 +488,7 @@ export default function AdminAuditLogs() {
                       <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${getActionColor(log.action)}`}>
                         {log.action === 'INSERT' ? '생성' : log.action === 'UPDATE' ? '수정' : '삭제'}
                       </span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
                         {getTableName(log.table_name)}
                       </span>
                     </div>
@@ -542,7 +542,7 @@ export default function AdminAuditLogs() {
                           </div>
                         </td>
                         <td className="px-4 lg:px-6 py-3 lg:py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
                             {getTableName(log.table_name)}
                           </span>
                         </td>

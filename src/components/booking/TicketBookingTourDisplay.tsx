@@ -144,7 +144,7 @@ export function TicketBookingTourDisplay({
     return (
       <button
         type="button"
-        className={`block min-w-0 text-left ${className} cursor-pointer hover:text-blue-600 hover:underline`}
+        className={`block min-w-0 text-left ${className} cursor-pointer hover:text-primary hover:underline`}
         onClick={(e) => {
           e.stopPropagation()
           onTourClick()

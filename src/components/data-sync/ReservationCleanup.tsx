@@ -89,12 +89,12 @@ export default function ReservationCleanup({ cleanupStatus, onRefresh }: Reserva
 
       {/* 현재 상태 표시 */}
       {cleanupStatus && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="text-sm font-medium text-blue-800 mb-2">현재 상태:</h4>
+        <div className="mb-4 p-4 bg-muted/50 border border-border rounded-lg">
+          <h4 className="text-sm font-medium text-primary mb-2">현재 상태:</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div className="bg-white p-2 rounded text-center">
-              <div className="font-bold text-blue-600">{cleanupStatus.summary?.totalReservations || 0}</div>
-              <div className="text-blue-800">총 예약</div>
+              <div className="font-bold text-primary">{cleanupStatus.summary?.totalReservations || 0}</div>
+              <div className="text-primary">총 예약</div>
             </div>
             <div className="bg-white p-2 rounded text-center">
               <div className="font-bold text-green-600">{cleanupStatus.summary?.reservationsWithChoices || 0}</div>
@@ -175,9 +175,9 @@ export default function ReservationCleanup({ cleanupStatus, onRefresh }: Reserva
                 </div>
                 
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div className="bg-blue-50 p-2 rounded text-center">
-                    <div className="font-bold text-blue-600">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
-                    <div className="text-blue-800">MDGCSUNRISE_X → X</div>
+                  <div className="bg-primary/5 p-2 rounded text-center">
+                    <div className="font-bold text-primary">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
+                    <div className="text-primary">MDGCSUNRISE_X → X</div>
                   </div>
                   <div className="bg-purple-50 p-2 rounded text-center">
                     <div className="font-bold text-purple-600">{cleanupResult.data.mdgc1DXUpdated || 0}</div>

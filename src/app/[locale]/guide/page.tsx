@@ -1100,7 +1100,7 @@ export default function GuideDashboard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loadingDashboard')}</p>
         </div>
       </div>
@@ -1136,7 +1136,7 @@ export default function GuideDashboard() {
               onClick={() => setActiveTab('upcoming')}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === 'upcoming'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -1333,7 +1333,7 @@ export default function GuideDashboard() {
                   schedule.off_date < today 
                     ? 'border-gray-200 bg-gray-50' 
                     : schedule.off_date === today
-                    ? 'border-blue-200 bg-blue-50'
+                    ? 'border-border bg-primary/5'
                     : 'border-gray-200'
                 }`}
               >
@@ -1345,12 +1345,12 @@ export default function GuideDashboard() {
                         schedule.off_date < today 
                           ? 'text-gray-500' 
                           : schedule.off_date === today
-                          ? 'text-blue-600'
+                          ? 'text-primary'
                           : 'text-gray-700'
                       }`}>
                         {formatDateWithDay(schedule.off_date)}
                                 {schedule.off_date === today && (
-                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                  <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                                     {t('offSchedule.today')}
                                   </span>
                                 )}
@@ -1416,7 +1416,7 @@ export default function GuideDashboard() {
                   }}
                   className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     chatActiveTab === 'team'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -1430,7 +1430,7 @@ export default function GuideDashboard() {
                   }}
                   className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     chatActiveTab === 'tour'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -1447,7 +1447,7 @@ export default function GuideDashboard() {
                     placeholder={locale === 'en' ? 'Search...' : '검색...'}
                     value={chatSearchTerm}
                     onChange={(e) => setChatSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   />
                 </div>
               </div>
@@ -1466,7 +1466,7 @@ export default function GuideDashboard() {
                       onClick={() => selectChatRoom(room)}
                       className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                         selectedChatRoom?.id === room.id 
-                          ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                          ? 'bg-primary/5 border-l-2 border-l-blue-500' 
                           : room.unread_count > 0 
                           ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
                           : ''
@@ -1547,7 +1547,7 @@ export default function GuideDashboard() {
                           <div
                             className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow-sm ${
                               message.sender_email === currentUserEmail
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-100 text-gray-900'
                             }`}
                           >
@@ -1576,13 +1576,13 @@ export default function GuideDashboard() {
                           }
                         }}
                         placeholder={locale === 'en' ? 'Type a message...' : '메시지를 입력하세요...'}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-sm"
                         disabled={chatSending}
                       />
                       <button
                         onClick={sendChatMessage}
                         disabled={!newChatMessage.trim() || chatSending}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                       >
                         {chatSending ? (locale === 'en' ? 'Sending...' : '전송 중...') : (locale === 'en' ? 'Send' : '전송')}
                       </button>
@@ -1629,7 +1629,7 @@ export default function GuideDashboard() {
                   value={offScheduleForm.off_date}
                   onChange={(e) => setOffScheduleForm({ ...offScheduleForm, off_date: e.target.value })}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   required
                 />
               </div>
@@ -1644,7 +1644,7 @@ export default function GuideDashboard() {
                       is_multi_day: e.target.checked,
                       end_date: e.target.checked ? offScheduleForm.end_date : ''
                     })}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                    className="rounded border-gray-300 text-primary focus:ring-ring w-4 h-4"
                   />
                           <span className="text-xs sm:text-sm font-medium text-gray-700">{t('offSchedule.multiDay')}</span>
                 </label>
@@ -1660,7 +1660,7 @@ export default function GuideDashboard() {
                     value={offScheduleForm.end_date}
                     onChange={(e) => setOffScheduleForm({ ...offScheduleForm, end_date: e.target.value })}
                     min={offScheduleForm.off_date || new Date().toISOString().split('T')[0]}
-                    className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                     required={offScheduleForm.is_multi_day}
                   />
                 </div>
@@ -1673,7 +1673,7 @@ export default function GuideDashboard() {
                 <textarea
                   value={offScheduleForm.reason || ''}
                   onChange={(e) => setOffScheduleForm({ ...offScheduleForm, reason: e.target.value })}
-                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   rows={2}
                   placeholder={t('offSchedule.reasonPlaceholder')}
                   required
@@ -1683,7 +1683,7 @@ export default function GuideDashboard() {
               <div className="flex space-x-2 pt-3">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  className="flex-1 bg-primary text-primary-foreground px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm"
                 >
                   {t('offSchedule.addButton')}
                 </button>
@@ -1811,7 +1811,7 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     <div
       onClick={onClick}
       className={`border rounded-lg p-2 sm:p-3 hover:bg-gray-50 cursor-pointer transition-colors ${
-        isToday ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200'
+        isToday ? 'border-primary bg-primary/5 shadow-md' : 'border-gray-200'
       }`}
     >
       <div className="space-y-2">
@@ -1827,7 +1827,7 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
           <div className="flex flex-wrap gap-1">
             {/* 날짜 배지 */}
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              isToday ? 'bg-blue-200 text-blue-900 font-bold' : 'bg-blue-100 text-blue-800'
+              isToday ? 'bg-blue-200 text-foreground font-bold' : 'bg-primary/10 text-primary'
             }`}>
               <Calendar className="w-3 h-3 mr-1" />
               {tour.tour_date}

@@ -512,7 +512,7 @@ export default function TourEnvelopeModal({
               <div className="flex flex-col gap-2 mb-3">
                 <span className="text-sm font-medium text-gray-700">{L.selectCustomers}</span>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => setSelectedReservationIds(new Set(displayRows.map((r) => r.reservationId)))} className="text-xs text-blue-600 hover:underline">
+                  <button type="button" onClick={() => setSelectedReservationIds(new Set(displayRows.map((r) => r.reservationId)))} className="text-xs text-primary hover:underline">
                     {L.selectAll}
                   </button>
                   <span className="text-gray-300">|</span>
@@ -532,7 +532,7 @@ export default function TourEnvelopeModal({
                           else next.delete(row.reservationId)
                           setSelectedReservationIds(next)
                         }}
-                        className="rounded text-blue-600"
+                        className="rounded text-primary"
                       />
                       <span className="text-sm truncate">{row.customerName || '—'}</span>
                     </label>
@@ -543,11 +543,11 @@ export default function TourEnvelopeModal({
               <div className="flex flex-col gap-2 mb-3">
                 <span className="text-sm font-medium text-gray-700">{L.printMode}</span>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="envelope-print-mode" checked={printWithImage} onChange={() => setPrintWithImage(true)} className="text-blue-600" />
+                  <input type="radio" name="envelope-print-mode" checked={printWithImage} onChange={() => setPrintWithImage(true)} className="text-primary" />
                   <span className="text-sm">{L.withImage}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="envelope-print-mode" checked={!printWithImage} onChange={() => setPrintWithImage(false)} className="text-blue-600" />
+                  <input type="radio" name="envelope-print-mode" checked={!printWithImage} onChange={() => setPrintWithImage(false)} className="text-primary" />
                   <span className="text-sm">{L.textOnly}</span>
                 </label>
               </div>
@@ -688,7 +688,7 @@ export default function TourEnvelopeModal({
               type="button"
               onClick={handlePrint}
               disabled={selectedReservationIds.size === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Printer className="w-4 h-4" />
               {L.print}

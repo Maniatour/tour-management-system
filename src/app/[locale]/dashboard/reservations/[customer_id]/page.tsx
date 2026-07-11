@@ -175,7 +175,7 @@ export default function CustomerReservations() {
       case 'confirmed': return 'bg-green-100 text-green-800'
       case 'inquiry': return 'bg-sky-100 text-sky-900'
       case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'completed': return 'bg-blue-100 text-blue-800'
+      case 'completed': return 'bg-primary/10 text-primary'
       case 'cancelled': return 'bg-red-100 text-red-800'
       case 'no_show': return 'bg-orange-100 text-orange-800'
       default: return 'bg-gray-100 text-gray-800'
@@ -395,9 +395,9 @@ export default function CustomerReservations() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">{t('loading')}</p>
         </div>
       </div>
@@ -406,12 +406,12 @@ export default function CustomerReservations() {
 
   if (!customer) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen app-page-bg flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">{t('customerNotFound')}</h1>
           <button
             onClick={() => router.push(`/${locale}/dashboard/reservations`)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
           >
             {t('backToReservations')}
           </button>
@@ -421,7 +421,7 @@ export default function CustomerReservations() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen app-page-bg">
       <div className="container mx-auto px-0 sm:px-4 py-0 sm:py-6">
         {/* 헤더 */}
         <div className="bg-white shadow-sm p-3 sm:p-6 mb-1 sm:mb-6 rounded-none sm:rounded-lg">
@@ -440,13 +440,13 @@ export default function CustomerReservations() {
             </div>
             {isSimulating && simulatedUser && (
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs sm:text-sm font-medium text-center">
+                <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs sm:text-sm font-medium text-center">
                   {t('simulating')}: {simulatedUser.name_ko}
                 </div>
                 <div className="flex flex-wrap gap-1 sm:gap-1">
                   <button
                     onClick={() => router.push(`/${locale}/dashboard`)}
-                    className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700 flex-1 sm:flex-none"
+                    className="bg-primary text-primary-foreground px-2 py-1 rounded text-xs hover:bg-primary/90 flex-1 sm:flex-none"
                   >
                     {t('dashboard')}
                   </button>
@@ -494,7 +494,7 @@ export default function CustomerReservations() {
                   onClick={() => setFilter(option.value)}
                   className={`px-3 py-1 text-sm rounded-full transition-colors whitespace-nowrap flex-shrink-0 ${
                     filter === option.value
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
@@ -518,7 +518,7 @@ export default function CustomerReservations() {
                       <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
                         <button
                           onClick={() => router.push(`/${locale}/dashboard/reservations/${customerId}/${reservation.id}`)}
-                          className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                          className="text-primary hover:text-primary/80 hover:underline transition-colors"
                         >
                           {locale === 'ko' 
                             ? (reservation.products?.customer_name_ko || reservation.products?.name || t('noProductName'))
@@ -565,7 +565,7 @@ export default function CustomerReservations() {
                             return (
                               <span
                                 key={`${choice.choice_id}-${choice.option_id}-${index}`}
-                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
                               >
                                 {optionName}
                               </span>
@@ -580,7 +580,7 @@ export default function CustomerReservations() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => router.push(`/${locale}/dashboard/reservations/${customerId}/${reservation.id}`)}
-                      className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
+                      className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-primary/10 text-primary hover:bg-blue-200 transition-colors"
                     >
                       <ExternalLink className="w-4 h-4 mr-2" />
                       {t('viewDetails')}
@@ -610,7 +610,7 @@ export default function CustomerReservations() {
                     <div className="flex items-center text-gray-600">
                       <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
                       <div>
-                        <span className="text-sm font-medium text-blue-600">{formatTimeToAMPM(reservation.pickup_time)}</span>
+                        <span className="text-sm font-medium text-primary">{formatTimeToAMPM(reservation.pickup_time)}</span>
                         {reservation.tour_date && (
                           <span className="text-xs text-gray-500 ml-1">
                             ({calculatePickupDate(reservation.pickup_time, reservation.tour_date)})
@@ -661,7 +661,7 @@ export default function CustomerReservations() {
                 {reservation.channel_rn && (
                   <div className="flex items-center text-gray-600">
                     <ExternalLink className="w-4 h-4 mr-2 flex-shrink-0" />
-                    <span className="text-sm text-blue-600 font-medium">
+                    <span className="text-sm text-primary font-medium">
                       #{reservation.channel_rn}
                     </span>
                   </div>
@@ -680,7 +680,7 @@ export default function CustomerReservations() {
               </p>
               <button
                 onClick={() => router.push(`/${locale}/products`)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
               >
                 {t('viewTourProducts')}
               </button>

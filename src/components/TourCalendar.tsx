@@ -825,7 +825,7 @@ const TourCalendar = memo(function TourCalendar({
           <div
             key={day}
             className={`p-1 text-center text-xs font-medium ${
-              index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
+              index === 0 ? 'text-red-500' : index === 6 ? 'text-primary' : 'text-gray-700'
             }`}
           >
             {day}
@@ -860,7 +860,7 @@ const TourCalendar = memo(function TourCalendar({
               {/* 날짜 */}
               <div className={`text-xs font-medium mb-0.5 ml-[3px] mt-[3px] ${
                 isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
-              } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}>
+              } ${isTodayDate ? 'text-primary font-bold' : ''}`}>
                 {date.getDate()}
               </div>
 
@@ -1513,7 +1513,7 @@ const TourCalendar = memo(function TourCalendar({
                   value={offScheduleForm.off_date}
                   onChange={(e) => setOffScheduleForm({ ...offScheduleForm, off_date: e.target.value })}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   required
                 />
               </div>
@@ -1530,7 +1530,7 @@ const TourCalendar = memo(function TourCalendar({
                           is_multi_day: e.target.checked,
                           end_date: e.target.checked ? offScheduleForm.end_date : ''
                         })}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                        className="rounded border-gray-300 text-primary focus:ring-ring w-4 h-4"
                       />
                       <span className="text-xs sm:text-sm font-medium text-gray-700">{t('offSchedule.multiDay')}</span>
                     </label>
@@ -1546,7 +1546,7 @@ const TourCalendar = memo(function TourCalendar({
                         value={offScheduleForm.end_date}
                         onChange={(e) => setOffScheduleForm({ ...offScheduleForm, end_date: e.target.value })}
                         min={offScheduleForm.off_date || new Date().toISOString().split('T')[0]}
-                        className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                         required={offScheduleForm.is_multi_day}
                       />
                     </div>
@@ -1561,7 +1561,7 @@ const TourCalendar = memo(function TourCalendar({
                 <textarea
                   value={offScheduleForm.reason || ''}
                   onChange={(e) => setOffScheduleForm({ ...offScheduleForm, reason: e.target.value })}
-                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full px-2 py-1.5 sm:px-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
                   rows={2}
                   placeholder={t('offSchedule.reasonPlaceholder')}
                   required
@@ -1571,7 +1571,7 @@ const TourCalendar = memo(function TourCalendar({
               <div className="flex space-x-2 pt-3">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  className="flex-1 bg-primary text-primary-foreground px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm"
                 >
                   {selectedOffSchedule ? t('offSchedule.editButton') : t('offSchedule.addButton')}
                 </button>
@@ -1624,7 +1624,7 @@ const TourCalendar = memo(function TourCalendar({
                   onClick={() => handleTourStatusChange(contextMenu.tour.id, option.value)}
                   disabled={isUpdating || isCurrentStatus}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors flex items-center gap-2 ${
-                    isCurrentStatus ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                    isCurrentStatus ? 'bg-primary/5 text-primary font-medium' : 'text-gray-700'
                   } ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span>{option.icon}</span>

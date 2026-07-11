@@ -28,12 +28,12 @@ export default function TrustBadgeRow({ items, className, compact = false }: Tru
         <li
           key={label}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/90 text-slate-700 shadow-sm',
+            'inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card text-foreground',
             compact ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-xs sm:text-sm'
           )}
         >
           <Icon
-            className={cn('shrink-0 text-[#0B5FFF]', compact ? 'h-3 w-3' : 'h-3.5 w-3.5 sm:h-4 sm:w-4')}
+            className={cn('shrink-0 text-booking cp-ui-icon-accent', compact ? 'h-3 w-3' : 'h-3.5 w-3.5 sm:h-4 sm:w-4')}
             aria-hidden
           />
           <span className="font-medium">{label}</span>

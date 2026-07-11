@@ -595,7 +595,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
               onClick={() => setActiveTab('tags')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'tags'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -605,7 +605,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
               onClick={() => setActiveTab('translations')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'translations'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -615,7 +615,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
               onClick={() => setActiveTab('json')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'json'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -641,7 +641,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
               )}
               <button
                 onClick={() => setShowAddTagModal(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center space-x-2"
               >
                 <Plus size={20} />
                 <span>{t('addTag')}</span>
@@ -681,8 +681,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
           )}
 
           {/* 안내 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800 whitespace-pre-line">
+          <div className="bg-muted/50 border border-border rounded-lg p-4">
+            <p className="text-sm text-primary whitespace-pre-line">
               {t('pronunciationTooltip')}
             </p>
           </div>
@@ -743,7 +743,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                       ) : (
                         <button
                           onClick={() => setEditingIconTagId(tag.id)}
-                          className="w-8 h-8 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
+                          className="w-8 h-8 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 hover:border-primary hover:text-primary transition-colors"
                           title={t('iconAdd')}
                         >
                           <ImageIcon size={16} />
@@ -812,7 +812,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                               <span>{translation?.label || t('noTranslation')}</span>
                               <button
                                 onClick={() => startEdit(tag.key, loc)}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-primary hover:text-foreground"
                               >
                                 <Edit2 size={14} />
                               </button>
@@ -863,7 +863,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   value={newTagKey}
                   onChange={(e) => setNewTagKey(e.target.value)}
                   placeholder={t('tagKeyPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {t('tagKeyDescription')}
@@ -877,7 +877,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                     id="isSystem"
                     checked={newTagIsSystem}
                     onChange={(e) => setNewTagIsSystem(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-1"
+                    className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded mt-1"
                   />
                   <label htmlFor="isSystem" className="ml-2 block text-sm">
                     <span className="font-medium text-gray-700">{t('systemTag')}</span>
@@ -963,7 +963,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                           value={newTagTranslations[loc]?.label || ''}
                           onChange={(e) => updateNewTagTranslation(loc, 'label', e.target.value)}
                           placeholder={t('tagKey')}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         />
                       </div>
                       <div>
@@ -972,7 +972,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                           value={newTagTranslations[loc]?.pronunciation || ''}
                           onChange={(e) => updateNewTagTranslation(loc, 'pronunciation', e.target.value)}
                           placeholder={t('pronunciationPlaceholder')}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         />
                       </div>
                     </div>
@@ -987,7 +987,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={handleAddTag}
-                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+                className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
               >
                 {t('add')}
               </button>

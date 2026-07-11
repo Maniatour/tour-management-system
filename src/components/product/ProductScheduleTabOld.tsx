@@ -311,7 +311,7 @@ export default function ProductScheduleTab({
 
   const getScheduleColor = (schedule: ScheduleItem) => {
     if (schedule.is_meal) return 'bg-orange-100 text-orange-800 border-orange-200'
-    if (schedule.is_transport) return 'bg-blue-100 text-blue-800 border-blue-200'
+    if (schedule.is_transport) return 'bg-primary/10 text-primary border-border'
     if (schedule.is_break) return 'bg-green-100 text-green-800 border-green-200'
     return 'bg-gray-100 text-gray-800 border-gray-200'
   }
@@ -336,7 +336,7 @@ export default function ProductScheduleTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">Loading...</span>
       </div>
     )
@@ -405,7 +405,7 @@ export default function ProductScheduleTab({
               disabled={isNewProduct}
               className={`flex items-center px-3 py-2 rounded-lg text-sm ${
                 addMode === 'modal' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
@@ -457,7 +457,7 @@ export default function ProductScheduleTab({
               disabled={isNewProduct}
               className={`flex items-center px-3 py-2 rounded-lg text-sm ${
                 addMode === 'table' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
@@ -531,7 +531,7 @@ export default function ProductScheduleTab({
                                 {schedule.latitude && schedule.longitude && (
                                   <button
                                     onClick={() => openMapModal(schedule.latitude!, schedule.longitude!, schedule.location_ko || schedule.location)}
-                                    className="ml-1 text-blue-600 hover:text-blue-800"
+                                    className="ml-1 text-primary hover:text-primary/80"
                                     title="지도에서 보기"
                                   >
                                     <Map className="h-3 w-3" />
@@ -566,7 +566,7 @@ export default function ProductScheduleTab({
                             </p>
                           )}
                           {getGuideAssignmentText(schedule) && (
-                            <p className="text-xs text-blue-600 mt-1 font-medium">
+                            <p className="text-xs text-primary mt-1 font-medium">
                               <Users className="h-3 w-3 inline mr-1" />
                               {getGuideAssignmentText(schedule)}
                             </p>
@@ -701,7 +701,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 type="number"
                 value={formData.day_number}
                 onChange={(e) => handleInputChange('day_number', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 min="1"
                 required
               />
@@ -714,7 +714,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 type="number"
                 value={formData.duration_minutes}
                 onChange={(e) => handleInputChange('duration_minutes', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 min="1"
                 required
               />
@@ -730,7 +730,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 type="time"
                 value={formData.start_time}
                 onChange={(e) => handleInputChange('start_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 required
               />
             </div>
@@ -742,7 +742,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 type="time"
                 value={formData.end_time}
                 onChange={(e) => handleInputChange('end_time', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 required
               />
             </div>
@@ -760,7 +760,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   type="text"
                   value={formData.title_ko || ''}
                   onChange={(e) => handleInputChange('title_ko', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="예: 호텔 픽업"
                   required
                 />
@@ -773,7 +773,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   type="text"
                   value={formData.title_en || ''}
                   onChange={(e) => handleInputChange('title_en', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="e.g. Hotel Pickup"
                 />
               </div>
@@ -792,7 +792,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   value={formData.description_ko || ''}
                   onChange={(e) => handleInputChange('description_ko', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="일정에 대한 자세한 설명을 입력해주세요"
                 />
               </div>
@@ -804,7 +804,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   value={formData.description_en || ''}
                   onChange={(e) => handleInputChange('description_en', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Detailed description of the schedule"
                 />
               </div>
@@ -823,7 +823,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   type="text"
                   value={formData.location_ko || ''}
                   onChange={(e) => handleInputChange('location_ko', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="예: 그랜드 하얏트 호텔"
                 />
               </div>
@@ -835,7 +835,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   type="text"
                   value={formData.location_en || ''}
                   onChange={(e) => handleInputChange('location_en', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="e.g. Grand Hyatt Hotel"
                 />
               </div>
@@ -857,7 +857,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                     step="any"
                     value={formData.latitude || ''}
                     onChange={(e) => handleInputChange('latitude', e.target.value ? parseFloat(e.target.value) : undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="예: 37.5665"
                   />
                 </div>
@@ -870,7 +870,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                     step="any"
                     value={formData.longitude || ''}
                     onChange={(e) => handleInputChange('longitude', e.target.value ? parseFloat(e.target.value) : undefined)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="예: 126.9780"
                   />
                 </div>
@@ -881,7 +881,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
               <button
                 type="button"
                 onClick={() => setShowLocationPicker(true)}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 <Map className="h-4 w-4 mr-2" />
                 지도에서 위치 선택
@@ -917,7 +917,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 id="is_break"
                 checked={formData.is_break}
                 onChange={(e) => handleInputChange('is_break', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="is_break" className="ml-2 text-sm text-gray-700">
                 휴식시간
@@ -929,7 +929,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 id="is_meal"
                 checked={formData.is_meal}
                 onChange={(e) => handleInputChange('is_meal', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="is_meal" className="ml-2 text-sm text-gray-700">
                 식사시간
@@ -941,7 +941,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 id="is_transport"
                 checked={formData.is_transport}
                 onChange={(e) => handleInputChange('is_transport', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="is_transport" className="ml-2 text-sm text-gray-700">
                 이동시간
@@ -953,7 +953,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                 id="show_to_customers"
                 checked={formData.show_to_customers}
                 onChange={(e) => handleInputChange('show_to_customers', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="show_to_customers" className="ml-2 text-sm text-gray-700">
                 고객에게 표시
@@ -971,7 +971,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   type="text"
                   value={formData.transport_type}
                   onChange={(e) => handleInputChange('transport_type', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="예: 버스, 도보, 택시"
                 />
               </div>
@@ -988,7 +988,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                       type="text"
                       value={formData.transport_details_ko || ''}
                       onChange={(e) => handleInputChange('transport_details_ko', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="예: 30분 버스 이동"
                     />
                   </div>
@@ -1000,7 +1000,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                       type="text"
                       value={formData.transport_details_en || ''}
                       onChange={(e) => handleInputChange('transport_details_en', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. 30 minutes bus ride"
                     />
                   </div>
@@ -1021,7 +1021,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   value={formData.notes_ko || ''}
                   onChange={(e) => handleInputChange('notes_ko', e.target.value)}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="특별한 주의사항이나 추가 정보를 입력해주세요"
                 />
               </div>
@@ -1033,7 +1033,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   value={formData.notes_en || ''}
                   onChange={(e) => handleInputChange('notes_en', e.target.value)}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Special notes or additional information"
                 />
               </div>
@@ -1063,7 +1063,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   }}
                   className={`px-3 py-2 text-sm rounded-lg border ${
                     formData.guide_assignment_type === 'two_guides' && formData.assigned_guide_1 === 'guide'
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1079,7 +1079,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   }}
                   className={`px-3 py-2 text-sm rounded-lg border ${
                     formData.guide_assignment_type === 'two_guides' && formData.assigned_guide_2 === 'assistant'
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1104,7 +1104,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   }}
                   className={`px-3 py-2 text-sm rounded-lg border ${
                     formData.guide_assignment_type === 'guide_driver' && formData.assigned_guide_1 === 'guide'
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1120,7 +1120,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                   }}
                   className={`px-3 py-2 text-sm rounded-lg border ${
                     formData.guide_assignment_type === 'guide_driver' && formData.assigned_driver === 'driver'
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -1141,7 +1141,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                     value={formData.guide_notes_ko || ''}
                     onChange={(e) => handleInputChange('guide_notes_ko', e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="가이드에게 전달할 특별한 지시사항이나 메모를 입력해주세요"
                   />
                 </div>
@@ -1153,7 +1153,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
                     value={formData.guide_notes_en || ''}
                     onChange={(e) => handleInputChange('guide_notes_en', e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Special instructions or notes for guides"
                   />
                 </div>
@@ -1173,7 +1173,7 @@ function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: Sched
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? '저장 중...' : '저장'}
@@ -1376,7 +1376,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
             onClick={() => setShowEnglishFields(!showEnglishFields)}
             className={`px-3 py-1 text-sm rounded-lg border ${
               showEnglishFields 
-                ? 'bg-blue-600 text-white border-blue-600' 
+                ? 'bg-primary text-primary-foreground border-primary' 
                 : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
             }`}
           >
@@ -1394,7 +1394,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
             type="button"
             onClick={onSave}
             disabled={saving || schedules.length === 0}
-            className="flex items-center px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+            className="flex items-center px-4 py-1 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 text-sm"
           >
             <Save className="h-4 w-4 mr-1" />
             {saving ? '저장 중...' : '모두 저장'}
@@ -1470,7 +1470,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   type="number"
                   value={schedule.day_number}
                   onChange={(e) => updateSchedule(index, 'day_number', parseInt(e.target.value))}
-                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   min="1"
                 />
               </div>
@@ -1491,7 +1491,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
@@ -1511,7 +1511,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
@@ -1544,7 +1544,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   min="5"
                   step="5"
                 />
@@ -1562,7 +1562,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                       updateSchedule(index, 'title_ko', e.target.value)
                     }
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder={showEnglishFields ? "English title" : "한국어 제목"}
                 />
               </div>
@@ -1579,7 +1579,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                       updateSchedule(index, 'description_ko', e.target.value)
                     }
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder={showEnglishFields ? "English description" : "한국어 설명"}
                 />
               </div>
@@ -1596,7 +1596,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                       updateSchedule(index, 'guide_notes_ko', e.target.value)
                     }
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder={showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)"}
                 />
               </div>
@@ -1640,7 +1640,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">선택</option>
                   <option value="guide">가이드</option>
@@ -1689,7 +1689,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="">선택</option>
                   <option value="guide">가이드</option>
@@ -1730,7 +1730,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                       updateSchedule(index, 'latitude', lat)
                       updateSchedule(index, 'longitude', lng)
                     }}
-                    className="flex-1 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="flex-1 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="위도, 경도"
                   />
                   <button
@@ -1739,7 +1739,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                       setLocationPickerIndex(index)
                       setShowLocationPicker(true)
                     }}
-                    className="w-8 h-6 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center"
+                    className="w-8 h-6 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center justify-center"
                   >
                     <Map className="h-3 w-3" />
                   </button>
@@ -1779,7 +1779,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   type="checkbox"
                   checked={schedules[currentScheduleIndex]?.is_break || false}
                   onChange={(e) => updateSchedule(currentScheduleIndex, 'is_break', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">휴식시간</span>
               </label>
@@ -1788,7 +1788,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   type="checkbox"
                   checked={schedules[currentScheduleIndex]?.is_meal || false}
                   onChange={(e) => updateSchedule(currentScheduleIndex, 'is_meal', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">식사시간</span>
               </label>
@@ -1797,7 +1797,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   type="checkbox"
                   checked={schedules[currentScheduleIndex]?.is_transport || false}
                   onChange={(e) => updateSchedule(currentScheduleIndex, 'is_transport', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">이동시간</span>
               </label>
@@ -1806,7 +1806,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   type="checkbox"
                   checked={schedules[currentScheduleIndex]?.show_to_customers || false}
                   onChange={(e) => updateSchedule(currentScheduleIndex, 'show_to_customers', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">고객에게 표시</span>
               </label>
@@ -1818,7 +1818,7 @@ function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, savin
                   setShowOptionsModal(false)
                   setCurrentScheduleIndex(null)
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 확인
               </button>
@@ -1885,7 +1885,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="장소명을 입력하세요 (예: 서울시청, 그랜드캐니언)"
               />
               <button
@@ -1900,7 +1900,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
                     handleMapClick(36.1699, -115.1398)
                   }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 검색
               </button>
@@ -1964,7 +1964,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
                   step="any"
                   value={selectedLat}
                   onChange={(e) => setSelectedLat(parseFloat(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
@@ -1974,7 +1974,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
                   step="any"
                   value={selectedLng}
                   onChange={(e) => setSelectedLng(parseFloat(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
             </div>
@@ -1996,7 +1996,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
           </button>
           <button
             onClick={handleConfirm}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             위치 선택
           </button>

@@ -27,13 +27,13 @@ export default function KoreanNameTest() {
             type="text"
             value={inputName}
             onChange={(e) => setInputName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-ring focus:border-primary"
             placeholder="예: 허유림, 김민수, 이지혜"
           />
         </div>
         <button
           onClick={handleTest}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
         >
           변환하기
         </button>

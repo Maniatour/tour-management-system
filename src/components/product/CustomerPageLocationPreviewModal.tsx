@@ -87,7 +87,7 @@ export default function CustomerPageLocationPreviewModal({
               {mainView === 'email' ? (
                 <Mail className="h-5 w-5 shrink-0 text-violet-600" />
               ) : (
-                <MapPin className="h-5 w-5 shrink-0 text-blue-800" />
+                <MapPin className="h-5 w-5 shrink-0 text-primary" />
               )}
               <h2 className="text-base sm:text-lg font-semibold">노출 위치 미리보기</h2>
             </div>
@@ -170,8 +170,8 @@ export default function CustomerPageLocationPreviewModal({
               onClick={() => setMainView('web')}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium ${
                 mainView === 'web'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:border-border'
               }`}
             >
               <Globe className="h-3.5 w-3.5" />
@@ -220,8 +220,8 @@ export default function CustomerPageLocationPreviewModal({
                 onClick={() => setActiveIndex(i)}
                 className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                   i === activeIndex
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-border'
                 }`}
               >
                 {target.pathLabel}
@@ -239,7 +239,7 @@ export default function CustomerPageLocationPreviewModal({
                 onClick={() => setWebViewMode('live')}
                 className={`px-3 py-1.5 text-xs rounded-md font-medium ${
                   webViewMode === 'live'
-                    ? 'bg-blue-100 text-blue-800'
+                    ? 'bg-primary/10 text-primary'
                     : 'text-gray-600 hover:bg-gray-100 disabled:opacity-40'
                 }`}
               >
@@ -250,7 +250,7 @@ export default function CustomerPageLocationPreviewModal({
                 onClick={() => setWebViewMode('wireframe')}
                 className={`px-3 py-1.5 text-xs rounded-md font-medium ${
                   webViewMode === 'wireframe'
-                    ? 'bg-blue-100 text-blue-800'
+                    ? 'bg-primary/10 text-primary'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
@@ -261,7 +261,7 @@ export default function CustomerPageLocationPreviewModal({
                   href={previewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-auto inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
                 >
                   새 탭에서 열기
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -274,7 +274,7 @@ export default function CustomerPageLocationPreviewModal({
                 <>
                   {iframeLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
-                      <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
                     </div>
                   )}
                   <iframe

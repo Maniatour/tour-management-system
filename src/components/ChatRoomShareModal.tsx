@@ -236,7 +236,7 @@ export default function ChatRoomShareModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
-            <MessageCircle size={24} className="text-blue-600" />
+            <MessageCircle size={24} className="text-primary" />
             <h2 className="text-xl font-semibold text-gray-900">{t.title}</h2>
           </div>
           <button
@@ -250,13 +250,13 @@ export default function ChatRoomShareModal({
         {/* 컨텐츠 */}
         <div className="p-6 space-y-6">
           {/* 채팅방 정보 */}
-          <div className="bg-blue-50 rounded-lg p-4">
+          <div className="bg-primary/5 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
-              <MessageCircle size={16} className="text-blue-600" />
-              <span className="font-medium text-blue-900">{roomName}</span>
+              <MessageCircle size={16} className="text-primary" />
+              <span className="font-medium text-foreground">{roomName}</span>
             </div>
             {tourDate && (
-              <div className="flex items-center space-x-2 text-sm text-blue-700">
+              <div className="flex items-center space-x-2 text-sm text-primary">
                 <Calendar size={14} />
                 <span>{new Date(tourDate).toLocaleDateString()}</span>
               </div>
@@ -280,7 +280,7 @@ export default function ChatRoomShareModal({
                 className={`px-3 py-2 rounded-lg text-sm font-medium ${
                   copied
                     ? 'bg-green-100 text-green-700'
-                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    : 'bg-primary/10 text-primary hover:bg-blue-200'
                 }`}
               >
                 {copied ? t.copied : t.copy}
@@ -296,7 +296,7 @@ export default function ChatRoomShareModal({
             <div className="flex space-x-2">
               <button
                 onClick={shareLink}
-                className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 <Share2 size={16} />
                 <span>{t.share}</span>

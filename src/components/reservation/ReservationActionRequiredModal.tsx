@@ -923,7 +923,7 @@ export default function ReservationActionRequiredModal({
                   onClick={() => setListViewMode('card')}
                   className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                     listViewMode === 'card'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title={t('actionRequired.viewCard')}
@@ -936,7 +936,7 @@ export default function ReservationActionRequiredModal({
                   onClick={() => setListViewMode('table')}
                   className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                     listViewMode === 'table'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-primary shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title={t('actionRequired.viewTable')}
@@ -950,7 +950,7 @@ export default function ReservationActionRequiredModal({
                     onClick={() => setListViewMode('detail')}
                     className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                       listViewMode === 'detail'
-                        ? 'bg-white text-blue-600 shadow-sm'
+                        ? 'bg-white text-primary shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                     title={t('actionRequired.viewDetailTooltip')}
@@ -967,7 +967,7 @@ export default function ReservationActionRequiredModal({
                 <select
                   value={tableRowsPerPage}
                   onChange={(e) => setTableRowsPerPage(Number(e.target.value) as TablePageSize)}
-                  className="max-w-[5.5rem] rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:py-1"
+                  className="max-w-[5.5rem] rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-800 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring sm:py-1"
                   aria-label={t('actionRequired.tableRowsPerPageAria')}
                 >
                   {TABLE_PAGE_SIZE_OPTIONS.map((n) => (
@@ -1011,7 +1011,7 @@ export default function ReservationActionRequiredModal({
               title={t(`actionRequired.tabTooltips.${id}` as Parameters<typeof t>[0])}
               className={`flex min-h-[48px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors sm:min-h-0 sm:px-4 sm:py-3 sm:text-sm ${
                 activeTab === id
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-primary text-primary'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -1035,7 +1035,7 @@ export default function ReservationActionRequiredModal({
               title={t('actionRequired.pricingSubTabTooltips.noPrice')}
               className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 pricingSubTab === 'noPrice'
-                  ? 'border-blue-600 text-blue-600 bg-white'
+                  ? 'border-primary text-primary bg-white'
                   : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -1052,7 +1052,7 @@ export default function ReservationActionRequiredModal({
               title={t('actionRequired.pricingSubTabTooltips.mismatch')}
               className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 pricingSubTab === 'mismatch'
-                  ? 'border-blue-600 text-blue-600 bg-white'
+                  ? 'border-primary text-primary bg-white'
                   : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -1075,7 +1075,7 @@ export default function ReservationActionRequiredModal({
               title={t('actionRequired.balanceSubTabTooltips.cancelled')}
               className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'cancelled'
-                  ? 'border-blue-600 text-blue-600 bg-white'
+                  ? 'border-primary text-primary bg-white'
                   : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -1092,7 +1092,7 @@ export default function ReservationActionRequiredModal({
               title={t('actionRequired.balanceSubTabTooltips.unpaid')}
               className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'unpaid'
-                  ? 'border-blue-600 text-blue-600 bg-white'
+                  ? 'border-primary text-primary bg-white'
                   : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -1109,7 +1109,7 @@ export default function ReservationActionRequiredModal({
               title={t('actionRequired.balanceSubTabTooltips.calcWrong')}
               className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'calcWrong'
-                  ? 'border-blue-600 text-blue-600 bg-white'
+                  ? 'border-primary text-primary bg-white'
                   : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
@@ -1136,7 +1136,7 @@ export default function ReservationActionRequiredModal({
                 title={t('actionRequired.balanceTotalFilterTooltips.all')}
                 className={`flex min-h-[40px] touch-manipulation items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                   balanceTotalFilter === 'all'
-                    ? 'bg-white text-blue-700 shadow-sm border border-gray-200'
+                    ? 'bg-white text-primary shadow-sm border border-gray-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
                 }`}
               >
@@ -1175,7 +1175,7 @@ export default function ReservationActionRequiredModal({
         <div className="min-h-0 flex-1 overflow-auto p-3 max-lg:pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4">
           {loadingPayments && (activeTab === 'deposit' || activeTab === 'cancel') ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent" />
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
               <span className="ml-2 text-sm text-gray-600">입금 데이터 조회 중...</span>
             </div>
           ) : currentList.length === 0 ? (

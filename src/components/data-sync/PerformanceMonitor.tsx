@@ -75,13 +75,13 @@ export default function PerformanceMonitor({
     <div className="bg-white rounded-lg shadow-sm border p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-          <Activity className="h-5 w-5 mr-2 text-blue-600" />
+          <Activity className="h-5 w-5 mr-2 text-primary" />
           성능 모니터링
         </h3>
         <div className="flex space-x-2">
           <button
             onClick={fetchCacheStats}
-            className="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center"
+            className="px-3 py-1 text-sm bg-primary/10 text-primary rounded hover:bg-blue-200 flex items-center"
           >
             <RefreshCw className="h-3 w-3 mr-1" />
             새로고침
@@ -101,7 +101,7 @@ export default function PerformanceMonitor({
           <h4 className="text-sm font-medium text-gray-700 mb-2">캐시 통계</h4>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{cacheStats.size}</div>
+              <div className="text-2xl font-bold text-primary">{cacheStats.size}</div>
               <div className="text-xs text-gray-500">캐시 항목</div>
             </div>
             <div className="text-center">
@@ -116,9 +116,9 @@ export default function PerformanceMonitor({
       {metrics && (
         <div className="space-y-4">
           {/* 전체 성능 등급 */}
-          <div className="text-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+          <div className="text-center p-4 bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg">
             <div className="flex items-center justify-center mb-2">
-              <TrendingUp className="h-6 w-6 text-blue-600 mr-2" />
+              <TrendingUp className="h-6 w-6 text-primary mr-2" />
               <span className="text-lg font-semibold text-gray-700">성능 등급</span>
             </div>
             <div className={`inline-flex items-center px-4 py-2 rounded-full text-2xl font-bold ${getPerformanceGrade(metrics.rowsPerSecond).bg} ${getPerformanceGrade(metrics.rowsPerSecond).color}`}>
@@ -131,12 +131,12 @@ export default function PerformanceMonitor({
 
           {/* 상세 성능 메트릭 */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="p-3 bg-blue-50 rounded-lg">
+            <div className="p-3 bg-primary/5 rounded-lg">
               <div className="flex items-center mb-1">
-                <Clock className="h-4 w-4 text-blue-600 mr-1" />
+                <Clock className="h-4 w-4 text-primary mr-1" />
                 <span className="text-sm font-medium text-gray-700">총 처리 시간</span>
               </div>
-              <div className="text-xl font-bold text-blue-600">{formatTime(metrics.totalTime)}</div>
+              <div className="text-xl font-bold text-primary">{formatTime(metrics.totalTime)}</div>
             </div>
 
             <div className="p-3 bg-green-50 rounded-lg">

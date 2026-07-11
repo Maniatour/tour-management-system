@@ -270,7 +270,7 @@ export default function HybridChoiceSelector({
                         key={option.id}
                         className={`border rounded-lg p-4 transition-colors ${
                           currentQuantity > 0 
-                            ? 'border-blue-500 bg-blue-50' 
+                            ? 'border-primary bg-primary/5' 
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
@@ -347,7 +347,7 @@ export default function HybridChoiceSelector({
                             }}
                             className={`w-full py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                               currentQuantity > 0
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >

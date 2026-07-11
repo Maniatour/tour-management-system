@@ -333,7 +333,7 @@ export default function ExpenseDetailModal({
         </div>
 
         {/* 일괄 변경 */}
-        <div className="p-4 border-b bg-blue-50">
+        <div className="p-4 border-b bg-primary/5">
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-gray-700">일괄 카테고리 변경:</span>
             <select
@@ -363,7 +363,7 @@ export default function ExpenseDetailModal({
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : expenses.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
@@ -398,7 +398,7 @@ export default function ExpenseDetailModal({
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-1 rounded ${
-                        expense.source_table === 'tour_expenses' ? 'bg-blue-100 text-blue-700' :
+                        expense.source_table === 'tour_expenses' ? 'bg-primary/10 text-primary' :
                         expense.source_table === 'reservation_expenses' ? 'bg-green-100 text-green-700' :
                         'bg-purple-100 text-purple-700'
                       }`}>
@@ -461,7 +461,7 @@ export default function ExpenseDetailModal({
                       ) : (
                         <button
                           onClick={() => handleEdit(expense)}
-                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          className="p-1 text-primary hover:bg-muted/50 rounded"
                         >
                           <Edit2 size={16} />
                         </button>

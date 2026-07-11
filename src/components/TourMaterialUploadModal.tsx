@@ -46,7 +46,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
     if (type.startsWith('audio/')) return <Volume2 className="w-5 h-5 text-green-500" />
     if (type.startsWith('video/')) return <Video className="w-5 h-5 text-purple-500" />
     if (type.startsWith('image/')) return <Image className="w-5 h-5 text-orange-500" />
-    if (type.includes('pdf') || type.includes('text')) return <FileText className="w-5 h-5 text-blue-500" />
+    if (type.includes('pdf') || type.includes('text')) return <FileText className="w-5 h-5 text-primary" />
     return <FileText className="w-5 h-5 text-gray-500" />
   }
 
@@ -333,7 +333,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="자료 제목을 입력하세요"
               />
             </div>
@@ -344,7 +344,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
               <select
                 value={formData.language}
                 onChange={(e) => setFormData(prev => ({ ...prev, language: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="ko">한국어</option>
                 <option value="en">English</option>
@@ -363,7 +363,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="자료에 대한 설명을 입력하세요"
             />
           </div>
@@ -377,7 +377,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
               <select
                 value={formData.attraction_id}
                 onChange={(e) => setFormData(prev => ({ ...prev, attraction_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">관광지 선택 (선택사항)</option>
                 {attractions.map(attraction => (
@@ -394,7 +394,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
               <select
                 value={formData.category_id}
                 onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">카테고리 선택 (선택사항)</option>
                 {categories.map(category => (
@@ -417,13 +417,13 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="태그를 입력하고 Enter를 누르세요"
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 추가
               </button>
@@ -433,13 +433,13 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
                 {formData.tags.map((tag, index) => (
                   <span
                     key={index}
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-primary/10 text-primary"
                   >
                     {tag}
                     <button
                       type="button"
                       onClick={() => removeTag(tag)}
-                      className="ml-2 text-blue-600 hover:text-blue-800"
+                      className="ml-2 text-primary hover:text-primary/80"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -461,7 +461,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
           <button
             onClick={handleUpload}
             disabled={loading || !formData.file}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>}
             <span>{loading ? '업로드 중...' : '업로드'}</span>

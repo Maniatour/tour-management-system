@@ -314,7 +314,7 @@ ${printHtml}
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
-            <Eye className="w-5 h-5 text-blue-600" />
+            <Eye className="w-5 h-5 text-primary" />
             <h2 className="text-xl font-bold text-gray-900">{emailTypeLabels[emailType]} 미리보기</h2>
           </div>
           <button
@@ -330,7 +330,7 @@ ${printHtml}
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+                <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
                 <p className="text-gray-600">이메일 미리보기를 불러오는 중...</p>
               </div>
             </div>
@@ -342,7 +342,7 @@ ${printHtml}
                 </div>
               ) : null}
               {/* 이메일 정보 */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="bg-muted/50 border border-border rounded-lg p-4">
                 <div className="space-y-2 text-sm">
                   <div>
                     <span className="font-semibold text-gray-700">받는 사람:</span>
@@ -383,7 +383,7 @@ ${printHtml}
                   showCopyPrintToolbar ? (
                     <>
                       <button type="button" onClick={handlePrint} className="flex items-center gap-1.5 rounded bg-slate-600 px-3 py-1.5 text-sm text-white hover:bg-slate-700" title="인쇄"><Printer className="h-4 w-4" /><span>인쇄</span></button>
-                      <button type="button" onClick={handleCopyHtml} className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" title="HTML 복사">{copied ? <><Check className="h-4 w-4" /><span>복사됨</span></> : <><Copy className="h-4 w-4" /><span>HTML 복사</span></>}</button>
+                      <button type="button" onClick={handleCopyHtml} className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-primary/90" title="HTML 복사">{copied ? <><Check className="h-4 w-4" /><span>복사됨</span></> : <><Copy className="h-4 w-4" /><span>HTML 복사</span></>}</button>
                       <button type="button" onClick={handleCopyText} className="flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700" title="텍스트 복사">{copied ? <><Check className="h-4 w-4" /><span>복사됨</span></> : <><Copy className="h-4 w-4" /><span>텍스트 복사</span></>}</button>
                     </>
                   ) : undefined
@@ -418,7 +418,7 @@ ${printHtml}
                 checked={includePriceInfo}
                 onChange={(e) => setIncludePriceInfo(e.target.checked)}
                 disabled={loading || sending}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
               />
               <span>가격 정보(Price Information) 표시</span>
             </label>

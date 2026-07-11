@@ -76,7 +76,7 @@ export const VehicleAssignment: React.FC<VehicleAssignmentProps> = ({
                       e.stopPropagation()
                       onFetchVehicles()
                     }}
-                    className="text-blue-500 hover:text-blue-700 underline"
+                    className="text-primary hover:text-primary underline"
                   >
                     다시 시도
                   </button>
@@ -105,9 +105,9 @@ export const VehicleAssignment: React.FC<VehicleAssignmentProps> = ({
 
             {/* 현재 배정된 차량 정보 표시 */}
             {assignedVehicle && (
-              <div className="p-2 bg-blue-50 rounded text-xs">
-                <div className="font-medium text-blue-700 mb-1">현재 배정된 차량:</div>
-                <div className="text-blue-600">
+              <div className="p-2 bg-primary/5 rounded text-xs">
+                <div className="font-medium text-primary mb-1">현재 배정된 차량:</div>
+                <div className="text-primary">
                   {getVehicleDisplayName(assignedVehicle)}
                 </div>
               </div>

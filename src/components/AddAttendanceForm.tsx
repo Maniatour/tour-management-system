@@ -173,7 +173,7 @@ export default function AddAttendanceForm({
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center min-w-0">
-            <Plus className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
+            <Plus className="w-5 h-5 mr-2 text-primary shrink-0" />
             <span className="truncate">출퇴근 기록 추가</span>
           </h2>
           <button
@@ -202,7 +202,7 @@ export default function AddAttendanceForm({
             <select
               value={formData.employee_email}
               onChange={(e) => handleInputChange('employee_email', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               required
             >
               <option value="">직원을 선택하세요</option>
@@ -224,7 +224,7 @@ export default function AddAttendanceForm({
               type="date"
               value={formData.date}
               onChange={(e) => handleInputChange('date', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               required
             />
           </div>
@@ -239,7 +239,7 @@ export default function AddAttendanceForm({
               type="time"
               value={formData.check_in_time}
               onChange={(e) => handleInputChange('check_in_time', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               required
             />
           </div>
@@ -254,7 +254,7 @@ export default function AddAttendanceForm({
               type="time"
               value={formData.check_out_time}
               onChange={(e) => handleInputChange('check_out_time', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
 
@@ -267,7 +267,7 @@ export default function AddAttendanceForm({
               value={formData.notes}
               onChange={(e) => handleInputChange('notes', e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="추가 메모를 입력하세요..."
             />
           </div>
@@ -284,7 +284,7 @@ export default function AddAttendanceForm({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-3 sm:py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors touch-manipulation"
+              className="flex-1 px-4 py-3 sm:py-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors touch-manipulation"
             >
               {loading ? '추가 중...' : '추가'}
             </button>

@@ -96,7 +96,7 @@ export const TourStatusModal: React.FC<TourStatusModalProps> = ({
                 >
                   <span className="truncate">{option.label}</span>
                   {selectedTourStatus === option.value && (
-                    <span className="text-blue-600 shrink-0">✓</span>
+                    <span className="text-primary shrink-0">✓</span>
                   )}
                 </button>
               ))}
@@ -122,7 +122,7 @@ export const TourStatusModal: React.FC<TourStatusModalProps> = ({
                 >
                   <span className="truncate">{option.label}</span>
                   {selectedAssignmentStatus === option.value && (
-                    <span className="text-blue-600 shrink-0">✓</span>
+                    <span className="text-primary shrink-0">✓</span>
                   )}
                 </button>
               ))}
@@ -142,7 +142,7 @@ export const TourStatusModal: React.FC<TourStatusModalProps> = ({
           <button
             onClick={handleSave}
             disabled={isUpdating}
-            className="px-3 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isUpdating 
               ? (locale === 'ko' ? '저장 중...' : 'Saving...')

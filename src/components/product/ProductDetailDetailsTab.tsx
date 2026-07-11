@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   Shield,
   Megaphone,
+  ClipboardList,
+  Bus,
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -56,11 +58,11 @@ function DetailInfoBlock({
   )
 }
 
-function DetailEmptyState({ emoji, message }: { emoji: string; message: string }) {
+function DetailEmptyState({ icon: Icon, message }: { icon: LucideIcon; message: string }) {
   return (
-    <div className="rounded-xl bg-gray-50 py-8 text-center sm:border sm:border-dashed sm:border-gray-300 sm:py-12">
-      <div className="mb-2 text-3xl text-gray-400 sm:text-4xl">{emoji}</div>
-      <p className="text-xs text-gray-600 sm:text-sm">{message}</p>
+    <div className="rounded-feature border border-dashed border-border/60 bg-muted/30 py-8 text-center sm:py-12">
+      <Icon className="mx-auto mb-2 h-8 w-8 text-muted-foreground sm:h-10 sm:w-10" aria-hidden />
+      <p className="text-xs text-muted-foreground sm:text-sm">{message}</p>
     </div>
   )
 }
@@ -223,7 +225,7 @@ export default function ProductDetailDetailsTab({
                             <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-4">
                               {getProductDepartureCity(product, locale) && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
-                                  <MapPin className="h-3.5 w-3.5 shrink-0 text-blue-500 sm:h-4 sm:w-4" />
+                                  <MapPin className="h-3.5 w-3.5 shrink-0 text-booking sm:h-4 sm:w-4" />
                                   <span className="text-gray-600">{t('departure')}</span>
                                   <span className="font-medium text-gray-900">
                                     {getProductDepartureCity(product, locale)}
@@ -294,7 +296,7 @@ export default function ProductDetailDetailsTab({
                         </div>
 
                         {!hasVisibleIncludedDetailCards && (
-                          <DetailEmptyState emoji="📋" message={t('noInclusionDetails')} />
+                          <DetailEmptyState icon={ClipboardList} message={t('noInclusionDetails')} />
                         )}
                       </div>
                     )}
@@ -306,7 +308,7 @@ export default function ProductDetailDetailsTab({
                           {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
                             <DetailInfoBlock
                               icon={Car}
-                              iconClassName="text-blue-600"
+                              iconClassName="text-booking"
                               title={t('pickupDropInfo')}
                               html={productDetails.pickup_drop_info}
                             />
@@ -363,7 +365,7 @@ export default function ProductDetailDetailsTab({
                         </div>
 
                         {!hasVisibleLogisticsCards && (
-                          <DetailEmptyState emoji="🚌" message={t('noLogisticsInfo')} />
+                          <DetailEmptyState icon={Bus} message={t('noLogisticsInfo')} />
                         )}
                       </div>
                     )}
@@ -399,7 +401,7 @@ export default function ProductDetailDetailsTab({
                           {productDetails?.chat_announcement && showDetailOnCustomerPage('chat_announcement') && (
                             <DetailInfoBlock
                               icon={Megaphone}
-                              iconClassName="text-blue-600"
+                              iconClassName="text-booking"
                               title={t('announcements')}
                               html={productDetails.chat_announcement}
                             />
@@ -407,7 +409,7 @@ export default function ProductDetailDetailsTab({
                         </div>
 
                         {!hasVisiblePolicyCards && (
-                          <DetailEmptyState emoji="📋" message={t('noPolicyInfo')} />
+                          <DetailEmptyState icon={ClipboardList} message={t('noPolicyInfo')} />
                         )}
                       </div>
                     )}

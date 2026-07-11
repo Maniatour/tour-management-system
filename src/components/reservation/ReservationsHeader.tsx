@@ -118,7 +118,7 @@ function ReservationsHeader({
     <button
       type="button"
       onClick={onAddReservation}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 md:h-auto md:w-auto md:gap-1.5 md:px-3 md:py-1.5 text-sm font-medium"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 md:h-auto md:w-auto md:gap-1.5 md:px-3 md:py-1.5 text-sm font-medium"
       title={t('addReservation')}
       aria-label={t('addReservation')}
     >
@@ -138,7 +138,7 @@ function ReservationsHeader({
               <div className="flex items-center space-x-2">
                 <span>{t('title')}</span>
                 <span className="text-lg text-gray-500">-</span>
-                <span className="truncate text-lg text-blue-600">
+                <span className="truncate text-lg text-primary">
                   {getCustomerName(customerIdFromUrl, customers || [])}
                 </span>
               </div>
@@ -159,7 +159,7 @@ function ReservationsHeader({
               type="button"
               onClick={() => onViewModeChange('card')}
               className={`flex items-center space-x-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                viewMode === 'card' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                viewMode === 'card' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <Grid3X3 className="h-3 w-3" />
@@ -169,7 +169,7 @@ function ReservationsHeader({
               type="button"
               onClick={() => onViewModeChange('calendar')}
               className={`flex items-center space-x-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                viewMode === 'calendar' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                viewMode === 'calendar' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <CalendarDays className="h-3 w-3" />
@@ -179,7 +179,7 @@ function ReservationsHeader({
               type="button"
               onClick={() => onViewModeChange('list')}
               className={`flex items-center space-x-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <LayoutList className="h-3 w-3" />
@@ -236,7 +236,7 @@ function ReservationsHeader({
                     onSearchSubmit()
                   }
                 }}
-                className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:border-transparent focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:border-transparent focus:ring-1 focus:ring-ring sm:text-sm"
               />
             </div>
             {typeof onSearchSubmit === 'function' && (
@@ -257,7 +257,7 @@ function ReservationsHeader({
             <button
               type="button"
               onClick={onOpenFilter}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
             >
               <SlidersHorizontal size={16} />
               <span>{t('filter')}</span>

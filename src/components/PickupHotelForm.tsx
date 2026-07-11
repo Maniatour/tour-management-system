@@ -499,7 +499,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                     is_active: !(f.is_active !== false),
                   }))
                 }
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                   formData.is_active !== false ? 'bg-blue-600' : 'bg-gray-200'
                 }`}
               >
@@ -628,7 +628,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 type="text"
                 value={formData.hotel}
                 onChange={(e) => setFormData({ ...formData, hotel: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={translations.hotel}
                 required
               />
@@ -642,7 +642,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 type="text"
                 value={formData.pick_up_location}
                 onChange={(e) => setFormData({ ...formData, pick_up_location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder={translations.pickUpLocation}
                 required
               />
@@ -661,7 +661,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   ...formData, 
                   group_number: e.target.value ? parseFloat(e.target.value) : null 
                 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: 1.0, 1.1, 2.0"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -682,7 +682,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   value={formData.description_ko}
                   onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: Rear Rotunda Tour Pickup Area (Back Entrance)."
                 />
               </div>
@@ -694,7 +694,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   value={formData.description_en}
                   onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="e.g. Rear Rotunda Tour Pickup Area (Back Entrance)."
                 />
               </div>
@@ -711,7 +711,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 value={formData.from_inside_hotel_ko}
                 onChange={(e) => setFormData({ ...formData, from_inside_hotel_ko: e.target.value })}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="호텔 내부에서 찾아가는 방법"
               />
             </div>
@@ -723,7 +723,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 value={formData.from_inside_hotel_en}
                 onChange={(e) => setFormData({ ...formData, from_inside_hotel_en: e.target.value })}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Directions from inside the hotel"
               />
             </div>
@@ -735,7 +735,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 value={formData.from_outside_hotel_ko}
                 onChange={(e) => setFormData({ ...formData, from_outside_hotel_ko: e.target.value })}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="호텔 밖에서 찾아가는 방법"
               />
             </div>
@@ -747,7 +747,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 value={formData.from_outside_hotel_en}
                 onChange={(e) => setFormData({ ...formData, from_outside_hotel_en: e.target.value })}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="Directions from outside the hotel"
               />
             </div>
@@ -773,7 +773,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               type="text"
               value={formData.address}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder={translations.address}
               required
             />
@@ -791,13 +791,13 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   type="text"
                   value={formData.pin}
                   onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: 37.5665,126.9780"
                 />
                 <button
                   type="button"
                   onClick={() => setShowMapModal(true)}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
                 >
                   지도에서 선택
                 </button>
@@ -814,7 +814,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   type="url"
                   value={formData.link}
                   onChange={(e) => setFormData({ ...formData, link: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="https://maps.google.com/..."
                 />
               </div>
@@ -832,7 +832,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 type="url"
                 value={formData.youtube_link}
                 onChange={(e) => setFormData({ ...formData, youtube_link: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="https://www.youtube.com/watch?v=..."
               />
             </div>
@@ -862,7 +862,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                         placeholder={`구글 드라이브 이미지 URL ${index + 1}`}
                         value={url}
                         onChange={(e) => updateGoogleDriveUrl(index, e.target.value)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       />
                       {url && (
                         <button
@@ -1000,7 +1000,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                       #{index + 1}
                     </div>
                     {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com') && (
-                      <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                         클릭하여 확대
                       </div>
                     )}
@@ -1038,7 +1038,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             <button
               type="submit"
               disabled={uploading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {uploading ? '업로드 중...' : (hotel ? translations.edit : translations.add)}
             </button>
@@ -1072,7 +1072,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                     type="text"
                     id="mapSearch"
                     placeholder="호텔명 또는 주소를 검색하세요 (예: Bellagio Hotel)"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
                         handleMapSearch()
@@ -1082,7 +1082,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   <button
                     type="button"
                     onClick={handleMapSearch}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                   >
                     검색
                   </button>
@@ -1102,7 +1102,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                       href={selectedGoogleMapLink} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="ml-1 text-blue-600 hover:text-blue-800 underline"
+                      className="ml-1 text-primary hover:text-primary/80 underline"
                     >
                       링크 열기
                     </a>
@@ -1129,7 +1129,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   type="number"
                   step="any"
                   id="latitude"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: 36.1699"
                 />
               </div>
@@ -1141,7 +1141,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   type="number"
                   step="any"
                   id="longitude"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="예: -115.1398"
                 />
               </div>
@@ -1168,7 +1168,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                     alert('위도와 경도를 입력해주세요.')
                   }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 좌표 적용
               </button>

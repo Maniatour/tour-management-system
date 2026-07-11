@@ -646,20 +646,20 @@ export default function AllTourExpensesManager() {
                   applySearch()
                 }
               }}
-              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             />
           </div>
           <button
             type="button"
             onClick={applySearch}
-            className="shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 text-sm"
+            className="shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center justify-center gap-1.5 text-sm"
           >
             <Search className="w-4 h-4" />
             {t('search')}
           </button>
           <button
             onClick={() => setShowDriveImporter(!showDriveImporter)}
-            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 sm:gap-2 text-sm"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center justify-center gap-1.5 sm:gap-2 text-sm"
           >
             <Folder className="w-4 h-4" />
             <span className="hidden sm:inline">{t('googleDriveReceipts')}</span>
@@ -674,7 +674,7 @@ export default function AllTourExpensesManager() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
             >
               <option value="all">{t('filterAll')}</option>
               <option value="pending">{t('filterPending')}</option>
@@ -687,7 +687,7 @@ export default function AllTourExpensesManager() {
             <select
               value={paidToFilter}
               onChange={(e) => setPaidToFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
             >
               <option value="all">{t('filterAll')}</option>
               {paidToOptions.map((value) => (
@@ -702,7 +702,7 @@ export default function AllTourExpensesManager() {
             <select
               value={paidForFilter}
               onChange={(e) => setPaidForFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
             >
               <option value="all">{t('filterAll')}</option>
               {paidForOptions.map((value) => (
@@ -718,7 +718,7 @@ export default function AllTourExpensesManager() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
             />
           </div>
           <div>
@@ -727,7 +727,7 @@ export default function AllTourExpensesManager() {
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
             />
           </div>
           <div className="col-span-2 lg:col-span-1">
@@ -737,7 +737,7 @@ export default function AllTourExpensesManager() {
               placeholder={t('tourIdPlaceholder')}
               value={tourIdFilter}
               onChange={(e) => setTourIdFilter(e.target.value)}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring"
             />
           </div>
         </div>
@@ -749,7 +749,7 @@ export default function AllTourExpensesManager() {
             onChange={(e) =>
               setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
             }
-            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
           >
             <option value="all">{t('reimbursementFilterAll')}</option>
             <option value="employee_card">{t('reimbursementFilterEmployeeCard')}</option>
@@ -801,7 +801,7 @@ export default function AllTourExpensesManager() {
       {/* 지출 목록 */}
       {loading ? (
         <div className="text-center py-6 sm:py-8">
-          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-primary mx-auto"></div>
           <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
         </div>
       ) : sortedFilteredExpenses.length > 0 ? (
@@ -901,7 +901,7 @@ export default function AllTourExpensesManager() {
                     <button
                       type="button"
                       onClick={() => setViewingReceipt({ imageUrl: expense.image_url!, expenseId: expense.id, paidFor: expense.paid_for })}
-                      className="inline-flex items-center gap-1 text-blue-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-blue-50 min-h-[44px]"
+                      className="inline-flex items-center gap-1 text-primary text-xs font-medium py-2 px-3 rounded-lg hover:bg-muted/50 min-h-[44px]"
                     >
                       <Receipt className="w-4 h-4" />
                       영수증
@@ -1100,7 +1100,7 @@ export default function AllTourExpensesManager() {
                           expenseId: expense.id,
                           paidFor: expense.paid_for 
                         })}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-800"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-primary hover:text-primary/80"
                       >
                         <Receipt className="w-4 h-4" />
                         보기
@@ -1131,7 +1131,7 @@ export default function AllTourExpensesManager() {
                       <button
                         type="button"
                         onClick={() => openTourDetailModal(expense)}
-                        className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
+                        className="p-1 text-gray-600 hover:text-primary hover:bg-muted/50 rounded"
                         title={t('tourDetail')}
                       >
                         <Eye className="w-4 h-4" />
@@ -1246,7 +1246,7 @@ export default function AllTourExpensesManager() {
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b">
                 <div className="flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-blue-600" />
+                  <Receipt className="w-5 h-5 text-primary" />
                   <h3 className="text-lg font-semibold text-gray-900">
                     {t('receiptLabel')}: {viewingReceipt.paidFor}
                   </h3>
@@ -1276,7 +1276,7 @@ export default function AllTourExpensesManager() {
                       href={viewingReceipt.imageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
                     >
                       <ImageIcon className="w-4 h-4" />
                       {t('openInNewWindow')}
@@ -1316,7 +1316,7 @@ export default function AllTourExpensesManager() {
                     href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
                   >
                     {tRes('card.openTourInNewTab')}
                   </a>

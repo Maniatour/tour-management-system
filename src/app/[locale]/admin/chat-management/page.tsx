@@ -2095,7 +2095,7 @@ export default function ChatManagementPage() {
           return 'bg-red-100 text-red-800'
         case 'completed':
         case '완료':
-          return 'bg-blue-100 text-blue-800'
+          return 'bg-primary/10 text-primary'
         default:
           return 'bg-gray-100 text-gray-800'
       }
@@ -2145,7 +2145,7 @@ export default function ChatManagementPage() {
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title={refreshing ? '새로고침 중...' : '새로고침'}
               >
                 <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
@@ -2159,7 +2159,7 @@ export default function ChatManagementPage() {
               onClick={() => setActiveTab('upcoming')}
               className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
                 activeTab === 'upcoming'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -2177,7 +2177,7 @@ export default function ChatManagementPage() {
               onClick={() => setActiveTab('past')}
               className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
                 activeTab === 'past'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -2195,7 +2195,7 @@ export default function ChatManagementPage() {
               onClick={() => setActiveTab('inactive')}
               className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
                 activeTab === 'inactive'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -2212,14 +2212,14 @@ export default function ChatManagementPage() {
                 placeholder="채팅방 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="all">전체</option>
               <option value="active">확정된 투어</option>
@@ -2253,7 +2253,7 @@ export default function ChatManagementPage() {
               key={room.id}
               className={`p-2 border-b overflow-hidden border-gray-100 transition-colors ${
                 selectedRoom?.id === room.id 
-                  ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                  ? 'bg-primary/5 border-l-2 border-l-blue-500' 
                   : room.unread_count > 0 
                     ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
                     : ''
@@ -2280,7 +2280,7 @@ export default function ChatManagementPage() {
                           className={`flex-shrink-0 tabular-nums rounded-full px-1.5 py-px text-[10px] font-semibold ${
                             roomMessageCounts[room.id] === 0
                               ? 'bg-gray-200 text-gray-600'
-                              : 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-primary text-primary-foreground shadow-sm'
                           }`}
                           title={`총 ${roomMessageCounts[room.id]}개 메시지`}
                           aria-label={`총 ${roomMessageCounts[room.id]}개 메시지`}
@@ -2345,7 +2345,7 @@ export default function ChatManagementPage() {
                         })
                       }
                     }}
-                    className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    className="p-1 text-gray-600 hover:text-primary hover:bg-muted/50 rounded transition-colors"
                     title="플로팅 채팅방 열기"
                   >
                     <Cast size={14} />
@@ -2398,7 +2398,7 @@ export default function ChatManagementPage() {
                     <div className="relative language-dropdown">
                       <button
                         onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                        className="flex items-center space-x-1 lg:space-x-2 px-2 lg:px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex items-center space-x-1 lg:space-x-2 px-2 lg:px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
                       >
                         <span className="text-lg">
                           {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
@@ -2418,7 +2418,7 @@ export default function ChatManagementPage() {
                                 setShowLanguageDropdown(false)
                               }}
                               className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                                selectedLanguage === 'ko' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                selectedLanguage === 'ko' ? 'bg-primary/5 text-primary' : 'text-gray-700'
                               }`}
                             >
                               <span className="text-base">🇰🇷</span>
@@ -2430,7 +2430,7 @@ export default function ChatManagementPage() {
                                 setShowLanguageDropdown(false)
                               }}
                               className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                                selectedLanguage === 'en' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                selectedLanguage === 'en' ? 'bg-primary/5 text-primary' : 'text-gray-700'
                               }`}
                             >
                               <span className="text-base">🇺🇸</span>
@@ -2548,13 +2548,13 @@ export default function ChatManagementPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-sm lg:text-base"
                   disabled={sending}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending}
-                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
+                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
                   <span className="hidden lg:inline">{sending ? '전송 중...' : '전송'}</span>
                   <span className="lg:hidden">{sending ? '...' : '전송'}</span>
@@ -2589,7 +2589,7 @@ export default function ChatManagementPage() {
                 <h3 className="text-lg font-semibold text-gray-900">투어 정보</h3>
                 <button
                   onClick={() => router.push(`/ko/admin/tours/${tourInfo.id}`)}
-                  className="px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
+                  className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded-md hover:bg-primary/90 transition-colors"
                 >
                   상세보기
                 </button>

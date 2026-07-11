@@ -151,7 +151,7 @@ export default function GuideTours({}: GuideToursProps) {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'completed':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-primary/10 text-primary'
       case 'cancelled':
       case 'canceled':
         return 'bg-red-100 text-red-800'
@@ -503,7 +503,7 @@ export default function GuideTours({}: GuideToursProps) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">{gt('loading')}</p>
         </div>
       </div>
@@ -518,7 +518,7 @@ export default function GuideTours({}: GuideToursProps) {
         <div className="mb-3">
           <button
             onClick={() => router.push('/${locale}/guide')}
-            className="flex items-center text-blue-600 hover:text-blue-700 text-sm font-medium"
+            className="flex items-center text-primary hover:text-primary/80 text-sm font-medium"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
             {gt('backToDashboard')}
@@ -540,7 +540,7 @@ export default function GuideTours({}: GuideToursProps) {
               onClick={() => setViewMode('calendar')}
               className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
                 effectiveViewMode === 'calendar' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -551,7 +551,7 @@ export default function GuideTours({}: GuideToursProps) {
               onClick={() => setViewMode('list')}
               className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
                 effectiveViewMode === 'list' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -570,7 +570,7 @@ export default function GuideTours({}: GuideToursProps) {
               placeholder={gt('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
             />
           </div>
         </div>
@@ -582,7 +582,7 @@ export default function GuideTours({}: GuideToursProps) {
           {navigatingToTour && (
             <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
                 <p className="text-sm text-gray-600">{gt('navigatingToTour')}</p>
               </div>
             </div>
@@ -649,7 +649,7 @@ export default function GuideTours({}: GuideToursProps) {
                   </div>
                   <div className="ml-auto flex items-center gap-2">
                     {navigatingToTour === tour.id && (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     )}
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusBadgeClasses(tour.status || tour.tour_status)}`}>
                       {(tour.status || tour.tour_status) || '-'}
@@ -657,7 +657,7 @@ export default function GuideTours({}: GuideToursProps) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="inline-flex items-center px-2 py-0.5 border border-blue-200 rounded text-xs text-blue-700 bg-blue-50">
+                  <span className="inline-flex items-center px-2 py-0.5 border border-border rounded text-xs text-primary bg-primary/5">
                     {locale === 'en' ? (tour.guide_name_en || tour.guide_name || '-') : (tour.guide_name || '-')}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 border border-emerald-200 rounded text-xs text-emerald-700 bg-emerald-50">

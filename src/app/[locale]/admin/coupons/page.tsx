@@ -251,7 +251,7 @@ export default function CouponsPage() {
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -261,7 +261,7 @@ export default function CouponsPage() {
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -270,7 +270,7 @@ export default function CouponsPage() {
           </div>
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
           >
             <Plus size={16} />
             <span>쿠폰 추가</span>
@@ -289,7 +289,7 @@ export default function CouponsPage() {
                 placeholder="쿠폰 코드 또는 설명으로 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -298,7 +298,7 @@ export default function CouponsPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="all">전체 상태</option>
               <option value="active">활성</option>
@@ -315,7 +315,7 @@ export default function CouponsPage() {
             onClick={() => setSelectedChannelFilter(null)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
               selectedChannelFilter === null
-                ? 'bg-blue-600 text-white shadow-sm'
+                ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
@@ -329,7 +329,7 @@ export default function CouponsPage() {
                 onClick={() => setSelectedChannelFilter(channel.id)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   selectedChannelFilter === channel.id
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -353,7 +353,7 @@ export default function CouponsPage() {
                 onClick={() => setSelectedChannelFilter('none')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   selectedChannelFilter === 'none'
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -432,7 +432,7 @@ export default function CouponsPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       <div className="max-w-xs">
-                        <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                        <span className="inline-block bg-primary/10 text-primary text-xs px-2 py-1 rounded-full">
                           {getProductNames(coupon.product_id)}
                         </span>
                       </div>
@@ -462,7 +462,7 @@ export default function CouponsPage() {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => setEditingCoupon(coupon)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-primary hover:text-foreground"
                         >
                           <Edit size={16} />
                         </button>
@@ -490,8 +490,8 @@ export default function CouponsPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
                         <div className="flex-shrink-0">
-                          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
-                            <Ticket size={24} className="text-blue-600" />
+                          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Ticket size={24} className="text-primary" />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
@@ -524,7 +524,7 @@ export default function CouponsPage() {
                       
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">할인 값</span>
-                        <span className="font-medium text-blue-600">
+                        <span className="font-medium text-primary">
                           {coupon.discount_type === 'percentage' && coupon.percentage_value ? 
                             `${coupon.percentage_value}%` :
                             coupon.discount_type === 'fixed' && coupon.fixed_value ? 
@@ -568,7 +568,7 @@ export default function CouponsPage() {
                       <div className="flex space-x-2">
                         <button
                           onClick={() => setEditingCoupon(coupon)}
-                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                          className="flex-1 bg-primary text-primary-foreground py-2 px-3 rounded-md hover:bg-primary/90 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
                         >
                           <Edit size={14} />
                           <span>편집</span>
@@ -771,7 +771,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
               required
               value={formData.coupon_code}
               onChange={(e) => setFormData(prev => ({ ...prev, coupon_code: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="예: WELCOME20"
             />
           </div>
@@ -783,7 +783,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             <textarea
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
               rows={3}
               placeholder="쿠폰에 대한 설명을 입력하세요"
             />
@@ -796,7 +796,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             <select
               value={formData.discount_type}
               onChange={(e) => setFormData(prev => ({ ...prev, discount_type: e.target.value as 'percentage' | 'fixed' }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="percentage">퍼센트 할인</option>
               <option value="fixed">고정 할인</option>
@@ -816,7 +816,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 step="0.01"
                 value={formData.fixed_value}
                 onChange={(e) => setFormData(prev => ({ ...prev, fixed_value: parseFloat(e.target.value) || 0 }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="20.00"
               />
             </div>
@@ -833,7 +833,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 step="0.01"
                 value={formData.percentage_value}
                 onChange={(e) => setFormData(prev => ({ ...prev, percentage_value: parseFloat(e.target.value) || 0 }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="5.00"
               />
             </div>
@@ -848,7 +848,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 type="date"
                 value={formData.start_date}
                 onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -859,7 +859,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 type="date"
                 value={formData.end_date}
                 onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -879,7 +879,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
               <button
                 type="button"
                 onClick={openChannelSelector}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 선택
               </button>
@@ -940,7 +940,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             <select
               value={formData.status}
               onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'inactive' }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="active">활성</option>
               <option value="inactive">비활성</option>
@@ -957,7 +957,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
             >
               {coupon ? '수정' : '추가'}
             </button>
@@ -990,7 +990,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                    }}
                    className={`py-2 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
                      selectedChannelType === type
-                       ? 'bg-white text-blue-600 shadow-sm'
+                       ? 'bg-white text-primary shadow-sm'
                        : 'text-gray-600 hover:text-gray-900'
                    }`}
                  >
@@ -1016,7 +1016,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                         setFormData(prev => ({ ...prev, channel_id: channel.id }))
                         setShowChannelSelector(false)
                       }}
-                      className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
+                      className="p-3 border border-gray-200 rounded-lg hover:bg-muted/50 hover:border-border cursor-pointer transition-colors"
                     >
                       <div className="font-medium text-gray-900">{channel.name}</div>
                       <div className="text-sm text-gray-500">ID: {channel.id}</div>

@@ -632,7 +632,7 @@ export default function TourHotelBookingForm({
                 value={formData.tour_id || ''}
                 onChange={handleChange}
                 disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">{t('selectTourPlaceholder')}</option>
                 {!formData.check_in_date?.trim() ? (
@@ -681,7 +681,7 @@ export default function TourHotelBookingForm({
                 name="rn_number"
                 value={formData.rn_number}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
               />
             </div>
           </div>
@@ -701,7 +701,7 @@ export default function TourHotelBookingForm({
                   value={formData.check_in_date}
                   onChange={handleChange}
                   required
-                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex flex-col">
                   <button
@@ -739,7 +739,7 @@ export default function TourHotelBookingForm({
                   value={formData.check_out_date}
                   onChange={handleChange}
                   required
-                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex flex-col">
                   <button
@@ -775,7 +775,7 @@ export default function TourHotelBookingForm({
                 value={formData.reservation_name || ''}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">예약자명을 선택하세요</option>
                 {formData.reservation_name?.trim() && !reservationInTeamList ? (
@@ -828,7 +828,7 @@ export default function TourHotelBookingForm({
                 name="cc"
                 value={formData.cc || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">CC 상태를 선택하세요</option>
                 <option value="sent">CC 발송 완료</option>
@@ -848,7 +848,7 @@ export default function TourHotelBookingForm({
                 onChange={handleChange}
                 required
                 min="1"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -861,7 +861,7 @@ export default function TourHotelBookingForm({
                 value={cityTrim}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
               >
                 <option value="">도시를 선택하세요</option>
                 {!cityInDbList && cityTrim ? (
@@ -889,7 +889,7 @@ export default function TourHotelBookingForm({
                 value={hotelTrim}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
               >
                 <option value="">호텔을 선택하세요</option>
                 {!hotelInDbList && hotelTrim ? (
@@ -916,7 +916,7 @@ export default function TourHotelBookingForm({
                 name="room_type"
                 value={formData.room_type || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">객실 타입을 선택하세요</option>
                 <option value="1 king">1 King</option>
@@ -939,7 +939,7 @@ export default function TourHotelBookingForm({
                 required
                 step="0.01"
                 min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -960,7 +960,7 @@ export default function TourHotelBookingForm({
                 }
                 step="0.01"
                 min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
 
@@ -982,13 +982,13 @@ export default function TourHotelBookingForm({
                       if (e.key === 'Escape') setShowNewPaymentMethodInput(false);
                     }}
                     placeholder={t('paymentMethod')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     autoFocus
                   />
                   <button
                     type="button"
                     onClick={() => void handleAddPaymentMethod()}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
                   >
                     {t('add')}
                   </button>
@@ -1015,7 +1015,7 @@ export default function TourHotelBookingForm({
                     }
                     setFormData((prev) => ({ ...prev, payment_method: v }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">{t('select')}</option>
                   {formData.payment_method &&
@@ -1051,7 +1051,7 @@ export default function TourHotelBookingForm({
                     setShowWebsiteSuggestions(filtered.length > 0);
                   }
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="웹사이트 주소 또는 이름을 입력하세요"
                 autoComplete="off"
               />
@@ -1078,7 +1078,7 @@ export default function TourHotelBookingForm({
                 name="status"
                 value={formData.status || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="pending">대기중</option>
                 <option value="confirmed">확정</option>
@@ -1098,8 +1098,8 @@ export default function TourHotelBookingForm({
                 isUploading 
                   ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
                   : isDragOver 
-                    ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer' 
-                    : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                    ? 'border-primary bg-primary/10 scale-105 cursor-pointer' 
+                    : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
               }`}
               onDragOver={!isUploading ? handleDragOver : undefined}
               onDragEnter={!isUploading ? handleDragEnter : undefined}
@@ -1112,19 +1112,19 @@ export default function TourHotelBookingForm({
               <div className="flex flex-col items-center space-y-2">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                   isUploading 
-                    ? 'bg-blue-100' 
+                    ? 'bg-primary/10' 
                     : isDragOver 
                       ? 'bg-blue-200' 
                       : 'bg-gray-100'
                 }`}>
                   {isUploading ? (
                     <div className="animate-spin">
-                      <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                     </div>
                   ) : isDragOver ? (
-                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                   ) : (
@@ -1135,7 +1135,7 @@ export default function TourHotelBookingForm({
                 </div>
                 <div>
                   <p className={`text-sm font-medium transition-colors ${
-                    isDragOver ? 'text-blue-900' : 'text-gray-900'
+                    isDragOver ? 'text-foreground' : 'text-gray-900'
                   }`}>
                     {isUploading 
                       ? '파일 업로드 중...' 
@@ -1170,13 +1170,13 @@ export default function TourHotelBookingForm({
                     {formData.uploaded_files.map((file, index) => (
                       <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                          <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
                             {file.type.startsWith('image/') ? (
-                              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
                             ) : (
-                              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                               </svg>
                             )}
@@ -1217,7 +1217,7 @@ export default function TourHotelBookingForm({
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
             >
               {loading ? t('saving') : t('save')}
             </button>

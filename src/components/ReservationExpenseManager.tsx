@@ -205,7 +205,7 @@ function PaidForAutocomplete({
           setOpen(true)
         }}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
       />
       {open && (loading || suggestions.length > 0) && (
         <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
@@ -1113,7 +1113,7 @@ export default function ReservationExpenseManager({
         <button
           type="button"
           onClick={() => openReservationEditModal(rid)}
-          className="inline-flex items-start gap-1.5 max-w-full min-w-0 text-left text-blue-600 hover:text-blue-800 hover:underline"
+          className="inline-flex items-start gap-1.5 max-w-full min-w-0 text-left text-primary hover:text-primary/80 hover:underline"
           title={cellTitle}
         >
           <ReservationStatusIcon status={status} {...(statusTitle ? { title: statusTitle } : {})} />
@@ -1383,7 +1383,7 @@ export default function ReservationExpenseManager({
                       applySearch()
                     }
                   }}
-                  className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                 />
               </div>
               <Button
@@ -1439,7 +1439,7 @@ export default function ReservationExpenseManager({
                   reimbursement_note: ''
                 })
               }}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 sm:gap-2 text-sm w-full sm:w-auto shrink-0 disabled:opacity-50 disabled:pointer-events-none"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center justify-center gap-1.5 sm:gap-2 text-sm w-full sm:w-auto shrink-0 disabled:opacity-50 disabled:pointer-events-none"
             >
               <Plus className="w-4 h-4" />
               <span>{t('addExpense')}</span>
@@ -1451,7 +1451,7 @@ export default function ReservationExpenseManager({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
               >
                 <option value="all">{tTour('filterAll')}</option>
                 <option value="pending">{tTour('filterPending')}</option>
@@ -1470,7 +1470,7 @@ export default function ReservationExpenseManager({
                 id="re-filter-statement-match"
                 value={statementMatchFilter}
                 onChange={(e) => setStatementMatchFilter(e.target.value as 'all' | 'unmatched')}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
               >
                 <option value="all">{t('statementMatchAll')}</option>
                 <option value="unmatched">{t('statementMatchUnmatched')}</option>
@@ -1491,7 +1491,7 @@ export default function ReservationExpenseManager({
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
               />
             </div>
             <div>
@@ -1502,7 +1502,7 @@ export default function ReservationExpenseManager({
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
               />
             </div>
             <div className="col-span-2 sm:col-span-1 lg:col-span-1 flex items-end">
@@ -1526,7 +1526,7 @@ export default function ReservationExpenseManager({
                 aria-label={t('submitYearPresetAria', { year })}
                 className={`px-2.5 py-1 text-xs sm:text-sm rounded-md border transition-colors ${
                   isSubmitYearFilterActive(year)
-                    ? 'bg-blue-600 text-white border-blue-600'
+                    ? 'bg-primary text-primary-foreground border-primary'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                 }`}
               >
@@ -1543,7 +1543,7 @@ export default function ReservationExpenseManager({
               onChange={(e) =>
                 setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
               }
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring bg-white"
             >
               <option value="all">{tTour('reimbursementFilterAll')}</option>
               <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
@@ -1584,7 +1584,7 @@ export default function ReservationExpenseManager({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
           {showTitle && (
             <>
-              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
               <h3 className="text-xs font-semibold text-gray-900 truncate">
                 {titleText}
                 {reservationId ? (
@@ -1649,7 +1649,7 @@ export default function ReservationExpenseManager({
                 reimbursement_note: ''
               })
             }}
-            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:bg-blue-600"
+            className="inline-flex items-center gap-1 px-2 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-xs font-medium transition-colors flex-shrink-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:bg-primary/90"
           >
             <Plus size={12} />
             <span>{t('addExpense')}</span>
@@ -1683,7 +1683,7 @@ export default function ReservationExpenseManager({
                     <select
                       value={formData.paid_to || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, paid_to: e.target.value }))}
-                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       required
                     >
                       <option value="">{t('selectOptions.pleaseSelect')}</option>
@@ -1694,7 +1694,7 @@ export default function ReservationExpenseManager({
                     <button
                       type="button"
                       onClick={() => setShowCustomPaidTo(true)}
-                      className="text-xs sm:text-sm text-blue-600 hover:text-blue-800"
+                      className="text-xs sm:text-sm text-primary hover:text-primary/80"
                     >
                       {t('directInput')}
                     </button>
@@ -1706,7 +1706,7 @@ export default function ReservationExpenseManager({
                       value={formData.custom_paid_to ?? ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
                       placeholder={t('newPaidToPlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       required
                     />
                     <button
@@ -1749,7 +1749,7 @@ export default function ReservationExpenseManager({
                   onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
                   placeholder={t('amountInputPlaceholder')}
                   step="0.01"
-                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   required
                 />
               </div>
@@ -1780,7 +1780,7 @@ export default function ReservationExpenseManager({
                   <select
                     value={formData.reservation_id || ''}
                     onChange={(e) => setFormData((prev) => ({ ...prev, reservation_id: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   >
                     <option value="">{t('selectOptions.pleaseSelect')}</option>
                     {reservations.map((reservation: Reservation) => (
@@ -1803,7 +1803,7 @@ export default function ReservationExpenseManager({
                 onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
                 placeholder={t('memoPlaceholder')}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
 
@@ -1817,8 +1817,8 @@ export default function ReservationExpenseManager({
                   uploading 
                     ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
                     : dragOver 
-                      ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer' 
-                      : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                      ? 'border-primary bg-primary/10 scale-105 cursor-pointer' 
+                      : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
                 }`}
                 onDragOver={!uploading ? handleDragOver : undefined}
                 onDragLeave={!uploading ? handleDragLeave : undefined}
@@ -1847,24 +1847,24 @@ export default function ReservationExpenseManager({
                 <div className="flex flex-col items-center space-y-2">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                     uploading 
-                      ? 'bg-blue-100' 
+                      ? 'bg-primary/10' 
                       : dragOver 
                         ? 'bg-blue-200' 
                         : 'bg-gray-100'
                   }`}>
                     {uploading ? (
                       <div className="animate-spin">
-                        <Upload className="w-6 h-6 text-blue-600" />
+                        <Upload className="w-6 h-6 text-primary" />
                       </div>
                     ) : dragOver ? (
-                      <Upload className="w-6 h-6 text-blue-600" />
+                      <Upload className="w-6 h-6 text-primary" />
                     ) : (
                       <Upload className="w-6 h-6 text-gray-400" />
                     )}
                   </div>
                   <div>
                     <p className={`text-sm font-medium transition-colors ${
-                      dragOver ? 'text-blue-900' : 'text-gray-900'
+                      dragOver ? 'text-foreground' : 'text-gray-900'
                     }`}>
                       {uploading 
                         ? t('uploadingFiles')
@@ -1890,13 +1890,13 @@ export default function ReservationExpenseManager({
                       {formData.uploaded_files.map((file, index) => (
                         <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
                           <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                            <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
                               {file.type.startsWith('image/') ? (
-                                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
                               ) : (
-                                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                               )}
@@ -1937,7 +1937,7 @@ export default function ReservationExpenseManager({
                 type="button"
                 onClick={handleAddExpense}
                 disabled={uploading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 {uploading ? t('processing') : t('buttons.register')}
               </button>
@@ -1949,7 +1949,7 @@ export default function ReservationExpenseManager({
       {/* 지출 목록 */}
       {loading ? (
         <div className="text-center py-6 sm:py-8">
-          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
+          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-primary mx-auto" />
           <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
         </div>
       ) : sortedDisplayExpenses.length > 0 ? (
@@ -2029,7 +2029,7 @@ export default function ReservationExpenseManager({
                         onClick={() =>
                           setViewingReceipt({ imageUrl: expense.image_url!, paidFor: expense.paid_for })
                         }
-                        className="inline-flex items-center gap-1 text-blue-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-blue-50 min-h-[44px]"
+                        className="inline-flex items-center gap-1 text-primary text-xs font-medium py-2 px-3 rounded-lg hover:bg-muted/50 min-h-[44px]"
                       >
                         <Receipt className="w-4 h-4" />
                         {t('viewReceipt')}
@@ -2195,7 +2195,7 @@ export default function ReservationExpenseManager({
                             onClick={() =>
                               setViewingReceipt({ imageUrl: expense.image_url!, paidFor: expense.paid_for })
                             }
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-800"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-primary hover:text-primary/80"
                           >
                             <Receipt className="w-4 h-4" />
                             {tTour('view')}
@@ -2209,7 +2209,7 @@ export default function ReservationExpenseManager({
                           <button
                             type="button"
                             onClick={() => handleEditExpense(expense)}
-                            className="p-1 text-gray-600 hover:text-blue-600"
+                            className="p-1 text-gray-600 hover:text-primary"
                             title={t('buttons.edit')}
                           >
                             <Edit className="w-4 h-4" />
@@ -2287,7 +2287,7 @@ export default function ReservationExpenseManager({
                   <button
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditExpense(expense); }}
-                    className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                    className="p-1.5 rounded text-gray-400 hover:text-primary hover:bg-muted/50"
                     title={t('buttons.edit')}
                   >
                     <Edit size={14} />
@@ -2311,7 +2311,7 @@ export default function ReservationExpenseManager({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); window.open(expense.image_url!, '_blank'); }}
-                    className="text-blue-600 hover:underline inline-flex items-center gap-0.5"
+                    className="text-primary hover:underline inline-flex items-center gap-0.5"
                   >
                     <Eye size={10} />
                     {t('viewReceipt')}
@@ -2354,7 +2354,7 @@ export default function ReservationExpenseManager({
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b">
                 <div className="flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-blue-600" />
+                  <Receipt className="w-5 h-5 text-primary" />
                   <h3 className="text-lg font-semibold text-gray-900">
                     {tTour('receiptLabel')}: {viewingReceipt.paidFor}
                   </h3>
@@ -2383,7 +2383,7 @@ export default function ReservationExpenseManager({
                       href={viewingReceipt.imageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
                     >
                       <ImageIcon className="w-4 h-4" />
                       {tTour('openInNewWindow')}
@@ -2412,7 +2412,7 @@ export default function ReservationExpenseManager({
                     type="text"
                     value={formData.custom_paid_to || formData.paid_to || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, paid_to: e.target.value, custom_paid_to: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2431,7 +2431,7 @@ export default function ReservationExpenseManager({
                     onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
                     step="0.01"
                     placeholder={t('amountInputPlaceholder')}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2455,7 +2455,7 @@ export default function ReservationExpenseManager({
                   <select
                     value={formData.reservation_id || ''}
                     onChange={(e) => setFormData((prev) => ({ ...prev, reservation_id: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   >
                     <option value="">{t('selectOptions.pleaseSelect')}</option>
                     {reservations.map((reservation: Reservation) => (
@@ -2535,7 +2535,7 @@ export default function ReservationExpenseManager({
                   onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
                   placeholder={t('memoPlaceholder')}
                   rows={3}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 />
               </div>
               {formData.image_url && (
@@ -2544,7 +2544,7 @@ export default function ReservationExpenseManager({
                   <button
                     type="button"
                     onClick={() => window.open(formData.image_url!, '_blank')}
-                    className="text-blue-600 hover:underline text-sm"
+                    className="text-primary hover:underline text-sm"
                   >
                     <Eye size={14} className="inline mr-1" />
                     {t('viewReceipt')}
@@ -2563,7 +2563,7 @@ export default function ReservationExpenseManager({
                   type="button"
                   onClick={() => handleAddExpense()}
                   disabled={uploading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
                 >
                   {uploading ? t('processing') : t('buttons.edit')}
                 </button>

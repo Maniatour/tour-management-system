@@ -50,9 +50,9 @@ export default function GuideDocumentUploadModal({
       title: '문서',
       icon: <FileText className="w-6 h-6" />,
       description: '문서를 업로드하세요.',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      borderColor: 'border-blue-200'
+      color: 'text-primary',
+      bgColor: 'bg-primary/5',
+      borderColor: 'border-border'
     }
   }
 
@@ -243,7 +243,7 @@ export default function GuideDocumentUploadModal({
               <div className="text-center">
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <label className="cursor-pointer">
-                  <span className="text-lg text-blue-600 hover:text-blue-800 font-medium">
+                  <span className="text-lg text-primary hover:text-primary/80 font-medium">
                     파일을 선택하거나 드래그하여 업로드
                   </span>
                   <input
@@ -269,7 +269,7 @@ export default function GuideDocumentUploadModal({
                 )}
                 {uploading && (
                   <div className="mt-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
                     <p className="text-sm text-gray-600 mt-2">업로드 중...</p>
                   </div>
                 )}
@@ -288,7 +288,7 @@ export default function GuideDocumentUploadModal({
                       type="date"
                       value={issueDate}
                       onChange={(e) => setIssueDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       disabled={uploading}
                     />
                   </div>
@@ -300,7 +300,7 @@ export default function GuideDocumentUploadModal({
                       type="date"
                       value={expiryDate}
                       onChange={(e) => setExpiryDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       disabled={uploading}
                     />
                   </div>
@@ -320,7 +320,7 @@ export default function GuideDocumentUploadModal({
               {selectedFile && !success && (
                 <button
                   onClick={handleUpload}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:bg-gray-400"
                   disabled={uploading || !issueDate || !expiryDate}
                 >
                   {uploading ? '업로드 중...' : '업로드'}

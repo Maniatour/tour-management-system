@@ -225,8 +225,8 @@ export default function SettlementPage() {
       <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-6 mb-4 sm:mb-6 lg:mb-8">
         <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-            <div className="p-1.5 sm:p-2 lg:p-3 bg-blue-100 rounded-full w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
-              <DollarSign className="w-4 h-4 sm:w-6 sm:h-6 text-blue-600" />
+            <div className="p-1.5 sm:p-2 lg:p-3 bg-primary/10 rounded-full w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+              <DollarSign className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
             </div>
             <div className="min-w-0">
               <p className="text-xs sm:text-sm text-gray-600 truncate">총 지급액</p>
@@ -266,7 +266,7 @@ export default function SettlementPage() {
             <select
               value={selectedSupplier || ''}
               onChange={(e) => setSelectedSupplier(e.target.value || null)}
-              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="">전체</option>
               {suppliers.map(supplier => (
@@ -282,7 +282,7 @@ export default function SettlementPage() {
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
           <div>
@@ -291,7 +291,7 @@ export default function SettlementPage() {
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
         </div>

@@ -311,7 +311,7 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
         <label className="inline-flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
           <input
             type="checkbox"
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="rounded border-gray-300 text-primary focus:ring-ring"
             checked={unmatchedOnly}
             onChange={(e) => setUnmatchedOnly(e.target.checked)}
           />
@@ -330,19 +330,19 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
       </div>
 
       {selectedIds.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 text-sm">
-          <span className="font-medium text-blue-900 tabular-nums">{t('selectedCount', { n: selectedIds.size })}</span>
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-primary/5/60 px-3 py-2 text-sm">
+          <span className="font-medium text-foreground tabular-nums">{t('selectedCount', { n: selectedIds.size })}</span>
           <button
             type="button"
             onClick={() => void openBookingForm('edit')}
-            className="px-2.5 py-1 rounded border border-blue-300 bg-white text-blue-800 hover:bg-blue-100/80 text-sm font-medium"
+            className="px-2.5 py-1 rounded border border-border bg-white text-primary hover:bg-muted/80 text-sm font-medium"
           >
             {t('editRow')}
           </button>
           <button
             type="button"
             onClick={() => void openBookingForm('copy')}
-            className="px-2.5 py-1 rounded border border-blue-300 bg-white text-blue-800 hover:bg-blue-100/80 text-sm font-medium"
+            className="px-2.5 py-1 rounded border border-border bg-white text-primary hover:bg-muted/80 text-sm font-medium"
           >
             {t('copyRow')}
           </button>
@@ -371,7 +371,7 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
                     type="checkbox"
                     checked={allFilteredSelected}
                     onChange={toggleSelectAllFiltered}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-primary focus:ring-ring"
                     aria-label={t('hotelsColSelect')}
                   />
                 </th>
@@ -411,14 +411,14 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
               {pageRows.map((r) => (
                 <tr
                   key={r.id}
-                  className={`hover:bg-gray-50 ${selectedIds.has(r.id) ? 'bg-blue-50/70' : ''}`}
+                  className={`hover:bg-gray-50 ${selectedIds.has(r.id) ? 'bg-primary/5/70' : ''}`}
                 >
                   <td className="px-1 py-1.5 text-center align-middle">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(r.id)}
                       onChange={() => toggleSelect(r.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 text-primary focus:ring-ring"
                       aria-label={t('hotelsColSelect')}
                     />
                   </td>
@@ -445,7 +445,7 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
                     {r.tour_id ? (
                       <Link
                         href={`/${locale}/admin/tours/${r.tour_id}`}
-                        className="text-blue-600 hover:underline font-medium"
+                        className="text-primary hover:underline font-medium"
                       >
                         {t('openTour')}
                       </Link>
@@ -469,7 +469,7 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
                     <button
                       type="button"
                       onClick={() => void openHotelFormById(r.id, 'edit')}
-                      className="text-blue-600 hover:underline text-xs font-medium"
+                      className="text-primary hover:underline text-xs font-medium"
                     >
                       {t('editRow')}
                     </button>

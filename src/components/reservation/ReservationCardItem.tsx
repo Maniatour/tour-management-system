@@ -74,7 +74,7 @@ function simpleCardTourStatusGlyph(statusRaw: string): React.ReactNode {
   const x = statusRaw.trim().toLowerCase()
   const cls = 'h-3.5 w-3.5 shrink-0'
   if (x === 'confirmed') return <CheckCircle2 className={`${cls} text-emerald-600`} aria-hidden />
-  if (x === 'completed') return <CircleCheck className={`${cls} text-blue-600`} aria-hidden />
+  if (x === 'completed') return <CircleCheck className={`${cls} text-primary`} aria-hidden />
   if (x === 'cancelled' || x === 'canceled') return <XCircle className={`${cls} text-red-600`} aria-hidden />
   return <HelpCircle className={`${cls} text-gray-400`} aria-hidden />
 }
@@ -237,7 +237,7 @@ function tourDateProximityBorderClasses(tourDate: string | null | undefined): st
   const diffDays = Math.round((tour.getTime() - today.getTime()) / 86400000)
   if (diffDays < 0) return 'border border-gray-200'
   if (diffDays < 3) return 'border-2 border-red-500'
-  if (diffDays <= 7) return 'border-2 border-blue-500'
+  if (diffDays <= 7) return 'border-2 border-primary'
   return 'border border-gray-200'
 }
 
@@ -426,7 +426,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     }
     return (
       <span
-        className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+        className="text-sm text-gray-900 hover:text-primary hover:underline cursor-pointer"
         onClick={(e) => onPickupTimeClick(reservation, e)}
       >
         {pickupDate} {pickupTime}
@@ -498,7 +498,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 className={`min-w-0 truncate text-left text-sm font-medium hover:underline ${
                   isReservationCancelled
                     ? 'text-gray-400 hover:text-gray-500'
-                    : 'text-gray-900 hover:text-blue-600'
+                    : 'text-gray-900 hover:text-primary'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -683,7 +683,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       if (onOpenTourDetailModal) onOpenTourDetailModal(effectiveTourId)
                       else router.push(`/${locale}/admin/tours/${effectiveTourId}`)
                     }}
-                    className="shrink-0 rounded p-0.5 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+                    className="shrink-0 rounded p-0.5 text-primary hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-30"
                     title={t('card.tourDetailModalTitle')}
                   >
                     <Flag className="h-4 w-4" />
@@ -739,7 +739,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 e.stopPropagation()
                 onPricingInfoClick(reservation)
               }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-primary/5 text-primary hover:bg-muted"
               title={t('actions.price')}
             >
               <Receipt className="h-4 w-4" />
@@ -781,7 +781,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 e.stopPropagation()
                 onPaymentClick(reservation)
               }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-primary/5 text-primary hover:bg-muted"
               title={t('card.paymentHistoryTitle')}
             >
               <DollarSign className="h-4 w-4" />
@@ -892,7 +892,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       e.stopPropagation()
                       onEmailLogsClick(reservation.id)
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-muted/50 flex items-center gap-2"
                   >
                     <Clock className="w-3 h-3" />
                     {t('card.emailLogs')}
@@ -1022,7 +1022,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                         e.stopPropagation()
                         onPickupTimeClick(reservation, e, { resumePickupSummary: true })
                       }}
-                      className="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                      className="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-primary/90"
                     >
                       {t('card.editPickupTimeButton')}
                     </button>
@@ -1121,7 +1121,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
         <div className="mb-2">
           <div className="flex items-start justify-between gap-2">
           <div 
-            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2 min-w-0 flex-1"
+            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-primary hover:underline flex items-center space-x-2 min-w-0 flex-1"
             onClick={(e) => {
               e.stopPropagation()
               const customer = customers.find(c => c.id === reservation.customerId)
@@ -1200,7 +1200,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   <Users className="h-3 w-3" />
                   <span>{reservation.adults}{t('card.peopleShort')}</span>
                   {hasChild && <span className="text-orange-600">{reservation.child}{t('card.childShort')}</span>}
-                  {hasInfant && <span className="text-blue-600">{reservation.infant}{t('card.infantShort')}</span>}
+                  {hasInfant && <span className="text-primary">{reservation.infant}{t('card.infantShort')}</span>}
                 </span>
               )
             })()}
@@ -1223,7 +1223,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           <a 
             href={`mailto:${customers.find(c => c.id === reservation.customerId)?.email || ''}`}
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
+            className="text-xs text-gray-500 hover:text-primary hover:underline cursor-pointer block"
           >
             {customers.find(c => c.id === reservation.customerId)?.email}
           </a>
@@ -1232,7 +1232,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             <a 
               href={`tel:${customers.find(c => c.id === reservation.customerId)?.phone || ''}`}
               onClick={(e) => e.stopPropagation()}
-              className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
+              className="text-xs text-gray-500 hover:text-primary hover:underline cursor-pointer"
             >
               {customers.find(c => c.id === reservation.customerId)?.phone || '-'}
             </a>
@@ -1309,7 +1309,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             <div className="flex items-center space-x-2">
               <MapPin className="h-4 w-4 text-gray-400" />
               <span
-                className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
+                className={`text-sm hover:text-primary hover:underline cursor-pointer ${
                   reservation.pickUpHotel
                     ? 'text-gray-900'
                     : 'text-gray-500 italic'
@@ -1373,7 +1373,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           const getStatusColor = (status: string) => {
             const s = status.toLowerCase()
             if (s === 'confirmed') return 'bg-green-100 text-green-800'
-            if (s === 'completed') return 'bg-blue-100 text-blue-800'
+            if (s === 'completed') return 'bg-primary/10 text-primary'
             if (s === 'cancelled' || s === 'canceled') return 'bg-red-100 text-red-800'
             return 'bg-gray-100 text-gray-800'
           }
@@ -1400,7 +1400,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   e.stopPropagation()
                   router.push(`/${locale}/admin/tours/${effectiveTourId}`)
                 }}
-                className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
+                className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-border transition-colors"
               >
                 <div className="flex items-center justify-between mb-1">
                   <div
@@ -1410,7 +1410,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     {assignedTourTitle}
                   </div>
                   <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                       {t('card.assigned')}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourStatusLabel)}`}>
@@ -1456,7 +1456,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 e.stopPropagation()
                 onPricingInfoClick(reservation)
               }}
-              className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+              className="px-2 py-1 text-xs bg-primary/5 text-primary rounded-md hover:bg-muted transition-colors flex items-center space-x-1 border border-border"
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
@@ -1493,7 +1493,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 e.stopPropagation()
                 onPaymentClick(reservation)
               }}
-              className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+              className="px-2 py-1 text-xs bg-primary/5 text-primary rounded-md hover:bg-muted transition-colors flex items-center space-x-1 border border-border"
               title={t('card.paymentHistoryTitle')}
             >
               <DollarSign className="w-3 h-3" />
@@ -1613,7 +1613,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       e.stopPropagation()
                       onEmailLogsClick(reservation.id)
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
+                    className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-muted/50 flex items-center space-x-2"
                   >
                     <Clock className="w-3 h-3" />
                     <span>{t('card.emailLogs')}</span>

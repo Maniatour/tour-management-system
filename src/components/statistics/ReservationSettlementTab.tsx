@@ -480,7 +480,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">
             {isCalculating ? '예약 정산 통계를 계산 중입니다...' : '데이터를 불러오는 중입니다...'}
           </p>
@@ -495,8 +495,8 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
-              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+            <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
+              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 예약 수</p>
@@ -562,7 +562,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
-                  ? 'bg-blue-500 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
@@ -713,7 +713,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                 <div key={index} className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200">
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center space-x-3">
-                      <Receipt className="h-5 w-5 text-blue-600" />
+                      <Receipt className="h-5 w-5 text-primary" />
                       <h4 className="font-semibold text-gray-900">{subCategory.subCategory}</h4>
                     </div>
                     <div className="text-right">
@@ -780,7 +780,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                   <div className="text-xs text-gray-500">{formatDate(reservation.reservationDate)} · {reservation.subCategory}</div>
                   <Link
                     href={`/ko/admin/reservations/${reservation.reservationId}`}
-                    className="text-xs font-medium text-blue-600 hover:underline truncate block"
+                    className="text-xs font-medium text-primary hover:underline truncate block"
                   >
                     {reservation.productName}
                   </Link>
@@ -798,7 +798,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                 </div>
                 <button
                   onClick={() => toggleExpenseDetails(reservation.reservationId)}
-                  className="p-1 text-blue-600 flex-shrink-0"
+                  className="p-1 text-primary flex-shrink-0"
                   title="상세"
                 >
                   {expandedExpenses[reservation.reservationId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -857,7 +857,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                     <td className="px-2 py-1.5 text-gray-900 truncate max-w-[112px]" title={reservation.productName}>
                       <Link 
                         href={`/ko/admin/reservations/${reservation.reservationId}`}
-                        className="text-blue-600 hover:underline truncate inline-flex items-center gap-0.5"
+                        className="text-primary hover:underline truncate inline-flex items-center gap-0.5"
                       >
                         <span className="truncate">{reservation.productName}</span>
                         <ExternalLink size={10} className="flex-shrink-0" />
@@ -878,7 +878,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                     <td className="px-2 py-1.5 whitespace-nowrap text-center">
                       <button
                         onClick={() => toggleExpenseDetails(reservation.reservationId)}
-                        className="p-0.5 hover:text-blue-700 text-blue-600 inline-flex"
+                        className="p-0.5 hover:text-primary text-primary inline-flex"
                         title="상세"
                       >
                         <Eye size={12} />
@@ -966,7 +966,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                             </div>
                           ) : (
                             <div className="text-center py-2">
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mx-auto"></div>
                               <p className="text-xs text-gray-500 mt-1">로딩 중...</p>
                             </div>
                           )}

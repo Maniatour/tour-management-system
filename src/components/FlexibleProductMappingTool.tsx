@@ -410,7 +410,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
           <p className="text-sm text-gray-600">
             기존 상품을 선택하고 새로운 상품으로 통합하며, 필수 선택 옵션을 추가할 수 있습니다.
             {reservations.length > 0 && (
-              <span className="ml-2 text-blue-600 font-medium">
+              <span className="ml-2 text-primary font-medium">
                 (전체 {reservations.length}개 예약 로드됨)
               </span>
             )}
@@ -421,7 +421,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             onClick={() => setDebugMode(!debugMode)}
             className={`px-3 py-2 text-sm rounded-lg flex items-center space-x-2 ${
               debugMode 
-                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                ? 'bg-primary/10 text-primary hover:bg-blue-200' 
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
@@ -467,13 +467,13 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                 placeholder="상품 ID 또는 이름으로 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <select
               value={selectedSourceProduct}
               onChange={(e) => setSelectedSourceProduct(e.target.value)}
-              className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">소스 상품 선택</option>
               {getUniqueProductIds().map(productId => (
@@ -490,7 +490,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             <select
               value={selectedTargetProduct}
               onChange={(e) => setSelectedTargetProduct(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">타겟 상품 선택</option>
               {products.map(product => (
@@ -519,7 +519,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                         setSelectedOptions(prev => prev.filter(name => name !== option.name))
                       }
                     }}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-primary focus:ring-ring"
                   />
                   <span className="text-sm text-gray-700">{option.name}</span>
                   <span className="text-xs text-red-500">(필수)</span>
@@ -536,7 +536,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
         <button
           onClick={addMappingRule}
           disabled={!selectedSourceProduct || !selectedTargetProduct}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
         >
           <Plus className="w-4 h-4" />
           <span>매핑 규칙 추가</span>
@@ -705,7 +705,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                       console.log('첫 번째 MDGCSUNRISE 예약:', reservation)
                     }
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                 >
                   예약 데이터 조회 테스트
                 </button>
@@ -1094,7 +1094,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
         <button
           onClick={executeMapping}
           disabled={loading || mappingRules.length === 0}
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+          className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
         >
           {loading ? (
             <RefreshCw className="w-4 h-4 animate-spin" />

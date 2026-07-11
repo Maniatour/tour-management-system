@@ -72,7 +72,7 @@ export default function ProductDetailChoiceDescriptionModal({
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">
                     {group.choice_name}
                   </h3>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
                     <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                       {groupDescription}
                     </p>

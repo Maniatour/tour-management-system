@@ -524,9 +524,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
     return sortDirection === 'asc' 
 
-      ? <ArrowUp size={14} className="text-blue-600" />
+      ? <ArrowUp size={14} className="text-primary" />
 
-      : <ArrowDown size={14} className="text-blue-600" />
+      : <ArrowDown size={14} className="text-primary" />
 
   }
 
@@ -1593,7 +1593,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                 viewMode === 'grid' 
 
-                  ? 'bg-white text-blue-600 shadow-sm' 
+                  ? 'bg-white text-primary shadow-sm' 
 
                   : 'text-gray-600 hover:text-gray-900'
 
@@ -1615,7 +1615,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                 viewMode === 'table' 
 
-                  ? 'bg-white text-blue-600 shadow-sm' 
+                  ? 'bg-white text-primary shadow-sm' 
 
                   : 'text-gray-600 hover:text-gray-900'
 
@@ -1637,7 +1637,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                 viewMode === 'map' 
 
-                  ? 'bg-white text-blue-600 shadow-sm' 
+                  ? 'bg-white text-primary shadow-sm' 
 
                   : 'text-gray-600 hover:text-gray-900'
 
@@ -1701,7 +1701,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             onClick={() => setShowAddForm(true)}
 
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
 
           >
 
@@ -1726,7 +1726,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
             placeholder="Search by hotel name, location, address..."
             value={searchTerm}
             onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm sm:text-base"
           />
         </div>
         {/* 필터 버튼들 - 모바일에서 줄바꿈 */}
@@ -1737,7 +1737,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
               onClick={() => setListUi((prev) => ({ ...prev, groupFilter: 'integer' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'integer'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -1747,7 +1747,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
               onClick={() => setListUi((prev) => ({ ...prev, groupFilter: 'all' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'all'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -1821,17 +1821,17 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       {/* Pickup Request Test */}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-3 sm:p-4">
 
         <div className="flex items-center gap-2 mb-2 sm:mb-3">
 
-          <Info size={18} className="text-blue-600 shrink-0" />
+          <Info size={18} className="text-primary shrink-0" />
 
-          <h3 className="text-base sm:text-lg font-semibold text-blue-900">Pickup Request Test</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-foreground">Pickup Request Test</h3>
 
         </div>
 
-        <p className="text-sm text-blue-700 mb-3 sm:mb-4">
+        <p className="text-sm text-primary mb-3 sm:mb-4">
 
           Enter a hotel name to test if it correctly guides to the rounded hotel based on the group number.
 
@@ -1849,7 +1849,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             onChange={(e) => setTestRequest(e.target.value)}
 
-            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm sm:text-base"
 
             onKeyPress={(e) => {
 
@@ -1867,7 +1867,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             onClick={testPickupRequest}
 
-            className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium shrink-0"
+            className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm font-medium shrink-0"
 
           >
 
@@ -1954,7 +1954,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{getGroupLabel(groupKey)}</h2>
 
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-medium rounded-full shrink-0">
+                    <span className="px-2 py-1 bg-primary/10 text-primary text-xs sm:text-sm font-medium rounded-full shrink-0">
 
                       {groupedHotels[groupKey].length} hotels
 
@@ -2051,7 +2051,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                       rel="noopener noreferrer"
 
-                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                      className="text-primary hover:text-primary/80 transition-colors"
 
                       onClick={(e) => e.stopPropagation()}
 
@@ -2097,7 +2097,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     }}
 
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                    className="text-primary hover:text-primary/80 transition-colors"
 
                     title="Copy Hotel"
 
@@ -2153,7 +2153,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     onClick={() => handleToggleActive(hotel.id, hotel.is_active)}
 
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
 
                       hotel.is_active !== false ? 'bg-blue-600' : 'bg-gray-300'
 
@@ -2329,7 +2329,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     rel="noopener noreferrer"
 
-                    className="text-blue-600 hover:text-blue-800 underline break-all flex-1"
+                    className="text-primary hover:text-primary/80 underline break-all flex-1"
 
                     onClick={(e) => e.stopPropagation()}
 
@@ -2355,7 +2355,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     }}
 
-                    className="ml-2 p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    className="ml-2 p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
 
                     title="Copy Link"
 
@@ -2520,7 +2520,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                         ) : (
 
-                          <Video size={16} className="text-blue-600" />
+                          <Video size={16} className="text-primary" />
 
                         )}
 
@@ -3161,7 +3161,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 })}
 
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
 
                               />
 
@@ -3185,7 +3185,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 onChange={(e) => setEditFormData({...editFormData, is_active: e.target.checked})}
 
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
 
                               />
 
@@ -3213,7 +3213,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 onClick={() => handleToggleActive(hotel.id, hotel.is_active)}
 
-                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
 
                                   hotel.is_active !== false ? 'bg-blue-600' : 'bg-gray-300'
 
@@ -3357,7 +3357,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                           {hotel.media && hotel.media.length > 0 ? (
 
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                            <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full">
 
                               {hotel.media.length}{locale === 'en' ? '' : '개'}
 
@@ -3395,7 +3395,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 onClick={() => handleCopyHotel(hotel)}
 
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-primary hover:text-foreground"
 
                                 title="복사"
 
@@ -3463,7 +3463,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 onClick={() => startEdit(hotel)}
 
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-primary hover:text-foreground"
 
                                 title={locale === 'en' ? 'Inline Edit' : '인라인 편집'}
 
@@ -3491,7 +3491,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                                 onClick={() => handleCopyHotel(hotel)}
 
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-primary hover:text-foreground"
 
                                 title="복사"
 
@@ -3537,7 +3537,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
               {bulkEditMode && (
 
-                <div className="px-6 py-4 bg-blue-50 border-t border-blue-200">
+                <div className="px-6 py-4 bg-primary/5 border-t border-border">
 
                   <div className="flex items-center justify-between">
 
@@ -3645,13 +3645,13 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                                 step="0.1"
                                 value={quickEditGroupNumber || ''}
                                 onChange={(e) => setQuickEditGroupNumber(e.target.value ? parseFloat(e.target.value) : null)}
-                                className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-transparent"
                                 placeholder={locale === 'en' ? 'Group Number' : '그룹 번호'}
                                 autoFocus
                               />
                               <button
                                 onClick={saveQuickEdit}
-                                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90"
                                 title="저장"
                               >
                                 저장
@@ -3669,7 +3669,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                             </div>
                           ) : (
                             selectedHotelInfo.group != null && (
-                              <div className="text-xs text-blue-700">{locale === 'en' ? `Group: ${selectedHotelInfo.group}` : `그룹: ${selectedHotelInfo.group}`}</div>
+                              <div className="text-xs text-primary">{locale === 'en' ? `Group: ${selectedHotelInfo.group}` : `그룹: ${selectedHotelInfo.group}`}</div>
                             )
                           )}
                         </div>
@@ -3685,7 +3685,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                                   setSelectedHotelInfo(null)
                                 }
                               }}
-                              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center space-x-1"
+                              className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90 flex items-center space-x-1"
                               title="호텔 편집"
                             >
                               <Edit2 size={12} />
@@ -3728,7 +3728,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                     <div className="text-center">
 
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
 
                       <p className="text-gray-600">{locale === 'en' ? 'Loading map...' : '지도를 로딩 중...'}</p>
 
@@ -3779,7 +3779,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                       }}
 
-                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                      className="px-3 py-1 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90"
 
                     >
 
@@ -4117,7 +4117,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                   void saveGroupNumberEditModal()
                 }
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder={locale === 'en' ? 'e.g. 1 or 1.1' : '예: 1 또는 1.1'}
               autoFocus
               disabled={groupNumberEditSaving}
@@ -4141,7 +4141,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                 type="button"
                 onClick={() => void saveGroupNumberEditModal()}
                 disabled={groupNumberEditSaving}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
               >
                 <Save size={16} />
                 {groupNumberEditSaving

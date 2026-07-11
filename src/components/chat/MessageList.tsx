@@ -121,8 +121,8 @@ export default function MessageList({
                           hasTranslation
                             ? 'bg-green-500 text-white'
                             : translating[message.id]
-                            ? 'bg-blue-500 text-white animate-pulse'
-                            : 'bg-blue-500 hover:bg-blue-600 text-white'
+                            ? 'bg-primary text-primary-foreground animate-pulse'
+                            : 'bg-primary/50 hover:bg-primary text-primary-foreground'
                         }`}
                         title={hasTranslation ? (selectedLanguage === 'ko' ? '이미 번역됨' : 'Already translated') : (selectedLanguage === 'ko' ? '번역하기' : 'Translate')}
                       >
@@ -165,9 +165,9 @@ export default function MessageList({
                   message.sender_type === 'system'
                     ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
                     : isMyMessage
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-primary'
                     : isStaffBubble
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-primary'
                     : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
                 }`}
               >
@@ -210,7 +210,7 @@ export default function MessageList({
                                     href={urlMatch[0]}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 inline-block"
+                                    className="text-primary hover:text-primary/80 underline flex items-center gap-1 inline-block"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       window.open(urlMatch[0], '_blank')

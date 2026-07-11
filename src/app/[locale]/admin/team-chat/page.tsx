@@ -942,7 +942,7 @@ export default function TeamChatPage() {
             </div>
             <button
               onClick={() => setShowCreateRoom(true)}
-              className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               title="새 채팅방 만들기"
             >
               <Plus size={16} />
@@ -958,14 +958,14 @@ export default function TeamChatPage() {
                 placeholder="채팅방 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="all">전체</option>
               <option value="general">일반</option>
@@ -990,7 +990,7 @@ export default function TeamChatPage() {
                 onClick={() => selectRoom(room)}
                 className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                   selectedRoom?.id === room.id 
-                    ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                    ? 'bg-primary/5 border-l-2 border-l-blue-500' 
                     : room.unread_count > 0 
                       ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
                       : ''
@@ -1015,7 +1015,7 @@ export default function TeamChatPage() {
                         room.room_type === 'announcement' 
                           ? 'bg-yellow-100 text-yellow-800'
                           : room.room_type === 'department'
-                          ? 'bg-blue-100 text-blue-800'
+                          ? 'bg-primary/10 text-primary'
                           : room.room_type === 'project'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'
@@ -1159,7 +1159,7 @@ export default function TeamChatPage() {
                             <div className="mt-2 p-3 bg-gray-50 rounded-lg border">
                               <div className="flex items-center space-x-2">
                                 {message.file_type?.startsWith('image/') ? (
-                                  <Image size={20} className="text-blue-600" />
+                                  <Image size={20} className="text-primary" />
                                 ) : (
                                   <File size={20} className="text-gray-600" />
                                 )}
@@ -1177,7 +1177,7 @@ export default function TeamChatPage() {
                                   href={message.file_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 text-sm"
+                                  className="text-primary hover:text-primary/80 text-sm"
                                 >
                                   다운로드
                                 </a>
@@ -1200,13 +1200,13 @@ export default function TeamChatPage() {
                               <button
                                 onClick={() => translateMessage(message.id, message.message)}
                                 disabled={translating[message.id]}
-                                className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
                               >
                                 {translating[message.id] ? '번역 중...' : '번역'}
                               </button>
                               
                               {translations[message.id] && (
-                                <div className="mt-1 p-2 bg-blue-50 rounded text-xs text-blue-800">
+                                <div className="mt-1 p-2 bg-primary/5 rounded text-xs text-primary">
                                   <span className="font-medium">번역: </span>
                                   {translations[message.id]}
                                 </div>
@@ -1272,13 +1272,13 @@ export default function TeamChatPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-sm lg:text-base"
                   disabled={sending || uploading}
                 />
                 <button
                   onClick={() => setShowFileUpload(true)}
                   disabled={sending || uploading}
-                  className="px-2 lg:px-3 py-2 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-2 lg:px-3 py-2 text-gray-600 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="파일 첨부"
                 >
                   <Paperclip size={18} className="lg:w-5 lg:h-5" />
@@ -1286,7 +1286,7 @@ export default function TeamChatPage() {
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending || uploading}
-                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
+                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
                   <span className="hidden lg:inline">{sending ? '전송 중...' : uploading ? '업로드 중...' : '전송'}</span>
                   <span className="lg:hidden">{sending ? '...' : uploading ? '...' : '전송'}</span>
@@ -1320,7 +1320,7 @@ export default function TeamChatPage() {
                   type="text"
                   value={newRoomData.room_name}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="채팅방 이름을 입력하세요"
                 />
               </div>
@@ -1332,7 +1332,7 @@ export default function TeamChatPage() {
                 <select
                   value={newRoomData.room_type}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_type: e.target.value as 'general' | 'department' | 'project' | 'announcement' }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 >
                   <option value="general">일반</option>
                   <option value="department">부서</option>
@@ -1348,7 +1348,7 @@ export default function TeamChatPage() {
                 <textarea
                   value={newRoomData.description}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   rows={3}
                   placeholder="채팅방 설명을 입력하세요"
                 />
@@ -1368,7 +1368,7 @@ export default function TeamChatPage() {
                       onClick={() => setSelectedPositionTab(tab.key)}
                       className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                         selectedPositionTab === tab.key
-                          ? 'bg-blue-600 text-white border-blue-600'
+                          ? 'bg-primary text-primary-foreground border-primary'
                           : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
                       }`}
                     >
@@ -1387,7 +1387,7 @@ export default function TeamChatPage() {
                         return (
                           <span
                             key={email}
-                            className="inline-flex items-center px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full"
+                            className="inline-flex items-center px-2 py-1 text-xs bg-primary/10 text-primary rounded-full"
                           >
                             {member?.name_ko || email.split('@')[0]}
                             <button
@@ -1397,7 +1397,7 @@ export default function TeamChatPage() {
                                   participant_emails: prev.participant_emails.filter(e => e !== email)
                                 }))
                               }}
-                              className="ml-1 text-blue-600 hover:text-blue-800"
+                              className="ml-1 text-primary hover:text-primary/80"
                             >
                               ×
                             </button>
@@ -1431,7 +1431,7 @@ export default function TeamChatPage() {
                           }}
                           className={`p-2 text-left rounded-lg border transition-colors ${
                             newRoomData.participant_emails.includes(member.email)
-                              ? 'bg-blue-50 border-blue-300 text-blue-900'
+                              ? 'bg-primary/5 border-border text-foreground'
                               : 'bg-white border-gray-200 hover:bg-gray-50'
                           }`}
                         >
@@ -1464,7 +1464,7 @@ export default function TeamChatPage() {
               <button
                 onClick={createRoom}
                 disabled={!newRoomData.room_name.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 생성
               </button>
@@ -1497,7 +1497,7 @@ export default function TeamChatPage() {
                 <input
                   type="text"
                   value={selectedRoom.room_name}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   readOnly
                 />
               </div>
@@ -1508,7 +1508,7 @@ export default function TeamChatPage() {
                 </label>
                 <select
                   value={selectedRoom.room_type}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   disabled
                 >
                   <option value="general">일반</option>
@@ -1524,7 +1524,7 @@ export default function TeamChatPage() {
                 </label>
                 <textarea
                   value={selectedRoom.description || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   rows={3}
                   readOnly
                 />
@@ -1543,7 +1543,7 @@ export default function TeamChatPage() {
                       onClick={() => setSettingsPositionTab(tab.key)}
                       className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                         settingsPositionTab === tab.key
-                          ? 'bg-blue-600 text-white border-blue-600'
+                          ? 'bg-primary text-primary-foreground border-primary'
                           : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
                       }`}
                     >
@@ -1564,7 +1564,7 @@ export default function TeamChatPage() {
                         >
                           {participant.participant_name}
                           {participant.is_admin && (
-                            <span className="ml-1 text-blue-600">👑</span>
+                            <span className="ml-1 text-primary">👑</span>
                           )}
                         </span>
                       ))}

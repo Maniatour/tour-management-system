@@ -297,7 +297,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
                     placeholder={getText('투어명으로 검색...', 'Search by tour name...')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
                 <div className="w-40">
@@ -305,14 +305,14 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
                     type="date"
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
               </div>
 
               {loading ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
                   <p className="text-gray-600">투어 목록을 불러오는 중...</p>
                 </div>
               ) : (
@@ -349,7 +349,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
                               </div>
                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                 tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                tour.tour_status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                                tour.tour_status === 'confirmed' ? 'bg-primary/10 text-primary' :
                                 tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
                                 'bg-gray-100 text-gray-800'
                               }`}>
@@ -394,7 +394,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
                           <div
                             key={tour.id}
                             onClick={() => tour.can_edit ? handleEditReport(tour) : undefined}
-                            className={`border border-blue-300 bg-blue-50 rounded-lg p-4 transition-all ${
+                            className={`border border-border bg-primary/5 rounded-lg p-4 transition-all ${
                               tour.can_edit ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'
                             }`}
                           >
@@ -419,7 +419,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
                               </div>
                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                 tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
-                                tour.tour_status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                                tour.tour_status === 'confirmed' ? 'bg-primary/10 text-primary' :
                                 tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
                                 'bg-gray-100 text-gray-800'
                               }`}>

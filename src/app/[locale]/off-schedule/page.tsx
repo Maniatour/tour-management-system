@@ -221,7 +221,7 @@ export default function OffSchedulePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen app-page-bg py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white rounded-lg shadow-sm">
           <div className="px-6 py-4 border-b border-gray-200">
@@ -232,7 +232,7 @@ export default function OffSchedulePage() {
               </h1>
               <button
                 onClick={() => setShowRequestForm(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 flex items-center"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Off 신청
@@ -255,7 +255,7 @@ export default function OffSchedulePage() {
                       value={newRequest.off_date}
                       onChange={(e) => setNewRequest({ ...newRequest, off_date: e.target.value })}
                       min={dayjs().format('YYYY-MM-DD')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       required
                     />
                   </div>
@@ -266,7 +266,7 @@ export default function OffSchedulePage() {
                     <textarea
                       value={newRequest.reason}
                       onChange={(e) => setNewRequest({ ...newRequest, reason: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       rows={3}
                       placeholder="Off 신청 사유를 입력해주세요"
                       required
@@ -275,7 +275,7 @@ export default function OffSchedulePage() {
                   <div className="flex space-x-2">
                     <button
                       type="submit"
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                      className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
                     >
                       신청하기
                     </button>
@@ -298,7 +298,7 @@ export default function OffSchedulePage() {
                   onClick={() => setActiveTab('upcoming')}
                   className={`py-3 px-4 border-b-2 font-medium text-sm ${
                     activeTab === 'upcoming'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -314,7 +314,7 @@ export default function OffSchedulePage() {
                   onClick={() => setActiveTab('past')}
                   className={`py-3 px-4 border-b-2 font-medium text-sm ${
                     activeTab === 'past'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -330,7 +330,7 @@ export default function OffSchedulePage() {
                   onClick={() => setActiveTab('pending')}
                   className={`py-3 px-4 border-b-2 font-medium text-sm ${
                     activeTab === 'pending'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -343,7 +343,7 @@ export default function OffSchedulePage() {
                   onClick={() => setActiveTab('approved')}
                   className={`py-3 px-4 border-b-2 font-medium text-sm ${
                     activeTab === 'approved'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -356,7 +356,7 @@ export default function OffSchedulePage() {
                   onClick={() => setActiveTab('rejected')}
                   className={`py-3 px-4 border-b-2 font-medium text-sm ${
                     activeTab === 'rejected'
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-primary text-primary'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >

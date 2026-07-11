@@ -384,7 +384,7 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
           <button
             type="button"
             onClick={openTourChat}
-            className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-primary/90"
           >
             {locale === 'ko' ? '투어 채팅 열기' : 'Open Tour Chat'}
           </button>

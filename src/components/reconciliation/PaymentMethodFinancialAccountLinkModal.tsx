@@ -488,7 +488,7 @@ export default function PaymentMethodFinancialAccountLinkModal({
                 카드·방법명, 가이드(팀 이메일), 메모, 금융 계정을 한 화면에서 고친 뒤{' '}
                 <strong>아래 저장</strong>을 누르면 반영됩니다. 저장은 <strong>Super 권한</strong>이 필요합니다. 명세
                 업로드·대조는{' '}
-                <Link href={statementRecoHref} className="text-blue-600 underline hover:text-blue-800">
+                <Link href={statementRecoHref} className="text-primary underline hover:text-primary/80">
                   명세 대조
                 </Link>
                 에서 진행합니다.
@@ -498,7 +498,7 @@ export default function PaymentMethodFinancialAccountLinkModal({
                 직원 카드·계좌는{' '}
                 <Link
                   href={`/${locale}/admin/payment-methods`}
-                  className="text-blue-600 underline hover:text-blue-800"
+                  className="text-primary underline hover:text-primary/80"
                   onClick={() => onOpenChange(false)}
                 >
                   결제 방법 관리
@@ -528,7 +528,7 @@ export default function PaymentMethodFinancialAccountLinkModal({
                 onChange={(e) => setPaymentLinkMethodSearch(e.target.value)}
                 placeholder="검색어 입력…"
                 autoComplete="off"
-                className="w-full border border-gray-300 rounded-md py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                className="w-full border border-gray-300 rounded-md py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-blue-400"
                 aria-label="결제수단 검색"
               />
             </div>
@@ -558,7 +558,7 @@ export default function PaymentMethodFinancialAccountLinkModal({
                       등록된 결제수단이 없습니다.{' '}
                       <Link
                         href={`/${locale}/admin/payment-methods`}
-                        className="text-blue-600 font-medium underline hover:text-blue-800"
+                        className="text-primary font-medium underline hover:text-primary/80"
                         onClick={() => onOpenChange(false)}
                       >
                         결제 방법 관리

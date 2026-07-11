@@ -142,7 +142,7 @@ export default function CustomerPageFavoriteOrderPanel({
             onDragOver={(e) => handleDragOver(e, index)}
             onDrop={(e) => void handleDrop(e, index)}
             className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 bg-white ${
-              dragOverIndex === index ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
+              dragOverIndex === index ? 'border-blue-400 bg-primary/5' : 'border-gray-200'
             }`}
           >
             <GripVertical className="h-4 w-4 text-gray-400 shrink-0 cursor-grab" />

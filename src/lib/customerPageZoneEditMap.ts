@@ -343,6 +343,13 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     basicFields: ['adultBasePrice', 'childBasePrice', 'infantBasePrice'],
     note: '화면 하단 고정 가격·예약 버튼입니다. 옵션·예약 플로우는 모바일 예약 카드·옵션 영역에서 편집하세요.',
   },
+  'detail-reviews-section': {
+    label: '리뷰 섹션',
+    editType: 'admin-tab',
+    adminTab: 'overview',
+    note: '실제 리뷰 데이터가 있을 때만 표시됩니다.',
+    supportsUiStyle: true,
+  },
   'detail-faq-section': {
     label: 'FAQ 섹션',
     editType: 'admin-tab',

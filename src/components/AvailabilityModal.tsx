@@ -208,7 +208,7 @@ export default function AvailabilityModal({
           {/* 헤더 */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
             <div className="flex items-center space-x-3">
-              <Calendar className="h-6 w-6 text-blue-600" />
+              <Calendar className="h-6 w-6 text-primary" />
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">날짜별 판매 가능 여부</h2>
                 <p className="text-sm text-gray-600">{channelName} 채널</p>
@@ -326,7 +326,7 @@ export default function AvailabilityModal({
               <button
                 onClick={saveAvailability}
                 disabled={saving}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save className="h-4 w-4" />
                 <span>{saving ? '저장 중...' : '저장'}</span>

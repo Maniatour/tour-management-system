@@ -93,7 +93,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
 
         <div className="space-y-4">
           {/* 현재 기름값 입력 */}
-          <div className="border rounded-lg p-4 bg-blue-50">
+          <div className="border rounded-lg p-4 bg-primary/5">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               현재 기름값 (갤런당 USD)
             </label>
@@ -103,7 +103,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
               step="0.01"
               value={gasPrice}
               onChange={(e) => onGasPriceChange(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
             />
           </div>
 
@@ -119,7 +119,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                   {!isEditing && (
                     <button
                       onClick={() => setEditingType(type)}
-                      className="text-sm text-blue-600 hover:text-blue-700"
+                      className="text-sm text-primary hover:text-primary/80"
                     >
                       편집
                     </button>
@@ -138,7 +138,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                         step="0.01"
                         value={dailyRate}
                         onChange={(e) => setDailyRate(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div>
@@ -151,13 +151,13 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                         step="0.01"
                         value={mpg}
                         onChange={(e) => setMpg(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => onSave(type, dailyRate, mpg)}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                       >
                         저장
                       </button>
@@ -199,7 +199,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                         type="text"
                         value={newDisplayName}
                         onChange={(e) => setNewDisplayName(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="예: 스프린터 밴"
                       />
                     </div>
@@ -211,7 +211,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                         step="0.01"
                         value={newDailyRate}
                         onChange={(e) => setNewDailyRate(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div>
@@ -222,7 +222,7 @@ const VehicleSettingsModal: React.FC<VehicleSettingsModalProps> = ({
                         step="0.01"
                         value={newMpg}
                         onChange={(e) => setNewMpg(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div className="flex gap-2">

@@ -107,10 +107,10 @@ export default function VoiceCallUserSelector({
                       // (에러가 발생하면 모달을 열어둬서 에러 메시지를 볼 수 있도록)
                       onClose()
                     }}
-                    className="w-full flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
+                    className="w-full flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-muted/50 hover:border-border transition-colors text-left"
                   >
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <User className="w-5 h-5 text-blue-600" />
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User className="w-5 h-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">

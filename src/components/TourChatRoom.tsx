@@ -881,7 +881,7 @@ export default function TourChatRoom({
 
   // 사용자별 채팅 색상 팔레트 (현재 사용되지 않음)
   // const chatColors = [
-  //   'bg-blue-100 text-blue-900 border-blue-200',
+  //   'bg-primary/10 text-foreground border-border',
   //   'bg-green-100 text-green-900 border-green-200',
   //   'bg-purple-100 text-purple-900 border-purple-200',
   //   'bg-pink-100 text-pink-900 border-pink-200',
@@ -896,7 +896,7 @@ export default function TourChatRoom({
   // 사용자별 색상 할당 함수 (현재 사용되지 않음)
   // const getUserColor = (senderName: string) => {
   //   if (senderName === '가이드' || senderName === 'Guide') {
-  //     return 'bg-blue-600 text-white border-blue-700'
+  //     return 'bg-primary text-primary-foreground border-blue-700'
   //   }
   //   
   //   // 고객 이름을 기반으로 일관된 색상 할당
@@ -2459,7 +2459,7 @@ export default function TourChatRoom({
             }
           }}
           disabled={loading}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
         >
           {loading 
             ? (selectedLanguage === 'ko' ? '생성 중...' : 'Creating...')
@@ -2692,7 +2692,7 @@ export default function TourChatRoom({
             )}
           </div>
           <div className="p-3 border-t text-right">
-            <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
+            <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
           </div>
         </div>
       </div>
@@ -2780,7 +2780,7 @@ export default function TourChatRoom({
                   {teamInfo.guide.phone && (
                     <a 
                       href={`tel:${teamInfo.guide.phone}`}
-                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                      className="text-sm text-gray-600 flex items-center hover:text-primary transition-colors"
                     >
                       <Phone className="w-3 h-3 mr-1" />
                       {teamInfo.guide.phone}
@@ -2826,7 +2826,7 @@ export default function TourChatRoom({
                   {teamInfo.assistant.phone && (
                     <a 
                       href={`tel:${teamInfo.assistant.phone}`}
-                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                      className="text-sm text-gray-600 flex items-center hover:text-primary transition-colors"
                     >
                       <Phone className="w-3 h-3 mr-1" />
                       {teamInfo.assistant.phone}
@@ -2871,7 +2871,7 @@ export default function TourChatRoom({
                   {teamInfo.driver.phone && (
                     <a 
                       href={`tel:${teamInfo.driver.phone}`}
-                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                      className="text-sm text-gray-600 flex items-center hover:text-primary transition-colors"
                     >
                       <Phone className="w-3 h-3 mr-1" />
                       {teamInfo.driver.phone}
@@ -2893,7 +2893,7 @@ export default function TourChatRoom({
             <div className="p-3 border-t text-right">
               <button 
                 onClick={() => setShowTeamInfo(false)} 
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 {selectedLanguage === 'ko' ? '닫기' : 'Close'}
               </button>
@@ -2920,7 +2920,7 @@ export default function TourChatRoom({
                   href={pendingLocation.googleMapsLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 text-xs underline"
+                  className="text-primary hover:text-primary/80 text-xs underline"
                 >
                   {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
                 </a>
@@ -2929,7 +2929,7 @@ export default function TourChatRoom({
                     href={pendingLocation.naverMapsLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 text-xs underline"
+                    className="text-primary hover:text-primary/80 text-xs underline"
                   >
                     Naver Maps에서 보기
                   </a>
@@ -2946,7 +2946,7 @@ export default function TourChatRoom({
               <button
                 onClick={confirmLocationShare}
                 disabled={sending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {sending 
                   ? (selectedLanguage === 'ko' ? '전송 중...' : 'Sending...')

@@ -963,7 +963,7 @@ export default function PickupScheduleEmailPreviewModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
-            <Eye className="w-5 h-5 text-blue-600" />
+            <Eye className="w-5 h-5 text-primary" />
             <h2 className="text-xl font-bold text-gray-900">{t('emailPreviewModalTitle')}</h2>
             <span className="text-sm text-gray-500">
               ({reservationsWithPickupTime.length}{t('emailPreviewCountUnit')})
@@ -998,7 +998,7 @@ export default function PickupScheduleEmailPreviewModal({
                     key={reservation.id}
                     className={`w-full rounded-lg border-2 transition-all ${
                       selectedReservationId === reservation.id
-                        ? 'bg-blue-50 border-blue-500 shadow-md'
+                        ? 'bg-primary/5 border-primary shadow-md'
                         : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-sm'
                     }`}
                   >
@@ -1023,7 +1023,7 @@ export default function PickupScheduleEmailPreviewModal({
                             <span className="text-xs text-green-600 font-medium">{t('emailPreviewSent')}</span>
                           )}
                           {selectedReservationId === reservation.id && (
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <div className="w-2 h-2 bg-primary/50 rounded-full"></div>
                           )}
                         </div>
                       </div>
@@ -1092,19 +1092,19 @@ export default function PickupScheduleEmailPreviewModal({
                             <div
                               className={
                                 details.pickupRedirected
-                                  ? 'rounded-md border border-blue-200 bg-blue-50/80 px-2 py-1.5'
+                                  ? 'rounded-md border border-border bg-primary/5/80 px-2 py-1.5'
                                   : 'text-gray-600'
                               }
                             >
                               {details.pickupRedirected && (
-                                <div className="text-[10px] font-semibold text-blue-700 mb-0.5">
+                                <div className="text-[10px] font-semibold text-primary mb-0.5">
                                   {t('groupRepPickupRef')}
                                 </div>
                               )}
                               <div
                                 className={`truncate ${
                                   details.pickupRedirected
-                                    ? 'font-semibold text-blue-900'
+                                    ? 'font-semibold text-foreground'
                                     : 'font-medium text-gray-700'
                                 }`}
                               >
@@ -1114,7 +1114,7 @@ export default function PickupScheduleEmailPreviewModal({
                                 <div
                                   className={`truncate mt-0.5 ${
                                     details.pickupRedirected
-                                      ? 'font-medium text-blue-800'
+                                      ? 'font-medium text-primary'
                                       : 'text-gray-500'
                                   }`}
                                 >
@@ -1170,7 +1170,7 @@ export default function PickupScheduleEmailPreviewModal({
                           className={`w-full px-3 py-2 text-xs rounded transition-all flex items-center justify-center gap-2 ${
                             isSending
                               ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-primary text-primary-foreground hover:bg-primary/90'
                           }`}
                         >
                           {isSending ? (
@@ -1198,14 +1198,14 @@ export default function PickupScheduleEmailPreviewModal({
             {loading ? (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+                  <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
                   <p className="text-gray-600">{t('emailPreviewLoading')}</p>
                 </div>
               </div>
             ) : emailContent ? (
               <div className="space-y-4">
                 {/* 이메일 정보 */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="bg-muted/50 border border-border rounded-lg p-4">
                   <div className="space-y-2 text-sm">
                     <div>
                       <span className="font-semibold text-gray-700">{t('emailPreviewTo')}</span>
@@ -1310,7 +1310,7 @@ export default function PickupScheduleEmailPreviewModal({
                         {/* HTML 복사 버튼 */}
                         <button
                           onClick={handleCopyEmail}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
                           title={t('emailPreviewCopyHTMLTitle')}
                           disabled={downloading}
                         >
@@ -1356,7 +1356,7 @@ export default function PickupScheduleEmailPreviewModal({
               <button
                 onClick={handleSend}
                 disabled={sending || reservationsWithPickupTime.length === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {sending ? (
                   <>

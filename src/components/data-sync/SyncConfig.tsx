@@ -65,7 +65,7 @@ export default function SyncConfig({
           </div>
         </div>
         {lastSyncTime && (
-          <p className="text-xs text-blue-600 mt-2">
+          <p className="text-xs text-primary mt-2">
             마지막 동기화: {new Date(lastSyncTime).toLocaleString('ko-KR')}
           </p>
         )}
@@ -109,7 +109,7 @@ export default function SyncConfig({
                 }
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">테이블을 선택하세요</option>
             {availableTables.map((table) => {
@@ -150,7 +150,7 @@ export default function SyncConfig({
           <select
             value={selectedSheet}
             onChange={(e) => onSheetSelect(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
             disabled={sheetInfo.length === 0}
           >
             <option value="">시트를 선택하세요</option>

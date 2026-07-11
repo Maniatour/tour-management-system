@@ -122,10 +122,10 @@ export default function CustomerReservationPricing({ reservation }: CustomerRese
                            )}
 
                           {/* 소계 */}
-                          <div className="p-4 bg-blue-50">
+                          <div className="p-4 bg-primary/5">
                             <div className="flex justify-between items-center">
-                              <span className="text-sm font-semibold text-blue-800">{t('subtotal')}</span>
-                              <span className="text-lg font-bold text-blue-900">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
+                              <span className="text-sm font-semibold text-primary">{t('subtotal')}</span>
+                              <span className="text-lg font-bold text-foreground">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
                             </div>
                           </div>
 
@@ -145,10 +145,10 @@ export default function CustomerReservationPricing({ reservation }: CustomerRese
 
                           {/* Grand Total (할인 후 최종 결제액) */}
                           {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
-                            <div className="p-4 bg-blue-100">
+                            <div className="p-4 bg-primary/10">
                               <div className="flex justify-between items-center">
-                                <span className="text-sm font-semibold text-blue-900">{t('grandTotal')}</span>
-                                <span className="text-lg font-bold text-blue-900">
+                                <span className="text-sm font-semibold text-foreground">{t('grandTotal')}</span>
+                                <span className="text-lg font-bold text-foreground">
                                   ${((reservation.pricing.subtotal || 0) - Math.abs(reservation.pricing.coupon_discount || 0)).toFixed(2)}
                                 </span>
                               </div>
@@ -156,10 +156,10 @@ export default function CustomerReservationPricing({ reservation }: CustomerRese
                           )}
                           {/* 쿠폰 할인이 없을 때도 Grand Total 표시 */}
                           {(!reservation.pricing.coupon_discount || reservation.pricing.coupon_discount === 0) && (
-                            <div className="p-4 bg-blue-100">
+                            <div className="p-4 bg-primary/10">
                               <div className="flex justify-between items-center">
-                                <span className="text-sm font-semibold text-blue-900">{t('grandTotal')}</span>
-                                <span className="text-lg font-bold text-blue-900">
+                                <span className="text-sm font-semibold text-foreground">{t('grandTotal')}</span>
+                                <span className="text-lg font-bold text-foreground">
                                   ${(reservation.pricing.subtotal || 0).toFixed(2)}
                                 </span>
                               </div>

@@ -454,7 +454,7 @@ export default function AdminTeam() {
               onClick={() => setViewMode('card')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'card'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -464,7 +464,7 @@ export default function AdminTeam() {
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
+                  ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -473,7 +473,7 @@ export default function AdminTeam() {
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
           >
             <Plus size={16} />
             <span>{t('addMember')}</span>
@@ -490,7 +490,7 @@ export default function AdminTeam() {
             placeholder={t('searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
           />
         </div>
         
@@ -520,7 +520,7 @@ export default function AdminTeam() {
             onClick={() => setStatusFilter('all')}
             className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               statusFilter === 'all'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-primary text-primary-foreground'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
@@ -532,7 +532,7 @@ export default function AdminTeam() {
       {/* 팀원 목록 */}
       {loading ? (
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">팀원 목록을 불러오는 중...</p>
         </div>
       ) : (
@@ -564,7 +564,7 @@ export default function AdminTeam() {
                       <div className="flex items-center space-x-1">
                         <span>이름</span>
                         {sortField === 'name_ko' && (
-                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
@@ -578,7 +578,7 @@ export default function AdminTeam() {
                       <div className="flex items-center space-x-1">
                         <span>이메일</span>
                         {sortField === 'email' && (
-                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
@@ -589,7 +589,7 @@ export default function AdminTeam() {
                       <div className="flex items-center space-x-1">
                         <span>전화번호</span>
                         {sortField === 'phone' && (
-                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
@@ -600,7 +600,7 @@ export default function AdminTeam() {
                       <div className="flex items-center space-x-1">
                         <span>직책</span>
                         {sortField === 'position' && (
-                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
@@ -611,7 +611,7 @@ export default function AdminTeam() {
                       <div className="flex items-center space-x-1">
                         <span>상태</span>
                         {sortField === 'is_active' && (
-                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                          <span className="text-primary">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
@@ -635,7 +635,7 @@ export default function AdminTeam() {
                                 onKeyDown={handleInlineEditKeyDown}
                                 onBlur={handleInlineEditSave}
                                 autoFocus
-                                className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                                className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-ring focus:outline-none bg-primary/5"
                                 placeholder="한국어 이름"
                               />
                             </div>
@@ -651,7 +651,7 @@ export default function AdminTeam() {
                                 onKeyDown={handleInlineEditKeyDown}
                                 onBlur={handleInlineEditSave}
                                 autoFocus
-                                className="w-full px-2 py-0.5 text-xs border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                                className="w-full px-2 py-0.5 text-xs border border-blue-400 rounded focus:ring-2 focus:ring-ring focus:outline-none bg-primary/5"
                                 placeholder="영어 이름"
                               />
                             </div>
@@ -659,14 +659,14 @@ export default function AdminTeam() {
                         ) : (
                           <div className="min-w-[100px]">
                             <div
-                              className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                              className="text-sm font-medium text-gray-900 cursor-pointer hover:text-primary hover:bg-muted/50 rounded px-1 py-0.5 -mx-1 transition-colors"
                               onClick={() => handleInlineEditStart(member.email, 'name_ko', member.name_ko)}
                               title="클릭하여 수정"
                             >
                               {member.name_ko}
                             </div>
                             <div
-                              className="text-xs text-gray-500 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                              className="text-xs text-gray-500 cursor-pointer hover:text-primary hover:bg-muted/50 rounded px-1 py-0.5 -mx-1 transition-colors"
                               onClick={() => handleInlineEditStart(member.email, 'name_en', member.name_en || '')}
                               title="클릭하여 수정"
                             >
@@ -687,17 +687,17 @@ export default function AdminTeam() {
                             onKeyDown={handleInlineEditKeyDown}
                             onBlur={handleInlineEditSave}
                             autoFocus
-                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50 max-w-[100px]"
+                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-ring focus:outline-none bg-primary/5 max-w-[100px]"
                             placeholder="닉네임"
                           />
                         ) : (
                           <div
-                            className="text-sm cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors min-w-[60px]"
+                            className="text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 -mx-1 transition-colors min-w-[60px]"
                             onClick={() => handleInlineEditStart(member.email, 'nick_name', member.nick_name || '')}
                             title="클릭하여 수정"
                           >
                             {member.nick_name ? (
-                              <span className="text-blue-600 font-medium">{member.nick_name}</span>
+                              <span className="text-primary font-medium">{member.nick_name}</span>
                             ) : (
                               <span className="text-gray-300 italic text-xs">미설정</span>
                             )}
@@ -720,12 +720,12 @@ export default function AdminTeam() {
                             onKeyDown={handleInlineEditKeyDown}
                             onBlur={handleInlineEditSave}
                             autoFocus
-                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50 max-w-[140px]"
+                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-ring focus:outline-none bg-primary/5 max-w-[140px]"
                             placeholder="전화번호"
                           />
                         ) : (
                           <div
-                            className="text-sm text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                            className="text-sm text-gray-900 cursor-pointer hover:text-primary hover:bg-muted/50 rounded px-1 py-0.5 -mx-1 transition-colors"
                             onClick={() => handleInlineEditStart(member.email, 'phone', member.phone || '')}
                             title="클릭하여 수정"
                           >
@@ -768,7 +768,7 @@ export default function AdminTeam() {
                             }}
                             onBlur={handleInlineEditCancel}
                             autoFocus
-                            className="px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                            className="px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-ring focus:outline-none bg-primary/5"
                           >
                             <option value="">미지정</option>
                             <option value="manager">매니저</option>
@@ -779,7 +779,7 @@ export default function AdminTeam() {
                           </select>
                         ) : (
                           <div
-                            className="text-sm text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                            className="text-sm text-gray-900 cursor-pointer hover:text-primary hover:bg-muted/50 rounded px-1 py-0.5 -mx-1 transition-colors"
                             onClick={() => handleInlineEditStart(member.email, 'position', member.position || '')}
                             title="클릭하여 수정"
                           >
@@ -816,7 +816,7 @@ export default function AdminTeam() {
                               setSelectedMember(member)
                               setShowDetailModal(true)
                             }}
-                            className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                            className="p-1 text-primary hover:text-foreground hover:bg-muted/50 rounded transition-colors"
                             title="상세보기"
                           >
                             <Eye size={15} />
@@ -880,7 +880,7 @@ export default function AdminTeam() {
                             <h3 className="text-lg font-semibold text-gray-900 truncate">
                               {member.name_ko}
                               {member.nick_name && (
-                                <span className="ml-1.5 text-sm font-normal text-blue-600">({member.nick_name})</span>
+                                <span className="ml-1.5 text-sm font-normal text-primary">({member.nick_name})</span>
                               )}
                             </h3>
                           </div>
@@ -913,7 +913,7 @@ export default function AdminTeam() {
                             e.stopPropagation()
                             handleToggleActive(member.email, member.is_active ?? true)
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                             member.is_active ? 'bg-green-600' : 'bg-gray-200'
                           }`}
                           aria-label={member.is_active ? '비활성화' : '활성화'}
@@ -936,7 +936,7 @@ export default function AdminTeam() {
                       
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">이메일</span>
-                        <span className="font-medium text-blue-600 truncate ml-2">{member.email}</span>
+                        <span className="font-medium text-primary truncate ml-2">{member.email}</span>
                       </div>
                       
                       <div className="flex items-center justify-between text-sm">
@@ -1102,7 +1102,7 @@ function TeamMemberCardLinkedPaymentMethods({
         <Link
           href={manageHref}
           onClick={(e) => e.stopPropagation()}
-          className="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap"
+          className="text-xs font-medium text-primary hover:text-primary/80 whitespace-nowrap"
         >
           관리
         </Link>
@@ -1235,13 +1235,13 @@ function TeamMemberDocuments({
                       href={doc.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-blue-300 transition-colors group"
+                      className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-border transition-colors group"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center flex-1 min-w-0">
-                        <FileText className="w-3 h-3 mr-2 text-gray-400 group-hover:text-blue-600 flex-shrink-0" />
+                        <FileText className="w-3 h-3 mr-2 text-gray-400 group-hover:text-primary flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-700 truncate group-hover:text-blue-600" title={doc.name}>
+                          <p className="text-xs text-gray-700 truncate group-hover:text-primary" title={doc.name}>
                             {doc.name}
                           </p>
                           <p className="text-xs text-gray-400">
@@ -1249,7 +1249,7 @@ function TeamMemberDocuments({
                           </p>
                         </div>
                       </div>
-                      <Download className="w-3 h-3 text-gray-400 group-hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Download className="w-3 h-3 text-gray-400 group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </a>
                   ))}
                 </div>

@@ -127,7 +127,7 @@ export const ChannelSelector = memo(function ChannelSelector({
   if (isLoadingChannels) {
     return (
       <div className="flex items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
         <span className="ml-2 text-gray-600">채널 로딩 중...</span>
       </div>
     );
@@ -243,7 +243,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                   key={channel.id}
                   className={`w-full p-2 rounded-md border transition-all ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50'
+                      ? 'border-primary bg-primary/5'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
@@ -254,7 +254,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                     >
                       <div className="flex flex-col">
                         <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                          <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
                             {channel.name}
                           </span>
                         </div>
@@ -274,7 +274,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                           e.stopPropagation();
                           onChannelEdit(channel.id);
                         }}
-                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
                         title="채널 편집"
                       >
                         <Edit2 className="h-4 w-4" />
@@ -326,7 +326,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                   key={channel.id}
                   className={`w-full p-2 rounded-md border transition-all ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50'
+                      ? 'border-primary bg-primary/5'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
@@ -337,7 +337,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                     >
                       <div className="flex flex-col">
                         <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                          <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
                             {channel.name}
                           </span>
                         </div>
@@ -352,7 +352,7 @@ export const ChannelSelector = memo(function ChannelSelector({
                           e.stopPropagation();
                           onChannelEdit(channel.id);
                         }}
-                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
                         title="채널 편집"
                       >
                         <Edit2 className="h-4 w-4" />
@@ -368,11 +368,11 @@ export const ChannelSelector = memo(function ChannelSelector({
 
       {/* 선택 상태 표시 */}
       {(selectedChannelType || selectedChannel) && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="text-sm font-medium text-blue-700">
+        <div className="mt-4 p-3 bg-muted/50 border border-border rounded-lg">
+          <div className="text-sm font-medium text-primary">
             현재 선택된 채널:
           </div>
-          <div className="text-sm text-blue-600 mt-1">
+          <div className="text-sm text-primary mt-1">
             {selectedChannelType === 'SELF' 
               ? `자체 채널 (${selfGroup?.channels.length || 0}개)`
               : selectedChannel 

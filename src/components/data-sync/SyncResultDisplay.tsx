@@ -79,11 +79,11 @@ export default function SyncResultDisplay({
       {/* 상세 통계 */}
       {syncResult.data && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div className="bg-blue-50 p-4 rounded-lg text-center">
-            <div className="text-2xl font-bold text-blue-600">
+          <div className="bg-primary/5 p-4 rounded-lg text-center">
+            <div className="text-2xl font-bold text-primary">
               {(syncResult.data.inserted || 0) + (syncResult.data.updated || 0)}
             </div>
-            <div className="text-sm text-blue-800">총 처리</div>
+            <div className="text-sm text-primary">총 처리</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg text-center">
             <div className="text-2xl font-bold text-green-600">{syncResult.data.inserted || 0}</div>
@@ -161,7 +161,7 @@ export default function SyncResultDisplay({
               
               <button
                 onClick={handleCopyLogs}
-                className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90"
               >
                 로그 복사
               </button>

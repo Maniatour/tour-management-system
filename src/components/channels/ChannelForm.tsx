@@ -106,7 +106,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               />
             </div>
@@ -115,7 +115,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               <select
                 value={formData.type || ''}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">{t('form.selectType')}</option>
                 <option value="self">Self</option>
@@ -130,7 +130,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               type="url"
               value={formData.customer_website || ''}
               onChange={(e) => setFormData({ ...formData, customer_website: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="https://example.com"
             />
           </div>
@@ -140,7 +140,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               type="url"
               value={formData.admin_website || ''}
               onChange={(e) => setFormData({ ...formData, admin_website: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="https://admin.example.com"
             />
           </div>
@@ -206,7 +206,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                 min="0"
                 max="100"
                 step="0.1"
-                className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -214,7 +214,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               <select
                 value={formData.is_active ? 'true' : 'false'}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="true">{t('status.active')}</option>
                 <option value="false">{t('status.inactive')}</option>
@@ -229,7 +229,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               <select
                 value={formData.pricing_type}
                 onChange={(e) => setFormData({ ...formData, pricing_type: e.target.value as 'separate' | 'single' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="separate">성인/아동/유아 가격 분리 판매</option>
                 <option value="single">단일 가격 판매</option>
@@ -250,7 +250,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                 id="commission_base_price_only"
                 checked={formData.commission_base_price_only || false}
                 onChange={(e) => setFormData({ ...formData, commission_base_price_only: e.target.checked })}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
               />
               <label htmlFor="commission_base_price_only" className="text-sm font-medium text-gray-700">
                 판매가격에만 커미션 & 쿠폰 적용
@@ -267,7 +267,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
           
@@ -281,7 +281,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                   type="text"
                   value={formData.manager_name || ''}
                   onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="담당자 이름을 입력하세요"
                 />
               </div>
@@ -291,7 +291,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                   type="text"
                   value={formData.manager_contact || ''}
                   onChange={(e) => setFormData({ ...formData, manager_contact: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   placeholder="전화번호 또는 이메일을 입력하세요"
                 />
               </div>
@@ -315,7 +315,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
                       href={formData.contract_url} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800 underline"
+                      className="text-sm text-primary hover:text-primary/80 underline"
                     >
                       {t('form.contractView')}
                     </a>
@@ -363,7 +363,7 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+              className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
             >
               {channel ? tCommon('save') : tCommon('add')}
             </button>

@@ -659,7 +659,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
   const getCategoryColor = (category: string) => {
     const categoryColors: Record<string, string> = {
-      'accommodation': 'bg-blue-100 text-blue-800',
+      'accommodation': 'bg-primary/10 text-primary',
       'transportation': 'bg-green-100 text-green-800',
       'meal': 'bg-orange-100 text-orange-800',
       'activity': 'bg-purple-100 text-purple-800',
@@ -745,13 +745,13 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
             placeholder="초이스 템플릿 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
           />
         </div>
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="col-span-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-0 sm:min-w-[140px]"
+          className="col-span-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent min-w-0 sm:min-w-[140px]"
         >
           <option value="all">모든 카테고리</option>
           {categories.map(category => (
@@ -762,7 +762,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         </select>
         <button
           onClick={() => setShowWorkflowGuide(true)}
-          className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
+          className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-primary bg-muted/50 border border-border rounded-lg hover:bg-muted flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
         >
           <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
           <span className="truncate">워크플로우 가이드</span>
@@ -855,7 +855,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                     })
                     setShowAddForm(true)
                   }}
-                  className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                  className="p-1 text-primary hover:text-foreground hover:bg-muted/50 rounded"
                   title="템플릿 추가"
                 >
                   <Plus size={16} />
@@ -868,7 +868,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                     min_selections: firstTemplate.min_selections,
                     max_selections: firstTemplate.max_selections
                   })}
-                  className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                  className="p-1 text-primary hover:text-foreground hover:bg-muted/50 rounded"
                   title="그룹 수정"
                 >
                   <Edit size={16} />
@@ -900,8 +900,8 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                     <div className="p-4 border-b border-gray-100 min-w-0">
                       <div className="flex items-start justify-between gap-2 min-w-0">
                         <div className="flex items-center space-x-3 min-w-0 flex-1 overflow-hidden">
-                          <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-medium text-blue-600">{index + 1}</span>
+                          <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-medium text-primary">{index + 1}</span>
                           </div>
                           <div className="min-w-0 flex-1 overflow-hidden">
                             <h4 className="text-sm font-semibold text-gray-900 truncate" title={template.name}>
@@ -914,7 +914,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                             <button
                               onClick={() => handleChangeSortOrder(template.id, 'up')}
                               disabled={isFirst}
-                              className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                              className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
                                 isFirst ? 'opacity-30 cursor-not-allowed' : ''
                               }`}
                               title="위로 이동"
@@ -924,7 +924,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                             <button
                               onClick={() => handleChangeSortOrder(template.id, 'down')}
                               disabled={isLast}
-                              className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                              className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
                                 isLast ? 'opacity-30 cursor-not-allowed' : ''
                               }`}
                               title="아래로 이동"
@@ -934,7 +934,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                           </div>
                           <button
                             onClick={() => setEditingTemplate(template)}
-                            className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                            className="p-1 text-primary hover:text-foreground hover:bg-muted/50 rounded"
                             title="편집"
                           >
                             <Edit size={14} />
@@ -1050,7 +1050,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                             {template.status === 'active' ? '활성' : '비활성'}
                           </span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            template.is_required ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                            template.is_required ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-800'
                           }`}>
                             {template.is_required ? '필수' : '선택'}
                           </span>
@@ -1157,7 +1157,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-            <BookOpen className="mr-2 text-blue-600" size={24} />
+            <BookOpen className="mr-2 text-primary" size={24} />
             초이스 템플릿 워크플로우 가이드
           </h2>
           <button
@@ -1170,9 +1170,9 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
 
         <div className="space-y-6">
           {/* 개요 */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-blue-900 mb-2">📋 개요</h3>
-            <p className="text-sm text-blue-800">
+          <div className="bg-muted/50 border border-border rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-foreground mb-2">📋 개요</h3>
+            <p className="text-sm text-primary">
               통합 옵션 - 초이스 관리에서는 <strong>템플릿</strong>을 생성하고 관리합니다. 
               이 템플릿은 상품 편집 - 초이스 관리에서 불러와서 사용할 수 있으며, 
               각 상품에서 필요한 옵션만 선택하거나 수정할 수 있습니다.
@@ -1182,7 +1182,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
           {/* Step 1 */}
           <div className="border border-gray-200 rounded-lg p-5">
             <div className="flex items-start mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold mr-3">
                 1
               </div>
               <div className="flex-1">
@@ -1315,7 +1315,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
             <h3 className="text-lg font-semibold text-gray-900 mb-3">🔄 워크플로우 다이어그램</h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-center">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">1</div>
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center mr-3">1</div>
                 <div className="flex-1">
                   <p className="font-medium">통합 옵션 - 초이스 관리</p>
                   <p className="text-xs text-gray-600">"국립공원 입장료" 템플릿 그룹 생성 + 모든 옵션 등록</p>
@@ -1381,7 +1381,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
         <div className="mt-6 flex justify-end">
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
           >
             닫기
           </button>
@@ -1457,7 +1457,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 type="text"
                 value={formData.name_ko}
                 onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -1466,7 +1466,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               />
             </div>
@@ -1478,7 +1478,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               <textarea
                 value={formData.description_ko}
                 onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 rows={3}
               />
             </div>
@@ -1487,7 +1487,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               <textarea
                 value={formData.description_en}
                 onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 rows={3}
               />
             </div>
@@ -1499,7 +1499,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               <select
                 value={formData.choice_type}
                 onChange={(e) => setFormData({ ...formData, choice_type: e.target.value as 'single' | 'multiple' | 'quantity' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="single">단일 선택</option>
                 <option value="multiple">다중 선택</option>
@@ -1511,7 +1511,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 required
               >
                 <option value="">카테고리 선택</option>
@@ -1528,7 +1528,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               <select
                 value={formData.price_type}
                 onChange={(e) => setFormData({ ...formData, price_type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="per_person">인당</option>
                 <option value="per_group">그룹당</option>
@@ -1546,7 +1546,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 step="0.01"
                 value={formData.adult_price}
                 onChange={(e) => setFormData({ ...formData, adult_price: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -1557,7 +1557,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 step="0.01"
                 value={formData.child_price}
                 onChange={(e) => setFormData({ ...formData, child_price: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -1568,7 +1568,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 step="0.01"
                 value={formData.infant_price}
                 onChange={(e) => setFormData({ ...formData, infant_price: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -1581,7 +1581,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 min="0"
                 value={formData.min_selections}
                 onChange={(e) => setFormData({ ...formData, min_selections: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -1591,7 +1591,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 min="1"
                 value={formData.max_selections}
                 onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -1639,7 +1639,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               type="text"
               value={formData.image_alt}
               onChange={(e) => setFormData({ ...formData, image_alt: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               placeholder="이미지 설명"
             />
           </div>
@@ -1651,12 +1651,12 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 id="tagInput"
                 type="text"
                 placeholder="태그 입력"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
               <button
                 type="button"
                 onClick={addTag}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 추가
               </button>
@@ -1665,13 +1665,13 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               {formData.tags.map((tag, index) => (
                 <span
                   key={index}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary"
                 >
                   {tag}
                   <button
                     type="button"
                     onClick={() => removeTag(tag)}
-                    className="ml-2 text-blue-600 hover:text-blue-800"
+                    className="ml-2 text-primary hover:text-primary/80"
                   >
                     ×
                   </button>
@@ -1683,7 +1683,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+              className="flex-1 bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90"
             >
               {template ? '수정' : '추가'}
             </button>
@@ -1766,7 +1766,7 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
             <select
               value={selectedProductId}
               onChange={(e) => setSelectedProductId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="">상품을 선택하세요</option>
               {products.map(product => (
@@ -1855,7 +1855,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
                 type="text"
                 value={formData.template_group}
                 onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: national_park_fee"
                 required
               />
@@ -1868,7 +1868,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
                 type="text"
                 value={formData.template_group_ko}
                 onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: 국립공원 입장료"
                 required
               />
@@ -1883,7 +1883,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
               <textarea
                 value={formData.template_group_description_en}
                 onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                 placeholder="Enter description for this choice group (English)"
                 rows={3}
               />
@@ -1895,7 +1895,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
               <textarea
                 value={formData.template_group_description_ko}
                 onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                 placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
                 rows={3}
               />
@@ -1910,7 +1910,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
               <select
                 value={formData.choice_type}
                 onChange={(e) => setFormData({ ...formData, choice_type: e.target.value as 'single' | 'multiple' | 'quantity' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="single">단일 선택</option>
                 <option value="multiple">다중 선택</option>
@@ -1940,7 +1940,7 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
                 min="0"
                 value={formData.min_selections}
                 onChange={(e) => setFormData({ ...formData, min_selections: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -1952,12 +1952,12 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
                 min="1"
                 value={formData.max_selections}
                 onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
 
-          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+          <div className="text-sm text-gray-600 bg-primary/5 p-3 rounded-lg">
             <p className="font-medium mb-1">💡 안내</p>
             <p>그룹을 추가한 후, 템플릿 추가 버튼을 사용하여 이 그룹에 옵션을 추가할 수 있습니다.</p>
           </div>
@@ -2043,7 +2043,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
                 type="text"
                 value={formData.template_group}
                 onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: Accommodation"
                 required
               />
@@ -2056,7 +2056,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
                 type="text"
                 value={formData.template_group_ko}
                 onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                 placeholder="예: 숙박 선택"
               />
             </div>
@@ -2069,7 +2069,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
               <textarea
                 value={formData.template_group_description_en}
                 onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                 placeholder="Enter description for this choice group (English)"
                 rows={3}
               />
@@ -2081,7 +2081,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
               <textarea
                 value={formData.template_group_description_ko}
                 onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                 placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
                 rows={3}
               />
@@ -2095,7 +2095,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
               <select
                 value={formData.choice_type}
                 onChange={(e) => setFormData({ ...formData, choice_type: e.target.value as 'single' | 'multiple' | 'quantity' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="single">단일 선택</option>
                 <option value="multiple">다중 선택</option>
@@ -2125,7 +2125,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
                 min="0"
                 value={formData.min_selections}
                 onChange={(e) => setFormData({ ...formData, min_selections: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
             <div>
@@ -2137,7 +2137,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
                 min="1"
                 value={formData.max_selections}
                 onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
@@ -2156,7 +2156,7 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90"
             >
               수정
             </button>

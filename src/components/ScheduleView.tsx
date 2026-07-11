@@ -631,8 +631,8 @@ function resolveMergedTicketBookingAxisDisplay(
 
 /** 드롭 존·행 재정렬 하이라이트는 classList만 갱신해 dragover마다 전체 트리 리렌더를 피함 */
 const SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT = ['bg-blue-200', 'border-2', 'border-blue-400'] as const
-const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-blue-50'] as const
-const SCHEDULE_ROW_REORDER_HIGHLIGHT = ['border-t-2', 'border-blue-500'] as const
+const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-primary/5'] as const
+const SCHEDULE_ROW_REORDER_HIGHLIGHT = ['border-t-2', 'border-primary'] as const
 
 function addScheduleLocalDaysYmd(daysFromToday: number): string {
   const now = new Date()
@@ -1639,7 +1639,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const preset = SCHEDULE_COLOR_PRESETS.find(p => p.id === colorClass)
     if (preset) return preset.bgHex
     const colorMap: { [key: string]: string } = {
-      'bg-blue-500 border-blue-600 text-white': '#3b82f6',
+      'bg-primary/50 border-primary text-white': '#3b82f6',
       'bg-green-500 border-green-600 text-white': '#10b981',
       'bg-yellow-500 border-yellow-600 text-black': '#eab308',
       'bg-purple-500 border-purple-600 text-white': '#8b5cf6',
@@ -1679,7 +1679,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       'bg-red-600': '#dc2626',
       'bg-purple-600 border-purple-700 text-white': '#9333ea',
       'bg-purple-600': '#9333ea',
-      'bg-blue-500': '#3b82f6',
+      'bg-primary/50': '#3b82f6',
       'bg-green-500': '#10b981',
       'bg-pink-500': '#ec4899',
       'bg-indigo-500': '#6366f1',
@@ -1719,7 +1719,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const colorMap: { [key: string]: string } = {
       'border-black': '#000000',
       'border-red-500': '#ef4444',
-      'border-blue-500': '#3b82f6',
+      'border-primary': '#3b82f6',
       'border-green-500': '#10b981',
       'border-yellow-500': '#eab308',
       'border-purple-500': '#8b5cf6',
@@ -1743,7 +1743,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const borderColors = [
       'border-black',      // 검은색 (첫 번째 팀)
       'border-red-500',    // 빨간색 (두 번째 팀)
-      'border-blue-500',
+      'border-primary',
       'border-green-500',
       'border-yellow-500',
       'border-purple-500',
@@ -5898,7 +5898,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   // 해당 월 사용 가능 차량 목록 + 차량별 색상 (scheduleVehicles 기준, 취소·비활성 제외)
   const VEHICLE_COLOR_PALETTE = [
-    'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-violet-500',
+    'bg-red-500', 'bg-primary/50', 'bg-green-500', 'bg-amber-500', 'bg-violet-500',
     'bg-pink-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500', 'bg-indigo-500',
     'bg-rose-500', 'bg-lime-500', 'bg-sky-500', 'bg-fuchsia-500', 'bg-emerald-500'
   ] as const
@@ -6349,7 +6349,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               {/* 상품 선택 버튼 */}
               <button
                 onClick={() => setShowProductModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors relative"
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors relative"
                 title={`상품 선택 (${selectedProducts.length}개)`}
               >
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -6464,7 +6464,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               <button
                 type="button"
                 onClick={goToToday}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap text-xs sm:text-sm"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap text-xs sm:text-sm"
               >
                 오늘
               </button>
@@ -6509,7 +6509,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 void executeBatchSave({ offerGuideEmail: true })
               }}
               disabled={pendingCount === 0}
-              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
             >
               저장
             </button>
@@ -6571,7 +6571,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </span>
               {pendingGuideAssignmentCount > 0 && (
                 <span
-                  className="max-w-[min(100%,28rem)] px-2 py-1 text-[10px] bg-blue-50 text-blue-900 rounded-full truncate"
+                  className="max-w-[min(100%,28rem)] px-2 py-1 text-[10px] bg-primary/5 text-foreground rounded-full truncate"
                   title={pendingGuideAssignmentChanges
                     .map(
                       (c) =>
@@ -6607,7 +6607,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         >
           <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between gap-2 leading-tight">
             <div className="flex items-center">
-              <MapPin className="w-4 h-4 mr-1 text-blue-500" />
+              <MapPin className="w-4 h-4 mr-1 text-primary" />
               스케쥴뷰
             </div>
             <div className="flex items-center gap-2 text-[11px]">
@@ -6628,7 +6628,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           <div
             ref={productScheduleHeaderScrollRef}
             onScroll={onProductScheduleHeaderScroll}
-            className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-blue-50"
+            className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-primary/5"
             style={{
               top: productScheduleStickyTopPx,
               scrollbarWidth: 'none',
@@ -6637,10 +6637,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             }}
           >
             <table className="w-full border-separate border-spacing-0" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
-              <thead className="bg-blue-50">
+              <thead className="bg-primary/5">
                 <tr className="align-top">
                   <th
-                    className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-blue-50 border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
+                    className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-primary/5 border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
                     style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
                   >
                     상품명
@@ -6657,7 +6657,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             ? 'bg-slate-100/90 text-gray-700'
                             : healthHeaderAlert
                               ? 'bg-red-600 text-[#ffff00]'
-                              : 'bg-blue-50 text-gray-700'
+                              : 'bg-primary/5 text-gray-700'
                         }`}
                         style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                       >
@@ -6672,7 +6672,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                               ? 'bg-yellow-50 border-2 border-yellow-400 rounded' 
                               : ''
                           }
-                          ${!healthHeaderAlert && hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : !healthHeaderAlert ? 'hover:bg-blue-100' : ''}
+                          ${!healthHeaderAlert && hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : !healthHeaderAlert ? 'hover:bg-muted' : ''}
                         `}
                         onClick={() => openDateNoteModal(dateString)}
                         onMouseEnter={() => {
@@ -6728,7 +6728,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     </th>
                   )
                 })}
-                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-primary/5 border-b border-gray-200" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
                   합계
                 </th>
               </tr>
@@ -6763,7 +6763,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   <tr 
                     key={productId} 
                     className={`hover:bg-gray-50 transition-colors ${
-                      draggedProductRow === productId ? 'opacity-50 bg-blue-50' : ''
+                      draggedProductRow === productId ? 'opacity-50 bg-primary/5' : ''
                     }`}
                     onDragOver={(e) => handleProductRowDragOver(e, productId)}
                     onDragLeave={handleProductRowDragLeave}
@@ -6911,7 +6911,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                       }
                                       if (onlyWaiting) {
                                         return `font-medium leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-blue-700' : 'text-blue-600'
+                                          isToday(dateString) ? 'text-primary' : 'text-primary'
                                         }`
                                       }
                                       if (confirmed === 0) {
@@ -6919,7 +6919,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                       }
                                       if (confirmed < 4) {
                                         return `font-medium leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-blue-700' : 'text-blue-600'
+                                          isToday(dateString) ? 'text-primary' : 'text-primary'
                                         }`
                                       }
                                       return 'font-medium leading-tight whitespace-nowrap text-gray-900'
@@ -7067,12 +7067,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       })
                       const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
                       if (rowOverflow) return 'font-bold text-red-600'
-                      if (onlyWaitingTotal) return 'font-medium text-blue-600'
+                      if (onlyWaitingTotal) return 'font-medium text-primary'
                       return `font-medium ${
                         product.totalPeople === 0
                           ? 'text-gray-300'
                           : product.totalPeople < 4
-                            ? 'text-blue-600'
+                            ? 'text-primary'
                             : 'text-gray-900'
                       }`
                     })()}
@@ -7083,8 +7083,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               })}
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
-              <tr className="bg-blue-100 font-semibold">
-                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-blue-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+              <tr className="bg-primary/10 font-semibold">
+                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-primary/10 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -7108,13 +7108,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             return `font-bold ${isToday(dateString) ? 'text-red-700' : 'text-red-600'}`
                           }
                           if (onlyWaiting) {
-                            return `font-medium ${isToday(dateString) ? 'text-blue-700' : 'text-blue-600'}`
+                            return `font-medium ${isToday(dateString) ? 'text-primary' : 'text-primary'}`
                           }
                           return `font-medium ${
                             confirmed === 0
                               ? 'text-gray-300'
                               : confirmed < 4
-                                ? 'text-blue-600'
+                                ? 'text-primary'
                                 : 'text-gray-900'
                           }`
                         })()}>{dayTotal.totalPeople}</div>
@@ -7184,7 +7184,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         dayTotal.assignedPeople === 0
                           ? 'text-gray-300'
                           : dayTotal.assignedPeople < 4
-                            ? 'text-blue-600'
+                            ? 'text-primary'
                             : 'text-red-600'
                       } ${isToday(dateString) ? 'text-red-700' : ''}`
                   return (
@@ -7359,7 +7359,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     >
                       <div className={`font-medium flex items-center gap-0.5 ${
                         hoveredGuideRow === teamMemberId 
-                          ? 'text-blue-600 animate-pulse' 
+                          ? 'text-primary animate-pulse' 
                           : 'text-gray-900'
                       }`}>
                         <div className="flex flex-col items-center -my-0.5">
@@ -7394,7 +7394,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           type="button"
                           className={`min-w-0 flex-1 truncate text-left ${
                             canEditTeamFromSchedule
-                              ? 'cursor-pointer hover:text-blue-700 hover:underline'
+                              ? 'cursor-pointer hover:text-primary hover:underline'
                               : ''
                           }`}
                           title={
@@ -7999,7 +7999,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         guide.totalAssignedPeople === 0 
                           ? 'text-gray-300' 
                           : guide.totalAssignedPeople < 4 
-                            ? 'text-blue-600' 
+                            ? 'text-primary' 
                             : 'text-red-600'
                       }`}>{guide.totalAssignedPeople} ({guide.totalTours}일)</div>
                     </td>
@@ -8054,7 +8054,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             !hasBooking || bookingData.totalCount === 0
                               ? 'text-gray-300'
                               : bookingData.totalCount < 5
-                                ? 'text-blue-600'
+                                ? 'text-primary'
                                 : 'text-red-600'
                           } ${isToday(dateString) ? 'text-red-700' : ''}`
                       return (
@@ -8402,12 +8402,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         <tr
                           key={id}
                           className={`group hover:bg-gray-50/50 ${
-                            draggedVehicleRowId === id ? 'opacity-50 bg-blue-50/80' : ''
+                            draggedVehicleRowId === id ? 'opacity-50 bg-primary/5/80' : ''
                           }`}
                         >
                           <td
                             className={`px-1 py-0.5 text-xs leading-tight text-gray-900 select-none sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${
-                              draggedVehicleRowId === id ? 'bg-blue-50/80' : 'bg-white group-hover:bg-gray-50/50'
+                              draggedVehicleRowId === id ? 'bg-primary/5/80' : 'bg-white group-hover:bg-gray-50/50'
                             }`}
                             style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
                             onDragOver={(e) => {
@@ -8461,7 +8461,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                 <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
                               </div>
                               <div
-                                className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-blue-700' : 'cursor-help'}`}
+                                className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-primary' : 'cursor-help'}`}
                                 title={
                                   canEditVehicleFromSchedule
                                     ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
@@ -8721,7 +8721,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   key={card.id}
                   className={`bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer group ${
                     card.role === 'guide' 
-                      ? 'border-blue-200 bg-blue-50' 
+                      ? 'border-border bg-primary/5' 
                       : 'border-green-200 bg-green-50'
                   } ${isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-50' : ''}`}
                   draggable
@@ -8742,7 +8742,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             type="button"
                             aria-label={locale === 'ko' ? '투어 배정' : 'Assign staff'}
                             title={locale === 'ko' ? '투어 배정' : 'Assign staff'}
-                            className="inline-flex items-center justify-center p-1 rounded-md border border-blue-300 text-blue-800 bg-white/90 hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="inline-flex items-center justify-center p-1 rounded-md border border-border text-primary bg-white/90 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
@@ -8780,7 +8780,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
                           card.role === 'guide' 
-                            ? 'bg-blue-100 text-blue-800' 
+                            ? 'bg-primary/10 text-primary' 
                             : 'bg-green-100 text-green-800'
                         }`}>
                           {card.role === 'guide' ? '가이드' : '어시스턴트'}
@@ -8935,7 +8935,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       >
                         <span className="line-clamp-3 leading-snug">{option.label}</span>
                         {isCurrent && (
-                          <span className="block text-[10px] mt-1 text-blue-800 font-semibold">
+                          <span className="block text-[10px] mt-1 text-primary font-semibold">
                             {locale === 'ko' ? '현재' : 'Current'}
                           </span>
                         )}
@@ -9002,7 +9002,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         <button
                           key={member.email}
                           type="button"
-                          className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                          className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-muted/50 hover:border-border transition-colors"
                           onClick={() => {
                             applyUnassignedPersonToTour(modalTour, member.email, modalTour.tour_date, assignRole)
                             setUnassignedPersonAssignModal(null)
@@ -9089,7 +9089,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         <div
                           key={v.id}
                           className={`flex items-center justify-between gap-2 p-3 rounded-lg border ${
-                            isCurrent ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                            isCurrent ? 'bg-muted/50 border-border' : 'bg-gray-50 border-gray-200'
                           }`}
                         >
                           <div className="min-w-0 flex-1">
@@ -9111,7 +9111,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             className={`shrink-0 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${
                               isCurrent
                                 ? 'bg-gray-300 text-gray-500 cursor-default'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-primary text-primary-foreground hover:bg-primary/90'
                             }`}
                           >
                             {isCurrent
@@ -9167,7 +9167,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             onClick={() => toggleProduct(item.id)}
                             className={`px-3 py-2 rounded-lg text-sm transition-colors ${
                               isSelected
-                                ? 'bg-blue-500 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                           >
@@ -9241,8 +9241,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
             <div className="flex flex-col space-y-3">
               {canManageSharedSchedule && (
-                <div className="flex items-center space-x-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <span className="text-sm text-blue-800">
+                <div className="flex items-center space-x-2 p-3 bg-muted/50 border border-border rounded-lg">
+                  <span className="text-sm text-primary">
                     적용한 상품 선택·색상이 모든 사용자에게 동일하게 표시됩니다.
                   </span>
                 </div>
@@ -9285,7 +9285,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     localStorage.setItem('schedule_selected_products', JSON.stringify(productsToSave))
                     setShowProductModal(false)
                   }}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                 >
                   확인
                 </button>
@@ -9550,7 +9550,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   value={teamModalSearchQuery}
                   onChange={(e) => setTeamModalSearchQuery(e.target.value)}
                   placeholder="가이드 이름, 닉네임, 이메일로 검색"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30"
                   autoComplete="off"
                 />
               </div>
@@ -9830,7 +9830,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                             type="button"
                             onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
                             disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                           >
                             <Plus className="h-3.5 w-3.5" aria-hidden />
                             {busy
@@ -10078,7 +10078,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           <div className="mt-5 flex justify-end border-t border-gray-100 pt-3">
             <button
               type="button"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
               onClick={() => {
                 setScheduleHealthModalOpen(false)
                 if (typeof window !== 'undefined') {
@@ -10163,7 +10163,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           </div>
                           <button
                             type="button"
-                            className="shrink-0 text-xs text-blue-600 hover:text-blue-800"
+                            className="shrink-0 text-xs text-primary hover:text-primary/80"
                             onClick={() => {
                               setCapacityOverflowVehicleModal(null)
                               openTourDetailModal(tour.id)
@@ -10247,7 +10247,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               type="button"
               onClick={() => void handleProductCellModalCreateTour()}
               disabled={productCellCreateTourLoading || productCellReservationList.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:pointer-events-none"
+              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
             >
               <Plus className="h-4 w-4 shrink-0" aria-hidden />
               {productCellCreateTourLoading
@@ -10637,7 +10637,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 type="button"
                 onClick={() => void handleScheduleLeaveSaveAndGo()}
                 disabled={scheduleLeaveSaving}
-                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {scheduleLeaveSaving ? '처리 중…' : '저장 후 이동'}
               </button>
@@ -10717,7 +10717,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 type="button"
                 onClick={() => void confirmDragAssignSave()}
                 disabled={dragAssignSaveLoading}
-                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {dragAssignSaveLoading ? '저장 중…' : '저장'}
               </button>
@@ -10960,7 +10960,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </button>
               <button
                 onClick={() => setShowGuideModal(false)}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 닫기
               </button>
@@ -10993,7 +10993,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
               >
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />
@@ -11045,7 +11045,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       setBatchOffGuides(guideMembers.map(m => m.email))
                     }
                   }}
-                  className="w-full text-left px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                  className="w-full text-left px-3 py-1.5 text-xs font-medium text-primary hover:bg-muted/50 rounded transition-colors"
                 >
                   {batchOffGuides.length === teamMembers.filter(m => m.position === 'guide' || m.position === '가이드').length ? '전체 해제' : '가이드 전체 선택'}
                 </button>
@@ -11296,7 +11296,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       value={newOffScheduleReason}
                       onChange={(e) => setNewOffScheduleReason(e.target.value)}
                       placeholder="오프 스케줄 사유를 입력하세요"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                       autoFocus
                     />
                   </div>
@@ -11355,7 +11355,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
                       }
                     }}
-                    className="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                    className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
                   >
                     오프 스케줄 추가
                   </button>
@@ -11502,7 +11502,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   return (
                     <div
                       key={tour.id}
-                      className={`flex items-center justify-between p-3 border rounded-lg ${isAlreadyThis ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}
+                      className={`flex items-center justify-between p-3 border rounded-lg ${isAlreadyThis ? 'bg-muted/50 border-border' : 'bg-gray-50 border-gray-200'}`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="font-medium text-gray-900 truncate">{productName}</div>
@@ -11523,7 +11523,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           setVehicleAssignTarget(null)
                           requestSaveAfterDragAssignment()
                         }}
-                        className={`ml-2 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${isAlreadyThis ? 'bg-gray-300 text-gray-500 cursor-default' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                        className={`ml-2 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${isAlreadyThis ? 'bg-gray-300 text-gray-500 cursor-default' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
                       >
                         {isAlreadyThis ? '현재 배정됨' : '이 차량에 배정'}
                       </button>

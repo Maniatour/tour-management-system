@@ -328,7 +328,7 @@ export default function AdminSopPage() {
           <>
             <p className="text-sm text-gray-700">
               {uiLocaleEn ? 'Version' : '제'} {latest.version_number} — {latest.title}{' '}
-              <Link className="text-blue-600 underline" href={`/${locale}/sop/sign?version=${latest.id}`}>
+              <Link className="text-primary underline" href={`/${locale}/sop/sign?version=${latest.id}`}>
                 {uiLocaleEn ? 'Open sign page' : '서명 페이지'}
               </Link>
             </p>
@@ -403,7 +403,7 @@ export default function AdminSopPage() {
           <>
             <p className="text-sm text-gray-700">
               {uiLocaleEn ? 'Version' : '제'} {contractLatest.version_number} — {contractLatest.title}{' '}
-              <Link className="text-blue-600 underline" href={`/${locale}/employee-contract/sign?version=${contractLatest.id}`}>
+              <Link className="text-primary underline" href={`/${locale}/employee-contract/sign?version=${contractLatest.id}`}>
                 {uiLocaleEn ? 'Open sign page' : '서명 페이지'}
               </Link>
             </p>

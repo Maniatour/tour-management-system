@@ -285,7 +285,7 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
 
         {loading && (
           <div className="text-center py-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
             <p className="text-sm text-gray-500 mt-2">옵션을 불러오는 중...</p>
           </div>
         )}
@@ -313,7 +313,7 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
          {!loading && !error && reservationOptions.length > 0 && (
            <div className="space-y-4">
              {/* 옵션별 그룹화 소계 - 카테고리별 그룹화 */}
-             <div className="bg-blue-50 rounded-lg p-3">
+             <div className="bg-primary/5 rounded-lg p-3">
                <div className="space-y-2">
                  {getOptionSummary().categories.map((categorySummary) => {
                    const categoryOptions = getOptionSummary().options.filter(option => option.category === categorySummary.category)
@@ -374,7 +374,7 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
                         <h3 className="font-medium text-gray-900">
                           {reservationOption.option?.name || '알 수 없는 옵션'}
                         </h3>
-                        <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                           {reservationOption.option?.category || '카테고리 없음'}
                         </span>
                       </div>

@@ -31,23 +31,23 @@ export default function SyncExecution({
       <h3 className="text-lg font-semibold text-gray-900 mb-4">동기화 실행</h3>
       
       {/* 동기화 설정 요약 */}
-      <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-        <h4 className="text-sm font-medium text-blue-800 mb-2">동기화 설정 요약</h4>
+      <div className="mb-4 p-4 bg-primary/5 rounded-lg">
+        <h4 className="text-sm font-medium text-primary mb-2">동기화 설정 요약</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
           <div>
-            <span className="text-blue-700 font-medium">대상 테이블:</span>
-            <span className="ml-2 text-blue-600">{selectedTable}</span>
+            <span className="text-primary font-medium">대상 테이블:</span>
+            <span className="ml-2 text-primary">{selectedTable}</span>
           </div>
           <div>
-            <span className="text-blue-700 font-medium">시트:</span>
-            <span className="ml-2 text-blue-600">{selectedSheet}</span>
+            <span className="text-primary font-medium">시트:</span>
+            <span className="ml-2 text-primary">{selectedSheet}</span>
           </div>
           <div>
-            <span className="text-blue-700 font-medium">매핑된 컬럼:</span>
-            <span className="ml-2 text-blue-600">{Object.keys(columnMapping).length}개</span>
+            <span className="text-primary font-medium">매핑된 컬럼:</span>
+            <span className="ml-2 text-primary">{Object.keys(columnMapping).length}개</span>
           </div>
           <div>
-            <span className="text-blue-700 font-medium">데이터 삭제:</span>
+            <span className="text-primary font-medium">데이터 삭제:</span>
             <span className={`ml-2 ${truncateTable ? 'text-red-600 font-medium' : 'text-green-600'}`}>
               {truncateTable ? '예 (전체 삭제 후 동기화)' : '아니오 (기존 데이터 유지)'}
             </span>

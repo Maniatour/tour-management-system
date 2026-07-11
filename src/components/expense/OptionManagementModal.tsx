@@ -356,7 +356,7 @@ const OptionManagementModal = ({
               onClick={() => setActiveTab(key as 'paid_to' | 'paid_for')}
               className={`px-6 py-3 font-medium ${
                 activeTab === key
-                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  ? 'text-primary border-b-2 border-primary'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -371,7 +371,7 @@ const OptionManagementModal = ({
           <div className="flex-1 p-6 overflow-y-auto border-r">
             {loading ? (
               <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                 <p className="mt-2 text-gray-500">로딩 중...</p>
               </div>
             ) : (
@@ -383,13 +383,13 @@ const OptionManagementModal = ({
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
                     placeholder={`새 ${tabLabels[activeTab]} 추가`}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     onKeyPress={(e) => e.key === 'Enter' && addNewOption()}
                   />
                   <button
                     onClick={addNewOption}
                     disabled={!newValue.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
                   >
                     <Plus size={16} />
                     <span>추가</span>
@@ -408,7 +408,7 @@ const OptionManagementModal = ({
                         key={option.id}
                         className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer ${
                           selectedPaidTo === option.value && activeTab === 'paid_to'
-                            ? 'border-blue-500 bg-blue-50'
+                            ? 'border-primary bg-primary/5'
                             : 'border-gray-200'
                         }`}
                         onClick={() => {
@@ -423,7 +423,7 @@ const OptionManagementModal = ({
                               type="text"
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-ring"
                               onKeyPress={(e) => e.key === 'Enter' && saveEdit()}
                               onClick={(e) => e.stopPropagation()}
                               autoFocus
@@ -432,7 +432,7 @@ const OptionManagementModal = ({
                             <div className="flex items-center space-x-2">
                               <span className="font-medium">{option.label}</span>
                               {option.isCustom && (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
                                   사용자 추가
                                 </span>
                               )}
@@ -467,7 +467,7 @@ const OptionManagementModal = ({
                             <>
                               <button
                                 onClick={() => startEdit(option)}
-                                className="p-1 text-blue-600 hover:text-blue-800"
+                                className="p-1 text-primary hover:text-primary/80"
                                 title="편집"
                               >
                                 <Edit2 size={16} />
@@ -508,7 +508,7 @@ const OptionManagementModal = ({
 
               {loadingExpenses ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
                   <p className="mt-2 text-gray-500">지출 내역 로딩 중...</p>
                 </div>
               ) : expenses.length === 0 ? (
@@ -584,7 +584,7 @@ const OptionManagementModal = ({
               onOptionsUpdated()
               onClose()
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             완료
           </button>

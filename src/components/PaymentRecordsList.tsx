@@ -397,7 +397,7 @@ export default function PaymentRecordsList({
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-xs font-medium transition-colors"
           >
             <Plus size={12} />
             추가
@@ -457,7 +457,7 @@ export default function PaymentRecordsList({
                       href={record.image_file_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:text-blue-800"
+                      className="text-xs text-primary hover:text-primary/80"
                     >
                       📎 파일
                     </a>
@@ -467,7 +467,7 @@ export default function PaymentRecordsList({
                 <div className="flex items-center space-x-1 ml-2">
                   <button
                     onClick={() => setEditingRecord(record)}
-                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                    className="p-1 text-primary hover:text-primary/80 hover:bg-muted/50 rounded"
                     title="수정"
                   >
                     <Edit size={14} />

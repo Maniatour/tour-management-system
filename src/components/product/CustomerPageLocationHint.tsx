@@ -35,11 +35,11 @@ function PathBreadcrumb({ paths }: { paths: string[][] }) {
             {path.map((segment, j) => (
               <span key={j} className="inline-flex items-center">
                 {j > 0 && (
-                  <ChevronRight className="h-3 w-3 shrink-0 text-blue-400 mx-0.5" aria-hidden />
+                  <ChevronRight className="mx-0.5 h-3 w-3 shrink-0 text-primary/60" aria-hidden />
                 )}
                 <span
                   className={
-                    j === path.length - 1 ? 'font-medium text-blue-800' : 'text-blue-600/90'
+                    j === path.length - 1 ? 'font-medium text-primary' : 'text-primary/90'
                   }
                 >
                   {segment}
@@ -48,7 +48,7 @@ function PathBreadcrumb({ paths }: { paths: string[][] }) {
             ))}
           </div>
           {i < paths.length - 1 && (
-            <span className="text-[10px] text-blue-500/70 font-normal py-0.5 block">또는</span>
+            <span className="text-[10px] text-primary/70 font-normal py-0.5 block">또는</span>
           )}
         </div>
       ))}
@@ -114,7 +114,7 @@ function LocationHintPopover({
       </p>
       {hasWeb && (
         <div>
-          <p className="text-[10px] font-medium text-blue-800 mb-0.5 flex items-center gap-1">
+          <p className="text-[10px] font-medium text-primary mb-0.5 flex items-center gap-1">
             <Globe className="h-3 w-3" />
             고객 웹 페이지
           </p>
@@ -208,14 +208,14 @@ function LocationHintButton({
           ? 'border-indigo-200 bg-gradient-to-r from-blue-50 to-violet-50 text-indigo-900 hover:border-indigo-300 hover:from-blue-100 hover:to-violet-100'
           : hasEmail
             ? 'border-violet-200 bg-violet-50 text-violet-900 hover:border-violet-300 hover:bg-violet-100'
-            : 'border-blue-200 bg-blue-50 text-blue-900 hover:border-blue-300 hover:bg-blue-100'
+            : 'border-border bg-primary/5 text-foreground hover:border-border hover:bg-muted'
       } ${canPreview ? 'cursor-pointer' : 'cursor-default'}`}
     >
       <MapPin className={size === 'sm' ? 'h-3 w-3 shrink-0' : 'h-3.5 w-3.5 shrink-0'} />
       <span>노출 위치</span>
       <span className="inline-flex items-center gap-1 opacity-80">
         {hasWeb && (
-          <span className="inline-flex items-center gap-0.5 rounded bg-blue-100/80 px-1 py-0.5 text-[10px] text-blue-800">
+          <span className="inline-flex items-center gap-0.5 rounded bg-primary/10/80 px-1 py-0.5 text-[10px] text-primary">
             <Globe className="h-2.5 w-2.5" />
             웹
           </span>
@@ -382,9 +382,9 @@ export default function CustomerPageLocationHint({
               type="button"
               onClick={openPreview}
               disabled={!canPreviewWeb}
-              className={`inline-flex items-center gap-0.5 text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 ${
+              className={`inline-flex items-center gap-0.5 text-[10px] font-medium text-primary bg-primary/5 px-1.5 py-0.5 rounded border border-border/60 ${
                 canPreviewWeb
-                  ? 'hover:bg-blue-100 hover:border-blue-300 cursor-pointer'
+                  ? 'hover:bg-muted hover:border-border cursor-pointer'
                   : 'cursor-default'
               }`}
             >

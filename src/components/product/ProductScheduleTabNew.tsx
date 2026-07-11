@@ -239,7 +239,7 @@ export default function ProductScheduleTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
   }
@@ -262,7 +262,7 @@ export default function ProductScheduleTab({
             disabled={isNewProduct}
             className={`flex items-center px-3 py-2 rounded-lg text-sm ${
               addMode === 'modal' 
-                ? 'bg-blue-600 text-white' 
+                ? 'bg-primary text-primary-foreground' 
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
@@ -314,7 +314,7 @@ export default function ProductScheduleTab({
             disabled={isNewProduct}
             className={`flex items-center px-3 py-2 rounded-lg text-sm ${
               addMode === 'table' 
-                ? 'bg-blue-600 text-white' 
+                ? 'bg-primary text-primary-foreground' 
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
@@ -341,7 +341,7 @@ export default function ProductScheduleTab({
                     ({schedule.duration_minutes}분)
                   </span>
                   {schedule.is_transport && (
-                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                    <span className="px-2 py-1 text-xs bg-primary/10 text-primary rounded">
                       이동시간
                     </span>
                   )}

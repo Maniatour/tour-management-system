@@ -1394,12 +1394,12 @@ export default function DataSyncPage() {
 
         {/* 현재 상태 표시 */}
         {cleanupStatus && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">현재 상태:</h4>
+          <div className="mb-4 p-3 bg-muted/50 border border-border rounded-lg">
+            <h4 className="text-sm font-medium text-primary mb-2">현재 상태:</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div className="bg-white p-2 rounded text-center">
-                <div className="font-bold text-blue-600">{cleanupStatus.summary?.totalReservations || 0}</div>
-                <div className="text-blue-800">총 예약</div>
+                <div className="font-bold text-primary">{cleanupStatus.summary?.totalReservations || 0}</div>
+                <div className="text-primary">총 예약</div>
               </div>
               <div className="bg-white p-2 rounded text-center">
                 <div className="font-bold text-green-600">{cleanupStatus.summary?.reservationsWithChoices || 0}</div>
@@ -1480,9 +1480,9 @@ export default function DataSyncPage() {
                   </div>
                   
                   <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                    <div className="bg-blue-50 p-2 rounded text-center">
-                      <div className="font-bold text-blue-600">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
-                      <div className="text-blue-800">MDGCSUNRISE_X → X</div>
+                    <div className="bg-primary/5 p-2 rounded text-center">
+                      <div className="font-bold text-primary">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
+                      <div className="text-primary">MDGCSUNRISE_X → X</div>
                     </div>
                     <div className="bg-purple-50 p-2 rounded text-center">
                       <div className="font-bold text-purple-600">{cleanupResult.data.mdgc1DXUpdated || 0}</div>
@@ -1517,14 +1517,14 @@ export default function DataSyncPage() {
           <span className="text-sm sm:text-base">선택사항 마이그레이션 (reservation_choices)</span>
         </h2>
         
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="text-sm font-medium text-blue-800 mb-2">마이그레이션 설명:</h3>
-          <ul className="text-sm text-blue-700 space-y-1">
-            <li>• <code className="bg-blue-100 px-1 rounded">reservations.selected_options</code> 컬럼의 데이터를 <code className="bg-blue-100 px-1 rounded">reservation_choices</code> 테이블로 변환합니다.</li>
-            <li>• 이미 <code className="bg-blue-100 px-1 rounded">reservation_choices</code>에 데이터가 있는 예약은 스킵됩니다.</li>
+        <div className="mb-4 p-3 bg-muted/50 border border-border rounded-lg">
+          <h3 className="text-sm font-medium text-primary mb-2">마이그레이션 설명:</h3>
+          <ul className="text-sm text-primary space-y-1">
+            <li>• <code className="bg-primary/10 px-1 rounded">reservations.selected_options</code> 컬럼의 데이터를 <code className="bg-primary/10 px-1 rounded">reservation_choices</code> 테이블로 변환합니다.</li>
+            <li>• 이미 <code className="bg-primary/10 px-1 rounded">reservation_choices</code>에 데이터가 있는 예약은 스킵됩니다.</li>
             <li>• 예약 관리 페이지에서 초이스가 표시되도록 합니다.</li>
           </ul>
-          <p className="text-xs text-blue-600 mt-2">
+          <p className="text-xs text-primary mt-2">
             ※ 이 작업은 5000개 이상의 예약 데이터를 한꺼번에 처리합니다.
           </p>
         </div>
@@ -1535,8 +1535,8 @@ export default function DataSyncPage() {
             <h4 className="text-sm font-medium text-gray-700 mb-2">현재 상태:</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div className="bg-white p-2 rounded text-center">
-                <div className="font-bold text-blue-600">{migrationStatus.totalReservations || 0}</div>
-                <div className="text-blue-800">총 예약</div>
+                <div className="font-bold text-primary">{migrationStatus.totalReservations || 0}</div>
+                <div className="text-primary">총 예약</div>
               </div>
               <div className="bg-white p-2 rounded text-center">
                 <div className="font-bold text-orange-600">{migrationStatus.needsMigration || 0}</div>
@@ -1559,7 +1559,7 @@ export default function DataSyncPage() {
           <button
             onClick={handleSelectedOptionsMigration}
             disabled={migrationLoading}
-            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
+            className="w-full sm:w-auto px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
           >
             <Zap className="h-4 w-4 mr-2" />
             <span className="text-sm sm:text-base">{migrationLoading ? '마이그레이션 중...' : 'reservation_choices 마이그레이션'}</span>
@@ -1606,9 +1606,9 @@ export default function DataSyncPage() {
               {migrationResult.details && (
                 <>
                   <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                    <div className="bg-blue-50 p-2 rounded text-center">
-                      <div className="font-bold text-blue-600">{migrationResult.details.totalProcessed}</div>
-                      <div className="text-blue-800">처리된 예약</div>
+                    <div className="bg-primary/5 p-2 rounded text-center">
+                      <div className="font-bold text-primary">{migrationResult.details.totalProcessed}</div>
+                      <div className="text-primary">처리된 예약</div>
                     </div>
                     <div className="bg-green-50 p-2 rounded text-center">
                       <div className="font-bold text-green-600">{(migrationResult.details as any).totalCreated || migrationResult.details.totalUpdated || 0}</div>
@@ -1682,7 +1682,7 @@ export default function DataSyncPage() {
           <button
             onClick={() => getSheetInfo()}
             disabled={loading}
-            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start text-base sm:text-lg font-medium"
+            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start text-base sm:text-lg font-medium"
           >
             <FileSpreadsheet className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             {loading ? '로딩 중...' : '시트 정보 가져오기'}
@@ -1741,7 +1741,7 @@ export default function DataSyncPage() {
               </div>
             </div>
             {lastSyncTime && (
-              <p className="text-xs text-blue-600 mt-2">
+              <p className="text-xs text-primary mt-2">
                 마지막 동기화: {new Date(lastSyncTime).toLocaleString('ko-KR')}
               </p>
             )}
@@ -1756,7 +1756,7 @@ export default function DataSyncPage() {
               <select
                 value={selectedTable}
                 onChange={(e) => handleTableSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">테이블을 선택하세요</option>
                 {availableTables.map((table) => {
@@ -1797,7 +1797,7 @@ export default function DataSyncPage() {
               <select
                 value={selectedSheet}
                 onChange={(e) => handleSheetSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 disabled={sheetInfo.length === 0}
               >
                 <option value="">시트를 선택하세요</option>
@@ -1865,23 +1865,23 @@ export default function DataSyncPage() {
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">동기화 실행</h3>
           
           {/* 동기화 설정 요약 */}
-          <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-blue-50 rounded-lg">
-            <h4 className="text-xs sm:text-sm font-medium text-blue-800 mb-2">동기화 설정 요약</h4>
+          <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-primary/5 rounded-lg">
+            <h4 className="text-xs sm:text-sm font-medium text-primary mb-2">동기화 설정 요약</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs sm:text-sm">
               <div>
-                <span className="text-blue-700 font-medium">대상 테이블:</span>
-                <span className="ml-2 text-blue-600">{selectedTable}</span>
+                <span className="text-primary font-medium">대상 테이블:</span>
+                <span className="ml-2 text-primary">{selectedTable}</span>
               </div>
               <div>
-                <span className="text-blue-700 font-medium">시트:</span>
-                <span className="ml-2 text-blue-600">{selectedSheet}</span>
+                <span className="text-primary font-medium">시트:</span>
+                <span className="ml-2 text-primary">{selectedSheet}</span>
               </div>
               <div>
-                <span className="text-blue-700 font-medium">매핑된 컬럼:</span>
-                <span className="ml-2 text-blue-600">{Object.keys(columnMapping).length}개</span>
+                <span className="text-primary font-medium">매핑된 컬럼:</span>
+                <span className="ml-2 text-primary">{Object.keys(columnMapping).length}개</span>
               </div>
               <div>
-                <span className="text-blue-700 font-medium">데이터 삭제:</span>
+                <span className="text-primary font-medium">데이터 삭제:</span>
                 <span className={`ml-2 ${truncateTable ? 'text-red-600 font-medium' : 'text-green-600'}`}>
                   {truncateTable ? '예 (전체 삭제 후 동기화)' : '아니오 (기존 데이터 유지)'}
                 </span>
@@ -1955,9 +1955,9 @@ export default function DataSyncPage() {
 
           {/* 실시간 통계 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
-            <div className="bg-blue-50 p-2 sm:p-3 rounded-lg text-center">
-              <div className="text-xl sm:text-2xl font-bold text-blue-600">{realTimeStats.processed}</div>
-              <div className="text-xs sm:text-sm text-blue-800">처리됨</div>
+            <div className="bg-primary/5 p-2 sm:p-3 rounded-lg text-center">
+              <div className="text-xl sm:text-2xl font-bold text-primary">{realTimeStats.processed}</div>
+              <div className="text-xs sm:text-sm text-primary">처리됨</div>
             </div>
             <div className="bg-green-50 p-2 sm:p-3 rounded-lg text-center">
               <div className="text-xl sm:text-2xl font-bold text-green-600">{realTimeStats.inserted}</div>
@@ -2005,21 +2005,21 @@ export default function DataSyncPage() {
             
             {tableColumns.length === 0 ? (
               <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
+                <RefreshCw className="h-5 w-5 animate-spin text-primary mr-2" />
                 <span className="text-gray-600">실제 데이터베이스에서 테이블 스키마를 불러오는 중...</span>
               </div>
             ) : (
               <div className="space-y-6">
                 {/* 헤더 정보 */}
-                <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+                <div className="bg-primary/5 p-3 sm:p-4 rounded-lg">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
                     <div>
-                      <span className="font-medium text-blue-800">선택된 테이블:</span>
-                      <span className="ml-2 text-blue-600 break-words">{selectedTable}</span>
+                      <span className="font-medium text-primary">선택된 테이블:</span>
+                      <span className="ml-2 text-primary break-words">{selectedTable}</span>
                     </div>
                     <div>
-                      <span className="font-medium text-blue-800">데이터베이스 컬럼 수:</span>
-                      <span className="ml-2 text-blue-600">{tableColumns.length}개</span>
+                      <span className="font-medium text-primary">데이터베이스 컬럼 수:</span>
+                      <span className="ml-2 text-primary">{tableColumns.length}개</span>
                       {tableColumns.length > 0 && (
                         <span className="ml-2 text-xs text-green-600">
                           (실시간 조회)
@@ -2027,12 +2027,12 @@ export default function DataSyncPage() {
                       )}
                     </div>
                     <div>
-                      <span className="font-medium text-blue-800">시트 컬럼 수:</span>
-                      <span className="ml-2 text-blue-600">{sheetInfo.find(s => s.name === selectedSheet)?.columns.length || 0}개</span>
+                      <span className="font-medium text-primary">시트 컬럼 수:</span>
+                      <span className="ml-2 text-primary">{sheetInfo.find(s => s.name === selectedSheet)?.columns.length || 0}개</span>
                     </div>
                     <div>
-                      <span className="font-medium text-blue-800">매핑된 컬럼:</span>
-                      <span className="ml-2 text-blue-600">{Object.keys(columnMapping).length}개</span>
+                      <span className="font-medium text-primary">매핑된 컬럼:</span>
+                      <span className="ml-2 text-primary">{Object.keys(columnMapping).length}개</span>
                     </div>
                   </div>
                 </div>
@@ -2054,7 +2054,7 @@ export default function DataSyncPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-center">
                           <div className="col-span-1 sm:col-span-4">
                             <div className="flex items-center">
-                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 flex-shrink-0"></div>
+                              <div className="w-2 h-2 bg-primary/50 rounded-full mr-2 flex-shrink-0"></div>
                               <div className="flex flex-col min-w-0">
                                 <span className="text-xs sm:text-sm font-medium text-gray-900 truncate">{dbColumn.name}</span>
                                 <span className="text-xs text-gray-500">
@@ -2110,7 +2110,7 @@ export default function DataSyncPage() {
                                     setOpenRecommendationIndex(null)
                                   }
                                 }}
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring"
                               >
                                 <option value="">매핑하지 않음</option>
                                 {sheetInfo.find(s => s.name === selectedSheet)?.columns.map((sheetColumn) => (
@@ -2158,7 +2158,7 @@ export default function DataSyncPage() {
                                         }}
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center"
                                       >
-                                        <span className="text-blue-600 font-medium">{suggestion}</span>
+                                        <span className="text-primary font-medium">{suggestion}</span>
                                       </button>
                                     ))}
                                   </div>
@@ -2222,7 +2222,7 @@ export default function DataSyncPage() {
                     }
                     setShowMappingModal(false)
                   }}
-                  className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="w-full sm:w-auto px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                 >
                   저장
                 </button>
@@ -2271,11 +2271,11 @@ export default function DataSyncPage() {
           {/* 상세 통계 */}
           {syncResult.data && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
-              <div className="bg-blue-50 p-3 sm:p-4 rounded-lg text-center">
-                <div className="text-xl sm:text-2xl font-bold text-blue-600">
+              <div className="bg-primary/5 p-3 sm:p-4 rounded-lg text-center">
+                <div className="text-xl sm:text-2xl font-bold text-primary">
                   {(syncResult.data.inserted || 0) + (syncResult.data.updated || 0)}
                 </div>
-                <div className="text-xs sm:text-sm text-blue-800">총 처리</div>
+                <div className="text-xs sm:text-sm text-primary">총 처리</div>
               </div>
               <div className="bg-green-50 p-3 sm:p-4 rounded-lg text-center">
                 <div className="text-xl sm:text-2xl font-bold text-green-600">{syncResult.data.inserted || 0}</div>
@@ -2357,7 +2357,7 @@ export default function DataSyncPage() {
                       navigator.clipboard.writeText(logText)
                       alert('로그가 클립보드에 복사되었습니다.')
                     }}
-                    className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                    className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/90"
                   >
                     로그 복사
                   </button>

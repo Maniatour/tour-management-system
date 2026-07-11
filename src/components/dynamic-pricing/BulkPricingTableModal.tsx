@@ -621,7 +621,7 @@ export default function BulkPricingTableModal({
                                 <select
                                   value={row.channelId}
                                   onChange={(e) => handleUpdateRow(row.id, 'channelId', e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                  className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                 >
                                   <option value="">선택</option>
                                   {allChannels.map((channel, channelIndex) => (
@@ -650,7 +650,7 @@ export default function BulkPricingTableModal({
                                         불포함 금액 타입: {notIncludedTypeLabels[notIncludedType] || notIncludedType}
                                       </div>
                                       {commissionBasePriceOnly && (
-                                        <div className="text-blue-600 font-medium">
+                                        <div className="text-primary font-medium">
                                           판매가격에만 커미션 & 쿠폰 적용
                                         </div>
                                       )}
@@ -664,7 +664,7 @@ export default function BulkPricingTableModal({
                               <select
                                 value={row.variantKey || 'default'}
                                 onChange={(e) => handleUpdateRow(row.id, 'variantKey', e.target.value)}
-                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               >
                                 {productVariants.map((variant) => (
                                   <option key={variant.variant_key} value={variant.variant_key}>
@@ -679,7 +679,7 @@ export default function BulkPricingTableModal({
                                 type="date"
                                 value={row.startDate}
                                 onChange={(e) => handleUpdateRow(row.id, 'startDate', e.target.value)}
-                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               />
                             </td>
                             {/* 종료일 */}
@@ -688,7 +688,7 @@ export default function BulkPricingTableModal({
                                 type="date"
                                 value={row.endDate}
                                 onChange={(e) => handleUpdateRow(row.id, 'endDate', e.target.value)}
-                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                               />
                             </td>
                             {/* OTA 채널은 증차감 컬럼 제거 */}
@@ -802,7 +802,7 @@ export default function BulkPricingTableModal({
                                           return r;
                                         }));
                                       }}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="OTA 판매가"
                                     />
@@ -847,7 +847,7 @@ export default function BulkPricingTableModal({
                                           return r;
                                         }));
                                       }}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -858,7 +858,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.commissionPercent || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -868,7 +868,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.commissionAmount || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -878,7 +878,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.couponPercent || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -888,7 +888,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.notIncludedPrice || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1020,7 +1020,7 @@ export default function BulkPricingTableModal({
                                           return r;
                                         }));
                                       }}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="OTA 판매가"
                                     />
@@ -1065,7 +1065,7 @@ export default function BulkPricingTableModal({
                                           return r;
                                         }));
                                       }}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1076,7 +1076,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.commissionPercent || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1086,7 +1086,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.commissionAmount || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1096,7 +1096,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.couponPercent || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1106,7 +1106,7 @@ export default function BulkPricingTableModal({
                                       type="number"
                                       value={row.notIncludedPrice || ''}
                                       onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
-                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                       step="0.01"
                                       placeholder="0"
                                     />
@@ -1257,7 +1257,7 @@ export default function BulkPricingTableModal({
                                         return r;
                                       }));
                                     }}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="OTA 판매가"
                                   />
@@ -1302,7 +1302,7 @@ export default function BulkPricingTableModal({
                                         return r;
                                       }));
                                     }}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="0"
                                   />
@@ -1313,7 +1313,7 @@ export default function BulkPricingTableModal({
                                     type="number"
                                     value={row.commissionPercent || ''}
                                     onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="0"
                                   />
@@ -1323,7 +1323,7 @@ export default function BulkPricingTableModal({
                                     type="number"
                                     value={row.commissionAmount || ''}
                                     onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="0"
                                   />
@@ -1333,7 +1333,7 @@ export default function BulkPricingTableModal({
                                     type="number"
                                     value={row.couponPercent || ''}
                                     onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="0"
                                   />
@@ -1343,7 +1343,7 @@ export default function BulkPricingTableModal({
                                     type="number"
                                     value={row.notIncludedPrice || ''}
                                     onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
-                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
                                     step="0.01"
                                     placeholder="0"
                                   />
@@ -1394,7 +1394,7 @@ export default function BulkPricingTableModal({
             <div className="flex items-center justify-between mt-3">
               <button
                 onClick={handleAddRow}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm hover:bg-primary/90 transition-colors"
               >
                 <Plus className="h-4 w-4" />
                 <span>{t('addRow')}</span>

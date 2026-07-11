@@ -238,7 +238,7 @@ export default function TourCoursesPage() {
           </button>
           <button
             onClick={() => setShowCategoryModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
           >
             <Settings className="w-4 h-4" />
             카테고리 관리
@@ -256,14 +256,14 @@ export default function TourCoursesPage() {
                 placeholder="투어 코스 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               />
             </div>
           </div>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
           >
             <option value="all">모든 카테고리</option>
             {categories?.map((category) => (
@@ -275,7 +275,7 @@ export default function TourCoursesPage() {
           <select
             value={difficultyFilter}
             onChange={(e) => setDifficultyFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
           >
             <option value="all">모든 난이도</option>
             <option value="easy">쉬움</option>
@@ -311,7 +311,7 @@ export default function TourCoursesPage() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => startEdit(course)}
-                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                            className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded"
                             title="편집"
                           >
                             <Edit className="w-4 h-4" />
@@ -363,7 +363,7 @@ export default function TourCoursesPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => startEdit(selectedCourse)}
-                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                     >
                       편집
                     </button>
@@ -431,9 +431,9 @@ export default function TourCoursesPage() {
               </div>
 
               <div className="space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">새로운 기능</h3>
-                  <ul className="space-y-2 text-blue-800">
+                <div className="bg-muted/50 border border-border rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-foreground mb-2">새로운 기능</h3>
+                  <ul className="space-y-2 text-primary">
                     <li>• 통합된 편집 모달: 기본 정보와 사진 관리를 하나의 모달에서 처리</li>
                     <li>• 사진 업로드: 드래그 앤 드롭으로 쉽게 사진 업로드</li>
                     <li>• 대표 사진 설정: 여러 사진 중 대표 사진 선택 가능</li>

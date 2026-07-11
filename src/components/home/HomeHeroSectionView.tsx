@@ -43,8 +43,8 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
               <p className="cp-ui-muted mb-6">{t('heroSubtitle1')}</p>
               <div className="flex flex-col sm:flex-row gap-3">{ctaPrimary}{ctaSecondary}</div>
             </div>
-            <div className="rounded-2xl min-h-[280px] bg-gradient-to-br from-blue-600/80 to-violet-900/80 flex items-center justify-center text-white">
-              <Play className="h-14 w-14" />
+            <div className="flex min-h-[280px] items-center justify-center rounded-feature border border-border/60 bg-primary/90 text-primary-foreground">
+              <Play className="h-14 w-14 opacity-90" aria-hidden />
             </div>
           </div>
         </div>
@@ -73,8 +73,8 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
         <div className="absolute inset-0 cp-ui-hero-overlay" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         <div className="relative w-full max-w-7xl mx-auto px-4 pb-12 pt-24">
-          <h1 className="text-4xl sm:text-6xl font-bold mb-4 text-white max-w-3xl">{t('specialTravelExperience')}</h1>
-          <p className="text-white/90 mb-8 max-w-2xl">{t('heroSubtitle1')}</p>
+          <h1 className="text-4xl sm:text-6xl font-bold mb-4 max-w-3xl">{t('specialTravelExperience')}</h1>
+          <p className="cp-ui-muted mb-8 max-w-2xl opacity-90">{t('heroSubtitle1')}</p>
           <div className="flex flex-wrap gap-3">{ctaPrimary}{ctaSecondary}</div>
         </div>
       </CustomerPageZone>

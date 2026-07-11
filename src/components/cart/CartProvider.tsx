@@ -478,7 +478,7 @@ export const CartSidebar: React.FC<{
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">{translate('총 가격', 'Total price')}</span>
-                        <span className="font-semibold text-blue-600">${item.totalPrice}</span>
+                        <span className="font-semibold text-primary">${item.totalPrice}</span>
                       </div>
                     </div>
                   </div>
@@ -492,13 +492,13 @@ export const CartSidebar: React.FC<{
             <div className="border-t border-gray-200 p-4">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-lg font-semibold text-gray-900">{translate('총 가격', 'Total price')}</span>
-                <span className="text-xl font-bold text-blue-600">${getTotalPrice()}</span>
+                <span className="text-xl font-bold text-primary">${getTotalPrice()}</span>
               </div>
               
               <div className="space-y-2">
                 <button
                   onClick={onCheckout}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center"
+                  className="w-full bg-primary text-primary-foreground py-3 px-4 rounded-lg hover:bg-primary/90 transition-colors font-medium flex items-center justify-center"
                 >
                   <CreditCard className="h-5 w-5 mr-2" />
                   {translate('결제하기', 'Proceed to payment')}

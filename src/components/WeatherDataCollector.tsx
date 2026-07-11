@@ -142,8 +142,8 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
   return (
     <div className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 ${className}`}>
       <div className="flex items-center mb-4">
-        <div className="bg-blue-100 rounded-full p-2 mr-3">
-          <Cloud className="h-5 w-5 text-blue-600" />
+        <div className="bg-primary/10 rounded-full p-2 mr-3">
+          <Cloud className="h-5 w-5 text-primary" />
         </div>
         <div>
           <h2 className="text-lg font-semibold text-gray-800">날씨 데이터 수집</h2>
@@ -195,7 +195,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
           <button
             onClick={() => collectDataForDate(getToday())}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="px-4 py-2 bg-primary text-primary-foreground text-sm rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             {loading ? (
               <RefreshCw className="h-4 w-4 animate-spin mr-2" />
@@ -261,8 +261,8 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       )}
 
       {/* 안내 메시지 */}
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="text-sm text-blue-700">
+      <div className="mt-4 p-3 bg-muted/50 border border-border rounded-lg">
+        <div className="text-sm text-primary">
           <p className="font-medium mb-1">💡 사용 팁:</p>
           <ul className="text-xs space-y-1">
             <li>• <strong>1개월 일출/일몰</strong>: 그랜드캐년 사우스림 1개월치 일출/일몰 데이터 수집 (권장)</li>

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
@@ -401,7 +401,7 @@ export default function AdminReservations() {
 
     // ????????? ?????(??????? ??? ???)
     const colorPalette = [
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-border",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200",
@@ -4477,7 +4477,7 @@ export default function AdminReservations() {
                 handleSearchSubmit()
               }
             }}
-            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm"
           />
         </div>
         <button
@@ -4490,7 +4490,7 @@ export default function AdminReservations() {
         <button
           type="button"
           onClick={() => setFilterModalOpen(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
         >
           <SlidersHorizontal className="h-4 w-4 shrink-0" />
           <span>{t('filter')}</span>
@@ -4562,7 +4562,7 @@ export default function AdminReservations() {
                 onClick={() => setCardsWeekPage(0)}
                 className={`rounded px-2 py-1 text-xs font-medium ${
                   cardsWeekPage === 0
-                    ? 'border border-blue-600 bg-blue-600 text-white'
+                    ? 'border border-primary bg-primary text-primary-foreground'
                     : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-100'
                 }`}
               >
@@ -4589,7 +4589,7 @@ export default function AdminReservations() {
               {t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}
               {t('groupingLabels.registrationDates')}
               {Object.values(groupedReservations).flat().length !== serverListTotal && serverListTotal > 0 && (
-                <span className="ml-2 text-blue-600">
+                <span className="ml-2 text-primary">
                   ({t('groupingLabels.filteredFromTotal')} {serverListTotal}
                   {t('stats.more')})
                 </span>
@@ -4616,7 +4616,7 @@ export default function AdminReservations() {
                   value={[10, 20, 50, 100].includes(itemsPerPage) ? itemsPerPage : 20}
                   onChange={(e) => handleFiltersItemsPerPageChange(Number(e.target.value))}
                   disabled={serverListLoading}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-transparent focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-transparent focus:ring-1 focus:ring-ring disabled:opacity-50"
                 >
                   {[10, 20, 50, 100].map((n) => (
                     <option key={n} value={n}>
@@ -4645,7 +4645,7 @@ export default function AdminReservations() {
       {showMainBodyLoading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm sm:p-12">
           <div className="mx-auto max-w-md text-center">
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
             <p className="mt-4 text-base font-semibold text-gray-900">{mainBodyLoadingHeadline}</p>
             {reservationsPageLoadingProgress.total > 0 && (
               <div className="mt-4 space-y-2 text-left">
@@ -5611,7 +5611,7 @@ export default function AdminReservations() {
                   href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                  className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
                 >
                   {t('card.openTourInNewTab')}
                 </a>

@@ -853,8 +853,8 @@ const VehicleMaintenanceFormDetails = React.memo(
             isUploading
               ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
               : isDragOver
-                ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer'
-                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                ? 'border-primary bg-primary/10 scale-105 cursor-pointer'
+                : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
           }`}
           onDragOver={!isUploading ? onDragOver : undefined}
           onDragEnter={!isUploading ? onDragEnter : undefined}
@@ -867,12 +867,12 @@ const VehicleMaintenanceFormDetails = React.memo(
           <div className="flex flex-col items-center space-y-2">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                isUploading ? 'bg-blue-100' : isDragOver ? 'bg-blue-200' : 'bg-gray-100'
+                isUploading ? 'bg-primary/10' : isDragOver ? 'bg-blue-200' : 'bg-gray-100'
               }`}
             >
               {isUploading ? (
                 <div className="animate-spin">
-                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -893,7 +893,7 @@ const VehicleMaintenanceFormDetails = React.memo(
               )}
             </div>
             <div>
-              <p className={`text-sm font-medium ${isDragOver ? 'text-blue-900' : 'text-gray-900'}`}>
+              <p className={`text-sm font-medium ${isDragOver ? 'text-foreground' : 'text-gray-900'}`}>
                 {isUploading
                   ? '파일 업로드 중...'
                   : isDragOver
@@ -928,8 +928,8 @@ const VehicleMaintenanceFormDetails = React.memo(
                     className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50"
                   >
                     <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center shrink-0">
-                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center shrink-0">
+                        <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"

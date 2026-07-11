@@ -52,7 +52,7 @@ export default function PickupHotelVehicleAccessSelect({
         <button
           type="button"
           onClick={() => onChange(['regular'])}
-          className="px-3 py-1.5 text-xs rounded-lg border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 transition-colors"
+          className="px-3 py-1.5 text-xs rounded-lg border border-border text-primary bg-primary/5 hover:bg-muted transition-colors"
         >
           {locale === 'en' ? 'Regular only' : 'Regular만 (표준 차량)'}
         </button>

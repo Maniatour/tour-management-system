@@ -288,7 +288,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                   <select
                     value={selectedProductId}
                     onChange={(e) => setSelectedProductId(e.target.value)}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-full"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring flex-1 min-w-0 max-w-full"
                   >
                     <option value="">{params.locale === 'ko' ? '상품 선택' : 'Select Product'}</option>
                     {products.map((p) => {
@@ -349,7 +349,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                   type="date"
                   value={dateValue}
                   onChange={(e) => setDateValue(e.target.value)}
-                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 <button
                   onClick={handleDateSave}
@@ -391,7 +391,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                   type="time"
                   value={timeValue}
                   onChange={(e) => setTimeValue(e.target.value)}
-                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
                 <button
                   onClick={handleTimeSave}
@@ -457,7 +457,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               onClick={onPrivateTourToggle}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
                 isPrivateTour
-                  ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:ring-offset-2'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'
               }`}
             >
@@ -475,7 +475,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                     max={500}
                     value={maxParticipantsInput}
                     onChange={(e) => setMaxParticipantsInput(e.target.value)}
-                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   <span className="text-sm text-gray-500">{params.locale === 'ko' ? '명' : tCommon('people')}</span>
                   <button
@@ -537,12 +537,12 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                   {residentStatusSummary.usResident}{params.locale === 'ko' ? '명' : ''}
                 </div>
               </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="bg-muted/50 border border-border rounded-lg p-3">
                 <div className="flex items-center space-x-2 mb-1">
                   <span className="w-3 h-3 rounded-full bg-blue-600"></span>
-                  <span className="text-xs font-medium text-blue-900">{tCommon('statusNonResident')}</span>
+                  <span className="text-xs font-medium text-foreground">{tCommon('statusNonResident')}</span>
                 </div>
-                <div className="text-lg font-semibold text-blue-900">
+                <div className="text-lg font-semibold text-foreground">
                   {residentStatusSummary.nonResident}{params.locale === 'ko' ? '명' : ''}
                 </div>
               </div>
@@ -580,7 +580,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             value={tourNote}
             onChange={(e) => onTourNoteChange(e.target.value)}
             placeholder={t('tourNotePlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
             rows={3}
           />
         </div>

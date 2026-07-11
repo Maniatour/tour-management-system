@@ -326,7 +326,7 @@ export const getGroupColorClasses = (groupId: string, groupName?: string, _optio
   
   // 특정 그룹에 대한 색상 매핑
   if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {
-    return "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200"
+    return "text-xs px-2 py-1 rounded bg-primary/10 text-primary border border-border"
   }
   if (groupNameStr.includes('hotel') || groupNameStr.includes('호텔') || groupNameStr.includes('room') || groupNameStr.includes('룸')) {
     return "text-xs px-2 py-1 rounded bg-green-100 text-green-800 border border-green-200"
@@ -364,7 +364,7 @@ export const getGroupColorClasses = (groupId: string, groupName?: string, _optio
 
 // 옵션 배지 색상 배열
 export const optionBadgeColors = [
-  'bg-blue-100 text-blue-800',
+  'bg-primary/10 text-primary',
   'bg-green-100 text-green-800',
   'bg-purple-100 text-purple-800',
   'bg-pink-100 text-pink-800',

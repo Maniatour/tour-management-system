@@ -162,7 +162,7 @@ function ComplianceColumn({
           <p className="mt-1 text-xs text-gray-700">
             {uiLocaleEn ? 'Version' : '제'} {latest.version_number} — {latest.title}{' '}
             {signHref ? (
-              <Link className="text-blue-600 underline" href={signHref}>
+              <Link className="text-primary underline" href={signHref}>
                 {uiLocaleEn ? 'Sign page' : '서명 페이지'}
               </Link>
             ) : null}

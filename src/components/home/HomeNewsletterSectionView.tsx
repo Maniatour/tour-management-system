@@ -13,7 +13,7 @@ function NewsletterForm({ t, compact }: { t: (key: string) => string; compact?: 
       <input
         type="email"
         placeholder={t('newsletterPlaceholder')}
-        className="flex-1 rounded-xl border px-4 py-3 text-sm bg-white"
+        className="flex-1 rounded-input border border-input bg-background px-4 py-3 text-sm"
         aria-label={t('newsletterPlaceholder')}
       />
       <button type="submit" className="cp-ui-btn-primary px-6 py-3 rounded-xl font-semibold text-sm shrink-0">
@@ -54,7 +54,7 @@ export default function HomeNewsletterSectionView({
     return (
       <CustomerPageZone zone={zoneId}>
         <div className="max-w-7xl mx-auto px-4 py-10 grid lg:grid-cols-2 gap-8 items-center">
-          <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-700 aspect-[4/3] lg:aspect-auto lg:min-h-64" />
+          <div className="flex aspect-[4/3] min-h-64 items-center justify-center rounded-feature border border-border/60 bg-primary/90 lg:aspect-auto" aria-hidden />
           <div>
             <h2 className="text-2xl font-bold mb-2">{title}</h2>
             <p className="cp-ui-muted mb-6">{t('newsletterDesc')}</p>

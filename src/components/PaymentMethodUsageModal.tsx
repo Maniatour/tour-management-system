@@ -423,13 +423,13 @@ export default function PaymentMethodUsageModal({
             <p className="text-sm text-gray-700">
               총 <strong>{total}</strong>건
             </p>
-            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 space-y-2">
-              <div className="text-xs text-blue-900">
+            <div className="rounded-md border border-border bg-primary/5 px-3 py-2 space-y-2">
+              <div className="text-xs text-foreground">
                 선택된 행 <strong>{selectedCount}</strong>건
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <select
-                  className="border border-blue-200 bg-white rounded px-2 py-1 text-sm min-w-[14rem]"
+                  className="border border-border bg-white rounded px-2 py-1 text-sm min-w-[14rem]"
                   value={bulkPaymentMethod}
                   onChange={(e) => setBulkPaymentMethod(e.target.value)}
                 >
@@ -442,7 +442,7 @@ export default function PaymentMethodUsageModal({
                 </select>
                 <button
                   type="button"
-                  className="text-sm px-3 py-1.5 rounded bg-blue-600 text-white disabled:opacity-50"
+                  className="text-sm px-3 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
                   onClick={() => void applyBulkPaymentMethod()}
                   disabled={bulkSaving || selectedCount === 0 || !bulkPaymentMethod}
                 >
@@ -529,7 +529,7 @@ export default function PaymentMethodUsageModal({
                               {hrefRes && (
                                 <Link
                                   href={hrefRes}
-                                  className="text-xs text-blue-600 hover:underline"
+                                  className="text-xs text-primary hover:underline"
                                   target="_blank"
                                   rel="noreferrer"
                                 >
@@ -539,7 +539,7 @@ export default function PaymentMethodUsageModal({
                               {hrefTour && (
                                 <Link
                                   href={hrefTour}
-                                  className="text-xs text-blue-600 hover:underline"
+                                  className="text-xs text-primary hover:underline"
                                   target="_blank"
                                   rel="noreferrer"
                                 >
@@ -549,7 +549,7 @@ export default function PaymentMethodUsageModal({
                               {g.table === 'company_expenses' && (
                                 <Link
                                   href={`/${locale}/admin/company-expenses`}
-                                  className="text-xs text-blue-600 hover:underline"
+                                  className="text-xs text-primary hover:underline"
                                   target="_blank"
                                   rel="noreferrer"
                                 >

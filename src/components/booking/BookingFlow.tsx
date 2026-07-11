@@ -447,9 +447,9 @@ function PaymentForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-        <h4 className="font-medium text-gray-900 mb-4 flex items-center">
-          <CreditCard className="h-5 w-5 mr-2 text-gray-600" />
+      <div className="rounded-card border border-border/60 bg-muted/50 p-4">
+        <h4 className="mb-4 flex items-center font-medium text-foreground">
+          <CreditCard className="mr-2 h-5 w-5 text-muted-foreground" />
           {translate('카드 정보', 'Card Information')}
         </h4>
         <div className="space-y-4">
@@ -465,10 +465,10 @@ function PaymentForm({
             )}
           </div>
         </div>
-        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="mt-4 rounded-card border border-border/60 bg-booking/5 p-3">
           <div className="flex items-start">
-            <Lock className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-            <span className="text-xs text-blue-800">
+            <Lock className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-booking" />
+            <span className="text-xs text-foreground/80">
               {translate('카드 정보는 Stripe를 통해 안전하게 처리됩니다. 서버에 저장되지 않습니다.', 'Card information is securely processed through Stripe. It is not stored on our servers.')}
             </span>
           </div>
@@ -2192,15 +2192,15 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('예약 정보', 'Booking Details')}</h3>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
                   </div>
                   <div className="ml-3">
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-primary">
                       <strong>{translate('매일 출발 가능합니다!', 'Tours depart daily!')}</strong> {translate('날짜를 선택해주세요.', 'Please select a date.')}
                     </p>
                   </div>
@@ -2209,7 +2209,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               
               {loading ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-booking mx-auto mb-4"></div>
                   <p className="text-gray-600">{translate('투어 스케줄을 불러오는 중...', 'Loading tour availability...')}</p>
                 </div>
               ) : (
@@ -2264,8 +2264,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                             relative p-2 text-sm rounded-lg transition-colors
                             ${!day.isCurrentMonth ? 'text-gray-300' : ''}
                             ${!day.isAvailable || closedDates.has(dateString) ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer'}
-                            ${isSelected ? 'bg-blue-500 text-white' : ''}
-                            ${!isSelected && day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) ? 'hover:bg-blue-50 text-gray-900' : ''}
+                            ${isSelected ? 'bg-primary text-primary-foreground' : ''}
+                            ${!isSelected && day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) ? 'hover:bg-muted/50 text-gray-900' : ''}
                             ${isToday && !isSelected ? 'bg-yellow-100 text-yellow-800 font-semibold' : ''}
                             ${closedDates.has(dateString) ? 'bg-red-100 text-red-500' : ''}
                           `}
@@ -2274,7 +2274,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                             <div>{day.date.getDate()}</div>
                             {/* 날짜별 가격 표시 */}
                             {day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) && (
-                              <div className="text-xs font-semibold mt-1 text-blue-600">
+                              <div className="text-xs font-semibold mt-1 text-primary">
                                 {datePrices[dateString] 
                                   ? `$${datePrices[dateString].adult_price}`
                                   : product.base_price 
@@ -2291,7 +2291,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 w-1 h-1 rounded-full
                                 ${getDateStatus(day.date) === 'available' ? 'bg-green-500' : ''}
                                 ${getDateStatus(day.date) === 'recruiting' ? 'bg-orange-500' : ''}
-                                ${getDateStatus(day.date) === 'confirmed' ? 'bg-blue-500' : ''}
+                                ${getDateStatus(day.date) === 'confirmed' ? 'bg-primary' : ''}
                                 ${getDateStatus(day.date) === 'almost_full' ? 'bg-yellow-500' : ''}
                                 ${getDateStatus(day.date) === 'closed' ? 'bg-red-500' : ''}
                               `} />
@@ -2313,7 +2313,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       {statusLabelMap.recruiting}
                     </div>
                     <div className="flex items-center">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-1"></div>
+                      <div className="mr-1 h-2 w-2 rounded-full bg-primary"></div>
                       {statusLabelMap.confirmed}
                     </div>
                     <div className="flex items-center">
@@ -2357,15 +2357,15 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('필수 선택', 'Required Options')}</h3>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
                   </div>
                   <div className="ml-3">
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-primary">
                       <strong>{translate('필수 선택입니다!', 'These are required!')}</strong> {translate('초이스와 인원을 선택해주세요.', 'Please select your choice and number of participants.')}
                     </p>
                   </div>
@@ -2545,11 +2545,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     return (
                     <div key={group.choice_id} className="mb-6">
                       <h4 className="text-base font-semibold text-gray-900 mb-3 flex items-center">
-                        <span className="text-blue-600 mr-1">*</span>
+                        <span className="text-primary mr-1">*</span>
                         {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                       </h4>
                       {hasDescription && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                        <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
                           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                             {groupDescription}
                           </p>
@@ -2844,8 +2844,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 isDisabled
                                   ? 'opacity-50 cursor-not-allowed border-gray-200'
                                   : isSelected
-                                    ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
-                                    : 'border-gray-200 hover:border-blue-400 hover:shadow-lg'
+                                    ? 'border-primary shadow-lg ring-2 ring-ring/30'
+                                    : 'border-border hover:border-booking hover:shadow-lg'
                               }`}
                             >
                               <input
@@ -2864,7 +2864,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                     }))
                                   }
                                 }}
-                                className="absolute top-3 right-3 w-5 h-5 text-blue-600"
+                                className="absolute top-3 right-3 w-5 h-5 text-primary"
                                 required
                                 disabled={isDisabled}
                               />
@@ -2886,12 +2886,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                     }}
                                   />
                                   {isSelected && (
-                                    <div className="absolute inset-0 bg-blue-500/10" />
+                                    <div className="absolute inset-0 bg-primary/10" />
                                   )}
                                 </div>
                               ) : (
-                                <div className="w-full h-56 bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
-                                  <Ticket className="h-16 w-16 text-blue-300" />
+                                <div className="w-full h-56 bg-gradient-to-br from-muted/50 to-muted flex items-center justify-center">
+                                  <Ticket className="h-16 w-16 text-muted-foreground" />
                                 </div>
                               )}
                               
@@ -2957,11 +2957,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                   
                                   if (isAnnualPassCompanion) {
                                     return (
-                                      <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg p-2">
-                                        <p className="text-xs text-blue-800 font-medium mb-1">
+                                      <div className="mb-3 bg-muted/50 border border-border rounded-lg p-2">
+                                        <p className="text-xs text-primary font-medium mb-1">
                                           {translate('👥 동행자 옵션', '👥 Companion Option')}
                                         </p>
-                                        <p className="text-xs text-blue-700">
+                                        <p className="text-xs text-primary">
                                           {translate('애뉴얼 패스 구매자와 함께 입장하는 동행자입니다. 입장료는 무료입니다. (구매자 1명당 최대 3명)', 'Companion traveling with Annual Pass buyer. Entry fee is free. (Max 3 per buyer)')}
                                         </p>
                                       </div>
@@ -2978,7 +2978,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {adultPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('성인', 'Adult')}</span>
-                                          <span className="text-blue-600 font-semibold text-sm">
+                                          <span className="text-primary font-semibold text-sm">
                                             +${adultPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -2986,7 +2986,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {childPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('아동', 'Child')}</span>
-                                          <span className="text-blue-600 font-medium text-xs">
+                                          <span className="text-primary font-medium text-xs">
                                             +${childPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -2994,7 +2994,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {infantPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('유아', 'Infant')}</span>
-                                          <span className="text-blue-600 font-medium text-xs">
+                                          <span className="text-primary font-medium text-xs">
                                             +${infantPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -3019,7 +3019,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       if (isAnnualPassCompanion && adultPrice === 0) {
                                         return (
                                           <div className="mt-2 pt-2 border-t border-gray-200">
-                                            <p className="text-xs text-blue-700 font-medium">
+                                            <p className="text-xs text-primary font-medium">
                                               {translate('✅ 입장료 무료 (애뉴얼 패스 구매자와 함께)', '✅ Free entry (with Annual Pass buyer)')}
                                             </p>
                                           </div>
@@ -3033,7 +3033,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 
                                 {/* 마감 배지 */}
                                 {isDisabled && !isAvailable && (
-                                  <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded mt-3 inline-block self-start">
+                                  <span className="mt-3 inline-block self-start rounded bg-primary/10 px-2 py-1 text-xs text-primary">
                                     {translate('마감', 'Closed')}
                                   </span>
                                 )}
@@ -3273,7 +3273,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         }
                       }))
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder={translate('이름을 입력하세요', 'Enter your name')}
                   />
                 </div>
@@ -3291,7 +3291,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         }
                       }))
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder={translate('이메일을 입력하세요', 'Enter your email')}
                   />
                 </div>
@@ -3309,7 +3309,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           }
                         }))
                       }}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       <option value="">{translate('국가', 'Country')}</option>
                       {countries.map(country => (
@@ -3332,7 +3332,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           }
                         }))
                       }}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                       placeholder={translate('전화번호를 입력하세요', 'Enter your phone number')}
                     />
                   </div>
@@ -3357,7 +3357,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         }
                       }))
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     required
                   >
                     <option value="">{translate('언어를 선택하세요', 'Select your native language')}</option>
@@ -3392,7 +3392,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                               }
                             }))
                           }}
-                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                          className="h-4 w-4 rounded text-primary focus:ring-ring"
                         />
                         <span className="text-sm text-gray-900">{isEnglish ? language.nameEn : language.nameKo}</span>
                       </label>
@@ -3416,7 +3416,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       }))
                     }}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                     placeholder={translate('특별 요청사항이 있다면 입력하세요', 'Let us know if you have any special requests')}
                   />
                 </div>
@@ -3425,8 +3425,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               {/* 로그인/회원가입 섹션 */}
               <div className="border-t border-gray-200 pt-4 mt-4">
                 {!isAuthenticated ? (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm text-blue-800 mb-3">
+                  <div className="bg-muted/50 border border-border rounded-lg p-4">
+                    <p className="text-sm text-primary mb-3">
                       {translate('회원으로 로그인하시면 정보를 자동으로 입력해드립니다.', 'Log in as a member to automatically fill in your information.')}
                     </p>
                     <div className="flex space-x-2">
@@ -3436,7 +3436,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           setAuthMode('login')
                           setShowAuthModal(true)
                         }}
-                        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                        className="flex-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
                       >
                         {translate('로그인', 'Log In')}
                       </button>
@@ -3446,7 +3446,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           setAuthMode('signup')
                           setShowAuthModal(true)
                         }}
-                        className="flex-1 bg-white text-blue-600 border border-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium"
+                        className="flex-1 rounded-lg border border-primary bg-background px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-muted/50"
                       >
                         {translate('회원가입', 'Sign Up')}
                       </button>
@@ -3545,7 +3545,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     )}
                     <div className="flex justify-between font-semibold text-lg">
                       <span>{translate('총 가격', 'Total price')}</span>
-                      <span className="text-blue-600">${calculateFinalPrice().toFixed(2)}</span>
+                      <span className="text-primary">${calculateFinalPrice().toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -3568,7 +3568,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           setCouponError('')
                         }}
                         placeholder={translate('쿠폰 코드 입력', 'Enter coupon code')}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                         onKeyPress={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -3583,7 +3583,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                           validatingCoupon || !couponCode.trim()
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-primary text-primary-foreground hover:bg-primary/90'
                         }`}
                       >
                         {validatingCoupon ? (
@@ -3626,7 +3626,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   <select 
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
                   >
                     <option value="card">{translate('신용카드', 'Credit card')}</option>
                     <option value="bank_transfer">{translate('은행 이체', 'Bank transfer')}</option>
@@ -3657,10 +3657,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
                 {/* 은행 이체 안내 */}
                 {paymentMethod === 'bank_transfer' && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="bg-muted/50 border border-border rounded-lg p-4">
                     <div className="flex items-center">
-                      <CreditCard className="h-5 w-5 text-blue-600 mr-2" />
-                      <span className="text-sm text-blue-800">
+                      <CreditCard className="h-5 w-5 text-primary mr-2" />
+                      <span className="text-sm text-primary">
                         {translate('은행 이체 정보는 예약 확정 후 별도로 안내드립니다.', 'Bank transfer information will be sent separately after your reservation is confirmed.')}
                       </span>
                     </div>
@@ -3689,8 +3689,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="booking-flow-premium flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-feature border border-border/60 bg-card shadow-elevated">
         {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-booking" />}
         <CustomerPageZoneLayoutRenderer
           pageId="product-booking"
@@ -3702,7 +3702,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 <CustomerPageZone
                   zone="booking-overlay-header"
                   productId={product.id}
-                  className="border-b border-gray-200 px-6 py-4 shrink-0"
+                  className="shrink-0 border-b border-border/60 px-6 py-4"
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -3725,7 +3725,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 <CustomerPageZone
                   zone="booking-overlay-stepper"
                   productId={product.id}
-                  className="border-b border-gray-200 px-6 py-4 shrink-0"
+                  className="shrink-0 border-b border-border/60 px-6 py-4"
                 >
                   <div className="flex items-center justify-between">
                     {steps.map((step, index) => {
@@ -3735,12 +3735,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
                       return (
                         <div key={step.id} className="flex items-center">
-                          <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${
                             isActive
-                              ? 'border-blue-500 bg-blue-500 text-white'
+                              ? 'border-booking bg-booking text-booking-foreground'
                               : isCompleted
-                                ? 'border-green-500 bg-green-500 text-white'
-                                : 'border-gray-300 text-gray-400'
+                                ? 'border-success bg-success text-success-foreground'
+                                : 'border-border text-muted-foreground'
                           }`}>
                             {isCompleted ? (
                               <Check className="h-4 w-4" />
@@ -3749,13 +3749,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                             )}
                           </div>
                           <span className={`ml-2 text-sm font-medium ${
-                            isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-400'
+                            isActive ? 'text-booking' : isCompleted ? 'text-success' : 'text-muted-foreground'
                           }`}>
                             {step.title}
                           </span>
                           {index < steps.length - 1 && (
-                            <div className={`w-8 h-0.5 mx-4 ${
-                              isCompleted ? 'bg-green-500' : 'bg-gray-300'
+                            <div className={`mx-4 h-0.5 w-8 ${
+                              isCompleted ? 'bg-success' : 'bg-border'
                             }`} />
                           )}
                         </div>
@@ -3828,7 +3828,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                             disabled={!isStepValid() || !paymentSubmitHandler || paymentProcessing || !stripePromise}
                             className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
                               isStepValid() && paymentSubmitHandler && !paymentProcessing && stripePromise
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             }`}
                           >
@@ -3861,7 +3861,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                             disabled={!isStepValid() || loading}
                             className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
                               isStepValid() && !loading
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             }`}
                           >
@@ -3882,7 +3882,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         disabled={!isStepValid()}
                         className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
                           isStepValid()
-                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
                       >

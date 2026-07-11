@@ -147,7 +147,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Users className="w-5 h-5 mr-2 text-blue-600" />
+            <Users className="w-5 h-5 mr-2 text-primary" />
             배정된 예약 ({assignedReservations.length}명)
           </h3>
         </div>
@@ -206,7 +206,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              <span onClick={() => onEditPickupTime(reservation)} className="cursor-pointer hover:text-blue-600">
+                              <span onClick={() => onEditPickupTime(reservation)} className="cursor-pointer hover:text-primary">
                                 {reservation.pickup_time ? formatTimeWithAMPM(reservation.pickup_time) : '시간 미설정'}
                               </span>
                             )}
@@ -244,7 +244,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              <span onClick={() => onEditPickupHotel(reservation)} className="cursor-pointer hover:text-blue-600">
+                              <span onClick={() => onEditPickupHotel(reservation)} className="cursor-pointer hover:text-primary">
                                 {getPickupHotelName(reservation.pickup_hotel_id)}
                               </span>
                             )}
@@ -281,7 +281,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
                     <div className="flex items-center space-x-2 ml-4">
                       <button
                         onClick={() => onEditReservationClick(reservation)}
-                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="p-2 text-gray-600 hover:text-primary hover:bg-muted/50 rounded-lg transition-colors"
                         title="예약 수정"
                       >
                         <Edit className="w-4 h-4" />
@@ -382,7 +382,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
                     <div className="flex items-center space-x-2 ml-4">
                       <button
                         onClick={() => onEditReservationClick(reservation)}
-                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="p-2 text-gray-600 hover:text-primary hover:bg-muted/50 rounded-lg transition-colors"
                         title="예약 수정"
                       >
                         <Edit className="w-4 h-4" />

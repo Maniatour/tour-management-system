@@ -66,7 +66,7 @@ const TemplateSaveModal: React.FC<TemplateSaveModalProps> = ({
                 onSelectTemplate(null)
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-2"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring mb-2"
           >
             <option value="">{locale === 'ko' ? '새 템플릿 만들기' : 'Create New Template'}</option>
             {savedConfigurations.map((template) => (
@@ -83,7 +83,7 @@ const TemplateSaveModal: React.FC<TemplateSaveModalProps> = ({
             value={saveConfigName}
             onChange={(e) => onSaveConfigNameChange(e.target.value)}
             placeholder={locale === 'ko' ? '예: 그랜드캐년 투어, 라스베가스 시내 투어' : 'e.g., Grand Canyon Tour, Las Vegas City Tour'}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 onSave()
@@ -102,13 +102,13 @@ const TemplateSaveModal: React.FC<TemplateSaveModalProps> = ({
             }
           </p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <div className="text-sm text-blue-900">
+        <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
+          <div className="text-sm text-foreground">
             <div className="font-medium mb-1">{locale === 'ko' ? '저장할 내용:' : 'Content to Save:'}</div>
-            <div className="text-blue-700">
+            <div className="text-primary">
               • {locale === 'ko' ? '선택된 코스:' : 'Selected Courses:'} <span className="font-semibold">{selectedCoursesCount}{locale === 'ko' ? '개' : ''}</span>
             </div>
-            <div className="text-blue-700">
+            <div className="text-primary">
               • {locale === 'ko' ? '순서:' : 'Order:'} <span className="font-semibold">{selectedCoursesOrderCount}{locale === 'ko' ? '개' : ''}</span>
             </div>
           </div>
@@ -116,7 +116,7 @@ const TemplateSaveModal: React.FC<TemplateSaveModalProps> = ({
         <div className="flex gap-2">
           <button
             onClick={onSave}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
           >
             {editingTemplate 
               ? (locale === 'ko' ? '덮어쓰기' : 'Overwrite')

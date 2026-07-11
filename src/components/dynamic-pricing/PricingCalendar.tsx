@@ -544,8 +544,8 @@ export const PricingCalendar = memo(function PricingCalendar({
         onMouseLeave={() => setHoveredDate(null)}
         title={hasDataForDate ? t('clickPriceHistory') : t('selectDate')}
         className={`relative p-2 h-20 border border-gray-200 hover:bg-gray-50 transition-colors ${
-          isSelected ? 'bg-blue-100 border-blue-300' : ''
-        } ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasDataForDate ? 'cursor-pointer' : ''}`}
+          isSelected ? 'bg-primary/10 border-border' : ''
+        } ${isToday ? 'ring-2 ring-primary' : ''} ${hasDataForDate ? 'cursor-pointer' : ''}`}
       >
         {/* 마우스 오버 시 가격 계산식 툴팁 */}
         {hoveredDate === dateString && breakdownTooltipText && (
@@ -569,7 +569,7 @@ export const PricingCalendar = memo(function PricingCalendar({
                   <div className="text-green-600 font-semibold">${singlePrice.maxSalePrice.toFixed(2)}</div>
                 )}
                 {selectedPriceTypes.has('discountPrice') && singlePrice.discountPrice > 0 && (
-                  <div className="text-blue-600">${singlePrice.discountPrice.toFixed(2)}</div>
+                  <div className="text-primary">${singlePrice.discountPrice.toFixed(2)}</div>
                 )}
                 {selectedPriceTypes.has('netPrice') && singlePrice.netPrice > 0 && (
                   <div className="text-purple-600 font-bold">${singlePrice.netPrice.toFixed(2)}</div>
@@ -598,7 +598,7 @@ export const PricingCalendar = memo(function PricingCalendar({
           </div>
         )}
         {pricingRules.length > 1 && !selectedChoice && !singlePrice && (
-          <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+          <div className="absolute top-1 right-1 bg-primary text-primary-foreground text-xs rounded-full w-4 h-4 flex items-center justify-center">
             {pricingRules.length}
           </div>
         )}
@@ -629,7 +629,7 @@ export const PricingCalendar = memo(function PricingCalendar({
               <select
                 value={selectedChoice}
                 onChange={(e) => setSelectedChoice(e.target.value)}
-                className="w-full min-w-0 max-w-full appearance-none bg-white border border-gray-300 rounded-md pl-2 pr-6 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full min-w-0 max-w-full appearance-none bg-white border border-gray-300 rounded-md pl-2 pr-6 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring"
               >
                 <option value="">초이스를 선택하세요</option>
                 {choiceCombinations.map((choice) => (
@@ -648,7 +648,7 @@ export const PricingCalendar = memo(function PricingCalendar({
                   <select
                     value={selectedCouponId}
                     onChange={(e) => setSelectedCouponId(e.target.value)}
-                    className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring"
                     title="쿠폰 선택 시 손님 지불가·Net Price가 해당 할인률로 재계산됩니다"
                   >
                     <option value="">{t('noCoupon')}</option>
@@ -687,11 +687,11 @@ export const PricingCalendar = memo(function PricingCalendar({
               title={priceTooltip}
               className={`flex items-center space-x-1 px-2 py-1 rounded transition-colors ${
                 selectedPriceTypes.has('discountPrice')
-                  ? 'bg-blue-100 border border-blue-600'
+                  ? 'bg-primary/10 border border-primary'
                   : 'bg-gray-100 border border-gray-300 opacity-50'
               }`}
             >
-              <div className={`w-3 h-3 rounded ${selectedPriceTypes.has('discountPrice') ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+              <div className={`h-3 w-3 rounded ${selectedPriceTypes.has('discountPrice') ? 'bg-primary' : 'bg-gray-400'}`}></div>
               <span className="text-gray-600">{t('discountPrice')}</span>
             </button>
             <button
@@ -758,13 +758,13 @@ export const PricingCalendar = memo(function PricingCalendar({
             <span>{t('priceSet')}</span>
           </div>
           <div className="flex items-center space-x-1">
-            <div className="w-3 h-3 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center">
+            <div className="w-3 h-3 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
               2
             </div>
             <span>{t('multipleRules')}</span>
           </div>
           <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <div className="w-2 h-2 bg-primary/50 rounded-full"></div>
             <span>{t('selectedDates')}</span>
           </div>
         </div>

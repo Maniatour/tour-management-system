@@ -233,10 +233,10 @@ export default function ChannelSection({
       
       {/* 선택된 채널 정보 표시 - 검색창 위에 배치 */}
       {formData.channelId && (
-        <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mb-3 px-3 py-2 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-600 font-medium">선택된 채널:</span>
+              <span className="text-xs text-primary font-medium">선택된 채널:</span>
               {(() => {
                 const selectedChannel = channels.find(c => c.id === formData.channelId)
                 return selectedChannel ? (
@@ -263,7 +263,7 @@ export default function ChannelSection({
                         🌐
                       </div>
                     )}
-                    <span className="text-sm text-blue-900 font-medium">
+                    <span className="text-sm text-foreground font-medium">
                       {selectedChannelTitleOverride?.trim() || selectedChannel.name}
                     </span>
                   </div>
@@ -273,14 +273,14 @@ export default function ChannelSection({
             <button
               type="button"
               onClick={() => setFormData((prev: any) => ({ ...prev, channelId: '' }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+              className="text-xs text-primary hover:text-primary/80 px-2 py-1 hover:bg-muted rounded"
             >
               해제
             </button>
           </div>
           {/* Variant 선택 (상품이 선택된 경우에만 표시) - 선택된 채널 박스 안에 통합 */}
           {formData.productId && productVariants.length > 0 && (
-            <div className="pt-2 border-t border-blue-200">
+            <div className="pt-2 border-t border-border">
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Variant
               </label>
@@ -290,7 +290,7 @@ export default function ChannelSection({
                   ...prev,
                   variantKey: e.target.value
                 }))}
-                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
               >
                 {productVariants.map((variant: { variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }) => (
                   <option key={variant.variant_key} value={variant.variant_key}>
@@ -309,7 +309,7 @@ export default function ChannelSection({
           <input
             type="text"
             placeholder="채널명 검색..."
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
             onChange={(e) => setFormData((prev: any) => ({ ...prev, channelSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
           />
         </div>
@@ -327,7 +327,7 @@ export default function ChannelSection({
               onClick={() => setFormData((prev: any) => ({ ...prev, selectedChannelType: type as 'ota' | 'self' | 'partner' }))} // eslint-disable-line @typescript-eslint/no-explicit-any
               className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                 formData.selectedChannelType === type
-                  ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                  ? 'bg-white text-primary border-b-2 border-primary'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
               }`}
             >
@@ -415,7 +415,7 @@ export default function ChannelSection({
                 }}
                 className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50 ${
                   formData.channelId === channel.id && formData.variantKey === variant.variant_key
-                    ? 'bg-blue-500 border-l-4 border-l-blue-500' 
+                    ? 'bg-primary/50 border-l-4 border-l-blue-500' 
                     : ''
                 }`}
               >

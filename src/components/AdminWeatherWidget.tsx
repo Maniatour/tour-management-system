@@ -35,7 +35,7 @@ const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
     return <CloudSnow className="w-4 h-4 text-blue-400" />
   }
   if (description.includes('rain') || description.includes('shower')) {
-    return <CloudRain className="w-4 h-4 text-blue-500" />
+    return <CloudRain className="w-4 h-4 text-primary" />
   }
   if (description.includes('drizzle')) {
     return <CloudDrizzle className="w-4 h-4 text-blue-400" />
@@ -59,7 +59,7 @@ const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
     case 'drizzle':
       return <CloudDrizzle className="w-4 h-4 text-blue-400" />
     case 'rain':
-      return <CloudRain className="w-4 h-4 text-blue-500" />
+      return <CloudRain className="w-4 h-4 text-primary" />
     case 'snow':
       return <CloudSnow className="w-4 h-4 text-blue-400" />
     case 'clear':
@@ -227,7 +227,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
   if (loading) {
     return (
       <div className={`flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg ${className}`}>
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
         <span className="text-sm text-gray-600">날씨 로딩중...</span>
       </div>
     )
@@ -321,7 +321,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
                   onClick={() => setCurrentLocation(location.key as any)}
                   className={`px-3 py-1 text-xs rounded-md transition-colors ${
                     currentLocation === location.key
-                      ? 'bg-blue-100 text-blue-700 font-medium'
+                      ? 'bg-primary/10 text-primary font-medium'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -357,9 +357,9 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
                     key={index} 
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
                       index === selectedDateIndex 
-                        ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
+                        ? 'bg-primary/10 border-2 border-border shadow-sm' 
                         : index === 0 
-                          ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100' 
+                          ? 'bg-muted/50 border border-border hover:bg-muted' 
                           : 'bg-gray-50 hover:bg-gray-100'
                     }`}
                     onClick={() => setSelectedDateIndex(index)}

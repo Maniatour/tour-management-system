@@ -6293,7 +6293,7 @@ export default function ReservationForm({
                 id="reservation-status-desktop"
                 value={formData.status}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
-                className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
               >
                 {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
@@ -6322,7 +6322,7 @@ export default function ReservationForm({
                     ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
                     : undefined
               }
-              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
             </button>
@@ -6420,7 +6420,7 @@ export default function ReservationForm({
                               return next
                             })
                           }}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
                           placeholder="+821012345678"
                         />
                         {(() => {
@@ -6441,7 +6441,7 @@ export default function ReservationForm({
                           type="email"
                           value={formData.customerEmail}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: stripSpacesFromContactInput(e.target.value) }))}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -6451,7 +6451,7 @@ export default function ReservationForm({
                           <button
                             type="button"
                             onClick={() => setLanguageDropdownOpen(prev => !prev)}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs bg-white flex items-center justify-between gap-2 text-left"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs bg-white flex items-center justify-between gap-2 text-left"
                           >
                             <span className="flex items-center gap-2">
                               {(() => {
@@ -6480,7 +6480,7 @@ export default function ReservationForm({
                                     setFormData(prev => ({ ...prev, customerLanguage: opt.value }))
                                     setLanguageDropdownOpen(false)
                                   }}
-                                  className={`w-full px-2 py-1.5 text-xs flex items-center gap-2 hover:bg-gray-100 text-left ${formData.customerLanguage === opt.value ? 'bg-blue-50 text-blue-700' : ''}`}
+                                  className={`w-full px-2 py-1.5 text-xs flex items-center gap-2 hover:bg-gray-100 text-left ${formData.customerLanguage === opt.value ? 'bg-primary/5 text-primary' : ''}`}
                                 >
                                   <ReactCountryFlag
                                     countryCode={opt.countryCode}
@@ -6501,7 +6501,7 @@ export default function ReservationForm({
                           type="tel"
                           value={formData.customerEmergencyContact}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerEmergencyContact: e.target.value }))}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -6511,7 +6511,7 @@ export default function ReservationForm({
                           type="text"
                           value={formData.customerAddress}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerAddress: e.target.value }))}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -6521,7 +6521,7 @@ export default function ReservationForm({
                           value={formData.customerSpecialRequests}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerSpecialRequests: e.target.value }))}
                           rows={3}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -6533,7 +6533,7 @@ export default function ReservationForm({
                             ...prev,
                             customerStatus: prev.customerStatus === 'active' ? 'inactive' : 'active'
                           }))}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                             formData.customerStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
                           }`}
                         >
@@ -6544,7 +6544,7 @@ export default function ReservationForm({
                           />
                         </button>
                         <span className={`text-sm font-medium ${
-                          formData.customerStatus === 'active' ? 'text-blue-600' : 'text-gray-500'
+                          formData.customerStatus === 'active' ? 'text-primary' : 'text-gray-500'
                         }`}>
                           {formData.customerStatus === 'active' ? '활성' : '비활성'}
                         </span>
@@ -6583,7 +6583,7 @@ export default function ReservationForm({
                         ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
                         : undefined
                   }
-                  className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  className="flex-1 min-w-0 bg-primary text-primary-foreground py-2.5 px-3 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
                   {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
                 </button>
@@ -6630,7 +6630,7 @@ export default function ReservationForm({
                       id="reservation-status-section"
                       value={formData.status}
                       onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
-                      className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-ring focus:border-transparent"
                     >
                       {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
@@ -6848,7 +6848,7 @@ export default function ReservationForm({
                           setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
                           setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })
                         }}
-                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
                         step="0.01"
                         placeholder="0"
                       />
@@ -6877,7 +6877,7 @@ export default function ReservationForm({
                     }}
                     disabled={pricingAudit.audited && !isSuperPricingAdmin}
                     title={pricingAudit.audited && !isSuperPricingAdmin ? 'Audited 가격 정보는 super 관리자만 저장할 수 있습니다.' : undefined}
-                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     저장
                   </button>
@@ -7026,7 +7026,7 @@ export default function ReservationForm({
               <button
                 type="button"
                 onClick={() => setShowProductChoiceModal(false)}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium"
+                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-xs font-medium"
               >
                 {tCommon('confirm') || '확인'}
               </button>
@@ -7071,7 +7071,7 @@ export default function ReservationForm({
               <button
                 type="button"
                 onClick={() => setShowChannelModal(false)}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium"
+                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-xs font-medium"
               >
                 {tCommon('confirm') || '확인'}
               </button>
@@ -7102,7 +7102,7 @@ export default function ReservationForm({
               </button>
             </div>
 
-            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <div className="mb-4 p-4 bg-primary/5 rounded-lg">
               <p className="text-sm text-gray-700 mb-2">
                 <strong>입력한 정보:</strong>
               </p>
@@ -7197,7 +7197,7 @@ export default function ReservationForm({
                         </div>
                       </div>
                       <div className="flex-shrink-0">
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
                           선택
                         </span>
                       </div>
@@ -7262,7 +7262,7 @@ export default function ReservationForm({
                     setPendingCustomerData(null)
                   }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
               >
                 새로 추가하기
               </button>

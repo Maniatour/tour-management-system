@@ -144,7 +144,7 @@ export function ReservationDetailPageView({
     if (loading || loadingReservation) {
       return (
         <div className="flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
-          <div className="mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+          <div className="mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
           <p className="text-gray-600">Loading...</p>
         </div>
       )

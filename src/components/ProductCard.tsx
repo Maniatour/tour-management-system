@@ -244,7 +244,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
   // 카테고리별 색상 매핑
   const getCategoryColor = (category: string) => {
     const categoryColors: { [key: string]: string } = {
-      tour: 'bg-blue-100 text-blue-800 border-blue-200',
+      tour: 'bg-primary/10 text-primary border-border',
       service: 'bg-purple-100 text-purple-800 border-purple-200',
       hotel: 'bg-amber-100 text-amber-800 border-amber-200',
       transportation: 'bg-green-100 text-green-800 border-green-200',
@@ -456,7 +456,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
           return (
             <span
               key={`transport-${method}-${index}`}
-              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-50 text-blue-700 border border-blue-200"
+              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/5 text-primary border border-border"
               title={method}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -479,8 +479,8 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center space-x-3 min-w-0 flex-1">
-              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <Package className="h-5 w-5 text-blue-600" />
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Package className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-gray-900 line-clamp-2" title={productDisplayName}>
@@ -523,7 +523,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
               <button
                 onClick={handleStatusToggle}
                 disabled={isUpdating}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                   localStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
                 } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >

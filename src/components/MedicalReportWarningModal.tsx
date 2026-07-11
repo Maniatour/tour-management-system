@@ -177,7 +177,7 @@ export default function MedicalReportWarningModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            <FileText className="w-6 h-6 text-blue-600" />
+            <FileText className="w-6 h-6 text-primary" />
             <h2 className="text-lg font-semibold text-gray-900">
               {t('medicalReportStatus')}
             </h2>
@@ -194,7 +194,7 @@ export default function MedicalReportWarningModal({
         <div className="p-6">
           {loading ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
               <p className="text-gray-600">{t('checkingStatus')}</p>
             </div>
           ) : (
@@ -254,7 +254,7 @@ export default function MedicalReportWarningModal({
                       onClose()
                       onUploadClick()
                     }}
-                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
+                    className="flex-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center space-x-2"
                   >
                     <FileText className="w-4 h-4" />
                     <span>{t('uploadMedicalReport')}</span>
