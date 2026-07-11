@@ -270,6 +270,7 @@ export default function SopDocumentInlinePreviewEditor({
         value: getChecklistManualValue(item, editLang),
         status: getChecklistManualStatus(item),
         linkedHubArticleIds: getLinkedHubArticleIds(item),
+        documentTitle: rowLabel || blockLabel || (isEn ? 'Manual notes' : '메뉴얼'),
         title: isEn ? 'View manual' : '메뉴얼 보기',
         editTitle: isEn ? 'Edit manual' : '메뉴얼 수정',
         description: rowLabel
@@ -294,6 +295,7 @@ export default function SopDocumentInlinePreviewEditor({
         value: getCategoryManualValue(category, editLang),
         status: getCategoryManualStatus(category),
         linkedHubArticleIds: getLinkedHubArticleIds(category),
+        documentTitle: blockLabel || (isEn ? 'Block manual' : '영역 메뉴얼'),
         title: isEn ? 'View block manual' : '영역 메뉴얼 보기',
         editTitle: isEn ? 'Edit block manual' : '영역 메뉴얼 수정',
         description: blockLabel
@@ -717,6 +719,7 @@ export default function SopDocumentInlinePreviewEditor({
           title={manualEditContext.title}
           {...(manualEditContext.editTitle ? { editTitle: manualEditContext.editTitle } : {})}
           {...(manualEditContext.description ? { description: manualEditContext.description } : {})}
+          documentTitle={manualEditContext.documentTitle}
           value={manualEditContext.value}
           status={manualEditContext.status}
           linkedHubArticleIds={manualEditContext.linkedHubArticleIds}
@@ -726,6 +729,17 @@ export default function SopDocumentInlinePreviewEditor({
           langLabel={manualEditContext.langLabel}
           startInViewMode
           onSave={handleManualSave}
+          onHubArticleCreated={(article) => {
+            setHubArticles((prev) => {
+              if (prev.some((a) => a.id === article.id)) return prev
+              return [...prev, article].sort((a, b) =>
+                (a.title_ko || a.title_en || a.slug).localeCompare(
+                  b.title_ko || b.title_en || b.slug,
+                  'ko'
+                )
+              )
+            })
+          }}
         />
       ) : null}
 

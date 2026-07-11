@@ -1,4 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  buildOfficeScheduleOffDaySavePayload,
+  offDayMapsEqual,
+  type OffDayMap,
+} from '@/lib/officeScheduleOffDays'
 import { parseSlotKeyForSave } from '@/lib/officeScheduleStats'
 
 export type OfficeScheduleSlotPayload = {
@@ -11,6 +16,8 @@ export type OfficeScheduleSlotPayload = {
 export type OfficeScheduleSavePayload = {
   deletes: OfficeScheduleSlotPayload[]
   upserts: OfficeScheduleSlotPayload[]
+  offDeletes: Array<{ employee_email: string; schedule_date: string }>
+  offUpserts: Array<{ employee_email: string; schedule_date: string; note?: string | null }>
   scopeMonth: string
   snapshotFrom: string
   snapshotTo: string
@@ -31,6 +38,8 @@ function mayEditSlot(
 export function buildOfficeScheduleSavePayload(
   savedSlotMap: SlotMap,
   draftSlotMap: SlotMap,
+  savedOffDayMap: OffDayMap,
+  draftOffDayMap: OffDayMap,
   canEditAll: boolean,
   currentUserEmail: string,
   scopeMonth: string,
@@ -65,7 +74,44 @@ export function buildOfficeScheduleSavePayload(
     })
   }
 
-  return { deletes, upserts, scopeMonth, snapshotFrom, snapshotTo }
+  const offPayload = buildOfficeScheduleOffDaySavePayload(
+    savedOffDayMap,
+    draftOffDayMap,
+    canEditAll,
+    currentUserEmail
+  )
+
+  return {
+    deletes,
+    upserts,
+    offDeletes: offPayload.deletes,
+    offUpserts: offPayload.upserts,
+    scopeMonth,
+    snapshotFrom,
+    snapshotTo,
+  }
+}
+
+export function scheduleDraftsEqual(
+  savedSlots: SlotMap,
+  draftSlots: SlotMap,
+  savedOffDays: OffDayMap,
+  draftOffDays: OffDayMap
+): boolean {
+  return (
+    slotMapsEqual(savedSlots, draftSlots) && offDayMapsEqual(savedOffDays, draftOffDays)
+  )
+}
+
+function slotMapsEqual(
+  a: Map<string, { note: string | null }>,
+  b: Map<string, { note: string | null }>
+): boolean {
+  if (a.size !== b.size) return false
+  for (const key of a.keys()) {
+    if (!b.has(key)) return false
+  }
+  return true
 }
 
 export async function saveOfficeScheduleBatch(
@@ -78,6 +124,8 @@ export async function saveOfficeScheduleBatch(
     p_scope_month: payload.scopeMonth,
     p_snapshot_from: payload.snapshotFrom,
     p_snapshot_to: payload.snapshotTo,
+    p_off_deletes: payload.offDeletes,
+    p_off_upserts: payload.offUpserts,
   })
 
   if (error) throw error

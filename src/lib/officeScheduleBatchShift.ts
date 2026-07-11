@@ -25,15 +25,20 @@ export function batchShiftTimeLabel(shift: OfficeBatchShift): string {
   return shift === 'first_half' ? '12:00 PM' : '4:00 PM'
 }
 
-export function workDatesInMonth(monthYmd: string, restDays: number[]): string[] {
+export function workDatesInMonth(
+  monthYmd: string,
+  restDays: number[],
+  skipDates?: Set<string>
+): string[] {
   const monthStart = dayjs(`${monthYmd}-01`)
   const daysInMonth = monthStart.daysInMonth()
   const rest = new Set(normalizeRestDays(restDays))
   const dates: string[] = []
   for (let d = 1; d <= daysInMonth; d++) {
     const date = monthStart.date(d)
-    if (!rest.has(date.day())) {
-      dates.push(date.format('YYYY-MM-DD'))
+    const ymd = date.format('YYYY-MM-DD')
+    if (!rest.has(date.day()) && !skipDates?.has(ymd)) {
+      dates.push(ymd)
     }
   }
   return dates
@@ -43,9 +48,10 @@ export function buildBatchShiftSlotKeys(
   email: string,
   monthYmd: string,
   restDays: number[],
-  shift: OfficeBatchShift
+  shift: OfficeBatchShift,
+  skipDates?: Set<string>
 ): string[] {
-  const dates = workDatesInMonth(monthYmd, restDays)
+  const dates = workDatesInMonth(monthYmd, restDays, skipDates)
   const hourSlots = hourSlotsForBatchShift(shift)
   const keys: string[] = []
   for (const date of dates) {
@@ -61,8 +67,9 @@ export function countNewBatchShiftSlots(
   email: string,
   monthYmd: string,
   restDays: number[],
-  shift: OfficeBatchShift
+  shift: OfficeBatchShift,
+  skipDates?: Set<string>
 ): number {
-  const keys = buildBatchShiftSlotKeys(email, monthYmd, restDays, shift)
+  const keys = buildBatchShiftSlotKeys(email, monthYmd, restDays, shift, skipDates)
   return keys.filter((key) => !draftSlotMap.has(key)).length
 }

@@ -17,6 +17,7 @@ const VARIANT_PROPS = {
   title: {
     height: 100,
     enableImageUpload: false,
+    enableTable: false,
     enableResize: false,
     enableColorPicker: false,
     enableFontSize: false,

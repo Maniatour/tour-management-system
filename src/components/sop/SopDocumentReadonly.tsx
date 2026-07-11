@@ -71,7 +71,7 @@ function RichLine({
   return (
     <div
       className={cn(
-        'w-full min-w-0 break-words prose prose-sm max-w-none text-gray-800 [&_*]:max-w-full [&_img]:h-auto [&_img]:max-w-full [&_ul]:my-2 [&_p]:my-1',
+        'w-full min-w-0 break-words prose prose-sm max-w-none text-gray-800 [&_*]:max-w-full [&_img]:h-auto [&_img]:max-w-full [&_ul]:my-2 [&_p]:my-1 [&_table]:my-3 [&_th]:text-left [&_td]:align-top [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold',
         flat || !bordered ? 'pl-0' : 'ml-1 border-l-2 border-gray-100 pl-6'
       )}
       dangerouslySetInnerHTML={{ __html: markdownToHtml(t) }}

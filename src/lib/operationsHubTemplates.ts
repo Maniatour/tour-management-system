@@ -9,6 +9,7 @@ import {
   type SopSection,
 } from '@/types/sopStructure'
 import type { Json } from '@/lib/database.types'
+import { reservationAdminManualDocument } from '@/lib/reservationAdminManualDocument'
 
 type ArticleSeed = {
   slug: string
@@ -674,27 +675,13 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
       'system-admin-reservation',
       '관리자 — 예약 관리 화면',
       'Admin — reservation management',
-      '예약 목록·상세·Pricing·상태 변경',
-      'List, detail, pricing, status changes',
+      '예약 목록·상세·Pricing·Follow-up·처리 필요 큐',
+      'List, detail, pricing, follow-up, action queues',
       'system',
       'system_guide',
       ['op', 'office manager', 'office'],
       0,
-      doc('예약 관리', 'Reservation admin', [
-        sec('화면 구성', 'Screen layout', 0, [
-          cat(
-            '주요 영역',
-            'Main areas',
-            '- **목록**: 필터(날짜·채널·상태)·검색\n- **상세**: 고객·상품·메모·연결 투어\n- **Pricing**: 매출·지출·운영이익·환불·잔액\n- **Choices**: 옵션·식사·입장권\n- **문서**: itinerary·바우처 생성',
-            '- **List**: filters (date, channel, status), search\n- **Detail**: customer, product, memo, linked tour\n- **Pricing**: revenue, costs, profit, refund, balance\n- **Choices**: options, meals, tickets\n- **Documents**: itinerary/voucher generation',
-            0,
-            checks([
-              { ko: '상태 변경 시 감사 로그 확인(필요 시)', en: 'Check audit log on status change' },
-              { ko: 'Pricing 저장 전 숫자 재확인', en: 'Recheck numbers before saving Pricing' },
-            ])
-          ),
-        ]),
-      ])
+      reservationAdminManualDocument
     ),
 
     seed(

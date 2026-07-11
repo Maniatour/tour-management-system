@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useState, useCallback } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Table2 } from 'lucide-react'
 
 /** contentEditable 루트 안에서 커서가 ul/ol/li 안에 있는지 */
 function selectionInsideList(root: HTMLElement | null): boolean {
@@ -14,6 +14,25 @@ function selectionInsideList(root: HTMLElement | null): boolean {
     if (node instanceof HTMLElement) {
       const t = node.tagName.toLowerCase()
       if (t === 'ul' || t === 'ol' || t === 'li') return true
+    }
+    node = node.parentNode
+  }
+  return false
+}
+
+/** contentEditable 루트 안에서 커서가 table/td/th 안에 있는지 */
+function selectionInsideTable(root: HTMLElement | null): boolean {
+  if (!root) return false
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return false
+  let node: Node | null = sel.anchorNode
+  if (node?.nodeType === Node.TEXT_NODE) node = (node as Text).parentElement
+  while (node && node !== root) {
+    if (node instanceof HTMLElement) {
+      const t = node.tagName.toLowerCase()
+      if (t === 'table' || t === 'thead' || t === 'tbody' || t === 'tr' || t === 'td' || t === 'th') {
+        return true
+      }
     }
     node = node.parentNode
   }
@@ -155,6 +174,92 @@ function tokenizeSopFontSizeSpans(html: string): string {
   return out
 }
 
+function parseMarkdownTableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function isMarkdownTableSeparatorLine(line: string): boolean {
+  const cells = parseMarkdownTableCells(line)
+  if (cells.length < 2) return false
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, '')))
+}
+
+function isMarkdownTableRowLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return false
+  const cells = parseMarkdownTableCells(trimmed)
+  return cells.length >= 2 && cells.some((cell) => cell.length > 0)
+}
+
+const TABLE_WRAPPER_STYLE =
+  'overflow-x: auto; margin: 1rem 0; border: 1px solid #e2e8f0; border-radius: 0.75rem;'
+const TABLE_STYLE = 'width: 100%; border-collapse: collapse; font-size: 0.875rem; line-height: 1.5;'
+const TABLE_TH_STYLE =
+  'border: 1px solid #e2e8f0; padding: 0.55rem 0.75rem; text-align: left; font-weight: 600; background: #f8fafc; color: #0f172a;'
+const TABLE_TD_STYLE =
+  'border: 1px solid #e2e8f0; padding: 0.55rem 0.75rem; vertical-align: top; color: #334155;'
+const TABLE_TR_STYLE = 'border-bottom: 1px solid #e2e8f0;'
+
+function buildEditableTableHtml(rows: number, cols: number): string {
+  const safeRows = Math.max(2, Math.min(rows, 20))
+  const safeCols = Math.max(2, Math.min(cols, 8))
+
+  const headerCells = Array.from({ length: safeCols }, (_, i) =>
+    `<th style="${TABLE_TH_STYLE}">열 ${i + 1}</th>`
+  ).join('')
+
+  const bodyRows = Array.from({ length: safeRows - 1 }, () => {
+    const cells = Array.from({ length: safeCols }, () => `<td style="${TABLE_TD_STYLE}">&nbsp;</td>`).join('')
+    return `<tr style="${TABLE_TR_STYLE}">${cells}</tr>`
+  }).join('')
+
+  return `<div style="${TABLE_WRAPPER_STYLE}"><table style="${TABLE_STYLE}"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div><p><br></p>`
+}
+
+function renderMarkdownTableHtml(lines: string[]): string {
+  const dataRows = lines
+    .filter((line) => isMarkdownTableRowLine(line) && !isMarkdownTableSeparatorLine(line))
+    .map(parseMarkdownTableCells)
+    .filter((cells) => cells.length >= 2)
+
+  if (dataRows.length < 1) return ''
+
+  const [headerCells, ...bodyRows] = dataRows
+  const headerHtml = headerCells
+    .map((cell) => `<th style="${TABLE_TH_STYLE}">${cell}</th>`)
+    .join('')
+
+  const bodyHtml = bodyRows
+    .map((cells) => {
+      const tds = cells.map((cell) => `<td style="${TABLE_TD_STYLE}">${cell}</td>`).join('')
+      return `<tr style="${TABLE_TR_STYLE}">${tds}</tr>`
+    })
+    .join('')
+
+  return `<div style="${TABLE_WRAPPER_STYLE}"><table style="${TABLE_STYLE}"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`
+}
+
+function renderMarkdownHeadingHtml(line: string): string | null {
+  const match = line.trim().match(/^(#{1,6})\s+(.+)$/)
+  if (!match) return null
+  const level = match[1]!.length
+  const text = match[2]!.trim()
+  const styles: Record<number, string> = {
+    1: 'margin: 1.25em 0 0.5em; font-size: 1.35rem; font-weight: 700; color: #0f172a;',
+    2: 'margin: 1.1em 0 0.45em; font-size: 1.2rem; font-weight: 700; color: #0f172a;',
+    3: 'margin: 1em 0 0.4em; font-size: 1.05rem; font-weight: 700; color: #1e293b;',
+    4: 'margin: 0.85em 0 0.35em; font-size: 1rem; font-weight: 600; color: #1e293b;',
+    5: 'margin: 0.75em 0 0.3em; font-size: 0.95rem; font-weight: 600; color: #334155;',
+    6: 'margin: 0.65em 0 0.25em; font-size: 0.9rem; font-weight: 600; color: #334155;',
+  }
+  return `<h${level} style="${styles[level] ?? styles[3]}">${text}</h${level}>`
+}
+
 // 마크다운을 HTML로 변환하는 함수
 export const markdownToHtml = (markdown: string, options?: { editableImages?: boolean }): string => {
   if (!markdown) return ''
@@ -166,6 +271,12 @@ export const markdownToHtml = (markdown: string, options?: { editableImages?: bo
   // 이미지 변환: ![alt](src) -> <img ...> (sopimg 토큰은 위에서 이미 처리)
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) =>
     buildSopImageHtml(src, alt, null, options?.editableImages ?? false)
+  )
+
+  // 인라인 코드: `text` -> <code>
+  html = html.replace(
+    /`([^`]+)`/g,
+    '<code style="padding: 0.1em 0.35em; border-radius: 0.25rem; background: #f1f5f9; font-size: 0.875em; color: #0f172a;">$1</code>'
   )
 
   // 굵게 변환: **text** -> <strong>text</strong>
@@ -220,6 +331,31 @@ export const markdownToHtml = (markdown: string, options?: { editableImages?: bo
       const trimmed = lines[i]?.trim() ?? ''
       if (!trimmed) {
         i += 1
+        continue
+      }
+
+      const headingHtml = renderMarkdownHeadingHtml(trimmed)
+      if (headingHtml) {
+        chunks.push(headingHtml)
+        i += 1
+        continue
+      }
+
+      if (isMarkdownTableRowLine(trimmed)) {
+        const collected: string[] = []
+        while (i < lines.length) {
+          const t = lines[i]?.trim() ?? ''
+          if (!t) break
+          if (!isMarkdownTableRowLine(t) && !isMarkdownTableSeparatorLine(t)) break
+          collected.push(t)
+          i += 1
+        }
+        const tableHtml = renderMarkdownTableHtml(collected)
+        if (tableHtml) {
+          chunks.push(tableHtml)
+        } else {
+          chunks.push(`<p style="${pStyle}">${collected.join('<br>')}</p>`)
+        }
         continue
       }
 
@@ -325,11 +461,72 @@ const liInnerToMarkdownLine = (inner: string): string => {
   return liInnerToMarkdownSegments(inner)[0] ?? ''
 }
 
+/** 표 셀·인라인 HTML을 마크다운 한 줄로 */
+const inlineHtmlToMarkdown = (inner: string): string => {
+  let t = inner
+  t = t.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**')
+  t = t.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
+  t = t.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
+  t = t.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
+  t = t.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+  t = t.replace(/<br\s*\/?>/gi, ' ')
+  t = t.replace(/&nbsp;/gi, ' ')
+  t = t.replace(/<[^>]+>/g, '')
+  return t.replace(/\s+/g, ' ').trim()
+}
+
+function extractTableRowsFromHtml(tableInner: string): string[][] {
+  const rows: string[][] = []
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi
+  let trMatch: RegExpExecArray | null
+  while ((trMatch = trRe.exec(tableInner)) !== null) {
+    const cells: string[] = []
+    const cellRe = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi
+    let cellMatch: RegExpExecArray | null
+    while ((cellMatch = cellRe.exec(trMatch[1])) !== null) {
+      cells.push(inlineHtmlToMarkdown(cellMatch[1]))
+    }
+    if (cells.length >= 2) rows.push(cells)
+  }
+  return rows
+}
+
+function serializeMarkdownTable(rows: string[][]): string {
+  if (rows.length < 1) return ''
+  const colCount = Math.max(...rows.map((row) => row.length))
+  const padRow = (cells: string[]) => {
+    const padded = [...cells]
+    while (padded.length < colCount) padded.push('')
+    return padded.map((cell) => cell.replace(/\|/g, '\\|'))
+  }
+  const [header, ...body] = rows
+  const headerLine = `| ${padRow(header).join(' | ')} |`
+  const sepLine = `| ${Array(colCount).fill('---').join(' | ')} |`
+  const bodyLines = body.map((row) => `| ${padRow(row).join(' | ')} |`)
+  return [headerLine, sepLine, ...bodyLines].join('\n')
+}
+
+function htmlTablesToMarkdown(html: string): string {
+  const convertTableBlock = (tableBlock: string): string => {
+    const tableMatch = /<table[^>]*>([\s\S]*?)<\/table>/i.exec(tableBlock)
+    if (!tableMatch) return tableBlock
+    const rows = extractTableRowsFromHtml(tableMatch[1])
+    const md = serializeMarkdownTable(rows)
+    return md ? `\n\n${md}\n\n` : tableBlock
+  }
+
+  let out = html
+  out = out.replace(/<div[^>]*>\s*<table[\s\S]*?<\/table>\s*<\/div>/gi, convertTableBlock)
+  out = out.replace(/<table[\s\S]*?<\/table>/gi, convertTableBlock)
+  return out
+}
+
 // HTML을 마크다운으로 변환하는 함수
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
   markdown = tokenizeSopFontSizeSpans(markdown)
   markdown = tokenizeSopImages(markdown)
+  markdown = htmlTablesToMarkdown(markdown)
 
   // 굵게 변환: <strong>text</strong> -> **text**
   markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**')
@@ -421,6 +618,7 @@ interface LightRichEditorProps {
   enableFontSize?: boolean
   enableLink?: boolean
   enableList?: boolean
+  enableTable?: boolean
   enableBold?: boolean
   enableItalic?: boolean
   enableUnderline?: boolean
@@ -446,6 +644,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   enableFontSize = true,
   enableLink = true,
   enableList = true,
+  enableTable = true,
   enableBold = true,
   enableItalic = true,
   enableUnderline = true,
@@ -468,6 +667,9 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showFontSizePicker, setShowFontSizePicker] = useState(false)
   const [showBackgroundColorPicker, setShowBackgroundColorPicker] = useState(false)
+  const [showTablePicker, setShowTablePicker] = useState(false)
+  const [tableRows, setTableRows] = useState(3)
+  const [tableCols, setTableCols] = useState(2)
   
   // 사이즈 조정 상태 관리
   const [currentHeight, setCurrentHeight] = useState(height)
@@ -670,12 +872,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 드롭다운 외부 클릭 시 닫기
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showColorPicker || showFontSizePicker || showBackgroundColorPicker) {
+      if (showColorPicker || showFontSizePicker || showBackgroundColorPicker || showTablePicker) {
         const target = event.target as HTMLElement
         if (!target.closest('.relative')) {
           setShowColorPicker(false)
           setShowFontSizePicker(false)
           setShowBackgroundColorPicker(false)
+          setShowTablePicker(false)
         }
       }
     }
@@ -684,7 +887,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showColorPicker, showFontSizePicker, showBackgroundColorPicker])
+  }, [showColorPicker, showFontSizePicker, showBackgroundColorPicker, showTablePicker])
 
   // 사이즈 조정 이벤트 핸들러
   const handleMouseDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -731,6 +934,14 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   const insertList = () => {
     editorRef.current?.focus()
     document.execCommand('insertUnorderedList', false)
+    setTimeout(updateEditorContent, 0)
+  }
+
+  const insertTable = () => {
+    editorRef.current?.focus()
+    const html = buildEditableTableHtml(tableRows, tableCols)
+    document.execCommand('insertHTML', false, html)
+    setShowTablePicker(false)
     setTimeout(updateEditorContent, 0)
   }
 
@@ -877,6 +1088,55 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               • 목록
             </button>
           )}
+          {enableTable && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowTablePicker(!showTablePicker)}
+                className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
+                title="표 삽입"
+              >
+                <Table2 className="h-3.5 w-3.5" aria-hidden />
+                표
+              </button>
+              {showTablePicker && (
+                <div className="absolute top-full left-0 z-20 mt-1 w-52 rounded border border-gray-300 bg-white p-3 shadow-lg">
+                  <p className="mb-2 text-xs font-medium text-gray-600">표 크기</p>
+                  <div className="mb-3 grid grid-cols-2 gap-2">
+                    <label className="text-xs text-gray-600">
+                      행
+                      <input
+                        type="number"
+                        min={2}
+                        max={20}
+                        value={tableRows}
+                        onChange={(e) => setTableRows(Math.max(2, Math.min(20, Number(e.target.value) || 2)))}
+                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                    </label>
+                    <label className="text-xs text-gray-600">
+                      열
+                      <input
+                        type="number"
+                        min={2}
+                        max={8}
+                        value={tableCols}
+                        onChange={(e) => setTableCols(Math.max(2, Math.min(8, Number(e.target.value) || 2)))}
+                        className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={insertTable}
+                    className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
+                  >
+                    표 삽입
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {enableLink && (
             <button
               type="button"
@@ -897,7 +1157,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               🖼️ 이미지
             </button>
           )}
-          {(enableList || enableLink || enableImageUpload) && (
+          {(enableList || enableTable || enableLink || enableImageUpload) && (
             <div className="w-px bg-gray-300 mx-1"></div>
           )}
           
@@ -1060,9 +1320,9 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           readOnly
             ? undefined
             : (e) => {
-          // 목록(ul/ol/li) 안에서는 브라우저 기본 Enter(다음 항목·분할) 유지
+          // 목록(ul/ol/li) 또는 표(table) 안에서는 브라우저 기본 Enter 유지
           if (e.key === 'Enter' && !e.shiftKey) {
-            if (selectionInsideList(editorRef.current)) {
+            if (selectionInsideList(editorRef.current) || selectionInsideTable(editorRef.current)) {
               return
             }
             e.preventDefault()
@@ -1103,7 +1363,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           }
         }
         }
-        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
+        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-slate-200 [&_td]:p-2 [&_td]:align-top [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
         style={{ 
           height: `${currentHeight}px`,
           minHeight: `${minHeight}px`,

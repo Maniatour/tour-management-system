@@ -23,7 +23,7 @@ export async function saveKnowledgeArticle(
     return { ok: false, error: 'title required' }
   }
 
-  const payload = {
+  const basePayload = {
     slug,
     title_ko: form.title_ko.trim(),
     title_en: form.title_en.trim(),
@@ -36,23 +36,32 @@ export async function saveKnowledgeArticle(
     is_published: form.is_published,
     published_at: form.is_published ? new Date().toISOString() : null,
     updated_by: userId,
-    ...(options?.metadataOnly && form.id
-      ? {}
-      : { body_structure: sopDocumentToJson(form.bodyDoc) as Json }),
   }
 
   if (form.id) {
+    const updatePayload =
+      options?.metadataOnly
+        ? basePayload
+        : {
+            ...basePayload,
+            body_structure: sopDocumentToJson(form.bodyDoc) as Json,
+          }
     const { error } = await supabase
       .from('company_knowledge_articles')
-      .update(payload)
+      .update(updatePayload)
       .eq('id', form.id)
     if (error) return { ok: false, error: error.message }
     return { ok: true, slug, id: form.id }
   }
 
+  const insertPayload = {
+    ...basePayload,
+    body_structure: sopDocumentToJson(form.bodyDoc) as Json,
+  }
+
   const { data, error } = await supabase
     .from('company_knowledge_articles')
-    .insert(payload)
+    .insert(insertPayload)
     .select('id')
     .single()
   if (error) return { ok: false, error: error.message }

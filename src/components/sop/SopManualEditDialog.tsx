@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
 import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
+import { useAuth } from '@/contexts/AuthContext'
 import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
+import { saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
+import { buildHubArticleFromManualNotes } from '@/lib/manualToHubDocument'
 import {
   hasChecklistManualContent,
   type ManualSavePayload,
@@ -18,7 +21,7 @@ import {
 import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { cn } from '@/lib/utils'
 import type { SopEditLocale, SopManualStatus } from '@/types/sopStructure'
-import { FileText, GripVertical, Link2, Pencil } from 'lucide-react'
+import { FileText, FilePlus2, GripVertical, Link2, Loader2, Pencil } from 'lucide-react'
 
 const MANUAL_MODAL_DEFAULT_WIDTH = 1024
 const MANUAL_MODAL_DEFAULT_HEIGHT = 800
@@ -32,6 +35,8 @@ type Props = {
   title: string
   editTitle?: string
   description?: string
+  /** 새 허브 문서 제목 (줄/영역 이름) */
+  documentTitle?: string
   value: string
   status: SopManualStatus
   linkedHubArticleIds?: string[]
@@ -42,6 +47,7 @@ type Props = {
   readOnly?: boolean
   startInViewMode?: boolean
   onSave: (payload: ManualSavePayload) => void
+  onHubArticleCreated?: (article: HubArticleLinkOption) => void
 }
 
 function StatusOption({
@@ -107,6 +113,7 @@ export default function SopManualEditDialog({
   title,
   editTitle,
   description,
+  documentTitle,
   value,
   status,
   linkedHubArticleIds = [],
@@ -117,11 +124,15 @@ export default function SopManualEditDialog({
   readOnly = false,
   startInViewMode = false,
   onSave,
+  onHubArticleCreated,
 }: Props) {
+  const { authUser } = useAuth()
   const [draft, setDraft] = useState(value)
   const [draftStatus, setDraftStatus] = useState<SopManualStatus>(status)
   const [draftLinkedIds, setDraftLinkedIds] = useState<string[]>(linkedHubArticleIds)
   const [isEditing, setIsEditing] = useState(false)
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState<string | null>(null)
 
   const isEn = uiLocaleEn
   const canEdit = !readOnly
@@ -135,6 +146,7 @@ export default function SopManualEditDialog({
   const hasInlineContent = hasChecklistManualContent(inlineContent)
   const hasContent = hasInlineContent || isLinked
   const canMarkComplete = hasInlineContent || isLinked
+  const canConvertToDocument = canEdit && hasInlineContent && !converting
   const showStatus = hasContent || !isViewMode || canEdit
   const showLinkedSection = isLinked || !isViewMode || hubArticles.length > 0
   const completeHint = isEn
@@ -144,6 +156,7 @@ export default function SopManualEditDialog({
   useEffect(() => {
     if (!open) return
     setIsEditing(!startInViewMode && canEdit)
+    setConvertError(null)
   }, [open, startInViewMode, canEdit])
 
   useEffect(() => {
@@ -169,6 +182,7 @@ export default function SopManualEditDialog({
     setDraft(value)
     setDraftStatus(status)
     setDraftLinkedIds(linkedHubArticleIds)
+    setConvertError(null)
     if (startInViewMode) {
       setIsEditing(false)
     } else {
@@ -190,6 +204,51 @@ export default function SopManualEditDialog({
       setIsEditing(false)
     } else {
       handleClose()
+    }
+  }
+
+  const handleConvertToDocument = async () => {
+    if (!canConvertToDocument) return
+    const content = inlineContent
+    const confirmMsg = isEn
+      ? 'Create a new Operations Hub document from these notes?\nThe notes will be cleared and the new document will be linked here.'
+      : '직접 작성한 내용으로 새 운영 허브 문서를 만들까요?\n직접 작성 내용은 비워지고, 새 문서가 이 메뉴얼에 연결됩니다.'
+    if (!window.confirm(confirmMsg)) return
+
+    setConverting(true)
+    setConvertError(null)
+    try {
+      const form = buildHubArticleFromManualNotes({
+        title: documentTitle?.trim() || description?.trim() || title,
+        content,
+        lang: viewLang,
+      })
+      const result = await saveKnowledgeArticle(form, authUser?.id ?? null)
+      if (!result.ok) {
+        setConvertError(result.error)
+        return
+      }
+
+      const created: HubArticleLinkOption = {
+        id: result.id,
+        slug: result.slug,
+        title_ko: form.title_ko,
+        title_en: form.title_en,
+        hub_category: form.hub_category as HubArticleLinkOption['hub_category'],
+        is_published: form.is_published,
+      }
+      onHubArticleCreated?.(created)
+
+      const nextLinked = [...new Set([...linkedIds, result.id])]
+      const nextStatus = draftStatus === 'complete' || status === 'complete' ? 'complete' : 'draft'
+      setDraft('')
+      setDraftLinkedIds(nextLinked)
+      setDraftStatus(nextStatus)
+      onSave(buildSavePayload(nextStatus, '', nextLinked))
+    } catch (error) {
+      setConvertError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setConverting(false)
     }
   }
 
@@ -264,10 +323,10 @@ export default function SopManualEditDialog({
                   {isEn ? 'No notes written here yet.' : '직접 작성한 내용이 없습니다.'}
                 </div>
               ) : (
-                <div className="shrink-0">
+                <div className="shrink-0 space-y-3">
                   <LightRichEditor
                     className="flex w-full min-w-0 flex-col"
-                    value={draft}
+                    value={isViewMode ? value : draft}
                     onChange={(v) => setDraft(v ?? '')}
                     placeholder={
                       isEn
@@ -282,6 +341,33 @@ export default function SopManualEditDialog({
                     maxHeight={MANUAL_EDITOR_MAX_HEIGHT}
                     readOnly={isViewMode}
                   />
+                  {canEdit && hasInlineContent ? (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-gray-500">
+                        {isEn
+                          ? 'Turn these notes into a reusable Operations Hub document.'
+                          : '이 내용을 재사용 가능한 운영 허브 문서로 만들 수 있습니다.'}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="w-full shrink-0 touch-manipulation sm:w-auto"
+                        disabled={!canConvertToDocument}
+                        onClick={() => void handleConvertToDocument()}
+                      >
+                        {converting ? (
+                          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                          <FilePlus2 className="mr-1.5 h-4 w-4" />
+                        )}
+                        {isEn ? 'Convert to new document' : '새 문서로 변환'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {convertError ? (
+                    <p className="text-xs text-red-600">{convertError}</p>
+                  ) : null}
                 </div>
               )}
             </section>

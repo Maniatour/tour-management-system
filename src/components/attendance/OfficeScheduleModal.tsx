@@ -39,20 +39,28 @@ import {
   formatHourlyRateLabel,
   formatScheduledDays,
   getScheduleLoadRange,
-  slotMapsEqual,
   sumStaffHoursSummaries,
   sumStaffPaySummaries,
 } from '@/lib/officeScheduleStats'
 import {
   buildOfficeScheduleSavePayload,
   saveOfficeScheduleBatch,
+  scheduleDraftsEqual,
 } from '@/lib/officeScheduleSave'
 import {
   cellsInPaintRectangle,
   paintCellId,
   type PaintCellCoord,
 } from '@/lib/officeSchedulePaintRange'
-import { pushUndoSnapshot } from '@/lib/officeScheduleUndo'
+import { pushScheduleUndoSnapshot, type ScheduleSnapshot } from '@/lib/officeScheduleUndo'
+import {
+  buildOffDaysByDate,
+  cloneOffDayMap,
+  officeScheduleOffDayKey,
+  offDatesForEmployee,
+  removeSlotsForEmployeeOnDate,
+  type OffDayMap,
+} from '@/lib/officeScheduleOffDays'
 import { fetchEmployeeHourlyRatePeriods, getHourlyRateForEmployeeOnDate, type EmployeeRatePeriod } from '@/lib/employeeHourlyRates'
 import OfficeScheduleHistoryPanel from '@/components/attendance/OfficeScheduleHistoryPanel'
 import OfficeScheduleEmployeeSettingsModal from '@/components/attendance/OfficeScheduleEmployeeSettingsModal'
@@ -80,6 +88,12 @@ type SlotRow = {
   employee_email: string
   schedule_date: string
   hour_slot: number
+  note: string | null
+}
+
+type OffDayRow = {
+  employee_email: string
+  schedule_date: string
   note: string | null
 }
 
@@ -137,6 +151,23 @@ function shortDateLabel(dateString: string): string {
 
 function cloneSlotMap(map: SlotMap): SlotMap {
   return new Map(map)
+}
+
+function buildCurrentSnapshot(slots: SlotMap, offDays: OffDayMap): ScheduleSnapshot {
+  return { slots: cloneSlotMap(slots), offDays: cloneOffDayMap(offDays) }
+}
+
+function cellsInOffPaintRange(
+  from: { date: string },
+  to: { date: string },
+  monthDates: string[]
+): { date: string }[] {
+  const fromIdx = monthDates.indexOf(from.date)
+  const toIdx = monthDates.indexOf(to.date)
+  if (fromIdx < 0 || toIdx < 0) return []
+  const min = Math.min(fromIdx, toIdx)
+  const max = Math.max(fromIdx, toIdx)
+  return monthDates.slice(min, max + 1).map((date) => ({ date }))
 }
 
 function buildCellStaffMap(slotMap: SlotMap): Map<string, string[]> {
@@ -241,11 +272,13 @@ export default function OfficeScheduleModal({
   const [error, setError] = useState<string | null>(null)
   const [savedSlotMap, setSavedSlotMap] = useState<SlotMap>(new Map())
   const [draftSlotMap, setDraftSlotMap] = useState<SlotMap>(new Map())
+  const [savedOffDayMap, setSavedOffDayMap] = useState<OffDayMap>(new Map())
+  const [draftOffDayMap, setDraftOffDayMap] = useState<OffDayMap>(new Map())
   const [colorOverrides, setColorOverrides] = useState<StaffColorOverrides>({})
   const [activeBrush, setActiveBrush] = useState<Brush>(null)
   const [statsTick, setStatsTick] = useState(0)
-  const [undoStack, setUndoStack] = useState<SlotMap[]>([])
-  const [redoStack, setRedoStack] = useState<SlotMap[]>([])
+  const [undoStack, setUndoStack] = useState<ScheduleSnapshot[]>([])
+  const [redoStack, setRedoStack] = useState<ScheduleSnapshot[]>([])
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isEmployeeSettingsOpen, setIsEmployeeSettingsOpen] = useState(false)
   const [mobileStatsOpen, setMobileStatsOpen] = useState(false)
@@ -257,12 +290,15 @@ export default function OfficeScheduleModal({
   >(() => new Map())
 
   const draftSlotMapRef = useRef<SlotMap>(new Map())
+  const draftOffDayMapRef = useRef<OffDayMap>(new Map())
   const cellStaffMapRef = useRef<Map<string, string[]>>(new Map())
   const activeBrushRef = useRef<Brush>(null)
   const isPaintingRef = useRef(false)
-  const strokeBeforeRef = useRef<SlotMap | null>(null)
+  const strokeBeforeRef = useRef<ScheduleSnapshot | null>(null)
   const strokeModeRef = useRef<StrokeMode | null>(null)
   const lastPaintedPosRef = useRef<PaintCellCoord | null>(null)
+  const lastPaintedOffDateRef = useRef<string | null>(null)
+  const isPaintingOffRef = useRef(false)
   const monthDateStringsRef = useRef<string[]>([])
   const paintRafRef = useRef<number | null>(null)
   const pointerCaptureTargetRef = useRef<HTMLElement | null>(null)
@@ -272,7 +308,7 @@ export default function OfficeScheduleModal({
     x: number
     y: number
     date: string
-    hourSlot: number
+    hourSlot: number | null
   } | null>(null)
   const canEditAllRef = useRef(canEditAll)
   const currentUserEmailRef = useRef(currentUserEmail)
@@ -296,8 +332,9 @@ export default function OfficeScheduleModal({
   const [isCompactScheduleTable, setIsCompactScheduleTable] = useState(false)
 
   const isDirty = useMemo(
-    () => !slotMapsEqual(savedSlotMap, draftSlotMap),
-    [savedSlotMap, draftSlotMap]
+    () =>
+      !scheduleDraftsEqual(savedSlotMap, draftSlotMap, savedOffDayMap, draftOffDayMap),
+    [savedSlotMap, draftSlotMap, savedOffDayMap, draftOffDayMap]
   )
 
   const scheduleTimeColumnCount = isCompactScheduleTable ? 1 : 2
@@ -323,6 +360,7 @@ export default function OfficeScheduleModal({
     const endStroke = () => {
       if (!isPaintingRef.current) return
       isPaintingRef.current = false
+      isPaintingOffRef.current = false
       strokeModeRef.current = null
       lastPaintedPosRef.current = null
       if (pointerCaptureTargetRef.current && activePointerIdRef.current != null) {
@@ -341,12 +379,21 @@ export default function OfficeScheduleModal({
 
       const before = strokeBeforeRef.current
       strokeBeforeRef.current = null
-      if (before && !slotMapsEqual(before, draftSlotMapRef.current)) {
-        setUndoStack((stack) => pushUndoSnapshot(stack, before))
+      if (
+        before &&
+        !scheduleDraftsEqual(
+          before.slots,
+          draftSlotMapRef.current,
+          before.offDays,
+          draftOffDayMapRef.current
+        )
+      ) {
+        setUndoStack((stack) => pushScheduleUndoSnapshot(stack, before))
         setRedoStack([])
       }
 
       setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+      setDraftOffDayMap(cloneOffDayMap(draftOffDayMapRef.current))
       setSaveSuccess(false)
       setStatsTick((n) => n + 1)
     }
@@ -380,18 +427,24 @@ export default function OfficeScheduleModal({
   const loadSlots = useCallback(async () => {
     const { from, to } = getScheduleLoadRange(monthDays)
     if (!from || !to) return
-    const { data, error: err } = await fromUntypedTable(supabase, 'office_schedule_slots')
-      .select('employee_email, schedule_date, hour_slot, note')
-      .gte('schedule_date', from)
-      .lte('schedule_date', to)
-    if (err) {
-      console.error(err)
+    const [slotsResult, offDaysResult] = await Promise.all([
+      fromUntypedTable(supabase, 'office_schedule_slots')
+        .select('employee_email, schedule_date, hour_slot, note')
+        .gte('schedule_date', from)
+        .lte('schedule_date', to),
+      fromUntypedTable(supabase, 'office_schedule_off_days')
+        .select('employee_email, schedule_date, note')
+        .gte('schedule_date', from)
+        .lte('schedule_date', to),
+    ])
+    if (slotsResult.error || offDaysResult.error) {
+      console.error(slotsResult.error ?? offDaysResult.error)
       setError(C.loadError)
       return
     }
     setError(null)
     const next = new Map<string, { note: string | null }>()
-    for (const row of (data || []) as SlotRow[]) {
+    for (const row of (slotsResult.data || []) as SlotRow[]) {
       const date =
         typeof row.schedule_date === 'string'
           ? row.schedule_date.slice(0, 10)
@@ -399,9 +452,21 @@ export default function OfficeScheduleModal({
       const key = officeScheduleSlotKey(row.employee_email, date, row.hour_slot)
       next.set(key, { note: row.note })
     }
+    const nextOffDays = new Map<string, { note: string | null }>()
+    for (const row of (offDaysResult.data || []) as OffDayRow[]) {
+      const date =
+        typeof row.schedule_date === 'string'
+          ? row.schedule_date.slice(0, 10)
+          : String(row.schedule_date)
+      const key = officeScheduleOffDayKey(row.employee_email, date)
+      nextOffDays.set(key, { note: row.note })
+    }
     setSavedSlotMap(next)
     setDraftSlotMap(cloneSlotMap(next))
     draftSlotMapRef.current = cloneSlotMap(next)
+    setSavedOffDayMap(nextOffDays)
+    setDraftOffDayMap(cloneOffDayMap(nextOffDays))
+    draftOffDayMapRef.current = cloneOffDayMap(nextOffDays)
     cellStaffMapRef.current = buildCellStaffMap(next)
     setUndoStack([])
     setRedoStack([])
@@ -550,6 +615,8 @@ export default function OfficeScheduleModal({
     return map
   }, [team, employeeSettingsMap, currentMonth])
 
+  const offDaysByDate = useMemo(() => buildOffDaysByDate(draftOffDayMap), [draftOffDayMap])
+
   const filterEmailsForView = useCallback(
     (emails: string[]): string[] => {
       if (hiddenStaffEmails.size === 0) return emails
@@ -661,6 +728,10 @@ export default function OfficeScheduleModal({
 
       const slotKey = officeScheduleSlotKey(email, date, hourSlot)
       draft.set(slotKey, { note: null })
+      const offKey = officeScheduleOffDayKey(email, date)
+      if (draftOffDayMapRef.current.delete(offKey)) {
+        // work slot and OFF are mutually exclusive
+      }
       const list = cellStaffMapRef.current.get(cellKey) ?? []
       cellStaffMapRef.current.set(cellKey, [...list, email])
       return true
@@ -668,12 +739,87 @@ export default function OfficeScheduleModal({
     []
   )
 
+  const getOffEmailsForDate = useCallback((date: string): string[] => {
+    const emails: string[] = []
+    for (const [key] of draftOffDayMapRef.current) {
+      const [, d] = key.split('|')
+      if (d === date) emails.push(key.split('|')[0])
+    }
+    return emails
+  }, [])
+
+  const resolveOffStrokeMode = useCallback((date: string): StrokeMode | null => {
+    const brush = activeBrushRef.current
+    if (!brush) return null
+    if (brush === 'eraser') return 'remove'
+
+    const email = brush
+    const offKey = officeScheduleOffDayKey(email, date)
+    return draftOffDayMapRef.current.has(offKey) ? 'remove' : 'add'
+  }, [])
+
+  const mutateOffDay = useCallback((date: string, mode: StrokeMode): boolean => {
+    const brush = activeBrushRef.current
+    if (!brush) return false
+
+    const draftOff = draftOffDayMapRef.current
+    const draft = draftSlotMapRef.current
+    let changed = false
+
+    if (mode === 'remove') {
+      const toRemove =
+        brush === 'eraser'
+          ? getOffEmailsForDate(date).filter(
+              (e) =>
+                canEditAllRef.current ||
+                e.trim().toLowerCase() === currentUserEmailRef.current.trim().toLowerCase()
+            )
+          : [brush]
+
+      if (!canEditAllRef.current && brush !== 'eraser') {
+        if (brush.trim().toLowerCase() !== currentUserEmailRef.current.trim().toLowerCase()) {
+          return false
+        }
+      }
+
+      for (const email of toRemove) {
+        if (
+          !canEditAllRef.current &&
+          email.trim().toLowerCase() !== currentUserEmailRef.current.trim().toLowerCase()
+        ) {
+          continue
+        }
+        const offKey = officeScheduleOffDayKey(email, date)
+        if (draftOff.delete(offKey)) changed = true
+      }
+      return changed
+    }
+
+    const email = brush
+    if (
+      !canEditAllRef.current &&
+      email.trim().toLowerCase() !== currentUserEmailRef.current.trim().toLowerCase()
+    ) {
+      return false
+    }
+
+    const offKey = officeScheduleOffDayKey(email, date)
+    if (draftOff.has(offKey)) return false
+
+    draftOff.set(offKey, { note: null })
+    if (removeSlotsForEmployeeOnDate(draft, email, date)) {
+      cellStaffMapRef.current = buildCellStaffMap(draft)
+    }
+    return true
+  }, [getOffEmailsForDate])
+
   const flushDraftRender = useCallback(() => {
     if (paintRafRef.current != null) {
       cancelAnimationFrame(paintRafRef.current)
       paintRafRef.current = null
     }
     setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+    setDraftOffDayMap(cloneOffDayMap(draftOffDayMapRef.current))
     setSaveSuccess(false)
   }, [])
 
@@ -682,9 +828,69 @@ export default function OfficeScheduleModal({
     paintRafRef.current = requestAnimationFrame(() => {
       paintRafRef.current = null
       setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+      setDraftOffDayMap(cloneOffDayMap(draftOffDayMapRef.current))
       setSaveSuccess(false)
     })
   }, [])
+
+  const paintOffDates = useCallback(
+    (dates: string[], isStrokeStart: boolean) => {
+      const brush = activeBrushRef.current
+      if (!brush) return
+      if (brush !== 'eraser' && !canEditAllRef.current) {
+        if (brush.trim().toLowerCase() !== currentUserEmailRef.current.trim().toLowerCase()) return
+      }
+
+      let mode = strokeModeRef.current
+      if (isStrokeStart || mode == null) {
+        const first = dates[0]
+        if (!first) return
+        mode = resolveOffStrokeMode(first)
+        if (!mode) return
+        strokeModeRef.current = mode
+      }
+
+      let changed = false
+      for (const date of dates) {
+        if (mutateOffDay(date, mode)) changed = true
+      }
+
+      if (changed) {
+        if (isPaintingRef.current) flushDraftRender()
+        else scheduleDraftRender()
+      }
+    },
+    [flushDraftRender, mutateOffDay, resolveOffStrokeMode, scheduleDraftRender]
+  )
+
+  const paintOffStrokeTo = useCallback(
+    (date: string, isStrokeStart: boolean) => {
+      if (isStrokeStart) {
+        lastPaintedOffDateRef.current = date
+        paintOffDates([date], true)
+        return
+      }
+
+      const last = lastPaintedOffDateRef.current
+      if (!last) {
+        lastPaintedOffDateRef.current = date
+        paintOffDates([date], false)
+        return
+      }
+
+      if (last === date) return
+
+      const dates = cellsInOffPaintRange({ date: last }, { date }, monthDateStringsRef.current).map(
+        (c) => c.date
+      )
+      lastPaintedOffDateRef.current = date
+      paintOffDates(dates, false)
+    },
+    [paintOffDates]
+  )
+
+  const paintOffStrokeToRef = useRef(paintOffStrokeTo)
+  paintOffStrokeToRef.current = paintOffStrokeTo
 
   const paintCells = useCallback(
     (cells: PaintCellCoord[], isStrokeStart: boolean) => {
@@ -749,6 +955,14 @@ export default function OfficeScheduleModal({
     const onPointerMove = (e: PointerEvent) => {
       if (!isPaintingRef.current) return
       const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (isPaintingOffRef.current) {
+        const offCell = el?.closest('[data-off-cell]') as HTMLElement | null
+        if (!offCell) return
+        const date = offCell.dataset.date
+        if (!date) return
+        paintOffStrokeToRef.current(date, false)
+        return
+      }
       const cell = el?.closest('[data-schedule-cell]') as HTMLElement | null
       if (!cell) return
       const date = cell.dataset.date
@@ -786,11 +1000,14 @@ export default function OfficeScheduleModal({
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
-  const applyDraftSnapshot = useCallback((snapshot: SlotMap) => {
-    const next = cloneSlotMap(snapshot)
-    draftSlotMapRef.current = next
-    cellStaffMapRef.current = buildCellStaffMap(next)
-    setDraftSlotMap(cloneSlotMap(next))
+  const applyDraftSnapshot = useCallback((snapshot: ScheduleSnapshot) => {
+    const nextSlots = cloneSlotMap(snapshot.slots)
+    const nextOffDays = cloneOffDayMap(snapshot.offDays)
+    draftSlotMapRef.current = nextSlots
+    draftOffDayMapRef.current = nextOffDays
+    cellStaffMapRef.current = buildCellStaffMap(nextSlots)
+    setDraftSlotMap(cloneSlotMap(nextSlots))
+    setDraftOffDayMap(cloneOffDayMap(nextOffDays))
     setSaveSuccess(false)
     setStatsTick((n) => n + 1)
   }, [])
@@ -798,7 +1015,9 @@ export default function OfficeScheduleModal({
   const handleUndo = useCallback(() => {
     if (isPaintingRef.current || undoStack.length === 0) return
     const prev = undoStack[undoStack.length - 1]
-    setRedoStack((stack) => pushUndoSnapshot(stack, draftSlotMapRef.current))
+    setRedoStack((stack) =>
+      pushScheduleUndoSnapshot(stack, buildCurrentSnapshot(draftSlotMapRef.current, draftOffDayMapRef.current))
+    )
     setUndoStack((stack) => stack.slice(0, -1))
     applyDraftSnapshot(prev)
   }, [undoStack, applyDraftSnapshot])
@@ -806,7 +1025,9 @@ export default function OfficeScheduleModal({
   const handleRedo = useCallback(() => {
     if (isPaintingRef.current || redoStack.length === 0) return
     const next = redoStack[redoStack.length - 1]
-    setUndoStack((stack) => pushUndoSnapshot(stack, draftSlotMapRef.current))
+    setUndoStack((stack) =>
+      pushScheduleUndoSnapshot(stack, buildCurrentSnapshot(draftSlotMapRef.current, draftOffDayMapRef.current))
+    )
     setRedoStack((stack) => stack.slice(0, -1))
     applyDraftSnapshot(next)
   }, [redoStack, applyDraftSnapshot])
@@ -830,7 +1051,11 @@ export default function OfficeScheduleModal({
 
   const startPainting = (e: React.PointerEvent, date: string, hourSlot: number) => {
     if (!canPaintCell()) return
-    strokeBeforeRef.current = cloneSlotMap(draftSlotMapRef.current)
+    isPaintingOffRef.current = false
+    strokeBeforeRef.current = buildCurrentSnapshot(
+      draftSlotMapRef.current,
+      draftOffDayMapRef.current
+    )
     const grid = bodyScrollRef.current
     if (grid) {
       try {
@@ -847,26 +1072,68 @@ export default function OfficeScheduleModal({
     paintStrokeTo({ date, hourSlot }, true)
   }
 
+  const startOffPainting = (e: React.PointerEvent, date: string) => {
+    if (!canPaintCell()) return
+    isPaintingOffRef.current = true
+    strokeBeforeRef.current = buildCurrentSnapshot(
+      draftSlotMapRef.current,
+      draftOffDayMapRef.current
+    )
+    const grid = bodyScrollRef.current
+    if (grid) {
+      try {
+        grid.setPointerCapture(e.pointerId)
+        pointerCaptureTargetRef.current = grid
+        activePointerIdRef.current = e.pointerId
+      } catch {
+        /* ignore */
+      }
+    }
+    isPaintingRef.current = true
+    strokeModeRef.current = null
+    lastPaintedOffDateRef.current = null
+    paintOffStrokeTo(date, true)
+  }
+
   const finishStrokeSnapshot = useCallback(() => {
     const before = strokeBeforeRef.current
     strokeBeforeRef.current = null
-    if (before && !slotMapsEqual(before, draftSlotMapRef.current)) {
-      setUndoStack((stack) => pushUndoSnapshot(stack, before))
+    isPaintingOffRef.current = false
+    if (
+      before &&
+      !scheduleDraftsEqual(
+        before.slots,
+        draftSlotMapRef.current,
+        before.offDays,
+        draftOffDayMapRef.current
+      )
+    ) {
+      setUndoStack((stack) => pushScheduleUndoSnapshot(stack, before))
       setRedoStack([])
     }
     setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+    setDraftOffDayMap(cloneOffDayMap(draftOffDayMapRef.current))
     setSaveSuccess(false)
     setStatsTick((n) => n + 1)
   }, [])
 
   const applyMobileTap = useCallback(
-    (date: string, hourSlot: number) => {
+    (date: string, hourSlot: number | null) => {
       if (!canPaintCell()) return
-      strokeBeforeRef.current = cloneSlotMap(draftSlotMapRef.current)
-      paintStrokeTo({ date, hourSlot }, true)
+      strokeBeforeRef.current = buildCurrentSnapshot(
+        draftSlotMapRef.current,
+        draftOffDayMapRef.current
+      )
+      if (hourSlot == null) {
+        isPaintingOffRef.current = true
+        paintOffStrokeTo(date, true)
+      } else {
+        isPaintingOffRef.current = false
+        paintStrokeTo({ date, hourSlot }, true)
+      }
       finishStrokeSnapshot()
     },
-    [canPaintCell, paintStrokeTo, finishStrokeSnapshot]
+    [canPaintCell, paintStrokeTo, paintOffStrokeTo, finishStrokeSnapshot]
   )
 
   const handleCellPointerDown = (e: React.PointerEvent, date: string, hourSlot: number) => {
@@ -883,6 +1150,22 @@ export default function OfficeScheduleModal({
     }
     e.preventDefault()
     startPainting(e, date, hourSlot)
+  }
+
+  const handleOffCellPointerDown = (e: React.PointerEvent, date: string) => {
+    if (!canPaintCell()) return
+    if (e.pointerType === 'touch') {
+      touchTapPendingRef.current = {
+        pointerId: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        date,
+        hourSlot: null,
+      }
+      return
+    }
+    e.preventDefault()
+    startOffPainting(e, date)
   }
 
   useEffect(() => {
@@ -930,6 +1213,8 @@ export default function OfficeScheduleModal({
       const payload = buildOfficeScheduleSavePayload(
         savedSlotMap,
         draftSlotMap,
+        savedOffDayMap,
+        draftOffDayMap,
         canEditAll,
         currentUserEmail,
         currentMonth,
@@ -937,9 +1222,16 @@ export default function OfficeScheduleModal({
         to
       )
 
-      if (payload.deletes.length === 0 && payload.upserts.length === 0) {
+      if (
+        payload.deletes.length === 0 &&
+        payload.upserts.length === 0 &&
+        payload.offDeletes.length === 0 &&
+        payload.offUpserts.length === 0
+      ) {
         setSavedSlotMap(cloneSlotMap(draftSlotMap))
+        setSavedOffDayMap(cloneOffDayMap(draftOffDayMap))
         draftSlotMapRef.current = cloneSlotMap(draftSlotMap)
+        draftOffDayMapRef.current = cloneOffDayMap(draftOffDayMap)
         cellStaffMapRef.current = buildCellStaffMap(draftSlotMap)
         setUndoStack([])
         setRedoStack([])
@@ -951,7 +1243,9 @@ export default function OfficeScheduleModal({
       await saveOfficeScheduleBatch(supabase, payload)
 
       setSavedSlotMap(cloneSlotMap(draftSlotMap))
+      setSavedOffDayMap(cloneOffDayMap(draftOffDayMap))
       draftSlotMapRef.current = cloneSlotMap(draftSlotMap)
+      draftOffDayMapRef.current = cloneOffDayMap(draftOffDayMap)
       cellStaffMapRef.current = buildCellStaffMap(draftSlotMap)
       setUndoStack([])
       setRedoStack([])
@@ -1014,12 +1308,14 @@ export default function OfficeScheduleModal({
       const shiftLabel =
         shift === 'first_half' ? C.employeeSettingsBatchFirstHalf : C.employeeSettingsBatchSecondHalf
       const timeLabel = batchShiftTimeLabel(shift)
+      const offDates = offDatesForEmployee(draftOffDayMapRef.current, email)
       const newCount = countNewBatchShiftSlots(
         draftSlotMapRef.current,
         email,
         currentMonth,
         restDays,
-        shift
+        shift,
+        offDates
       )
 
       if (newCount === 0) {
@@ -1035,8 +1331,8 @@ export default function OfficeScheduleModal({
       )
       if (!confirmed) return
 
-      const before = cloneSlotMap(draftSlotMapRef.current)
-      const keys = buildBatchShiftSlotKeys(email, currentMonth, restDays, shift)
+      const before = buildCurrentSnapshot(draftSlotMapRef.current, draftOffDayMapRef.current)
+      const keys = buildBatchShiftSlotKeys(email, currentMonth, restDays, shift, offDates)
       let changed = false
       for (const key of keys) {
         if (!draftSlotMapRef.current.has(key)) {
@@ -1048,9 +1344,10 @@ export default function OfficeScheduleModal({
       if (!changed) return
 
       cellStaffMapRef.current = buildCellStaffMap(draftSlotMapRef.current)
-      setUndoStack((stack) => pushUndoSnapshot(stack, before))
+      setUndoStack((stack) => pushScheduleUndoSnapshot(stack, before))
       setRedoStack([])
       setDraftSlotMap(cloneSlotMap(draftSlotMapRef.current))
+      setDraftOffDayMap(cloneOffDayMap(draftOffDayMapRef.current))
       setSaveSuccess(false)
       setStatsTick((n) => n + 1)
       window.alert(C.employeeSettingsBatchFillDone)
@@ -1452,6 +1749,59 @@ export default function OfficeScheduleModal({
                     </tr>
                   </thead>
                   <tbody>
+                    <tr className="border-b-2 border-rose-200 bg-rose-50/40">
+                      <td
+                        colSpan={scheduleTimeColumnCount}
+                        className="sticky left-0 z-10 border-r border-rose-200 px-1 py-1 text-center text-[10px] font-bold text-rose-700 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] bg-rose-50/90"
+                        title={C.offDayHint}
+                      >
+                        {C.offRowLabel}
+                      </td>
+                      {monthDays.map((d) => {
+                        const offEmails = filterEmailsForView(offDaysByDate.get(d.dateString) ?? [])
+                        const { background, color } = cellBackgroundForEmails(offEmails, staffColorMap)
+                        const label =
+                          offEmails.length > 0 ? cellLabelForEmails(offEmails, staffColorMap) : ''
+                        const offBackground =
+                          offEmails.length > 0
+                            ? `repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 6px), ${background}`
+                            : '#fff'
+                        return (
+                          <td
+                            key={`off-${d.dateString}`}
+                            className={`p-0 border-r border-rose-100 align-middle ${
+                              d.isEdgePadding ? 'bg-gray-50/50' : ''
+                            }`}
+                            style={{ height: 24 }}
+                          >
+                            <button
+                              type="button"
+                              disabled={!canPaintCell()}
+                              data-off-cell
+                              data-date={d.dateString}
+                              title={label || (canPaintCell() ? C.offDayHint : C.readOnly)}
+                              onPointerDown={(e) => handleOffCellPointerDown(e, d.dateString)}
+                              className={`w-full h-full min-h-[22px] flex items-center justify-center ${
+                                canPaintCell()
+                                  ? 'cursor-crosshair hover:brightness-95'
+                                  : 'cursor-default'
+                              }`}
+                              style={{ background: offBackground, color }}
+                            >
+                              {offEmails.length > 1 ? (
+                                <span className="text-[8px] leading-none px-0.5 truncate font-bold">
+                                  {offEmails.length}
+                                </span>
+                              ) : offEmails.length === 1 ? (
+                                <span className="text-[8px] leading-none font-bold tracking-tight">
+                                  {C.offDayCellLabel}
+                                </span>
+                              ) : null}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
                     {timeRows.map((row) => (
                       <tr key={row.hourSlot} className="border-b border-gray-200">
                         <td

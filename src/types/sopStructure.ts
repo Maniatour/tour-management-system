@@ -233,6 +233,25 @@ export function allSopChecklistItemsForReuse(doc: SopDocument) {
   return rows
 }
 
+/** 표·제목 등 블록 마크다운 — 체크list 줄 분리 대상이 아님 */
+export function isMarkdownStructuredContent(raw: string): boolean {
+  const normalized = (raw || '').trim()
+  if (!normalized) return false
+
+  const lines = normalized.split(/\n/).map((l) => l.trim()).filter(Boolean)
+  let pipeLines = 0
+  let hasSeparator = false
+  for (const line of lines) {
+    if (line.includes('|')) pipeLines += 1
+    if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) hasSeparator = true
+  }
+  if (pipeLines >= 2 && hasSeparator) return true
+
+  if (/^#{1,6}\s/m.test(normalized)) return true
+
+  return false
+}
+
 /** 리치/마크다운 조각 제거 후 문장 분리용으로만 사용 */
 function stripMarkupForChecklistSplit(raw: string): string {
   let t = raw || ''
@@ -281,6 +300,7 @@ function splitSingleLineBySentencePeriods(line: string): string[] {
 export function splitRichContentToChecklistLines(raw: string): string[] {
   const normalized = stripMarkupForChecklistSplit(raw).trim()
   if (!normalized) return []
+  if (isMarkdownStructuredContent(raw)) return []
   const rawLines = normalized
     .split(/\n+/)
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())

@@ -3,6 +3,12 @@
 import React from "react"
 import { useTranslations } from 'next-intl'
 import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks, LayoutList } from 'lucide-react'
+import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
+import {
+  reservationAdminManualDocument,
+  reservationAdminManualTitles,
+  RESERVATION_ADMIN_MANUAL_SLUG,
+} from '@/lib/reservationAdminManualDocument'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -140,6 +146,13 @@ function ReservationsHeader({
               t('title')
             )}
           </h1>
+
+          <AdminPageHubManualButton
+            slug={RESERVATION_ADMIN_MANUAL_SLUG}
+            fallbackDoc={reservationAdminManualDocument}
+            fallbackTitle={reservationAdminManualTitles}
+            storageKey="reservations-page-manual-modal-rect-v1"
+          />
 
           <div className="flex shrink-0 items-center space-x-1">
             <button

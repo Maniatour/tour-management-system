@@ -67,3 +67,23 @@ export async function fetchHubArticleDocumentById(
   if (!doc) return null
   return { doc, row }
 }
+
+export async function fetchHubArticleDocumentBySlug(
+  slug: string
+): Promise<{ doc: SopDocument; row: KnowledgeArticleRow } | null> {
+  const trimmed = slug.trim()
+  if (!trimmed) return null
+
+  const { data, error } = await supabase
+    .from('company_knowledge_articles')
+    .select(KNOWLEDGE_ARTICLE_SELECT)
+    .eq('slug', trimmed)
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  const row = data as KnowledgeArticleRow
+  const doc = articleBodyToDocument(row)
+  if (!doc) return null
+  return { doc, row }
+}

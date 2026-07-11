@@ -6,7 +6,8 @@ import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as Im
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { loadHtml2Canvas, loadHtml2Pdf, loadJsPDF } from '@/lib/lazyPdfLibs'
+import { loadHtml2Canvas } from '@/lib/lazyPdfLibs'
+import { downloadDomAsA4Pdf } from '@/lib/sopPreviewPrintAndPdf'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
@@ -71,6 +72,7 @@ export default function PickupScheduleEmailPreviewModal({
   const [sentReservations, setSentReservations] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [pdfDownloading, setPdfDownloading] = useState(false)
   const emailPreviewRef = useRef<HTMLDivElement>(null)
   const [reservationDetails, setReservationDetails] = useState<Record<string, ReservationPreviewDetails>>({})
   const [preparationInfoSource, setPreparationInfoSource] = useState<{
@@ -786,101 +788,107 @@ export default function PickupScheduleEmailPreviewModal({
     }
   }
 
+  /** html2canvas가 div innerHTML 조각보다 완전한 HTML 문서(iframe)를 안정적으로 캡처 */
+  const createEmailExportBody = async (html: string): Promise<{ iframe: HTMLIFrameElement; body: HTMLElement }> => {
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('title', 'pickup-email-pdf-export')
+    iframe.style.cssText = [
+      'position:fixed',
+      'left:0',
+      'top:0',
+      'width:794px',
+      'min-height:1200px',
+      'border:0',
+      'opacity:0.02',
+      'pointer-events:none',
+      'z-index:2147483646',
+    ].join(';')
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentDocument
+    if (!doc) {
+      iframe.remove()
+      throw new Error('PDF export iframe unavailable')
+    }
+
+    doc.open()
+    doc.write(html)
+    doc.close()
+
+    await new Promise<void>((resolve) => {
+      if (doc.readyState === 'complete') {
+        resolve()
+        return
+      }
+      iframe.addEventListener('load', () => resolve(), { once: true })
+    })
+
+    await document.fonts.ready.catch(() => undefined)
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+
+    const images = Array.from(doc.images)
+    await Promise.race([
+      Promise.all(
+        images.map(
+          (img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.onload = () => resolve()
+                  img.onerror = () => resolve()
+                })
+        )
+      ),
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 8000)
+      }),
+    ])
+
+    return { iframe, body: doc.body }
+  }
+
   // PDF로 다운로드
   const handleDownloadPDF = async () => {
-    if (!emailPreviewRef.current || !emailContent) return
+    if (!emailContent) {
+      alert(t('emailPreviewPDFDownloadFailed'))
+      return
+    }
 
-    setDownloading(true)
+    setPdfDownloading(true)
+    let exportIframe: HTMLIFrameElement | null = null
     try {
-      const html2pdf = await loadHtml2Pdf()
-      const customerName = emailContent.customer?.name || 'customer'
-      // 영문 파일명으로 생성 (한글 제거 및 영문 변환)
-      const sanitizedCustomerName = customerName
-        .replace(/[^a-zA-Z0-9]/g, '_') // 한글 및 특수문자를 언더스코어로 변환
-        .substring(0, 30) // 최대 30자로 제한
-      const dateStr = new Date().toISOString().split('T')[0]
-      const fileName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}.pdf`
+      const isFullHtmlDocument =
+        /<!DOCTYPE/i.test(emailContent.html) || /<html[\s>]/i.test(emailContent.html)
 
-      // html2pdf.js 옵션 설정 (링크 클릭 가능)
-      const opt = {
-        margin: 10,
-        filename: fileName,
-        image: { type: 'jpeg' as const, quality: 0.95 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true,
-          logging: false,
-          allowTaint: false,
-          letterRendering: true
-        },
-        jsPDF: { 
-          unit: 'mm' as const, 
-          format: 'a4' as const, 
-          orientation: 'portrait' as const,
-          compress: true
-        },
-        pagebreak: { mode: 'avoid-all' as const }
+      let captureRoot: HTMLElement | null = null
+      if (isFullHtmlDocument) {
+        const exported = await createEmailExportBody(emailContent.html)
+        exportIframe = exported.iframe
+        captureRoot = exported.body
+      } else {
+        captureRoot = emailPreviewRef.current
       }
 
-      // html2pdf로 PDF 생성 (링크 유지됨)
-      await html2pdf().set(opt).from(emailPreviewRef.current).save()
-      
+      if (!captureRoot) {
+        alert(t('emailPreviewPDFDownloadFailed'))
+        return
+      }
+
+      const customerName = emailContent.customer?.name || 'customer'
+      const sanitizedCustomerName =
+        customerName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30) || 'customer'
+      const dateStr = new Date().toISOString().split('T')[0]
+      const fileBaseName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}`
+
+      await downloadDomAsA4Pdf(captureRoot, fileBaseName)
     } catch (error) {
       console.error('PDF 다운로드 오류:', error)
-      // 폴백: 기존 방식으로 시도
-      try {
-        const html2canvas = await loadHtml2Canvas()
-        const jsPDF = await loadJsPDF()
-        const canvas = await html2canvas(emailPreviewRef.current, {
-          backgroundColor: '#ffffff',
-          scale: 2,
-          logging: false,
-          useCORS: true,
-          allowTaint: false
-        })
-
-        let imgData = canvas.toDataURL('image/png')
-        imgData = await compressImage(imgData, 0.9)
-
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-          compress: true
-        })
-
-        const pdfWidth = pdf.internal.pageSize.getWidth()
-        const pdfHeight = pdf.internal.pageSize.getHeight()
-
-        const img = new Image()
-        await new Promise((resolve) => {
-          img.onload = resolve
-          img.onerror = resolve
-          img.src = imgData
-        })
-
-        const imgWidth = img.width || canvas.width
-        const imgHeight = img.height || canvas.height
-        const ratio = Math.min(pdfWidth / (imgWidth * 0.264583), pdfHeight / (imgHeight * 0.264583))
-        const imgX = (pdfWidth - imgWidth * 0.264583 * ratio) / 2
-        const imgY = 10
-
-        pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * 0.264583 * ratio, imgHeight * 0.264583 * ratio, undefined, 'FAST')
-
-        const customerName = emailContent.customer?.name || 'customer'
-        // 영문 파일명으로 생성 (한글 제거 및 영문 변환)
-        const sanitizedCustomerName = customerName
-          .replace(/[^a-zA-Z0-9]/g, '_') // 한글 및 특수문자를 언더스코어로 변환
-          .substring(0, 30) // 최대 30자로 제한
-        const dateStr = new Date().toISOString().split('T')[0]
-        const fileName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}.pdf`
-        pdf.save(fileName)
-      } catch (fallbackError) {
-        console.error('PDF 폴백 다운로드 오류:', fallbackError)
-        alert(t('emailPreviewPDFDownloadFailed'))
-      }
+      alert(t('emailPreviewPDFDownloadFailed'))
     } finally {
-      setDownloading(false)
+      exportIframe?.remove()
+      setPdfDownloading(false)
     }
   }
 
@@ -1266,7 +1274,7 @@ export default function PickupScheduleEmailPreviewModal({
                           onClick={handleDownloadImage}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
                           title={t('emailPreviewDownloadImageTitle')}
-                          disabled={downloading}
+                          disabled={downloading || pdfDownloading}
                         >
                           {downloading ? (
                             <>
@@ -1285,9 +1293,9 @@ export default function PickupScheduleEmailPreviewModal({
                           onClick={handleDownloadPDF}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
                           title={t('emailPreviewDownloadPDFTitle')}
-                          disabled={downloading}
+                          disabled={downloading || pdfDownloading}
                         >
-                          {downloading ? (
+                          {pdfDownloading ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
                               <span>{t('emailPreviewDownloading')}</span>

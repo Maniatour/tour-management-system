@@ -1,4 +1,5 @@
 import {
+  isMarkdownStructuredContent,
   newSopId,
   orderedChecklistItems,
   sopText,
@@ -446,6 +447,9 @@ function hydrateCategoryRowsForEditing(category: SopCategory): {
 
   const bodyKo = (category.content_ko || '').trim()
   const bodyEn = (category.content_en || '').trim()
+  if (isMarkdownStructuredContent(bodyKo) || isMarkdownStructuredContent(bodyEn)) {
+    return { category, changed: false }
+  }
   const koLines = bodyKo ? splitRichContentToChecklistLines(bodyKo) : []
   const enLines = bodyEn ? splitRichContentToChecklistLines(bodyEn) : []
   // 제목 없는 레거시 슬롯·섹션 본문은 줄 목록으로 쪼개지 않음

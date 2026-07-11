@@ -2,7 +2,7 @@
 export const OFFICE_SCHEDULE_COPY = {
   title: 'Office Schedule',
   close: 'Close',
-  hint: 'Select a staff member, then click or drag cells. Press Save to apply changes. Ctrl+Z to undo.',
+  hint: 'Select a staff member, then click or drag cells to schedule. Use the OFF row for mandatory rest days. Press Save to apply changes. Ctrl+Z to undo.',
   selectStaff: 'Select staff to schedule',
   staffPickerShow: 'Show staff picker',
   staffPickerHide: 'Hide staff picker',
@@ -57,6 +57,9 @@ export const OFFICE_SCHEDULE_COPY = {
   loadError: 'Could not load schedule.',
   saveError: 'Failed to save schedule.',
   noStaff: 'No active OP or Office Manager staff.',
+  offRowLabel: 'OFF',
+  offDayHint: 'Click or drag to mark mandatory day off for selected staff',
+  offDayCellLabel: 'OFF',
   cellHint: 'Click or drag to schedule',
   readOnly: 'You can only edit your own schedule.',
   loading: 'Loading...',
