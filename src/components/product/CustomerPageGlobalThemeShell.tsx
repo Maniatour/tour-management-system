@@ -1,7 +1,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { useCustomerPageGlobalTheme } from '@/hooks/useCustomerPageGlobalTheme'
+import { useCustomerPageFieldBindings } from '@/components/product/CustomerPageFieldBindingsProvider'
 
 type CustomerPageGlobalThemeShellProps = {
   children: ReactNode
@@ -14,16 +16,20 @@ export default function CustomerPageGlobalThemeShell({
   className = '',
 }: CustomerPageGlobalThemeShellProps) {
   const theme = useCustomerPageGlobalTheme()
+  const pathname = usePathname()
+  const { ready } = useCustomerPageFieldBindings()
+  const isCustomerHome = /^\/(ko|en)\/?$/.test(pathname)
+  const pageBackground = isCustomerHome ? '#ffffff' : theme.pageBackground
 
   return (
     <div
       data-cp-global-theme={theme.id}
       data-cp-theme-dark={theme.isDark ? '1' : '0'}
-      className={`customer-page-theme-root transition-colors duration-300 ${className}`.trim()}
+      className={`customer-page-theme-root ${ready || !isCustomerHome ? 'transition-colors duration-300' : ''} ${className}`.trim()}
       style={{
-        backgroundColor: theme.pageBackground,
+        backgroundColor: pageBackground,
         ['--cp-global-accent' as string]: theme.accentColor,
-        ['--cp-global-page-bg' as string]: theme.pageBackground,
+        ['--cp-global-page-bg' as string]: pageBackground,
       }}
     >
       {children}

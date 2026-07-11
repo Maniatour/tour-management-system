@@ -19,6 +19,7 @@ export type ProductReviewItem = {
 type ProductDetailReviewsSectionProps = {
   reviews: ProductReviewItem[]
   averageRating?: number
+  variant?: 'default' | 'airbnb'
 }
 
 function StarRating({ rating }: { rating: number }) {
@@ -38,6 +39,7 @@ function StarRating({ rating }: { rating: number }) {
 export default function ProductDetailReviewsSection({
   reviews,
   averageRating,
+  variant = 'default',
 }: ProductDetailReviewsSectionProps) {
   const t = useTranslations('productDetail')
 
@@ -48,6 +50,44 @@ export default function ProductDetailReviewsSection({
   const avg =
     averageRating ??
     reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+
+  if (variant === 'airbnb') {
+    return (
+      <section className="airbnb-detail-section">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Star className="h-5 w-5 fill-[#1a2b49] text-[#1a2b49]" aria-hidden />
+            <span className="text-2xl font-semibold text-[#1a2b49]">{avg.toFixed(1)}</span>
+            <span className="text-[#6b7280]">·</span>
+            <span className="text-base font-semibold text-[#1a2b49]">
+              {t('reviewCount', { count: reviews.length })}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-8 md:grid-cols-2">
+          {reviews.slice(0, 6).map((review, index) => (
+            <article key={`${review.name}-${index}`}>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1a2b49] text-sm font-semibold text-white">
+                  {review.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#1a2b49]">{review.name}</p>
+                  {review.country ? (
+                    <p className="text-xs text-[#6b7280]">{review.country}</p>
+                  ) : null}
+                </div>
+              </div>
+              <StarRating rating={review.rating} />
+              <p className="mt-3 text-sm leading-relaxed text-[#374151]">
+                &ldquo;{review.quote}&rdquo;
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <CustomerPageZone zone="detail-reviews-section">

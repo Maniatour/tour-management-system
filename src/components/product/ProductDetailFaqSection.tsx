@@ -8,10 +8,23 @@ import ProductDetailSectionCard from '@/components/product/ui/ProductDetailSecti
 
 type ProductDetailFaqSectionProps = {
   productId: string
+  variant?: 'default' | 'airbnb'
 }
 
-export default function ProductDetailFaqSection({ productId }: ProductDetailFaqSectionProps) {
+export default function ProductDetailFaqSection({
+  productId,
+  variant = 'default',
+}: ProductDetailFaqSectionProps) {
   const t = useTranslations('productDetail')
+
+  if (variant === 'airbnb') {
+    return (
+      <div className="airbnb-detail-faq">
+        <h2 className="airbnb-detail-section-title">{t('faqSectionTitle')}</h2>
+        <ProductFaqDisplay productId={productId} />
+      </div>
+    )
+  }
 
   return (
     <CustomerPageZone zone="detail-faq-section">

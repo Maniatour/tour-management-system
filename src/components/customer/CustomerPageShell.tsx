@@ -8,6 +8,7 @@ type CustomerPageShellProps = {
   locale: string
   children: ReactNode
   className?: string
+  hideFooter?: boolean
 }
 
 function measurePreviewHeight() {
@@ -20,6 +21,7 @@ export default function CustomerPageShell({
   locale,
   children,
   className = '',
+  hideFooter = false,
 }: CustomerPageShellProps) {
   useEffect(() => {
     if (window.parent === window) return
@@ -40,9 +42,11 @@ export default function CustomerPageShell({
   return (
     <div className={`customer-page-shell flex min-h-full flex-col ${className}`.trim()}>
       <div className="flex-1">{children}</div>
-      <div className="-mx-4 mt-8 sm:-mx-6 lg:-mx-8" data-customer-site-footer>
-        <CustomerSiteFooter locale={locale} forceShow />
-      </div>
+      {!hideFooter ? (
+        <div className="-mx-4 mt-8 sm:-mx-6 lg:-mx-8" data-customer-site-footer>
+          <CustomerSiteFooter locale={locale} forceShow />
+        </div>
+      ) : null}
     </div>
   )
 }

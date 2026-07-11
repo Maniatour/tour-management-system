@@ -113,13 +113,14 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
     description: '메인 타이틀·CTA',
     icon: '🎯',
     allowMultiple: false,
-    defaultConfig: { structureVariant: 'centered-classic', uiPresetId: 'default' },
+    defaultConfig: { structureVariant: 'search-discovery', uiPresetId: 'default' },
     structureVariants: [
       { id: 'centered-classic', label: '중앙 히어로' },
       { id: 'split-editorial', label: '2단 분할' },
       { id: 'left-minimal', label: '좌측 미니멀' },
       { id: 'full-immersive', label: '풀스크린' },
       { id: 'compact-bar', label: '컴팩트 바' },
+      { id: 'search-discovery', label: '검색 히어로' },
     ],
   },
   {
@@ -128,13 +129,14 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
     description: '태그·카테고리 그리드',
     icon: '🗂️',
     allowMultiple: false,
-    defaultConfig: { structureVariant: 'grid-icons', uiPresetId: 'default' },
+    defaultConfig: { structureVariant: 'destination-cities', uiPresetId: 'default' },
     structureVariants: [
       { id: 'grid-icons', label: '아이콘 그리드' },
       { id: 'horizontal-scroll', label: '가로 스크롤' },
       { id: 'large-tiles', label: '대형 타일' },
       { id: 'compact-pills', label: '필 태그' },
       { id: 'bento-asymmetric', label: '벤토 그리드' },
+      { id: 'destination-cities', label: '목적지 도시' },
     ],
   },
   {
@@ -158,9 +160,9 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
     icon: '🃏',
     allowMultiple: true,
     defaultConfig: {
-      structureVariant: 'grid-three',
+      structureVariant: 'attraction-cards',
       uiPresetId: 'default',
-      cardCount: 3,
+      cardCount: 4,
       productQuery: 'favorites',
       cardFieldBindings: {
         title: 'customerNameKo',
@@ -175,6 +177,8 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'horizontal-scroll', label: '가로 스크롤' },
       { id: 'featured-plus-grid', label: '피처드+그리드' },
       { id: 'stacked-list', label: '리스트형' },
+      { id: 'attraction-cards', label: '명소 카드' },
+      { id: 'activity-cards', label: '액티비티 카드' },
     ],
   },
   {

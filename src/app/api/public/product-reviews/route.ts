@@ -6,8 +6,7 @@ import {
   type PublicProductReviewRow,
 } from '@/lib/productReviewDisplay'
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PRODUCT_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/
 
 const DEFAULT_LIMIT = 12
 const MAX_LIMIT = 30
@@ -103,7 +102,7 @@ export async function GET(request: NextRequest) {
     ? Math.min(Math.max(limitParam, 1), MAX_LIMIT)
     : DEFAULT_LIMIT
 
-  if (productId && !UUID_RE.test(productId)) {
+  if (productId && !PRODUCT_ID_RE.test(productId)) {
     return NextResponse.json({ ok: false, message: 'Invalid product_id' }, { status: 400 })
   }
 

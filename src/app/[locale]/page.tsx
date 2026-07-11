@@ -14,6 +14,7 @@ import { emitCustomerPageBindingsUpdate } from '@/lib/customerPageBindingsSync'
 import CustomerPageHomeCanvasBuilder from '@/components/product/CustomerPageHomeCanvasBuilder'
 import CustomerPageHomeLayoutGuideBar from '@/components/product/CustomerPageHomeLayoutGuideBar'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import { useCustomerPageFieldBindings } from '@/components/product/CustomerPageFieldBindingsProvider'
 
 export default function HomePage() {
   return (
@@ -27,6 +28,7 @@ function HomePageInner() {
   const t = useTranslations('common')
   const locale = useLocale()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const { ready: customerPageConfigReady } = useCustomerPageFieldBindings()
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
   const { userRole } = useAuth()
   const [isChangingOrder, setIsChangingOrder] = useState(false)
@@ -140,6 +142,7 @@ function HomePageInner() {
   const orderedHomeSections = useCustomerPageHomeLayoutSections(isPreview && isEditMode)
   const layoutEditMode = isPreview && isEditMode
   const showCardEditZones = isPreview && isEditMode
+  const showHomeContent = customerPageConfigReady || layoutEditMode
 
   const renderSection = (section: (typeof orderedHomeSections)[number]['section']) => (
     <HomeSectionRenderer
@@ -163,18 +166,24 @@ function HomePageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen">
-        <CustomerPagePreviewHighlightEffect />
-        {layoutEditMode && <CustomerPageHomeLayoutGuideBar />}
-        {layoutEditMode ? (
-          <CustomerPageHomeCanvasBuilder
-            sections={orderedHomeSections}
-            renderSection={renderSection}
-          />
+      <div className="gyg-home min-h-screen bg-white">
+        {!showHomeContent ? (
+          <div className="gyg-hero" aria-busy="true" aria-live="polite" />
         ) : (
-          orderedHomeSections.map(({ section }) => (
-            <div key={section.instanceId}>{renderSection(section)}</div>
-          ))
+          <>
+            <CustomerPagePreviewHighlightEffect />
+            {layoutEditMode && <CustomerPageHomeLayoutGuideBar />}
+            {layoutEditMode ? (
+              <CustomerPageHomeCanvasBuilder
+                sections={orderedHomeSections}
+                renderSection={renderSection}
+              />
+            ) : (
+              orderedHomeSections.map(({ section }) => (
+                <div key={section.instanceId}>{renderSection(section)}</div>
+              ))
+            )}
+          </>
         )}
       </div>
     </CustomerPageShell>

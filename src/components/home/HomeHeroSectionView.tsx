@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { ArrowRight, Play } from 'lucide-react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import HomeSearchBar from '@/components/home/HomeSearchBar'
 import type { HeroStructureVariant } from '@/lib/customerPageHomeStructure'
 
 type Props = {
@@ -92,6 +93,31 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
           </div>
           {ctaPrimary}
         </div>
+      </CustomerPageZone>
+    )
+  }
+
+  if (variant === 'search-discovery') {
+    const participantOptions =
+      locale === 'en'
+        ? ['1 participant', '2 participants', '3 participants', '4 participants', '5+ participants']
+        : ['1명', '2명', '3명', '4명', '5명 이상']
+
+    return (
+      <CustomerPageZone zone="home-hero">
+        <section className="gyg-hero">
+          <div className="gyg-container">
+            <h1 className="gyg-hero-title">{t('homeHeroDiscoverTitle')}</h1>
+            <HomeSearchBar
+              locale={locale}
+              searchPlaceholder={t('homeSearchPlaceholder')}
+              anytimeLabel={t('homeSearchAnytime')}
+              participantLabel={t('homeSearchParticipants')}
+              participantOptions={participantOptions}
+              searchButtonLabel={t('search')}
+            />
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }

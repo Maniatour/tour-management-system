@@ -81,6 +81,8 @@ type ProductDetailOverviewTabProps = {
 
   tagLabelMap: TagLabelMap
 
+  variant?: 'default' | 'airbnb'
+
 }
 
 
@@ -102,6 +104,8 @@ export default function ProductDetailOverviewTab({
   showDetail,
 
   tagLabelMap,
+
+  variant = 'default',
 
 }: ProductDetailOverviewTabProps) {
 
@@ -143,6 +147,27 @@ export default function ProductDetailOverviewTab({
       displayName
     )
   })()
+
+  if (variant === 'airbnb') {
+    return (
+      <div className="airbnb-overview space-y-4">
+        {greetingHtml && showDetail('greeting') ? (
+          <div
+            className="prose prose-sm max-w-none text-[#1a2b49] sm:prose-base"
+            dangerouslySetInnerHTML={{ __html: markdownToHtml(greetingHtml) }}
+          />
+        ) : null}
+        {showDetail('description') ? (
+          <div
+            className="prose prose-sm max-w-none text-[#374151] sm:prose-base"
+            dangerouslySetInnerHTML={{
+              __html: markdownToHtml(overviewDescription),
+            }}
+          />
+        ) : null}
+      </div>
+    )
+  }
 
   return (
 

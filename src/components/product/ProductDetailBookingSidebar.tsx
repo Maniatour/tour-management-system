@@ -36,13 +36,27 @@ type ProductDetailBookingSidebarProps = {
   onCompareOptions: () => void
   onBookNow: () => void
   contactEmail?: string
+  variant?: 'default' | 'airbnb'
 }
 
-export default function ProductDetailBookingSidebar(props: ProductDetailBookingSidebarProps) {
+export default function ProductDetailBookingSidebar({
+  variant = 'default',
+  ...props
+}: ProductDetailBookingSidebarProps) {
   return (
-    <CustomerPageZone zone="detail-sidebar" suppressEditButton className="hidden lg:block">
-      <div className="sticky top-6 rounded-2xl cp-ui-panel-surface p-6 shadow-lg">
-        <ProductDetailBookingPanelContent {...props} variant="sidebar" />
+    <CustomerPageZone
+      zone="detail-sidebar"
+      suppressEditButton
+      className={variant === 'airbnb' ? '' : 'hidden lg:block'}
+    >
+      <div
+        className={
+          variant === 'airbnb'
+            ? 'airbnb-detail-booking-card sticky top-24'
+            : 'sticky top-6 rounded-2xl cp-ui-panel-surface p-6 shadow-lg'
+        }
+      >
+        <ProductDetailBookingPanelContent {...props} variant={variant === 'airbnb' ? 'airbnb' : 'sidebar'} />
       </div>
     </CustomerPageZone>
   )

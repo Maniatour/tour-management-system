@@ -45,8 +45,14 @@ export async function fetchCustomerPageHomeStructure(): Promise<HomePageStructur
     }
   }
 
-  setActiveHomePageStructure(structure)
-  return structure
+  const normalized = normalizeHomePageStructure(structure)
+  const gygStructure =
+    normalized.hero === 'search-discovery'
+      ? normalized
+      : { ...DEFAULT_HOME_PAGE_STRUCTURE }
+
+  setActiveHomePageStructure(gygStructure)
+  return gygStructure
 }
 
 async function upsertHomeStructureJson(structure: HomePageStructure): Promise<void> {

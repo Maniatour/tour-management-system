@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowRight, Tag } from 'lucide-react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import { Container } from '@/components/ui/container'
@@ -9,6 +10,7 @@ import { SectionHeader } from '@/components/ui/section-header'
 import type { CategoriesStructureVariant } from '@/lib/customerPageHomeStructure'
 import type { CategoryTagItem } from '@/components/home/homeSectionTypes'
 import { getHomeCategoryIcon } from '@/lib/homeCategoryIcons'
+import { HOME_DESTINATIONS } from '@/lib/homeDestinationData'
 
 type Props = {
   variant: CategoriesStructureVariant
@@ -40,6 +42,38 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
   const renderIcon = (labelKey: string, sizeClass = 'h-7 w-7') => {
     const Icon = getHomeCategoryIcon(labelKey)
     return <Icon className={`${sizeClass} cp-ui-icon-accent mb-2`} aria-hidden />
+  }
+
+  if (variant === 'destination-cities') {
+    return (
+      <CustomerPageZone zone="home-categories">
+        <section className="gyg-section">
+          <div className="gyg-container">
+            <h2 className="gyg-section-title">{t('homeDestinationsTitle')}</h2>
+            <div className="gyg-dest-grid">
+              {HOME_DESTINATIONS.map((destination) => (
+                <Link
+                  key={destination.id}
+                  href={`/${locale}/products?tag=${encodeURIComponent(destination.tagQuery)}`}
+                  className="gyg-dest-card group"
+                >
+                  <div className="gyg-dest-image">
+                    <Image
+                      src={destination.imageUrl}
+                      alt={t(destination.labelKey)}
+                      fill
+                      sizes="(max-width: 768px) 45vw, 160px"
+                      className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    />
+                  </div>
+                  <span className="gyg-dest-name">{t(destination.labelKey)}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      </CustomerPageZone>
+    )
   }
 
   if (variant === 'horizontal-scroll') {

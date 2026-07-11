@@ -28,6 +28,7 @@ import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/produ
 import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import ProductsListingPublicView from '@/components/products/ProductsListingPublicView'
 import PriceDisplay from '@/components/customer/ui/PriceDisplay'
 import { getTransportationIcon } from '@/lib/transportationIcons'
 
@@ -90,11 +91,19 @@ export default function ProductsPage() {
   const [expandedSubCategories, setExpandedSubCategories] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'grouped' | 'grid'>('grouped')
 
-  // URL 파라미터에서 태그 읽기
+  // URL 파라미터에서 태그·검색어·카테고리 읽기
   useEffect(() => {
     const tagParam = searchParams.get('tag')
     if (tagParam) {
       setSelectedTag(tagParam)
+    }
+    const searchParam = searchParams.get('search')
+    if (searchParam) {
+      setSearchTerm(searchParam)
+    }
+    const categoryParam = searchParams.get('category')
+    if (categoryParam) {
+      setSelectedCategory(categoryParam)
     }
   }, [searchParams])
 
@@ -370,6 +379,77 @@ export default function ProductsPage() {
       return a.localeCompare(b)
     })
   }, [productsByCategory])
+
+  const hasActiveFilters =
+    selectedCategory !== 'all' ||
+    searchTerm !== '' ||
+    selectedTag !== 'all' ||
+    priceRange !== 'all'
+
+  const showListingGrid = hasActiveFilters
+
+  const listingGroups = useMemo(() => {
+    const sourceProducts = showListingGrid ? filteredProducts : products
+    const grouped: Record<string, Product[]> = {}
+
+    sourceProducts.forEach((product) => {
+      const category = product.category || 'other'
+      if (!grouped[category]) {
+        grouped[category] = []
+      }
+      grouped[category].push(product)
+    })
+
+    return Object.keys(grouped)
+      .sort((a, b) => {
+        if (a === 'Tour' || a === 'tour') return -1
+        if (b === 'Tour' || b === 'tour') return 1
+        return a.localeCompare(b)
+      })
+      .map((category) => ({
+        id: category,
+        title: t('listingGroupTitle', { category: getCategoryLabel(category) }),
+        products: grouped[category] ?? [],
+      }))
+      .filter((group) => group.products.length > 0)
+  }, [showListingGrid, filteredProducts, products, getCategoryLabel, t])
+
+  const filterPills = useMemo(() => {
+    const uniqueCategories = Array.from(new Set(products.map((p) => p.category).filter(Boolean)))
+    const pills = [
+      {
+        id: 'all',
+        label: t('all'),
+        active: !hasActiveFilters,
+        onClick: () => {
+          setSelectedCategory('all')
+          setSelectedTag('all')
+          setSearchTerm('')
+          setPriceRange('all')
+        },
+      },
+      ...uniqueCategories.map((category) => ({
+        id: category,
+        label: getCategoryLabel(category),
+        active: selectedCategory === category,
+        onClick: () => {
+          setSelectedCategory((prev) => (prev === category ? 'all' : category))
+        },
+      })),
+    ]
+    return pills
+  }, [products, hasActiveFilters, selectedCategory, getCategoryLabel, t])
+
+  const clearListingFilters = useCallback(() => {
+    setSelectedCategory('all')
+    setSelectedTag('all')
+    setSearchTerm('')
+    setPriceRange('all')
+  }, [])
+
+  const handleListingImageError = useCallback((productId: string) => {
+    setImageErrors((prev) => new Set(prev).add(productId))
+  }, [])
 
   // 카테고리 토글 함수
   const toggleCategory = (category: string) => {
@@ -690,9 +770,33 @@ export default function ProductsPage() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-muted/30">
+      <div className={layoutEditMode ? 'min-h-screen bg-muted/30' : ''}>
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-listing" />}
+      {!layoutEditMode ? (
+        <ProductsListingPublicView
+          locale={locale}
+          t={t}
+          loading={loading}
+          error={error}
+          searchTerm={searchTerm}
+          selectedTag={selectedTag}
+          selectedCategory={selectedCategory}
+          priceRange={priceRange}
+          onRetry={() => void fetchProducts()}
+          onClearFilters={clearListingFilters}
+          filterPills={filterPills}
+          groups={listingGroups}
+          gridProducts={filteredProducts}
+          showGrid={showListingGrid}
+          resultCount={filteredProducts.length}
+          getProductTitle={(product) => getCustomerDisplayName(product as Product)}
+          getProductLocation={(product) => getListDepartureLine(product as Product)}
+          getProductPrice={(product) => getListPrice(product as Product)}
+          imageErrors={imageErrors}
+          onImageError={handleListingImageError}
+        />
+      ) : (
       <CustomerPageZoneLayoutRenderer
         pageId="products-listing"
         layoutEditMode={layoutEditMode}
@@ -986,6 +1090,7 @@ export default function ProductsPage() {
           return null
         }}
       />
+      )}
       </div>
     </CustomerPageShell>
   )

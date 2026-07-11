@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, type ComponentProps } from 'react'
 import {
   MapPin,
   Users,
@@ -38,14 +38,22 @@ function DetailInfoBlock({
   iconClassName,
   title,
   html,
+  variant = 'default',
 }: {
   icon: LucideIcon
   iconClassName: string
   title: string
   html: string
+  variant?: 'default' | 'airbnb'
 }) {
   return (
-    <div className="rounded-xl bg-slate-50 p-4 sm:border sm:border-slate-200 sm:bg-white sm:p-6 sm:shadow-sm">
+    <div
+      className={
+        variant === 'airbnb'
+          ? 'airbnb-detail-info-block'
+          : 'rounded-xl bg-slate-50 p-4 sm:border sm:border-slate-200 sm:bg-white sm:p-6 sm:shadow-sm'
+      }
+    >
       <div className="mb-2.5 flex items-center gap-2 sm:mb-3 sm:gap-2.5">
         <Icon className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${iconClassName}`} aria-hidden />
         <h4 className="text-sm font-semibold text-gray-900 sm:text-lg">{title}</h4>
@@ -75,6 +83,7 @@ type ProductDetailDetailsTabProps = {
   locale: string
   tagLabelMap: TagLabelMap
   section: ProductDetailSection
+  variant?: 'default' | 'airbnb'
 }
 
 export default function ProductDetailDetailsTab({
@@ -85,8 +94,13 @@ export default function ProductDetailDetailsTab({
   locale,
   tagLabelMap,
   section,
+  variant = 'default',
 }: ProductDetailDetailsTabProps) {
   const t = useTranslations('productDetail')
+
+  const InfoBlock = (
+    props: Omit<ComponentProps<typeof DetailInfoBlock>, 'variant'>
+  ) => <DetailInfoBlock {...props} variant={variant} />
 
   const showDetailOnCustomerPage = (field: string) =>
     isProductDetailVisibleOnCustomerPage(productDetails?.customer_page_visibility, field)
@@ -278,7 +292,7 @@ export default function ProductDetailDetailsTab({
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                           {productDetails?.included && showDetailOnCustomerPage('included') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={CheckCircle2}
                               iconClassName="text-green-600"
                               title={t('included')}
@@ -286,7 +300,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.not_included && showDetailOnCustomerPage('not_included') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={XCircle}
                               iconClassName="text-red-600"
                               title={t('excluded')}
@@ -306,7 +320,7 @@ export default function ProductDetailDetailsTab({
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-4">
                           {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Car}
                               iconClassName="text-booking"
                               title={t('pickupDropInfo')}
@@ -314,7 +328,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.luggage_info && showDetailOnCustomerPage('luggage_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Luggage}
                               iconClassName="text-yellow-600"
                               title={t('luggageInfo')}
@@ -322,7 +336,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.tour_operation_info && showDetailOnCustomerPage('tour_operation_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Settings}
                               iconClassName="text-purple-600"
                               title={t('tourOperations')}
@@ -330,7 +344,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.preparation_info && showDetailOnCustomerPage('preparation_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Lightbulb}
                               iconClassName="text-orange-600"
                               title={t('preparationTips')}
@@ -338,7 +352,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.small_group_info && showDetailOnCustomerPage('small_group_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Users2}
                               iconClassName="text-indigo-600"
                               title={t('smallGroupInfo')}
@@ -347,7 +361,7 @@ export default function ProductDetailDetailsTab({
                           )}
                           {productDetails?.companion_recruitment_info &&
                             showDetailOnCustomerPage('companion_recruitment_info') && (
-                              <DetailInfoBlock
+  <InfoBlock
                                 icon={Users2}
                                 iconClassName="text-teal-600"
                                 title={t('companionRecruitment')}
@@ -355,7 +369,7 @@ export default function ProductDetailDetailsTab({
                               />
                             )}
                           {productDetails?.notice_info && showDetailOnCustomerPage('notice_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={AlertTriangle}
                               iconClassName="text-red-600"
                               title={t('importantNotes')}
@@ -375,7 +389,7 @@ export default function ProductDetailDetailsTab({
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-4">
                           {productDetails?.important_notes && showDetailOnCustomerPage('important_notes') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={AlertTriangle}
                               iconClassName="text-amber-600"
                               title="IMPORTANT NOTES"
@@ -383,7 +397,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.private_tour_info && showDetailOnCustomerPage('private_tour_info') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Users}
                               iconClassName="text-purple-600"
                               title={t('privateTourInfo')}
@@ -391,7 +405,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.cancellation_policy && showDetailOnCustomerPage('cancellation_policy') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Shield}
                               iconClassName="text-red-600"
                               title={t('cancellationPolicy')}
@@ -399,7 +413,7 @@ export default function ProductDetailDetailsTab({
                             />
                           )}
                           {productDetails?.chat_announcement && showDetailOnCustomerPage('chat_announcement') && (
-                            <DetailInfoBlock
+<InfoBlock
                               icon={Megaphone}
                               iconClassName="text-booking"
                               title={t('announcements')}

@@ -6,6 +6,7 @@ export type HeroStructureVariant =
   | 'left-minimal'
   | 'full-immersive'
   | 'compact-bar'
+  | 'search-discovery'
 
 export type CategoriesStructureVariant =
   | 'grid-icons'
@@ -13,6 +14,7 @@ export type CategoriesStructureVariant =
   | 'large-tiles'
   | 'compact-pills'
   | 'bento-asymmetric'
+  | 'destination-cities'
 
 export type StatsStructureVariant =
   | 'grid-four'
@@ -26,6 +28,8 @@ export type PopularStructureVariant =
   | 'horizontal-scroll'
   | 'featured-plus-grid'
   | 'stacked-list'
+  | 'attraction-cards'
+  | 'activity-cards'
 
 export type FeaturesStructureVariant =
   | 'grid-two-text'
@@ -49,10 +53,10 @@ export type HomePageStructure = {
 }
 
 export const DEFAULT_HOME_PAGE_STRUCTURE: HomePageStructure = {
-  hero: 'centered-classic',
-  categories: 'grid-icons',
+  hero: 'search-discovery',
+  categories: 'destination-cities',
   stats: 'grid-four',
-  popular: 'grid-three',
+  popular: 'attraction-cards',
   features: 'grid-two-text',
   cta: 'centered-classic',
 }
@@ -67,6 +71,7 @@ export const HOME_STRUCTURE_LABELS: Record<
     'left-minimal': '좌측 미니멀',
     'full-immersive': '풀스크린',
     'compact-bar': '컴팩트 바',
+    'search-discovery': '검색 히어로',
   },
   categories: {
     'grid-icons': '아이콘 그리드',
@@ -74,6 +79,7 @@ export const HOME_STRUCTURE_LABELS: Record<
     'large-tiles': '대형 타일',
     'compact-pills': '필 태그',
     'bento-asymmetric': '벤토 그리드',
+    'destination-cities': '목적지 도시',
   },
   stats: {
     'grid-four': '4열 그리드',
@@ -87,6 +93,8 @@ export const HOME_STRUCTURE_LABELS: Record<
     'horizontal-scroll': '가로 스크롤',
     'featured-plus-grid': '피처드+그리드',
     'stacked-list': '리스트형',
+    'attraction-cards': '명소 카드',
+    'activity-cards': '액티비티 카드',
   },
   features: {
     'grid-two-text': '2열 텍스트',
@@ -140,10 +148,10 @@ export function normalizeHomePageStructure(raw: unknown): HomePageStructure {
       : fallback
 
   return {
-    hero: pick(o.hero, ['centered-classic', 'split-editorial', 'left-minimal', 'full-immersive', 'compact-bar'], DEFAULT_HOME_PAGE_STRUCTURE.hero),
-    categories: pick(o.categories, ['grid-icons', 'horizontal-scroll', 'large-tiles', 'compact-pills', 'bento-asymmetric'], DEFAULT_HOME_PAGE_STRUCTURE.categories),
+    hero: pick(o.hero, ['centered-classic', 'split-editorial', 'left-minimal', 'full-immersive', 'compact-bar', 'search-discovery'], DEFAULT_HOME_PAGE_STRUCTURE.hero),
+    categories: pick(o.categories, ['grid-icons', 'horizontal-scroll', 'large-tiles', 'compact-pills', 'bento-asymmetric', 'destination-cities'], DEFAULT_HOME_PAGE_STRUCTURE.categories),
     stats: pick(o.stats, ['grid-four', 'inline-strip', 'card-row', 'highlight-band'], DEFAULT_HOME_PAGE_STRUCTURE.stats),
-    popular: pick(o.popular, ['grid-three', 'grid-two-large', 'horizontal-scroll', 'featured-plus-grid', 'stacked-list'], DEFAULT_HOME_PAGE_STRUCTURE.popular),
+    popular: pick(o.popular, ['grid-three', 'grid-two-large', 'horizontal-scroll', 'featured-plus-grid', 'stacked-list', 'attraction-cards', 'activity-cards'], DEFAULT_HOME_PAGE_STRUCTURE.popular),
     features: pick(o.features, ['grid-two-text', 'card-grid-four', 'alternating-rows', 'icon-row'], DEFAULT_HOME_PAGE_STRUCTURE.features),
     cta: pick(o.cta, ['centered-classic', 'split-actions', 'full-band', 'inline-minimal'], DEFAULT_HOME_PAGE_STRUCTURE.cta),
   }

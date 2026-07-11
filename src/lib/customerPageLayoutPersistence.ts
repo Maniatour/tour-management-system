@@ -2,6 +2,7 @@ import type { CustomerPageId } from '@/lib/customer-page-registry'
 import { supabase } from '@/lib/supabase'
 import {
   DEFAULT_HOME_PAGE_LAYOUT,
+  ensureGygHomePageLayout,
   normalizeHomePageLayout,
   type HomePageLayout,
 } from '@/lib/customerPageHomeLayout'
@@ -25,9 +26,7 @@ export const CUSTOMER_PAGE_LAYOUTS_LOCALE = 'config'
 export const HOME_PAGE_LAYOUT_KEY = 'home'
 export const LISTING_CARD_LAYOUT_KEY = 'listing-card-layout'
 
-let homeLayoutCache: HomePageLayout = {
-  sections: DEFAULT_HOME_PAGE_LAYOUT.sections.map((section) => ({ ...section })),
-}
+let homeLayoutCache: HomePageLayout = ensureGygHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT)
 
 const zoneLayoutCaches: Partial<Record<ZoneLayoutPageId, PageZoneLayout>> = {}
 
@@ -38,7 +37,7 @@ export function getCustomerPageHomeLayoutCache(): HomePageLayout {
 }
 
 export function setCustomerPageHomeLayoutCache(layout: HomePageLayout): void {
-  homeLayoutCache = normalizeHomePageLayout(layout)
+  homeLayoutCache = ensureGygHomePageLayout(layout)
 }
 
 export function loadCustomerPageHomeLayout(): HomePageLayout {
@@ -47,7 +46,7 @@ export function loadCustomerPageHomeLayout(): HomePageLayout {
 
 export async function fetchCustomerPageHomeLayout(): Promise<HomePageLayout> {
   const layout = await fetchLayoutJson(HOME_PAGE_LAYOUT_KEY, (raw) =>
-    normalizeHomePageLayout(raw)
+    ensureGygHomePageLayout(normalizeHomePageLayout(raw))
   )
   homeLayoutCache = layout
   return layout

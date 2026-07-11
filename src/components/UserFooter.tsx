@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation'
 import { Home, Calendar, MessageCircle, AlertCircle, X, Package, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
+import { isCustomerFacingPath } from '@/lib/customerSiteRoutes'
 
 interface UserFooterProps {
   locale: string
@@ -14,6 +15,7 @@ interface UserFooterProps {
 
 export default function UserFooter({ locale }: UserFooterProps) {
   const pathname = usePathname()
+  const currentLocale = useLocale()
   const { user, userRole, simulatedUser, isSimulating, isInitialized } = useAuth()
   const t = useTranslations('common')
   const [mounted, setMounted] = useState(false)
@@ -246,6 +248,14 @@ export default function UserFooter({ locale }: UserFooterProps) {
         : visibleFooterItems.length === 4
           ? 'grid-cols-4'
           : 'grid-cols-5'
+
+  const isCustomerHome =
+    isCustomerFacingPath(pathname) &&
+    (pathname === `/${currentLocale}` || pathname === `/${currentLocale}/`)
+
+  if (isCustomerHome) {
+    return null
+  }
 
   return (
     <>

@@ -53,7 +53,7 @@ export const CUSTOMER_PAGE_TEMPLATES: CustomerPageTemplateDefinition[] = [
     description: '중앙 히어로 · 아이콘 카테고리 · 3열 인기 투어 — 기본 올인원',
     tags: ['기본', '올인원'],
     themeId: 'kovegas-classic',
-    homeLayout: buildHomeLayout(FULL_HOME_ORDER),
+    homeLayout: normalizeHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT),
     structure: { ...DEFAULT_HOME_PAGE_STRUCTURE },
   },
   {

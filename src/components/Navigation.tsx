@@ -12,6 +12,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search, Package } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
+import CustomerSiteHeader from '@/components/customer/CustomerSiteHeader'
 import { AuthContext } from '@/contexts/AuthContext'
 import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 import { isCustomerFacingPath } from '@/lib/customerSiteRoutes'
@@ -44,18 +45,6 @@ const NavigationContent = () => {
   const isAdminPath = pathname.startsWith(`/${locale}/admin`)
   const isCustomerSite = isCustomerFacingPath(pathname)
 
-  const navShellClass = isCustomerSite
-    ? 'bg-background/95 backdrop-blur-md border-b border-border/60 shadow-sm'
-    : 'bg-white shadow-lg border-b'
-
-  const linkClass = isCustomerSite
-    ? 'flex items-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-    : 'flex items-center text-gray-600 hover:text-gray-900 transition-colors'
-
-  const mobileLinkClass = isCustomerSite
-    ? 'flex items-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground px-2 py-2 rounded-lg hover:bg-muted/50'
-    : 'flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2'
-
   const handleLogout = async () => {
     try {
       await signOut()
@@ -83,6 +72,34 @@ const NavigationContent = () => {
       router.push(`/${locale}/admin`)
     }
   }
+
+  if (isCustomerSite) {
+    return (
+      <>
+        {isSimulating && simulatedUser && (
+          <div className="border-b border-border/60 bg-primary/5 px-4 py-2 text-center text-sm">
+            <span className="font-medium text-primary">
+              {t('simulatingAs')} {simulatedUser.name_ko}
+            </span>
+            <button
+              onClick={handleStopSimulation}
+              className="ml-3 text-xs font-medium text-danger hover:underline"
+              type="button"
+            >
+              {t('backToAdmin')}
+            </button>
+          </div>
+        )}
+        <CustomerSiteHeader brandName={tBrand('brandName')} />
+      </>
+    )
+  }
+
+  const navShellClass = 'bg-white shadow-lg border-b'
+
+  const linkClass = 'flex items-center text-gray-600 hover:text-gray-900 transition-colors'
+
+  const mobileLinkClass = 'flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2'
 
   return (
     <nav className={`${navShellClass} relative z-50 min-h-[var(--header-height)] flex flex-col text-foreground overflow-visible md:flex-row md:items-center md:h-[var(--header-height)]`}>

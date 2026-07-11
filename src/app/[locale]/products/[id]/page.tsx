@@ -21,6 +21,7 @@ import ProductDetailCheckoutLayer, {
   useProductDetailCheckoutActions,
 } from '@/components/product/ProductDetailCheckoutLayer'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import ProductDetailAirbnbView from '@/components/product/ProductDetailAirbnbView'
 import type {
   Product,
   ProductChoice,
@@ -112,7 +113,7 @@ function ProductDetailPageInner() {
       setError(data.error)
 
       const reviewsData = await fetchProductReviews({
-        productId,
+        productId: data.product?.id ?? productId,
         locale,
         limit: 12,
       })
@@ -238,9 +239,36 @@ function ProductDetailPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-muted/30 pb-20 lg:pb-12">
+      <div className={layoutEditMode ? 'min-h-screen bg-muted/30 pb-20 lg:pb-12' : ''}>
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-detail" />}
+      {!layoutEditMode ? (
+        <ProductDetailAirbnbView
+          locale={locale}
+          isEnglish={isEnglish}
+          displayName={displayName}
+          categoryLabel={categoryLabel}
+          durationLabel={durationLabel}
+          primaryTag={primaryTag}
+          groupSize={product.group_size}
+          productId={productId}
+          product={product}
+          productDetails={productDetails}
+          productMedia={productMedia}
+          tourCourses={tourCourses}
+          tourCoursePhotos={tourCoursePhotos}
+          slogans={slogans}
+          showSlogans={showSlogans}
+          tagLabelMap={tagLabelMap}
+          showDetail={showDetailOnCustomerPage}
+          reviews={productReviews}
+          {...(reviewCount > 0 && reviewRating != null
+            ? { reviewRating, reviewCount }
+            : {})}
+          totalPrice={totalPrice}
+          bookingPanelProps={bookingPanelProps}
+        />
+      ) : (
       <CustomerPageZoneLayoutRenderer
         pageId="product-detail"
         layoutEditMode={layoutEditMode}
@@ -331,8 +359,11 @@ function ProductDetailPageInner() {
           return null
         }}
       />
+      )}
 
-      <ProductDetailMobileStickyCta totalPrice={totalPrice} onBookNow={openBookingFlow} />
+      {!layoutEditMode ? null : (
+        <ProductDetailMobileStickyCta totalPrice={totalPrice} onBookNow={openBookingFlow} />
+      )}
 
       <ProductDetailCheckoutLayer
         product={product}

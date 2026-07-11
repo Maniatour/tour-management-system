@@ -34,16 +34,82 @@ export type HomePageLayout = {
 }
 
 function defaultBuiltinSections(): HomePageSectionEntry[] {
-  return BUILTIN_INSTANCE_IDS.map((instanceId) => ({
-    instanceId,
-    kind: LEGACY_HOME_SECTION_ID_TO_KIND[instanceId],
-    visible: true,
-    config: normalizeHomeSectionConfig({}, LEGACY_HOME_SECTION_ID_TO_KIND[instanceId]),
-  }))
+  const base = BUILTIN_INSTANCE_IDS.map((instanceId) => {
+    const kind = LEGACY_HOME_SECTION_ID_TO_KIND[instanceId]
+    const config = normalizeHomeSectionConfig({}, kind)
+
+    if (instanceId === 'home-hero') {
+      config.structureVariant = 'search-discovery'
+    }
+    if (instanceId === 'home-categories') {
+      config.structureVariant = 'destination-cities'
+    }
+    if (instanceId === 'home-popular') {
+      config.structureVariant = 'attraction-cards'
+      config.cardCount = 4
+    }
+
+    const hiddenByDefault = instanceId === 'home-stats' || instanceId === 'home-features' || instanceId === 'home-cta'
+
+    return {
+      instanceId,
+      kind,
+      visible: !hiddenByDefault,
+      config,
+    }
+  })
+
+  return [
+    ...base,
+    {
+      instanceId: 'home-cards-activities',
+      kind: 'card-list',
+      visible: true,
+      config: normalizeHomeSectionConfig(
+        {
+          structureVariant: 'activity-cards',
+          cardCount: 4,
+          productQuery: 'recent',
+        },
+        'card-list'
+      ),
+    },
+  ]
 }
 
 export const DEFAULT_HOME_PAGE_LAYOUT: HomePageLayout = {
   sections: defaultBuiltinSections(),
+}
+
+const GYG_BUILTIN_INSTANCE_IDS = new Set([
+  ...BUILTIN_INSTANCE_IDS,
+  'home-cards-activities',
+])
+
+/** 저장된 홈 레이아웃을 GetYourGuide 기본 구성과 맞춤 (깜빡임·구형 덮어쓰기 방지) */
+export function ensureGygHomePageLayout(layout: HomePageLayout): HomePageLayout {
+  const normalized = normalizeHomePageLayout(layout)
+  const defaults = normalizeHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT)
+
+  const mergedDefaults = defaults.sections.map((defaultSection) => {
+    const existing = normalized.sections.find((section) => section.instanceId === defaultSection.instanceId)
+    if (!existing) return defaultSection
+
+    const customTitle = existing.config.title?.trim()
+    return {
+      ...defaultSection,
+      config: {
+        ...defaultSection.config,
+        ...(customTitle ? { title: customTitle } : {}),
+      },
+    }
+  })
+
+  const extraSections = normalized.sections.filter(
+    (section) => !GYG_BUILTIN_INSTANCE_IDS.has(section.instanceId)
+  )
+
+  return normalizeHomePageLayout({ sections: [...mergedDefaults, ...extraSections] })
 }
 
 export function isHomeSectionId(value: unknown): value is HomeSectionId {

@@ -46,6 +46,11 @@ export default async function LocaleLayout({
     pathname.includes('/guide') || headersList.get('x-is-guide-route') === '1';
   const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
   const isAuthPage = /\/auth(\/|$)/.test(pathname);
+  const isCustomerHome = /^\/(ko|en)\/?$/.test(pathname);
+  const isCustomerProductsListing = /^\/(ko|en)\/products\/?$/.test(pathname);
+  const isCustomerProductDetail = /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname);
+  const isFullWidthCustomerPage =
+    isCustomerHome || isCustomerProductsListing || isCustomerProductDetail;
 
   // Admin, Embed, Photos, Auth(콜백): 기본 레이아웃만 (사이드바/네비 없음)
   if (isAdminPage || isEmbedPage || isPhotosPage || isAuthPage) {
@@ -94,7 +99,11 @@ export default async function LocaleLayout({
             <LazyNavigation />
             <div className="flex flex-col lg:flex-row">
               <LazySidebar />
-              <main className="flex-1 px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6 main-safe-area">
+              <main
+                className={`flex-1 main-safe-area ${
+                  isFullWidthCustomerPage ? 'px-0 pt-0' : 'px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6'
+                }`}
+              >
                 {children}
               </main>
             </div>

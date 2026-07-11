@@ -28,7 +28,7 @@ type ProductDetailBookingPanelContentProps = {
   onCompareOptions: () => void
   onBookNow: () => void
   contactEmail?: string
-  variant?: 'sidebar' | 'mobile'
+  variant?: 'sidebar' | 'mobile' | 'airbnb'
 }
 
 export default function ProductDetailBookingPanelContent({
@@ -53,24 +53,25 @@ export default function ProductDetailBookingPanelContent({
   const t = useTranslations('productDetail')
   const trustBadges = useProductDetailTrustBadges()
   const isMobile = variant === 'mobile'
+  const isAirbnb = variant === 'airbnb'
 
   return (
     <>
       <CustomerPageZone zone="detail-sidebar-price" className={cn('mb-4', isMobile && 'mb-4')}>
-        <div className="flex justify-center text-center">
+        <div className={cn(isAirbnb ? 'text-left' : 'flex justify-center text-center')}>
           <PriceDisplay
             amount={totalPrice}
             prefixLabel={t('fromPrice')}
             suffixLabel={t('perPerson')}
             size={isMobile ? 'md' : 'lg'}
           />
-          {!isMobile && (
+          {!isMobile && !isAirbnb && (
             <p className="mt-1 text-xs cp-ui-muted">{t('totalPrice')}: ${totalPrice}</p>
           )}
         </div>
 
-        {!isMobile && (
-        <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
+        {(isAirbnb || !isMobile) && (
+        <div className={cn('mt-5 space-y-2 border-t border-slate-100 pt-4', isAirbnb && 'border-[#e5e7eb]')}>
           <div className="flex justify-between text-sm">
             <span className="cp-ui-muted">{t('basePrice')}</span>
             <span className="font-medium">${basePrice || 0}</span>
@@ -91,9 +92,18 @@ export default function ProductDetailBookingPanelContent({
         )}
       </CustomerPageZone>
 
-      <TrustBadgeRow items={trustBadges} className="mb-4 justify-center sm:mb-5" compact={isMobile} />
+      <TrustBadgeRow
+        items={trustBadges}
+        className={cn('mb-4 sm:mb-5', isAirbnb ? 'justify-start' : 'justify-center')}
+        compact={isMobile}
+      />
 
-      <div className={cn('mb-4 space-y-2.5 sm:mb-6 sm:space-y-3', isMobile ? '' : 'rounded-xl cp-ui-panel-surface p-4')}>
+      <div
+        className={cn(
+          'mb-4 space-y-2.5 sm:mb-6 sm:space-y-3',
+          isMobile ? '' : isAirbnb ? 'rounded-xl border border-[#e5e7eb] p-4' : 'rounded-xl cp-ui-panel-surface p-4'
+        )}
+      >
         <div className="flex justify-between text-xs sm:text-sm">
           <span className="cp-ui-muted">{t('maxParticipants')}</span>
           <span className="font-medium">
@@ -161,11 +171,13 @@ export default function ProductDetailBookingPanelContent({
         type="button"
         onClick={onBookNow}
         className={cn(
-          'cp-ui-btn-primary w-full rounded-xl font-semibold shadow-lg transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+          isAirbnb
+            ? 'airbnb-detail-reserve-btn'
+            : 'cp-ui-btn-primary w-full rounded-xl font-semibold shadow-lg transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
           isMobile ? 'py-3.5 text-sm' : 'py-4 text-base hover:-translate-y-0.5 hover:shadow-xl'
         )}
       >
-        {t('bookNow')}
+        {isAirbnb ? t('checkAvailability') : t('bookNow')}
       </button>
 
       <p className="mt-3 text-center text-xs cp-ui-muted">{t('freeCancellationNote')}</p>
@@ -181,6 +193,7 @@ export default function ProductDetailBookingPanelContent({
       </div>
 
       {(showIncluded && includedHtml) || (showNotIncluded && notIncludedHtml) ? (
+        !isAirbnb ? (
         <CustomerPageZone zone="detail-sidebar-included">
           {showIncluded && includedHtml && (
             <div className="mt-4 rounded-xl bg-emerald-50 p-4 sm:mt-6 sm:rounded-2xl sm:border sm:border-emerald-200 sm:p-5 sm:shadow-sm">
@@ -212,6 +225,7 @@ export default function ProductDetailBookingPanelContent({
             </div>
           )}
         </CustomerPageZone>
+        ) : null
       ) : null}
     </>
   )

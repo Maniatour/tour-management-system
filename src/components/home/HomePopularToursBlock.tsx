@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronDown, ChevronUp, MapPin } from 'lucide-react'
+import { ChevronDown, ChevronUp, Heart, MapPin } from 'lucide-react'
 import type { ReactNode } from 'react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import HomeGygCarousel from '@/components/home/HomeGygCarousel'
 import TourCard from '@/components/customer/ui/TourCard'
 import TourGrid from '@/components/customer/ui/TourGrid'
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +48,8 @@ function mapGridLayout(variant: PopularStructureVariant) {
     case 'stacked-list':
       return 'list' as const
     case 'horizontal-scroll':
+    case 'attraction-cards':
+    case 'activity-cards':
       return 'scroll' as const
     default:
       return 'grid' as const
@@ -65,6 +68,8 @@ function mapCardVariant(
 }
 
 function imageHeightClass(variant: PopularStructureVariant, index: number): string {
+  if (variant === 'attraction-cards') return 'relative h-48 sm:h-56 bg-muted'
+  if (variant === 'activity-cards') return 'relative h-44 sm:h-52 bg-muted'
   if (variant === 'stacked-list') return 'relative h-44 sm:h-auto sm:w-52 md:w-64 shrink-0 bg-muted'
   if (variant === 'grid-two-large') return 'relative h-52 sm:h-64 bg-muted'
   if (variant === 'featured-plus-grid' && index === 0) return 'relative h-52 sm:h-72 bg-muted'
@@ -75,6 +80,12 @@ function imageHeightClass(variant: PopularStructureVariant, index: number): stri
 function cardShellClass(variant: PopularStructureVariant, index: number): string {
   const base =
     'cp-ui-card-surface rounded-card shadow-card border overflow-hidden hover:shadow-card-hover transition-all duration-300 relative'
+  if (variant === 'attraction-cards') {
+    return `${base} min-w-[min(75vw,280px)] sm:min-w-[300px] shrink-0 snap-start border-0 shadow-none hover:shadow-md bg-transparent`
+  }
+  if (variant === 'activity-cards') {
+    return `${base} min-w-[min(80vw,300px)] sm:min-w-[320px] shrink-0 snap-start group`
+  }
   if (variant === 'stacked-list') {
     return `${base} flex flex-col sm:flex-row sm:items-stretch`
   }
@@ -135,7 +146,71 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
       <div className={className}>{children}</div>
     )
 
-  const renderPublicCard = (product: PopularProductView, index: number) => (
+  const renderPublicCard = (product: PopularProductView, index: number) => {
+    if (variant === 'attraction-cards') {
+      const metaText = product.duration
+        ? product.duration
+        : getPriceLabel(getCardPrice(product))
+
+      return (
+        <Link
+          key={product.id}
+          href={`/${locale}/products/${product.id}`}
+          className="gyg-attraction-card"
+          role="listitem"
+        >
+          <div className="gyg-card-image">
+            <Image
+              src={product.primary_image ?? '/placeholder-tour.svg'}
+              alt={getProductName(product)}
+              fill
+              sizes="260px"
+              className="object-cover"
+            />
+          </div>
+          <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
+          <p className="gyg-card-meta">{metaText}</p>
+        </Link>
+      )
+    }
+
+    if (variant === 'activity-cards') {
+      const showSelloutBadge =
+        product.max_participants != null && product.max_participants <= 20
+
+      return (
+        <Link
+          key={product.id}
+          href={`/${locale}/products/${product.id}`}
+          className="gyg-activity-card group"
+          role="listitem"
+        >
+          <div className="gyg-card-image">
+            <Image
+              src={product.primary_image ?? '/placeholder-tour.svg'}
+              alt={getProductName(product)}
+              fill
+              sizes="280px"
+              className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            />
+            {showSelloutBadge ? (
+              <span className="gyg-sellout-badge">{t('likelyToSellOut')}</span>
+            ) : null}
+            <span
+              className="gyg-wishlist-btn"
+              onClick={(e) => e.preventDefault()}
+              aria-hidden
+            >
+              <Heart className="h-4 w-4 text-[#1a2b49]" strokeWidth={1.75} />
+            </span>
+          </div>
+          <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
+          <p className="gyg-card-meta">{getPriceLabel(getCardPrice(product))}</p>
+        </Link>
+      )
+    }
+
+    return (
     <TourCard
       key={product.id}
       href={`/${locale}/products/${product.id}`}
@@ -172,7 +247,8 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
       ) : null}
       <span className="text-base font-bold cp-ui-price">{getPriceLabel(getCardPrice(product))}</span>
     </TourCard>
-  )
+    )
+  }
 
   const renderAdminCard = (product: PopularProductView, index: number) => {
     const isFavorite = product.favorite_order !== null && product.favorite_order !== undefined
@@ -275,24 +351,29 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     )
   }
 
+  const isGygCarousel = variant === 'attraction-cards' || variant === 'activity-cards'
+
+  const cards = popularLoading ? (
+    <div className="py-10 text-center text-[#6b7280]">{t('loading')}</div>
+  ) : popularError ? (
+    <div className="py-10 text-center text-[#6b7280]">{popularError}</div>
+  ) : popularTours.length === 0 ? (
+    <div className="py-10 text-center text-[#6b7280]">
+      {locale === 'en' ? 'No popular tours are available yet.' : '등록된 인기 투어가 없습니다.'}
+    </div>
+  ) : (
+    popularTours.map((product, index) =>
+      showCardEditZones ? renderAdminCard(product, index) : renderPublicCard(product, index)
+    )
+  )
+
+  if (isGygCarousel) {
+    return <HomeGygCarousel ariaLabel={variant === 'attraction-cards' ? 'Attractions' : 'Activities'}>{cards}</HomeGygCarousel>
+  }
+
   return (
     <TourGrid layout={mapGridLayout(variant)}>
-      {popularLoading && (
-        <div className="col-span-full flex justify-center py-10 text-muted-foreground">{t('loading')}</div>
-      )}
-      {!popularLoading && popularError && (
-        <div className="col-span-full py-10 text-center text-muted-foreground">{popularError}</div>
-      )}
-      {!popularLoading && !popularError && popularTours.length === 0 && (
-        <div className="col-span-full py-10 text-center text-muted-foreground">
-          {locale === 'en' ? 'No popular tours are available yet.' : '등록된 인기 투어가 없습니다.'}
-        </div>
-      )}
-      {!popularLoading &&
-        !popularError &&
-        popularTours.map((product, index) =>
-          showCardEditZones ? renderAdminCard(product, index) : renderPublicCard(product, index)
-        )}
+      {cards}
     </TourGrid>
   )
 }
