@@ -221,7 +221,7 @@ function ProductDetailPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-slate-50 pb-28 lg:pb-12">
+      <div className="min-h-screen bg-slate-50 pb-24 lg:pb-12">
         <CustomerPagePreviewHighlightEffect />
       {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-detail" />}
       <CustomerPageZoneLayoutRenderer

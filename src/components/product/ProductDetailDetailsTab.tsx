@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   MapPin,
   Users,
@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Shield,
   Megaphone,
+  type LucideIcon,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
@@ -28,6 +29,42 @@ import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 
+export type ProductDetailSection = 'basic' | 'included' | 'logistics' | 'policy'
+
+function DetailInfoBlock({
+  icon: Icon,
+  iconClassName,
+  title,
+  html,
+}: {
+  icon: LucideIcon
+  iconClassName: string
+  title: string
+  html: string
+}) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-4 sm:border sm:border-slate-200 sm:bg-white sm:p-6 sm:shadow-sm">
+      <div className="mb-2.5 flex items-center gap-2 sm:mb-3 sm:gap-2.5">
+        <Icon className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${iconClassName}`} aria-hidden />
+        <h4 className="text-sm font-semibold text-gray-900 sm:text-lg">{title}</h4>
+      </div>
+      <div
+        className="prose prose-sm max-w-none text-xs leading-relaxed text-gray-700 sm:text-sm"
+        dangerouslySetInnerHTML={{ __html: markdownToHtml(html) }}
+      />
+    </div>
+  )
+}
+
+function DetailEmptyState({ emoji, message }: { emoji: string; message: string }) {
+  return (
+    <div className="rounded-xl bg-gray-50 py-8 text-center sm:border sm:border-dashed sm:border-gray-300 sm:py-12">
+      <div className="mb-2 text-3xl text-gray-400 sm:text-4xl">{emoji}</div>
+      <p className="text-xs text-gray-600 sm:text-sm">{message}</p>
+    </div>
+  )
+}
+
 type ProductDetailDetailsTabProps = {
   product: ProductDetailsTabProduct
   productDetails: ProductDetailsFields | null
@@ -35,6 +72,7 @@ type ProductDetailDetailsTabProps = {
   durationLabel: string
   locale: string
   tagLabelMap: TagLabelMap
+  section: ProductDetailSection
 }
 
 export default function ProductDetailDetailsTab({
@@ -44,16 +82,9 @@ export default function ProductDetailDetailsTab({
   durationLabel,
   locale,
   tagLabelMap,
+  section,
 }: ProductDetailDetailsTabProps) {
   const t = useTranslations('productDetail')
-  const [activeDetailTab, setActiveDetailTab] = useState('basic')
-
-  const detailTabs = [
-    { id: 'basic', label: t('detailTabBasic') },
-    { id: 'included', label: t('detailTabIncluded') },
-    { id: 'logistics', label: t('detailTabLogistics') },
-    { id: 'policy', label: t('detailTabPolicy') },
-  ]
 
   const showDetailOnCustomerPage = (field: string) =>
     isProductDetailVisibleOnCustomerPage(productDetails?.customer_page_visibility, field)
@@ -93,38 +124,14 @@ export default function ProductDetailDetailsTab({
   }, [productDetails])
 
   return (
-    <CustomerPageZone zone="detail-details-body" className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-900">{t("detailedTourInformation")}</h3>
-                    
-                    {/* 상세정보 서브 탭 네비게이션 */}
-                    <div className="border-b border-gray-200">
-                      <nav className="-mb-px flex overflow-x-auto scrollbar-hide">
-                        <div className="flex space-x-2 sm:space-x-8 min-w-max px-4 sm:px-0">
-                          {detailTabs.map((tab) => (
-                            <button
-                              key={tab.id}
-                              onClick={() => setActiveDetailTab(tab.id)}
-                              className={`py-2 sm:py-2 px-2 sm:px-1 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 transition-colors touch-optimized mobile-button ${
-                                activeDetailTab === tab.id
-                                  ? 'border-blue-500 text-blue-600'
-                                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                              }`}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
-                        </div>
-                      </nav>
-                    </div>
-
-                    {/* 기본정보 탭 */}
-                    {activeDetailTab === 'basic' && (
-                      <div className="space-y-6">
-                        {/* 기본 정보 */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <CustomerPageZone zone="detail-details-body" className="space-y-4 sm:space-y-6">
+                    {/* 기본정보 */}
+                    {section === 'basic' && (
+                      <div className="space-y-4 sm:space-y-6">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">{t('keyInformation')}</h4>
-                            <dl className="space-y-3 text-sm">
+                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('keyInformation')}</h4>
+                            <dl className="space-y-2.5 text-xs sm:space-y-3 sm:text-sm">
                               <div className="flex justify-between">
                                 <dt className="text-gray-600">{t('category')}</dt>
                                 <dd className="text-gray-900">{categoryLabel}</dd>
@@ -158,8 +165,8 @@ export default function ProductDetailDetailsTab({
                           </div>
 
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">{t('ageGuidelines')}</h4>
-                            <dl className="space-y-3 text-sm">
+                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('ageGuidelines')}</h4>
+                            <dl className="space-y-2.5 text-xs sm:space-y-3 sm:text-sm">
                               {product.adult_age && (
                                 <div className="flex justify-between">
                                   <dt className="text-gray-600">{t('adultAge')}</dt>
@@ -194,12 +201,12 @@ export default function ProductDetailDetailsTab({
                         {/* 언어 정보 */}
                         {product.languages && product.languages.length > 0 && (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">{t('supportedLanguages')}</h4>
-                            <div className="flex flex-wrap gap-2">
+                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('supportedLanguages')}</h4>
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
                               {product.languages.map((language, index) => (
                                 <span
                                   key={index}
-                                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"
+                                  className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 sm:px-3 sm:py-1 sm:text-sm"
                                 >
                                   {language}
                                 </span>
@@ -212,31 +219,31 @@ export default function ProductDetailDetailsTab({
                         {(getProductDepartureCity(product, locale) ||
                           getProductArrivalCity(product, locale)) && (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">{t('departureArrival')}</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('departureArrival')}</h4>
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-4">
                               {getProductDepartureCity(product, locale) && (
-                                <div className="flex items-center space-x-2">
-                                  <MapPin className="h-4 w-4 text-blue-500" />
-                                  <span className="text-sm text-gray-600">{t('departure')}</span>
-                                  <span className="text-sm font-medium">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
+                                  <MapPin className="h-3.5 w-3.5 shrink-0 text-blue-500 sm:h-4 sm:w-4" />
+                                  <span className="text-gray-600">{t('departure')}</span>
+                                  <span className="font-medium text-gray-900">
                                     {getProductDepartureCity(product, locale)}
                                   </span>
                                   {getProductDepartureCountry(product, locale) && (
-                                    <span className="text-sm text-gray-500">
+                                    <span className="text-gray-500">
                                       ({getProductDepartureCountry(product, locale)})
                                     </span>
                                   )}
                                 </div>
                               )}
                               {getProductArrivalCity(product, locale) && (
-                                <div className="flex items-center space-x-2">
-                                  <MapPin className="h-4 w-4 text-green-500" />
-                                  <span className="text-sm text-gray-600">{t('arrival')}</span>
-                                  <span className="text-sm font-medium">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
+                                  <MapPin className="h-3.5 w-3.5 shrink-0 text-green-500 sm:h-4 sm:w-4" />
+                                  <span className="text-gray-600">{t('arrival')}</span>
+                                  <span className="font-medium text-gray-900">
                                     {getProductArrivalCity(product, locale)}
                                   </span>
                                   {getProductArrivalCountry(product, locale) && (
-                                    <span className="text-sm text-gray-500">
+                                    <span className="text-gray-500">
                                       ({getProductArrivalCountry(product, locale)})
                                     </span>
                                   )}
@@ -246,321 +253,161 @@ export default function ProductDetailDetailsTab({
                           </div>
                         )}
 
-                        {/* 태그 */}
-                        {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) && (
+                        {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) ? (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">{t('tags')}</h4>
-                            <div className="flex flex-wrap gap-2">
+                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('tags')}</h4>
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
                               {(productDetails?.tags || product.tags || []).map((tag, index) => (
                                 <span
                                   key={index}
-                                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
+                                  className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 sm:px-3 sm:py-1 sm:text-sm"
                                 >
                                   {resolveTagLabel(tag, locale, tagLabelMap)}
                                 </span>
                               ))}
                             </div>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     )}
 
-                    {/* 포함/불포함 탭 */}
-                    {activeDetailTab === 'included' && (
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* 포함/불포함 */}
+                    {section === 'included' && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                           {productDetails?.included && showDetailOnCustomerPage('included') && (
-                            <div className="group relative overflow-hidden bg-white border border-green-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-green-500 to-green-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-green-100 to-green-200 rounded-lg">
-                                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('included')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.included || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={CheckCircle2}
+                              iconClassName="text-green-600"
+                              title={t('included')}
+                              html={productDetails.included}
+                            />
                           )}
                           {productDetails?.not_included && showDetailOnCustomerPage('not_included') && (
-                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
-                                    <XCircle className="w-5 h-5 text-red-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('excluded')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.not_included || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={XCircle}
+                              iconClassName="text-red-600"
+                              title={t('excluded')}
+                              html={productDetails.not_included}
+                            />
                           )}
                         </div>
-                        
+
                         {!hasVisibleIncludedDetailCards && (
-                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                            <div className="text-gray-400 mb-2 text-4xl">📋</div>
-                            <p className="text-gray-600">{t('noInclusionDetails')}</p>
-                          </div>
+                          <DetailEmptyState emoji="📋" message={t('noInclusionDetails')} />
                         )}
                       </div>
                     )}
 
-                    {/* 운영정보 탭 */}
-                    {activeDetailTab === 'logistics' && (
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-1 gap-6">
+                    {/* 운영정보 */}
+                    {section === 'logistics' && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4">
                           {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg">
-                                    <Car className="w-5 h-5 text-blue-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('pickupDropInfo')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.pickup_drop_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Car}
+                              iconClassName="text-blue-600"
+                              title={t('pickupDropInfo')}
+                              html={productDetails.pickup_drop_info}
+                            />
                           )}
-                          
                           {productDetails?.luggage_info && showDetailOnCustomerPage('luggage_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-yellow-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-lg">
-                                    <Luggage className="w-5 h-5 text-yellow-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('luggageInfo')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.luggage_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Luggage}
+                              iconClassName="text-yellow-600"
+                              title={t('luggageInfo')}
+                              html={productDetails.luggage_info}
+                            />
                           )}
-                          
                           {productDetails?.tour_operation_info && showDetailOnCustomerPage('tour_operation_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
-                                    <Settings className="w-5 h-5 text-purple-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('tourOperations')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.tour_operation_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Settings}
+                              iconClassName="text-purple-600"
+                              title={t('tourOperations')}
+                              html={productDetails.tour_operation_info}
+                            />
                           )}
-                          
                           {productDetails?.preparation_info && showDetailOnCustomerPage('preparation_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-orange-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-orange-100 to-orange-200 rounded-lg">
-                                    <Lightbulb className="w-5 h-5 text-orange-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('preparationTips')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.preparation_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Lightbulb}
+                              iconClassName="text-orange-600"
+                              title={t('preparationTips')}
+                              html={productDetails.preparation_info}
+                            />
                           )}
-                          
                           {productDetails?.small_group_info && showDetailOnCustomerPage('small_group_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-indigo-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-lg">
-                                    <Users2 className="w-5 h-5 text-indigo-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('smallGroupInfo')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.small_group_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Users2}
+                              iconClassName="text-indigo-600"
+                              title={t('smallGroupInfo')}
+                              html={productDetails.small_group_info}
+                            />
                           )}
-
-                          {productDetails?.companion_recruitment_info && showDetailOnCustomerPage('companion_recruitment_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-teal-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-teal-400 via-teal-500 to-teal-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-teal-100 to-teal-200 rounded-lg">
-                                    <Users2 className="w-5 h-5 text-teal-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('companionRecruitment')}</h4>
-                                </div>
-                                <div
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{
-                                    __html: markdownToHtml(productDetails.companion_recruitment_info || '')
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          )}
-                          
+                          {productDetails?.companion_recruitment_info &&
+                            showDetailOnCustomerPage('companion_recruitment_info') && (
+                              <DetailInfoBlock
+                                icon={Users2}
+                                iconClassName="text-teal-600"
+                                title={t('companionRecruitment')}
+                                html={productDetails.companion_recruitment_info}
+                              />
+                            )}
                           {productDetails?.notice_info && showDetailOnCustomerPage('notice_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
-                                    <AlertTriangle className="w-5 h-5 text-red-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('importantNotes')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.notice_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={AlertTriangle}
+                              iconClassName="text-red-600"
+                              title={t('importantNotes')}
+                              html={productDetails.notice_info}
+                            />
                           )}
                         </div>
-                        
+
                         {!hasVisibleLogisticsCards && (
-                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                            <div className="text-gray-400 mb-2 text-4xl">🚌</div>
-                            <p className="text-gray-600">{t('noLogisticsInfo')}</p>
-                          </div>
+                          <DetailEmptyState emoji="🚌" message={t('noLogisticsInfo')} />
                         )}
                       </div>
                     )}
 
-                    {/* 정책 탭 */}
-                    {activeDetailTab === 'policy' && (
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-1 gap-6">
+                    {/* 정책 */}
+                    {section === 'policy' && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4">
                           {productDetails?.important_notes && showDetailOnCustomerPage('important_notes') && (
-                            <div className="group relative overflow-hidden bg-white border border-amber-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg">
-                                    <AlertTriangle className="w-5 h-5 text-amber-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">IMPORTANT NOTES</h4>
-                                </div>
-                                <div
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{
-                                    __html: markdownToHtml(productDetails.important_notes || '')
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={AlertTriangle}
+                              iconClassName="text-amber-600"
+                              title="IMPORTANT NOTES"
+                              html={productDetails.important_notes}
+                            />
                           )}
                           {productDetails?.private_tour_info && showDetailOnCustomerPage('private_tour_info') && (
-                            <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
-                                    <Users className="w-5 h-5 text-purple-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('privateTourInfo')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.private_tour_info || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Users}
+                              iconClassName="text-purple-600"
+                              title={t('privateTourInfo')}
+                              html={productDetails.private_tour_info}
+                            />
                           )}
-                          
                           {productDetails?.cancellation_policy && showDetailOnCustomerPage('cancellation_policy') && (
-                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
-                                    <Shield className="w-5 h-5 text-red-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('cancellationPolicy')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.cancellation_policy || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Shield}
+                              iconClassName="text-red-600"
+                              title={t('cancellationPolicy')}
+                              html={productDetails.cancellation_policy}
+                            />
                           )}
-                          
                           {productDetails?.chat_announcement && showDetailOnCustomerPage('chat_announcement') && (
-                            <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
-                              <div className="p-6">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <div className="p-2 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg">
-                                    <Megaphone className="w-5 h-5 text-blue-600" />
-                                  </div>
-                                  <h4 className="text-lg font-semibold text-gray-900">{t('announcements')}</h4>
-                                </div>
-                                <div 
-                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: markdownToHtml(productDetails.chat_announcement || '') 
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <DetailInfoBlock
+                              icon={Megaphone}
+                              iconClassName="text-blue-600"
+                              title={t('announcements')}
+                              html={productDetails.chat_announcement}
+                            />
                           )}
                         </div>
-                        
+
                         {!hasVisiblePolicyCards && (
-                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                            <div className="text-gray-400 mb-2 text-4xl">📋</div>
-                            <p className="text-gray-600">{t('noPolicyInfo')}</p>
-                          </div>
+                          <DetailEmptyState emoji="📋" message={t('noPolicyInfo')} />
                         )}
                       </div>
                     )}

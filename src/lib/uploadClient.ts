@@ -68,11 +68,7 @@ export async function ensureFreshAuthSessionForUpload(): Promise<void> {
   }
 }
 
-/**
- * /api/upload 호출 시 세션이 쿠키가 아닌 localStorage(기본 supabase-js)에만 있어도
- * Authorization Bearer 로 인증되도록 합니다.
- */
-export async function fetchUploadApi(formData: FormData): Promise<Response> {
+async function buildAuthUploadHeaders(): Promise<Headers> {
   await ensureFreshAuthSessionForUpload();
   const {
     data: { session },
@@ -81,9 +77,46 @@ export async function fetchUploadApi(formData: FormData): Promise<Response> {
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }
+  return headers;
+}
+
+/**
+ * /api/upload 호출 시 세션이 쿠키가 아닌 localStorage(기본 supabase-js)에만 있어도
+ * Authorization Bearer 로 인증되도록 합니다.
+ */
+export async function fetchUploadApi(formData: FormData): Promise<Response> {
+  const headers = await buildAuthUploadHeaders();
   return fetch('/api/upload', {
     method: 'POST',
     body: formData,
+    credentials: 'include',
+    headers,
+  });
+}
+
+/**
+ * /api/upload/image — 예약 증빙·상품 이미지 등 (Office Manager 등 localStorage JWT 세션)
+ */
+export async function fetchImageUploadApi(formData: FormData): Promise<Response> {
+  const headers = await buildAuthUploadHeaders();
+  return fetch('/api/upload/image', {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+    headers,
+  });
+}
+
+/** JSON API 호출 시 Bearer JWT + 쿠키 credentials */
+export async function fetchWithAuthSession(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const authHeaders = await buildAuthUploadHeaders();
+  const headers = new Headers(init?.headers);
+  authHeaders.forEach((value, key) => headers.set(key, value));
+  return fetch(input, {
+    ...init,
     credentials: 'include',
     headers,
   });

@@ -60,6 +60,8 @@ export const OFFICE_SCHEDULE_COPY = {
   offRowLabel: 'OFF',
   offDayHint: 'Click or drag to mark mandatory day off for selected staff',
   offDayCellLabel: 'OFF',
+  offDayScheduleBlocked:
+    '{name} is marked OFF on {date}. Remove OFF from the OFF row before adding work hours.',
   cellHint: 'Click or drag to schedule',
   readOnly: 'You can only edit your own schedule.',
   loading: 'Loading...',

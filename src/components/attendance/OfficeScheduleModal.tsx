@@ -299,6 +299,7 @@ export default function OfficeScheduleModal({
   const lastPaintedPosRef = useRef<PaintCellCoord | null>(null)
   const lastPaintedOffDateRef = useRef<string | null>(null)
   const isPaintingOffRef = useRef(false)
+  const offDayBlockAlertShownRef = useRef(false)
   const monthDateStringsRef = useRef<string[]>([])
   const paintRafRef = useRef<number | null>(null)
   const pointerCaptureTargetRef = useRef<HTMLElement | null>(null)
@@ -361,6 +362,7 @@ export default function OfficeScheduleModal({
       if (!isPaintingRef.current) return
       isPaintingRef.current = false
       isPaintingOffRef.current = false
+      offDayBlockAlertShownRef.current = false
       strokeModeRef.current = null
       lastPaintedPosRef.current = null
       if (pointerCaptureTargetRef.current && activePointerIdRef.current != null) {
@@ -652,6 +654,28 @@ export default function OfficeScheduleModal({
     return cellStaffMapRef.current.get(cellKey) ?? []
   }, [])
 
+  const isOffDayForBrush = useCallback((date: string): boolean => {
+    const brush = activeBrushRef.current
+    if (!brush || brush === 'eraser') return false
+    return draftOffDayMapRef.current.has(officeScheduleOffDayKey(brush, date))
+  }, [])
+
+  const showOffDayScheduleBlocked = useCallback(
+    (date: string) => {
+      if (offDayBlockAlertShownRef.current) return
+      offDayBlockAlertShownRef.current = true
+      const brush = activeBrushRef.current
+      if (!brush || brush === 'eraser') return
+      const member = team.find((m) => m.email === brush)
+      const name = member ? displayName(member) : brush.split('@')[0]
+      const dateLabel = shortDateLabel(date)
+      window.alert(
+        C.offDayScheduleBlocked.replace('{name}', name).replace('{date}', dateLabel)
+      )
+    },
+    [team]
+  )
+
   const resolveStrokeMode = useCallback((date: string, hourSlot: number): StrokeMode | null => {
     const brush = activeBrushRef.current
     if (!brush) return null
@@ -726,12 +750,13 @@ export default function OfficeScheduleModal({
       )
       if (already) return false
 
+      const offKey = officeScheduleOffDayKey(email, date)
+      if (draftOffDayMapRef.current.has(offKey)) {
+        return false
+      }
+
       const slotKey = officeScheduleSlotKey(email, date, hourSlot)
       draft.set(slotKey, { note: null })
-      const offKey = officeScheduleOffDayKey(email, date)
-      if (draftOffDayMapRef.current.delete(offKey)) {
-        // work slot and OFF are mutually exclusive
-      }
       const list = cellStaffMapRef.current.get(cellKey) ?? []
       cellStaffMapRef.current.set(cellKey, [...list, email])
       return true
@@ -911,6 +936,10 @@ export default function OfficeScheduleModal({
 
       let changed = false
       for (const { date, hourSlot } of cells) {
+        if (mode === 'add' && isOffDayForBrush(date)) {
+          showOffDayScheduleBlocked(date)
+          continue
+        }
         if (mutateCell(date, hourSlot, mode)) changed = true
       }
 
@@ -919,7 +948,7 @@ export default function OfficeScheduleModal({
         else scheduleDraftRender()
       }
     },
-    [flushDraftRender, mutateCell, resolveStrokeMode, scheduleDraftRender]
+    [flushDraftRender, isOffDayForBrush, mutateCell, resolveStrokeMode, scheduleDraftRender, showOffDayScheduleBlocked]
   )
 
   const paintStrokeTo = useCallback(
@@ -1052,6 +1081,7 @@ export default function OfficeScheduleModal({
   const startPainting = (e: React.PointerEvent, date: string, hourSlot: number) => {
     if (!canPaintCell()) return
     isPaintingOffRef.current = false
+    offDayBlockAlertShownRef.current = false
     strokeBeforeRef.current = buildCurrentSnapshot(
       draftSlotMapRef.current,
       draftOffDayMapRef.current
@@ -1075,6 +1105,7 @@ export default function OfficeScheduleModal({
   const startOffPainting = (e: React.PointerEvent, date: string) => {
     if (!canPaintCell()) return
     isPaintingOffRef.current = true
+    offDayBlockAlertShownRef.current = false
     strokeBeforeRef.current = buildCurrentSnapshot(
       draftSlotMapRef.current,
       draftOffDayMapRef.current
@@ -1124,6 +1155,7 @@ export default function OfficeScheduleModal({
         draftSlotMapRef.current,
         draftOffDayMapRef.current
       )
+      offDayBlockAlertShownRef.current = false
       if (hourSlot == null) {
         isPaintingOffRef.current = true
         paintOffStrokeTo(date, true)

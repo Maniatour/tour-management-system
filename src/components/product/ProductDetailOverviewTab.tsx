@@ -146,7 +146,7 @@ export default function ProductDetailOverviewTab({
 
   return (
 
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-4 sm:space-y-8">
 
       {productDetails &&
 
@@ -156,25 +156,25 @@ export default function ProductDetailOverviewTab({
 
           <CustomerPageZone zone="detail-overview-slogan">
 
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 sm:p-8">
+            <div className="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4 sm:rounded-2xl sm:border sm:border-blue-100 sm:p-8">
 
               <div className="space-y-3">
 
                 {productDetails.slogan1 && (
 
-                  <div className="text-2xl font-bold text-[#0B5FFF] sm:text-3xl">{productDetails.slogan1}</div>
+                  <div className="text-xl font-bold text-[#0B5FFF] sm:text-3xl">{productDetails.slogan1}</div>
 
                 )}
 
                 {productDetails.slogan2 && (
 
-                  <div className="text-lg font-semibold text-slate-800 sm:text-xl">{productDetails.slogan2}</div>
+                  <div className="text-base font-semibold text-slate-800 sm:text-xl">{productDetails.slogan2}</div>
 
                 )}
 
                 {productDetails.slogan3 && (
 
-                  <div className="text-base leading-relaxed text-slate-600">{productDetails.slogan3}</div>
+                  <div className="text-sm leading-relaxed text-slate-600 sm:text-base">{productDetails.slogan3}</div>
 
                 )}
 
@@ -208,7 +208,7 @@ export default function ProductDetailOverviewTab({
 
             <div
 
-              className="prose prose-sm max-w-none leading-relaxed text-slate-700 sm:prose-base"
+              className="prose prose-sm max-w-none text-xs leading-relaxed text-slate-700 sm:prose-base sm:text-base"
 
               dangerouslySetInnerHTML={{ __html: markdownToHtml(greetingHtml) }}
 
@@ -230,7 +230,7 @@ export default function ProductDetailOverviewTab({
 
             <div
 
-              className="prose prose-sm max-w-none leading-relaxed text-slate-700 sm:prose-base"
+              className="prose prose-sm max-w-none text-xs leading-relaxed text-slate-700 sm:prose-base sm:text-base"
 
               dangerouslySetInnerHTML={{
 
@@ -262,39 +262,39 @@ export default function ProductDetailOverviewTab({
 
         >
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-4">
 
-            <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100/80">
+            <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
-              <div className="shrink-0 rounded-xl bg-blue-50 p-3">
+              <div className="shrink-0 rounded-lg bg-blue-50 p-2 sm:rounded-xl sm:p-3">
 
-                <Calendar className="h-6 w-6 text-[#0B5FFF]" aria-hidden />
+                <Calendar className="h-5 w-5 text-[#0B5FFF] sm:h-6 sm:w-6" aria-hidden />
 
               </div>
 
               <div className="min-w-0 flex-1">
 
-                <span className="mb-1 block text-sm font-medium text-slate-500">{t('duration')}</span>
+                <span className="mb-0.5 block text-xs font-medium text-slate-500 sm:mb-1 sm:text-sm">{t('duration')}</span>
 
-                <p className="text-lg font-semibold text-slate-900">{durationLabel}</p>
+                <p className="text-sm font-semibold text-slate-900 sm:text-lg">{durationLabel}</p>
 
               </div>
 
             </div>
 
-            <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100/80">
+            <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
-              <div className="shrink-0 rounded-xl bg-green-50 p-3">
+              <div className="shrink-0 rounded-lg bg-green-50 p-2 sm:rounded-xl sm:p-3">
 
-                <Users className="h-6 w-6 text-green-600" aria-hidden />
+                <Users className="h-5 w-5 text-green-600 sm:h-6 sm:w-6" aria-hidden />
 
               </div>
 
               <div className="min-w-0 flex-1">
 
-                <span className="mb-1 block text-sm font-medium text-slate-500">{t('maxParticipants')}</span>
+                <span className="mb-0.5 block text-xs font-medium text-slate-500 sm:mb-1 sm:text-sm">{t('maxParticipants')}</span>
 
-                <p className="text-lg font-semibold text-slate-900">
+                <p className="text-sm font-semibold text-slate-900 sm:text-lg">
 
                   {product.max_participants || 0}
 
@@ -306,19 +306,19 @@ export default function ProductDetailOverviewTab({
 
             </div>
 
-            <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100/80">
+            <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
-              <div className="shrink-0 rounded-xl bg-red-50 p-3">
+              <div className="shrink-0 rounded-lg bg-red-50 p-2 sm:rounded-xl sm:p-3">
 
-                <MapPin className="h-6 w-6 text-red-500" aria-hidden />
+                <MapPin className="h-5 w-5 text-red-500 sm:h-6 sm:w-6" aria-hidden />
 
               </div>
 
               <div className="min-w-0 flex-1">
 
-                <span className="mb-1 block text-sm font-medium text-slate-500">{t('category')}</span>
+                <span className="mb-0.5 block text-xs font-medium text-slate-500 sm:mb-1 sm:text-sm">{t('category')}</span>
 
-                <p className="text-lg font-semibold text-slate-900">{categoryLabel}</p>
+                <p className="text-sm font-semibold text-slate-900 sm:text-lg">{categoryLabel}</p>
 
               </div>
 
@@ -326,19 +326,19 @@ export default function ProductDetailOverviewTab({
 
             {product.group_size && (
 
-              <div className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100/80">
+              <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
-                <div className="shrink-0 rounded-xl bg-purple-50 p-3">
+                <div className="shrink-0 rounded-lg bg-purple-50 p-2 sm:rounded-xl sm:p-3">
 
-                  <Users2 className="h-6 w-6 text-purple-600" aria-hidden />
+                  <Users2 className="h-5 w-5 text-purple-600 sm:h-6 sm:w-6" aria-hidden />
 
                 </div>
 
                 <div className="min-w-0 flex-1">
 
-                  <span className="mb-1 block text-sm font-medium text-slate-500">{t('groupSize')}</span>
+                  <span className="mb-0.5 block text-xs font-medium text-slate-500 sm:mb-1 sm:text-sm">{t('groupSize')}</span>
 
-                  <p className="text-lg font-semibold text-slate-900">{product.group_size}</p>
+                  <p className="text-sm font-semibold text-slate-900 sm:text-lg">{product.group_size}</p>
 
                 </div>
 
@@ -378,7 +378,7 @@ export default function ProductDetailOverviewTab({
 
                   key={index}
 
-                  className="inline-flex items-center rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 text-sm font-medium text-[#0B5FFF] transition-colors hover:from-blue-100 hover:to-indigo-100"
+                  className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-[#0B5FFF] sm:rounded-xl sm:border sm:border-blue-100 sm:px-4 sm:py-2 sm:text-sm"
 
                 >
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Upload, Image as ImageIcon, Trash2, X } from 'lucide-react'
+import { fetchImageUploadApi, fetchWithAuthSession } from '@/lib/uploadClient'
 
 export type EvidenceAttachment = {
   id: string
@@ -44,7 +45,7 @@ export default function ReservationEvidenceUpload({
     if (!reservationId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/reservations/${reservationId}/evidence`)
+      const res = await fetchWithAuthSession(`/api/reservations/${reservationId}/evidence`)
       if (res.ok) {
         const data = await res.json()
         setList(Array.isArray(data) ? data : [])
@@ -76,13 +77,13 @@ export default function ReservationEvidenceUpload({
         const formData = new FormData()
         formData.append('file', file)
         formData.append('folder', 'reservation-evidence')
-        const uploadRes = await fetch('/api/upload/image', { method: 'POST', body: formData })
+        const uploadRes = await fetchImageUploadApi(formData)
         if (!uploadRes.ok) {
           const err = await uploadRes.json().catch(() => ({}))
           throw new Error(err.error || 'Upload failed')
         }
         const { imageUrl, path, fileName } = await uploadRes.json()
-        const addRes = await fetch(`/api/reservations/${reservationId}/evidence`, {
+        const addRes = await fetchWithAuthSession(`/api/reservations/${reservationId}/evidence`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageUrl, filePath: path, fileName: fileName || file.name })
@@ -125,7 +126,10 @@ export default function ReservationEvidenceUpload({
     async (attachmentId: string) => {
       if (!reservationId || !confirm(locale === 'ko' ? '이 증거 자료를 삭제할까요?' : 'Delete this attachment?')) return
       try {
-        const res = await fetch(`/api/reservations/${reservationId}/evidence/${attachmentId}`, { method: 'DELETE' })
+        const res = await fetchWithAuthSession(
+          `/api/reservations/${reservationId}/evidence/${attachmentId}`,
+          { method: 'DELETE' }
+        )
         if (!res.ok) throw new Error('Delete failed')
         await fetchList()
       } catch (e) {

@@ -72,12 +72,11 @@ export default function ProductDetailImageGallery({
   }
 
   return (
-    <CustomerPageZone zone="detail-gallery" className="rounded-2xl cp-ui-panel-surface shadow-sm">
-      <div className="overflow-hidden rounded-2xl">
+    <CustomerPageZone zone="detail-gallery" className="overflow-hidden rounded-xl cp-ui-panel-surface sm:rounded-2xl sm:shadow-sm">
       {allImages.length > 0 ? (
         <>
           <div
-            className="relative h-[50vh] min-h-[280px] w-full bg-slate-100 sm:h-[55vh] md:h-[60vh] lg:h-[560px]"
+            className="relative h-[42vh] min-h-[220px] w-full bg-slate-100 sm:h-[55vh] sm:min-h-[280px] md:h-[60vh] lg:h-[560px]"
             onMouseEnter={() => setIsAutoSlidePaused(true)}
             onMouseLeave={() => setIsAutoSlidePaused(false)}
           >
@@ -125,21 +124,21 @@ export default function ProductDetailImageGallery({
           </div>
 
           <div
-            className="border-t border-slate-100 p-4 sm:p-5"
+            className="border-t border-slate-100 px-2 py-2 sm:p-5"
             onMouseEnter={() => setIsAutoSlidePaused(true)}
             onMouseLeave={() => setIsAutoSlidePaused(false)}
           >
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide sm:gap-2">
               {allImages.slice(0, 8).map((image, index) => (
                 <button
                   key={image.id}
                   type="button"
                   onClick={() => handleThumbnailSelect(index)}
                   className={cn(
-                    'relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 transition-all sm:h-20 sm:w-20',
+                    'relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-all sm:h-20 sm:w-20 sm:rounded-xl',
                     selectedImageIndex === index
-                      ? 'border-[#0B5FFF] ring-2 ring-[#0B5FFF]/20'
-                      : 'border-transparent opacity-80 hover:opacity-100'
+                      ? 'border-[#0B5FFF] opacity-100'
+                      : 'border-transparent opacity-70 hover:opacity-100'
                   )}
                   aria-label={`${isEnglish ? 'Select image' : '이미지 선택'} ${index + 1}`}
                 >
@@ -157,7 +156,7 @@ export default function ProductDetailImageGallery({
         </>
       ) : (
         <>
-          <div className="relative h-72 bg-slate-100 sm:h-96 md:h-[420px]">
+          <div className="relative h-56 bg-slate-100 sm:h-96 md:h-[420px]">
             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
               <div className="text-center px-6">
                 <div className="mb-4 text-6xl" aria-hidden>
@@ -173,7 +172,6 @@ export default function ProductDetailImageGallery({
           </div>
         </>
       )}
-      </div>
     </CustomerPageZone>
   )
 }

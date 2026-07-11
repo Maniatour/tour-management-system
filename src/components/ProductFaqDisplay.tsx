@@ -87,39 +87,39 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
   }
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-3">
+    <div className="space-y-2 sm:space-y-3">
+      <div className="space-y-2 sm:space-y-3">
         {faqs.map((faq, index) => (
           <div
             key={faq.id}
-            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white sm:rounded-2xl sm:shadow-sm sm:transition-shadow sm:hover:shadow-md"
           >
             <button
               type="button"
               onClick={() => toggleFaqExpansion(faq.id)}
-              className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50 sm:px-6 sm:py-5"
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-50 sm:gap-4 sm:px-6 sm:py-5"
               aria-expanded={expandedFaqs.has(faq.id)}
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="mt-0.5 shrink-0 rounded-lg bg-[#0B5FFF]/10 px-2 py-1 text-xs font-bold text-[#0B5FFF]">
+              <div className="flex min-w-0 items-start gap-2 sm:gap-3">
+                <span className="mt-0.5 shrink-0 rounded-md bg-[#0B5FFF]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#0B5FFF] sm:rounded-lg sm:px-2 sm:py-1 sm:text-xs">
                   Q{index + 1}
                 </span>
-                <h4 className="font-semibold text-slate-900">{faq.question}</h4>
+                <h4 className="text-sm font-semibold text-slate-900 sm:text-base">{faq.question}</h4>
               </div>
               {expandedFaqs.has(faq.id) ? (
-                <ChevronUp className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+                <ChevronUp className="h-4 w-4 shrink-0 text-slate-400 sm:h-5 sm:w-5" aria-hidden />
               ) : (
-                <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+                <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 sm:h-5 sm:w-5" aria-hidden />
               )}
             </button>
 
             {expandedFaqs.has(faq.id) && (
-              <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-4 sm:px-6 sm:py-5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 shrink-0 rounded-lg bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">
+              <div className="border-t border-slate-100 bg-slate-50/50 px-3 py-3 sm:px-6 sm:py-5">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <span className="mt-0.5 shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 sm:rounded-lg sm:px-2 sm:py-1 sm:text-xs">
                     A
                   </span>
-                  <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{faq.answer}</p>
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700 sm:text-sm">{faq.answer}</p>
                 </div>
               </div>
             )}

@@ -36,26 +36,26 @@ export default function ProductDetailHighlights({
 
   return (
     <CustomerPageZone zone="detail-highlights" suppressEditButton>
-      <section className="rounded-2xl cp-ui-panel-surface p-6 shadow-sm sm:p-8">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+      <section className="rounded-xl border border-slate-200/80 bg-white p-4 sm:rounded-2xl sm:p-6 sm:shadow-sm lg:p-8">
+        <div className="mb-4 sm:mb-6">
+          <h2 className="text-lg font-bold tracking-tight sm:text-2xl lg:text-3xl">
             {t('tourHighlights')}
           </h2>
-          <p className="mt-2 text-sm cp-ui-muted sm:text-base">{t('tourHighlightsSubtitle')}</p>
+          <p className="mt-1 text-xs cp-ui-muted sm:mt-2 sm:text-base">{t('tourHighlightsSubtitle')}</p>
         </div>
 
         {(categoryLabel || durationLabel) && (
-          <CustomerPageZone zone="detail-overview-keyinfo" className="mb-5">
-            <div className="flex flex-wrap gap-3">
+          <CustomerPageZone zone="detail-overview-keyinfo" className="mb-4 sm:mb-5">
+            <div className="flex flex-wrap gap-2">
               {categoryLabel && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFB800]/15 px-3 py-1.5 text-sm font-semibold text-amber-900">
-                  <MapPin className="h-4 w-4" aria-hidden />
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#FFB800]/15 px-2.5 py-1 text-xs font-semibold text-amber-900 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-sm">
+                  <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                   {categoryLabel}
                 </span>
               )}
               {durationLabel && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold cp-ui-link">
-                  <Clock className="h-4 w-4 cp-ui-icon" aria-hidden />
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold cp-ui-link sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-sm">
+                  <Clock className="h-3.5 w-3.5 cp-ui-icon sm:h-4 sm:w-4" aria-hidden />
                   {durationLabel}
                 </span>
               )}
@@ -64,19 +64,17 @@ export default function ProductDetailHighlights({
         )}
 
         {showSlogans && sloganItems.length > 0 && (
-          <CustomerPageZone zone="detail-overview-slogan" className="mb-5">
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <CustomerPageZone zone="detail-overview-slogan" className="mb-4 sm:mb-5">
+            <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
               {sloganItems.map((text, index) => (
                 <li
                   key={`slogan-${index}`}
                   className={cn(
-                    'flex items-start gap-3 rounded-2xl border bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100 p-5 text-[#0B5FFF] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md'
+                    'flex items-start gap-2.5 rounded-xl bg-blue-50/80 p-3 text-[#0B5FFF] sm:gap-3 sm:rounded-2xl sm:border sm:border-blue-100 sm:p-4 sm:transition-all sm:duration-300 sm:hover:-translate-y-0.5 sm:hover:shadow-md'
                   )}
                 >
-                  <div className="rounded-xl bg-white/80 p-2 shadow-sm">
-                    <Sparkles className="h-5 w-5 shrink-0" aria-hidden />
-                  </div>
-                  <p className="text-sm font-semibold leading-snug sm:text-base">{text}</p>
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 sm:h-5 sm:w-5" aria-hidden />
+                  <p className="text-xs font-semibold leading-snug sm:text-sm lg:text-base">{text}</p>
                 </li>
               ))}
             </ul>
@@ -85,18 +83,16 @@ export default function ProductDetailHighlights({
 
         {tagItems.length > 0 && (
           <CustomerPageZone zone="detail-overview-tags">
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
               {tagItems.map((text, index) => (
                 <li
                   key={`tag-${index}`}
                   className={cn(
-                    'flex items-start gap-3 rounded-2xl border bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 p-5 text-slate-700 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md'
+                    'flex items-start gap-2.5 rounded-xl bg-slate-50 p-3 text-slate-700 sm:gap-3 sm:rounded-2xl sm:border sm:border-slate-200 sm:p-4 sm:transition-all sm:duration-300 sm:hover:-translate-y-0.5 sm:hover:shadow-md'
                   )}
                 >
-                  <div className="rounded-xl bg-white/80 p-2 shadow-sm">
-                    <MapPin className="h-5 w-5 shrink-0" aria-hidden />
-                  </div>
-                  <p className="text-sm font-semibold leading-snug sm:text-base">{text}</p>
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 sm:h-5 sm:w-5" aria-hidden />
+                  <p className="text-xs font-semibold leading-snug sm:text-sm lg:text-base">{text}</p>
                 </li>
               ))}
             </ul>

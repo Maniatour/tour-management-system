@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 /** GET: 예약별 증거 첨부 목록 */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sbOrErr = await getSupabaseForApiRoute(request)
+    if (sbOrErr instanceof NextResponse) return sbOrErr
+
     const { id: reservationId } = await params
     if (!reservationId) {
       return NextResponse.json({ error: 'reservation id required' }, { status: 400 })
     }
 
-    const { data, error } = await fromUntypedTable(supabase, 'reservation_evidence_attachments')
+    const { data, error } = await fromUntypedTable(sbOrErr, 'reservation_evidence_attachments')
       .select('id, file_path, file_name, image_url, created_at')
       .eq('reservation_id', reservationId)
       .order('created_at', { ascending: true })
@@ -36,6 +39,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sbOrErr = await getSupabaseForApiRoute(request)
+    if (sbOrErr instanceof NextResponse) return sbOrErr
+
     const { id: reservationId } = await params
     if (!reservationId) {
       return NextResponse.json({ error: 'reservation id required' }, { status: 400 })
@@ -47,7 +53,7 @@ export async function POST(
       return NextResponse.json({ error: 'imageUrl required' }, { status: 400 })
     }
 
-    const { data, error } = await fromUntypedTable(supabase, 'reservation_evidence_attachments')
+    const { data, error } = await fromUntypedTable(sbOrErr, 'reservation_evidence_attachments')
       .insert({
         reservation_id: reservationId,
         file_path: filePath || imageUrl,

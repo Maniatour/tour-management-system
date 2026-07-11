@@ -34,8 +34,8 @@ export default function ProductDetailItineraryTab({
 
     if (groupHeader && courses.length > 0) {
       courseElements.push(
-        <div key={`group-${parentId}`} className="bg-gray-100 border border-gray-200 rounded-lg p-3 mb-4">
-          <div className="font-semibold text-gray-900">{groupHeader}</div>
+        <div key={`group-${parentId}`} className="mb-3 rounded-lg bg-slate-100 px-3 py-2 sm:border sm:border-gray-200 sm:p-3">
+          <div className="text-sm font-semibold text-gray-900">{groupHeader}</div>
         </div>
       )
     }
@@ -60,26 +60,26 @@ export default function ProductDetailItineraryTab({
       }
 
       courseElements.push(
-        <div key={course.id} className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex gap-4 items-start">
+        <div key={course.id} className="border-b border-slate-100 py-4 last:border-b-0 sm:rounded-lg sm:border sm:border-gray-200 sm:p-4 sm:last:border-b">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
             {fullPhotoUrl && (
-              <div className="flex-shrink-0 w-48">
+              <div className="w-full shrink-0 sm:w-40 lg:w-48">
                 <img
                   src={fullPhotoUrl}
                   alt={fullCourseName || t('courseImageAlt')}
-                  className="w-full h-36 object-cover rounded-lg border border-gray-200"
+                  className="h-40 w-full rounded-lg object-cover sm:h-32"
                 />
               </div>
             )}
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               {fullCourseName.trim() !== '' && (
-                <div className="font-semibold text-gray-900 mb-2">
+                <div className="mb-1.5 text-sm font-semibold text-gray-900 sm:mb-2 sm:text-base">
                   {fullCourseName}
                 </div>
               )}
               {courseDescription && courseDescription.trim() !== '' && (
                 <div
-                  className="text-sm text-gray-700 whitespace-pre-wrap"
+                  className="text-xs leading-relaxed text-gray-700 sm:text-sm"
                   dangerouslySetInnerHTML={{
                     __html: markdownToHtml(courseDescription),
                   }}
@@ -94,26 +94,24 @@ export default function ProductDetailItineraryTab({
 
   return (
     <div>
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <MapPin className="w-5 h-5" />
-          {t('tourCourseDescription')}
-        </h2>
-        <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
-          {tourCourses.length > 0 ? (
-            validCourses.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
-                {t('noTourCourseInfo')}
-              </p>
-            ) : (
-              courseElements
-            )
-          ) : (
-            <p className="text-sm text-gray-500 text-center py-4">
+      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold sm:mb-4 sm:text-xl">
+        <MapPin className="h-4 w-4 shrink-0 text-[#0B5FFF] sm:h-5 sm:w-5" aria-hidden />
+        {t('tourCourseDescription')}
+      </h2>
+      <div className="sm:rounded-lg sm:border sm:border-gray-200 sm:bg-gray-50 sm:p-4">
+        {tourCourses.length > 0 ? (
+          validCourses.length === 0 ? (
+            <p className="py-6 text-center text-xs text-gray-500 sm:text-sm">
               {t('noTourCourseInfo')}
             </p>
-          )}
-        </div>
+          ) : (
+            <div className="divide-y divide-slate-100 sm:space-y-0 sm:divide-none">{courseElements}</div>
+          )
+        ) : (
+          <p className="py-6 text-center text-xs text-gray-500 sm:text-sm">
+            {t('noTourCourseInfo')}
+          </p>
+        )}
       </div>
     </div>
   )

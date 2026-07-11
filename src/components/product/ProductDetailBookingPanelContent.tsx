@@ -55,16 +55,21 @@ export default function ProductDetailBookingPanelContent({
 
   return (
     <>
-      <CustomerPageZone zone="detail-sidebar-price" className={cn('mb-6', isMobile && 'mb-5')}>
+      <CustomerPageZone zone="detail-sidebar-price" className={cn('mb-4', isMobile && 'mb-4')}>
         <div className="text-center">
-          <p className="text-sm font-medium cp-ui-muted">{t('fromPrice')}</p>
-          <div className="mt-1 flex items-baseline justify-center gap-1">
-            <span className="text-4xl font-bold tracking-tight cp-ui-price">${totalPrice}</span>
-            <span className="text-base font-medium cp-ui-muted">{t('perPerson')}</span>
+          <p className="text-xs font-medium cp-ui-muted sm:text-sm">{t('fromPrice')}</p>
+          <div className="mt-0.5 flex items-baseline justify-center gap-1 sm:mt-1">
+            <span className={cn('font-bold tracking-tight cp-ui-price', isMobile ? 'text-3xl' : 'text-4xl')}>
+              ${totalPrice}
+            </span>
+            <span className="text-sm font-medium cp-ui-muted sm:text-base">{t('perPerson')}</span>
           </div>
-          <p className="mt-1 text-xs cp-ui-muted">{t('totalPrice')}: ${totalPrice}</p>
+          {!isMobile && (
+            <p className="mt-1 text-xs cp-ui-muted">{t('totalPrice')}: ${totalPrice}</p>
+          )}
         </div>
 
+        {!isMobile && (
         <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
           <div className="flex justify-between text-sm">
             <span className="cp-ui-muted">{t('basePrice')}</span>
@@ -83,24 +88,25 @@ export default function ProductDetailBookingPanelContent({
             )
           })}
         </div>
+        )}
       </CustomerPageZone>
 
-      <TrustBadgeRow items={trustBadges} className="mb-5 justify-center" compact={isMobile} />
+      <TrustBadgeRow items={trustBadges} className="mb-4 justify-center sm:mb-5" compact={isMobile} />
 
-      <div className="mb-6 space-y-3 rounded-xl cp-ui-panel-surface p-4">
-        <div className="flex justify-between text-sm">
+      <div className={cn('mb-4 space-y-2.5 sm:mb-6 sm:space-y-3', isMobile ? '' : 'rounded-xl cp-ui-panel-surface p-4')}>
+        <div className="flex justify-between text-xs sm:text-sm">
           <span className="cp-ui-muted">{t('maxParticipants')}</span>
           <span className="font-medium">
             {maxParticipants || 0}
             {t('peopleUnit')}
           </span>
         </div>
-        <div className="flex justify-between text-sm">
+        <div className="flex justify-between text-xs sm:text-sm">
           <span className="cp-ui-muted">{t('duration')}</span>
           <span className="font-medium">{durationLabel}</span>
         </div>
         {groupSize && (
-          <div className="flex justify-between text-sm">
+          <div className="flex justify-between text-xs sm:text-sm">
             <span className="cp-ui-muted">{t('groupSize')}</span>
             <span className="font-medium">{groupSize}</span>
           </div>
@@ -108,9 +114,9 @@ export default function ProductDetailBookingPanelContent({
       </div>
 
       {Object.keys(groupedChoices).length > 0 && (
-        <CustomerPageZone zone="detail-sidebar-options" className="mb-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-semibold">{t('requiredSelection')}</h4>
+        <CustomerPageZone zone="detail-sidebar-options" className="mb-4 sm:mb-6">
+          <div className="mb-2.5 flex items-center justify-between sm:mb-3">
+            <h4 className="text-sm font-semibold sm:text-base">{t('requiredSelection')}</h4>
             <button
               type="button"
               onClick={onCompareOptions}
@@ -154,7 +160,10 @@ export default function ProductDetailBookingPanelContent({
       <button
         type="button"
         onClick={onBookNow}
-        className="cp-ui-btn-primary w-full rounded-xl py-4 text-base font-semibold shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        className={cn(
+          'cp-ui-btn-primary w-full rounded-xl font-semibold shadow-lg transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+          isMobile ? 'py-3.5 text-sm' : 'py-4 text-base hover:-translate-y-0.5 hover:shadow-xl'
+        )}
       >
         {t('bookNow')}
       </button>
@@ -174,15 +183,13 @@ export default function ProductDetailBookingPanelContent({
       {(showIncluded && includedHtml) || (showNotIncluded && notIncludedHtml) ? (
         <CustomerPageZone zone="detail-sidebar-included">
           {showIncluded && includedHtml && (
-            <div className="mt-6 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-xl bg-emerald-500 p-2.5 shadow-sm">
-                  <CheckCircle2 className="h-5 w-5 text-white" aria-hidden />
-                </div>
-                <h3 className="text-lg font-bold text-emerald-800">{t('included')}</h3>
+            <div className="mt-4 rounded-xl bg-emerald-50 p-4 sm:mt-6 sm:rounded-2xl sm:border sm:border-emerald-200 sm:p-5 sm:shadow-sm">
+              <div className="mb-3 flex items-center gap-2 sm:mb-4 sm:gap-3">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+                <h3 className="text-sm font-bold text-emerald-800 sm:text-lg">{t('included')}</h3>
               </div>
               <div
-                className="prose prose-sm max-w-none text-sm text-slate-800"
+                className="prose prose-sm max-w-none text-xs text-slate-800 sm:text-sm"
                 dangerouslySetInnerHTML={{
                   __html: markdownToHtml(formatInclusionList(includedHtml, true)),
                 }}
@@ -191,15 +198,13 @@ export default function ProductDetailBookingPanelContent({
           )}
 
           {showNotIncluded && notIncludedHtml && (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-gradient-to-br from-red-50 to-rose-50 p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-xl bg-red-500 p-2.5 shadow-sm">
-                  <XCircle className="h-5 w-5 text-white" aria-hidden />
-                </div>
-                <h3 className="text-lg font-bold text-red-800">{t('excluded')}</h3>
+            <div className="mt-4 rounded-xl bg-red-50 p-4 sm:mt-6 sm:rounded-2xl sm:border sm:border-red-200 sm:p-5 sm:shadow-sm">
+              <div className="mb-3 flex items-center gap-2 sm:mb-4 sm:gap-3">
+                <XCircle className="h-5 w-5 shrink-0 text-red-600" aria-hidden />
+                <h3 className="text-sm font-bold text-red-800 sm:text-lg">{t('excluded')}</h3>
               </div>
               <div
-                className="prose prose-sm max-w-none text-sm text-slate-800"
+                className="prose prose-sm max-w-none text-xs text-slate-800 sm:text-sm"
                 dangerouslySetInnerHTML={{
                   __html: markdownToHtml(formatInclusionList(notIncludedHtml, false)),
                 }}

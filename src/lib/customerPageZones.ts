@@ -70,7 +70,16 @@ export type CustomerPreviewTarget = {
   /** iframe highlight query (data-customer-zone) */
   highlightZone: CustomerPageZone
   /** 상품 상세 탭 (detail 페이지만) */
-  tab?: 'overview' | 'itinerary' | 'tour-schedule' | 'details' | 'faq'
+  tab?:
+    | 'overview'
+    | 'itinerary'
+    | 'tour-schedule'
+    | 'basic'
+    | 'included'
+    | 'logistics'
+    | 'policy'
+    | 'faq'
+    | 'details'
   /** UI 표시용 라벨 (breadcrumb 마지막 구간) */
   label: string
   pathLabel: string
@@ -80,7 +89,12 @@ const DETAIL_TAB_MAP: Record<string, CustomerPreviewTarget['tab']> = {
   개요: 'overview',
   '일정(코스)': 'itinerary',
   '투어 일정': 'tour-schedule',
-  상세정보: 'details',
+  '투어 스케줄': 'tour-schedule',
+  상세정보: 'basic',
+  기본정보: 'basic',
+  '포함/불포함': 'included',
+  운영정보: 'logistics',
+  정책: 'policy',
   FAQ: 'faq',
 }
 
@@ -240,9 +254,15 @@ function resolveSinglePath(path: string[]): CustomerPreviewTarget | null {
           ? 'detail-tab-itinerary'
           : tab === 'tour-schedule'
             ? 'detail-tab-schedule'
-            : tab === 'details'
-              ? 'detail-tab-details'
-              : 'detail-tab-faq'
+            : tab === 'faq'
+              ? 'detail-tab-faq'
+              : tab === 'basic' ||
+                  tab === 'included' ||
+                  tab === 'logistics' ||
+                  tab === 'policy' ||
+                  tab === 'details'
+                ? 'detail-tab-details'
+                : 'detail-tab-overview'
 
     if (tab === 'overview') {
       if (last.includes('슬로건') && last.includes('대제목')) zone = 'detail-overview-slogan'
@@ -255,7 +275,13 @@ function resolveSinglePath(path: string[]): CustomerPreviewTarget | null {
       else if (last.includes('출발') || last.includes('도착')) zone = 'detail-overview-keyinfo'
     }
 
-    if (tab === 'details') {
+    if (
+      tab === 'details' ||
+      tab === 'basic' ||
+      tab === 'included' ||
+      tab === 'logistics' ||
+      tab === 'policy'
+    ) {
       zone = 'detail-details-body'
     }
 

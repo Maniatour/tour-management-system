@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 /** DELETE: 증거 첨부 삭제 (DB 행 삭제, 스토리지 삭제는 선택) */
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; attachmentId: string }> }
 ) {
   try {
+    const sbOrErr = await getSupabaseForApiRoute(request)
+    if (sbOrErr instanceof NextResponse) return sbOrErr
+
     const { id: reservationId, attachmentId } = await params
     if (!reservationId || !attachmentId) {
       return NextResponse.json({ error: 'reservation id and attachment id required' }, { status: 400 })
     }
 
-    const { data: row, error: fetchError } = await fromUntypedTable(supabase, 'reservation_evidence_attachments')
+    const { data: row, error: fetchError } = await fromUntypedTable(
+      sbOrErr,
+      'reservation_evidence_attachments'
+    )
       .select('file_path')
       .eq('id', attachmentId)
       .eq('reservation_id', reservationId)
@@ -25,7 +31,7 @@ export async function DELETE(
 
     const filePath = (row as { file_path?: string | null }).file_path
 
-    const { error: deleteError } = await fromUntypedTable(supabase, 'reservation_evidence_attachments')
+    const { error: deleteError } = await fromUntypedTable(sbOrErr, 'reservation_evidence_attachments')
       .delete()
       .eq('id', attachmentId)
       .eq('reservation_id', reservationId)
@@ -36,7 +42,7 @@ export async function DELETE(
     }
 
     if (filePath && filePath.startsWith('reservation-evidence/')) {
-      await supabase.storage.from('images').remove([filePath])
+      await sbOrErr.storage.from('images').remove([filePath])
     }
 
     return NextResponse.json({ success: true })

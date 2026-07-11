@@ -33,36 +33,36 @@ export default function ProductDetailHeader({
 
   return (
     <CustomerPageZone zone="detail-header" className="border-b cp-ui-panel-surface">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-5">
           <div className="min-w-0 flex-1">
             <Link
               href={`/${locale}/products`}
-              className="mb-4 inline-flex items-center gap-2 text-sm font-medium cp-ui-muted transition-colors hover:opacity-80"
+              className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium cp-ui-muted transition-colors hover:opacity-80 sm:mb-4 sm:gap-2 sm:text-sm"
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
+              <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
               {t('backToProductList')}
             </Link>
 
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="cp-ui-badge inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold sm:text-sm">
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 sm:mb-3 sm:gap-2">
+              <span className="cp-ui-badge inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold sm:px-3 sm:py-1 sm:text-sm">
                 {categoryLabel}
               </span>
               {primaryTag && (
                 <CustomerPageZone zone="detail-overview-tags">
-                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:text-sm">
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 sm:px-3 sm:py-1 sm:text-sm">
                     {primaryTag}
                   </span>
                 </CustomerPageZone>
               )}
             </div>
 
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+            <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
               {displayName}
             </h1>
 
             {(durationLabel || groupSize) && (
-              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm cp-ui-muted sm:text-base">
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs cp-ui-muted sm:mt-4 sm:gap-4 sm:text-base">
                 {durationLabel && (
                   <span className="inline-flex items-center gap-2">
                     <Clock className="h-4 w-4 cp-ui-icon" aria-hidden />
@@ -78,7 +78,7 @@ export default function ProductDetailHeader({
               </div>
             )}
 
-            <TrustBadgeRow items={trustBadges} className="mt-5" />
+            <TrustBadgeRow items={trustBadges} className="mt-3 sm:mt-5" compact />
           </div>
 
           {typeof totalPrice === 'number' && onBookNow && (

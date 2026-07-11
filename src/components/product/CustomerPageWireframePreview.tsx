@@ -83,14 +83,25 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
             🖼 갤러리
           </ZoneBlock>
           <div className="flex gap-1 flex-wrap text-[10px]">
-            {(['overview', 'itinerary', 'tour-schedule', 'details', 'faq'] as const).map((id) => (
+            {(
+              [
+                ['overview', '개요'],
+                ['itinerary', '코스'],
+                ['tour-schedule', '일정'],
+                ['basic', '기본'],
+                ['included', '포함'],
+                ['logistics', '운영'],
+                ['policy', '정책'],
+                ['faq', 'FAQ'],
+              ] as const
+            ).map(([id, label]) => (
               <span
                 key={id}
                 className={`px-2 py-1 rounded border ${
                   tab === id ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-400'
                 }`}
               >
-                {id === 'overview' ? '개요' : id === 'itinerary' ? '코스' : id === 'tour-schedule' ? '일정' : id === 'details' ? '상세' : 'FAQ'}
+                {label}
               </span>
             ))}
           </div>
@@ -120,11 +131,15 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
                 <ZoneBlock active={isActive(target, 'detail-overview-tags')} label="태그" className="h-8 text-xs px-2 flex items-center">태그</ZoneBlock>
               </>
             )}
-            {tab === 'details' && (
+            {tab === 'basic' ||
+            tab === 'included' ||
+            tab === 'logistics' ||
+            tab === 'policy' ||
+            tab === 'details' ? (
               <ZoneBlock active={isActive(target, 'detail-details-body')} label="상세정보 섹션" className="h-24 text-xs px-2 flex items-center">
                 포함·불포함·안내 등
               </ZoneBlock>
-            )}
+            ) : null}
             {tab === 'itinerary' && <div className="text-xs text-gray-500 p-2">투어 코스 · 경유지</div>}
             {tab === 'tour-schedule' && <div className="text-xs text-gray-500 p-2">투어 일정 타임라인</div>}
             {tab === 'faq' && <div className="text-xs text-gray-500 p-2">FAQ 질문·답변</div>}

@@ -42,9 +42,9 @@ export default function CustomerPageZoneLayoutRenderer({
     return (
       <>
         {headerBlock?.visible && renderBlock('detail-header')}
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
-            <div className="space-y-6 lg:col-span-2 lg:space-y-8">
+        <div className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8 lg:px-8">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-8">
+            <div className="space-y-4 lg:col-span-2 lg:space-y-8">
               {mainBlocks.map((block) => (
                 <div key={block.zoneId}>{renderBlock(block.zoneId)}</div>
               ))}
