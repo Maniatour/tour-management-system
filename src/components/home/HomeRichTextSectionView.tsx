@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
-import HomeManiaTourSectionHeader from '@/components/home/HomeManiaTourSectionHeader'
+import HomeManiaTourSectionHeader, {
+  HomeManiaTourSectionViewAllFooter,
+} from '@/components/home/HomeManiaTourSectionHeader'
 import { MANIATOUR_GUIDE_ITEMS } from '@/lib/maniatourHomeData'
 import { fetchTravelGuideArticles } from '@/lib/fetchTravelGuideArticles'
 
@@ -115,6 +117,12 @@ export default function HomeRichTextSectionView({
                 </Link>
               ))}
             </div>
+            {locale ? (
+              <HomeManiaTourSectionViewAllFooter
+                href={`/${locale}/travel-guide`}
+                label={t('homeViewAllArticles')}
+              />
+            ) : null}
           </div>
         </section>
       </CustomerPageZone>

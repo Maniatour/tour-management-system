@@ -23,15 +23,18 @@ export default function HomeTourCategoryGrid({ locale, t, items, variant = 'defa
   return (
     <div className={isBoxed ? 'kv-adventure-grid' : 'gyg-category-grid'}>
       {items.map((item) => {
-        const Icon = getHomeCategoryIcon(item.labelKey)
-        const tileStyle = getHomeCategoryTileStyle(item.labelKey)
-        const illustrationUrl = getHomeCategoryIllustration(item.labelKey)
-        const label = t(item.labelKey)
+        const labelKey = item.labelKey ?? ''
+        const Icon = labelKey ? getHomeCategoryIcon(labelKey) : getHomeCategoryIcon('dayTour')
+        const tileStyle = labelKey ? getHomeCategoryTileStyle(labelKey) : getHomeCategoryTileStyle('dayTour')
+        const illustrationUrl =
+          item.imageUrl ?? (labelKey ? getHomeCategoryIllustration(labelKey) : undefined)
+        const label = item.label ?? (labelKey ? t(labelKey) : item.tagQuery)
+        const itemKey = item.id ?? labelKey ?? item.tagQuery
 
         if (isBoxed) {
           return (
             <Link
-              key={item.labelKey}
+              key={itemKey}
               href={`/${locale}/products?tag=${encodeURIComponent(item.tagQuery)}`}
               className="kv-adventure-card group"
             >
@@ -60,7 +63,7 @@ export default function HomeTourCategoryGrid({ locale, t, items, variant = 'defa
 
         return (
           <Link
-            key={item.labelKey}
+            key={itemKey}
             href={`/${locale}/products?tag=${encodeURIComponent(item.tagQuery)}`}
             className="gyg-category-tile group"
           >

@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Globe, Heart, Menu, ShoppingCart, User, X } from 'lucide-react'
+import { Heart, Menu, ShoppingCart, User, X } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useLocale, useTranslations } from 'next-intl'
-import { useContext, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useState, type ReactNode } from 'react'
 import { CartSidebar, useCart } from '@/components/cart/CartProvider'
 import { AuthContext } from '@/contexts/AuthContext'
 import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
+import type { AuthUser } from '@/lib/auth'
 
 type CustomerSiteHeaderProps = {
   brandName: string
@@ -20,43 +21,55 @@ function UtilityIconButton({
   icon,
   label,
   light,
+  className = '',
 }: {
   href?: string
   onClick?: () => void
   icon: ReactNode
   label: string
   light?: boolean
+  className?: string
 }) {
-  const className = `kv-header-icon-btn ${light ? 'kv-header-icon-btn--light' : ''}`
+  const buttonClass = `kv-header-icon-btn ${light ? 'kv-header-icon-btn--light' : ''} ${className}`.trim()
 
   if (href) {
     return (
-      <Link href={href} className={className} aria-label={label}>
+      <Link href={href} className={buttonClass} aria-label={label}>
         {icon}
       </Link>
     )
   }
 
   return (
-    <button type="button" onClick={onClick} className={className} aria-label={label}>
+    <button type="button" onClick={onClick} className={buttonClass} aria-label={label}>
       {icon}
     </button>
   )
 }
 
-function HeaderCartButton({ onClick, label, light }: { onClick: () => void; label: string; light?: boolean }) {
+function HeaderCartButton({
+  onClick,
+  label,
+  light,
+  className = '',
+}: {
+  onClick: () => void
+  label: string
+  light?: boolean
+  className?: string
+}) {
   const { totalItems } = useCart()
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`kv-header-icon-btn relative ${light ? 'kv-header-icon-btn--light' : ''}`}
+      className={`kv-header-icon-btn relative ${light ? 'kv-header-icon-btn--light' : ''} ${className}`.trim()}
       aria-label={label}
     >
       <ShoppingCart className="h-5 w-5" strokeWidth={1.75} aria-hidden />
       {totalItems > 0 ? (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff7e33] px-1 text-[10px] font-bold text-white">
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff7e33] px-1 text-[10px] font-bold text-white">
           {totalItems}
         </span>
       ) : null}
@@ -64,10 +77,21 @@ function HeaderCartButton({ onClick, label, light }: { onClick: () => void; labe
   )
 }
 
+function getAuthUserInitial(user: AuthUser): string {
+  const name =
+    user.name ||
+    user.user_metadata?.name ||
+    user.user_metadata?.full_name ||
+    user.email?.split('@')[0] ||
+    'U'
+
+  return name.charAt(0).toUpperCase()
+}
+
 function HeaderLocaleButton({
   locale,
   onSwitch,
-  className = 'kv-header-locale',
+  className = 'kv-header-icon-btn',
   label,
 }: {
   locale: string
@@ -76,13 +100,35 @@ function HeaderLocaleButton({
   label: string
 }) {
   const countryCode = locale === 'ko' ? 'KR' : 'US'
-  const displayLabel = locale === 'ko' ? 'KRW' : 'USD'
 
   return (
     <button type="button" onClick={onSwitch} className={className} aria-label={label}>
       <ReactCountryFlag countryCode={countryCode} svg aria-hidden className="kv-header-flag-icon" />
-      <span>{displayLabel}</span>
     </button>
+  )
+}
+
+function HeaderAccountButton({
+  href,
+  user,
+  loading,
+  label,
+}: {
+  href: string
+  user: AuthUser | null
+  loading: boolean
+  label: string
+}) {
+  return (
+    <Link href={href} className="kv-header-icon-btn" aria-label={label}>
+      {!loading && user ? (
+        <span className="kv-header-account-initial" aria-hidden>
+          {getAuthUserInitial(user)}
+        </span>
+      ) : (
+        <User className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+      )}
+    </Link>
   )
 }
 
@@ -99,6 +145,9 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
   const currentUser = context?.authUser ?? null
 
   const isHome = pathname === `/${locale}` || pathname === `/${locale}/`
+  const profileHref = !loading && currentUser ? `/${locale}/dashboard` : `/${locale}/auth`
+  const cartLabel = locale === 'en' ? 'Cart' : '장바구니'
+  const accountLabel = !loading && currentUser ? t('profile') : t('login')
 
   const switchLocale = () => {
     const newLocale = locale === 'ko' ? 'en' : 'ko'
@@ -122,135 +171,118 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
         { href: `/${locale}/products/custom-tour`, label: t('navTripInspiration') },
       ]
 
-  if (isHome) {
-    return (
-      <>
-        <header className="kv-header kv-header--solid">
-          <div className="kv-container kv-header-inner">
-            <CustomerSiteLogo brandName={brandName} href={`/${locale}`} className="kv-logo" />
+  const closeMobileMenu = () => setIsMobileMenuOpen(false)
 
-            <nav className="kv-header-nav hidden lg:flex" aria-label="Main">
-              {navLinks.map((link) => (
-                <Link key={link.href + link.label} href={link.href} className="kv-header-nav-link">
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
+  useEffect(() => {
+    setIsMobileMenuOpen(false)
+  }, [pathname])
 
-            <div className="kv-header-actions hidden md:flex">
-              <HeaderLocaleButton locale={locale} onSwitch={switchLocale} label={t('language')} />
-              <UtilityIconButton
-                href={`/${locale}/products`}
-                icon={<Heart className="h-5 w-5" strokeWidth={1.75} />}
-                label={t('wishlist')}
-              />
-              {!loading && currentUser ? (
-                <UtilityIconButton
-                  href={`/${locale}/dashboard`}
-                  icon={<User className="h-5 w-5" strokeWidth={1.75} />}
-                  label={t('profile')}
-                />
-              ) : (
-                <UtilityIconButton
-                  href={`/${locale}/auth`}
-                  icon={<User className="h-5 w-5" strokeWidth={1.75} />}
-                  label={t('profile')}
-                />
-              )}
-              <HeaderCartButton onClick={() => setShowCart(true)} label={locale === 'en' ? 'Cart' : '장바구니'} />
-            </div>
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isMobileMenuOpen])
 
-            <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="kv-header-icon-btn md:hidden"
-              aria-label={isMobileMenuOpen ? t('close') : t('menu')}
-            >
-              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
-
-          {isMobileMenuOpen ? (
-            <div className="kv-header-mobile md:hidden">
-              <div className="kv-container flex flex-col gap-2 py-4">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href + link.label}
-                    href={link.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="rounded-lg px-3 py-2.5 text-sm font-medium text-[#1a1a1a] hover:bg-[#f7f8fa]"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-                <HeaderLocaleButton
-                  locale={locale}
-                  onSwitch={() => {
-                    setIsMobileMenuOpen(false)
-                    switchLocale()
-                  }}
-                  className="kv-header-locale mt-2 w-fit"
-                  label={t('language')}
-                />
-              </div>
-            </div>
-          ) : null}
-        </header>
-
-        <CartSidebar
-          isOpen={showCart}
-          onClose={() => setShowCart(false)}
-          onCheckout={() => setShowCart(false)}
-        />
-      </>
-    )
-  }
+  const navLinkClass = isHome ? 'kv-header-nav-link' : 'gyg-nav-link'
 
   return (
     <>
-      <header className="gyg-header">
-        <div className="gyg-container flex h-[68px] items-center justify-between">
-          <CustomerSiteLogo brandName={brandName} href={`/${locale}`} className="kv-logo shrink-0" />
+      <header className={`kv-header kv-header--solid ${isHome ? '' : 'gyg-header'}`}>
+        <div className="kv-container kv-header-inner">
+          <div className="kv-header-logo-wrap--mobile">
+            <CustomerSiteLogo brandName={brandName} href={`/${locale}`} className="kv-logo" compact />
+          </div>
+          <div className="kv-header-logo-wrap--desktop">
+            <CustomerSiteLogo brandName={brandName} href={`/${locale}`} className="kv-logo" />
+          </div>
 
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 lg:flex" aria-label="Main">
+          <nav
+            className={`kv-header-nav ${isHome ? '' : 'kv-header-nav--centered'}`}
+            aria-label="Main"
+          >
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href} className="gyg-nav-link">
+              <Link key={link.href + link.label} href={link.href} className={navLinkClass}>
                 {link.label}
               </Link>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-1 md:flex">
+          <div className="kv-header-actions">
+            <HeaderLocaleButton locale={locale} onSwitch={switchLocale} label={t('language')} />
             <UtilityIconButton
               href={`/${locale}/products`}
-              icon={<Heart className="h-[22px] w-[22px]" strokeWidth={1.75} />}
+              icon={<Heart className="h-5 w-5" strokeWidth={1.75} />}
               label={t('wishlist')}
             />
-            <HeaderCartButton onClick={() => setShowCart(true)} label={locale === 'en' ? 'Cart' : '장바구니'} />
-            <HeaderLocaleButton
-              locale={locale}
-              onSwitch={switchLocale}
-              className="kv-header-locale hidden sm:inline-flex"
-              label={t('language')}
+            <HeaderAccountButton
+              href={profileHref}
+              user={currentUser}
+              loading={loading}
+              label={accountLabel}
             />
-            <button type="button" onClick={switchLocale} className="kv-header-icon-btn sm:hidden" aria-label={t('language')}>
-              <Globe className="h-[22px] w-[22px]" strokeWidth={1.75} aria-hidden />
+            <HeaderCartButton onClick={() => setShowCart(true)} label={cartLabel} />
+          </div>
+
+          <div className="kv-header-mobile-bar">
+            <HeaderLocaleButton locale={locale} onSwitch={switchLocale} label={t('language')} />
+            <HeaderAccountButton
+              href={profileHref}
+              user={currentUser}
+              loading={loading}
+              label={accountLabel}
+            />
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((open) => !open)}
+              className="kv-header-icon-btn"
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="customer-site-mobile-nav"
+              aria-label={isMobileMenuOpen ? t('close') : t('menu')}
+            >
+              {isMobileMenuOpen ? <X className="h-6 w-6" aria-hidden /> : <Menu className="h-6 w-6" aria-hidden />}
             </button>
-            {!loading && currentUser ? (
-              <UtilityIconButton
-                href={`/${locale}/dashboard`}
-                icon={<User className="h-[22px] w-[22px]" strokeWidth={1.75} />}
-                label={t('profile')}
-              />
-            ) : (
-              <UtilityIconButton
-                href={`/${locale}/auth`}
-                icon={<User className="h-[22px] w-[22px]" strokeWidth={1.75} />}
-                label={t('profile')}
-              />
-            )}
           </div>
         </div>
+
+        {isMobileMenuOpen ? (
+          <div id="customer-site-mobile-nav" className="kv-header-mobile">
+            <div className="kv-container kv-header-mobile-panel">
+              <nav className="kv-header-mobile-nav" aria-label="Mobile">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href + link.label}
+                    href={link.href}
+                    onClick={closeMobileMenu}
+                    className="kv-header-mobile-link"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+
+              <div className="kv-header-mobile-actions">
+                <Link href={`/${locale}/products`} onClick={closeMobileMenu} className="kv-header-mobile-action">
+                  <Heart className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+                  <span>{t('wishlist')}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeMobileMenu()
+                    setShowCart(true)
+                  }}
+                  className="kv-header-mobile-action"
+                >
+                  <ShoppingCart className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+                  <span>{cartLabel}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <CartSidebar

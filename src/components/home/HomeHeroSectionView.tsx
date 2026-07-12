@@ -7,6 +7,8 @@ import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomeSearchBar from '@/components/home/HomeSearchBar'
 import type { HeroStructureVariant } from '@/lib/customerPageHomeStructure'
 import { MANIATOUR_HERO_IMAGE, MANIATOUR_HERO_STATS } from '@/lib/maniatourHomeData'
+import { loadCustomerPageHomeContent } from '@/lib/customerPageHomeContentPersistence'
+import { useCustomerPageFieldBindings } from '@/components/product/CustomerPageFieldBindingsProvider'
 
 type Props = {
   variant: HeroStructureVariant
@@ -15,6 +17,12 @@ type Props = {
 }
 
 export default function HomeHeroSectionView({ variant, locale, t }: Props) {
+  const { revision } = useCustomerPageFieldBindings()
+  const heroImage =
+    (() => {
+      void revision
+      return loadCustomerPageHomeContent().heroImageUrl ?? MANIATOUR_HERO_IMAGE
+    })()
   const ctaPrimary = (
     <Link
       href={`/${locale}/products`}
@@ -36,7 +44,7 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
       <CustomerPageZone zone="home-hero">
         <section className="kv-hero">
           <Image
-            src={MANIATOUR_HERO_IMAGE}
+            src={heroImage}
             alt={t('homeManiaTourHeroTitle')}
             fill
             priority

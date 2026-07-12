@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { HomeSectionConfig } from '@/lib/customerPageHomeSectionCatalog'
+import { loadCustomerPageHomeContent } from '@/lib/customerPageHomeContentPersistence'
 
 export const HOME_SECTION_PRODUCT_SELECT =
   'id, name, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en, base_price, adult_base_price, category, is_favorite, favorite_order, departure_city, departure_city_ko, departure_city_en, departure_country, departure_country_ko, departure_country_en, duration, max_participants, tags, created_at'
@@ -68,4 +69,38 @@ export async function fetchHomeSectionProducts(
   }
 
   return rows.map((row) => ({ ...row, primary_image: null }))
+}
+
+export async function fetchHomeSectionProductsByIds(
+  productIds: string[]
+): Promise<HomeSectionProductRow[]> {
+  const ids = productIds.filter(Boolean)
+  if (ids.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('products')
+    .select(HOME_SECTION_PRODUCT_SELECT)
+    .eq('status', 'active')
+    .in('id', ids)
+
+  if (error) throw error
+
+  const rows = (data ?? []) as unknown as Omit<HomeSectionProductRow, 'primary_image'>[]
+  const rowMap = new Map(rows.map((row) => [row.id, row]))
+
+  return ids
+    .map((id) => rowMap.get(id))
+    .filter((row): row is Omit<HomeSectionProductRow, 'primary_image'> => row != null)
+    .map((row) => ({ ...row, primary_image: null }))
+}
+
+export async function fetchHomeSectionProductsForSection(
+  instanceId: string,
+  config: HomeSectionConfig
+): Promise<HomeSectionProductRow[]> {
+  const homeContent = loadCustomerPageHomeContent()
+  if (instanceId === 'home-popular' && homeContent.popularProductIds.length > 0) {
+    return fetchHomeSectionProductsByIds(homeContent.popularProductIds)
+  }
+  return fetchHomeSectionProducts(config)
 }

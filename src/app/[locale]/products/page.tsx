@@ -188,10 +188,13 @@ export default function ProductsPage() {
             'listing-card-price',
             product as unknown as Record<string, unknown>,
             resolveProductListingPrice(product as unknown as Record<string, unknown>)
-          ) ?? resolveProductListingPrice(product as unknown as Record<string, unknown>)
+          ) ??
+          resolveProductListingPrice(product as unknown as Record<string, unknown>) ??
+          product.base_price ??
+          0
         )
     }
-    return resolveProductListingPrice(product as unknown as Record<string, unknown>) ?? product.base_price
+    return resolveProductListingPrice(product as unknown as Record<string, unknown>) ?? product.base_price ?? 0
     },
     [bindingsActive, bindingRevision]
   )

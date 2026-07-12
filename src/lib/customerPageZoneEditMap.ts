@@ -63,10 +63,14 @@ export type ZoneEditType =
   | 'info'
   | 'tags-bilingual'
   | 'translation-fields'
+  | 'home-settings'
+
+export type HomeSettingsKind = 'hero' | 'popular' | 'destinations' | 'adventure'
 
 export type ZoneEditConfig = {
   label: string
   editType: ZoneEditType
+  homeSettingsKind?: HomeSettingsKind
   adminTab?: string
   detailFields?: DetailFieldKey[]
   basicFields?: BasicFieldKey[]
@@ -78,25 +82,6 @@ export type ZoneEditConfig = {
   /** basic-fields / detail-fields 저장 시 상품 ID 필요 */
   requiresProduct?: boolean
 }
-
-const HOME_CATEGORY_LABEL_FIELDS: TranslationFieldDef[] = [
-  { key: 'antelopeCanyon', label: '앤텔롭 캐년' },
-  { key: 'grandCanyon', label: '그랜드 캐년' },
-  { key: 'suburbanTour', label: '근교 투어' },
-  { key: 'dayTour', label: '당일 투어' },
-  { key: 'accommodationTour', label: '숙박 투어' },
-  { key: 'cityTour', label: '시티 투어' },
-  { key: 'helicopterTour', label: '헬기 투어' },
-  { key: 'lightAircraftTour', label: '경비행기 투어' },
-  { key: 'busTour', label: '버스 투어' },
-  { key: 'premiumTour', label: '프리미엄 투어' },
-  { key: 'performanceTicket', label: '공연·티켓' },
-  { key: 'attraction', label: '어트랙션' },
-  { key: 'categoryEvent', label: '이벤트' },
-  { key: 'categoryCoupon', label: '쿠폰' },
-  { key: 'categoryTravelInsurance', label: '여행자 보험' },
-  { key: 'categoryConventionSupport', label: '컨벤션 지원' },
-]
 
 export const DETAIL_FIELD_LABELS: Record<DetailFieldKey, string> = {
   slogan1: '슬로건 (대제목)',
@@ -527,7 +512,8 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   },
   'home-hero': {
     label: '히어로 배너',
-    editType: 'translation-fields',
+    editType: 'home-settings',
+    homeSettingsKind: 'hero',
     translationNamespace: 'common',
     translationFields: [
       { key: 'homeManiaTourHeroTitle', label: '메인 타이틀', multiline: true },
@@ -550,19 +536,19 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     ],
   },
   'home-categories': {
-    label: '카테고리 그리드',
-    editType: 'translation-fields',
+    label: 'Explore Top Destinations',
+    editType: 'home-settings',
+    homeSettingsKind: 'destinations',
     translationNamespace: 'common',
     translationFields: [
       { key: 'homeDestinationsManiaTourTitle', label: '목적지 섹션 제목' },
-      { key: 'homeDestinationsMania TourSubtitle', label: '목적지 섹션 부제', multiline: true },
+      { key: 'homeViewAllDestinations', label: '전체 보기 버튼' },
       { key: 'homeDestinationsTitle', label: '목적지 제목 (GYG)' },
       { key: 'findToursByCategory', label: '카테고리 섹션 제목' },
       { key: 'findToursByCategoryDesc', label: '카테고리 섹션 설명', multiline: true },
       { key: 'viewAllTags', label: '전체 태그 보기 버튼' },
-      ...HOME_CATEGORY_LABEL_FIELDS,
     ],
-    note: '각 카테고리가 연결하는 태그·상품은 태그 번역·상품 태그 설정에서 조정합니다.',
+    note: '목적지 이름·태그·이미지는 아래에서 설정합니다. 클릭 시 해당 태그 투어 목록으로 이동합니다.',
   },
   'home-stats': {
     label: '통계 수치',
@@ -580,8 +566,9 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     ],
   },
   'home-popular': {
-    label: '인기 투어',
-    editType: 'translation-fields',
+    label: 'Most Popular Tours',
+    editType: 'home-settings',
+    homeSettingsKind: 'popular',
     translationNamespace: 'common',
     translationFields: [
       { key: 'homePopularToursTitle', label: '섹션 제목' },
@@ -589,8 +576,10 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
       { key: 'homeAttractionsTitle', label: '명소 섹션 제목' },
       { key: 'maniatourBadgeBestSeller', label: 'Best Seller 뱃지' },
       { key: 'maniatourBadgePopular', label: 'Popular 뱃지' },
+      { key: 'homeViewAllTours', label: '전체 보기 버튼' },
+      { key: 'maniatourPerPerson', label: '1인당 가격 라벨' },
     ],
-    note: '섹션 제목은 여기서, 각 카드의 상품명·설명·출발지·가격·이미지는 카드 안 「수정」 버튼으로 편집합니다. 표시 상품·순서는 상품 관리 즐겨찾기·favorite_order로 설정합니다.',
+    note: '표시할 투어 목록은 아래에서 직접 선택할 수 있습니다. 비워두면 즐겨찾기 순서를 사용합니다.',
   },
   'home-cards-activities': {
     label: '액티비티 카드 섹션',
@@ -656,25 +645,12 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     note: '질문·답변은 최대 5쌍까지 편집할 수 있습니다.',
   },
   'home-travel-style': {
-    label: '여행 스타일',
-    editType: 'translation-fields',
+    label: 'Choose Your Adventure',
+    editType: 'home-settings',
+    homeSettingsKind: 'adventure',
     translationNamespace: 'common',
-    translationFields: [
-      { key: 'homeTravelStyleTitle', label: '섹션 제목' },
-      { key: 'homeTravelStyleSubtitle', label: '섹션 설명', multiline: true },
-      { key: 'travelStyleDayTour', label: '당일 투어' },
-      { key: 'travelStyleDayTourDesc', label: '당일 투어 설명', multiline: true },
-      { key: 'travelStyleSunrise', label: '일출 투어' },
-      { key: 'travelStyleSunriseDesc', label: '일출 투어 설명', multiline: true },
-      { key: 'travelStyleMultiDay', label: '2일+ 투어' },
-      { key: 'travelStyleMultiDayDesc', label: '2일+ 투어 설명', multiline: true },
-      { key: 'travelStyleSmallGroup', label: '소그룹' },
-      { key: 'travelStyleSmallGroupDesc', label: '소그룹 설명', multiline: true },
-      { key: 'travelStyleHelicopter', label: '헬기 투어' },
-      { key: 'travelStyleHelicopterDesc', label: '헬기 투어 설명', multiline: true },
-      { key: 'travelStyleCustom', label: '맞춤 투어' },
-      { key: 'travelStyleCustomDesc', label: '맞춤 투어 설명', multiline: true },
-    ],
+    translationFields: [{ key: 'homeTravelStyleTitle', label: '섹션 제목' }],
+    note: '카테고리 이름·태그·아이콘 이미지는 아래에서 설정합니다. 클릭 시 /products?tag=... 로 이동합니다.',
   },
   'home-guides': {
     label: '여행 가이드',

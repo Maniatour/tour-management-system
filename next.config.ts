@@ -78,6 +78,12 @@ const nextConfig = {
 			},
 			{
 				protocol: 'https' as const,
+				hostname: 'upload.wikimedia.org',
+				port: '',
+				pathname: '/**',
+			},
+			{
+				protocol: 'https' as const,
 				hostname: 'lh3.googleusercontent.com',
 				port: '',
 				pathname: '/**',

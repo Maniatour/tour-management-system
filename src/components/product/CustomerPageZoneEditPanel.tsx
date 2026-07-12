@@ -51,6 +51,7 @@ import {
 } from '@/lib/customerPageFieldBindings'
 import CustomerPageBasicFieldSlotsForm from '@/components/product/CustomerPageBasicFieldSlotsForm'
 import CustomerPageDetailFieldSlotsForm from '@/components/product/CustomerPageDetailFieldSlotsForm'
+import CustomerPageHomeSettingsPanel from '@/components/product/CustomerPageHomeSettingsPanel'
 
 type CustomerPageZoneEditPanelProps = {
   zone: CustomerPageZone
@@ -178,7 +179,13 @@ function needsAsyncLoad(
   productId: string | null | undefined
 ): boolean {
   if (!config) return false
-  if (config.editType === 'admin-tab' || config.editType === 'info') return false
+  if (
+    config.editType === 'admin-tab' ||
+    config.editType === 'info' ||
+    config.editType === 'home-settings'
+  ) {
+    return false
+  }
   if (config.editType === 'translation-fields') {
     return (config.translationFields?.length ?? 0) > 0 && !!config.translationNamespace
   }
@@ -192,6 +199,7 @@ function needsAsyncLoad(
 }
 
 function needsProductForEditing(config: ZoneEditConfig, pickedField: DetailFieldKey | null): boolean {
+  if (config.editType === 'home-settings') return false
   if (config.editType === 'tags-bilingual') return true
   if (config.editType === 'basic-fields' || config.editType === 'detail-fields') return true
   if (config.editType === 'field-picker' && pickedField) return true
@@ -211,7 +219,13 @@ function serializeEditSnapshot(input: {
 
 function supportsDirtyTracking(config: ZoneEditConfig | undefined, pickedField: DetailFieldKey | null): boolean {
   if (!config) return false
-  if (config.editType === 'admin-tab' || config.editType === 'info') return false
+  if (
+    config.editType === 'admin-tab' ||
+    config.editType === 'info' ||
+    config.editType === 'home-settings'
+  ) {
+    return false
+  }
   if (config.editType === 'field-picker' && !pickedField) return false
   return true
 }
@@ -812,6 +826,17 @@ export default function CustomerPageZoneEditPanel({
                 이 영역을 편집하려면 상단에서 <strong>상품을 선택</strong>하세요.
               </div>
             )}
+
+            {config.editType === 'home-settings' && config.homeSettingsKind ? (
+              <CustomerPageHomeSettingsPanel
+                kind={config.homeSettingsKind}
+                locale={locale}
+                {...(config.translationNamespace ? { translationNamespace: config.translationNamespace } : {})}
+                {...(config.translationFields ? { translationFields: config.translationFields } : {})}
+                onSaved={onSaved}
+                {...(onDirtyChange ? { onDirtyChange } : {})}
+              />
+            ) : null}
 
             {config.editType === 'translation-fields' &&
               config.translationFields && (

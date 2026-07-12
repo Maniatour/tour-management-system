@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowRight, ChevronLeft, ChevronRight, Star } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import type { ProductReviewItem } from '@/components/product/ProductDetailReviewsSection'
 import { fetchGoogleReviews } from '@/lib/fetchGoogleReviews'
@@ -11,6 +11,10 @@ import { fetchInstagramPosts } from '@/lib/fetchInstagramPosts'
 import { fetchProductReviews } from '@/lib/fetchProductReviews'
 import { getDemoReviews } from '@/components/home/homeExtendedSectionData'
 import GoogleReviewCard from '@/components/home/GoogleReviewCard'
+import {
+  HomeManiaTourSectionViewAllFooter,
+  HomeManiaTourViewAllLink,
+} from '@/components/home/HomeManiaTourSectionHeader'
 import { getPublicInstagramProfileUrl } from '@/lib/instagramPublic'
 import type { InstagramPostItem } from '@/lib/instagramPublic'
 import { MANIATOUR_INSTAGRAM_IMAGES } from '@/lib/maniatourHomeData'
@@ -148,17 +152,18 @@ export default function HomeReviewsSectionView({
             <div className="kv-reviews-split">
               <div className="kv-reviews-panel">
                 <div className="kv-section-header-row">
-                  <h2 className="kv-section-title">{t('homeReviewsManiaTourTitle')}</h2>
-                  <Link
-                    href={googleMapsUrl ?? `/${locale}/products`}
-                    className="kv-view-all-link"
-                    {...(googleMapsUrl
-                      ? { target: '_blank', rel: 'noopener noreferrer' }
-                      : {})}
-                  >
-                    {googleMapsUrl ? t('homeViewAllGoogleReviews') : t('homeViewAllReviews')}
-                    <ArrowRight className="h-4 w-4" aria-hidden />
-                  </Link>
+                  <div className="kv-section-header">
+                    <h2 className="kv-section-title">{t('homeReviewsManiaTourTitle')}</h2>
+                  </div>
+                  <div className="kv-section-view-all-inline">
+                    <HomeManiaTourViewAllLink
+                      href={googleMapsUrl ?? `/${locale}/products`}
+                      label={googleMapsUrl ? t('homeViewAllGoogleReviews') : t('homeViewAllReviews')}
+                      {...(googleMapsUrl
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
+                    />
+                  </div>
                 </div>
                 {activeReview ? (
                   <GoogleReviewCard review={activeReview} menuHref={googleMapsUrl} />
@@ -183,14 +188,29 @@ export default function HomeReviewsSectionView({
                     </button>
                   </div>
                 ) : null}
+                <HomeManiaTourSectionViewAllFooter
+                  href={googleMapsUrl ?? `/${locale}/products`}
+                  label={googleMapsUrl ? t('homeViewAllGoogleReviews') : t('homeViewAllReviews')}
+                  {...(googleMapsUrl
+                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                    : {})}
+                />
               </div>
               <div className="kv-reviews-divider" aria-hidden />
               <div className="kv-instagram-panel">
                 <div className="kv-section-header-row kv-instagram-header">
-                  <h2 className="kv-section-title">{t('homeInstagramTitle')}</h2>
-                  <Link href={instagramProfileUrl} className="kv-view-all-link kv-view-all-link--sm" target="_blank" rel="noopener noreferrer">
-                    {t('homeViewOnInstagram')}
-                  </Link>
+                  <div className="kv-section-header">
+                    <h2 className="kv-section-title">{t('homeInstagramTitle')}</h2>
+                  </div>
+                  <div className="kv-section-view-all-inline">
+                    <HomeManiaTourViewAllLink
+                      href={instagramProfileUrl}
+                      label={t('homeViewOnInstagram')}
+                      size="sm"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  </div>
                 </div>
                 <div className="kv-instagram-grid kv-instagram-grid--10">
                   {instagramGridItems.map((item) => (
@@ -212,6 +232,13 @@ export default function HomeReviewsSectionView({
                     </Link>
                   ))}
                 </div>
+                <HomeManiaTourSectionViewAllFooter
+                  href={instagramProfileUrl}
+                  label={t('homeViewOnInstagram')}
+                  size="sm"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
               </div>
             </div>
           </div>

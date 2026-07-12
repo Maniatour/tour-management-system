@@ -2,7 +2,9 @@
 
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomePopularToursBlock, { type PopularToursBlockProps } from '@/components/home/HomePopularToursBlock'
-import HomeManiaTourSectionHeader from '@/components/home/HomeManiaTourSectionHeader'
+import HomeManiaTourSectionHeader, {
+  HomeManiaTourSectionViewAllFooter,
+} from '@/components/home/HomeManiaTourSectionHeader'
 import type { PopularStructureVariant } from '@/lib/customerPageHomeStructure'
 
 export default function HomePopularSectionView({
@@ -37,6 +39,10 @@ export default function HomePopularSectionView({
               locale={locale}
               t={t}
               {...popularProps}
+            />
+            <HomeManiaTourSectionViewAllFooter
+              href={`/${locale}/products`}
+              label={t('homeViewAllTours')}
             />
           </div>
         </section>

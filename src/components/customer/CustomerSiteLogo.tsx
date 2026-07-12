@@ -12,6 +12,8 @@ type CustomerSiteLogoProps = {
   href: string
   className?: string
   variant?: 'header' | 'footer' | 'dark'
+  /** 모바일 헤더 — 파비콘 + 워드마크 고정 */
+  compact?: boolean
 }
 
 function formatBrandWordmark(brandName: string) {
@@ -24,6 +26,7 @@ export default function CustomerSiteLogo({
   href,
   className,
   variant = 'header',
+  compact = false,
 }: CustomerSiteLogoProps) {
   const { logoUrl, hasCustomLogo } = useCustomerSiteBranding()
   const [imageFailed, setImageFailed] = useState(false)
@@ -32,8 +35,8 @@ export default function CustomerSiteLogo({
   const wordmark = formatBrandWordmark(brandName)
   const useFallback = !hasCustomLogo || imageFailed
   const iconUrl = imageFailed ? FALLBACK_SITE_LOGO_URL : logoUrl
-  const showWordmark = useFallback || logoShape !== 'wide'
-  const imageClassName = showWordmark ? 'kv-logo-favicon' : 'kv-logo-brand'
+  const showWordmark = compact || useFallback || logoShape !== 'wide'
+  const imageClassName = compact || showWordmark ? 'kv-logo-favicon' : 'kv-logo-brand'
   const wordmarkClassName =
     variant === 'footer' || variant === 'dark'
       ? 'kv-logo-wordmark kv-logo-wordmark--light'

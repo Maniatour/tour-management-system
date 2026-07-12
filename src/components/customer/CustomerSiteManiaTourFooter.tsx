@@ -106,7 +106,15 @@ export default function CustomerSiteManiaTourFooter({ locale }: Props) {
           <ul className="kv-footer-contact">
             <li>
               <Phone className="h-4 w-4 shrink-0" aria-hidden />
-              <a href={`tel:${t('phoneValue')}`}>{t('phoneDisplay')}</a>
+              <a href={`tel:${t('phoneEnValue')}`}>
+                {t('phoneEnDisplay')} ({t('phoneEnBadge')})
+              </a>
+            </li>
+            <li>
+              <Phone className="h-4 w-4 shrink-0" aria-hidden />
+              <a href={`tel:${t('phoneKrValue')}`}>
+                {t('phoneKrDisplay')} ({t('phoneKrBadge')})
+              </a>
             </li>
             <li>
               <Mail className="h-4 w-4 shrink-0" aria-hidden />

@@ -96,11 +96,16 @@ export default function CustomerSiteFooter({ locale, forceShow = false }: Custom
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
             <span>{t('address')}</span>
           </div>
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 sm:col-span-1">
             <Phone className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
-            <a href={`tel:${t('phoneValue')}`} className="transition-colors hover:text-white">
-              {t('phoneDisplay')}
-            </a>
+            <div className="flex flex-col gap-1">
+              <a href={`tel:${t('phoneEnValue')}`} className="transition-colors hover:text-white">
+                {t('phoneEnDisplay')} ({t('phoneEnBadge')})
+              </a>
+              <a href={`tel:${t('phoneKrValue')}`} className="transition-colors hover:text-white">
+                {t('phoneKrDisplay')} ({t('phoneKrBadge')})
+              </a>
+            </div>
           </div>
           <div className="flex items-start gap-3">
             <Mail className="mt-0.5 h-4 w-4 shrink-0 text-booking" aria-hidden />
