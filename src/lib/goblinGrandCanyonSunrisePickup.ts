@@ -47,7 +47,10 @@ export function isGoblinGrandCanyonSunriseTour(product: {
   ].filter((f): f is string => typeof f === 'string' && f.length > 0)
 
   const hasGoblin = fields.some(
-    (f) => f.includes('\ubc24\ub3c4\uae68\ube44') || normCompact(f).includes('goblin')
+    (f) =>
+      f.includes('도깨비') ||
+      f.includes('\ubc24\ub3c4\uae68\ube44') ||
+      normCompact(f).includes('goblin')
   )
   const hasGc = fields.some(
     (f) =>

@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button'
 
 type ProductDetailMobileStickyCtaProps = {
   totalPrice: number
+  originalTotalPrice?: number
   onBookNow: () => void
 }
 
 export default function ProductDetailMobileStickyCta({
   totalPrice,
+  originalTotalPrice,
   onBookNow,
 }: ProductDetailMobileStickyCtaProps) {
   const t = useTranslations('productDetail')
@@ -25,6 +27,9 @@ export default function ProductDetailMobileStickyCta({
       >
         <div className="mx-auto flex max-w-7xl items-center gap-4">
           <div className="min-w-0 flex-1">
+            {originalTotalPrice != null && originalTotalPrice !== totalPrice ? (
+              <p className="text-xs text-muted-foreground line-through">${originalTotalPrice}</p>
+            ) : null}
             <PriceDisplay
               amount={totalPrice}
               prefixLabel={t('fromPrice')}

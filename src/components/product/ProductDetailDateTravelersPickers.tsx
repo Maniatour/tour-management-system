@@ -19,6 +19,14 @@ type ProductDetailDateTravelersPickersProps = {
   onTravelerCountsChange: (counts: TravelerCounts) => void
   ageLimits: TravelerAgeLimits
   className?: string
+  customerTourName?: string
+  product?: {
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }
 }
 
 function formatDateLabel(iso: string, locale: string): string {
@@ -101,6 +109,8 @@ export default function ProductDetailDateTravelersPickers({
   onTravelerCountsChange,
   ageLimits,
   className = '',
+  customerTourName = '',
+  product = {},
 }: ProductDetailDateTravelersPickersProps) {
   const t = useTranslations('productDetail')
   const locale = useLocale()
@@ -165,6 +175,8 @@ export default function ProductDetailDateTravelersPickers({
                 selectedDate={selectedDate}
                 onDateChange={onDateChange}
                 onClose={() => setDateOpen(false)}
+                customerTourName={customerTourName}
+                product={product}
               />
             </div>
           ) : null}

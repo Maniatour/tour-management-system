@@ -6,10 +6,8 @@ import { markdownToHtml } from '@/components/LightRichEditor'
 import type { ProductTourCourse, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import {
   getCourseDescription,
-  getCourseGroupHeader,
   getFullCoursePath,
   getValidTourCourses,
-  groupCoursesByParent,
 } from '@/lib/productTourCourseDisplay'
 
 type ProductDetailItineraryTabProps = {
@@ -26,22 +24,10 @@ export default function ProductDetailItineraryTab({
   const t = useTranslations('productDetail')
 
   const validCourses = getValidTourCourses(tourCourses, isEnglish)
-  const groupedCourses = groupCoursesByParent(validCourses)
 
   const courseElements: JSX.Element[] = []
-  groupedCourses.forEach((courses, parentId) => {
-    const groupHeader = getCourseGroupHeader(parentId, tourCourses, isEnglish)
-
-    if (groupHeader && courses.length > 0) {
-      courseElements.push(
-        <div key={`group-${parentId}`} className="mb-3 rounded-lg bg-slate-100 px-3 py-2 sm:border sm:border-gray-200 sm:p-3">
-          <div className="text-sm font-semibold text-gray-900">{groupHeader}</div>
-        </div>
-      )
-    }
-
-    courses.forEach((course) => {
-      const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
+  validCourses.forEach((course) => {
+    const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
       const courseDescription = getCourseDescription(course, isEnglish)
 
       const coursePhotos = (course.photos || tourCoursePhotos.filter((p) => p.course_id === course.id))
@@ -60,7 +46,7 @@ export default function ProductDetailItineraryTab({
       }
 
       courseElements.push(
-        <div key={course.id} className="border-b border-slate-100 py-4 last:border-b-0 sm:rounded-lg sm:border sm:border-gray-200 sm:p-4 sm:last:border-b">
+        <div key={course.id} className="border-b border-slate-100 py-4 last:border-b-0">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
             {fullPhotoUrl && (
               <div className="w-full shrink-0 sm:w-40 lg:w-48">
@@ -89,7 +75,6 @@ export default function ProductDetailItineraryTab({
           </div>
         </div>
       )
-    })
   })
 
   return (
@@ -98,14 +83,14 @@ export default function ProductDetailItineraryTab({
         <MapPin className="h-4 w-4 shrink-0 text-booking sm:h-5 sm:w-5" aria-hidden />
         {t('tourCourseDescription')}
       </h2>
-      <div className="sm:rounded-lg sm:border sm:border-gray-200 sm:bg-gray-50 sm:p-4">
+      <div>
         {tourCourses.length > 0 ? (
           validCourses.length === 0 ? (
             <p className="py-6 text-center text-xs text-gray-500 sm:text-sm">
               {t('noTourCourseInfo')}
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 sm:space-y-0 sm:divide-none">{courseElements}</div>
+            courseElements
           )
         ) : (
           <p className="py-6 text-center text-xs text-gray-500 sm:text-sm">

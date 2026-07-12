@@ -54,6 +54,7 @@ export default function ProductDetailReviewsSection({
   if (variant === 'airbnb') {
     return (
       <section className="airbnb-detail-section">
+        <h2 className="airbnb-detail-section-title">{t('guestReviewsTitle')}</h2>
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-2">
             <Star className="h-5 w-5 fill-[#1a2b49] text-[#1a2b49]" aria-hidden />

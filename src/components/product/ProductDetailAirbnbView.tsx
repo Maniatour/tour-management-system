@@ -10,7 +10,9 @@ import ProductDetailAirbnbBookingCard from '@/components/product/ProductDetailAi
 import ProductDetailAirbnbOptionsSection from '@/components/product/ProductDetailAirbnbOptionsSection'
 import ProductDetailDateTravelersPickers from '@/components/product/ProductDetailDateTravelersPickers'
 import ProductDetailMobileStickyCta from '@/components/product/ProductDetailMobileStickyCta'
+import ProductDetailPromoCodesBox from '@/components/product/ProductDetailPromoCodesBox'
 import ReviewSummary from '@/components/customer/ui/ReviewSummary'
+import { useProductDetailAppliedPromo } from '@/hooks/useProductDetailAppliedPromo'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
 import { useProductDetailTrustBadges } from '@/components/product/useProductDetailTrustBadges'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
@@ -113,6 +115,11 @@ export default function ProductDetailAirbnbView({
   const optionsAnchorRef = useRef<HTMLDivElement>(null)
   const previousDateRef = useRef('')
   const locationLine = product.departure_city || 'Las Vegas'
+  const promo = useProductDetailAppliedPromo(
+    productId,
+    bookingPanelProps.basePrice,
+    totalPrice
+  )
 
   const ageLimits = {
     adultAge: product.adult_age ?? DEFAULT_TRAVELER_AGE_LIMITS.adultAge,
@@ -187,6 +194,8 @@ export default function ProductDetailAirbnbView({
             <div className="airbnb-detail-mobile-booking lg:hidden">
               <ProductDetailDateTravelersPickers
                 productId={productId}
+                product={product}
+                customerTourName={displayName}
                 selectedDate={selectedDate}
                 onDateChange={setSelectedDate}
                 travelerCounts={travelerCounts}
@@ -204,9 +213,15 @@ export default function ProductDetailAirbnbView({
                   onCompareOptions={bookingPanelProps.onCompareOptions}
                   onBookNow={bookingPanelProps.onBookNow}
                   totalPrice={totalPrice}
+                  displayTotalPrice={promo.displayTotalPrice}
+                  promoDiscountAmount={promo.discountAmount}
+                  appliedPromoCode={promo.appliedCoupon?.code ?? null}
                   selectedDate={selectedDate}
                   isEnglish={isEnglish}
                 />
+                <div className="mt-4 lg:hidden">
+                  <ProductDetailPromoCodesBox promo={promo} />
+                </div>
                 <hr className="airbnb-detail-divider" />
               </div>
             ) : null}
@@ -228,6 +243,7 @@ export default function ProductDetailAirbnbView({
               tagLabelMap={tagLabelMap}
               showDetail={showDetail}
               reviews={reviews}
+              selectedDate={selectedDate}
               {...(reviewRating != null ? { reviewRating } : {})}
             />
           </div>
@@ -236,6 +252,8 @@ export default function ProductDetailAirbnbView({
             <div className="airbnb-detail-sticky">
               <ProductDetailAirbnbBookingCard
                 productId={productId}
+                product={product}
+                customerTourName={displayName}
                 basePrice={bookingPanelProps.basePrice}
                 totalPrice={totalPrice}
                 groupedChoices={bookingPanelProps.groupedChoices}
@@ -247,6 +265,7 @@ export default function ProductDetailAirbnbView({
                 onTravelerCountsChange={setTravelerCounts}
                 ageLimits={ageLimits}
                 onBookNow={bookingPanelProps.onBookNow}
+                promo={promo}
               />
               <TrustBadgeRow items={trustBadges} className="mt-4 justify-center" compact />
             </div>
@@ -263,7 +282,11 @@ export default function ProductDetailAirbnbView({
         </div>
       </div>
 
-      <ProductDetailMobileStickyCta totalPrice={totalPrice} onBookNow={bookingPanelProps.onBookNow} />
+      <ProductDetailMobileStickyCta
+        totalPrice={promo.displayTotalPrice}
+        {...(promo.hasPromoApplied ? { originalTotalPrice: totalPrice } : {})}
+        onBookNow={bookingPanelProps.onBookNow}
+      />
     </div>
   )
 }

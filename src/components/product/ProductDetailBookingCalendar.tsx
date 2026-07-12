@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useProductTourDateAvailability } from '@/hooks/useProductTourDateAvailability'
+import { isGoblinGrandCanyonSunriseTour } from '@/lib/goblinGrandCanyonSunrisePickup'
 import {
   buildMonthGrid,
   TOUR_DATE_STATUS_DOT_CLASS,
@@ -16,6 +17,14 @@ type ProductDetailBookingCalendarProps = {
   selectedDate: string
   onDateChange: (value: string) => void
   onClose?: () => void
+  customerTourName?: string
+  product?: {
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }
 }
 
 const STATUS_KEYS: TourDateStatus[] = [
@@ -31,9 +40,20 @@ export default function ProductDetailBookingCalendar({
   selectedDate,
   onDateChange,
   onClose,
+  customerTourName = '',
+  product = {},
 }: ProductDetailBookingCalendarProps) {
   const t = useTranslations('productDetail')
   const locale = useLocale()
+  const isGoblinSunriseTour = useMemo(() => isGoblinGrandCanyonSunriseTour(product), [product])
+  const resolvedTourName =
+    customerTourName.trim() ||
+    product.customer_name_en?.trim() ||
+    product.customer_name_ko?.trim() ||
+    product.name_en?.trim() ||
+    product.name_ko?.trim() ||
+    product.name?.trim() ||
+    ''
   const { loading, getStatusForDate, isDateSelectable, todayIso } =
     useProductTourDateAvailability(productId)
 
@@ -130,6 +150,14 @@ export default function ProductDetailBookingCalendar({
     <div className="booking-calendar-panel">
       <div className="booking-calendar-info">
         <p className="booking-calendar-info-text">{t('calendarDailyDeparturesHint')}</p>
+        {isGoblinSunriseTour ? (
+          <div className="booking-calendar-goblin-notice">
+            <p className="booking-calendar-goblin-notice-title">
+              {t('calendarGoblinSunriseDateTitle', { tourName: resolvedTourName })}
+            </p>
+            <p className="booking-calendar-goblin-notice-text">{t('calendarGoblinSunriseDateBody')}</p>
+          </div>
+        ) : null}
       </div>
 
       {loading ? (

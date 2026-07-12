@@ -2070,14 +2070,563 @@
 }
 
 .airbnb-detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   margin: 0 0 1.25rem;
   font-size: 1.375rem;
   font-weight: 600;
   line-height: 1.25;
 }
 
+.airbnb-detail-section-title::before {
+  display: inline-block;
+  flex-shrink: 0;
+  height: 1.35em;
+  width: 0.25rem;
+  border-radius: 9999px;
+  background: #f97316;
+  content: '';
+}
+
 .airbnb-detail-section-content {
   color: #374151;
+}
+
+.airbnb-itinerary {
+  color: #1a2b49;
+}
+
+.airbnb-itinerary-schedule-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.airbnb-itinerary-schedule-toggle .airbnb-detail-section-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+}
+
+.airbnb-itinerary-schedule-toggle .airbnb-detail-section-title::before {
+  align-self: center;
+}
+
+.airbnb-itinerary-detail-toggle-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: 2.5rem;
+  margin: 0;
+  padding: 0.375rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1a2b49;
+  cursor: pointer;
+  transition: background-color 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.airbnb-itinerary-detail-toggle-btn:hover {
+  background: #f9fafb;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 0.08);
+}
+
+.airbnb-itinerary-timeline-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.airbnb-itinerary-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.airbnb-itinerary-card-header {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 0;
+  background: #f3efff;
+  padding: 1rem 1.25rem;
+  text-align: left;
+}
+
+button.airbnb-itinerary-card-header.is-clickable {
+  cursor: pointer;
+}
+
+button.airbnb-itinerary-card-header:disabled {
+  cursor: default;
+}
+
+.airbnb-itinerary-card-chevron {
+  display: inline-flex;
+  margin-top: 0.125rem;
+  color: #6b7280;
+}
+
+.airbnb-itinerary-time {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.airbnb-itinerary-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.airbnb-itinerary-pickup {
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 1.5rem;
+}
+
+.airbnb-itinerary-pickup-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.airbnb-itinerary-pickup-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.airbnb-itinerary-pickup-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.airbnb-itinerary-departure-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.airbnb-departure-modal {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.airbnb-departure-map-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  background: #f3f4f6;
+}
+
+.airbnb-departure-map {
+  min-height: 22rem;
+  width: 100%;
+}
+
+.airbnb-departure-map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: rgb(255 255 255 / 0.82);
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.airbnb-departure-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+.airbnb-departure-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  padding: 0.75rem 0.875rem;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.airbnb-departure-result:hover,
+.airbnb-departure-result.is-selected {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.airbnb-itinerary-pickup-content {
+  margin-left: 1.75rem;
+  border-radius: 1rem;
+  background: #f8fafc;
+  padding: 1.25rem;
+}
+
+.airbnb-itinerary-pickup-badge {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+  border-radius: 9999px;
+  background: #f3e8ff;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.airbnb-itinerary-pickup-copy {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: #374151;
+}
+
+.airbnb-itinerary-pickup-copy :is(p, ul, ol) {
+  margin: 0.5rem 0 0;
+}
+
+.airbnb-itinerary-pickup-copy :is(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.airbnb-itinerary-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.airbnb-itinerary-timeline::before {
+  position: absolute;
+  bottom: 1rem;
+  left: 0.5rem;
+  top: 1rem;
+  width: 1px;
+  background: #e5e7eb;
+  content: '';
+}
+
+.airbnb-itinerary-group-label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 1.75rem;
+  border-radius: 9999px;
+  background: #fff7ed;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #c2410c;
+}
+
+.airbnb-itinerary-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.airbnb-itinerary-marker {
+  z-index: 1;
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  transform: translateX(-0.25rem);
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #4b5563;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.12);
+}
+
+.airbnb-itinerary-card {
+  overflow: hidden;
+  border: 1px solid #ede9fe;
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 0.06);
+}
+
+.airbnb-itinerary-card.is-previous-day {
+  border-color: #fca5a5;
+  box-shadow: 0 12px 28px rgb(239 68 68 / 0.12);
+}
+
+.airbnb-itinerary-pickup-notice {
+  margin-bottom: 1rem;
+  border-radius: 0.75rem;
+}
+
+.airbnb-itinerary-previous-day-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(180deg, #fef2f2 0%, #fff7ed 100%);
+  border-bottom: 1px solid #fecaca;
+}
+
+.airbnb-itinerary-previous-day-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.airbnb-itinerary-previous-day-reason {
+  flex: 1 1 14rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #991b1b;
+}
+
+.airbnb-itinerary-previous-day-date {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.airbnb-itinerary-card-time {
+  font-variant-numeric: tabular-nums;
+  color: #1f2937;
+  text-decoration: none;
+}
+
+.airbnb-itinerary-card-separator {
+  margin: 0 0.5rem;
+  color: #9ca3af;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.airbnb-itinerary-sunrise-alert {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.125rem;
+  border: 2px solid #ef4444;
+  border-radius: 1rem;
+  background: transparent;
+}
+
+.airbnb-itinerary-sunrise-alert-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  color: #b91c1c;
+}
+
+.airbnb-itinerary-sunrise-alert-copy {
+  margin: 0.625rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #7f1d1d;
+}
+
+.airbnb-itinerary-sunrise-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+}
+
+.airbnb-itinerary-sunrise-alert-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #9a3412;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.airbnb-itinerary-sunrise-alert-grid strong {
+  font-size: 0.9375rem;
+  color: #431407;
+}
+
+.airbnb-itinerary-sunrise-alert-window,
+.airbnb-itinerary-sunrise-alert-sunrise {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #78350f;
+}
+
+.airbnb-itinerary-sunrise-loading {
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  color: #9a3412;
+}
+
+.airbnb-itinerary-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.35;
+  color: #1f2937;
+  text-decoration: none;
+}
+
+.airbnb-itinerary-inline-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.airbnb-itinerary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.airbnb-itinerary-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.airbnb-itinerary-card-body {
+  background: #fbfaff;
+  padding: 1rem 1.25rem 1.125rem;
+}
+
+.airbnb-itinerary-description {
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: #374151;
+}
+
+.airbnb-itinerary-description :is(p, ul, ol) {
+  margin: 0.5rem 0 0;
+}
+
+.airbnb-itinerary-description :is(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.airbnb-itinerary-path {
+  margin: 0 0 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.airbnb-itinerary-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.airbnb-itinerary-photo {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 0.5rem;
+  background: #e5e7eb;
+}
+
+.airbnb-itinerary-empty {
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  background: #f8fafc;
+}
+
+.airbnb-itinerary-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #9ca3af;
+}
+
+@media (min-width: 640px) {
+  .airbnb-itinerary-photo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .airbnb-itinerary-photo-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .airbnb-itinerary-photo-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 .airbnb-detail-amenities {
@@ -2106,6 +2655,84 @@
   color: #1a2b49;
 }
 
+.airbnb-things-to-know {
+  color: #1a2b49;
+}
+
+.airbnb-things-to-know-subtitle {
+  margin: 0.5rem 0 1.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.airbnb-things-accordion {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.airbnb-things-accordion-item {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.airbnb-things-accordion-item.is-last {
+  border-bottom: 0;
+}
+
+.airbnb-things-accordion-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 0;
+  background: #ffffff;
+  padding: 1rem 1.125rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease-out;
+}
+
+.airbnb-things-accordion-trigger:hover {
+  background: #f9fafb;
+}
+
+.airbnb-things-accordion-trigger-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.airbnb-things-accordion-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 2rem;
+  width: 2rem;
+  border-radius: 0.5rem;
+}
+
+.airbnb-things-accordion-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.airbnb-things-accordion-panel {
+  border-top: 1px solid #f1f5f9;
+  background: #fafafa;
+  padding: 1rem 1.125rem 1.25rem;
+}
+
+.airbnb-things-accordion-panel .customer-page-zone {
+  max-width: none;
+}
+
 .airbnb-detail-things-to-know .customer-page-zone {
   max-width: none;
 }
@@ -2114,16 +2741,51 @@
   margin-bottom: 1rem;
 }
 
-.airbnb-detail-info-block h4 {
-  margin: 0 0 0.5rem;
+.airbnb-detail-info-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.625rem;
+}
+
+.airbnb-detail-info-block-icon {
+  display: block;
+  height: 1.125rem;
+  width: 1.125rem;
+  flex-shrink: 0;
+}
+
+.airbnb-detail-info-block-title {
+  margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
+  line-height: 1.25;
+  color: #111827;
 }
 
 .airbnb-detail-info-block .prose {
   font-size: 0.875rem;
   line-height: 1.6;
   color: #374151;
+}
+
+.airbnb-detail-section-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.airbnb-detail-section-stack .airbnb-detail-info-block {
+  margin-bottom: 0;
+  padding-bottom: 1rem;
+}
+
+.airbnb-detail-section-stack .airbnb-detail-info-block + .airbnb-detail-info-block {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 1rem;
+}
+
+.airbnb-detail-section-stack .airbnb-detail-info-block:last-child {
+  padding-bottom: 0;
 }
 
 .airbnb-detail-booking-card {
@@ -2175,6 +2837,35 @@
   padding: 0.875rem 0 1rem;
 }
 
+.airbnb-detail-booking-summary-original {
+  margin: 0 0 0.125rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+.airbnb-detail-booking-summary-row-promo .airbnb-detail-booking-summary-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.airbnb-detail-booking-summary-promo-code {
+  display: inline-flex;
+  border-radius: 9999px;
+  background: #ecfdf5;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #059669;
+}
+
+.airbnb-detail-booking-summary-discount {
+  color: #059669;
+}
+
 .airbnb-detail-booking-summary-price {
   margin: 0;
   font-size: 1.5rem;
@@ -2192,6 +2883,149 @@
 
 .airbnb-detail-booking-summary .airbnb-detail-reserve-btn {
   width: 100%;
+}
+
+.airbnb-detail-promo-box {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  border: 1px solid #dddddd;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  padding: 0.875rem 1rem;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.airbnb-detail-promo-box:hover {
+  background: #f9fafb;
+  border-color: #cbd5e1;
+}
+
+.airbnb-detail-promo-box.is-applied {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.airbnb-detail-promo-ticket.is-applied {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.airbnb-detail-promo-redeem-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.airbnb-detail-promo-box-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #1a2b49;
+}
+
+.airbnb-detail-promo-box-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.airbnb-detail-promo-box-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.375rem;
+  background: #fff5f5;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+
+.airbnb-detail-promo-modal {
+  overflow: hidden;
+}
+
+.airbnb-detail-promo-ticket {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.75rem;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.airbnb-detail-promo-ticket-main {
+  position: relative;
+  padding: 0.875rem 1rem;
+}
+
+.airbnb-detail-promo-ticket-main::after {
+  content: '';
+  position: absolute;
+  top: 0.625rem;
+  right: -1px;
+  bottom: 0.625rem;
+  border-right: 2px dashed #d1d5db;
+}
+
+.airbnb-detail-promo-ticket-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #111827;
+}
+
+.airbnb-detail-promo-ticket-code {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.airbnb-detail-promo-ticket-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: #fff7ed;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+.airbnb-detail-promo-ticket-discount {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ea580c;
+}
+
+.airbnb-detail-promo-ticket-min {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #ea580c;
+}
+
+.airbnb-detail-promo-redeem-btn {
+  margin-top: 0.375rem;
+  border-radius: 9999px;
+  background: #ea580c;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  transition: filter 0.15s ease;
+}
+
+.airbnb-detail-promo-redeem-btn:hover {
+  filter: brightness(1.05);
 }
 
 .airbnb-detail-mobile-booking {
@@ -2392,11 +3226,14 @@
   border: 1px solid #b0b0b0;
   border-radius: 0.5rem;
   background: #ffffff;
+  isolation: isolate;
 }
 
 .booking-picker-field-wrap {
   position: relative;
+  display: flex;
   min-width: 0;
+  min-height: 3.25rem;
 }
 
 .booking-picker-field-wrap-travelers {
@@ -2407,7 +3244,9 @@
   position: relative;
   display: flex;
   width: 100%;
+  height: 100%;
   min-height: 3.25rem;
+  flex: 1 1 auto;
   flex-direction: column;
   justify-content: center;
   border: none;
@@ -2415,20 +3254,28 @@
   background: transparent;
   padding: 0.5rem 1.625rem 0.5rem 0.75rem;
   text-align: left;
-  transition: background 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .booking-picker-field-date {
   border-right: 1px solid #b0b0b0;
+  border-radius: 0.5rem 0 0 0.5rem;
 }
 
 .booking-picker-field-travelers {
+  border-radius: 0 0.5rem 0.5rem 0;
   padding-right: 1.375rem;
 }
 
 .booking-picker-field:hover,
 .booking-picker-field.is-open {
   background: #f9fafb;
+}
+
+.booking-picker-field:focus-visible {
+  outline: 2px solid #1a2b49;
+  outline-offset: -2px;
+  z-index: 1;
 }
 
 .booking-picker-field-label {
@@ -2535,6 +3382,26 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: #374151;
+}
+
+.booking-calendar-goblin-notice {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #fecaca;
+}
+
+.booking-calendar-goblin-notice-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: #b91c1c;
+}
+
+.booking-calendar-goblin-notice-text {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #7f1d1d;
 }
 
 .booking-calendar-loading {

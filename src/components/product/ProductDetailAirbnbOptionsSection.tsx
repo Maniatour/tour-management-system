@@ -11,6 +11,9 @@ type ProductDetailAirbnbOptionsSectionProps = {
   onCompareOptions: () => void
   onBookNow: () => void
   totalPrice: number
+  displayTotalPrice: number
+  promoDiscountAmount: number
+  appliedPromoCode?: string | null
   selectedDate: string
   isEnglish: boolean
 }
@@ -22,11 +25,15 @@ export default function ProductDetailAirbnbOptionsSection({
   onCompareOptions,
   onBookNow,
   totalPrice,
+  displayTotalPrice,
+  promoDiscountAmount,
+  appliedPromoCode,
   selectedDate,
   isEnglish,
 }: ProductDetailAirbnbOptionsSectionProps) {
   const t = useTranslations('productDetail')
   const groups = Object.values(groupedChoices)
+  const hasPromo = promoDiscountAmount > 0
 
   if (groups.length === 0 || !selectedDate) {
     return null
@@ -88,11 +95,21 @@ export default function ProductDetailAirbnbOptionsSection({
 
       <div className="airbnb-detail-options-summary">
         <div>
+          {hasPromo ? (
+            <p className="text-sm text-[#9ca3af] line-through">${totalPrice}</p>
+          ) : null}
           <p className="text-2xl font-bold text-[#1a2b49]">
-            ${totalPrice}
+            ${hasPromo ? displayTotalPrice.toFixed(2) : totalPrice}
             <span className="text-sm font-normal text-[#6b7280]"> {t('perPerson')}</span>
           </p>
-          <p className="mt-0.5 text-xs text-[#6b7280]">{t('freeCancellationNote')}</p>
+          {hasPromo ? (
+            <p className="mt-0.5 text-xs font-medium text-[#059669]">
+              {t('promoDiscountLabel')}
+              {appliedPromoCode ? ` (${appliedPromoCode})` : ''}: -${promoDiscountAmount.toFixed(2)}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-[#6b7280]">{t('freeCancellationNote')}</p>
+          )}
         </div>
         <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn sm:max-w-[220px]">
           {t('bookNow')}

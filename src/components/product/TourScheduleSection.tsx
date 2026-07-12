@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp, Map } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import TourScheduleCustomerItineraryView from '@/components/product/TourScheduleCustomerItineraryView'
 
 interface ScheduleItem {
   id: string
@@ -48,6 +49,16 @@ interface TourScheduleSectionProps {
   currentUserEmail?: string | null // 현재 사용자 이메일 (필터링용)
   tourGuideId?: string | null // 투어 가이드 ID
   assistantId?: string | null // 어시스턴트/드라이버 ID
+  variant?: 'default' | 'customer-itinerary'
+  pickupDropInfo?: string | null | undefined
+  selectedDate?: string
+  product?: {
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }
 }
 
 export default function TourScheduleSection({ 
@@ -57,7 +68,11 @@ export default function TourScheduleSection({
   showAllSchedules = false,
   currentUserEmail,
   tourGuideId,
-  assistantId
+  assistantId,
+  variant = 'default',
+  pickupDropInfo,
+  selectedDate = '',
+  product = {},
 }: TourScheduleSectionProps) {
   // 디버깅: locale 값 확인
   useEffect(() => {
@@ -423,6 +438,23 @@ export default function TourScheduleSection({
     return acc
   }, {} as Record<number, ScheduleItem[]>)
 
+  const filteredSchedulesWithDescription = filteredSchedules.filter((s) =>
+    getLocalizedText(s.description_ko, s.description_en, '')
+  )
+  const allSchedulesExpanded =
+    filteredSchedulesWithDescription.length > 0 &&
+    filteredSchedulesWithDescription.every((s) => expandedSchedules.has(s.id))
+
+  const toggleAllSchedules = () => {
+    if (allSchedulesExpanded) {
+      setExpandedSchedules(new Set())
+      return
+    }
+
+    const allScheduleIds = filteredSchedulesWithDescription.map((s) => s.id)
+    setExpandedSchedules(new Set(allScheduleIds))
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -431,6 +463,39 @@ export default function TourScheduleSection({
           <div className="h-4 bg-gray-200 rounded w-3/4"></div>
           <div className="h-4 bg-gray-200 rounded w-1/2"></div>
           <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (variant === 'customer-itinerary' && filteredSchedules.length > 0) {
+    return (
+      <TourScheduleCustomerItineraryView
+        schedules={filteredSchedules}
+        locale={locale}
+        selectedDate={selectedDate}
+        product={product}
+        pickupDropInfo={pickupDropInfo}
+        allSchedulesExpanded={allSchedulesExpanded}
+        expandedSchedules={expandedSchedules}
+        onToggleAll={toggleAllSchedules}
+        onToggleSchedule={toggleScheduleExpansion}
+        getText={getText}
+        getLocalizedText={getLocalizedText}
+      />
+    )
+  }
+
+  if (variant === 'customer-itinerary' && filteredSchedules.length === 0) {
+    return (
+      <div className="airbnb-itinerary">
+        <h3 className="airbnb-detail-section-title">
+          {getText('투어 일정 (제목만 보기)', 'Tour Schedules (Title Only)')}
+        </h3>
+        <div className="airbnb-itinerary-empty">
+          <p className="py-6 text-center text-sm text-gray-500">
+            {getText('등록된 일정이 없습니다.', 'No schedules registered.')}
+          </p>
         </div>
       </div>
     )
@@ -455,11 +520,6 @@ export default function TourScheduleSection({
       </div>
     )
   }
-
-  // 필터링된 일정으로 allSchedulesExpanded 계산
-  const filteredSchedulesWithDescription = filteredSchedules.filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
-  const allSchedulesExpanded = filteredSchedulesWithDescription.length > 0 && 
-    filteredSchedulesWithDescription.every(s => expandedSchedules.has(s.id))
 
   void _openGoogleMapsNavigation
   void _generateRouteUrl
@@ -503,19 +563,7 @@ export default function TourScheduleSection({
       {(!showAllSchedules || !currentUserEmail) && (
         <div 
           className="flex items-center justify-between cursor-pointer mb-6 p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl hover:from-gray-100 hover:to-gray-200 transition-all duration-200 shadow-sm border border-gray-200"
-          onClick={() => {
-            // 모든 개별 아코디언이 열려있으면 닫기, 아니면 열기
-            if (allSchedulesExpanded) {
-              // 제목만 보기: 모든 개별 아코디언 닫기
-              setExpandedSchedules(new Set())
-            } else {
-              // 상세보기: 모든 개별 아코디언 열기 (설명이 있는 것만)
-              const allScheduleIds = filteredSchedules
-                .filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
-                .map(s => s.id)
-              setExpandedSchedules(new Set(allScheduleIds))
-            }
-          }}
+          onClick={toggleAllSchedules}
         >
           <h3 className="text-lg sm:text-xl font-bold text-gray-900">
             {teamType === '2guide' ? (

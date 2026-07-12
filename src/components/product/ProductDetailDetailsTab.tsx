@@ -54,9 +54,26 @@ function DetailInfoBlock({
           : 'rounded-xl bg-slate-50 p-4 sm:border sm:border-slate-200 sm:bg-white sm:p-6 sm:shadow-sm'
       }
     >
-      <div className="mb-2.5 flex items-center gap-2 sm:mb-3 sm:gap-2.5">
-        <Icon className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5 ${iconClassName}`} aria-hidden />
-        <h4 className="text-sm font-semibold text-gray-900 sm:text-lg">{title}</h4>
+      <div
+        className={
+          variant === 'airbnb'
+            ? 'airbnb-detail-info-block-header'
+            : 'mb-2.5 flex items-center gap-2 sm:mb-3 sm:gap-2.5'
+        }
+      >
+        <Icon
+          className={`${variant === 'airbnb' ? 'airbnb-detail-info-block-icon' : 'h-4 w-4 shrink-0 sm:h-5 sm:w-5'} ${iconClassName}`}
+          aria-hidden
+        />
+        <h4
+          className={
+            variant === 'airbnb'
+              ? 'airbnb-detail-info-block-title'
+              : 'text-sm font-semibold text-gray-900 sm:text-lg'
+          }
+        >
+          {title}
+        </h4>
       </div>
       <div
         className="prose prose-sm max-w-none text-xs leading-relaxed text-gray-700 sm:text-sm"
@@ -318,7 +335,13 @@ export default function ProductDetailDetailsTab({
                     {/* 운영정보 */}
                     {section === 'logistics' && (
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4">
+                        <div
+                          className={
+                            variant === 'airbnb'
+                              ? 'airbnb-detail-section-stack'
+                              : 'grid grid-cols-1 gap-4'
+                          }
+                        >
                           {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
 <InfoBlock
                               icon={Car}

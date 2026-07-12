@@ -4,11 +4,21 @@ import { MessageCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import ProductDetailDateTravelersPickers from '@/components/product/ProductDetailDateTravelersPickers'
 import ProductDetailAirbnbBookingSummary from '@/components/product/ProductDetailAirbnbBookingSummary'
+import ProductDetailPromoCodesBox from '@/components/product/ProductDetailPromoCodesBox'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
+import type { ProductDetailAppliedPromoState } from '@/hooks/useProductDetailAppliedPromo'
 import type { TravelerAgeLimits, TravelerCounts } from '@/lib/productDetailTravelers'
 
 type ProductDetailAirbnbBookingCardProps = {
   productId: string
+  product?: {
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }
+  customerTourName?: string
   basePrice: number | null
   totalPrice: number
   groupedChoices: Record<string, ProductDetailChoiceGroup>
@@ -20,11 +30,14 @@ type ProductDetailAirbnbBookingCardProps = {
   onTravelerCountsChange: (counts: TravelerCounts) => void
   ageLimits: TravelerAgeLimits
   onBookNow: () => void
+  promo: ProductDetailAppliedPromoState
   contactEmail?: string
 }
 
 export default function ProductDetailAirbnbBookingCard({
   productId,
+  product = {},
+  customerTourName = '',
   basePrice,
   totalPrice,
   groupedChoices,
@@ -36,6 +49,7 @@ export default function ProductDetailAirbnbBookingCard({
   onTravelerCountsChange,
   ageLimits,
   onBookNow,
+  promo,
   contactEmail = 'info@maniatour.com',
 }: ProductDetailAirbnbBookingCardProps) {
   const t = useTranslations('productDetail')
@@ -53,6 +67,8 @@ export default function ProductDetailAirbnbBookingCard({
       <ProductDetailDateTravelersPickers
         className={hasSelectedDate ? '' : 'mt-4'}
         productId={productId}
+        product={product}
+        customerTourName={customerTourName}
         selectedDate={selectedDate}
         onDateChange={onDateChange}
         travelerCounts={travelerCounts}
@@ -61,14 +77,20 @@ export default function ProductDetailAirbnbBookingCard({
       />
 
       {hasSelectedDate ? (
-        <ProductDetailAirbnbBookingSummary
-          basePrice={basePrice}
-          totalPrice={totalPrice}
-          groupedChoices={groupedChoices}
-          selectedOptions={selectedOptions}
-          isEnglish={isEnglish}
-          onBookNow={onBookNow}
-        />
+        <>
+          <ProductDetailAirbnbBookingSummary
+            basePrice={basePrice}
+            totalPrice={totalPrice}
+            displayTotalPrice={promo.displayTotalPrice}
+            promoDiscountAmount={promo.discountAmount}
+            appliedPromoCode={promo.appliedCoupon?.code ?? null}
+            groupedChoices={groupedChoices}
+            selectedOptions={selectedOptions}
+            isEnglish={isEnglish}
+            onBookNow={onBookNow}
+          />
+          <ProductDetailPromoCodesBox promo={promo} />
+        </>
       ) : (
         <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn mt-4">
           {t('checkAvailability')}

@@ -12,11 +12,11 @@ import {
 import { useTranslations } from 'next-intl'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
-import ProductDetailDetailsTab from '@/components/product/ProductDetailDetailsTab'
 import ProductDetailReviewsSection, {
   type ProductReviewItem,
 } from '@/components/product/ProductDetailReviewsSection'
 import ProductDetailFaqSection from '@/components/product/ProductDetailFaqSection'
+import ProductDetailThingsToKnowAccordion from '@/components/product/ProductDetailThingsToKnowAccordion'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import type {
@@ -57,6 +57,7 @@ type ProductDetailAirbnbBodyProps = {
   showDetail: (field: string) => boolean
   reviews: ProductReviewItem[]
   reviewRating?: number
+  selectedDate?: string
 }
 
 function AirbnbSectionDivider() {
@@ -81,6 +82,7 @@ export default function ProductDetailAirbnbBody({
   showDetail,
   reviews,
   reviewRating,
+  selectedDate = '',
 }: ProductDetailAirbnbBodyProps) {
   const t = useTranslations('productDetail')
   const tags = productDetails?.tags || product.tags || []
@@ -193,24 +195,6 @@ export default function ProductDetailAirbnbBody({
         </>
       ) : null}
 
-      <AirbnbSectionDivider />
-
-      <section className="airbnb-detail-section">
-        <h2 className="airbnb-detail-section-title">{t('detailTabIncluded')}</h2>
-        <div className="airbnb-detail-section-content">
-          <ProductDetailDetailsTab
-            product={product}
-            productDetails={productDetails}
-            categoryLabel={categoryLabel}
-            durationLabel={durationLabel}
-            locale={locale}
-            tagLabelMap={tagLabelMap}
-            section="included"
-            variant="airbnb"
-          />
-        </div>
-      </section>
-
       {tags.length > 0 ? (
         <>
           <AirbnbSectionDivider />
@@ -231,7 +215,17 @@ export default function ProductDetailAirbnbBody({
       <AirbnbSectionDivider />
 
       <section className="airbnb-detail-section">
-        <TourScheduleSection productId={productId} teamType={null} locale={locale} />
+        <div className="airbnb-detail-section-content">
+          <TourScheduleSection
+            productId={productId}
+            teamType={null}
+            locale={locale}
+            variant="customer-itinerary"
+            pickupDropInfo={productDetails?.pickup_drop_info}
+            selectedDate={selectedDate}
+            product={product}
+          />
+        </div>
       </section>
 
       {reviews.length > 0 ? (
@@ -247,49 +241,15 @@ export default function ProductDetailAirbnbBody({
 
       <AirbnbSectionDivider />
 
-      <section className="airbnb-detail-section airbnb-detail-things-to-know">
-        <h2 className="airbnb-detail-section-title">{t('thingsToKnow')}</h2>
-        <div className="space-y-8">
-          <div>
-            <h3 className="airbnb-detail-things-heading mb-4 text-lg font-semibold">{t('detailTabPolicy')}</h3>
-            <ProductDetailDetailsTab
-              product={product}
-              productDetails={productDetails}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              locale={locale}
-              tagLabelMap={tagLabelMap}
-              section="policy"
-              variant="default"
-            />
-          </div>
-          <div>
-            <h3 className="airbnb-detail-things-heading mb-4 text-lg font-semibold">{t('detailTabLogistics')}</h3>
-            <ProductDetailDetailsTab
-              product={product}
-              productDetails={productDetails}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              locale={locale}
-              tagLabelMap={tagLabelMap}
-              section="logistics"
-              variant="default"
-            />
-          </div>
-          <div>
-            <h3 className="airbnb-detail-things-heading mb-4 text-lg font-semibold">{t('detailTabBasic')}</h3>
-            <ProductDetailDetailsTab
-              product={product}
-              productDetails={productDetails}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              locale={locale}
-              tagLabelMap={tagLabelMap}
-              section="basic"
-              variant="default"
-            />
-          </div>
-        </div>
+      <section className="airbnb-detail-section">
+        <ProductDetailThingsToKnowAccordion
+          product={product}
+          productDetails={productDetails}
+          categoryLabel={categoryLabel}
+          durationLabel={durationLabel}
+          locale={locale}
+          tagLabelMap={tagLabelMap}
+        />
       </section>
 
       <AirbnbSectionDivider />

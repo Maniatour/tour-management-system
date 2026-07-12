@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
 interface FaqItem {
@@ -18,6 +19,7 @@ interface ProductFaqDisplayProps {
 }
 
 export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps) {
+  const t = useTranslations('productDetail')
   const [faqs, setFaqs] = useState<FaqItem[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedFaqs, setExpandedFaqs] = useState<Set<string>>(new Set())
@@ -72,7 +74,7 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
     return (
       <div className="flex items-center justify-center py-8">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-        <span className="ml-2 text-gray-600">FAQ를 불러오는 중...</span>
+        <span className="ml-2 text-gray-600">{t('faqLoading')}</span>
       </div>
     )
   }
@@ -81,7 +83,7 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
     return (
       <div className="text-center py-8 text-gray-500">
         <HelpCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-        <p>등록된 FAQ가 없습니다.</p>
+        <p>{t('noFaqRegistered')}</p>
       </div>
     )
   }

@@ -6,6 +6,9 @@ import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetai
 type ProductDetailAirbnbBookingSummaryProps = {
   basePrice: number | null
   totalPrice: number
+  displayTotalPrice: number
+  promoDiscountAmount: number
+  appliedPromoCode?: string | null
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
   isEnglish: boolean
@@ -15,6 +18,9 @@ type ProductDetailAirbnbBookingSummaryProps = {
 export default function ProductDetailAirbnbBookingSummary({
   basePrice,
   totalPrice,
+  displayTotalPrice,
+  promoDiscountAmount,
+  appliedPromoCode,
   groupedChoices,
   selectedOptions,
   isEnglish,
@@ -22,6 +28,7 @@ export default function ProductDetailAirbnbBookingSummary({
 }: ProductDetailAirbnbBookingSummaryProps) {
   const t = useTranslations('productDetail')
   const groups = Object.values(groupedChoices)
+  const hasPromo = promoDiscountAmount > 0
 
   const selectedLines = groups
     .map((group) => {
@@ -59,11 +66,28 @@ export default function ProductDetailAirbnbBookingSummary({
             </span>
           </div>
         ))}
+
+        {hasPromo ? (
+          <div className="airbnb-detail-booking-summary-row airbnb-detail-booking-summary-row-promo">
+            <span className="airbnb-detail-booking-summary-label">
+              {t('promoDiscountLabel')}
+              {appliedPromoCode ? (
+                <span className="airbnb-detail-booking-summary-promo-code">{appliedPromoCode}</span>
+              ) : null}
+            </span>
+            <span className="airbnb-detail-booking-summary-value airbnb-detail-booking-summary-discount">
+              -${promoDiscountAmount.toFixed(2)}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="airbnb-detail-booking-summary-total">
+        {hasPromo && displayTotalPrice !== totalPrice ? (
+          <p className="airbnb-detail-booking-summary-original">${totalPrice}</p>
+        ) : null}
         <p className="airbnb-detail-booking-summary-price">
-          ${totalPrice}
+          ${hasPromo ? displayTotalPrice.toFixed(2) : totalPrice}
           <span className="airbnb-detail-booking-summary-per">{t('perPerson')}</span>
         </p>
       </div>
