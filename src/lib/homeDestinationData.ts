@@ -5,7 +5,7 @@ export type HomeDestination = {
   imageUrl: string
 }
 
-/** GetYourGuide 스타일 목적지 카드 — Kovegas/Southwest 여행지 */
+/** Mania Tour 홈 목적지 카드 — American Southwest */
 export const HOME_DESTINATIONS: HomeDestination[] = [
   {
     id: 'las-vegas',
@@ -43,10 +43,38 @@ export const HOME_DESTINATIONS: HomeDestination[] = [
       'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 'hoover-dam',
-    labelKey: 'destHooverDam',
+    id: 'horseshoe-bend',
+    labelKey: 'destHorseshoeBend',
+    tagQuery: '근교',
+    imageUrl:
+      'https://images.unsplash.com/photo-1504198458649-3128b932f49e?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'death-valley',
+    labelKey: 'destDeathValley',
+    tagQuery: '근교',
+    imageUrl:
+      'https://images.unsplash.com/photo-1509316785289-025f5b846b35?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'valley-of-fire',
+    labelKey: 'destValleyOfFire',
     tagQuery: '근교',
     imageUrl:
       'https://images.unsplash.com/photo-1587330979470-3595ac045ab0?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'monument-valley',
+    labelKey: 'destMonumentValley',
+    tagQuery: '근교',
+    imageUrl:
+      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'page',
+    labelKey: 'destPage',
+    tagQuery: '앤텔롭',
+    imageUrl:
+      'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=600&q=80',
   },
 ]

@@ -14,6 +14,9 @@ export type ProductReviewItem = {
   rating: number
   quote: string
   date?: string
+  source?: 'google' | 'internal'
+  sourceUrl?: string
+  avatarUrl?: string
 }
 
 type ProductDetailReviewsSectionProps = {

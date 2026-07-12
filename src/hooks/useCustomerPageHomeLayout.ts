@@ -25,22 +25,14 @@ export function useCustomerPageHomeLayout(): HomePageSectionEntry[] {
 }
 
 export function useCustomerPageHomeLayoutSections(
-  includeHiddenSections: boolean
+  _includeHiddenSections = false
 ): HomeLayoutSectionView[] {
   const { revision } = useCustomerPageFieldBindings()
 
   return useMemo(() => {
     void revision
+    void _includeHiddenSections
     const layout = loadCustomerPageHomeLayout()
-
-    if (includeHiddenSections) {
-      return layout.sections.map((section, orderIndex) => ({
-        instanceId: section.instanceId,
-        visible: section.visible,
-        orderIndex,
-        section,
-      }))
-    }
 
     return layout.sections
       .filter((section) => section.visible)
@@ -50,5 +42,5 @@ export function useCustomerPageHomeLayoutSections(
         orderIndex,
         section,
       }))
-  }, [includeHiddenSections, revision])
+  }, [_includeHiddenSections, revision])
 }

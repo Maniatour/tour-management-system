@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
           // 모든 구독에 푸시 알림 전송
           const messageText = message || (message_type === 'image' ? '이미지를 보냈습니다' : '')
           const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.kovegas.com')
+            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.maniatour.com')
           const iconUrl = faviconUrl.startsWith('http') ? faviconUrl : `${baseUrl}${faviconUrl}`
           
           const notifications = subscriptions.map(async (subscription) => {

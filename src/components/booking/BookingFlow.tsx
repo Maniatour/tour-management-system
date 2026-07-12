@@ -12,10 +12,8 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useCart } from '@/components/cart/CartProvider'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
-import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
-import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 
 interface Product {
   id: string
@@ -480,8 +478,6 @@ function PaymentForm({
 
 export default function BookingFlow({ product, productChoices, onClose, onComplete }: BookingFlowProps) {
   const locale = useLocale()
-  const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const layoutEditMode = isPreview && isEditMode
   const isEnglish = locale === 'en'
   const translate = useCallback((ko: string, en: string) => (isEnglish ? en : ko), [isEnglish])
   const localeTag = isEnglish ? 'en-US' : 'ko-KR'
@@ -3691,10 +3687,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="booking-flow-premium flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-feature border border-border/60 bg-card shadow-elevated">
-        {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-booking" />}
         <CustomerPageZoneLayoutRenderer
           pageId="product-booking"
-          layoutEditMode={layoutEditMode}
+          layoutEditMode={false}
           productId={product.id}
           renderBlock={(zoneId) => {
             if (zoneId === 'booking-overlay-header') {

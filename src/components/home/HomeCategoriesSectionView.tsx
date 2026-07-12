@@ -4,19 +4,20 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, Tag } from 'lucide-react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
-import { Container } from '@/components/ui/container'
-import { Section } from '@/components/ui/section'
-import { SectionHeader } from '@/components/ui/section-header'
+import HomeTourCategoryGrid from '@/components/home/HomeTourCategoryGrid'
 import type { CategoriesStructureVariant } from '@/lib/customerPageHomeStructure'
 import type { CategoryTagItem } from '@/components/home/homeSectionTypes'
 import { getHomeCategoryIcon } from '@/lib/homeCategoryIcons'
+import { HOME_CATEGORY_GRID_ITEMS } from '@/lib/homeCategoryGridData'
 import { HOME_DESTINATIONS } from '@/lib/homeDestinationData'
+import HomeManiaTourSectionHeader from '@/components/home/HomeManiaTourSectionHeader'
 
 type Props = {
   variant: CategoriesStructureVariant
   locale: string
   t: (key: string) => string
   categoryTags: CategoryTagItem[]
+  zoneId?: string
 }
 
 const tileClass =
@@ -25,7 +26,36 @@ const tileClass =
 const pillClass =
   'inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-2 text-sm font-medium transition-colors hover:border-booking/30 hover:bg-muted/50'
 
-export default function HomeCategoriesSectionView({ variant, locale, t, categoryTags }: Props) {
+function CategoryIconGridSection({
+  locale,
+  t,
+  categoryTags,
+}: {
+  locale: string
+  t: (key: string) => string
+  categoryTags: CategoryTagItem[]
+}) {
+  return (
+    <section className="gyg-section gyg-section--muted">
+      <div className="gyg-container">
+        <h2 className="gyg-section-title">{t('findToursByCategory')}</h2>
+        <HomeTourCategoryGrid locale={locale} t={t} items={categoryTags} />
+        <div className="mt-6 text-center">
+          <Link
+            href={`/${locale}/products/tags`}
+            className="gyg-text-link inline-flex items-center gap-2 text-sm font-semibold"
+          >
+            <Tag className="h-4 w-4" aria-hidden />
+            {t('viewAllTags')}
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export default function HomeCategoriesSectionView({ variant, locale, t, categoryTags, zoneId = 'home-categories' }: Props) {
   const footer = (
     <div className="mt-8 text-center">
       <Link
@@ -44,9 +74,59 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
     return <Icon className={`${sizeClass} cp-ui-icon-accent mb-2`} aria-hidden />
   }
 
+  if (variant === 'maniatour-destinations') {
+    return (
+      <CustomerPageZone zone={zoneId}>
+        <section className="kv-section">
+          <div className="kv-container">
+            <HomeManiaTourSectionHeader
+              title={t('homeDestinationsManiaTourTitle')}
+              viewAllHref={`/${locale}/products/tags`}
+              viewAllLabel={t('homeViewAllDestinations')}
+            />
+            <div className="kv-dest-grid">
+              {HOME_DESTINATIONS.map((destination) => (
+                <Link
+                  key={destination.id}
+                  href={`/${locale}/products?tag=${encodeURIComponent(destination.tagQuery)}`}
+                  className="kv-dest-card group"
+                >
+                  <div className="kv-dest-image">
+                    <Image
+                      src={destination.imageUrl}
+                      alt={t(destination.labelKey)}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 220px"
+                      className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    />
+                    <div className="kv-dest-overlay" />
+                    <span className="kv-dest-name">{t(destination.labelKey)}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      </CustomerPageZone>
+    )
+  }
+
+  if (variant === 'travel-style-cards') {
+    return (
+      <CustomerPageZone zone={zoneId}>
+        <section className="kv-section">
+          <div className="kv-container">
+            <HomeManiaTourSectionHeader title={t('homeTravelStyleTitle')} />
+            <HomeTourCategoryGrid locale={locale} t={t} items={HOME_CATEGORY_GRID_ITEMS} variant="boxed" />
+          </div>
+        </section>
+      </CustomerPageZone>
+    )
+  }
+
   if (variant === 'destination-cities') {
     return (
-      <CustomerPageZone zone="home-categories">
+      <CustomerPageZone zone={zoneId}>
         <section className="gyg-section">
           <div className="gyg-container">
             <h2 className="gyg-section-title">{t('homeDestinationsTitle')}</h2>
@@ -72,16 +152,25 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
             </div>
           </div>
         </section>
+        <CategoryIconGridSection locale={locale} t={t} categoryTags={categoryTags} />
+      </CustomerPageZone>
+    )
+  }
+
+  if (variant === 'grid-icons') {
+    return (
+      <CustomerPageZone zone={zoneId}>
+        <CategoryIconGridSection locale={locale} t={t} categoryTags={categoryTags} />
       </CustomerPageZone>
     )
   }
 
   if (variant === 'horizontal-scroll') {
     return (
-      <CustomerPageZone zone="home-categories">
-        <Section spacing="compact">
-          <Container>
-            <SectionHeader heading={t('findToursByCategory')} />
+      <CustomerPageZone zone={zoneId}>
+        <section className="gyg-section">
+          <div className="gyg-container">
+            <h2 className="gyg-section-title">{t('findToursByCategory')}</h2>
             <div className="cp-home-scroll-row flex gap-4 pb-2">
               {categoryTags.map((c) => (
                 <Link
@@ -95,18 +184,18 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
               ))}
             </div>
             {footer}
-          </Container>
-        </Section>
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }
 
   if (variant === 'large-tiles') {
     return (
-      <CustomerPageZone zone="home-categories">
-        <Section spacing="compact">
-          <Container>
-            <SectionHeader heading={t('findToursByCategory')} />
+      <CustomerPageZone zone={zoneId}>
+        <section className="gyg-section">
+          <div className="gyg-container">
+            <h2 className="gyg-section-title">{t('findToursByCategory')}</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
               {categoryTags.map((c) => (
                 <Link
@@ -120,18 +209,18 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
               ))}
             </div>
             {footer}
-          </Container>
-        </Section>
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }
 
   if (variant === 'compact-pills') {
     return (
-      <CustomerPageZone zone="home-categories">
-        <Section spacing="compact">
-          <Container>
-            <SectionHeader heading={t('findToursByCategory')} align="center" />
+      <CustomerPageZone zone={zoneId}>
+        <section className="gyg-section">
+          <div className="gyg-container">
+            <h2 className="gyg-section-title text-center">{t('findToursByCategory')}</h2>
             <div className="flex flex-wrap justify-center gap-2">
               {categoryTags.map((c) => {
                 const Icon = getHomeCategoryIcon(c.labelKey)
@@ -148,18 +237,18 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
               })}
             </div>
             {footer}
-          </Container>
-        </Section>
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }
 
   if (variant === 'bento-asymmetric') {
     return (
-      <CustomerPageZone zone="home-categories">
-        <Section spacing="compact">
-          <Container>
-            <SectionHeader heading={t('findToursByCategory')} />
+      <CustomerPageZone zone={zoneId}>
+        <section className="gyg-section gyg-section--muted">
+          <div className="gyg-container">
+            <h2 className="gyg-section-title">{t('findToursByCategory')}</h2>
             <div className="grid auto-rows-[130px] grid-cols-2 gap-3 md:grid-cols-4">
               {categoryTags.map((c, i) => (
                 <Link
@@ -173,36 +262,15 @@ export default function HomeCategoriesSectionView({ variant, locale, t, category
               ))}
             </div>
             {footer}
-          </Container>
-        </Section>
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }
 
   return (
-    <CustomerPageZone zone="home-categories">
-      <Section spacing="compact" variant="muted">
-        <Container>
-          <SectionHeader
-            heading={t('findToursByCategory')}
-            subtitle={t('findToursByCategoryDesc')}
-            align="center"
-          />
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {categoryTags.map((c) => (
-              <Link
-                key={c.labelKey}
-                href={`/${locale}/products?tag=${encodeURIComponent(c.tagQuery)}`}
-                className={tileClass}
-              >
-                {renderIcon(c.labelKey)}
-                <h3 className="text-center text-xs font-semibold">{t(c.labelKey)}</h3>
-              </Link>
-            ))}
-          </div>
-          {footer}
-        </Container>
-      </Section>
+    <CustomerPageZone zone={zoneId}>
+      <CategoryIconGridSection locale={locale} t={t} categoryTags={categoryTags} />
     </CustomerPageZone>
   )
 }

@@ -10,7 +10,6 @@ import type { Database } from '@/lib/database.types'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
@@ -70,7 +69,7 @@ function CustomTourPageInner() {
   const isEnglish = locale === 'en'
   const t = useTranslations('customTour')
   const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const layoutEditMode = isPreview && isEditMode
+  const contentEditMode = isPreview && isEditMode
   // 기본 상태
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
   const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
@@ -768,13 +767,12 @@ function CustomTourPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-muted/30 py-4 sm:py-8">
+      <div className={`min-h-screen bg-muted/30 py-4 sm:py-8 ${contentEditMode ? 'pb-20' : ''}`}>
         <CustomerPagePreviewHighlightEffect />
-      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="custom-tour" />}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
         <CustomerPageZoneLayoutRenderer
           pageId="custom-tour"
-          layoutEditMode={layoutEditMode}
+          layoutEditMode={false}
           renderBlock={(zoneId) => {
             if (zoneId === 'custom-tour-header') {
               return (

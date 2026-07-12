@@ -3,7 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import type { Metadata } from 'next'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
-const FALLBACK_FAVICON_URL = '/company-logo.png'
+import { FALLBACK_SITE_LOGO_URL } from '@/lib/customerSiteBranding'
+
+const FALLBACK_FAVICON_URL = FALLBACK_SITE_LOGO_URL
+
+export { FALLBACK_SITE_LOGO_URL }
 
 type ChannelFaviconRow = {
   id?: string | null
@@ -82,6 +86,21 @@ const getCachedChannelFaviconUrl = unstable_cache(
     tags: ['channel-favicon'],
   }
 )
+
+export { getCachedChannelFaviconUrl as getCachedChannelSiteLogoUrl }
+
+export type CustomerSiteBrandingData = {
+  logoUrl: string
+  hasCustomLogo: boolean
+}
+
+export async function getCachedCustomerSiteBranding(): Promise<CustomerSiteBrandingData> {
+  const customLogoUrl = await getCachedChannelFaviconUrl()
+  return {
+    logoUrl: customLogoUrl ?? FALLBACK_SITE_LOGO_URL,
+    hasCustomLogo: Boolean(customLogoUrl),
+  }
+}
 
 function buildIconsMetadata(faviconUrl: string): NonNullable<Metadata['icons']> {
   return {

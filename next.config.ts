@@ -76,6 +76,18 @@ const nextConfig = {
 				port: '',
 				pathname: '/**',
 			},
+			{
+				protocol: 'https' as const,
+				hostname: 'lh3.googleusercontent.com',
+				port: '',
+				pathname: '/**',
+			},
+			{
+				protocol: 'https' as const,
+				hostname: '**.cdninstagram.com',
+				port: '',
+				pathname: '/**',
+			},
 		],
 		// 개발 환경에서 이미지 최적화 비활성화 (선택사항 - 에러 발생 시)
 		// unoptimized: process.env.NODE_ENV === 'development',

@@ -14,7 +14,8 @@ import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageE
 import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider';
 import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell';
 import CustomerPageEditModeQuickBar from '@/components/product/CustomerPageEditModeQuickBar';
-import { getLocaleLayoutMetadata } from '@/lib/channelFaviconMetadata';
+import { getLocaleLayoutMetadata, getCachedCustomerSiteBranding } from '@/lib/channelFaviconMetadata';
+import { CustomerSiteBrandingProvider } from '@/contexts/CustomerSiteBrandingContext';
 
 export async function generateMetadata(): Promise<Metadata> {
   return getLocaleLayoutMetadata();
@@ -49,21 +50,32 @@ export default async function LocaleLayout({
   const isCustomerHome = /^\/(ko|en)\/?$/.test(pathname);
   const isCustomerProductsListing = /^\/(ko|en)\/products\/?$/.test(pathname);
   const isCustomerProductDetail = /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname);
+  const isCustomerTravelGuide = /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname);
   const isFullWidthCustomerPage =
-    isCustomerHome || isCustomerProductsListing || isCustomerProductDetail;
+    isCustomerHome || isCustomerProductsListing || isCustomerProductDetail || isCustomerTravelGuide;
+
+  const siteBranding = await getCachedCustomerSiteBranding();
+
+  const brandingWrapper = (content: React.ReactNode) => (
+    <CustomerSiteBrandingProvider logoUrl={siteBranding.logoUrl} hasCustomLogo={siteBranding.hasCustomLogo}>
+      {content}
+    </CustomerSiteBrandingProvider>
+  );
 
   // Admin, Embed, Photos, Auth(콜백): 기본 레이아웃만 (사이드바/네비 없음)
   if (isAdminPage || isEmbedPage || isPhotosPage || isAuthPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
-        <FloatingChatProvider>
-          <LazyStripeErrorHandler />
-          <LazyModalBackdropGuard />
-          <div className="min-h-screen app-page-bg">
-            {children}
-            <LazyFloatingChatContainer />
-          </div>
-        </FloatingChatProvider>
+        {brandingWrapper(
+          <FloatingChatProvider>
+            <LazyStripeErrorHandler />
+            <LazyModalBackdropGuard />
+            <div className="min-h-screen app-page-bg">
+              {children}
+              <LazyFloatingChatContainer />
+            </div>
+          </FloatingChatProvider>
+        )}
       </NextIntlClientProvider>
     );
   }
@@ -72,15 +84,17 @@ export default async function LocaleLayout({
   if (isGuidePage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
-        <FloatingChatProvider>
-          <LazyStripeErrorHandler />
-          <LazyModalBackdropGuard />
-          <div className="min-h-screen app-page-bg">
-            <LazyNavigation />
-            {children}
-            <LazyFloatingChatContainer />
-          </div>
-        </FloatingChatProvider>
+        {brandingWrapper(
+          <FloatingChatProvider>
+            <LazyStripeErrorHandler />
+            <LazyModalBackdropGuard />
+            <div className="min-h-screen app-page-bg">
+              <LazyNavigation />
+              {children}
+              <LazyFloatingChatContainer />
+            </div>
+          </FloatingChatProvider>
+        )}
       </NextIntlClientProvider>
     );
   }
@@ -88,34 +102,36 @@ export default async function LocaleLayout({
   // 일반 페이지인 경우 기존 레이아웃 사용
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
-      <FloatingChatProvider>
-        <LazyStripeErrorHandler />
-        <LazyModalBackdropGuard />
-        <CartProviderWrapper>
-          <CustomerPageEditModeProvider>
-          <CustomerPageFieldBindingsProvider>
-          <CustomerPageGlobalThemeShell className="min-h-screen">
-          <div className="min-h-screen">
-            <LazyNavigation />
-            <div className="flex flex-col lg:flex-row">
-              <LazySidebar />
-              <main
-                className={`flex-1 main-safe-area ${
-                  isFullWidthCustomerPage ? 'px-0 pt-0' : 'px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6'
-                }`}
-              >
-                {children}
-              </main>
+      {brandingWrapper(
+        <FloatingChatProvider>
+          <LazyStripeErrorHandler />
+          <LazyModalBackdropGuard />
+          <CartProviderWrapper>
+            <CustomerPageEditModeProvider>
+            <CustomerPageFieldBindingsProvider>
+            <CustomerPageGlobalThemeShell className="min-h-screen">
+            <div className="min-h-screen">
+              <LazyNavigation />
+              <div className="flex flex-col lg:flex-row">
+                <LazySidebar />
+                <main
+                  className={`flex-1 main-safe-area ${
+                    isFullWidthCustomerPage ? 'px-0 pt-0' : 'px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6'
+                  }`}
+                >
+                  {children}
+                </main>
+              </div>
+              <LazyUserFooter locale={locale} />
+              <LazyFloatingChatContainer />
             </div>
-            <LazyUserFooter locale={locale} />
-            <LazyFloatingChatContainer />
-          </div>
-          <CustomerPageEditModeQuickBar />
-          </CustomerPageGlobalThemeShell>
-          </CustomerPageFieldBindingsProvider>
-          </CustomerPageEditModeProvider>
-        </CartProviderWrapper>
-      </FloatingChatProvider>
+            <CustomerPageEditModeQuickBar />
+            </CustomerPageGlobalThemeShell>
+            </CustomerPageFieldBindingsProvider>
+            </CustomerPageEditModeProvider>
+          </CartProviderWrapper>
+        </FloatingChatProvider>
+      )}
     </NextIntlClientProvider>
   );
 }

@@ -34,7 +34,7 @@ export function formatReviewPlatformLabel(platform: string): string {
     kkday: 'KKday',
     facebook: 'Facebook',
     instagram: 'Instagram',
-    kovegas: 'Kovegas',
+    maniatour: 'Mania Tour',
   }
 
   const key = normalized.toLowerCase().replace(/[\s_-]+/g, '')

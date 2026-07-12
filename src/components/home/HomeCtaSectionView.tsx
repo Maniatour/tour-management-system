@@ -16,32 +16,24 @@ export default function HomeCtaSectionView({
   if (variant === 'split-actions') {
     return (
       <CustomerPageZone zone="home-cta">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 cp-ui-card-surface rounded-2xl border p-8">
-            <div>
-              <h2 className="text-2xl font-bold mb-2">{t('startYourJourney')}</h2>
-              <p className="cp-ui-muted">{t('contactUs')}</p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Link href={`/${locale}/products`} className="cp-ui-btn-primary px-6 py-3 rounded-xl font-semibold text-center">{t('browseTours')}</Link>
-              <a href="mailto:info@maniatour.com" className="cp-ui-btn-outline px-6 py-3 rounded-xl font-semibold text-center border-2">{t('contact')}</a>
+        <section className="gyg-section gyg-section--cta">
+          <div className="gyg-container">
+            <div className="gyg-cta-split">
+              <div>
+                <h2 className="gyg-cta-title">{t('startYourJourney')}</h2>
+                <p className="gyg-cta-subtitle">{t('contactUs')}</p>
+              </div>
+              <div className="gyg-cta-actions">
+                <Link href={`/${locale}/products`} className="gyg-cta-btn gyg-cta-btn--primary">
+                  {t('browseTours')}
+                </Link>
+                <a href="mailto:info@maniatour.com" className="gyg-cta-btn gyg-cta-btn--secondary">
+                  {t('contact')}
+                </a>
+              </div>
             </div>
           </div>
-        </div>
-      </CustomerPageZone>
-    )
-  }
-
-  if (variant === 'full-band') {
-    return (
-      <CustomerPageZone zone="home-cta">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="cp-home-cta-band rounded-3xl p-10 text-center">
-            <h2 className="text-3xl font-bold mb-3">{t('startYourJourney')}</h2>
-            <p className="cp-ui-muted mb-6">{t('contactUs')}</p>
-            <Link href={`/${locale}/products`} className="cp-ui-btn-primary inline-flex px-8 py-4 rounded-xl font-semibold">{t('browseTours')}</Link>
-          </div>
-        </div>
+        </section>
       </CustomerPageZone>
     )
   }
@@ -49,24 +41,38 @@ export default function HomeCtaSectionView({
   if (variant === 'inline-minimal') {
     return (
       <CustomerPageZone zone="home-cta">
-        <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-t">
-          <h2 className="text-xl font-bold">{t('startYourJourney')}</h2>
-          <Link href={`/${locale}/products`} className="cp-ui-btn-primary px-6 py-3 rounded-xl font-semibold text-center">{t('browseTours')}</Link>
-        </div>
+        <section className="gyg-section gyg-section--cta-inline">
+          <div className="gyg-container">
+            <div className="gyg-cta-inline">
+              <h2 className="gyg-cta-title gyg-cta-title--sm">{t('startYourJourney')}</h2>
+              <Link href={`/${locale}/products`} className="gyg-cta-btn gyg-cta-btn--primary">
+                {t('browseTours')}
+              </Link>
+            </div>
+          </div>
+        </section>
       </CustomerPageZone>
     )
   }
 
   return (
     <CustomerPageZone zone="home-cta">
-      <div className="max-w-7xl mx-auto px-4 text-center py-6">
-        <h2 className="text-2xl sm:text-4xl font-bold mb-3">{t('startYourJourney')}</h2>
-        <p className="cp-ui-muted mb-6">{t('contactUs')}</p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Link href={`/${locale}/products`} className="cp-ui-btn-primary px-8 py-3 rounded-xl font-semibold">{t('browseTours')}</Link>
-          <a href="mailto:info@maniatour.com" className="cp-ui-btn-outline border-2 px-8 py-3 rounded-xl font-semibold">{t('contact')}</a>
+      <section className="gyg-section gyg-section--cta-band">
+        <div className="gyg-container">
+          <div className="gyg-cta-band">
+            <h2 className="gyg-cta-title">{t('startYourJourney')}</h2>
+            <p className="gyg-cta-subtitle">{t('contactUs')}</p>
+            <div className="gyg-cta-actions gyg-cta-actions--center">
+              <Link href={`/${locale}/products`} className="gyg-cta-btn gyg-cta-btn--primary">
+                {t('browseTours')}
+              </Link>
+              <a href="mailto:info@maniatour.com" className="gyg-cta-btn gyg-cta-btn--ghost">
+                {t('contact')}
+              </a>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
     </CustomerPageZone>
   )
 }

@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowRight, Play } from 'lucide-react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomeSearchBar from '@/components/home/HomeSearchBar'
 import type { HeroStructureVariant } from '@/lib/customerPageHomeStructure'
+import { MANIATOUR_HERO_IMAGE, MANIATOUR_HERO_STATS } from '@/lib/maniatourHomeData'
 
 type Props = {
   variant: HeroStructureVariant
@@ -28,6 +30,45 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
       {t('watchIntroVideo')}
     </button>
   )
+
+  if (variant === 'maniatour-southwest') {
+    return (
+      <CustomerPageZone zone="home-hero">
+        <section className="kv-hero">
+          <Image
+            src={MANIATOUR_HERO_IMAGE}
+            alt={t('homeManiaTourHeroTitle')}
+            fill
+            priority
+            sizes="100vw"
+            className="kv-hero-bg object-cover"
+          />
+          <div className="kv-hero-overlay" aria-hidden />
+          <div className="kv-hero-content">
+            <div className="kv-container">
+              <h1 className="kv-hero-title">{t('homeManiaTourHeroTitle')}</h1>
+              <p className="kv-hero-subtitle">{t('homeManiaTourHeroSubtitle')}</p>
+              <Link href={`/${locale}/products`} className="kv-hero-cta">
+                {t('homeManiaTourHeroCta')}
+                <ArrowRight className="h-5 w-5" aria-hidden />
+              </Link>
+              <div className="kv-hero-stats">
+                {MANIATOUR_HERO_STATS.map((stat) => {
+                  const Icon = stat.icon
+                  return (
+                    <div key={stat.textKey} className="kv-hero-stat">
+                      <Icon className="kv-hero-stat-icon" aria-hidden />
+                      <div className="kv-hero-stat-text">{t(stat.textKey)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+      </CustomerPageZone>
+    )
+  }
 
   if (variant === 'split-editorial') {
     return (

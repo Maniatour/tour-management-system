@@ -29,6 +29,7 @@ export function isCustomerFacingPath(pathname: string | null | undefined): boole
 
   if (/^\/(ko|en)\/?$/.test(pathname)) return true
   if (/\/products(\/|$)/.test(pathname)) return true
+  if (/\/travel-guide(\/|$)/.test(pathname)) return true
   if (/\/reservation-check(\/|$)/.test(pathname)) return true
   if (LEGAL_PAGE_SLUGS.some((slug) => pathname.includes(`/${slug}`))) return true
 

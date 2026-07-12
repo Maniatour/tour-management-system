@@ -33,47 +33,49 @@ export type HomePageLayout = {
   sections: HomePageSectionEntry[]
 }
 
+function buildSection(
+  instanceId: string,
+  kind: HomeSectionKind,
+  configPatch: HomeSectionConfig = {},
+  visible = true
+): HomePageSectionEntry {
+  return {
+    instanceId,
+    kind,
+    visible,
+    config: normalizeHomeSectionConfig(configPatch, kind),
+  }
+}
+
 function defaultBuiltinSections(): HomePageSectionEntry[] {
-  const base = BUILTIN_INSTANCE_IDS.map((instanceId) => {
-    const kind = LEGACY_HOME_SECTION_ID_TO_KIND[instanceId]
-    const config = normalizeHomeSectionConfig({}, kind)
-
-    if (instanceId === 'home-hero') {
-      config.structureVariant = 'search-discovery'
-    }
-    if (instanceId === 'home-categories') {
-      config.structureVariant = 'destination-cities'
-    }
-    if (instanceId === 'home-popular') {
-      config.structureVariant = 'attraction-cards'
-      config.cardCount = 4
-    }
-
-    const hiddenByDefault = instanceId === 'home-stats' || instanceId === 'home-features' || instanceId === 'home-cta'
-
-    return {
-      instanceId,
-      kind,
-      visible: !hiddenByDefault,
-      config,
-    }
-  })
-
   return [
-    ...base,
-    {
-      instanceId: 'home-cards-activities',
-      kind: 'card-list',
-      visible: true,
-      config: normalizeHomeSectionConfig(
-        {
-          structureVariant: 'activity-cards',
-          cardCount: 4,
-          productQuery: 'recent',
-        },
-        'card-list'
-      ),
-    },
+    buildSection('home-hero', 'hero', { structureVariant: 'maniatour-southwest' }),
+    buildSection('home-popular', 'card-list', {
+      structureVariant: 'maniatour-carousel',
+      cardCount: 8,
+      productQuery: 'favorites',
+    }),
+    buildSection('home-features', 'features', { structureVariant: 'maniatour-trust-six' }),
+    buildSection('home-categories', 'categories', { structureVariant: 'maniatour-destinations' }),
+    buildSection('home-travel-style', 'categories', { structureVariant: 'travel-style-cards' }),
+    buildSection('home-reviews', 'reviews', {
+      structureVariant: 'maniatour-split-instagram',
+      itemCount: 1,
+    }),
+    buildSection('home-guides', 'rich-text', { structureVariant: 'maniatour-guides-carousel' }),
+    buildSection('home-faq', 'faq', { structureVariant: 'maniatour-faq-cta', itemCount: 4 }),
+    buildSection('home-stats', 'stats', { structureVariant: 'inline-strip' }, false),
+    buildSection('home-cta', 'cta', { structureVariant: 'full-band' }, false),
+    buildSection(
+      'home-cards-activities',
+      'card-list',
+      {
+        structureVariant: 'activity-cards',
+        cardCount: 4,
+        productQuery: 'recent',
+      },
+      false
+    ),
   ]
 }
 
@@ -81,19 +83,27 @@ export const DEFAULT_HOME_PAGE_LAYOUT: HomePageLayout = {
   sections: defaultBuiltinSections(),
 }
 
-const GYG_BUILTIN_INSTANCE_IDS = new Set([
+const MANIATOUR_HOME_INSTANCE_IDS = new Set([
   ...BUILTIN_INSTANCE_IDS,
   'home-cards-activities',
+  'home-reviews',
+  'home-travel-style',
+  'home-guides',
+  'home-faq',
 ])
 
-/** 저장된 홈 레이아웃을 GetYourGuide 기본 구성과 맞춤 (깜빡임·구형 덮어쓰기 방지) */
-export function ensureGygHomePageLayout(layout: HomePageLayout): HomePageLayout {
+/** 저장된 홈 레이아웃을 Mania Tour 기본 구성과 맞춤 */
+export function ensureManiaTourHomePageLayout(layout: HomePageLayout): HomePageLayout {
   const normalized = normalizeHomePageLayout(layout)
   const defaults = normalizeHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT)
 
   const mergedDefaults = defaults.sections.map((defaultSection) => {
     const existing = normalized.sections.find((section) => section.instanceId === defaultSection.instanceId)
     if (!existing) return defaultSection
+
+    if (MANIATOUR_HOME_INSTANCE_IDS.has(defaultSection.instanceId)) {
+      return defaultSection
+    }
 
     const customTitle = existing.config.title?.trim()
     return {
@@ -105,12 +115,16 @@ export function ensureGygHomePageLayout(layout: HomePageLayout): HomePageLayout 
     }
   })
 
-  const extraSections = normalized.sections.filter(
-    (section) => !GYG_BUILTIN_INSTANCE_IDS.has(section.instanceId)
-  )
+  const extraSections: HomePageSectionEntry[] = []
 
   return normalizeHomePageLayout({ sections: [...mergedDefaults, ...extraSections] })
 }
+
+/** @deprecated use ensureManiaTourHomePageLayout */
+export const ensureKovegasHomePageLayout = ensureManiaTourHomePageLayout
+
+/** @deprecated use ensureManiaTourHomePageLayout */
+export const ensureGygHomePageLayout = ensureManiaTourHomePageLayout
 
 export function isHomeSectionId(value: unknown): value is HomeSectionId {
   return typeof value === 'string' && (HOME_SECTION_IDS as readonly string[]).includes(value)

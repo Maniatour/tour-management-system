@@ -75,6 +75,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 # https://console.cloud.google.com/ 에서 API 키 생성
 # Maps JavaScript API, Geocoding API, Places API 활성화 필요
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+# Optional server-only key for Google Business reviews API
+GOOGLE_MAPS_API_KEY=your_google_maps_server_api_key_here
+# Las Vegas Mania Tours Google Business place ID (홈 What Our Guests Say)
+GOOGLE_BUSINESS_PLACE_ID=ChIJ7W4fZpfGyIARL1o2YnYWOmE
 
 # Google Translate API Key (자동 번역 기능용)
 # https://console.cloud.google.com/ 에서 API 키 생성
@@ -113,16 +117,16 @@ Supabase 대시보드에서 다음 설정을 완료하세요:
    - Supabase 대시보드의 **Authentication > URL Configuration**에서 **Site URL** 아래에 표시되는 **Redirect URLs**를 확인하세요.
    - 일반적으로 `https:/tyilwbytyuqrhxekjxcd.supabase.co/auth/v1/callback` 형식입니다.
 3. **Authentication > URL Configuration**에서 (로그인 후 localhost로 돌아가면 이 설정이 원인인 경우가 많음):
-   - **Site URL** (가장 중요, Redirect URLs만 맞춰도 Site URL이 localhost면 localhost로 감): `https://kovegas.com`
+   - **Site URL** (가장 중요, Redirect URLs만 맞춰도 Site URL이 localhost면 localhost로 감): `https://maniatour.com`
    - **Redirect URLs** (한 줄씩 추가, `redirectTo`와 정확히 일치해야 함):
      - `http://localhost:3000/auth/callback` (로컬 개발)
-     - `https://<운영-도메인>/auth/callback` (예: `https://kovegas.com/auth/callback`)
-     - 여러 도메인·www를 쓰면 각각 추가 (예: `https://www.kovegas.com/auth/callback`)
+     - `https://<운영-도메인>/auth/callback` (예: `https://maniatour.com/auth/callback`)
+     - 여러 도메인·www를 쓰면 각각 추가 (예: `https://www.maniatour.com/auth/callback`)
      - Vercel 프리뷰를 쓰면 `https://*.vercel.app/auth/callback` 형태도 추가
    - `redirectTo`가 목록에 없으면 Supabase가 **Site URL**(localhost로 두었을 때)로 리다이렉트합니다.
-   - 앱은 `redirectTo`로 `{origin}/{locale}/auth/callback` 을 보냅니다 (예: `https://www.kovegas.com/ko/auth/callback`, `src/lib/auth.ts`).
+   - 앱은 `redirectTo`로 `{origin}/{locale}/auth/callback` 을 보냅니다 (예: `https://www.maniatour.com/ko/auth/callback`, `src/lib/auth.ts`).
    - 구 URL `/auth/callback` 로 오면 자동으로 `/{locale}/auth/callback` 으로 넘깁니다.
-   - Vercel **Production** 환경 변수: `NEXT_PUBLIC_SITE_URL=https://kovegas.com` (끝 슬래시 없음)
+   - Vercel **Production** 환경 변수: `NEXT_PUBLIC_SITE_URL=https://maniatour.com` (끝 슬래시 없음)
 
 ### 4. Google Cloud Console 설정
 

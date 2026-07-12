@@ -3,10 +3,14 @@ import {
   Bus,
   Building2,
   Camera,
+  Handshake,
   Map,
   Mountain,
+  PartyPopper,
   Plane,
   Route,
+  Scissors,
+  ShieldCheck,
   Sparkles,
   Star,
   Tent,
@@ -27,6 +31,10 @@ export const HOME_CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
   premiumTour: Star,
   performanceTicket: Ticket,
   attraction: Sparkles,
+  categoryEvent: PartyPopper,
+  categoryCoupon: Scissors,
+  categoryTravelInsurance: ShieldCheck,
+  categoryConventionSupport: Handshake,
 }
 
 export function getHomeCategoryIcon(labelKey: string): LucideIcon {

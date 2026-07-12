@@ -10,6 +10,7 @@ import {
   isCustomerFacingPath,
 } from '@/lib/customerSiteRoutes'
 import { LEGAL_LABEL_KEYS } from '@/lib/legalPageLabels'
+import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
 
 type CustomerSiteFooterProps = {
   locale: string
@@ -30,9 +31,12 @@ export default function CustomerSiteFooter({ locale, forceShow = false }: Custom
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
-            <Link href={`/${locale}`} className="inline-flex items-center gap-2">
-              <span className="text-xl font-bold text-white">{t('brandName')}</span>
-            </Link>
+            <CustomerSiteLogo
+              brandName={t('brandName')}
+              href={`/${locale}`}
+              className="inline-flex items-center gap-2"
+              variant="dark"
+            />
             <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">
               {t('brandDescription')}
             </p>

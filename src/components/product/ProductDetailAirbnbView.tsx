@@ -11,6 +11,7 @@ import ProductDetailAirbnbOptionsSection from '@/components/product/ProductDetai
 import ProductDetailDateTravelersPickers from '@/components/product/ProductDetailDateTravelersPickers'
 import ProductDetailMobileStickyCta from '@/components/product/ProductDetailMobileStickyCta'
 import ProductDetailPromoCodesBox from '@/components/product/ProductDetailPromoCodesBox'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ReviewSummary from '@/components/customer/ui/ReviewSummary'
 import { useProductDetailAppliedPromo } from '@/hooks/useProductDetailAppliedPromo'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
@@ -147,47 +148,51 @@ export default function ProductDetailAirbnbView({
   return (
     <div className="airbnb-detail min-h-screen bg-white pb-24 lg:pb-12">
       <div className="airbnb-detail-container">
-        <div className="airbnb-detail-title-row">
-          <div className="min-w-0 flex-1">
-            <p className="airbnb-detail-meta-line">
-              {t('tourInLocation', { location: locationLine })}
-              {durationLabel ? ` · ${durationLabel}` : ''}
-              {groupSize ? ` · ${groupSize}` : ''}
-            </p>
-            <h1 className="airbnb-detail-title">{displayName}</h1>
-            {reviewRating != null && reviewCount != null && reviewCount > 0 ? (
-              <ReviewSummary
-                rating={reviewRating}
-                reviewCount={reviewCount}
-                reviewsLabel={t('reviewCount', { count: reviewCount })}
-                className="mt-2"
-              />
-            ) : (
-              <div className="mt-2 flex items-center gap-1 text-sm text-[#1a2b49]">
-                <Star className="h-4 w-4 fill-[#1a2b49]" aria-hidden />
-                <span className="font-semibold">{categoryLabel}</span>
-              </div>
-            )}
-          </div>
+        <CustomerPageZone zone="detail-header" productId={productId}>
+          <div className="airbnb-detail-title-row">
+            <div className="min-w-0 flex-1">
+              <p className="airbnb-detail-meta-line">
+                {t('tourInLocation', { location: locationLine })}
+                {durationLabel ? ` · ${durationLabel}` : ''}
+                {groupSize ? ` · ${groupSize}` : ''}
+              </p>
+              <h1 className="airbnb-detail-title">{displayName}</h1>
+              {reviewRating != null && reviewCount != null && reviewCount > 0 ? (
+                <ReviewSummary
+                  rating={reviewRating}
+                  reviewCount={reviewCount}
+                  reviewsLabel={t('reviewCount', { count: reviewCount })}
+                  className="mt-2"
+                />
+              ) : (
+                <div className="mt-2 flex items-center gap-1 text-sm text-[#1a2b49]">
+                  <Star className="h-4 w-4 fill-[#1a2b49]" aria-hidden />
+                  <span className="font-semibold">{categoryLabel}</span>
+                </div>
+              )}
+            </div>
 
-          <div className="airbnb-detail-title-actions">
-            <button type="button" className="airbnb-detail-text-action">
-              <Share2 className="h-4 w-4" aria-hidden />
-              <span>{t('share')}</span>
-            </button>
-            <button type="button" className="airbnb-detail-text-action">
-              <Heart className="h-4 w-4" aria-hidden />
-              <span>{t('save')}</span>
-            </button>
+            <div className="airbnb-detail-title-actions">
+              <button type="button" className="airbnb-detail-text-action">
+                <Share2 className="h-4 w-4" aria-hidden />
+                <span>{t('share')}</span>
+              </button>
+              <button type="button" className="airbnb-detail-text-action">
+                <Heart className="h-4 w-4" aria-hidden />
+                <span>{t('save')}</span>
+              </button>
+            </div>
           </div>
-        </div>
+        </CustomerPageZone>
 
-        <ProductDetailAirbnbGallery
-          productMedia={productMedia}
-          tourCoursePhotos={tourCoursePhotos}
-          displayName={displayName}
-          isEnglish={isEnglish}
-        />
+        <CustomerPageZone zone="detail-gallery" productId={productId}>
+          <ProductDetailAirbnbGallery
+            productMedia={productMedia}
+            tourCoursePhotos={tourCoursePhotos}
+            displayName={displayName}
+            isEnglish={isEnglish}
+          />
+        </CustomerPageZone>
 
         <div className="airbnb-detail-layout">
           <div className="airbnb-detail-main">
@@ -219,9 +224,11 @@ export default function ProductDetailAirbnbView({
                   selectedDate={selectedDate}
                   isEnglish={isEnglish}
                 />
-                <div className="mt-4 lg:hidden">
-                  <ProductDetailPromoCodesBox promo={promo} />
-                </div>
+                <CustomerPageZone zone="detail-promo-codes" productId={productId}>
+                  <div className="mt-4 lg:hidden">
+                    <ProductDetailPromoCodesBox promo={promo} />
+                  </div>
+                </CustomerPageZone>
                 <hr className="airbnb-detail-divider" />
               </div>
             ) : null}
@@ -250,23 +257,25 @@ export default function ProductDetailAirbnbView({
 
           <aside className="airbnb-detail-aside hidden lg:block">
             <div className="airbnb-detail-sticky">
-              <ProductDetailAirbnbBookingCard
-                productId={productId}
-                product={product}
-                customerTourName={displayName}
-                basePrice={bookingPanelProps.basePrice}
-                totalPrice={totalPrice}
-                groupedChoices={bookingPanelProps.groupedChoices}
-                selectedOptions={bookingPanelProps.selectedOptions}
-                isEnglish={isEnglish}
-                selectedDate={selectedDate}
-                travelerCounts={travelerCounts}
-                onDateChange={setSelectedDate}
-                onTravelerCountsChange={setTravelerCounts}
-                ageLimits={ageLimits}
-                onBookNow={bookingPanelProps.onBookNow}
-                promo={promo}
-              />
+              <CustomerPageZone zone="detail-sidebar" productId={productId}>
+                <ProductDetailAirbnbBookingCard
+                  productId={productId}
+                  product={product}
+                  customerTourName={displayName}
+                  basePrice={bookingPanelProps.basePrice}
+                  totalPrice={totalPrice}
+                  groupedChoices={bookingPanelProps.groupedChoices}
+                  selectedOptions={bookingPanelProps.selectedOptions}
+                  isEnglish={isEnglish}
+                  selectedDate={selectedDate}
+                  travelerCounts={travelerCounts}
+                  onDateChange={setSelectedDate}
+                  onTravelerCountsChange={setTravelerCounts}
+                  ageLimits={ageLimits}
+                  onBookNow={bookingPanelProps.onBookNow}
+                  promo={promo}
+                />
+              </CustomerPageZone>
               <TrustBadgeRow items={trustBadges} className="mt-4 justify-center" compact />
             </div>
           </aside>

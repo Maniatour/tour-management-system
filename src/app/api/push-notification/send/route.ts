@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
         
         // 절대 URL로 favicon 변환
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
-          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.kovegas.com')
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.maniatour.com')
         const iconUrl = faviconUrl.startsWith('http') ? faviconUrl : `${baseUrl}${faviconUrl}`
 
         const payload = JSON.stringify({

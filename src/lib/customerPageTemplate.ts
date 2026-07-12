@@ -50,9 +50,9 @@ export const CUSTOMER_PAGE_TEMPLATES: CustomerPageTemplateDefinition[] = [
   {
     id: 'agency-classic',
     label: '투어 에이전시 클래식',
-    description: '중앙 히어로 · 아이콘 카테고리 · 3열 인기 투어 — 기본 올인원',
+    description: 'Mania Tour 히어로 · 인기 투어 · 목적지 · FAQ — 기본 올인원',
     tags: ['기본', '올인원'],
-    themeId: 'kovegas-classic',
+    themeId: 'maniatour-classic',
     homeLayout: normalizeHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT),
     structure: { ...DEFAULT_HOME_PAGE_STRUCTURE },
   },
@@ -61,7 +61,7 @@ export const CUSTOMER_PAGE_TEMPLATES: CustomerPageTemplateDefinition[] = [
     label: '에디토리얼 스플릿',
     description: '2단 히어로 + 대형 타일 + 피처드 그리드 · 매거진형 레이아웃',
     tags: ['에디토리얼', '2025'],
-    themeId: 'kovegas-classic',
+    themeId: 'maniatour-classic',
     homeLayout: buildHomeLayout(FULL_HOME_ORDER),
     structure: {
       hero: 'split-editorial',
@@ -131,7 +131,7 @@ export const CUSTOMER_PAGE_TEMPLATES: CustomerPageTemplateDefinition[] = [
     label: '소셜 프루프 퍼스트',
     description: '컴팩트 바 + 통계 밴드 선행 · 리스트형 인기 투어',
     tags: ['신뢰', 'B2C'],
-    themeId: 'kovegas-classic',
+    themeId: 'maniatour-classic',
     homeLayout: buildHomeLayout([
       'home-hero',
       'home-stats',

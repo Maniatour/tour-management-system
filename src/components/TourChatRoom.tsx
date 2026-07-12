@@ -2276,7 +2276,7 @@ export default function TourChatRoom({
 
   const copyRoomLink = () => {
     if (!room) return
-    const link = `https://www.kovegas.com/chat/${room.room_code}`
+    const link = `https://www.maniatour.com/chat/${room.room_code}`
     navigator.clipboard.writeText(link)
     alert('Chat room link has been copied to clipboard.')
   }

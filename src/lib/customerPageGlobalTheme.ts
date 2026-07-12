@@ -1,4 +1,4 @@
-export const DEFAULT_GLOBAL_THEME_ID = 'kovegas-classic'
+export const DEFAULT_GLOBAL_THEME_ID = 'maniatour-classic'
 
 export type CustomerPageGlobalThemeDefinition = {
   id: string
@@ -15,8 +15,8 @@ export type CustomerPageGlobalThemeDefinition = {
 
 export const CUSTOMER_PAGE_GLOBAL_THEMES: CustomerPageGlobalThemeDefinition[] = [
   {
-    id: 'kovegas-classic',
-    label: '코베가스 클래식',
+    id: 'maniatour-classic',
+    label: '매니아투어 클래식',
     description: '신뢰감 있는 브랜드 블루 · 여행 사이트 기본',
     presetId: 'default',
     pageBackground: '#f8fafc',
@@ -117,8 +117,9 @@ export function getActiveGlobalThemeId(): string {
 export function normalizeGlobalThemeId(themeId: unknown): string {
   if (typeof themeId !== 'string' || !themeId.trim()) return DEFAULT_GLOBAL_THEME_ID
   const trimmed = themeId.trim()
-  return CUSTOMER_PAGE_GLOBAL_THEMES.some((theme) => theme.id === trimmed)
-    ? trimmed
+  const legacyId = trimmed === 'kovegas-classic' ? 'maniatour-classic' : trimmed
+  return CUSTOMER_PAGE_GLOBAL_THEMES.some((theme) => theme.id === legacyId)
+    ? legacyId
     : DEFAULT_GLOBAL_THEME_ID
 }
 

@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react'
 import { useCustomerPageZoneLayoutViews } from '@/hooks/useCustomerPageZoneLayout'
 import { getPageZoneBlockDef, type ZoneLayoutPageId } from '@/lib/customerPageZoneLayoutCatalog'
-import CustomerPageZoneLayoutBuilder from '@/components/product/CustomerPageZoneLayoutBuilder'
 
 type CustomerPageZoneLayoutRendererProps = {
   pageId: ZoneLayoutPageId
@@ -14,22 +13,11 @@ type CustomerPageZoneLayoutRendererProps = {
 
 export default function CustomerPageZoneLayoutRenderer({
   pageId,
-  layoutEditMode,
+  layoutEditMode: _layoutEditMode,
   renderBlock,
-  productId = null,
+  productId: _productId = null,
 }: CustomerPageZoneLayoutRendererProps) {
-  const blocks = useCustomerPageZoneLayoutViews(pageId, layoutEditMode)
-
-  if (layoutEditMode) {
-    return (
-      <CustomerPageZoneLayoutBuilder
-        pageId={pageId}
-        blocks={blocks}
-        renderBlock={renderBlock}
-        productId={productId}
-      />
-    )
-  }
+  const blocks = useCustomerPageZoneLayoutViews(pageId, false)
 
   if (pageId === 'product-detail') {
     const headerBlock = blocks.find((b) => b.zoneId === 'detail-header')

@@ -2,7 +2,7 @@ import type { CustomerPageId } from '@/lib/customer-page-registry'
 import { supabase } from '@/lib/supabase'
 import {
   DEFAULT_HOME_PAGE_LAYOUT,
-  ensureGygHomePageLayout,
+  ensureManiaTourHomePageLayout,
   normalizeHomePageLayout,
   type HomePageLayout,
 } from '@/lib/customerPageHomeLayout'
@@ -26,7 +26,7 @@ export const CUSTOMER_PAGE_LAYOUTS_LOCALE = 'config'
 export const HOME_PAGE_LAYOUT_KEY = 'home'
 export const LISTING_CARD_LAYOUT_KEY = 'listing-card-layout'
 
-let homeLayoutCache: HomePageLayout = ensureGygHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT)
+let homeLayoutCache: HomePageLayout = ensureManiaTourHomePageLayout(DEFAULT_HOME_PAGE_LAYOUT)
 
 const zoneLayoutCaches: Partial<Record<ZoneLayoutPageId, PageZoneLayout>> = {}
 
@@ -37,18 +37,20 @@ export function getCustomerPageHomeLayoutCache(): HomePageLayout {
 }
 
 export function setCustomerPageHomeLayoutCache(layout: HomePageLayout): void {
-  homeLayoutCache = ensureGygHomePageLayout(layout)
+  homeLayoutCache = ensureManiaTourHomePageLayout(layout)
 }
 
 export function loadCustomerPageHomeLayout(): HomePageLayout {
-  return homeLayoutCache
+  return ensureManiaTourHomePageLayout(homeLayoutCache)
 }
 
 export async function fetchCustomerPageHomeLayout(): Promise<HomePageLayout> {
   const layout = await fetchLayoutJson(HOME_PAGE_LAYOUT_KEY, (raw) =>
-    ensureGygHomePageLayout(normalizeHomePageLayout(raw))
+    ensureManiaTourHomePageLayout(normalizeHomePageLayout(raw))
   )
   homeLayoutCache = layout
+  // DB에 구형 섹션이 남아 있으면 GYG 기본 구성으로 정리해 저장
+  await upsertLayoutJson(HOME_PAGE_LAYOUT_KEY, layout)
   return layout
 }
 
@@ -145,7 +147,7 @@ async function upsertLayoutJson(keyPath: string, layout: unknown): Promise<void>
 }
 
 export async function persistCustomerPageHomeLayout(layout: HomePageLayout): Promise<void> {
-  const normalized = normalizeHomePageLayout(layout)
+  const normalized = ensureManiaTourHomePageLayout(normalizeHomePageLayout(layout))
   homeLayoutCache = normalized
   await upsertLayoutJson(HOME_PAGE_LAYOUT_KEY, normalized)
 }

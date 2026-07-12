@@ -8,6 +8,7 @@ import {
   Plus_Jakarta_Sans,
   Merriweather,
   Lora,
+  Righteous,
 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -67,6 +68,13 @@ const lora = Lora({
   display: "swap",
 });
 
+const righteous = Righteous({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-righteous",
+  display: "swap",
+});
+
 const customerPageFontVariables = cn(
   geist.variable,
   inter.variable,
@@ -75,7 +83,8 @@ const customerPageFontVariables = cn(
   poppins.variable,
   plusJakarta.variable,
   merriweather.variable,
-  lora.variable
+  lora.variable,
+  righteous.variable
 );
 
 export const metadata: Metadata = {

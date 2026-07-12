@@ -7,6 +7,7 @@ export type HeroStructureVariant =
   | 'full-immersive'
   | 'compact-bar'
   | 'search-discovery'
+  | 'maniatour-southwest'
 
 export type CategoriesStructureVariant =
   | 'grid-icons'
@@ -15,6 +16,8 @@ export type CategoriesStructureVariant =
   | 'compact-pills'
   | 'bento-asymmetric'
   | 'destination-cities'
+  | 'maniatour-destinations'
+  | 'travel-style-cards'
 
 export type StatsStructureVariant =
   | 'grid-four'
@@ -30,12 +33,14 @@ export type PopularStructureVariant =
   | 'stacked-list'
   | 'attraction-cards'
   | 'activity-cards'
+  | 'maniatour-carousel'
 
 export type FeaturesStructureVariant =
   | 'grid-two-text'
   | 'card-grid-four'
   | 'alternating-rows'
   | 'icon-row'
+  | 'maniatour-trust-six'
 
 export type CtaStructureVariant =
   | 'centered-classic'
@@ -52,13 +57,17 @@ export type HomePageStructure = {
   cta: CtaStructureVariant
 }
 
+export const MANIATOUR_HOME_PAGE_STRUCTURE: HomePageStructure = {
+  hero: 'maniatour-southwest',
+  categories: 'maniatour-destinations',
+  stats: 'inline-strip',
+  popular: 'maniatour-carousel',
+  features: 'maniatour-trust-six',
+  cta: 'full-band',
+}
+
 export const DEFAULT_HOME_PAGE_STRUCTURE: HomePageStructure = {
-  hero: 'search-discovery',
-  categories: 'destination-cities',
-  stats: 'grid-four',
-  popular: 'attraction-cards',
-  features: 'grid-two-text',
-  cta: 'centered-classic',
+  ...MANIATOUR_HOME_PAGE_STRUCTURE,
 }
 
 export const HOME_STRUCTURE_LABELS: Record<
@@ -72,6 +81,7 @@ export const HOME_STRUCTURE_LABELS: Record<
     'full-immersive': '풀스크린',
     'compact-bar': '컴팩트 바',
     'search-discovery': '검색 히어로',
+    'maniatour-southwest': 'Mania Tour 히어로',
   },
   categories: {
     'grid-icons': '아이콘 그리드',
@@ -80,6 +90,8 @@ export const HOME_STRUCTURE_LABELS: Record<
     'compact-pills': '필 태그',
     'bento-asymmetric': '벤토 그리드',
     'destination-cities': '목적지 도시',
+    'maniatour-destinations': 'Mania Tour 목적지',
+    'travel-style-cards': '여행 스타일 카드',
   },
   stats: {
     'grid-four': '4열 그리드',
@@ -95,12 +107,14 @@ export const HOME_STRUCTURE_LABELS: Record<
     'stacked-list': '리스트형',
     'attraction-cards': '명소 카드',
     'activity-cards': '액티비티 카드',
+    'maniatour-carousel': 'Mania Tour 캐러셀',
   },
   features: {
     'grid-two-text': '2열 텍스트',
     'card-grid-four': '4카드',
     'alternating-rows': '지그재그',
     'icon-row': '아이콘 행',
+    'maniatour-trust-six': 'Mania Tour 신뢰 6열',
   },
   cta: {
     'centered-classic': '중앙 CTA',
@@ -142,17 +156,68 @@ export function normalizeHomePageStructure(raw: unknown): HomePageStructure {
     return { ...DEFAULT_HOME_PAGE_STRUCTURE }
   }
   const o = raw as Partial<HomePageStructure>
+  const rawHero = o.hero as string | undefined
+  const rawCategories = o.categories as string | undefined
+  const rawPopular = o.popular as string | undefined
+  const rawFeatures = o.features as string | undefined
+  const legacyHero = rawHero === 'kovegas-southwest' ? 'maniatour-southwest' : rawHero
+  const legacyCategories =
+    rawCategories === 'kovegas-destinations' ? 'maniatour-destinations' : rawCategories
+  const legacyPopular = rawPopular === 'kovegas-carousel' ? 'maniatour-carousel' : rawPopular
+  const legacyFeatures = rawFeatures === 'kovegas-trust-six' ? 'maniatour-trust-six' : rawFeatures
   const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
     typeof value === 'string' && (allowed as readonly string[]).includes(value)
       ? (value as T)
       : fallback
 
   return {
-    hero: pick(o.hero, ['centered-classic', 'split-editorial', 'left-minimal', 'full-immersive', 'compact-bar', 'search-discovery'], DEFAULT_HOME_PAGE_STRUCTURE.hero),
-    categories: pick(o.categories, ['grid-icons', 'horizontal-scroll', 'large-tiles', 'compact-pills', 'bento-asymmetric', 'destination-cities'], DEFAULT_HOME_PAGE_STRUCTURE.categories),
+    hero: pick(
+      legacyHero,
+      [
+        'centered-classic',
+        'split-editorial',
+        'left-minimal',
+        'full-immersive',
+        'compact-bar',
+        'search-discovery',
+        'maniatour-southwest',
+      ],
+      DEFAULT_HOME_PAGE_STRUCTURE.hero
+    ),
+    categories: pick(
+      legacyCategories,
+      [
+        'grid-icons',
+        'horizontal-scroll',
+        'large-tiles',
+        'compact-pills',
+        'bento-asymmetric',
+        'destination-cities',
+        'maniatour-destinations',
+        'travel-style-cards',
+      ],
+      DEFAULT_HOME_PAGE_STRUCTURE.categories
+    ),
     stats: pick(o.stats, ['grid-four', 'inline-strip', 'card-row', 'highlight-band'], DEFAULT_HOME_PAGE_STRUCTURE.stats),
-    popular: pick(o.popular, ['grid-three', 'grid-two-large', 'horizontal-scroll', 'featured-plus-grid', 'stacked-list', 'attraction-cards', 'activity-cards'], DEFAULT_HOME_PAGE_STRUCTURE.popular),
-    features: pick(o.features, ['grid-two-text', 'card-grid-four', 'alternating-rows', 'icon-row'], DEFAULT_HOME_PAGE_STRUCTURE.features),
+    popular: pick(
+      legacyPopular,
+      [
+        'grid-three',
+        'grid-two-large',
+        'horizontal-scroll',
+        'featured-plus-grid',
+        'stacked-list',
+        'attraction-cards',
+        'activity-cards',
+        'maniatour-carousel',
+      ],
+      DEFAULT_HOME_PAGE_STRUCTURE.popular
+    ),
+    features: pick(
+      legacyFeatures,
+      ['grid-two-text', 'card-grid-four', 'alternating-rows', 'icon-row', 'maniatour-trust-six'],
+      DEFAULT_HOME_PAGE_STRUCTURE.features
+    ),
     cta: pick(o.cta, ['centered-classic', 'split-actions', 'full-band', 'inline-minimal'], DEFAULT_HOME_PAGE_STRUCTURE.cta),
   }
 }

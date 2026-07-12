@@ -9,7 +9,6 @@ import { useLocale, useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import PriceDisplay from '@/components/customer/ui/PriceDisplay'
@@ -67,7 +66,7 @@ function ProductTagsPageInner() {
   const locale = useLocale()
   const t = useTranslations('common')
   const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const layoutEditMode = isPreview && isEditMode
+  const contentEditMode = isPreview && isEditMode
   const [tagCategories, setTagCategories] = useState<TagCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -205,12 +204,11 @@ function ProductTagsPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen app-page-bg">
+      <div className={`min-h-screen app-page-bg ${contentEditMode ? 'bg-muted/30' : ''}`}>
         <CustomerPagePreviewHighlightEffect />
-      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="products-tags" />}
       <CustomerPageZoneLayoutRenderer
         pageId="products-tags"
-        layoutEditMode={layoutEditMode}
+        layoutEditMode={false}
         renderBlock={(zoneId) => {
           if (zoneId === 'tags-page-header') {
             return (

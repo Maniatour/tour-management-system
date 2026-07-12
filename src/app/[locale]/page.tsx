@@ -11,10 +11,9 @@ import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditMo
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageHomeLayoutSections } from '@/hooks/useCustomerPageHomeLayout'
 import { emitCustomerPageBindingsUpdate } from '@/lib/customerPageBindingsSync'
-import CustomerPageHomeCanvasBuilder from '@/components/product/CustomerPageHomeCanvasBuilder'
-import CustomerPageHomeLayoutGuideBar from '@/components/product/CustomerPageHomeLayoutGuideBar'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import { useCustomerPageFieldBindings } from '@/components/product/CustomerPageFieldBindingsProvider'
+import { HOME_CATEGORY_GRID_ITEMS } from '@/lib/homeCategoryGridData'
 
 export default function HomePage() {
   return (
@@ -95,10 +94,10 @@ function HomePageInner() {
   }
 
   const stats = [
-    { number: '10,000+', label: t('satisfiedCustomers') },
-    { number: '500+', label: t('successfulTours') },
-    { number: '50+', label: t('professionalGuides') },
-    { number: '4.8', label: t('averageRating') }
+    { number: t('statsSatisfiedCustomersNumber'), label: t('satisfiedCustomers') },
+    { number: t('statsSuccessfulToursNumber'), label: t('successfulTours') },
+    { number: t('statsProfessionalGuidesNumber'), label: t('professionalGuides') },
+    { number: t('statsAverageRatingNumber'), label: t('averageRating') },
   ]
 
   const features = [
@@ -124,22 +123,9 @@ function HomePageInner() {
     }
   ]
 
-  const categoryTags = [
-    { labelKey: 'antelopeCanyon', tagQuery: '앤텔롭' },
-    { labelKey: 'grandCanyon', tagQuery: '그랜드캐년' },
-    { labelKey: 'suburbanTour', tagQuery: '근교' },
-    { labelKey: 'dayTour', tagQuery: '당일' },
-    { labelKey: 'accommodationTour', tagQuery: '숙박' },
-    { labelKey: 'cityTour', tagQuery: '시티' },
-    { labelKey: 'helicopterTour', tagQuery: '헬기' },
-    { labelKey: 'lightAircraftTour', tagQuery: '경비행기' },
-    { labelKey: 'busTour', tagQuery: '버스' },
-    { labelKey: 'premiumTour', tagQuery: '프리미엄' },
-    { labelKey: 'performanceTicket', tagQuery: '공연' },
-    { labelKey: 'attraction', tagQuery: '어트랙션' },
-  ]
+  const categoryTags = HOME_CATEGORY_GRID_ITEMS
 
-  const orderedHomeSections = useCustomerPageHomeLayoutSections(isPreview && isEditMode)
+  const orderedHomeSections = useCustomerPageHomeLayoutSections(false)
   const layoutEditMode = isPreview && isEditMode
   const showCardEditZones = isPreview && isEditMode
   const showHomeContent = customerPageConfigReady || layoutEditMode
@@ -166,23 +152,15 @@ function HomePageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="gyg-home min-h-screen bg-white">
+      <div className="maniatour-home min-h-screen bg-white">
         {!showHomeContent ? (
-          <div className="gyg-hero" aria-busy="true" aria-live="polite" />
+          <div className="kv-hero min-h-[28rem] bg-[#1a1a1a]" aria-busy="true" aria-live="polite" />
         ) : (
           <>
             <CustomerPagePreviewHighlightEffect />
-            {layoutEditMode && <CustomerPageHomeLayoutGuideBar />}
-            {layoutEditMode ? (
-              <CustomerPageHomeCanvasBuilder
-                sections={orderedHomeSections}
-                renderSection={renderSection}
-              />
-            ) : (
-              orderedHomeSections.map(({ section }) => (
-                <div key={section.instanceId}>{renderSection(section)}</div>
-              ))
-            )}
+            {orderedHomeSections.map(({ section }) => (
+              <div key={section.instanceId}>{renderSection(section)}</div>
+            ))}
           </>
         )}
       </div>

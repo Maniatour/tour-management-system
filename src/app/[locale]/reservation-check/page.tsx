@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 
@@ -77,7 +76,7 @@ function ReservationCheckPageInner() {
   const locale = useLocale()
   const dateLocale = locale === 'en' ? 'en-US' : 'ko-KR'
   const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const layoutEditMode = isPreview && isEditMode
+  const contentEditMode = isPreview && isEditMode
 
   const [reservationId, setReservationId] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -217,12 +216,11 @@ function ReservationCheckPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className="min-h-screen bg-muted/30">
+      <div className={`min-h-screen bg-muted/30 ${contentEditMode ? 'pb-20' : ''}`}>
         <CustomerPagePreviewHighlightEffect />
-      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="reservation-check" />}
       <CustomerPageZoneLayoutRenderer
         pageId="reservation-check"
-        layoutEditMode={layoutEditMode}
+        layoutEditMode={false}
         renderBlock={(zoneId) => {
           if (zoneId === 'reservation-check-header') {
             return (

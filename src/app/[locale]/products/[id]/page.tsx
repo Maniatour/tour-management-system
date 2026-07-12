@@ -2,19 +2,8 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import ProductDetailImageGallery from '@/components/product/ProductDetailImageGallery'
 import { useLocale } from 'next-intl'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
-import ProductDetailBookingSidebar from '@/components/product/ProductDetailBookingSidebar'
-import ProductDetailHeader from '@/components/product/ProductDetailHeader'
-import ProductDetailTabPanel from '@/components/product/ProductDetailTabPanel'
-import ProductDetailHighlights from '@/components/product/ProductDetailHighlights'
-import ProductDetailMobileBookingCard from '@/components/product/ProductDetailMobileBookingCard'
-import ProductDetailMobileStickyCta from '@/components/product/ProductDetailMobileStickyCta'
-import ProductDetailFaqSection from '@/components/product/ProductDetailFaqSection'
-import ProductDetailReviewsSection, {
-  type ProductReviewItem,
-} from '@/components/product/ProductDetailReviewsSection'
 import { fetchProductReviews } from '@/lib/fetchProductReviews'
 import { ProductDetailErrorState, ProductDetailLoadingState } from '@/components/product/ProductDetailPageStates'
 import ProductDetailCheckoutLayer, {
@@ -46,8 +35,6 @@ import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import CustomerPageZoneLayoutGuideBar from '@/components/product/CustomerPageZoneLayoutGuideBar'
-import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
 
 function ProductDetailPageInner() {
   const params = useParams()
@@ -57,7 +44,7 @@ function ProductDetailPageInner() {
   const isEnglish = locale === 'en'
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
-  const layoutEditMode = isPreview && isEditMode
+  const contentEditMode = isPreview && isEditMode
 
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -68,7 +55,9 @@ function ProductDetailPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
-  const [productReviews, setProductReviews] = useState<ProductReviewItem[]>([])
+  const [productReviews, setProductReviews] = useState<
+    import('@/components/product/ProductDetailReviewsSection').ProductReviewItem[]
+  >([])
   const [reviewRating, setReviewRating] = useState<number | null>(null)
   const [reviewCount, setReviewCount] = useState(0)
 
@@ -179,7 +168,6 @@ function ProductDetailPageInner() {
     ? resolveTagLabel(product.tags[0], locale, tagLabelMap)
     : null
 
-  const tags = productDetails?.tags || product.tags || []
   const slogans = [
     productDetails?.slogan1,
     productDetails?.slogan2,
@@ -239,10 +227,8 @@ function ProductDetailPageInner() {
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className={layoutEditMode ? 'min-h-screen bg-muted/30 pb-20 lg:pb-12' : ''}>
+      <div className={contentEditMode ? 'min-h-screen bg-muted/30 pb-20 lg:pb-12' : ''}>
         <CustomerPagePreviewHighlightEffect />
-      {layoutEditMode && <CustomerPageZoneLayoutGuideBar pageId="product-detail" />}
-      {!layoutEditMode ? (
         <ProductDetailAirbnbView
           locale={locale}
           isEnglish={isEnglish}
@@ -268,112 +254,16 @@ function ProductDetailPageInner() {
           totalPrice={totalPrice}
           bookingPanelProps={bookingPanelProps}
         />
-      ) : (
-      <CustomerPageZoneLayoutRenderer
-        pageId="product-detail"
-        layoutEditMode={layoutEditMode}
-        productId={productId}
-        renderBlock={(zoneId) => {
-          if (zoneId === 'detail-header') {
-            return (
-              <ProductDetailHeader
-                locale={locale}
-                displayName={displayName}
-                categoryLabel={categoryLabel}
-                primaryTag={primaryTag}
-                durationLabel={durationLabel}
-                groupSize={product.group_size}
-                totalPrice={totalPrice}
-                {...(reviewCount > 0 && reviewRating != null
-                  ? { reviewRating, reviewCount }
-                  : {})}
-                onBookNow={openBookingFlow}
-              />
-            )
-          }
 
-          if (zoneId === 'detail-gallery') {
-            return (
-              <ProductDetailImageGallery
-                productMedia={productMedia}
-                tourCoursePhotos={tourCoursePhotos}
-                displayName={displayName}
-                isEnglish={isEnglish}
-              />
-            )
-          }
-
-          if (zoneId === 'detail-mobile-booking') {
-            return <ProductDetailMobileBookingCard {...bookingPanelProps} />
-          }
-
-          if (zoneId === 'detail-highlights') {
-            return (
-              <ProductDetailHighlights
-                slogans={slogans}
-                tags={tags}
-                locale={locale}
-                tagLabelMap={tagLabelMap}
-                categoryLabel={categoryLabel}
-                durationLabel={durationLabel}
-                showSlogans={showSlogans}
-              />
-            )
-          }
-
-          if (zoneId === 'detail-tabs') {
-            return (
-              <ProductDetailTabPanel
-                productId={productId}
-                locale={locale}
-                product={product}
-                productDetails={productDetails}
-                tourCourses={tourCourses}
-                tourCoursePhotos={tourCoursePhotos}
-                isEnglish={isEnglish}
-                displayName={displayName}
-                categoryLabel={categoryLabel}
-                durationLabel={durationLabel}
-                showDetail={showDetailOnCustomerPage}
-              />
-            )
-          }
-
-          if (zoneId === 'detail-reviews-section') {
-            return (
-              <ProductDetailReviewsSection
-                reviews={productReviews}
-                {...(reviewRating != null ? { averageRating: reviewRating } : {})}
-              />
-            )
-          }
-
-          if (zoneId === 'detail-faq-section') {
-            return <ProductDetailFaqSection productId={productId} />
-          }
-
-          if (zoneId === 'detail-sidebar') {
-            return <ProductDetailBookingSidebar {...bookingPanelProps} />
-          }
-
-          return null
-        }}
-      />
-      )}
-
-      {!layoutEditMode ? null : (
-        <ProductDetailMobileStickyCta totalPrice={totalPrice} onBookNow={openBookingFlow} />
-      )}
-
-      <ProductDetailCheckoutLayer
-        product={product}
-        productChoices={productChoices}
-        groupedChoices={groupedChoices}
-        showBookingFlow={showBookingFlow}
-        onCloseBookingFlow={() => setShowBookingFlow(false)}
-        showChoiceDescriptionModal={showChoiceDescriptionModal}
-        onCloseChoiceDescriptionModal={closeChoiceDescriptionModal}
-      />
+        <ProductDetailCheckoutLayer
+          product={product}
+          productChoices={productChoices}
+          groupedChoices={groupedChoices}
+          showBookingFlow={showBookingFlow}
+          onCloseBookingFlow={() => setShowBookingFlow(false)}
+          showChoiceDescriptionModal={showChoiceDescriptionModal}
+          onCloseChoiceDescriptionModal={closeChoiceDescriptionModal}
+        />
       </div>
     </CustomerPageShell>
   )

@@ -133,7 +133,7 @@ export default function ChatRoomShareModal({
 
   if (!isOpen) return null
 
-  const chatUrl = `https://www.kovegas.com/chat/${roomCode}`
+  const chatUrl = `https://www.maniatour.com/chat/${roomCode}`
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(chatUrl)}`
 
   const copyLink = async () => {

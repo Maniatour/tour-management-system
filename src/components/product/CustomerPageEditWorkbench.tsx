@@ -2,15 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ExternalLink, Languages, LayoutGrid, Layers, Loader2, Monitor, Palette, Pencil, Smartphone, X } from 'lucide-react'
+import { ExternalLink, Languages, Loader2, Monitor, Pencil, Smartphone, X } from 'lucide-react'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import {
-  isCustomerPageGlobalThemeEditMessage,
-  isCustomerPageHomeLayoutEditMessage,
-  isCustomerPageTemplateEditMessage,
   isCustomerPageZoneEditMessage,
-  isCustomerPageZoneLayoutEditMessage,
-  isCustomerPageListingCardLayoutEditMessage,
   isCustomerPagePreviewHeightMessage,
   notifyIframeCustomerPageEditMode,
   notifyIframeCustomerPageReload,
@@ -29,7 +24,6 @@ import {
   inferCustomerPageIdFromUrl,
   type CustomerPageId,
 } from '@/lib/customer-page-registry'
-import { pageSupportsZoneLayout, type ZoneLayoutPageId } from '@/lib/customerPageZoneLayoutCatalog'
 import {
   buildCustomerPageWorkbenchQuery,
   parseCustomerPageWorkbenchUrl,
@@ -37,13 +31,6 @@ import {
   type PreviewViewport,
 } from '@/lib/customerPageWorkbenchState'
 import CustomerPageZoneEditPanel from '@/components/product/CustomerPageZoneEditPanel'
-import CustomerPageHomeLayoutPanel from '@/components/product/CustomerPageHomeLayoutPanel'
-import CustomerPageZoneLayoutPanel from '@/components/product/CustomerPageZoneLayoutPanel'
-import CustomerPageListingCardLayoutPanel from '@/components/product/CustomerPageListingCardLayoutPanel'
-import CustomerPageGlobalThemePanel from '@/components/product/CustomerPageGlobalThemePanel'
-import CustomerPageTemplatePanel from '@/components/product/CustomerPageTemplatePanel'
-import { useCustomerPageGlobalTheme } from '@/hooks/useCustomerPageGlobalTheme'
-import { useCustomerPageTemplate } from '@/hooks/useCustomerPageTemplate'
 import CustomerPageProductSearchSelect, {
   type CustomerPageProductOption,
 } from '@/components/product/CustomerPageProductSearchSelect'
@@ -125,14 +112,6 @@ function CustomerPageEditWorkbenchInner({
   const [selectedZone, setSelectedZone] = useState<CustomerPageZone | null>(null)
   const [editProductId, setEditProductId] = useState<string | null>(null)
   const [editDirty, setEditDirty] = useState(false)
-  const [showHomeLayoutPanel, setShowHomeLayoutPanel] = useState(false)
-  const [homeLayoutEditTargetId, setHomeLayoutEditTargetId] = useState<string | null>(null)
-  const [showZoneLayoutPanel, setShowZoneLayoutPanel] = useState(false)
-  const [zoneLayoutPageId, setZoneLayoutPageId] = useState<ZoneLayoutPageId>('products-tags')
-  const [zoneLayoutFocusZoneId, setZoneLayoutFocusZoneId] = useState<CustomerPageZone | null>(null)
-  const [showListingCardLayoutPanel, setShowListingCardLayoutPanel] = useState(false)
-  const [showGlobalThemePanel, setShowGlobalThemePanel] = useState(false)
-  const [showTemplatePanel, setShowTemplatePanel] = useState(false)
   const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale === 'en' ? 'en' : 'ko')
   const [previewViewport, setPreviewViewport] = useState<PreviewViewport>('desktop')
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -142,8 +121,6 @@ function CustomerPageEditWorkbenchInner({
   const syncUrlState = variant === 'embedded'
 
   const currentPage = CUSTOMER_PAGE_REGISTRY.find((p) => p.id === pageId)
-  const activeGlobalTheme = useCustomerPageGlobalTheme()
-  const { effectiveTemplate, isCustomized: isTemplateCustomized } = useCustomerPageTemplate()
   const needsProduct = currentPage?.requiresProduct ?? false
 
   const previewUrl = useMemo(() => {
@@ -212,84 +189,6 @@ function CustomerPageEditWorkbenchInner({
     if (editDirty && !confirmDiscardUnsavedChanges()) return
     closeEditModal()
   }, [editDirty, closeEditModal])
-
-  const openHomeLayoutPanel = useCallback((instanceId?: string) => {
-    if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
-    closeEditModal()
-    setShowGlobalThemePanel(false)
-    setShowTemplatePanel(false)
-    setShowZoneLayoutPanel(false)
-    setShowListingCardLayoutPanel(false)
-    setHomeLayoutEditTargetId(instanceId ?? null)
-    setShowHomeLayoutPanel(true)
-  }, [closeEditModal, editDirty, selectedZone])
-
-  const openZoneLayoutPanel = useCallback(
-    (targetPageId: ZoneLayoutPageId, zoneId?: CustomerPageZone) => {
-      if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
-      closeEditModal()
-      setShowGlobalThemePanel(false)
-      setShowTemplatePanel(false)
-      setShowHomeLayoutPanel(false)
-      setShowListingCardLayoutPanel(false)
-      setZoneLayoutPageId(targetPageId)
-      setZoneLayoutFocusZoneId(zoneId ?? null)
-      setShowZoneLayoutPanel(true)
-    },
-    [closeEditModal, editDirty, selectedZone]
-  )
-
-  const requestCloseListingCardLayoutPanel = useCallback(() => {
-    setShowListingCardLayoutPanel(false)
-  }, [])
-
-  const openListingCardLayoutPanel = useCallback(() => {
-    if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
-    closeEditModal()
-    setShowGlobalThemePanel(false)
-    setShowTemplatePanel(false)
-    setShowHomeLayoutPanel(false)
-    setShowZoneLayoutPanel(false)
-    setShowListingCardLayoutPanel(true)
-  }, [closeEditModal, editDirty, selectedZone])
-
-  const requestCloseZoneLayoutPanel = useCallback(() => {
-    setShowZoneLayoutPanel(false)
-    setZoneLayoutFocusZoneId(null)
-  }, [])
-
-  const requestCloseHomeLayoutPanel = useCallback(() => {
-    setShowHomeLayoutPanel(false)
-    setHomeLayoutEditTargetId(null)
-  }, [])
-
-  const openGlobalThemePanel = useCallback(() => {
-    if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
-    closeEditModal()
-    setShowHomeLayoutPanel(false)
-    setShowZoneLayoutPanel(false)
-    setShowListingCardLayoutPanel(false)
-    setShowTemplatePanel(false)
-    setShowGlobalThemePanel(true)
-  }, [closeEditModal, editDirty, selectedZone])
-
-  const requestCloseGlobalThemePanel = useCallback(() => {
-    setShowGlobalThemePanel(false)
-  }, [])
-
-  const openTemplatePanel = useCallback(() => {
-    if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
-    closeEditModal()
-    setShowHomeLayoutPanel(false)
-    setShowZoneLayoutPanel(false)
-    setShowListingCardLayoutPanel(false)
-    setShowGlobalThemePanel(false)
-    setShowTemplatePanel(true)
-  }, [closeEditModal, editDirty, selectedZone])
-
-  const requestCloseTemplatePanel = useCallback(() => {
-    setShowTemplatePanel(false)
-  }, [])
 
   const openZoneEdit = useCallback(
     (zone: CustomerPageZone, resolvedProductId: string | null) => {
@@ -454,31 +353,6 @@ function CustomerPageEditWorkbenchInner({
         return
       }
 
-      if (isCustomerPageHomeLayoutEditMessage(event.data)) {
-        openHomeLayoutPanel(event.data.instanceId)
-        return
-      }
-
-      if (isCustomerPageZoneLayoutEditMessage(event.data)) {
-        openZoneLayoutPanel(event.data.pageId, event.data.zoneId)
-        return
-      }
-
-      if (isCustomerPageListingCardLayoutEditMessage(event.data)) {
-        openListingCardLayoutPanel()
-        return
-      }
-
-      if (isCustomerPageGlobalThemeEditMessage(event.data)) {
-        openGlobalThemePanel()
-        return
-      }
-
-      if (isCustomerPageTemplateEditMessage(event.data)) {
-        openTemplatePanel()
-        return
-      }
-
       if (!isCustomerPageZoneEditMessage(event.data)) return
 
       const resolvedProductId =
@@ -497,7 +371,7 @@ function CustomerPageEditWorkbenchInner({
       window.removeEventListener('message', handleMessage)
       retryTimers.forEach((id) => window.clearTimeout(id))
     }
-  }, [variant, isOpen, iframeKey, previewViewport, applyIframeHeight, syncContextFromIframe, productId, openZoneEdit, openHomeLayoutPanel, openZoneLayoutPanel, openListingCardLayoutPanel, openGlobalThemePanel, openTemplatePanel])
+  }, [variant, isOpen, iframeKey, previewViewport, applyIframeHeight, syncContextFromIframe, productId, openZoneEdit])
 
   useEffect(() => {
     const initial = previewViewport === 'mobile' ? 680 : 960
@@ -534,11 +408,6 @@ function CustomerPageEditWorkbenchInner({
   const handlePageTabChange = (id: CustomerPageId) => {
     if (!guardUnsaved()) return
     closeEditModal()
-    setShowHomeLayoutPanel(false)
-    setShowZoneLayoutPanel(false)
-    setShowListingCardLayoutPanel(false)
-    setShowGlobalThemePanel(false)
-    setShowTemplatePanel(false)
     setPageId(id)
     setIframeLoading(true)
   }
@@ -601,7 +470,7 @@ function CustomerPageEditWorkbenchInner({
           <div className="min-w-0">
             <h2 className="text-base sm:text-lg font-semibold text-gray-900">고객 페이지 작업</h2>
             <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
-              홈부터 상품·예약 페이지까지 실제 화면을 보며 영역별로 수정하세요.
+              미리보기 화면의 「수정」 버튼으로 표시되는 콘텐츠만 편집할 수 있습니다.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -705,60 +574,6 @@ function CustomerPageEditWorkbenchInner({
               {label}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={openTemplatePanel}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-violet-600 text-white hover:bg-violet-700 ml-auto sm:ml-0"
-            title={
-              isTemplateCustomized
-                ? '맞춤 설정 중 · 템플릿 다시 선택'
-                : effectiveTemplate
-                  ? `현재 템플릿: ${effectiveTemplate.label}`
-                  : '페이지 템플릿'
-            }
-          >
-            <Layers className="h-3.5 w-3.5" />
-            {isTemplateCustomized ? '템플릿' : effectiveTemplate?.label ?? '템플릿'}
-          </button>
-          <button
-            type="button"
-            onClick={openGlobalThemePanel}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
-            title={`현재 테마: ${activeGlobalTheme.label}`}
-          >
-            <Palette className="h-3.5 w-3.5" />
-            테마
-          </button>
-          {pageId === 'home' && (
-            <button
-              type="button"
-              onClick={() => openHomeLayoutPanel()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-violet-600 text-white hover:bg-violet-700"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              섹션 목록
-            </button>
-          )}
-          {pageId === 'products-listing' && (
-            <button
-              type="button"
-              onClick={openListingCardLayoutPanel}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-amber-600 text-white hover:bg-amber-700"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              카드 슬롯
-            </button>
-          )}
-          {pageSupportsZoneLayout(pageId) && (
-            <button
-              type="button"
-              onClick={() => openZoneLayoutPanel(pageId)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors bg-teal-600 text-white hover:bg-teal-700"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              블록 목록
-            </button>
-          )}
         </div>
 
         {needsProduct && (
@@ -821,9 +636,7 @@ function CustomerPageEditWorkbenchInner({
 
         {!selectedZone && !iframeLoading && (
           <div className="shrink-0 border-b border-border/60 bg-primary/5 px-4 py-2.5 text-center text-xs font-medium leading-relaxed text-foreground">
-            {pageId === 'home'
-              ? '「템플릿」으로 한 번에 꾸미거나, 상단의 테마·섹션·미리보기 「수정」으로 세부 조정하세요'
-              : '상단 「템플릿」·「테마」 또는 미리보기 영역의 「수정」 버튼을 사용하세요'}
+            편집할 영역의 「수정」 버튼을 눌러 문구·상품 정보·FAQ 등 콘텐츠를 변경하세요.
           </div>
         )}
 
@@ -861,106 +674,6 @@ function CustomerPageEditWorkbenchInner({
             />
           </div>
         </div>
-
-        {showTemplatePanel && (
-          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div
-              className="absolute inset-0 bg-black/45"
-              onClick={requestCloseTemplatePanel}
-              aria-hidden
-            />
-            <div className="relative flex flex-col w-full max-w-3xl h-[min(88vh,calc(100dvh-2rem))] min-h-[min(520px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-              <CustomerPageTemplatePanel
-                variant="modal"
-                onSaved={() => {
-                  refreshPreview()
-                }}
-                onClose={requestCloseTemplatePanel}
-              />
-            </div>
-          </div>
-        )}
-
-        {showGlobalThemePanel && (
-          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div
-              className="absolute inset-0 bg-black/45"
-              onClick={requestCloseGlobalThemePanel}
-              aria-hidden
-            />
-            <div className="relative flex flex-col w-full max-w-2xl h-[min(88vh,calc(100dvh-2rem))] min-h-[min(480px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-              <CustomerPageGlobalThemePanel
-                variant="modal"
-                onSaved={() => {
-                  refreshPreview()
-                }}
-                onClose={requestCloseGlobalThemePanel}
-              />
-            </div>
-          </div>
-        )}
-
-        {showListingCardLayoutPanel && (
-          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div
-              className="absolute inset-0 bg-black/45"
-              onClick={requestCloseListingCardLayoutPanel}
-              aria-hidden
-            />
-            <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-              <CustomerPageListingCardLayoutPanel
-                variant="modal"
-                productId={productId}
-                onSaved={() => {
-                  refreshPreview()
-                }}
-                onClose={requestCloseListingCardLayoutPanel}
-              />
-            </div>
-          </div>
-        )}
-
-        {showZoneLayoutPanel && (
-          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div
-              className="absolute inset-0 bg-black/45"
-              onClick={requestCloseZoneLayoutPanel}
-              aria-hidden
-            />
-            <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-              <CustomerPageZoneLayoutPanel
-                variant="modal"
-                pageId={zoneLayoutPageId}
-                initialFocusZoneId={zoneLayoutFocusZoneId}
-                productId={productId}
-                onSaved={() => {
-                  refreshPreview()
-                }}
-                onClose={requestCloseZoneLayoutPanel}
-              />
-            </div>
-          </div>
-        )}
-
-        {showHomeLayoutPanel && (
-          <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
-            <div
-              className="absolute inset-0 bg-black/45"
-              onClick={requestCloseHomeLayoutPanel}
-              aria-hidden
-            />
-            <div className="relative flex flex-col w-full max-w-lg h-[min(88vh,calc(100dvh-2rem))] min-h-[min(420px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-              <CustomerPageHomeLayoutPanel
-                variant="modal"
-                initialEditInstanceId={homeLayoutEditTargetId}
-                onSaved={() => {
-                  refreshPreview()
-                }}
-                onClose={requestCloseHomeLayoutPanel}
-              />
-            </div>
-          </div>
-        )}
 
         {selectedZone && selectedConfig && (
           <div className="fixed inset-0 z-[80] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">

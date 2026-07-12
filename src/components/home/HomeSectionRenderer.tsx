@@ -92,15 +92,12 @@ function CardListSectionBody({
     onChangeFavoriteOrder,
   }
 
-  const customTitle = section.config.title?.trim()
-
   return (
     <HomePopularSectionView
       locale={locale}
       t={t}
       variant={variant}
       popularProps={popularProps}
-      {...(customTitle ? { titleOverride: customTitle } : {})}
       zoneId={getBuiltinZoneId(section)}
     />
   )
@@ -131,6 +128,7 @@ export default function HomeSectionRenderer(props: HomeSectionRendererProps) {
           locale={locale}
           t={t}
           categoryTags={categoryTags}
+          zoneId={zoneId}
         />
       )
       break
@@ -180,6 +178,7 @@ export default function HomeSectionRenderer(props: HomeSectionRendererProps) {
         <HomeFaqSectionView
           variant={resolveSectionStructureVariant(section, globalStructure) as import('@/components/home/HomeFaqSectionView').FaqStructureVariant}
           t={t}
+          locale={locale}
           zoneId={zoneId}
           itemCount={section.config.itemCount ?? getCatalogItem('faq').defaultConfig.itemCount ?? 5}
           {...(section.config.title?.trim() ? { titleOverride: section.config.title.trim() } : {})}
@@ -244,6 +243,7 @@ export default function HomeSectionRenderer(props: HomeSectionRendererProps) {
         <HomeRichTextSectionView
           variant={resolveSectionStructureVariant(section, globalStructure) as import('@/components/home/HomeRichTextSectionView').RichTextStructureVariant}
           t={t}
+          locale={locale}
           zoneId={zoneId}
           {...(section.config.title?.trim() ? { titleOverride: section.config.title.trim() } : {})}
         />

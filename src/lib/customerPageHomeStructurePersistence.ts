@@ -2,8 +2,10 @@ import { supabase } from '@/lib/supabase'
 import {
   DEFAULT_HOME_PAGE_STRUCTURE,
   getActiveHomePageStructure,
+  MANIATOUR_HOME_PAGE_STRUCTURE,
   normalizeHomePageStructure,
   setActiveHomePageStructure,
+  structuresEqual,
   type HomePageStructure,
 } from '@/lib/customerPageHomeStructure'
 
@@ -46,13 +48,15 @@ export async function fetchCustomerPageHomeStructure(): Promise<HomePageStructur
   }
 
   const normalized = normalizeHomePageStructure(structure)
-  const gygStructure =
-    normalized.hero === 'search-discovery'
-      ? normalized
-      : { ...DEFAULT_HOME_PAGE_STRUCTURE }
+  const maniatourStructure = { ...MANIATOUR_HOME_PAGE_STRUCTURE }
 
-  setActiveHomePageStructure(gygStructure)
-  return gygStructure
+  setActiveHomePageStructure(maniatourStructure)
+
+  if (!structuresEqual(normalized, maniatourStructure)) {
+    await upsertHomeStructureJson(maniatourStructure)
+  }
+
+  return maniatourStructure
 }
 
 async function upsertHomeStructureJson(structure: HomePageStructure): Promise<void> {

@@ -2,14 +2,13 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronDown, ChevronUp, Heart, MapPin } from 'lucide-react'
+import { ChevronDown, ChevronUp, Heart, Star } from 'lucide-react'
 import type { ReactNode } from 'react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomeGygCarousel from '@/components/home/HomeGygCarousel'
-import TourCard from '@/components/customer/ui/TourCard'
-import TourGrid from '@/components/customer/ui/TourGrid'
-import { Badge } from '@/components/ui/badge'
+import HomeManiaTourCarousel from '@/components/home/HomeManiaTourCarousel'
 import type { PopularStructureVariant } from '@/lib/customerPageHomeStructure'
+import { formatProductDurationShort } from '@/lib/productDetailDisplay'
 
 export type PopularProductView = {
   id: string
@@ -39,68 +38,6 @@ export type PopularToursBlockProps = {
   onChangeFavoriteOrder: (productId: string, direction: 'up' | 'down') => void | Promise<void>
 }
 
-function mapGridLayout(variant: PopularStructureVariant) {
-  switch (variant) {
-    case 'grid-two-large':
-      return 'grid-two' as const
-    case 'featured-plus-grid':
-      return 'featured-grid' as const
-    case 'stacked-list':
-      return 'list' as const
-    case 'horizontal-scroll':
-    case 'attraction-cards':
-    case 'activity-cards':
-      return 'scroll' as const
-    default:
-      return 'grid' as const
-  }
-}
-
-function mapCardVariant(
-  variant: PopularStructureVariant,
-  index: number
-): 'grid' | 'stacked' | 'horizontal' | 'featured' {
-  if (variant === 'stacked-list') return 'stacked'
-  if (variant === 'horizontal-scroll') return 'horizontal'
-  if (variant === 'featured-plus-grid' && index === 0) return 'featured'
-  if (variant === 'grid-two-large') return 'featured'
-  return 'grid'
-}
-
-function imageHeightClass(variant: PopularStructureVariant, index: number): string {
-  if (variant === 'attraction-cards') return 'relative h-48 sm:h-56 bg-muted'
-  if (variant === 'activity-cards') return 'relative h-44 sm:h-52 bg-muted'
-  if (variant === 'stacked-list') return 'relative h-44 sm:h-auto sm:w-52 md:w-64 shrink-0 bg-muted'
-  if (variant === 'grid-two-large') return 'relative h-52 sm:h-64 bg-muted'
-  if (variant === 'featured-plus-grid' && index === 0) return 'relative h-52 sm:h-72 bg-muted'
-  if (variant === 'horizontal-scroll') return 'relative h-44 bg-muted'
-  return 'relative h-40 sm:h-48 bg-muted aspect-[4/3]'
-}
-
-function cardShellClass(variant: PopularStructureVariant, index: number): string {
-  const base =
-    'cp-ui-card-surface rounded-card shadow-card border overflow-hidden hover:shadow-card-hover transition-all duration-300 relative'
-  if (variant === 'attraction-cards') {
-    return `${base} min-w-[min(75vw,280px)] sm:min-w-[300px] shrink-0 snap-start border-0 shadow-none hover:shadow-md bg-transparent`
-  }
-  if (variant === 'activity-cards') {
-    return `${base} min-w-[min(80vw,300px)] sm:min-w-[320px] shrink-0 snap-start group`
-  }
-  if (variant === 'stacked-list') {
-    return `${base} flex flex-col sm:flex-row sm:items-stretch`
-  }
-  if (variant === 'horizontal-scroll') {
-    return `${base} min-w-[min(88vw,320px)] sm:min-w-[340px] shrink-0 snap-start`
-  }
-  if (variant === 'featured-plus-grid' && index === 0) {
-    return `${base} sm:col-span-2 lg:row-span-2`
-  }
-  if (variant === 'grid-two-large') {
-    return `${base} hover:-translate-y-0.5`
-  }
-  return base
-}
-
 export default function HomePopularToursBlock(props: PopularToursBlockProps) {
   const {
     variant,
@@ -113,8 +50,6 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     isChangingOrder,
     showCardEditZones,
     getProductName,
-    getProductDescription,
-    getCardDepartureLine,
     getCardPrice,
     getPriceLabel,
     onChangeFavoriteOrder,
@@ -122,13 +57,11 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
 
   const CardZone = ({
     zone,
-    className = '',
     productId,
     suppressEditButton,
     children,
   }: {
     zone: string
-    className?: string
     productId: string
     suppressEditButton?: boolean
     children: ReactNode
@@ -137,54 +70,172 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
       <CustomerPageZone
         zone={zone}
         productId={productId}
-        className={className}
         {...(suppressEditButton ? { suppressEditButton } : {})}
       >
         {children}
       </CustomerPageZone>
     ) : (
-      <div className={className}>{children}</div>
+      <>{children}</>
     )
 
-  const renderPublicCard = (product: PopularProductView, index: number) => {
+  const renderFavoriteOrderControls = (product: PopularProductView, index: number) => {
+    const isFavorite = product.favorite_order !== null && product.favorite_order !== undefined
+    if (!showCardEditZones || !isAdmin || !isFavorite) return null
+
+    return (
+      <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 rounded-md bg-white/90 p-1 shadow-md">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onChangeFavoriteOrder(product.id, 'up')
+          }}
+          disabled={index <= 0 || isChangingOrder}
+          className="rounded p-1 hover:bg-muted disabled:opacity-50"
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onChangeFavoriteOrder(product.id, 'down')
+          }}
+          disabled={index >= popularTours.length - 1 || isChangingOrder}
+          className="rounded p-1 hover:bg-muted disabled:opacity-50"
+        >
+          <ChevronDown size={16} />
+        </button>
+      </div>
+    )
+  }
+
+  const renderManiaTourCard = (product: PopularProductView, index: number) => {
+    const badgeConfigs = [
+      { labelKey: 'maniatourBadgeBest', variant: 'best' },
+      { labelKey: 'maniatourBadgeBestSeller', variant: 'best-seller' },
+      { labelKey: 'maniatourBadgePopular', variant: 'popular' },
+    ] as const
+    const badge = badgeConfigs[index]
+    const demoMeta = [
+      { rating: '4.9', reviewCount: 1234, duration: '17 hrs' },
+      { rating: '4.9', reviewCount: 987, duration: '11 hrs' },
+      { rating: '4.8', reviewCount: 756, duration: '10 hrs' },
+      { rating: '4.8', reviewCount: 512, duration: '6 hrs' },
+      { rating: '4.7', reviewCount: 423, duration: '11 hrs' },
+      { rating: '4.8', reviewCount: 635, duration: '14 hrs' },
+    ]
+    const cardMeta = demoMeta[index] ?? demoMeta[demoMeta.length - 1]!
+    const duration =
+      formatProductDurationShort(product.duration, locale === 'en') ?? cardMeta.duration
+    const price = getCardPrice(product)
+    const priceAmount =
+      price != null
+        ? `$${Math.round(price)}`
+        : getPriceLabel(price)
+
+    return (
+      <Link
+        key={product.id}
+        href={`/${locale}/products/${product.id}`}
+        className={`kv-tour-card group${showCardEditZones ? ' relative' : ''}`}
+        role="listitem"
+      >
+        {renderFavoriteOrderControls(product, index)}
+        <article className="kv-tour-card-inner">
+          <CardZone zone="listing-card-image" productId={product.id} suppressEditButton>
+            <div className="kv-tour-card-image">
+              <Image
+                src={product.primary_image ?? '/placeholder-tour.svg'}
+                alt={getProductName(product)}
+                fill
+                sizes="(max-width: 640px) 72vw, 196px"
+                className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              />
+              {badge ? (
+                <span className={`kv-tour-badge kv-tour-badge--${badge.variant}`}>{t(badge.labelKey)}</span>
+              ) : null}
+            </div>
+          </CardZone>
+          <div className="kv-tour-card-body">
+            <CardZone zone="listing-card-name" productId={product.id} suppressEditButton>
+              <h3 className="kv-tour-card-title line-clamp-2">{getProductName(product)}</h3>
+            </CardZone>
+            <div className="kv-tour-card-rating-row">
+              <Star className="kv-tour-card-star" aria-hidden />
+              <span className="kv-tour-card-rating">{cardMeta.rating}</span>
+              <span className="kv-tour-card-reviews">({cardMeta.reviewCount.toLocaleString()})</span>
+            </div>
+            <p className="kv-tour-card-details">
+              {t('maniatourSmallGroupLabel')} · {duration}
+            </p>
+            <CardZone zone="listing-card-price" productId={product.id}>
+              <p className="kv-tour-card-price">
+                <span className="kv-tour-card-price-amount">{priceAmount}</span>
+                {price != null ? (
+                  <span className="kv-tour-card-price-unit">{t('maniatourPerPerson')}</span>
+                ) : null}
+              </p>
+            </CardZone>
+          </div>
+        </article>
+      </Link>
+    )
+  }
+
+  const renderGygCard = (product: PopularProductView, index: number) => {
+    if (variant === 'maniatour-carousel') {
+      return renderManiaTourCard(product, index)
+    }
+
     if (variant === 'attraction-cards') {
-      const metaText = product.duration
-        ? product.duration
-        : getPriceLabel(getCardPrice(product))
+      const metaText =
+        formatProductDurationShort(product.duration, locale === 'en') ??
+        getPriceLabel(getCardPrice(product))
 
       return (
         <Link
           key={product.id}
           href={`/${locale}/products/${product.id}`}
-          className="gyg-attraction-card"
+          className={`gyg-attraction-card${showCardEditZones ? ' relative' : ''}`}
           role="listitem"
         >
-          <div className="gyg-card-image">
-            <Image
-              src={product.primary_image ?? '/placeholder-tour.svg'}
-              alt={getProductName(product)}
-              fill
-              sizes="260px"
-              className="object-cover"
-            />
-          </div>
-          <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
-          <p className="gyg-card-meta">{metaText}</p>
+          {renderFavoriteOrderControls(product, index)}
+          <CardZone zone="listing-card-image" productId={product.id} suppressEditButton>
+            <div className="gyg-card-image">
+              <Image
+                src={product.primary_image ?? '/placeholder-tour.svg'}
+                alt={getProductName(product)}
+                fill
+                sizes="260px"
+                className="object-cover"
+              />
+            </div>
+          </CardZone>
+          <CardZone zone="listing-card-name" productId={product.id} suppressEditButton>
+            <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
+          </CardZone>
+          <CardZone zone="listing-card-price" productId={product.id}>
+            <p className="gyg-card-meta">{metaText}</p>
+          </CardZone>
         </Link>
       )
     }
 
-    if (variant === 'activity-cards') {
-      const showSelloutBadge =
-        product.max_participants != null && product.max_participants <= 20
+    const showSelloutBadge =
+      product.max_participants != null && product.max_participants <= 20
 
-      return (
-        <Link
-          key={product.id}
-          href={`/${locale}/products/${product.id}`}
-          className="gyg-activity-card group"
-          role="listitem"
-        >
+    return (
+      <Link
+        key={product.id}
+        href={`/${locale}/products/${product.id}`}
+        className={`gyg-activity-card group${showCardEditZones ? ' relative' : ''}`}
+        role="listitem"
+      >
+        {renderFavoriteOrderControls(product, index)}
+        <CardZone zone="listing-card-image" productId={product.id} suppressEditButton>
           <div className="gyg-card-image">
             <Image
               src={product.primary_image ?? '/placeholder-tour.svg'}
@@ -204,154 +255,16 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
               <Heart className="h-4 w-4 text-[#1a2b49]" strokeWidth={1.75} />
             </span>
           </div>
-          <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
-          <p className="gyg-card-meta">{getPriceLabel(getCardPrice(product))}</p>
-        </Link>
-      )
-    }
-
-    return (
-    <TourCard
-      key={product.id}
-      href={`/${locale}/products/${product.id}`}
-      variant={mapCardVariant(variant, index)}
-      ctaLabel={t('viewDetails')}
-      image={
-        <div className={imageHeightClass(variant, index)}>
-          <Image
-            src={product.primary_image ?? '/placeholder-tour.svg'}
-            alt={getProductName(product)}
-            fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          />
-          {product.category && variant !== 'stacked-list' ? (
-            <div className="absolute left-2 top-2">
-              <Badge variant="neutral">{product.category}</Badge>
-            </div>
-          ) : null}
-        </div>
-      }
-    >
-      <h3 className="text-card-title mb-2 text-foreground">{getProductName(product)}</h3>
-      {variant !== 'stacked-list' ? (
-        <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">
-          {getProductDescription(product)}
-        </p>
-      ) : null}
-      {getCardDepartureLine(product) ? (
-        <div className="mb-3 flex items-center text-sm text-muted-foreground">
-          <MapPin className="mr-2 h-4 w-4 shrink-0 cp-ui-icon" aria-hidden />
-          <span className="truncate">{getCardDepartureLine(product)}</span>
-        </div>
-      ) : null}
-      <span className="text-base font-bold cp-ui-price">{getPriceLabel(getCardPrice(product))}</span>
-    </TourCard>
-    )
-  }
-
-  const renderAdminCard = (product: PopularProductView, index: number) => {
-    const isFavorite = product.favorite_order !== null && product.favorite_order !== undefined
-    const canMoveUp = isAdmin && isFavorite && index > 0
-    const canMoveDown = isAdmin && isFavorite && index < popularTours.length - 1
-    const bodyPadding =
-      variant === 'stacked-list' ? 'p-4 sm:p-5 flex-1 flex flex-col justify-center' : 'p-4 sm:p-6'
-
-    const cardContent = (
-      <>
-        {isAdmin && isFavorite && (
-          <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 rounded-md bg-white/90 p-1 shadow-md">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onChangeFavoriteOrder(product.id, 'up')
-              }}
-              disabled={!canMoveUp || isChangingOrder}
-              className="rounded p-1 hover:bg-muted disabled:opacity-50"
-            >
-              <ChevronUp size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onChangeFavoriteOrder(product.id, 'down')
-              }}
-              disabled={!canMoveDown || isChangingOrder}
-              className="rounded p-1 hover:bg-muted disabled:opacity-50"
-            >
-              <ChevronDown size={16} />
-            </button>
-          </div>
-        )}
-
-        <CardZone zone="listing-card-image" productId={product.id}>
-          <div className={imageHeightClass(variant, index)}>
-            <img
-              src={product.primary_image ?? '/placeholder-tour.svg'}
-              alt={getProductName(product)}
-              className="h-full w-full object-cover"
-            />
-          </div>
         </CardZone>
-
-        <div className={bodyPadding}>
-          <CardZone zone="listing-card-name" productId={product.id}>
-            <h3 className="mb-2 text-base font-semibold text-foreground sm:text-lg">
-              <Link href={`/${locale}/products/${product.id}`}>{getProductName(product)}</Link>
-            </h3>
-          </CardZone>
-
-          {variant !== 'stacked-list' && (
-            <CardZone zone="listing-card-description" productId={product.id}>
-              <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">
-                {getProductDescription(product)}
-              </p>
-            </CardZone>
-          )}
-
-          {getCardDepartureLine(product) && (
-            <CardZone zone="listing-card-location" productId={product.id} className="mb-3 text-sm text-muted-foreground">
-              <div className="flex items-center">
-                <MapPin className="mr-2 h-4 w-4 shrink-0 cp-ui-icon" />
-                <span className="truncate">{getCardDepartureLine(product)}</span>
-              </div>
-            </CardZone>
-          )}
-
-          <CardZone zone="listing-card-price" productId={product.id}>
-            <div className="mb-3 text-base font-bold cp-ui-price">
-              {getPriceLabel(getCardPrice(product))}
-            </div>
-          </CardZone>
-
-          <Link
-            href={`/${locale}/products/${product.id}`}
-            className="cp-ui-btn-primary block w-full rounded-btn py-2.5 text-center text-sm font-semibold"
-          >
-            {t('viewDetails')}
-          </Link>
-        </div>
-      </>
-    )
-
-    return (
-      <CardZone
-        key={product.id}
-        zone="listing-card"
-        productId={product.id}
-        suppressEditButton
-        className={cardShellClass(variant, index)}
-      >
-        {cardContent}
-      </CardZone>
+        <CardZone zone="listing-card-name" productId={product.id} suppressEditButton>
+          <h3 className="gyg-card-title line-clamp-2">{getProductName(product)}</h3>
+        </CardZone>
+        <CardZone zone="listing-card-price" productId={product.id}>
+          <p className="gyg-card-meta">{getPriceLabel(getCardPrice(product))}</p>
+        </CardZone>
+      </Link>
     )
   }
-
-  const isGygCarousel = variant === 'attraction-cards' || variant === 'activity-cards'
 
   const cards = popularLoading ? (
     <div className="py-10 text-center text-[#6b7280]">{t('loading')}</div>
@@ -362,18 +275,18 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
       {locale === 'en' ? 'No popular tours are available yet.' : '등록된 인기 투어가 없습니다.'}
     </div>
   ) : (
-    popularTours.map((product, index) =>
-      showCardEditZones ? renderAdminCard(product, index) : renderPublicCard(product, index)
-    )
+    popularTours.map((product, index) => renderGygCard(product, index))
   )
 
-  if (isGygCarousel) {
-    return <HomeGygCarousel ariaLabel={variant === 'attraction-cards' ? 'Attractions' : 'Activities'}>{cards}</HomeGygCarousel>
+  if (variant === 'maniatour-carousel') {
+    return <HomeManiaTourCarousel ariaLabel="Popular tours">{cards}</HomeManiaTourCarousel>
   }
 
   return (
-    <TourGrid layout={mapGridLayout(variant)}>
+    <HomeGygCarousel
+      ariaLabel={variant === 'attraction-cards' ? 'Attractions' : 'Activities'}
+    >
       {cards}
-    </TourGrid>
+    </HomeGygCarousel>
   )
 }

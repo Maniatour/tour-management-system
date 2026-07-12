@@ -121,6 +121,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'full-immersive', label: '풀스크린' },
       { id: 'compact-bar', label: '컴팩트 바' },
       { id: 'search-discovery', label: '검색 히어로' },
+      { id: 'maniatour-southwest', label: 'Mania Tour 히어로' },
     ],
   },
   {
@@ -137,6 +138,8 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'compact-pills', label: '필 태그' },
       { id: 'bento-asymmetric', label: '벤토 그리드' },
       { id: 'destination-cities', label: '목적지 도시' },
+      { id: 'maniatour-destinations', label: 'Mania Tour 목적지' },
+      { id: 'travel-style-cards', label: '여행 스타일 카드' },
     ],
   },
   {
@@ -179,6 +182,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'stacked-list', label: '리스트형' },
       { id: 'attraction-cards', label: '명소 카드' },
       { id: 'activity-cards', label: '액티비티 카드' },
+      { id: 'maniatour-carousel', label: 'Mania Tour 캐러셀' },
     ],
   },
   {
@@ -193,6 +197,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'card-grid-four', label: '4카드' },
       { id: 'alternating-rows', label: '지그재그' },
       { id: 'icon-row', label: '아이콘 행' },
+      { id: 'maniatour-trust-six', label: 'Mania Tour 신뢰 6열' },
     ],
   },
   {
@@ -221,6 +226,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'carousel-strip', label: '가로 스크롤' },
       { id: 'featured-quote', label: '대형 인용' },
       { id: 'masonry-mix', label: '믹스 masonry' },
+      { id: 'maniatour-split-instagram', label: 'Mania Tour 후기+인스타' },
     ],
   },
   {
@@ -234,6 +240,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'accordion', label: '아코디언' },
       { id: 'two-column', label: '2열 분할' },
       { id: 'compact-list', label: '컴팩트 리스트' },
+      { id: 'maniatour-faq-cta', label: 'Mania Tour FAQ+CTA' },
     ],
   },
   {
@@ -313,6 +320,7 @@ export const HOME_SECTION_CATALOG: HomeSectionCatalogItem[] = [
       { id: 'centered-prose', label: '중앙 본문' },
       { id: 'split-media', label: '미디어 분할' },
       { id: 'highlight-box', label: '강조 박스' },
+      { id: 'maniatour-guides-carousel', label: 'Mania Tour 가이드 캐러셀' },
     ],
   },
 ]
@@ -378,6 +386,21 @@ export function createHomeSectionEntry(
   }
 }
 
+const LEGACY_KOVEGAS_STRUCTURE_VARIANT_ALIASES: Record<string, string> = {
+  'kovegas-southwest': 'maniatour-southwest',
+  'kovegas-carousel': 'maniatour-carousel',
+  'kovegas-trust-six': 'maniatour-trust-six',
+  'kovegas-destinations': 'maniatour-destinations',
+  'kovegas-split-instagram': 'maniatour-split-instagram',
+  'kovegas-faq-cta': 'maniatour-faq-cta',
+  'kovegas-guides-carousel': 'maniatour-guides-carousel',
+}
+
+function resolveStructureVariantAlias(variant: string | undefined): string | undefined {
+  if (!variant) return variant
+  return LEGACY_KOVEGAS_STRUCTURE_VARIANT_ALIASES[variant] ?? variant
+}
+
 export function normalizeHomeSectionConfig(raw: unknown, kind: HomeSectionKind): HomeSectionConfig {
   const catalog = getCatalogItem(kind)
   const defaults = catalog.defaultConfig
@@ -399,10 +422,13 @@ export function normalizeHomeSectionConfig(raw: unknown, kind: HomeSectionKind):
       ? o.productQuery
       : defaults.productQuery
 
+  const requestedVariant = resolveStructureVariantAlias(
+    typeof o.structureVariant === 'string' ? o.structureVariant : undefined
+  )
   const structureVariant =
-    o.structureVariant &&
-    catalog.structureVariants.some((variant) => variant.id === o.structureVariant)
-      ? o.structureVariant
+    requestedVariant &&
+    catalog.structureVariants.some((variant) => variant.id === requestedVariant)
+      ? requestedVariant
       : defaults.structureVariant
 
   const mergedBindings =
@@ -455,10 +481,25 @@ export function getGlobalStructureVariantForKind(
   }
 }
 
+/** Mania Tour 홈 섹션 — DB/템플릿 로드 후에도 variant가 GYG로 덮이지 않도록 고정 */
+const MANIATOUR_FORCED_SECTION_VARIANTS: Record<string, string> = {
+  'home-hero': 'maniatour-southwest',
+  'home-popular': 'maniatour-carousel',
+  'home-features': 'maniatour-trust-six',
+  'home-categories': 'maniatour-destinations',
+  'home-travel-style': 'travel-style-cards',
+  'home-reviews': 'maniatour-split-instagram',
+  'home-guides': 'maniatour-guides-carousel',
+  'home-faq': 'maniatour-faq-cta',
+}
+
 export function resolveSectionStructureVariant(
   section: HomePageSectionEntry,
   globalStructure: HomePageStructure
 ): string {
+  const forced = MANIATOUR_FORCED_SECTION_VARIANTS[section.instanceId]
+  if (forced) return forced
+
   return (
     section.config.structureVariant ??
     getGlobalStructureVariantForKind(section.kind, globalStructure)
@@ -497,6 +538,9 @@ export function applyTemplateStructureToSections(
 
 export function getBuiltinZoneId(section: HomePageSectionEntry): string {
   if (section.instanceId in LEGACY_HOME_SECTION_ID_TO_KIND) return section.instanceId
+  if (section.instanceId.startsWith('home-cards-')) return section.instanceId
+  if (section.instanceId === 'home-travel-style') return 'home-travel-style'
+  if (section.instanceId === 'home-guides') return 'home-guides'
   if (section.kind === 'card-list') return 'home-popular'
   const map: Partial<Record<HomeSectionKind, string>> = {
     hero: 'home-hero',

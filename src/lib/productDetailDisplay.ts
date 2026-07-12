@@ -108,6 +108,44 @@ export function formatProductDuration(duration: string | null, isEnglish: boolea
   return duration
 }
 
+/**
+ * 홈·목록 카드용 짧은 소요시간 — "18:00:00"→"18hr", "48"→"2D1N", "1.5"→"1.5hr"
+ * (숫자 문자열은 시간 단위로 해석, 24시간 이상은 박/일 표기)
+ */
+export function formatProductDurationShort(
+  duration: string | null | undefined,
+  isEnglish: boolean
+): string | null {
+  if (!duration) return null
+  const trimmed = duration.trim()
+  if (!trimmed) return null
+
+  let totalHours: number | null = null
+
+  const timeMatch = trimmed.match(/^(\d+):(\d+)(?::(\d+))?$/)
+  if (timeMatch) {
+    totalHours =
+      parseInt(timeMatch[1]!, 10) +
+      parseInt(timeMatch[2]!, 10) / 60 +
+      (timeMatch[3] ? parseInt(timeMatch[3], 10) / 3600 : 0)
+  } else if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    totalHours = parseFloat(trimmed)
+  }
+
+  if (totalHours == null || Number.isNaN(totalHours) || totalHours <= 0) {
+    return trimmed
+  }
+
+  if (totalHours >= 24) {
+    const days = Math.ceil(totalHours / 24)
+    const nights = days - 1
+    return isEnglish ? `${days}D${nights}N` : `${nights}박 ${days}일`
+  }
+
+  const rounded = Math.round(totalHours * 10) / 10
+  return isEnglish ? `${rounded}hr` : `${rounded}시간`
+}
+
 export type ProductLocationSource = {
   departure_city?: string | null
   departure_city_ko?: string | null

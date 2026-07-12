@@ -8,8 +8,6 @@ import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditMo
 import type { CustomerPageZone as CustomerPageZoneId } from '@/lib/customerPageZones'
 import { getZoneEditConfig, resolveCustomerPageZone } from '@/lib/customerPageZoneEditMap'
 import { postCustomerPageZoneEdit } from '@/lib/customerPageEditMessaging'
-import { zoneUiStyleToCssProperties } from '@/lib/customerPageZoneUiStyle'
-import { useCustomerPageZoneUiStyle } from '@/hooks/useCustomerPageZoneUiStyle'
 
 type CustomerPageZoneProps = {
   zone: string
@@ -35,9 +33,6 @@ export default function CustomerPageZone({
   const showEditButton = isPreview && isEditMode && !suppressEditButton
   const canonicalZone = resolveCustomerPageZone(zone)
   const editConfig = getZoneEditConfig(canonicalZone)
-  const uiStyle = useCustomerPageZoneUiStyle(canonicalZone)
-  const uiInlineStyle = uiStyle ? zoneUiStyleToCssProperties(uiStyle) : undefined
-  const hasUiStyle = uiStyle !== null
 
   const resolvedProductId = useMemo(() => {
     if (productIdProp?.trim()) return productIdProp.trim()
@@ -56,8 +51,7 @@ export default function CustomerPageZone({
     <div
       data-customer-zone={zone}
       data-edit-mode={showEditButton ? '1' : '0'}
-      style={uiInlineStyle}
-      className={`customer-page-zone cp-ui-zone relative ${hasUiStyle ? 'cp-ui-styled-zone' : ''} ${showEditButton ? 'customer-page-zone--editable' : ''} ${zone === 'detail-mobile-sticky-cta' ? 'customer-page-zone--fixed' : ''} ${className}`.trim()}
+      className={`customer-page-zone cp-ui-zone relative ${showEditButton ? 'customer-page-zone--editable' : ''} ${zone === 'detail-mobile-sticky-cta' ? 'customer-page-zone--fixed' : ''} ${className}`.trim()}
     >
       {children}
       {showEditButton && (

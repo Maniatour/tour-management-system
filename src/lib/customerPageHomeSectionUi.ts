@@ -8,7 +8,7 @@ export function sectionPresetToCssProperties(
   section: HomePageSectionEntry
 ): CSSProperties | undefined {
   const presetId = section.config.uiPresetId
-  if (!presetId) return undefined
+  if (!presetId || presetId === 'default') return undefined
   const zone = getBuiltinZoneId(section) as CustomerPageZone
   const style = resolveZoneUiStyle(zone, { presetId })
   return zoneUiStyleToCssProperties(style)
