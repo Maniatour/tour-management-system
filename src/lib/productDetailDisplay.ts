@@ -34,6 +34,25 @@ export function getProductCustomerDisplayName(product: Product, locale: string):
   return product.customer_name_ko || product.name_ko || product.name
 }
 
+/** 목록·홈 카드 가격 — adult_base_price 우선, 없으면 base_price */
+export function resolveProductListingPrice(product: Record<string, unknown>): number | null {
+  const parse = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+  }
+
+  const adult = parse(product.adult_base_price)
+  const base = parse(product.base_price)
+
+  if (adult != null && adult > 0) return adult
+  if (base != null && base > 0) return base
+  return adult ?? base
+}
+
 export type ProductSummarySource = {
   description?: string | null
   summary_ko?: string | null

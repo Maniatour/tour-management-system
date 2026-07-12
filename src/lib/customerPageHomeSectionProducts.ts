@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 import type { HomeSectionConfig } from '@/lib/customerPageHomeSectionCatalog'
 
 export const HOME_SECTION_PRODUCT_SELECT =
-  'id, name, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en, base_price, category, is_favorite, favorite_order, departure_city, departure_city_ko, departure_city_en, departure_country, departure_country_ko, departure_country_en, duration, max_participants, tags, created_at'
+  'id, name, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en, base_price, adult_base_price, category, is_favorite, favorite_order, departure_city, departure_city_ko, departure_city_en, departure_country, departure_country_ko, departure_country_en, duration, max_participants, tags, created_at'
 
 export type HomeSectionProductRow = {
   id: string
@@ -15,6 +15,7 @@ export type HomeSectionProductRow = {
   summary_en: string | null
   category: string | null
   base_price: number | null
+  adult_base_price: number | null
   favorite_order: number | null
   departure_city: string | null
   departure_city_ko: string | null

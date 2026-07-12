@@ -289,6 +289,28 @@ export function bindingLabel(field: BasicFieldKey): string {
   return BASIC_FIELD_LABELS[field] ?? field
 }
 
+/** 카드·목록 바인딩 — locale에 맞는 Ko/En 필드로 변환 */
+const KO_TO_EN_BASIC_FIELD: Partial<Record<BasicFieldKey, BasicFieldKey>> = {
+  customerNameKo: 'customerNameEn',
+  internalNameKo: 'internalNameEn',
+  summaryKo: 'summaryEn',
+  departureCityKo: 'departureCityEn',
+  arrivalCityKo: 'arrivalCityEn',
+  departureCountryKo: 'departureCountryEn',
+  arrivalCountryKo: 'arrivalCountryEn',
+}
+
+const EN_TO_KO_BASIC_FIELD = Object.fromEntries(
+  Object.entries(KO_TO_EN_BASIC_FIELD).map(([ko, en]) => [en, ko])
+) as Partial<Record<BasicFieldKey, BasicFieldKey>>
+
+export function resolveLocaleBasicField(field: BasicFieldKey, locale: string): BasicFieldKey {
+  if (locale === 'en') {
+    return KO_TO_EN_BASIC_FIELD[field] ?? field
+  }
+  return EN_TO_KO_BASIC_FIELD[field] ?? field
+}
+
 export function dbColumnForBasicField(field: BasicFieldKey): string {
   const map: Record<BasicFieldKey, string> = {
     customerNameKo: 'customer_name_ko',

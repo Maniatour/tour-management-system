@@ -131,10 +131,8 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     const duration =
       formatProductDurationShort(product.duration, locale === 'en') ?? cardMeta.duration
     const price = getCardPrice(product)
-    const priceAmount =
-      price != null
-        ? `$${Math.round(price)}`
-        : getPriceLabel(price)
+    const hasPrice = price != null && price > 0
+    const priceAmount = hasPrice ? `$${Math.round(price)}+` : getPriceLabel(price)
 
     return (
       <Link
@@ -174,7 +172,7 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
             <CardZone zone="listing-card-price" productId={product.id}>
               <p className="kv-tour-card-price">
                 <span className="kv-tour-card-price-amount">{priceAmount}</span>
-                {price != null ? (
+                {hasPrice ? (
                   <span className="kv-tour-card-price-unit">{t('maniatourPerPerson')}</span>
                 ) : null}
               </p>

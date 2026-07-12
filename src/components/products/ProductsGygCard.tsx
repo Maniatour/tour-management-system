@@ -122,6 +122,7 @@ export default function ProductsGygCard({
           currency: 'USD',
           maximumFractionDigits: 0,
         }).format(price)}
+        +
       </span>
     </p>
   )

@@ -14,12 +14,10 @@ import {
 } from 'lucide-react'
 
 /** Grand Canyon South Rim sunrise — wide hero (Yavapai Point golden hour) */
-export const MANIATOUR_HERO_IMAGE =
-  'https://images.unsplash.com/photo-1530638561217-8fde588861e3?auto=format&fit=crop&w=1920&q=85'
-
-/** Grand Canyon sunrise — traveler on the right rim looking out over the canyon */
 export const MANIATOUR_CTA_IMAGE =
   '/images/maniatour-cta-grand-canyon-sunrise.png'
+
+export const MANIATOUR_HERO_IMAGE = MANIATOUR_CTA_IMAGE
 
 export type ManiaTourTravelStyleItem = {
   labelKey: string

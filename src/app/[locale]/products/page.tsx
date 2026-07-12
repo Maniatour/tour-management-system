@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import { getProductSummaryByLocale, formatProductDepartureLine } from '@/lib/productDetailDisplay'
+import { getProductSummaryByLocale, formatProductDepartureLine, resolveProductListingPrice } from '@/lib/productDetailDisplay'
 import {
   getPreviewDepartureLine,
   getPreviewListingPrice,
@@ -187,11 +187,11 @@ export default function ProductsPage() {
           getPreviewListingPrice(
             'listing-card-price',
             product as unknown as Record<string, unknown>,
-            product.base_price
-          ) ?? product.base_price
+            resolveProductListingPrice(product as unknown as Record<string, unknown>)
+          ) ?? resolveProductListingPrice(product as unknown as Record<string, unknown>)
         )
     }
-    return product.base_price
+    return resolveProductListingPrice(product as unknown as Record<string, unknown>) ?? product.base_price
     },
     [bindingsActive, bindingRevision]
   )

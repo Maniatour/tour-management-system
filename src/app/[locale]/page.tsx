@@ -45,7 +45,7 @@ function HomePageInner() {
       maximumFractionDigits: 0,
     }).format(price)
 
-    return locale === 'en' ? `${t('startingFrom')} ${formatted}` : `${formatted}${t('startingFrom')}`
+    return locale === 'en' ? `${t('startingFrom')} ${formatted}+` : `${formatted}+${t('startingFrom')}`
   }
 
   const handleChangeFavoriteOrder = async (productId: string, direction: 'up' | 'down') => {

@@ -103,6 +103,7 @@ export function resolveBoundListingPrice(
   const bindings = loadZoneFieldBindings(zone, slots)
   const bound = bindings.adultBasePrice ?? 'adultBasePrice'
   const raw = readBasicFieldValue(product, bound as BasicFieldKey)
+  if (raw === '' || raw == null) return null
   const num = Number(raw)
   return Number.isFinite(num) ? num : null
 }
@@ -177,7 +178,8 @@ export function getPreviewListingPrice(
   const config = getZoneEditConfig(zone)
   const slots = config?.basicFields ? resolveEditSlotsForBasicFields(config.basicFields) : []
   if (slots.some((s) => s.slotId === 'adultBasePrice')) {
-    return resolveBoundListingPrice(zone, product)
+    const bound = resolveBoundListingPrice(zone, product)
+    if (bound != null) return bound
   }
   return fallback
 }

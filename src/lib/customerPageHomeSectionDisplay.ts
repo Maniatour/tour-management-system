@@ -1,4 +1,4 @@
-import { getProductSummaryByLocale, formatProductDepartureLine } from '@/lib/productDetailDisplay'
+import { getProductSummaryByLocale, formatProductDepartureLine, resolveProductListingPrice } from '@/lib/productDetailDisplay'
 import {
   getPreviewDepartureLine,
   getPreviewListingPrice,
@@ -7,12 +7,13 @@ import {
 } from '@/lib/customerPageDisplayFromBindings'
 import type { HomePageSectionEntry } from '@/lib/customerPageHomeSectionCatalog'
 import type { BasicFieldKey } from '@/lib/customerPageZoneEditMap'
-import { dbColumnForBasicField } from '@/lib/customerPageFieldBindings'
+import { dbColumnForBasicField, resolveLocaleBasicField } from '@/lib/customerPageFieldBindings'
 
 type ProductRow = Record<string, unknown>
 
-function readProductField(product: ProductRow, field: BasicFieldKey, _locale: string): string | null {
-  const col = dbColumnForBasicField(field)
+function readProductField(product: ProductRow, field: BasicFieldKey, locale: string): string | null {
+  const localizedField = resolveLocaleBasicField(field, locale)
+  const col = dbColumnForBasicField(localizedField)
   const raw = product[col]
   if (raw == null) return null
   if (typeof raw === 'number') return String(raw)
@@ -96,17 +97,16 @@ export function getSectionProductPrice(
   product: ProductRow,
   bindingsActive: boolean
 ): number | null {
+  const fallback = resolveProductListingPrice(product)
   const field = section.config.cardFieldBindings?.price
   if (field) {
     const direct = readProductNumber(product, field)
+    if (direct != null && direct > 0) return direct
+    if (fallback != null && fallback > 0) return fallback
     if (direct != null) return direct
   }
   if (bindingsActive) {
-    return getPreviewListingPrice(
-      'listing-card-price',
-      product,
-      typeof product.base_price === 'number' ? product.base_price : null
-    )
+    return getPreviewListingPrice('listing-card-price', product, fallback)
   }
-  return typeof product.base_price === 'number' ? product.base_price : null
+  return fallback
 }
