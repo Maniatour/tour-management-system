@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X, GripVertical } from 'lucide-react'
 
 interface ResizableModalProps {
@@ -64,8 +65,8 @@ export default function ResizableModal({
 
   if (!isOpen) return null
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50 p-4">
+  const modal = (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-[1100] p-4">
       <div 
         ref={modalRef}
         className="bg-white rounded-t-lg shadow-xl w-full max-w-7xl overflow-hidden flex flex-col"
@@ -94,4 +95,7 @@ export default function ResizableModal({
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modal
+  return createPortal(modal, document.body)
 }

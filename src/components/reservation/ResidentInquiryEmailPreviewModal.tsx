@@ -56,6 +56,7 @@ export default function ResidentInquiryEmailPreviewModal({
   const uiLocale = useLocale()
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
 
   const emailLocale: ResidentInquiryEmailLocale = resolveReservationEmailIsEnglish(
     customerLanguage,
@@ -85,11 +86,56 @@ export default function ResidentInquiryEmailPreviewModal({
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [resettingTemplate, setResettingTemplate] = useState(false)
   const [templateNotice, setTemplateNotice] = useState<string | null>(null)
+  /** HTML 복사·수동 발송용 — 미리보기 열릴 때 예약별 개인 링크 생성 */
+  const [guestLinkUrl, setGuestLinkUrl] = useState<string | null>(null)
+  const [guestLinkLoading, setGuestLinkLoading] = useState(false)
+  const [guestLinkError, setGuestLinkError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setGuestLinkUrl(null)
+      setGuestLinkError(null)
+      setGuestLinkLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setGuestLinkLoading(true)
+      setGuestLinkError(null)
+      try {
+        const res = await fetch('/api/resident-check/mint-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservationId, locale: emailLocale }),
+        })
+        const data = (await res.json()) as { absoluteUrl?: string; error?: string }
+        if (cancelled) return
+        if (!res.ok || !data.absoluteUrl?.trim()) {
+          setGuestLinkUrl(null)
+          setGuestLinkError(data.error || t('residentInquiryGuestLinkFailed'))
+          return
+        }
+        setGuestLinkUrl(data.absoluteUrl.trim())
+      } catch {
+        if (!cancelled) {
+          setGuestLinkUrl(null)
+          setGuestLinkError(t('residentInquiryGuestLinkFailed'))
+        }
+      } finally {
+        if (!cancelled) setGuestLinkLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, reservationId, emailLocale, t])
 
   useEffect(() => {
     if (!isOpen) {
       setEditMode(false)
       setTemplateNotice(null)
+      setCopied(false)
+      setCopiedLink(false)
       return
     }
     let cancelled = false
@@ -150,12 +196,26 @@ export default function ResidentInquiryEmailPreviewModal({
       tourDate,
       productName,
       channelReference: channelRN ?? null,
-      residentCheckAbsoluteUrl: '',
+      residentCheckAbsoluteUrl: guestLinkUrl || '',
       locale: emailLocale,
+      flowLinkPreview: !guestLinkUrl,
     })
-  }, [customerName, tourDate, productName, channelRN, emailLocale, subjectTpl, mergedHtmlTpl])
+  }, [
+    customerName,
+    tourDate,
+    productName,
+    channelRN,
+    emailLocale,
+    subjectTpl,
+    mergedHtmlTpl,
+    guestLinkUrl,
+  ])
 
   const handleCopyHtml = useCallback(async () => {
+    if (!guestLinkUrl) {
+      alert(guestLinkError || t('residentInquiryGuestLinkRequired'))
+      return
+    }
     const cleanHtml = emailContent.html
     try {
       const htmlBlob = new Blob([cleanHtml], { type: 'text/html' })
@@ -176,7 +236,21 @@ export default function ResidentInquiryEmailPreviewModal({
         alert(uiLocale === 'en' ? 'Failed to copy.' : '복사에 실패했습니다.')
       }
     }
-  }, [emailContent.html, uiLocale])
+  }, [emailContent.html, uiLocale, guestLinkUrl, guestLinkError, t])
+
+  const handleCopyGuestLink = useCallback(async () => {
+    if (!guestLinkUrl) {
+      alert(guestLinkError || t('residentInquiryGuestLinkRequired'))
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(guestLinkUrl)
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2000)
+    } catch {
+      alert(uiLocale === 'en' ? 'Failed to copy link.' : '링크 복사에 실패했습니다.')
+    }
+  }, [guestLinkUrl, guestLinkError, t, uiLocale])
 
   const handleSaveTemplate = async () => {
     setSavingTemplate(true)
@@ -250,7 +324,8 @@ export default function ResidentInquiryEmailPreviewModal({
 
   if (!isOpen) return null
 
-  const previewBlocked = templateLoading || !subjectTpl.trim()
+  const previewBlocked = templateLoading || guestLinkLoading || !subjectTpl.trim()
+  const copyBlocked = previewBlocked || !guestLinkUrl
   const canSendEmail = !!customerEmail.trim()
 
   return (
@@ -319,12 +394,23 @@ export default function ResidentInquiryEmailPreviewModal({
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-2">
           <button
             type="button"
-            onClick={handleCopyHtml}
-            disabled={previewBlocked}
+            onClick={() => void handleCopyHtml()}
+            disabled={copyBlocked}
+            title={!guestLinkUrl ? t('residentInquiryGuestLinkRequired') : undefined}
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
           >
             {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? t('residentInquiryCopied') : t('residentInquiryCopyHtml')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleCopyGuestLink()}
+            disabled={copyBlocked}
+            title={!guestLinkUrl ? t('residentInquiryGuestLinkRequired') : undefined}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+          >
+            {copiedLink ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedLink ? t('residentInquiryCopied') : t('residentInquiryCopyGuestLink')}
           </button>
           <button
             type="button"
@@ -394,6 +480,18 @@ export default function ResidentInquiryEmailPreviewModal({
           {templateNotice && (
             <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
               {templateNotice}
+            </div>
+          )}
+          {guestLinkError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+              {guestLinkError}
+            </div>
+          )}
+          {guestLinkUrl && (
+            <div className="mb-3 rounded-lg border border-teal-200 bg-teal-50/80 px-3 py-2 text-sm text-teal-950">
+              <p className="font-medium">{t('residentInquiryGuestLinkReady')}</p>
+              <p className="mt-1 break-all text-xs text-teal-900/90">{guestLinkUrl}</p>
+              <p className="mt-1 text-xs text-teal-800/80">{t('residentInquiryGuestLinkCopyHint')}</p>
             </div>
           )}
 

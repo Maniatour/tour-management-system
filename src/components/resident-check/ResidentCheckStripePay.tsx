@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react'
 import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import { useTranslations } from 'next-intl'
+import { Button } from '@/components/ui/button'
 
 const cardStyle = {
   style: {
@@ -94,19 +95,21 @@ export default function ResidentCheckStripePay({
   }, [stripe, elements, token, customerName, customerEmail, onPaid, t])
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <div className="rounded-md border border-slate-200 p-3">
+    <div className="space-y-4">
+      <div className="rounded-xl border border-input bg-background p-4">
         <CardElement options={cardStyle} />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
+      {error && <p className="text-sm text-danger">{error}</p>}
+      <Button
         type="button"
+        variant="booking"
+        size="booking"
         disabled={!stripe || processing}
         onClick={() => void handlePay()}
-        className="w-full rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+        className="w-full"
       >
         {processing ? t('stripeProcessing') : t('stripePayButton')}
-      </button>
+      </Button>
     </div>
   )
 }

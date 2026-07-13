@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { couponMatchesProduct } from '@/lib/productDetailPromoCodes'
 
 /**
  * POST /api/coupons/validate
@@ -125,9 +126,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 상품 ID 검증 (product_id가 지정된 경우)
+    // 상품 ID 검증 (product_id가 지정된 경우, 콤마 구분 다중 상품 지원)
     if (coupon.product_id && productIds.length > 0) {
-      if (!productIds.includes(coupon.product_id)) {
+      if (!productIds.some((productId: string) => couponMatchesProduct(coupon.product_id, productId))) {
         return NextResponse.json({
           valid: false,
           error: '이 쿠폰은 해당 상품에 사용할 수 없습니다.'

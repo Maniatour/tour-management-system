@@ -4,7 +4,6 @@ import { Suspense } from 'react'
 import { useTranslations } from 'next-intl'
 import ResidentCheckFlow from '@/components/resident-check/ResidentCheckFlow'
 
-/** @deprecated Use /[locale]/resident-check — kept for links already sent in email. */
 function ResidentCheckSuspenseFallback() {
   const t = useTranslations('residentCheck')
   return (
@@ -14,7 +13,7 @@ function ResidentCheckSuspenseFallback() {
   )
 }
 
-export default function DashboardResidentCheckPage() {
+export default function ResidentCheckPage() {
   return (
     <Suspense fallback={<ResidentCheckSuspenseFallback />}>
       <ResidentCheckFlow />

@@ -29,7 +29,7 @@ export async function mintResidentCheckTokenForReservation(args: {
   }
 
   const base = siteUrlForEmail().replace(/\/$/, '')
-  const path = `/${args.emailLocalePath}/dashboard/resident-check`
+  const path = `/${args.emailLocalePath}/resident-check`
   const absoluteUrl = base
     ? `${base}${path}?t=${encodeURIComponent(rawToken)}`
     : `${path}?t=${encodeURIComponent(rawToken)}`

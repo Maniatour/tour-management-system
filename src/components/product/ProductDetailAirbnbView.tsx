@@ -255,7 +255,7 @@ export default function ProductDetailAirbnbView({
                 </CustomerPageZone>
                 <CustomerPageZone zone="detail-promo-codes" productId={productId}>
                   <div className="mt-4 lg:hidden">
-                    <ProductDetailPromoCodesBox promo={promo} />
+                    <ProductDetailPromoCodesBox productId={productId} promo={promo} />
                   </div>
                 </CustomerPageZone>
                 <hr className="airbnb-detail-divider" />

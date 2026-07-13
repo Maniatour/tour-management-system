@@ -2,6 +2,7 @@
 /* eslint-disable */
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
@@ -6244,8 +6245,8 @@ export default function ReservationForm({
 
   const isModal = layout !== 'page'
 
-  return (
-    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
+  const content = (
+    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
       <div className={isModal 
         ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden"}
@@ -7279,4 +7280,9 @@ export default function ReservationForm({
       />
     </div>
   )
+
+  if (isModal && typeof document !== 'undefined') {
+    return createPortal(content, document.body)
+  }
+  return content
 }

@@ -735,7 +735,7 @@ export default function CustomerDashboard() {
                   {t('editInfo')} →
                 </Link>
                 <Link
-                  href={`/${locale}/dashboard/resident-check`}
+                  href={`/${locale}/resident-check`}
                   className="text-teal-700 hover:text-teal-800 text-sm font-medium"
                 >
                   {tDash('residentCheckLink')}

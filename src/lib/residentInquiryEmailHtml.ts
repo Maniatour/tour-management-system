@@ -14,6 +14,11 @@ export type BuildResidentInquiryEmailParams = {
   locale: ResidentInquiryEmailLocale
   /** 기본값 day_tour */
   emailTourKind?: ResidentInquiryEmailTourKind
+  /**
+   * 미리보기 전용: URL이 아직 없을 때 실제 버튼 모양을 예시로 보여줍니다.
+   * (버튼 아래에 "예시" 안내가 함께 표시됩니다.)
+   */
+  flowLinkPreview?: boolean
 }
 
 function escapeHtml(s: string | null | undefined): string {
@@ -44,12 +49,29 @@ export function formatTourLineForResidentEmail(
  */
 export function buildFlowLinkBlockHtml(
   residentCheckAbsoluteUrl: string,
-  locale: ResidentInquiryEmailLocale
+  locale: ResidentInquiryEmailLocale,
+  flowLinkPreview = false
 ): string {
+  const label = locale === 'en' ? 'Open secure guest page' : '고객 안내 페이지 열기'
   const flowUrl = residentCheckAbsoluteUrl.trim()
+
   if (flowUrl.length > 0) {
-    return `<a href="${escapeHtml(flowUrl)}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;">${locale === 'en' ? 'Open secure guest page' : '고객 안내 페이지 열기'}</a><div style="font-size:13px;color:#64748b;margin-top:8px;word-break:break-all;">${escapeHtml(flowUrl)}</div>`
+    return `<a href="${escapeHtml(flowUrl)}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;">${label}</a><div style="font-size:13px;color:#64748b;margin-top:8px;word-break:break-all;">${escapeHtml(flowUrl)}</div>`
   }
+
+  // 미리보기: 실제 버튼 모양을 예시로 표시 (전송 시 본인 전용 링크로 대체)
+  if (flowLinkPreview) {
+    const note =
+      locale === 'en'
+        ? 'Example button — the guest receives their own personal link when this email is sent.'
+        : '예시 버튼입니다 — 실제 발송 시 고객 본인 전용 링크로 대체됩니다.'
+    const sampleUrl =
+      locale === 'en'
+        ? 'https://…/en/resident-check?t=YOUR-PERSONAL-LINK'
+        : 'https://…/ko/resident-check?t=본인-전용-링크'
+    return `<span style="display:inline-block;margin:12px 0;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;">${label}</span><div style="font-size:13px;color:#94a3b8;margin-top:8px;word-break:break-all;">${escapeHtml(sampleUrl)}</div><p style="margin:8px 0 0;font-size:13px;color:#64748b;"><em>${note}</em></p>`
+  }
+
   return locale === 'en'
     ? '<p style="margin:12px 0;font-size:14px;color:#64748b;"><em>Your personal link is added automatically when this email is sent.</em></p>'
     : '<p style="margin:12px 0;font-size:14px;color:#64748b;"><em>실제 발송 시 본인 전용 링크가 자동으로 들어갑니다.</em></p>'
@@ -287,7 +309,11 @@ export function substituteResidentInquiryEmailTemplate(
   const product = escapeHtml(params.productName || (locale === 'en' ? 'Tour' : '투어'))
   const tour = escapeHtml(formatTourLineForResidentEmail(params.tourDate, locale))
   const rnHtml = escapeHtml(refPlain)
-  const flowBlock = buildFlowLinkBlockHtml(params.residentCheckAbsoluteUrl, locale)
+  const flowBlock = buildFlowLinkBlockHtml(
+    params.residentCheckAbsoluteUrl,
+    locale,
+    params.flowLinkPreview === true
+  )
 
   const subject = subjectTpl.replace(/\{\{CHANNEL_RN\}\}/g, refPlain)
   const html = htmlTpl

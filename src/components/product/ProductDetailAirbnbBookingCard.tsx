@@ -103,7 +103,7 @@ export default function ProductDetailAirbnbBookingCard({
 
       {showPromoSection ? (
         <CustomerPageZone zone="detail-promo-codes" productId={productId} className="mt-4">
-          <ProductDetailPromoCodesBox promo={promo} />
+          <ProductDetailPromoCodesBox productId={productId} promo={promo} />
         </CustomerPageZone>
       ) : null}
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { ChevronRight, Ticket } from 'lucide-react'
 import ProductDetailPromoCodesModal from '@/components/product/ProductDetailPromoCodesModal'
@@ -10,16 +10,22 @@ import { useProductDetailPlatformPromoCodes } from '@/hooks/useProductDetailPlat
 import type { ProductDetailAppliedPromoState } from '@/hooks/useProductDetailAppliedPromo'
 
 type ProductDetailPromoCodesBoxProps = {
+  productId: string
   promo: ProductDetailAppliedPromoState
 }
 
-export default function ProductDetailPromoCodesBox({ promo }: ProductDetailPromoCodesBoxProps) {
+export default function ProductDetailPromoCodesBox({
+  productId,
+  promo,
+}: ProductDetailPromoCodesBoxProps) {
   const t = useTranslations('productDetail')
-  const platformPromoCodes = useProductDetailPlatformPromoCodes()
+  const locale = useLocale()
+  const isEnglish = locale === 'en'
+  const { promoCodes, loading } = useProductDetailPlatformPromoCodes(productId)
   const [open, setOpen] = useState(false)
   const badgeLabel = promo.hasPromoApplied
     ? t('promoApplied')
-    : getBestPromoDiscountLabel(platformPromoCodes)
+    : getBestPromoDiscountLabel(promoCodes, isEnglish)
 
   const handleRedeem = async (code: string) => {
     promo.clearError()
@@ -55,7 +61,8 @@ export default function ProductDetailPromoCodesBox({ promo }: ProductDetailPromo
       <ProductDetailPromoCodesModal
         open={open}
         onOpenChange={setOpen}
-        promoCodes={platformPromoCodes}
+        promoCodes={promoCodes}
+        loading={loading}
         appliedCode={promo.appliedCoupon?.code ?? null}
         validating={promo.validating}
         error={promo.error}

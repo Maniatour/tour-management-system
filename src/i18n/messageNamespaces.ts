@@ -157,6 +157,10 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
     namespaces: ['products', 'booking', 'weather', 'productDetail', 'customTour'],
   },
   {
+    test: (p) => /\/resident-check/.test(p),
+    namespaces: ['residentCheck', 'customerSiteFooter', 'legalPages'],
+  },
+  {
     test: (p) => /\/dashboard/.test(p),
     namespaces: ['passUpload', 'reservationEvidence', 'reservations', 'customerDashboard', 'residentCheck'],
   },

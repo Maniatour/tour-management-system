@@ -130,7 +130,7 @@ function otherAreaClusters(): SiteAccessNode[] {
           id: 'cust-resident',
           kind: 'page',
           label: { type: 'siteDirectory', key: 'nodesPublic.customerResidentCheck' },
-          localePath: 'dashboard/resident-check',
+          localePath: 'resident-check',
           menuVisibility: { type: 'site_doc_customer' },
           crudByRole: CRUD_DOC_CUSTOMER,
         },
