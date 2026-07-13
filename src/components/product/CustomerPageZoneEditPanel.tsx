@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Loader2, Save, X } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import LightRichEditor from '@/components/LightRichEditor'
 import CustomerPageZoneAdminEmbed from '@/components/product/CustomerPageZoneAdminEmbed'
 import ProductTagsBilingualEditor, {
@@ -52,6 +53,13 @@ import {
 import CustomerPageBasicFieldSlotsForm from '@/components/product/CustomerPageBasicFieldSlotsForm'
 import CustomerPageDetailFieldSlotsForm from '@/components/product/CustomerPageDetailFieldSlotsForm'
 import CustomerPageHomeSettingsPanel from '@/components/product/CustomerPageHomeSettingsPanel'
+import AdminCouponsEmbed from '@/components/admin/AdminCouponsEmbed'
+import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
+import {
+  normalizeAdminEditLocale,
+  zoneEditSupportsLocaleSwitch,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
 
 type CustomerPageZoneEditPanelProps = {
   zone: CustomerPageZone
@@ -240,6 +248,7 @@ export default function CustomerPageZoneEditPanel({
   onDirtyChange,
   variant = 'sidebar',
 }: CustomerPageZoneEditPanelProps) {
+  const tEditLocale = useTranslations('products.customerPageEdit')
   const resolvedZone = useMemo(() => resolveCustomerPageZone(zone), [zone])
   const config = useMemo(() => getZoneEditConfig(resolvedZone), [resolvedZone])
   const basicFieldSlots = useMemo(
@@ -267,6 +276,9 @@ export default function CustomerPageZoneEditPanel({
   const [slotValues, setSlotValues] = useState<BasicSlotValues>({})
   const [detailSlotBindings, setDetailSlotBindings] = useState<Record<string, DetailBindingKey>>({})
   const [detailSlotValues, setDetailSlotValues] = useState<DetailSlotValues>({})
+  const [editLocale, setEditLocale] = useState<AdminEditLocale>(() => normalizeAdminEditLocale(locale))
+
+  const showLocaleToggle = zoneEditSupportsLocaleSwitch(config)
 
   const fieldsToLoad = useMemo(
     () => resolveDetailFieldsToLoad(config, pickedField),
@@ -284,6 +296,7 @@ export default function CustomerPageZoneEditPanel({
   useEffect(() => {
     setPickedField(null)
     setMessage(null)
+    setEditLocale(normalizeAdminEditLocale(locale))
     initialSnapshotRef.current = null
     productRowRef.current = null
     detailsRowRef.current = null
@@ -457,7 +470,7 @@ export default function CustomerPageZoneEditPanel({
             fromUntypedTable(supabase, 'product_details_multilingual')
               .select('*')
               .eq('product_id', productId)
-              .eq('language_code', locale)
+              .eq('language_code', editLocale)
               .is('channel_id', null)
               .eq('variant_key', 'default')
               .maybeSingle(),
@@ -532,7 +545,7 @@ export default function CustomerPageZoneEditPanel({
     return () => {
       cancelled = true
     }
-  }, [config, productId, locale, pickedField, zone, useBasicFieldSlots, basicFieldSlots])
+  }, [config, productId, editLocale, pickedField, zone, useBasicFieldSlots, basicFieldSlots, locale])
 
   const handleDetailSlotBindingChange = (slotId: DetailFieldKey, binding: DetailBindingKey) => {
     const nextBindings = { ...detailSlotBindings, [slotId]: binding }
@@ -681,7 +694,7 @@ export default function CustomerPageZoneEditPanel({
 
         const patch: Record<string, unknown> = {
           product_id: productId,
-          language_code: locale,
+          language_code: editLocale,
           channel_id: null,
           variant_key: 'default',
         }
@@ -730,7 +743,7 @@ export default function CustomerPageZoneEditPanel({
 
       const patch: Record<string, unknown> = {
         product_id: productId,
-        language_code: locale,
+        language_code: editLocale,
         channel_id: null,
         variant_key: 'default',
       }
@@ -795,18 +808,29 @@ export default function CustomerPageZoneEditPanel({
     >
       <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 shrink-0">
         <div className="flex items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-900">{config.label}</h3>
-            <p className="text-xs text-gray-500 mt-0.5">고객 페이지 영역 편집</p>
+            <p className="mt-0.5 text-xs text-gray-500">고객 페이지 영역 편집</p>
           </div>
-          <button
-            type="button"
-            onClick={handleRequestClose}
-            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-white/80 hover:text-gray-600"
-            aria-label="닫기"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {showLocaleToggle ? (
+              <AdminEditLocaleToggle
+                value={editLocale}
+                onChange={setEditLocale}
+                groupLabel={tEditLocale('editLocaleGroup')}
+                koLabel={tEditLocale('editLocaleKo')}
+                enLabel={tEditLocale('editLocaleEn')}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={handleRequestClose}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-white/80 hover:text-gray-600"
+              aria-label="닫기"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         {config.note && (
           <p className="text-xs text-gray-600 mt-2">{config.note}</p>
@@ -830,7 +854,7 @@ export default function CustomerPageZoneEditPanel({
             {config.editType === 'home-settings' && config.homeSettingsKind ? (
               <CustomerPageHomeSettingsPanel
                 kind={config.homeSettingsKind}
-                locale={locale}
+                locale={editLocale}
                 {...(config.translationNamespace ? { translationNamespace: config.translationNamespace } : {})}
                 {...(config.translationFields ? { translationFields: config.translationFields } : {})}
                 onSaved={onSaved}
@@ -847,6 +871,24 @@ export default function CustomerPageZoneEditPanel({
               />
             )}
 
+            {resolvedZone === 'detail-promo-codes' && (
+              <div className="mt-6 space-y-3 border-t border-border pt-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">쿠폰 관리</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    고객이 입력하는 실제 쿠폰 코드입니다. 편집·추가 시 쿠폰 모달이 열립니다.
+                  </p>
+                </div>
+                <AdminCouponsEmbed
+                  productId={productId ?? null}
+                  onMutated={onSaved}
+                  {...(onNavigateToTab
+                    ? { onOpenFullAdmin: () => onNavigateToTab('coupons') }
+                    : {})}
+                />
+              </div>
+            )}
+
             {config.editType === 'info' && (
               <InfoPanel config={config} />
             )}
@@ -857,7 +899,7 @@ export default function CustomerPageZoneEditPanel({
                 zone={resolvedZone}
                 adminTab={config.adminTab}
                 productId={productId ?? null}
-                locale={locale}
+                locale={editLocale}
                 onSaved={onSaved}
                 {...(onNavigateToTab ? { onOpenFullAdmin: onNavigateToTab } : {})}
               />

@@ -1,8 +1,9 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ExternalLink, Languages, Loader2, Monitor, Pencil, Smartphone, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Languages, Loader2, Monitor, Pencil, Smartphone, X } from 'lucide-react'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import {
   isCustomerPageZoneEditMessage,
@@ -87,6 +88,14 @@ type CustomerPageEditWorkbenchProps = {
   onClose?: () => void
   initialPageId?: CustomerPageId
   initialProductId?: string | null
+  /** 상품 상세 고객 페이지만 편집 (페이지 탭·상품 검색 숨김) */
+  focusMode?: 'none' | 'product-detail'
+  /** 상품 ID 고정 (상품 관리 → 고객 페이지 편집) */
+  lockProductId?: string | null
+  backHref?: string | null
+  headerTitle?: string | null
+  headerSubtitle?: string | null
+  classicAdminHref?: string | null
 }
 
 function CustomerPageEditWorkbenchInner({
@@ -96,13 +105,23 @@ function CustomerPageEditWorkbenchInner({
   onClose,
   initialPageId = 'home',
   initialProductId = null,
+  focusMode = 'none',
+  lockProductId = null,
+  backHref = null,
+  headerTitle = null,
+  headerSubtitle = null,
+  classicAdminHref = null,
 }: CustomerPageEditWorkbenchProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const urlBootstrapped = useRef(false)
+  const isProductDetailFocus = focusMode === 'product-detail'
+  const lockedProductId = lockProductId?.trim() || null
 
-  const [pageId, setPageId] = useState<CustomerPageId>(initialPageId)
-  const [productId, setProductId] = useState<string | null>(initialProductId)
+  const [pageId, setPageId] = useState<CustomerPageId>(
+    isProductDetailFocus ? 'product-detail' : initialPageId
+  )
+  const [productId, setProductId] = useState<string | null>(lockedProductId ?? initialProductId)
   const [productOptions, setProductOptions] = useState<CustomerPageProductOption[]>([])
   const [productsLoading, setProductsLoading] = useState(false)
   const [productsSearching, setProductsSearching] = useState(false)
@@ -118,7 +137,7 @@ function CustomerPageEditWorkbenchInner({
   const previewScrollRef = useRef<HTMLDivElement>(null)
   const iframeHeightRef = useRef(960)
 
-  const syncUrlState = variant === 'embedded'
+  const syncUrlState = variant === 'embedded' && !isProductDetailFocus
 
   const currentPage = CUSTOMER_PAGE_REGISTRY.find((p) => p.id === pageId)
   const needsProduct = currentPage?.requiresProduct ?? false
@@ -194,14 +213,15 @@ function CustomerPageEditWorkbenchInner({
     (zone: CustomerPageZone, resolvedProductId: string | null) => {
       if (editDirty && selectedZone && !confirmDiscardUnsavedChanges()) return
 
-      if (resolvedProductId) {
-        setProductId(resolvedProductId)
+      const nextProductId = lockedProductId ?? resolvedProductId
+      if (nextProductId) {
+        setProductId(nextProductId)
       }
-      setEditProductId(resolvedProductId)
+      setEditProductId(nextProductId)
       setEditDirty(false)
       setSelectedZone(zone)
     },
-    [editDirty, selectedZone]
+    [editDirty, selectedZone, lockedProductId]
   )
 
   const syncContextFromIframe = useCallback(
@@ -212,7 +232,7 @@ function CustomerPageEditWorkbenchInner({
         fromIframe.productId ||
         null
 
-      if (fromIframe.pageId) {
+      if (fromIframe.pageId && !isProductDetailFocus) {
         setPageId((prev) => {
           if (prev === fromIframe.pageId) return prev
           if (fromIframe.pageId === 'product-detail' || fromIframe.pageId === 'product-booking') {
@@ -222,9 +242,9 @@ function CustomerPageEditWorkbenchInner({
         })
       }
 
-      return resolvedProductId
+      return lockedProductId ?? resolvedProductId
     },
-    []
+    [isProductDetailFocus, lockedProductId]
   )
 
   const loadProducts = useCallback(
@@ -287,15 +307,15 @@ function CustomerPageEditWorkbenchInner({
     if (variant === 'modal' && !isOpen) return
     if (syncUrlState && urlBootstrapped.current) return
 
-    setPageId(initialPageId)
-    setProductId(initialProductId)
+    setPageId(isProductDetailFocus ? 'product-detail' : initialPageId)
+    setProductId(lockedProductId ?? initialProductId)
     setSelectedZone(null)
     setEditProductId(null)
     setEditDirty(false)
     setPreviewLocale(locale === 'en' ? 'en' : 'ko')
     setPreviewViewport('desktop')
     setIframeLoading(true)
-  }, [variant, isOpen, initialPageId, initialProductId, locale, syncUrlState])
+  }, [variant, isOpen, initialPageId, initialProductId, locale, syncUrlState, isProductDetailFocus, lockedProductId])
 
   useEffect(() => {
     if (!syncUrlState) return
@@ -406,6 +426,7 @@ function CustomerPageEditWorkbenchInner({
   }
 
   const handlePageTabChange = (id: CustomerPageId) => {
+    if (isProductDetailFocus) return
     if (!guardUnsaved()) return
     closeEditModal()
     setPageId(id)
@@ -413,6 +434,7 @@ function CustomerPageEditWorkbenchInner({
   }
 
   const handleProductChange = (nextProductId: string | null) => {
+    if (lockedProductId) return
     if (!guardUnsaved()) return
     closeEditModal()
     setProductId(nextProductId)
@@ -467,11 +489,25 @@ function CustomerPageEditWorkbenchInner({
     <div className={shellClass}>
       <div className={innerClass}>
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-violet-50 shrink-0">
-          <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900">고객 페이지 작업</h2>
-            <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
-              미리보기 화면의 「수정」 버튼으로 표시되는 콘텐츠만 편집할 수 있습니다.
-            </p>
+          <div className="min-w-0 flex items-start gap-3">
+            {backHref ? (
+              <Link
+                href={backHref}
+                className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-600 transition-colors hover:border-primary/40 hover:text-primary"
+                aria-label="상품 목록으로"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            ) : null}
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+                {headerTitle ?? '고객 페이지 작업'}
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                {headerSubtitle ??
+                  '미리보기 화면의 「수정」 버튼으로 표시되는 콘텐츠만 편집할 수 있습니다.'}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <div className="hidden md:flex items-center gap-1 rounded-lg border border-slate-200 bg-white/80 p-0.5">
@@ -520,6 +556,15 @@ function CustomerPageEditWorkbenchInner({
               새 탭
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
+            {classicAdminHref ? (
+              <Link
+                href={classicAdminHref}
+                className="hidden md:inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-md hover:bg-white/80"
+              >
+                전체 관리
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            ) : null}
             {variant === 'modal' && onClose && (
               <button
                 type="button"
@@ -558,25 +603,27 @@ function CustomerPageEditWorkbenchInner({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50 shrink-0">
-          {CUSTOMER_PAGE_REGISTRY.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => handlePageTabChange(id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
-                pageId === id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-border'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
+        {!isProductDetailFocus ? (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50 shrink-0">
+            {CUSTOMER_PAGE_REGISTRY.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => handlePageTabChange(id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
+                  pageId === id
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-border'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-        {needsProduct && (
+        {needsProduct && !lockedProductId ? (
           <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-amber-100 bg-amber-50/80 shrink-0">
             <span className="text-xs font-medium text-amber-900 shrink-0">상품 선택</span>
             <CustomerPageProductSearchSelect
@@ -591,7 +638,17 @@ function CustomerPageEditWorkbenchInner({
               <span className="text-xs text-amber-700">상품 상세·예약 편집에 필요합니다.</span>
             )}
           </div>
-        )}
+        ) : null}
+
+        {isProductDetailFocus && lockedProductId ? (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50 shrink-0">
+            <span className="text-xs font-medium text-slate-700">편집 상품</span>
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-900 border border-slate-200">
+              {editingProductLabel ?? lockedProductId}
+            </span>
+            <span className="text-xs text-slate-500">{lockedProductId}</span>
+          </div>
+        ) : null}
 
         <div className="flex md:hidden flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50 shrink-0">
           <span className="text-xs font-medium text-slate-700">미리보기</span>
@@ -668,7 +725,7 @@ function CustomerPageEditWorkbenchInner({
                 notifyIframeCustomerPageBindingsUpdate(iframeRef.current)
                 scheduleIframeHeightSync()
                 const resolved = syncContextFromIframe()
-                if (resolved) setProductId(resolved)
+                if (resolved && !lockedProductId) setProductId(resolved)
               }}
               onError={() => setIframeLoading(false)}
             />

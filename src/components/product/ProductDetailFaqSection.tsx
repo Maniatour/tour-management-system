@@ -19,15 +19,17 @@ export default function ProductDetailFaqSection({
 
   if (variant === 'airbnb') {
     return (
-      <div className="airbnb-detail-faq">
-        <h2 className="airbnb-detail-section-title">{t('faqSectionTitle')}</h2>
-        <ProductFaqDisplay productId={productId} />
-      </div>
+      <CustomerPageZone zone="detail-faq-section" productId={productId}>
+        <div className="airbnb-detail-faq">
+          <h2 className="airbnb-detail-section-title">{t('faqSectionTitle')}</h2>
+          <ProductFaqDisplay productId={productId} />
+        </div>
+      </CustomerPageZone>
     )
   }
 
   return (
-    <CustomerPageZone zone="detail-faq-section">
+    <CustomerPageZone zone="detail-faq-section" productId={productId}>
       <ProductDetailSectionCard title={t('faqSectionTitle')} icon={HelpCircle} iconBgClassName="bg-amber-50" iconClassName="text-amber-600">
         <ProductFaqDisplay productId={productId} />
       </ProductDetailSectionCard>

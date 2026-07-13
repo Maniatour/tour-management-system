@@ -114,9 +114,11 @@ interface ProductChoice {
 interface ChoicesTabProps {
   productId: string
   isNewProduct: boolean
+  /** 모달 임베드 시 중복 헤더 숨김 */
+  embedded?: boolean
 }
 
-export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps) {
+export default function ChoicesTab({ productId, isNewProduct, embedded = false }: ChoicesTabProps) {
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1211,13 +1213,15 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }
 
   return (
-    <div className="space-y-6">
+    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
       {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900">초이스 관리</h3>
-        </div>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+      <div className={`flex flex-col sm:flex-row justify-between items-start md:items-center gap-4 ${embedded ? 'gap-2' : ''}`}>
+        {!embedded && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900">초이스 관리</h3>
+          </div>
+        )}
+        <div className={`flex flex-wrap gap-2 ${embedded ? 'w-full' : 'w-full md:w-auto'}`}>
           <div className="flex items-center">
             <button
               onClick={() => setShowTemplateModal(true)}

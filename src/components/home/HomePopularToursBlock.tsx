@@ -2,13 +2,19 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronDown, ChevronUp, Heart, Star } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ChevronDown, ChevronUp, Heart } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomeGygCarousel from '@/components/home/HomeGygCarousel'
-import HomeManiaTourCarousel from '@/components/home/HomeManiaTourCarousel'
+import ProductsGygCard from '@/components/products/ProductsGygCard'
+import ProductsHorizontalScroll from '@/components/products/ProductsHorizontalScroll'
 import type { PopularStructureVariant } from '@/lib/customerPageHomeStructure'
 import { formatProductDurationShort } from '@/lib/productDetailDisplay'
+import {
+  getProductListingRibbonLabelKey,
+  getProductListingRibbonVariantClass,
+  resolveProductListingRibbon,
+} from '@/lib/productListingRibbon'
 
 export type PopularProductView = {
   id: string
@@ -50,10 +56,13 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     isChangingOrder,
     showCardEditZones,
     getProductName,
+    getCardDepartureLine,
     getCardPrice,
     getPriceLabel,
     onChangeFavoriteOrder,
   } = props
+
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
 
   const CardZone = ({
     zone,
@@ -112,80 +121,44 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
     )
   }
 
-  const renderManiaTourCard = (product: PopularProductView, index: number) => {
-    const badgeConfigs = [
-      { labelKey: 'maniatourBadgeBest', variant: 'best' },
-      { labelKey: 'maniatourBadgeBestSeller', variant: 'best-seller' },
-      { labelKey: 'maniatourBadgePopular', variant: 'popular' },
-    ] as const
-    const badge = badgeConfigs[index]
-    const demoMeta = [
-      { rating: '4.9', reviewCount: 1234, duration: '17 hrs' },
-      { rating: '4.9', reviewCount: 987, duration: '11 hrs' },
-      { rating: '4.8', reviewCount: 756, duration: '10 hrs' },
-      { rating: '4.8', reviewCount: 512, duration: '6 hrs' },
-      { rating: '4.7', reviewCount: 423, duration: '11 hrs' },
-      { rating: '4.8', reviewCount: 635, duration: '14 hrs' },
-    ]
-    const cardMeta = demoMeta[index] ?? demoMeta[demoMeta.length - 1]!
-    const duration =
-      formatProductDurationShort(product.duration, locale === 'en') ?? cardMeta.duration
-    const price = getCardPrice(product)
-    const hasPrice = price != null && price > 0
-    const priceAmount = hasPrice ? `$${Math.round(price)}+` : getPriceLabel(price)
-
-    return (
-      <Link
-        key={product.id}
+  const renderListingCard = (product: PopularProductView, index: number) => (
+    <div key={product.id} className="gyg-listing-scroll-item relative">
+      {renderFavoriteOrderControls(product, index)}
+      <ProductsGygCard
+        locale={locale}
         href={`/${locale}/products/${product.id}`}
-        className={`kv-tour-card group${showCardEditZones ? ' relative' : ''}`}
-        role="listitem"
-      >
-        {renderFavoriteOrderControls(product, index)}
-        <article className="kv-tour-card-inner">
-          <CardZone zone="listing-card-image" productId={product.id} suppressEditButton>
-            <div className="kv-tour-card-image">
-              <Image
-                src={product.primary_image ?? '/placeholder-tour.svg'}
-                alt={getProductName(product)}
-                fill
-                sizes="(max-width: 640px) 72vw, 196px"
-                className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-              />
-              {badge ? (
-                <span className={`kv-tour-badge kv-tour-badge--${badge.variant}`}>{t(badge.labelKey)}</span>
-              ) : null}
-            </div>
-          </CardZone>
-          <div className="kv-tour-card-body">
-            <CardZone zone="listing-card-name" productId={product.id} suppressEditButton>
-              <h3 className="kv-tour-card-title line-clamp-2">{getProductName(product)}</h3>
-            </CardZone>
-            <div className="kv-tour-card-rating-row">
-              <Star className="kv-tour-card-star" aria-hidden />
-              <span className="kv-tour-card-rating">{cardMeta.rating}</span>
-              <span className="kv-tour-card-reviews">({cardMeta.reviewCount.toLocaleString()})</span>
-            </div>
-            <p className="kv-tour-card-details">
-              {t('maniatourSmallGroupLabel')} · {duration}
-            </p>
-            <CardZone zone="listing-card-price" productId={product.id}>
-              <p className="kv-tour-card-price">
-                <span className="kv-tour-card-price-amount">{priceAmount}</span>
-                {hasPrice ? (
-                  <span className="kv-tour-card-price-unit">{t('maniatourPerPerson')}</span>
-                ) : null}
-              </p>
-            </CardZone>
-          </div>
-        </article>
-      </Link>
-    )
-  }
+        product={{
+          id: product.id,
+          primary_image: product.primary_image,
+          duration: product.duration,
+          max_participants: product.max_participants,
+          departure_city:
+            typeof product.departure_city === 'string' ? product.departure_city : null,
+          tags: Array.isArray(product.tags) ? product.tags : null,
+        }}
+        title={getProductName(product)}
+        locationLine={getCardDepartureLine(product)}
+        price={getCardPrice(product) ?? 0}
+        priceLabel={t('listingFromPrice')}
+        imageError={imageErrors.has(product.id)}
+        onImageError={() =>
+          setImageErrors((prev) => {
+            const next = new Set(prev)
+            next.add(product.id)
+            return next
+          })
+        }
+        likelyToSellOutLabel={t('likelyToSellOut')}
+        imagePreparingLabel={t('imagePreparing')}
+        priority={index < 4}
+        editableZones={showCardEditZones}
+      />
+    </div>
+  )
 
   const renderGygCard = (product: PopularProductView, index: number) => {
     if (variant === 'maniatour-carousel') {
-      return renderManiaTourCard(product, index)
+      return renderListingCard(product, index)
     }
 
     if (variant === 'attraction-cards') {
@@ -222,8 +195,10 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
       )
     }
 
-    const showSelloutBadge =
-      product.max_participants != null && product.max_participants <= 20
+    const listingRibbon = resolveProductListingRibbon({
+      max_participants: product.max_participants,
+      tags: Array.isArray(product.tags) ? product.tags : null,
+    })
 
     return (
       <Link
@@ -242,8 +217,10 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
               sizes="280px"
               className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
             />
-            {showSelloutBadge ? (
-              <span className="gyg-sellout-badge">{t('likelyToSellOut')}</span>
+            {listingRibbon ? (
+              <span className={getProductListingRibbonVariantClass(listingRibbon.variant)}>
+                {t(getProductListingRibbonLabelKey(listingRibbon.id))}
+              </span>
             ) : null}
             <span
               className="gyg-wishlist-btn"
@@ -277,7 +254,7 @@ export default function HomePopularToursBlock(props: PopularToursBlockProps) {
   )
 
   if (variant === 'maniatour-carousel') {
-    return <HomeManiaTourCarousel ariaLabel="Popular tours">{cards}</HomeManiaTourCarousel>
+    return <ProductsHorizontalScroll ariaLabel="Popular tours">{cards}</ProductsHorizontalScroll>
   }
 
   return (

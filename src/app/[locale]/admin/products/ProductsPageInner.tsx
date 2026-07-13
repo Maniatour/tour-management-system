@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useEffect, type SetStateAction } from 'react'
+import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, ChevronUp, Star } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import AdminProductCardPreviewLocaleToggle from '@/components/admin/AdminProductCardPreviewLocaleToggle'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import type { AdminProductCardPreviewLocale } from '@/lib/adminProductCardPreviewLabels'
+import { buildAdminProductCustomerEditPath } from '@/lib/adminProductCustomerEdit'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -19,7 +22,7 @@ const PRODUCTS_LIST_UI_DEFAULT = {
   selectedSubCategory: 'all',
   selectedStatus: 'active',
   viewMode: 'card' as 'card' | 'table',
-  allCardsCollapsed: false,
+  cardPreviewLocale: 'ko' as AdminProductCardPreviewLocale,
 }
 
 export default function AdminProducts() {
@@ -27,11 +30,20 @@ export default function AdminProducts() {
   const locale = paramsObj.locale as string
   const t = useTranslations('products')
   const tCommon = useTranslations('common')
-  
+
+  const initialListUi = useMemo(
+    () => ({
+      ...PRODUCTS_LIST_UI_DEFAULT,
+      cardPreviewLocale: (locale === 'en' ? 'en' : 'ko') as AdminProductCardPreviewLocale,
+    }),
+    [locale]
+  )
+
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [listUi, setListUi] = useRoutePersistedState('products-list', PRODUCTS_LIST_UI_DEFAULT)
-  const { searchTerm, selectedCategory, selectedSubCategory, selectedStatus, viewMode, allCardsCollapsed } = listUi
+  const [listUi, setListUi] = useRoutePersistedState('products-list', initialListUi)
+  const { searchTerm, selectedCategory, selectedSubCategory, selectedStatus, viewMode, cardPreviewLocale } =
+    listUi
   const setSearchTerm = (v: SetStateAction<string>) =>
     setListUi((u) => ({
       ...u,
@@ -41,11 +53,8 @@ export default function AdminProducts() {
   const setSelectedSubCategory = (c: string) => setListUi((u) => ({ ...u, selectedSubCategory: c }))
   const setSelectedStatus = (s: string) => setListUi((u) => ({ ...u, selectedStatus: s }))
   const setViewMode = (m: 'card' | 'table') => setListUi((u) => ({ ...u, viewMode: m }))
-  const setAllCardsCollapsed = (v: boolean | ((p: boolean) => boolean)) =>
-    setListUi((u) => ({
-      ...u,
-      allCardsCollapsed: typeof v === 'function' ? v(u.allCardsCollapsed) : v,
-    }))
+  const setCardPreviewLocale = (previewLocale: AdminProductCardPreviewLocale) =>
+    setListUi((u) => ({ ...u, cardPreviewLocale: previewLocale }))
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
@@ -855,10 +864,22 @@ export default function AdminProducts() {
       {/* 페이지 헤더 */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('pageTitle')}</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            {t('pageDescription')}
-          </p>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('pageTitle')}</h1>
+            <AdminProductCardPreviewLocaleToggle
+              value={cardPreviewLocale}
+              onChange={setCardPreviewLocale}
+              koLabel={t('cardPreviewLocaleKo')}
+              enLabel={t('cardPreviewLocaleEn')}
+              groupLabel={t('cardPreviewLocaleGroup')}
+            />
+          </div>
+          <p className="mt-1 text-sm text-gray-600">{t('pageDescription')}</p>
+          {viewMode === 'card' ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {cardPreviewLocale === 'ko' ? t('cardPreviewLocaleKoHint') : t('cardPreviewLocaleEnHint')}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
@@ -1009,26 +1030,8 @@ export default function AdminProducts() {
             )}
           </div>
         </div>
-        {/* 2줄: 접어보기/펼쳐보기 + 카드/테이블 뷰 전환 */}
-        <div className="flex items-center justify-between gap-2 sm:justify-end">
-          {viewMode === 'card' && (
-            <button
-              onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-              className="px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
-            >
-              {allCardsCollapsed ? (
-                <>
-                  <ChevronDown size={16} />
-                  <span>{t('expandAll')}</span>
-                </>
-              ) : (
-                <>
-                  <ChevronUp size={16} />
-                  <span>{t('collapseAll')}</span>
-                </>
-              )}
-            </button>
-          )}
+        {/* 2줄: 카드/테이블 뷰 전환 */}
+        <div className="flex items-center justify-end gap-2">
           <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
             <button
               onClick={() => setViewMode('card')}
@@ -1074,35 +1077,41 @@ export default function AdminProducts() {
           </button>
         </div>
       ) : viewMode === 'card' ? (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}>
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              locale={locale}
-              collapsed={allCardsCollapsed}
-              onStatusChange={(productId, newStatus) => {
-                // 로컬 상태 업데이트
-                setProducts(prevProducts => 
-                  prevProducts.map(p => 
-                    p.id === productId ? { ...p, status: newStatus } : p
+        <div className="gyg-listing admin-products-listing">
+          <div className="admin-products-gyg-grid">
+            {filteredProducts.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                locale={locale}
+                displayLocale={cardPreviewLocale}
+                priority={index < 4}
+                onStatusChange={(productId, newStatus) => {
+                  setProducts((prevProducts) =>
+                    prevProducts.map((p) => (p.id === productId ? { ...p, status: newStatus } : p))
                   )
-                )
-              }}
-              onProductCopied={() => {
-                // 상품 복사 후 목록 새로고침
-                fetchProducts()
-              }}
-              onFavoriteToggle={(productId, isFavorite) => {
-                // 로컬 상태 업데이트
-                setProducts(prevProducts => 
-                  prevProducts.map(p => 
-                    p.id === productId ? { ...p, is_favorite: isFavorite } : p
+                }}
+                onProductCopied={() => {
+                  fetchProducts()
+                }}
+                onFavoriteToggle={(productId, isFavorite) => {
+                  setProducts((prevProducts) =>
+                    prevProducts.map((p) => (p.id === productId ? { ...p, is_favorite: isFavorite } : p))
                   )
-                )
-              }}
-            />
-          ))}
+                }}
+                onRibbonToggle={(productId, tags) => {
+                  setProducts((prevProducts) =>
+                    prevProducts.map((p) => (p.id === productId ? { ...p, tags } : p))
+                  )
+                }}
+                onProductUpdated={(productId, updates) => {
+                  setProducts((prevProducts) =>
+                    prevProducts.map((p) => (p.id === productId ? { ...p, ...updates } : p))
+                  )
+                }}
+              />
+            ))}
+          </div>
         </div>
       ) : (
         /* 테이블 뷰 */
@@ -1236,7 +1245,7 @@ export default function AdminProducts() {
                           <div className="flex items-center justify-between group">
                             <div className="flex-1 min-w-0">
                               <Link 
-                                href={`/${locale}/admin/products/${product.id}`}
+                                href={buildAdminProductCustomerEditPath(locale, product.id)}
                                 className="text-sm font-medium text-primary hover:text-primary/80 hover:underline block truncate"
                               >
                                 {locale === 'en' ? (product.name_en || product.name) : product.name}

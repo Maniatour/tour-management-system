@@ -49,6 +49,7 @@
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
     font-family: var(--font-inter), var(--font-sans), system-ui, sans-serif;
+    scrollbar-gutter: stable;
     @apply font-sans;
   }
 
@@ -338,6 +339,42 @@
 
   .app-page-bg {
     background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+  }
+
+  /* 관리자 본문 — fixed 배경으로 헤더·스크롤바와 동일한 오른쪽 끝까지 채움 */
+  .admin-main-shell {
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+
+  .admin-main-shell::before {
+    content: '';
+    position: fixed;
+    top: var(--header-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 0;
+    background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+    pointer-events: none;
+  }
+
+  .admin-main-shell > main {
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (min-width: 1024px) {
+    .admin-main-shell::before {
+      left: 16rem;
+    }
+
+    .admin-main-shell--collapsed::before {
+      left: 4rem;
+    }
   }
 
 }
@@ -1797,6 +1834,11 @@
   --kv-border: #e8e8e8;
   --kv-bg-muted: #f7f8fa;
   --kv-mobile-gutter: 1rem;
+  --gyg-orange: #ff5533;
+  --gyg-blue: #0071eb;
+  --gyg-navy: #1a2b49;
+  --gyg-muted: #6b7280;
+  --gyg-border: #e5e7eb;
   color: var(--kv-navy);
 }
 
@@ -2751,6 +2793,76 @@ main:has(.maniatour-home) {
   gap: 1rem;
 }
 
+.travel-guide-page .kv-travel-guide-search {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+
+.travel-guide-page .kv-travel-guide-search-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  width: 1.125rem;
+  height: 1.125rem;
+  transform: translateY(-50%);
+  color: var(--kv-muted, #64748b);
+  pointer-events: none;
+}
+
+.travel-guide-page .kv-travel-guide-search-input {
+  width: 100%;
+  height: 3rem;
+  padding: 0 2.75rem 0 2.75rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgb(0 0 0 / 0.08);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--kv-navy, #1a1a1a);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.travel-guide-page .kv-travel-guide-search-input::placeholder {
+  color: var(--kv-muted, #64748b);
+}
+
+.travel-guide-page .kv-travel-guide-search-input:focus {
+  outline: none;
+  border-color: rgb(255 126 51 / 0.45);
+  box-shadow: 0 0 0 3px rgb(255 126 51 / 0.12);
+}
+
+.travel-guide-page .kv-travel-guide-search-clear {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--kv-muted, #64748b);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.travel-guide-page .kv-travel-guide-search-clear:hover {
+  background: rgb(0 0 0 / 0.05);
+  color: var(--kv-navy, #1a1a1a);
+}
+
+.travel-guide-page .kv-travel-guide-search-summary {
+  margin: -0.25rem 0 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--kv-muted, #64748b);
+}
+
 .travel-guide-page .kv-travel-guide-write-btn,
 .travel-guide-page .kv-travel-guide-inline-edit {
   display: inline-flex;
@@ -2832,6 +2944,24 @@ main:has(.maniatour-home) {
   background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
 }
 
+/* Shared guide category pill (home guides carousel + travel guide pages) */
+.kv-guide-category {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.625rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  background: #fff1ea;
+  color: var(--kv-orange);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .travel-guide-page .kv-travel-guide-card-title {
   margin: 0.625rem 0 0;
   font-size: 1rem;
@@ -2842,9 +2972,38 @@ main:has(.maniatour-home) {
 
 .travel-guide-page .kv-travel-guide-card-excerpt {
   margin: 0.5rem 0 0;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.5;
   color: var(--kv-muted, #64748b);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.travel-guide-page .kv-travel-guide-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: auto;
+  padding-top: 0.875rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--kv-muted, #64748b);
+}
+
+.travel-guide-page .kv-travel-guide-card-meta-author {
+  font-weight: 600;
+  color: #475569;
+}
+
+.travel-guide-page .kv-travel-guide-card-meta-sep {
+  opacity: 0.7;
+}
+
+.travel-guide-page .kv-travel-guide-card-meta-date {
+  font-variant-numeric: tabular-nums;
 }
 
 .travel-guide-page .kv-travel-guide-card--skeleton,
@@ -2974,6 +3133,51 @@ main:has(.maniatour-home) {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.travel-guide-page .kv-travel-guide-form-row,
+.kv-travel-guide-form-row {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .travel-guide-page .kv-travel-guide-form-row,
+  .kv-travel-guide-form-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.travel-guide-page .kv-travel-guide-form--modal,
+.kv-travel-guide-form--modal {
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.travel-guide-page .kv-travel-guide-form-footer,
+.kv-travel-guide-form-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgb(0 0 0 / 0.06);
+}
+
+.travel-guide-page .kv-travel-guide-rich-editor,
+.kv-travel-guide-rich-editor {
+  border-color: rgb(0 0 0 / 0.08);
+  border-radius: 0.75rem;
+}
+
+.travel-guide-page button.kv-travel-guide-write-btn,
+.travel-guide-page button.kv-travel-guide-inline-edit {
+  cursor: pointer;
+  font: inherit;
 }
 
 @media (min-width: 768px) {
@@ -3657,19 +3861,6 @@ main:has(.maniatour-home) {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.maniatour-home .kv-guide-category {
-  display: inline-block;
-  margin-top: 0.625rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 9999px;
-  background: #fff1ea;
-  color: var(--kv-orange);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
 /* Mania Tour homepage footer */
 .kv-footer {
   width: 100%;
@@ -4001,17 +4192,41 @@ main:has(.maniatour-home) {
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 }
 
-.gyg-sellout-badge {
+.gyg-sellout-badge,
+.gyg-listing-ribbon {
   position: absolute;
   left: 0.625rem;
   top: 0.625rem;
+  z-index: 2;
   border-radius: 0.25rem;
-  background: #dc2626;
   padding: 0.125rem 0.5rem;
   font-size: 0.6875rem;
   font-weight: 700;
   color: #ffffff;
   line-height: 1.4;
+  white-space: nowrap;
+}
+
+.gyg-sellout-badge,
+.gyg-listing-ribbon--likely-to-sell-out {
+  background: #dc2626;
+}
+
+.gyg-listing-ribbon--best-seller {
+  background: #e53935;
+}
+
+.gyg-listing-ribbon--popular,
+.gyg-listing-ribbon--best {
+  background: #ff7e33;
+}
+
+.gyg-listing-ribbon--best-value {
+  background: #0071eb;
+}
+
+.gyg-listing-ribbon--new {
+  background: #059669;
 }
 
 @media (max-width: 767px) {
@@ -4291,6 +4506,367 @@ main:has(.maniatour-home) {
 .gyg-listing-empty {
   padding: 4rem 1rem;
   text-align: center;
+}
+
+/* 관리자 상품 관리 — 고객 목록 카드와 동일한 고정 크기 */
+.admin-products-listing {
+  --gyg-orange: #ff5533;
+  --gyg-blue: #0071eb;
+  --gyg-navy: #1a2b49;
+  --gyg-muted: #6b7280;
+  --gyg-border: #e5e7eb;
+  --admin-product-card-width: 280px;
+  --admin-product-card-height: 356px;
+  --admin-product-card-image-height: 210px;
+  width: 100%;
+}
+
+.admin-products-gyg-grid {
+  display: grid;
+  gap: 1.5rem 1rem;
+  grid-template-columns: repeat(auto-fill, var(--admin-product-card-width));
+  justify-content: space-between;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .admin-products-gyg-grid {
+    gap: 2rem 1.25rem;
+  }
+}
+
+.admin-product-gyg-card {
+  position: relative;
+  width: var(--admin-product-card-width);
+  max-width: 100%;
+  justify-self: center;
+}
+
+.admin-product-gyg-card .gyg-listing-card {
+  width: var(--admin-product-card-width);
+  max-width: 100%;
+  height: var(--admin-product-card-height);
+  flex-shrink: 0;
+}
+
+.admin-product-gyg-card .gyg-listing-card-image {
+  flex: 0 0 var(--admin-product-card-image-height);
+  height: var(--admin-product-card-image-height);
+  aspect-ratio: auto;
+}
+
+.admin-product-gyg-card .gyg-listing-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  gap: 0.25rem;
+  padding-bottom: 1rem;
+}
+
+.admin-product-gyg-card .gyg-listing-card-location {
+  min-height: 1.125rem;
+  margin-bottom: 0;
+}
+
+.admin-product-gyg-card .gyg-listing-card-title {
+  min-height: 2.55rem;
+}
+
+.admin-product-gyg-card .gyg-listing-card-meta {
+  min-height: 1.125rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.admin-product-gyg-card .gyg-listing-card-footer {
+  margin-top: auto;
+  padding-top: 0.625rem;
+}
+
+.admin-product-gyg-card__toolbar {
+  position: absolute;
+  right: 0.625rem;
+  top: 0.625rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border-radius: 9999px;
+  border: 1px solid var(--gyg-border, #e5e7eb);
+  background: rgb(255 255 255 / 0.96);
+  padding: 0.125rem 0.375rem;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+
+.admin-product-gyg-card__ribbon {
+  cursor: pointer;
+  border: none;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.admin-product-gyg-card__ribbon.is-off {
+  background: rgb(255 255 255 / 0.88);
+  color: #dc2626;
+  border: 1px dashed #dc2626;
+  opacity: 0.72;
+}
+
+.admin-product-gyg-card__ribbon.is-off:hover:not(:disabled) {
+  opacity: 1;
+  background: #dc2626;
+  color: #ffffff;
+  border-style: solid;
+}
+
+.admin-product-gyg-card__ribbon.is-on:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.admin-product-gyg-card__ribbon:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-product-gyg-card__ribbon-picker {
+  position: absolute;
+  left: 0.625rem;
+  top: 0.625rem;
+  z-index: 4;
+}
+
+.admin-product-gyg-card__ribbon-picker .gyg-listing-ribbon,
+.admin-product-gyg-card__ribbon-picker .admin-product-gyg-card__ribbon {
+  position: static;
+}
+
+.admin-product-gyg-card__ribbon-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--gyg-border, #e5e7eb);
+  background: #ffffff;
+  padding: 0.375rem;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+
+.admin-product-gyg-card__ribbon-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.admin-product-gyg-card__ribbon-option:hover,
+.admin-product-gyg-card__ribbon-option.is-selected {
+  background: #f3f4f6;
+}
+
+.admin-product-gyg-card__ribbon-preview {
+  position: static;
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-product-gyg-card__ribbon-preview--plain {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.admin-product-gyg-card__ribbon-check {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0071eb;
+}
+
+.gyg-listing-card-editable {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  padding: 0;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.gyg-listing-card-editable:hover,
+.gyg-listing-card-editable:focus-visible {
+  color: #0071eb;
+  outline: none;
+  box-shadow: inset 0 -1px 0 0 rgb(0 113 235 / 0.35);
+}
+
+.admin-product-gyg-card .gyg-listing-card-location-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.admin-product-gyg-card .gyg-listing-card-location-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.gyg-listing-card-edit-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.gyg-listing-card-edit-btn:hover,
+.gyg-listing-card-edit-btn:focus-visible {
+  color: #0071eb;
+  border-color: #0071eb;
+  background: #eff6ff;
+  outline: none;
+}
+
+.admin-product-gyg-card--open-editor {
+  cursor: pointer;
+}
+
+.admin-product-gyg-card--open-editor:focus-visible {
+  outline: 2px solid #0071eb;
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+}
+
+.gyg-listing-card-image-edit-trigger {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: transparent;
+  overflow: hidden;
+}
+
+.gyg-listing-card-image-edit-hint {
+  position: absolute;
+  inset: auto 0.625rem 0.625rem auto;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 255 255 / 0.85);
+  background: rgb(0 0 0 / 0.58);
+  color: #ffffff;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+}
+
+.admin-product-gyg-card .gyg-listing-card-image-edit-trigger:hover .gyg-listing-card-image-edit-hint,
+.admin-product-gyg-card .gyg-listing-card-image-edit-trigger:focus-visible .gyg-listing-card-image-edit-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.admin-product-gyg-card .gyg-listing-card-image-edit-trigger:focus-visible {
+  outline: 2px solid #0071eb;
+  outline-offset: -2px;
+}
+
+@media (max-width: 639px) {
+  .admin-products-gyg-grid {
+    grid-template-columns: var(--admin-product-card-width);
+    justify-content: center;
+  }
+}
+
+.admin-products-preview-locale,
+.admin-edit-locale-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem;
+  border-radius: 9999px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.admin-products-preview-locale__btn,
+.admin-edit-locale-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.admin-products-preview-locale__btn.is-active,
+.admin-edit-locale-toggle__btn.is-active {
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px #0071eb;
+}
+
+.admin-products-preview-locale__flag,
+.admin-edit-locale-toggle__flag {
+  width: 1.125rem !important;
+  height: 1.125rem !important;
+  border-radius: 9999px;
+  object-fit: cover;
+}
+
+.admin-products-preview-locale__btn:hover,
+.admin-edit-locale-toggle__btn:hover {
+  background: #f3f4f6;
+}
+
+.admin-products-preview-locale__flag svg,
+.admin-edit-locale-toggle__flag svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .gyg-listing .customer-page-zone.cp-ui-styled-zone {

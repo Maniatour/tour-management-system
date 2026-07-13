@@ -8,6 +8,7 @@ import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditMo
 import type { CustomerPageZone as CustomerPageZoneId } from '@/lib/customerPageZones'
 import { getZoneEditConfig, resolveCustomerPageZone } from '@/lib/customerPageZoneEditMap'
 import { postCustomerPageZoneEdit } from '@/lib/customerPageEditMessaging'
+import { useCustomerPageZoneEdit } from '@/components/product/CustomerPageZoneEditProvider'
 
 type CustomerPageZoneProps = {
   zone: string
@@ -30,6 +31,7 @@ export default function CustomerPageZone({
   const params = useParams()
   const searchParams = useSearchParams()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const zoneEdit = useCustomerPageZoneEdit()
   const showEditButton = isPreview && isEditMode && !suppressEditButton
   const canonicalZone = resolveCustomerPageZone(zone)
   const editConfig = getZoneEditConfig(canonicalZone)
@@ -44,6 +46,10 @@ export default function CustomerPageZone({
   const handleEditClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    if (zoneEdit) {
+      zoneEdit.openZoneEdit(canonicalZone as CustomerPageZoneId, resolvedProductId)
+      return
+    }
     postCustomerPageZoneEdit(canonicalZone as CustomerPageZoneId, resolvedProductId)
   }
 

@@ -1,32 +1,136 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowLeft, PenLine } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, PenLine, Search, X } from 'lucide-react'
 import { useContext } from 'react'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import TravelGuideEditorModal from '@/components/travel-guide/TravelGuideEditorModal'
 import { AuthContext } from '@/contexts/AuthContext'
 import { fetchTravelGuideArticles } from '@/lib/fetchTravelGuideArticles'
+import { formatTravelGuideDisplayDate } from '@/lib/travelGuideAuthorDisplay'
 import type { TravelGuideArticle } from '@/lib/travelGuideArticles'
 
 type Props = {
   locale: string
-  t: (key: string) => string
+  t: (key: string, values?: Record<string, string | number>) => string
+}
+
+function TravelGuideArticleCard({
+  article,
+  locale,
+  t,
+}: {
+  article: TravelGuideArticle
+  locale: string
+  t: Props['t']
+}) {
+  return (
+    <Link
+      href={`/${locale}/travel-guide/${article.slug}`}
+      className="kv-travel-guide-card group"
+    >
+      <div className="kv-travel-guide-card-image">
+        {article.coverImageUrl ? (
+          <Image
+            src={article.coverImageUrl}
+            alt={article.title}
+            fill
+            sizes="(max-width: 768px) 100vw, 320px"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div className="kv-travel-guide-card-placeholder" aria-hidden />
+        )}
+      </div>
+      <span className="kv-guide-category">{article.category}</span>
+      <h2 className="kv-travel-guide-card-title">{article.title}</h2>
+      {article.excerpt ? <p className="kv-travel-guide-card-excerpt">{article.excerpt}</p> : null}
+      {article.authorName || article.updatedAt ? (
+        <p className="kv-travel-guide-card-meta">
+          {article.authorName ? (
+            <span className="kv-travel-guide-card-meta-author">{article.authorName}</span>
+          ) : null}
+          {article.authorName && article.updatedAt ? (
+            <span className="kv-travel-guide-card-meta-sep" aria-hidden>
+              ·
+            </span>
+          ) : null}
+          {article.updatedAt ? (
+            <time className="kv-travel-guide-card-meta-date" dateTime={article.updatedAt}>
+              {t('travelGuideCardUpdated', {
+                date: formatTravelGuideDisplayDate(article.updatedAt, locale),
+              })}
+            </time>
+          ) : null}
+        </p>
+      ) : null}
+    </Link>
+  )
 }
 
 export default function TravelGuideListingView({ locale, t }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const auth = useContext(AuthContext)
+  const initialQuery = searchParams.get('q')?.trim() ?? ''
+
   const [articles, setArticles] = useState<TravelGuideArticle[]>([])
   const [loading, setLoading] = useState(true)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorArticleId, setEditorArticleId] = useState<string | undefined>()
+  const [searchInput, setSearchInput] = useState(initialQuery)
+  const [searchQuery, setSearchQuery] = useState(initialQuery)
 
   const canWrite = auth?.hasPermission('canViewAdmin') ?? false
+  const hasSearchQuery = searchQuery.length > 0
+
+  const loadArticles = useCallback(
+    async (query: string) => {
+      setLoading(true)
+      const rows = await fetchTravelGuideArticles({
+        locale,
+        limit: 48,
+        ...(query ? { query } : {}),
+      })
+      setArticles(rows)
+      setLoading(false)
+    },
+    [locale]
+  )
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim())
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
+
+  useEffect(() => {
+    const nextQuery = searchQuery.trim()
+    const currentQuery = searchParams.get('q')?.trim() ?? ''
+    if (nextQuery === currentQuery) return
+
+    const nextUrl = nextQuery
+      ? `/${locale}/travel-guide?q=${encodeURIComponent(nextQuery)}`
+      : `/${locale}/travel-guide`
+
+    router.replace(nextUrl, { scroll: false })
+  }, [locale, router, searchParams, searchQuery])
 
   useEffect(() => {
     let cancelled = false
 
     void (async () => {
-      const rows = await fetchTravelGuideArticles({ locale, limit: 48 })
+      setLoading(true)
+      const rows = await fetchTravelGuideArticles({
+        locale,
+        limit: 48,
+        ...(searchQuery ? { query: searchQuery } : {}),
+      })
       if (!cancelled) {
         setArticles(rows)
         setLoading(false)
@@ -36,7 +140,17 @@ export default function TravelGuideListingView({ locale, t }: Props) {
     return () => {
       cancelled = true
     }
-  }, [locale])
+  }, [locale, searchQuery])
+
+  const openCreateModal = () => {
+    setEditorArticleId(undefined)
+    setEditorOpen(true)
+  }
+
+  const clearSearch = () => {
+    setSearchInput('')
+    setSearchQuery('')
+  }
 
   return (
     <CustomerPageShell locale={locale} className="travel-guide-page">
@@ -54,13 +168,46 @@ export default function TravelGuideListingView({ locale, t }: Props) {
                 <p className="kv-section-subtitle">{t('travelGuideListingSubtitle')}</p>
               </div>
               {canWrite ? (
-                <Link href={`/${locale}/travel-guide/write`} className="kv-travel-guide-write-btn">
+                <button type="button" onClick={openCreateModal} className="kv-travel-guide-write-btn">
                   <PenLine className="h-4 w-4" aria-hidden />
                   {t('travelGuideWriteArticle')}
-                </Link>
+                </button>
               ) : null}
             </div>
           </div>
+
+          <div className="kv-travel-guide-search">
+            <label htmlFor="travel-guide-search" className="sr-only">
+              {t('travelGuideSearchPlaceholder')}
+            </label>
+            <Search className="kv-travel-guide-search-icon" aria-hidden />
+            <input
+              id="travel-guide-search"
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder={t('travelGuideSearchPlaceholder')}
+              className="kv-travel-guide-search-input"
+              autoComplete="off"
+              enterKeyHint="search"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="kv-travel-guide-search-clear"
+                aria-label={t('travelGuideSearchClear')}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+
+          {hasSearchQuery && !loading ? (
+            <p className="kv-travel-guide-search-summary">
+              {t('travelGuideSearchResults', { count: articles.length })}
+            </p>
+          ) : null}
 
           {loading ? (
             <div className="kv-travel-guide-grid" aria-busy="true">
@@ -70,45 +217,53 @@ export default function TravelGuideListingView({ locale, t }: Props) {
             </div>
           ) : articles.length === 0 ? (
             <div className="kv-travel-guide-empty">
-              <p>{t('travelGuideEmpty')}</p>
-              {canWrite ? (
-                <Link href={`/${locale}/travel-guide/write`} className="kv-travel-guide-write-btn">
-                  {t('travelGuideWriteFirst')}
-                </Link>
-              ) : null}
+              {hasSearchQuery ? (
+                <>
+                  <Search className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" aria-hidden />
+                  <p className="text-lg font-semibold text-foreground">{t('noSearchResults')}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t('tryDifferentSearch')}</p>
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="kv-travel-guide-write-btn mt-4"
+                  >
+                    {t('travelGuideSearchClear')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>{t('travelGuideEmpty')}</p>
+                  {canWrite ? (
+                    <button type="button" onClick={openCreateModal} className="kv-travel-guide-write-btn">
+                      {t('travelGuideWriteFirst')}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
           ) : (
             <div className="kv-travel-guide-grid">
               {articles.map((article) => (
-                <Link
-                  key={article.id}
-                  href={`/${locale}/travel-guide/${article.slug}`}
-                  className="kv-travel-guide-card group"
-                >
-                  <div className="kv-travel-guide-card-image">
-                    {article.coverImageUrl ? (
-                      <Image
-                        src={article.coverImageUrl}
-                        alt={article.title}
-                        fill
-                        sizes="(max-width: 768px) 100vw, 320px"
-                        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      />
-                    ) : (
-                      <div className="kv-travel-guide-card-placeholder" aria-hidden />
-                    )}
-                  </div>
-                  <span className="kv-guide-category">{article.category}</span>
-                  <h2 className="kv-travel-guide-card-title">{article.title}</h2>
-                  {article.excerpt ? (
-                    <p className="kv-travel-guide-card-excerpt">{article.excerpt}</p>
-                  ) : null}
-                </Link>
+                <TravelGuideArticleCard key={article.id} article={article} locale={locale} t={t} />
               ))}
             </div>
           )}
         </div>
       </section>
+
+      {canWrite ? (
+        <TravelGuideEditorModal
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          articleId={editorArticleId}
+          t={t}
+          onSaved={(article) => {
+            void loadArticles(searchQuery)
+            router.push(`/${locale}/travel-guide/${article.slug}`)
+          }}
+          onDeleted={() => void loadArticles(searchQuery)}
+        />
+      ) : null}
     </CustomerPageShell>
   )
 }

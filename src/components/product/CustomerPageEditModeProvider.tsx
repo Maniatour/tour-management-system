@@ -35,11 +35,33 @@ function readModeFromUrl(): CustomerPageEditMode {
   }
 }
 
-export function CustomerPageEditModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<CustomerPageEditMode>(defaultMode)
+export function CustomerPageEditModeProvider({
+  children,
+  forced = false,
+}: {
+  children: ReactNode
+  /** 관리자 직접 렌더 편집 화면 — 항상 zone 수정 버튼 표시 */
+  forced?: boolean
+}) {
+  const forcedMode: CustomerPageEditMode = { isPreview: true, isEditMode: true }
+  const [mode, setMode] = useState<CustomerPageEditMode>(forced ? forcedMode : defaultMode)
   const router = useRouter()
 
   useEffect(() => {
+    if (forced) {
+      setMode(forcedMode)
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return
+        if (event.data?.type === CUSTOMER_PAGE_RELOAD_MESSAGE) {
+          dispatchCustomerPageSoftReload()
+        }
+      }
+
+      window.addEventListener('message', onMessage)
+      return () => window.removeEventListener('message', onMessage)
+    }
+
     const syncFromUrl = () => setMode(readModeFromUrl())
 
     const onMessage = (event: MessageEvent) => {
@@ -65,7 +87,7 @@ export function CustomerPageEditModeProvider({ children }: { children: ReactNode
       window.removeEventListener('message', onMessage)
       retryTimers.forEach((id) => window.clearTimeout(id))
     }
-  }, [router])
+  }, [router, forced])
 
   return (
     <CustomerPageEditModeContext.Provider value={mode}>

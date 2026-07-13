@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, PenLine } from 'lucide-react'
 import { useContext } from 'react'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import TravelGuideEditorModal from '@/components/travel-guide/TravelGuideEditorModal'
 import { AuthContext } from '@/contexts/AuthContext'
 import { fetchTravelGuideArticle } from '@/lib/fetchTravelGuideArticles'
 import { markdownToHtml } from '@/lib/markdownToHtml'
@@ -18,12 +20,27 @@ type Props = {
 }
 
 export default function TravelGuideArticleView({ locale, slug, t }: Props) {
+  const router = useRouter()
   const auth = useContext(AuthContext)
   const [article, setArticle] = useState<TravelGuideArticle | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
 
   const canWrite = auth?.hasPermission('canViewAdmin') ?? false
+
+  const reloadArticle = useCallback(async () => {
+    setLoading(true)
+    const row = await fetchTravelGuideArticle({ locale, slug })
+    if (!row) {
+      setNotFound(true)
+      setArticle(null)
+    } else {
+      setNotFound(false)
+      setArticle(row)
+    }
+    setLoading(false)
+  }, [locale, slug])
 
   useEffect(() => {
     let cancelled = false
@@ -83,13 +100,14 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
                 <div className="kv-travel-guide-article-meta">
                   <span className="kv-guide-category">{article.category}</span>
                   {canWrite ? (
-                    <Link
-                      href={`/${locale}/travel-guide/write?id=${article.id}`}
+                    <button
+                      type="button"
+                      onClick={() => setEditorOpen(true)}
                       className="kv-travel-guide-inline-edit"
                     >
                       <PenLine className="h-4 w-4" aria-hidden />
                       {t('travelGuideEditArticle')}
-                    </Link>
+                    </button>
                   ) : null}
                 </div>
 
@@ -107,6 +125,23 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
           )}
         </div>
       </section>
+
+      {canWrite && article ? (
+        <TravelGuideEditorModal
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          articleId={article.id}
+          t={t}
+          onSaved={(saved) => {
+            if (saved.slug !== slug) {
+              router.replace(`/${locale}/travel-guide/${saved.slug}`)
+              return
+            }
+            void reloadArticle()
+          }}
+          onDeleted={() => router.push(`/${locale}/travel-guide`)}
+        />
+      ) : null}
     </CustomerPageShell>
   )
 }

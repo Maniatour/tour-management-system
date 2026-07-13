@@ -1,0 +1,160 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
+import { ArrowLeft, ExternalLink, Languages, Monitor, Smartphone } from 'lucide-react'
+import ProductDetailPageContent from '@/components/product/ProductDetailPageContent'
+import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider'
+import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider'
+import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell'
+import { CustomerPageZoneEditProvider } from '@/components/product/CustomerPageZoneEditProvider'
+import { buildAdminPathForEditTab, buildCustomerPageEditUrl } from '@/lib/customer-page-registry'
+
+type PreviewLocale = 'ko' | 'en'
+type PreviewViewport = 'desktop' | 'mobile'
+
+type AdminProductCustomerEditViewProps = {
+  locale: string
+  productId: string
+}
+
+export default function AdminProductCustomerEditView({
+  locale,
+  productId,
+}: AdminProductCustomerEditViewProps) {
+  const t = useTranslations('products.customerPageEdit')
+  const router = useRouter()
+  const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale === 'en' ? 'en' : 'ko')
+  const [previewViewport, setPreviewViewport] = useState<PreviewViewport>('desktop')
+
+  const customerPreviewUrl = useMemo(
+    () => buildCustomerPageEditUrl(previewLocale, 'product-detail', { productId, previewLocale }),
+    [previewLocale, productId]
+  )
+
+  const handleNavigateToTab = (tabId: string) => {
+    router.push(buildAdminPathForEditTab(locale, tabId, productId))
+  }
+
+  const handlePreviewLocaleChange = (nextLocale: PreviewLocale) => {
+    if (nextLocale === previewLocale) return
+    setPreviewLocale(nextLocale)
+  }
+
+  return (
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col -m-4 sm:-m-6">
+      <header className="shrink-0 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-violet-50 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <Link
+              href={`/${locale}/admin/products`}
+              className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-600 transition-colors hover:border-primary/40 hover:text-primary"
+              aria-label={t('backToProducts')}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold text-gray-900 sm:text-lg">{t('title')}</h1>
+              <p className="mt-0.5 text-xs text-gray-600 sm:text-sm">{t('subtitle')}</p>
+              <p className="mt-1 text-xs text-slate-500">{productId}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white/80 p-0.5 md:flex">
+              {([
+                { id: 'desktop' as const, label: t('desktop'), icon: Monitor },
+                { id: 'mobile' as const, label: t('mobile'), icon: Smartphone },
+              ]).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPreviewViewport(id)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                    previewViewport === id
+                      ? 'bg-slate-800 text-white'
+                      : 'text-gray-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-white/80 p-0.5">
+              <Languages className="ml-1 h-3.5 w-3.5 text-indigo-600" />
+              {(['ko', 'en'] as const).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => handlePreviewLocaleChange(code)}
+                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                    previewLocale === code
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-gray-600 hover:bg-indigo-50'
+                  }`}
+                >
+                  {code === 'ko' ? t('localeKo') : t('localeEn')}
+                </button>
+              ))}
+            </div>
+
+            <a
+              href={customerPreviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-primary hover:bg-white/80"
+            >
+              {t('openCustomerPage')}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+
+            <Link
+              href={`/${locale}/admin/products/${productId}`}
+              className="hidden items-center gap-1 rounded-md px-2 py-1.5 text-xs text-gray-600 hover:bg-white/80 md:inline-flex"
+            >
+              {t('classicAdmin')}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <CustomerPageFieldBindingsProvider>
+        <CustomerPageGlobalThemeShell className="flex min-h-0 flex-1 flex-col">
+          <CustomerPageEditModeProvider forced>
+            <CustomerPageZoneEditProvider
+              productId={productId}
+              previewLocale={previewLocale}
+              onNavigateToTab={handleNavigateToTab}
+            >
+              <div
+                className={`min-h-0 flex-1 overflow-y-auto ${
+                  previewViewport === 'mobile' ? 'bg-slate-200 px-4 py-6' : 'bg-background'
+                }`}
+              >
+                <div
+                  className={
+                    previewViewport === 'mobile'
+                      ? 'mx-auto w-full max-w-[390px] overflow-hidden rounded-[2rem] border-[10px] border-gray-900 bg-white shadow-2xl'
+                      : 'w-full'
+                  }
+                >
+                  <ProductDetailPageContent
+                    productId={productId}
+                    contentLocale={previewLocale}
+                    enableCheckout={false}
+                    forceShowOptions
+                  />
+                </div>
+              </div>
+            </CustomerPageZoneEditProvider>
+          </CustomerPageEditModeProvider>
+        </CustomerPageGlobalThemeShell>
+      </CustomerPageFieldBindingsProvider>
+    </div>
+  )
+}

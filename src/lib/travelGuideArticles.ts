@@ -1,3 +1,6 @@
+import { resolveTravelGuideAuthorNames } from '@/lib/travelGuideAuthorDisplay'
+import { pickTravelGuideLocalizedField } from '@/lib/travelGuideEditorLocales'
+import { filterTravelGuideRowsByQuery } from '@/lib/travelGuideSearch'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 export type TravelGuideArticleRow = {
@@ -34,6 +37,7 @@ export type TravelGuideArticle = {
   publishedAt: string | null
   createdAt: string
   updatedAt: string
+  authorName: string | null
 }
 
 export type TravelGuideArticleInput = {
@@ -66,30 +70,56 @@ export function slugifyTravelGuideTitle(value: string): string {
     .slice(0, 80)
 }
 
-export function mapTravelGuideArticle(row: TravelGuideArticleRow, locale: string): TravelGuideArticle {
-  const isKo = locale === 'ko'
+/** 목록·카드용 요약 — 본문에서 자동 생성 */
+export function deriveTravelGuideExcerpt(body: string, maxLength = 160): string {
+  const plain = body
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[#>*_`~|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!plain) return ''
+  if (plain.length <= maxLength) return plain
+  return `${plain.slice(0, maxLength).trim()}…`
+}
+
+export function mapTravelGuideArticle(
+  row: TravelGuideArticleRow,
+  locale: string,
+  authorName: string | null = null
+): TravelGuideArticle {
+  const titles = { en: row.title_en, ko: row.title_ko }
+  const excerpts = { en: row.excerpt_en, ko: row.excerpt_ko }
+  const bodies = { en: row.body_en, ko: row.body_ko }
+  const categories = { en: row.category_en, ko: row.category_ko }
+
   return {
     id: row.id,
     slug: row.slug,
-    title: isKo ? row.title_ko || row.title_en : row.title_en || row.title_ko,
-    excerpt: isKo ? row.excerpt_ko || row.excerpt_en : row.excerpt_en || row.excerpt_ko,
-    body: isKo ? row.body_ko || row.body_en : row.body_en || row.body_ko,
-    category: isKo ? row.category_ko || row.category_en : row.category_en || row.category_ko,
+    title: pickTravelGuideLocalizedField(locale, titles),
+    excerpt: pickTravelGuideLocalizedField(locale, excerpts),
+    body: pickTravelGuideLocalizedField(locale, bodies),
+    category: pickTravelGuideLocalizedField(locale, categories),
     coverImageUrl: row.cover_image_url,
     sortOrder: row.sort_order,
     isPublished: row.is_published,
     publishedAt: row.published_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    authorName,
   }
 }
 
 export async function listPublishedTravelGuideArticles(options?: {
   locale?: string
   limit?: number
+  query?: string
 }): Promise<TravelGuideArticle[]> {
   const locale = options?.locale === 'ko' ? 'ko' : 'en'
   const limit = Math.min(Math.max(options?.limit ?? 24, 1), 100)
+  const query = options?.query?.trim() ?? ''
   const db = getDb()
 
   const { data, error } = await db
@@ -98,14 +128,25 @@ export async function listPublishedTravelGuideArticles(options?: {
     .eq('is_published', true)
     .order('sort_order', { ascending: false })
     .order('published_at', { ascending: false })
-    .limit(limit)
+    .limit(query ? 100 : limit)
 
   if (error) {
     console.error('[travelGuideArticles] listPublished', error.message)
     return []
   }
 
-  return (data as TravelGuideArticleRow[]).map((row) => mapTravelGuideArticle(row, locale))
+  const rows = filterTravelGuideRowsByQuery((data ?? []) as TravelGuideArticleRow[], query).slice(
+    0,
+    limit
+  )
+  const authorMap = await resolveTravelGuideAuthorNames(
+    rows.map((row) => row.created_by),
+    locale
+  )
+
+  return rows.map((row) =>
+    mapTravelGuideArticle(row, locale, authorMap.get(row.created_by ?? '') ?? null)
+  )
 }
 
 export async function getPublishedTravelGuideArticleBySlug(
@@ -126,7 +167,10 @@ export async function getPublishedTravelGuideArticleBySlug(
   }
 
   if (!data) return null
-  return mapTravelGuideArticle(data as TravelGuideArticleRow, locale)
+
+  const row = data as TravelGuideArticleRow
+  const authorMap = await resolveTravelGuideAuthorNames([row.created_by], locale)
+  return mapTravelGuideArticle(row, locale, authorMap.get(row.created_by ?? '') ?? null)
 }
 
 export async function listAllTravelGuideArticlesForStaff(): Promise<TravelGuideArticleRow[]> {
@@ -219,6 +263,7 @@ export async function updateTravelGuideArticle(
     sort_order: input.sortOrder ?? existing.sort_order,
     is_published: isPublished,
     published_at: isPublished ? publishedAt : null,
+    updated_at: new Date().toISOString(),
     updated_by: userId,
   }
 

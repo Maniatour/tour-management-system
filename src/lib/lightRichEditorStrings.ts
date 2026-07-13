@@ -1,0 +1,90 @@
+export type LightRichEditorUiLocale = 'en' | 'ko'
+
+export type LightRichEditorStrings = {
+  placeholder: string
+  boldTitle: string
+  italicTitle: string
+  underlineTitle: string
+  listTitle: string
+  tableTitle: string
+  tableSize: string
+  rows: string
+  cols: string
+  insertTable: string
+  linkTitle: string
+  imageTitle: string
+  textColorTitle: string
+  backgroundColorTitle: string
+  fontSizeTitle: string
+  fontFamilyTitle: string
+  fontDefault: string
+  linkUrlPrompt: string
+  linkTextPrompt: string
+  linkDefaultText: string
+  imageUploadFailed: string
+  imageSizeLabel: string
+  imageWidthAria: string
+  dragResizeTitle: string
+  /** true면 목록·표·링크·이미지 버튼에 텍스트 라벨 숨김 */
+  iconOnlyToolbar: boolean
+}
+
+const EN_STRINGS: LightRichEditorStrings = {
+  placeholder: 'Enter text… (Ctrl+B: bold, Ctrl+I: italic, Ctrl+U: underline)',
+  boldTitle: 'Bold (Ctrl+B)',
+  italicTitle: 'Italic (Ctrl+I)',
+  underlineTitle: 'Underline (Ctrl+U)',
+  listTitle: 'Bullet list',
+  tableTitle: 'Insert table',
+  tableSize: 'Table size',
+  rows: 'Rows',
+  cols: 'Columns',
+  insertTable: 'Insert table',
+  linkTitle: 'Insert link',
+  imageTitle: 'Insert image',
+  textColorTitle: 'Text color',
+  backgroundColorTitle: 'Highlight color',
+  fontSizeTitle: 'Font size',
+  fontFamilyTitle: 'Font',
+  fontDefault: 'Default',
+  linkUrlPrompt: 'Enter link URL:',
+  linkTextPrompt: 'Enter link text:',
+  linkDefaultText: 'Link',
+  imageUploadFailed: 'Image upload failed.',
+  imageSizeLabel: 'Size',
+  imageWidthAria: 'Adjust image width',
+  dragResizeTitle: 'Drag to resize',
+  iconOnlyToolbar: true,
+}
+
+const KO_STRINGS: LightRichEditorStrings = {
+  placeholder: '텍스트를 입력하세요… (Ctrl+B: 굵게, Ctrl+I: 기울임, Ctrl+U: 밑줄)',
+  boldTitle: '굵게 (Ctrl+B)',
+  italicTitle: '기울임 (Ctrl+I)',
+  underlineTitle: '밑줄 (Ctrl+U)',
+  listTitle: '목록',
+  tableTitle: '표 삽입',
+  tableSize: '표 크기',
+  rows: '행',
+  cols: '열',
+  insertTable: '표 삽입',
+  linkTitle: '링크',
+  imageTitle: '이미지 삽입',
+  textColorTitle: '글자색',
+  backgroundColorTitle: '글자 배경색',
+  fontSizeTitle: '글자 크기',
+  fontFamilyTitle: '글꼴',
+  fontDefault: '기본',
+  linkUrlPrompt: '링크 URL을 입력하세요:',
+  linkTextPrompt: '링크 텍스트를 입력하세요:',
+  linkDefaultText: '링크',
+  imageUploadFailed: '이미지 업로드에 실패했습니다.',
+  imageSizeLabel: '크기',
+  imageWidthAria: '이미지 너비 조절',
+  dragResizeTitle: '드래그하여 크기 조절',
+  iconOnlyToolbar: false,
+}
+
+export function getLightRichEditorStrings(locale: LightRichEditorUiLocale = 'ko'): LightRichEditorStrings {
+  return locale === 'en' ? EN_STRINGS : KO_STRINGS
+}

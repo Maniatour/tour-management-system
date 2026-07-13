@@ -5,11 +5,17 @@ const emptyArticles: TravelGuideArticle[] = []
 export async function fetchTravelGuideArticles(options: {
   locale: string
   limit?: number
+  query?: string
 }): Promise<TravelGuideArticle[]> {
   const params = new URLSearchParams({
     locale: options.locale,
     limit: String(options.limit ?? 24),
   })
+
+  const query = options.query?.trim()
+  if (query) {
+    params.set('q', query)
+  }
 
   try {
     const response = await fetch(`/api/public/travel-guide?${params.toString()}`)

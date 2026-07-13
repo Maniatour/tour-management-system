@@ -144,6 +144,7 @@ export function buildAdminPathForEditTab(
     'tag-translations': 'tag-translations',
     products: 'products',
     reservations: 'reservations',
+    coupons: 'coupons',
   }
 
   const path = tabPaths[tabId] ?? tabId

@@ -117,7 +117,7 @@ export default function ProductDetailAirbnbBody({
     <div className="airbnb-detail-body">
       {highlightItems.length > 0 ? (
         <>
-          <CustomerPageZone zone="detail-highlights">
+          <CustomerPageZone zone="detail-highlights" productId={productId}>
             <section>
               <ul className="airbnb-detail-highlights">
                 {highlightItems.map((item) => {

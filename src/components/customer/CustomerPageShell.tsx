@@ -2,7 +2,6 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import CustomerSiteFooter from '@/components/customer/CustomerSiteFooter'
 import CustomerSiteManiaTourFooter from '@/components/customer/CustomerSiteManiaTourFooter'
 import { postCustomerPagePreviewHeight } from '@/lib/customerPageEditMessaging'
 
@@ -18,6 +17,14 @@ function measurePreviewHeight() {
   return Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)
 }
 
+function isFullWidthCustomerFooterPath(pathname: string): boolean {
+  return (
+    /^\/(ko|en)\/?$/.test(pathname) ||
+    /^\/(ko|en)\/products(\/|$)/.test(pathname) ||
+    /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname)
+  )
+}
+
 /** 고객-facing 페이지 공통 래퍼 — 본문 + 사이트 푸터 */
 export default function CustomerPageShell({
   locale,
@@ -26,7 +33,9 @@ export default function CustomerPageShell({
   hideFooter = false,
 }: CustomerPageShellProps) {
   const pathname = usePathname()
-  const isHome = pathname === `/${locale}` || pathname === `/${locale}/`
+  const footerBleedClass = isFullWidthCustomerFooterPath(pathname)
+    ? 'w-full'
+    : '-mx-4 w-auto sm:-mx-6 lg:-mx-8'
 
   useEffect(() => {
     if (window.parent === window) return
@@ -48,15 +57,9 @@ export default function CustomerPageShell({
     <div className={`customer-page-shell flex min-h-full flex-col ${className}`.trim()}>
       <div className="flex-1">{children}</div>
       {!hideFooter ? (
-        isHome ? (
-          <div className="w-full" data-customer-site-footer>
-            <CustomerSiteManiaTourFooter locale={locale} />
-          </div>
-        ) : (
-          <div className="-mx-4 mt-8 sm:-mx-6 lg:-mx-8" data-customer-site-footer>
-            <CustomerSiteFooter locale={locale} forceShow />
-          </div>
-        )
+        <div className={footerBleedClass} data-customer-site-footer>
+          <CustomerSiteManiaTourFooter locale={locale} />
+        </div>
       ) : null}
     </div>
   )

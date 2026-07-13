@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useRef, useState, useCallback } from 'react'
-import { ChevronDown, Table2 } from 'lucide-react'
+import React, { useRef, useState, useCallback, useMemo } from 'react'
+import { ChevronDown, Image as ImageIcon, Link2, List, Table2 } from 'lucide-react'
+import { getLightRichEditorStrings, type LightRichEditorUiLocale } from '@/lib/lightRichEditorStrings'
 import {
   markdownToHtml,
   markdownToHeadingHtml,
@@ -331,6 +332,9 @@ interface LightRichEditorProps {
   enableImageResize?: boolean
   enableColorPicker?: boolean
   enableFontSize?: boolean
+  enableFontFamily?: boolean
+  /** 제공 시 붙여넣기·파일 업로드 이미지를 Supabase 등 외부 URL로 저장 */
+  uploadImageFile?: (file: File) => Promise<string | null>
   enableLink?: boolean
   enableList?: boolean
   enableTable?: boolean
@@ -342,6 +346,8 @@ interface LightRichEditorProps {
   resizeWhenReadOnly?: boolean
   minHeight?: number
   maxHeight?: number
+  /** 툴바·프롬프트 UI 언어 (en: 아이콘 중심 영문) */
+  uiLocale?: LightRichEditorUiLocale
 }
 
 // 가벼운 리치 텍스트 에디터 컴포넌트
@@ -357,6 +363,8 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   enableImageResize = true,
   enableColorPicker = true,
   enableFontSize = true,
+  enableFontFamily = false,
+  uploadImageFile,
   enableLink = true,
   enableList = true,
   enableTable = true,
@@ -366,8 +374,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   enableResize = true,
   resizeWhenReadOnly = false,
   minHeight = 100,
-  maxHeight = 800
+  maxHeight = 800,
+  uiLocale = 'ko',
 }) => {
+  const strings = useMemo(() => getLightRichEditorStrings(uiLocale), [uiLocale])
+  const defaultKoPlaceholder = "텍스트를 입력하세요... (Ctrl+B: 굵게, Ctrl+I: 기울임, Ctrl+U: 밑줄)"
+  const effectivePlaceholder =
+    !placeholder || placeholder === defaultKoPlaceholder ? strings.placeholder : placeholder
   const effectiveShowToolbar = readOnly ? false : showToolbar
   const effectiveResize = readOnly ? resizeWhenReadOnly : enableResize
   const effectiveImageResize = !readOnly && enableImageUpload && enableImageResize
@@ -381,6 +394,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 드롭다운 상태 관리
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showFontSizePicker, setShowFontSizePicker] = useState(false)
+  const [showFontFamilyPicker, setShowFontFamilyPicker] = useState(false)
   const [showBackgroundColorPicker, setShowBackgroundColorPicker] = useState(false)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [tableRows, setTableRows] = useState(3)
@@ -412,6 +426,18 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     '#FF0066', '#FF3366', '#FF6699', '#FF99CC', '#FFCCFF', '#FFB6C1'
   ]
   
+  const fontFamilyOptions = useMemo(
+    () => [
+      { label: strings.fontDefault, value: 'inherit' },
+      { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+      { label: 'Georgia', value: 'Georgia, serif' },
+      { label: 'Times', value: '"Times New Roman", Times, serif' },
+      { label: 'Courier', value: '"Courier New", Courier, monospace' },
+      { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+    ],
+    [strings.fontDefault]
+  )
+
   // 폰트 크기 옵션
   const fontSizeOptions = [
     { label: '8px', value: '8px' },
@@ -587,11 +613,12 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 드롭다운 외부 클릭 시 닫기
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showColorPicker || showFontSizePicker || showBackgroundColorPicker || showTablePicker) {
+      if (showColorPicker || showFontSizePicker || showFontFamilyPicker || showBackgroundColorPicker || showTablePicker) {
         const target = event.target as HTMLElement
         if (!target.closest('.relative')) {
           setShowColorPicker(false)
           setShowFontSizePicker(false)
+          setShowFontFamilyPicker(false)
           setShowBackgroundColorPicker(false)
           setShowTablePicker(false)
         }
@@ -602,7 +629,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showColorPicker, showFontSizePicker, showBackgroundColorPicker, showTablePicker])
+  }, [showColorPicker, showFontSizePicker, showFontFamilyPicker, showBackgroundColorPicker, showTablePicker])
 
   // 사이즈 조정 이벤트 핸들러
   const handleMouseDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -635,9 +662,9 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }, [currentHeight, minHeight, maxHeight])
 
   const insertLink = () => {
-    const url = prompt('링크 URL을 입력하세요:')
+    const url = prompt(strings.linkUrlPrompt)
     if (url) {
-      const text = prompt('링크 텍스트를 입력하세요:', '링크')
+      const text = prompt(strings.linkTextPrompt, strings.linkDefaultText)
       if (text) {
         const linkHtml = `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">${text}</a>`
         document.execCommand('insertHTML', false, linkHtml)
@@ -672,15 +699,36 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     setTimeout(updateEditorContent, 0)
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && file.type.startsWith('image/')) {
+  const insertImageFromFile = useCallback(
+    async (file: File) => {
+      if (uploadImageFile) {
+        try {
+          const uploadedUrl = await uploadImageFile(file)
+          if (uploadedUrl) {
+            insertImageDataUrl(uploadedUrl, file.name || 'image')
+            return
+          }
+        } catch (error) {
+          console.error('[LightRichEditor] image upload failed', error)
+          alert(error instanceof Error ? error.message : strings.imageUploadFailed)
+          return
+        }
+      }
+
       const reader = new FileReader()
       reader.onload = (event) => {
         const imageUrl = event.target?.result as string
-        insertImageDataUrl(imageUrl, file.name)
+        if (imageUrl) insertImageDataUrl(imageUrl, file.name || 'image')
       }
       reader.readAsDataURL(file)
+    },
+    [uploadImageFile, effectiveImageResize, updateEditorContent, strings.imageUploadFailed]
+  )
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      void insertImageFromFile(file)
     }
     e.target.value = ''
   }
@@ -703,12 +751,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       e.preventDefault()
       const file = item.getAsFile()
       if (!file) continue
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const imageUrl = event.target?.result as string
-        if (imageUrl) insertImageDataUrl(imageUrl, file.name || 'pasted-image')
-      }
-      reader.readAsDataURL(file)
+      void insertImageFromFile(file)
       return
     }
 
@@ -746,6 +789,22 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     setShowFontSizePicker(false)
   }
 
+  const applyFontFamily = (family: string) => {
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      const span = document.createElement('span')
+      span.style.fontFamily = family
+      try {
+        range.surroundContents(span)
+        setTimeout(updateEditorContent, 0)
+      } catch {
+        console.log('Cannot surround contents')
+      }
+    }
+    setShowFontFamilyPicker(false)
+  }
+
   return (
     <div className={`border border-gray-300 rounded overflow-hidden flex flex-col ${className}`}>
       {/* 툴바 */}
@@ -759,7 +818,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 setTimeout(updateEditorContent, 0)
               }}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"
-              title="굵게 (Ctrl+B)"
+              title={strings.boldTitle}
             >
               B
             </button>
@@ -772,7 +831,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 setTimeout(updateEditorContent, 0)
               }}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 italic"
-              title="기울임 (Ctrl+I)"
+              title={strings.italicTitle}
             >
               I
             </button>
@@ -785,7 +844,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 setTimeout(updateEditorContent, 0)
               }}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 underline"
-              title="밑줄 (Ctrl+U)"
+              title={strings.underlineTitle}
             >
               U
             </button>
@@ -797,10 +856,12 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             <button
               type="button"
               onClick={insertList}
-              className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
-              title="목록"
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+              title={strings.listTitle}
+              aria-label={strings.listTitle}
             >
-              • 목록
+              <List className="h-4 w-4" aria-hidden />
+              {!strings.iconOnlyToolbar ? <span>목록</span> : null}
             </button>
           )}
           {enableTable && (
@@ -808,18 +869,19 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               <button
                 type="button"
                 onClick={() => setShowTablePicker(!showTablePicker)}
-                className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
-                title="표 삽입"
+                className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+                title={strings.tableTitle}
+                aria-label={strings.tableTitle}
               >
-                <Table2 className="h-3.5 w-3.5" aria-hidden />
-                표
+                <Table2 className="h-4 w-4" aria-hidden />
+                {!strings.iconOnlyToolbar ? <span>표</span> : null}
               </button>
               {showTablePicker && (
                 <div className="absolute top-full left-0 z-20 mt-1 w-52 rounded border border-gray-300 bg-white p-3 shadow-lg">
-                  <p className="mb-2 text-xs font-medium text-gray-600">표 크기</p>
+                  <p className="mb-2 text-xs font-medium text-gray-600">{strings.tableSize}</p>
                   <div className="mb-3 grid grid-cols-2 gap-2">
                     <label className="text-xs text-gray-600">
-                      행
+                      {strings.rows}
                       <input
                         type="number"
                         min={2}
@@ -830,7 +892,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                       />
                     </label>
                     <label className="text-xs text-gray-600">
-                      열
+                      {strings.cols}
                       <input
                         type="number"
                         min={2}
@@ -846,7 +908,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                     onClick={insertTable}
                     className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
                   >
-                    표 삽입
+                    {strings.insertTable}
                   </button>
                 </div>
               )}
@@ -856,20 +918,24 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             <button
               type="button"
               onClick={insertLink}
-              className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
-              title="링크"
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+              title={strings.linkTitle}
+              aria-label={strings.linkTitle}
             >
-              🔗 링크
+              <Link2 className="h-4 w-4" aria-hidden />
+              {!strings.iconOnlyToolbar ? <span>링크</span> : null}
             </button>
           )}
           {enableImageUpload && (
             <button
               type="button"
               onClick={insertImage}
-              className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
-              title="이미지 삽입"
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+              title={strings.imageTitle}
+              aria-label={strings.imageTitle}
             >
-              🖼️ 이미지
+              <ImageIcon className="h-4 w-4" aria-hidden />
+              {!strings.iconOnlyToolbar ? <span>이미지</span> : null}
             </button>
           )}
           {(enableList || enableTable || enableLink || enableImageUpload) && (
@@ -883,7 +949,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 type="button"
                 onClick={() => setShowColorPicker(!showColorPicker)}
                 className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
-                title="글자색"
+                title={strings.textColorTitle}
               >
                 <span style={{ color: '#000000' }}>A</span>
                 <ChevronDown className="w-3 h-3" />
@@ -914,7 +980,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 type="button"
                 onClick={() => setShowBackgroundColorPicker(!showBackgroundColorPicker)}
                 className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
-                title="글자 배경색"
+                title={strings.backgroundColorTitle}
               >
                 <span className="relative">
                   <span style={{ color: '#000000' }}>A</span>
@@ -948,7 +1014,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 type="button"
                 onClick={() => setShowFontSizePicker(!showFontSizePicker)}
                 className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
-                title="글자 크기"
+                title={strings.fontSizeTitle}
               >
                 <span>12px</span>
                 <ChevronDown className="w-3 h-3" />
@@ -972,6 +1038,35 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               )}
             </div>
           )}
+
+          {enableFontFamily && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFontFamilyPicker(!showFontFamilyPicker)}
+                className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
+                title={strings.fontFamilyTitle}
+              >
+                <span>{uiLocale === 'en' ? 'Font' : '글꼴'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showFontFamilyPicker && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-10 min-w-[10rem]">
+                  {fontFamilyOptions.map((option) => (
+                    <button
+                      key={option.label}
+                      type="button"
+                      onClick={() => applyFontFamily(option.value)}
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                      style={{ fontFamily: option.value === 'inherit' ? undefined : option.value }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       
@@ -987,7 +1082,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            <span className="mr-1 text-[11px] font-medium text-slate-500">크기</span>
+            <span className="mr-1 text-[11px] font-medium text-slate-500">{strings.imageSizeLabel}</span>
             {IMAGE_WIDTH_PRESETS.map((preset) => (
               <button
                 key={preset}
@@ -1009,7 +1104,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               value={Math.min(100, Math.max(20, getImageWidthPercent(selectedImage)))}
               onChange={(e) => applyImageWidth(selectedImage, `${e.target.value}%`)}
               className="ml-1 h-1.5 w-20 cursor-pointer accent-blue-600"
-              aria-label="이미지 너비 조절"
+              aria-label={strings.imageWidthAria}
             />
           </div>
         )}
@@ -1018,7 +1113,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             role="presentation"
             className="absolute z-20 h-6 w-2 cursor-ew-resize rounded bg-blue-600 shadow-sm hover:bg-primary/90"
             style={imageResizeHandleStyle}
-            title="드래그하여 크기 조절"
+            title={strings.dragResizeTitle}
             onMouseDown={(e) => startImageWidthDrag(e, selectedImage)}
           />
         )}
@@ -1087,7 +1182,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           fontFamily: 'system-ui, -apple-system, sans-serif',
           whiteSpace: 'normal'
         }}
-        data-placeholder={placeholder}
+        data-placeholder={effectivePlaceholder}
       />
       </div>
       

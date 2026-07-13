@@ -11,6 +11,7 @@ import ProductDetailAirbnbOptionsSection from '@/components/product/ProductDetai
 import ProductDetailDateTravelersPickers from '@/components/product/ProductDetailDateTravelersPickers'
 import ProductDetailMobileStickyCta from '@/components/product/ProductDetailMobileStickyCta'
 import ProductDetailPromoCodesBox from '@/components/product/ProductDetailPromoCodesBox'
+import ProductDetailRecommendations from '@/components/product/ProductDetailRecommendations'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ReviewSummary from '@/components/customer/ui/ReviewSummary'
 import { useProductDetailAppliedPromo } from '@/hooks/useProductDetailAppliedPromo'
@@ -67,6 +68,10 @@ type ProductDetailAirbnbViewProps = {
   reviewRating?: number
   reviewCount?: number
   totalPrice: number
+  /** 관리자 직접 편집 화면에서는 날짜 선택 전에도 옵션 영역 표시 */
+  forceShowOptions?: boolean
+  /** 관리자 직접 편집 화면에서는 날짜 선택 전에도 프로모 코드 영역 표시 */
+  forceShowPromo?: boolean
   bookingPanelProps: {
     basePrice: number | null
     maxParticipants: number | null
@@ -107,6 +112,8 @@ export default function ProductDetailAirbnbView({
   reviewRating,
   reviewCount,
   totalPrice,
+  forceShowOptions = false,
+  forceShowPromo = false,
   bookingPanelProps,
 }: ProductDetailAirbnbViewProps) {
   const t = useTranslations('productDetail')
@@ -209,21 +216,36 @@ export default function ProductDetailAirbnbView({
               />
             </div>
 
-            {selectedDate ? (
+            {selectedDate || forceShowOptions ? (
               <div ref={optionsAnchorRef} className="airbnb-detail-options-anchor">
-                <ProductDetailAirbnbOptionsSection
-                  groupedChoices={bookingPanelProps.groupedChoices}
-                  selectedOptions={bookingPanelProps.selectedOptions}
-                  onOptionChange={bookingPanelProps.onOptionChange}
-                  onCompareOptions={bookingPanelProps.onCompareOptions}
-                  onBookNow={bookingPanelProps.onBookNow}
-                  totalPrice={totalPrice}
-                  displayTotalPrice={promo.displayTotalPrice}
-                  promoDiscountAmount={promo.discountAmount}
-                  appliedPromoCode={promo.appliedCoupon?.code ?? null}
-                  selectedDate={selectedDate}
-                  isEnglish={isEnglish}
-                />
+                <CustomerPageZone zone="detail-sidebar-options" productId={productId}>
+                  {Object.keys(bookingPanelProps.groupedChoices).length > 0 ? (
+                    <ProductDetailAirbnbOptionsSection
+                      groupedChoices={bookingPanelProps.groupedChoices}
+                      selectedOptions={bookingPanelProps.selectedOptions}
+                      onOptionChange={bookingPanelProps.onOptionChange}
+                      onCompareOptions={bookingPanelProps.onCompareOptions}
+                      onBookNow={bookingPanelProps.onBookNow}
+                      totalPrice={totalPrice}
+                      displayTotalPrice={promo.displayTotalPrice}
+                      promoDiscountAmount={promo.discountAmount}
+                      appliedPromoCode={promo.appliedCoupon?.code ?? null}
+                      selectedDate={selectedDate || 'admin-preview'}
+                      isEnglish={isEnglish}
+                    />
+                  ) : (
+                    <section className="airbnb-detail-section airbnb-detail-options airbnb-detail-options-panel">
+                      <h2 className="airbnb-detail-section-title mb-2">
+                        {t('bookingOptionsTitle')}
+                      </h2>
+                      <p className="text-sm text-[#6b7280]">
+                        {isEnglish
+                          ? 'No choices or options have been configured yet.'
+                          : '아직 설정된 초이스 또는 옵션이 없습니다.'}
+                      </p>
+                    </section>
+                  )}
+                </CustomerPageZone>
                 <CustomerPageZone zone="detail-promo-codes" productId={productId}>
                   <div className="mt-4 lg:hidden">
                     <ProductDetailPromoCodesBox promo={promo} />
@@ -274,12 +296,15 @@ export default function ProductDetailAirbnbView({
                   ageLimits={ageLimits}
                   onBookNow={bookingPanelProps.onBookNow}
                   promo={promo}
+                  forceShowPromo={forceShowPromo}
                 />
               </CustomerPageZone>
               <TrustBadgeRow items={trustBadges} className="mt-4 justify-center" compact />
             </div>
           </aside>
         </div>
+
+        <ProductDetailRecommendations productId={productId} locale={locale} />
 
         <div className="mt-8 lg:hidden">
           <Link

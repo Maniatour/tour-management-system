@@ -70,7 +70,7 @@ export default async function LocaleLayout({
           <FloatingChatProvider>
             <LazyStripeErrorHandler />
             <LazyModalBackdropGuard />
-            <div className="min-h-screen app-page-bg">
+            <div className="min-h-screen">
               {children}
               <LazyFloatingChatContainer />
             </div>

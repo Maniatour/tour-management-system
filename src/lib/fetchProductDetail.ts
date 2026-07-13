@@ -437,3 +437,60 @@ export async function fetchProductPageData(
     }
   }
 }
+
+/** 고객 페이지와 동일한 우선순위로 상세정보 행 1건 조회 (편집 모달용) */
+export async function fetchProductDetailsRowForLocale(
+  productId: string,
+  locale: string
+): Promise<Record<string, unknown> | null> {
+  const { data: commonDetails, error: commonError } = await supabase
+    .from('product_details_multilingual')
+    .select('*')
+    .eq('product_id', productId)
+    .eq('language_code', locale)
+    .is('channel_id', null)
+    .limit(1)
+
+  if (!commonError && commonDetails && commonDetails.length > 0) {
+    return commonDetails[0] as Record<string, unknown>
+  }
+
+  const { data: channelDetails, error: channelError } = await supabase
+    .from('product_details_multilingual')
+    .select('*')
+    .eq('product_id', productId)
+    .eq('language_code', locale)
+    .limit(1)
+
+  if (!channelError && channelDetails && channelDetails.length > 0) {
+    return channelDetails[0] as Record<string, unknown>
+  }
+
+  if (locale !== 'ko') {
+    const { data: fallbackDetails } = await supabase
+      .from('product_details_multilingual')
+      .select('*')
+      .eq('product_id', productId)
+      .eq('language_code', 'ko')
+      .is('channel_id', null)
+      .limit(1)
+
+    if (fallbackDetails && fallbackDetails.length > 0) {
+      return fallbackDetails[0] as Record<string, unknown>
+    }
+
+    const { data: koChannelDetails } = await supabase
+      .from('product_details_multilingual')
+      .select('*')
+      .eq('product_id', productId)
+      .eq('language_code', 'ko')
+      .limit(1)
+
+    if (koChannelDetails && koChannelDetails.length > 0) {
+      return koChannelDetails[0] as Record<string, unknown>
+    }
+  }
+
+  return null
+}
+

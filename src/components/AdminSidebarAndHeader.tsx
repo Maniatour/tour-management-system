@@ -519,7 +519,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   return (
     <>
       {/* 어드민 헤더 - 페이지 가장 상단에 여백 없이 */}
-      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-[9999]" style={{ height: 'var(--header-height)' }}>
+      <header
+        className="bg-white shadow-sm border-b border-gray-200 fixed top-0 inset-x-0 z-[9999] w-full box-border"
+        style={{ height: 'var(--header-height)' }}
+      >
         <div className="w-full h-full px-2 sm:px-4 flex items-center">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center space-x-2 sm:space-x-6">
@@ -1067,13 +1070,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div
-        className={`pt-[var(--header-height)] transition-[padding] duration-300 ${
-          sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-64'
+        className={`admin-main-shell pt-[var(--header-height)] transition-[padding] duration-300 ${
+          sidebarCollapsed ? 'lg:pl-16 admin-main-shell--collapsed' : 'lg:pl-64'
         }`}
       >
         {/* 페이지 콘텐츠 */}
         <main className="main-safe-area min-w-0 max-w-full overflow-x-clip pt-2 sm:pt-4 lg:pt-6">
-          <div className="mx-auto w-full min-w-0 max-w-full px-1.5 sm:px-2 lg:px-3">
+          <div className="mx-auto w-full min-w-0 max-w-full px-2 sm:px-4">
             {children}
           </div>
         </main>

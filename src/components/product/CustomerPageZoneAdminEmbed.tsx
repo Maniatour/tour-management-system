@@ -3,10 +3,21 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import TagTranslationManager from '@/components/admin/TagTranslationManager'
-import ChoicesTab from '@/components/product/ChoicesTab'
+import ChoicesTab from '@/components/product/ChoicesTabNew'
+import ProductOptionsEmbed from '@/components/product/ProductOptionsEmbed'
 import CustomerPageFavoriteOrderPanel from '@/components/product/CustomerPageFavoriteOrderPanel'
 import CustomerPageProductBasicEmbed from '@/components/product/CustomerPageProductBasicEmbed'
 import CustomerPageProductDetailsEmbed from '@/components/product/CustomerPageProductDetailsEmbed'
+import CustomerPageDetailHighlightsEmbed from '@/components/product/CustomerPageDetailHighlightsEmbed'
+import CustomerPageSloganEmbed from '@/components/product/CustomerPageSloganEmbed'
+import CustomerPageOverviewEmbed from '@/components/product/CustomerPageOverviewEmbed'
+import CustomerPageTourCoursesEmbed from '@/components/product/CustomerPageTourCoursesEmbed'
+import CustomerPageScheduleEmbed from '@/components/product/CustomerPageScheduleEmbed'
+import CustomerPageThingsToKnowEmbed from '@/components/product/CustomerPageThingsToKnowEmbed'
+import CustomerPageFaqEmbed from '@/components/product/CustomerPageFaqEmbed'
+import CustomerPageProductRecommendationsEmbed, {
+  sectionKeyFromRecommendationTab,
+} from '@/components/product/CustomerPageProductRecommendationsEmbed'
 import CustomerPageReservationLookup from '@/components/product/CustomerPageReservationLookup'
 import CustomerPageTourCoursesCatalog from '@/components/product/CustomerPageTourCoursesCatalog'
 import ProductFaqTab from '@/components/product/ProductFaqTab'
@@ -31,6 +42,11 @@ const DETAIL_TAB_CHOICES = [
   { id: 'tour-courses', label: '일정(코스)' },
   { id: 'schedule', label: '투어 일정' },
   { id: 'faq', label: 'FAQ' },
+] as const
+
+const BOOKING_OPTION_TABS = [
+  { id: 'choices', label: '초이스 관리' },
+  { id: 'options', label: '옵션 관리' },
 ] as const
 
 function NeedProductMessage() {
@@ -59,9 +75,11 @@ export default function CustomerPageZoneAdminEmbed({
   }, [zone, adminTab])
 
   const [subTab, setSubTab] = useState<string>(initialSubTab)
-  const activeTab = zone === 'detail-tabs' ? subTab : adminTab
+  const isBookingOptionsZone =
+    zone === 'detail-sidebar-options' || zone === 'booking-options'
+  const activeTab = zone === 'detail-tabs' || isBookingOptionsZone ? subTab : adminTab
   const tabLabel = ADMIN_TAB_LABELS[activeTab] ?? activeTab
-  const needsProduct = ['basic', 'media', 'details', 'schedule', 'tour-courses', 'faq', 'choices', 'options', 'dynamic-pricing'].includes(
+  const needsProduct = ['basic', 'media', 'details', 'schedule', 'tour-courses', 'faq', 'choices', 'options', 'dynamic-pricing', 'detail-highlights', 'detail-slogan', 'detail-overview', 'detail-tour-courses', 'detail-schedule', 'detail-things-to-know', 'detail-faq', 'detail-recommendations-viewed', 'detail-recommendations-for-you', 'detail-recommendations-bought-together'].includes(
     activeTab
   )
 
@@ -127,7 +145,92 @@ export default function CustomerPageZoneAdminEmbed({
         )
 
       case 'choices':
-        return <ChoicesTab productId={productId!} isNewProduct={false} />
+        return <ChoicesTab productId={productId!} isNewProduct={false} embedded />
+
+      case 'options':
+        return (
+          <ProductOptionsEmbed
+            productId={productId!}
+            {...(onOpenFullAdmin ? { onOpenFullAdmin } : {})}
+          />
+        )
+
+      case 'detail-highlights':
+        return (
+          <CustomerPageDetailHighlightsEmbed
+            productId={productId!}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
+      case 'detail-slogan':
+        return (
+          <CustomerPageSloganEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
+      case 'detail-overview':
+        return (
+          <CustomerPageOverviewEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
+      case 'detail-tour-courses':
+        return (
+          <CustomerPageTourCoursesEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+            {...(onOpenFullAdmin ? { onOpenFullAdmin } : {})}
+          />
+        )
+
+      case 'detail-schedule':
+        return (
+          <CustomerPageScheduleEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+            {...(onOpenFullAdmin ? { onOpenFullAdmin } : {})}
+          />
+        )
+
+      case 'detail-things-to-know':
+        return (
+          <CustomerPageThingsToKnowEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
+      case 'detail-faq':
+        return (
+          <CustomerPageFaqEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+            {...(onOpenFullAdmin ? { onOpenFullAdmin } : {})}
+          />
+        )
+
+      case 'detail-recommendations-viewed':
+      case 'detail-recommendations-for-you':
+      case 'detail-recommendations-bought-together':
+        return (
+          <CustomerPageProductRecommendationsEmbed
+            productId={productId!}
+            sectionKey={sectionKeyFromRecommendationTab(activeTab)}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
 
       case 'tag-translations':
         return <TagTranslationManager locale={locale} />
@@ -193,6 +296,25 @@ export default function CustomerPageZoneAdminEmbed({
                 subTab === tab.id
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isBookingOptionsZone && (
+        <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-1">
+          {BOOKING_OPTION_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSubTab(tab.id)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                subTab === tab.id
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white hover:text-foreground'
               }`}
             >
               {tab.label}

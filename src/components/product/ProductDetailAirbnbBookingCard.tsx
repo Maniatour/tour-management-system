@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import ProductDetailDateTravelersPickers from '@/components/product/ProductDetailDateTravelersPickers'
 import ProductDetailAirbnbBookingSummary from '@/components/product/ProductDetailAirbnbBookingSummary'
 import ProductDetailPromoCodesBox from '@/components/product/ProductDetailPromoCodesBox'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import type { ProductDetailAppliedPromoState } from '@/hooks/useProductDetailAppliedPromo'
 import type { TravelerAgeLimits, TravelerCounts } from '@/lib/productDetailTravelers'
@@ -32,6 +33,8 @@ type ProductDetailAirbnbBookingCardProps = {
   onBookNow: () => void
   promo: ProductDetailAppliedPromoState
   contactEmail?: string
+  /** 관리자 편집 미리보기 — 날짜 없이도 프로모 영역 표시 */
+  forceShowPromo?: boolean
 }
 
 export default function ProductDetailAirbnbBookingCard({
@@ -51,9 +54,11 @@ export default function ProductDetailAirbnbBookingCard({
   onBookNow,
   promo,
   contactEmail = 'info@maniatour.com',
+  forceShowPromo = false,
 }: ProductDetailAirbnbBookingCardProps) {
   const t = useTranslations('productDetail')
   const hasSelectedDate = Boolean(selectedDate)
+  const showPromoSection = hasSelectedDate || forceShowPromo
 
   return (
     <div className="airbnb-detail-booking-card">
@@ -89,13 +94,18 @@ export default function ProductDetailAirbnbBookingCard({
             isEnglish={isEnglish}
             onBookNow={onBookNow}
           />
-          <ProductDetailPromoCodesBox promo={promo} />
         </>
       ) : (
         <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn mt-4">
           {t('checkAvailability')}
         </button>
       )}
+
+      {showPromoSection ? (
+        <CustomerPageZone zone="detail-promo-codes" productId={productId} className="mt-4">
+          <ProductDetailPromoCodesBox promo={promo} />
+        </CustomerPageZone>
+      ) : null}
 
       <p className="mt-3 text-center text-xs text-[#6b7280]">{t('freeCancellationNote')}</p>
 

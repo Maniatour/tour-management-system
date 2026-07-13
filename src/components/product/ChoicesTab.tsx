@@ -46,9 +46,14 @@ type ProductChoices = {
 interface ChoicesTabProps {
   productId: string
   isNewProduct: boolean
+  /** 모달 임베드 시 중복 헤더 숨김 + 컴팩트 툴바 */
+  embedded?: boolean
 }
 
-export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps) {
+const TOOLBAR_BTN =
+  'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50'
+
+export default function ChoicesTab({ productId, isNewProduct, embedded = false }: ChoicesTabProps) {
   const [choiceGroups, setChoiceGroups] = useState<ChoiceGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -430,63 +435,73 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">초이스 관리</h3>
-          <p className="text-sm text-gray-600">상품의 필수 선택 옵션(초이스)을 그룹별로 관리합니다.</p>
-        </div>
-        <div className="flex space-x-2">
+      <div className={embedded ? 'space-y-2' : 'space-y-2 sm:space-y-3'}>
+        {!embedded && (
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">초이스 관리</h3>
+            <p className="text-xs text-gray-500">
+              상품의 필수 선택 옵션(초이스)을 그룹별로 관리합니다.
+            </p>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
+            type="button"
             onClick={addGroup}
-            className="flex items-center px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            className={`${TOOLBAR_BTN} border-transparent bg-primary text-primary-foreground hover:bg-primary/90`}
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className="h-3.5 w-3.5 shrink-0" />
             그룹 추가
           </button>
           <button
+            type="button"
             onClick={() => {
               loadProducts()
               setShowCopyModal(true)
             }}
-            className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+            className={`${TOOLBAR_BTN} border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`}
           >
-            <Copy className="w-4 h-4 mr-1" />
+            <Copy className="h-3.5 w-3.5 shrink-0" />
             다른 상품에서 복사
           </button>
           <button
+            type="button"
             onClick={() => {
               loadProducts()
               setShowCopyToModal(true)
             }}
             disabled={choiceGroups.length === 0}
-            className="flex items-center px-3 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 disabled:bg-gray-400"
+            className={`${TOOLBAR_BTN} border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 disabled:bg-gray-100 disabled:text-gray-400`}
           >
-            <Copy className="w-4 h-4 mr-1" />
+            <Copy className="h-3.5 w-3.5 shrink-0" />
             다른 상품으로 복사
           </button>
           <button
+            type="button"
             onClick={exportChoices}
             disabled={choiceGroups.length === 0}
-            className="flex items-center px-3 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:bg-gray-400"
+            className={`${TOOLBAR_BTN} border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100 disabled:bg-gray-100 disabled:text-gray-400`}
           >
-            <Download className="w-4 h-4 mr-1" />
-            내보내기
+            <Download className="h-3.5 w-3.5 shrink-0" />
+           보내기
           </button>
           <button
+            type="button"
             onClick={() => setShowImportModal(true)}
-            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+            className={`${TOOLBAR_BTN} border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100`}
           >
-            <Upload className="w-4 h-4 mr-1" />
+            <Upload className="h-3.5 w-3.5 shrink-0" />
             가져오기
           </button>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || isNewProduct}
-            className="flex items-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+            className={`${TOOLBAR_BTN} border-transparent bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-300`}
           >
-            <Save className="w-4 h-4 mr-1" />
+            <Save className="h-3.5 w-3.5 shrink-0" />
             {saving ? '저장 중...' : '저장'}
           </button>
         </div>
@@ -555,12 +570,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                     />
                   </div>
                 </div>
-                <div className="flex space-x-2 ml-4">
+                <div className="ml-4 flex shrink-0 items-center gap-1.5">
                   <button
+                    type="button"
                     onClick={() => addChoiceToGroup(group.id)}
-                    className="flex items-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                    className={`${TOOLBAR_BTN} border-transparent bg-green-600 text-white hover:bg-green-700`}
                   >
-                    <Plus className="w-4 h-4 mr-1" />
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
                     초이스 추가
                   </button>
                   <button
