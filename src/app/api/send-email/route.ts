@@ -60,14 +60,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { reservationId, email, type = 'both', locale: localeParam, sentBy, includePriceInfo } = body as {
+    const { reservationId, email, locale: localeParam, sentBy, includePriceInfo } = body as {
       reservationId?: string
       email?: string
-      type?: string
       locale?: string
       sentBy?: string
       includePriceInfo?: boolean
     }
+    const rawType = typeof body.type === 'string' ? body.type : 'both'
+    const type: 'receipt' | 'voucher' | 'both' =
+      rawType === 'receipt' || rawType === 'voucher' || rawType === 'both' ? rawType : 'both'
 
     if (!reservationId || !email) {
       return NextResponse.json(
