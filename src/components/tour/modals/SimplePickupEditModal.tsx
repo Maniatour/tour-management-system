@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { X, Clock, Building } from 'lucide-react'
+import { timeToHHmm } from '@/lib/utils'
 
 interface SimplePickupEditModalProps {
   isOpen: boolean
@@ -27,10 +28,10 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
   const [pickupHotel, setPickupHotel] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // 모달이 열릴 때 현재 값으로 초기화
+  // 모달이 열릴 때 현재 값으로 초기화 (<input type="time">은 HH:mm 필요)
   useEffect(() => {
     if (isOpen && reservation) {
-      setPickupTime(reservation.pickup_time || '')
+      setPickupTime(timeToHHmm(reservation.pickup_time || ''))
       setPickupHotel(reservation.pickup_hotel || '')
     }
   }, [isOpen, reservation])
@@ -40,14 +41,13 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
     
     setLoading(true)
     try {
-      await onSave(reservation.id, pickupTime, pickupHotel)
+      await onSave(reservation.id, timeToHHmm(pickupTime) || pickupTime, pickupHotel)
       // 저장 완료 후 약간의 지연을 두어 데이터 새로고침이 완료되도록 함
       await new Promise(resolve => setTimeout(resolve, 300))
       onClose()
     } catch (error) {
       console.error('픽업 정보 저장 오류:', error)
-      // 에러가 발생해도 모달은 닫음
-      onClose()
+      alert(error instanceof Error ? error.message : '픽업 정보 저장에 실패했습니다.')
     } finally {
       setLoading(false)
     }

@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { timeToHHmm } from '@/lib/utils'
 import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/tourStatusUtils'
 import {
   normalizeReservationIds,
@@ -486,7 +487,9 @@ export function useTourHandlers() {
     if (!selectedReservation) return
 
     try {
-      const timeValue = pickupTimeValue ? `${pickupTimeValue}:00` : null
+      const hhmm = timeToHHmm(pickupTimeValue || '')
+      // 이미 HH:mm:ss 이면 :00 을 중복 붙이지 않음
+      const timeValue = hhmm ? `${hhmm}:00` : null
       
       // 예약 정보 조회 (투어 날짜 확인용)
       const { data: reservationData, error: reservationFetchError } = await supabase
@@ -499,13 +502,20 @@ export function useTourHandlers() {
         console.error('Error fetching reservation:', reservationFetchError)
       }
       
-      const { error } = await (supabase as any)
+      const { data: updatedRow, error } = await (supabase as any)
         .from('reservations')
         .update({ pickup_time: timeValue } as Database['public']['Tables']['reservations']['Update'])
         .eq('id', selectedReservation.id)
+        .select('id, pickup_time')
+        .maybeSingle()
 
       if (error) {
         console.error('Error updating pickup time:', error)
+        return false
+      }
+
+      if (!updatedRow) {
+        console.error('Error updating pickup time: no rows updated (RLS or missing row)')
         return false
       }
 

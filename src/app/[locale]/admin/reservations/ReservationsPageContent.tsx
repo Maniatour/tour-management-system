@@ -48,6 +48,7 @@ import {
   getStatusLabel,
   isReservationTourDatePastLocal,
 } from '@/utils/reservationUtils'
+import { timeToHHmm } from '@/lib/utils'
 import {
   isTourDeletedStatus,
   isReservationCancelledStatus,
@@ -3948,37 +3949,47 @@ export default function AdminReservations() {
       e.stopPropagation()
       pendingReturnToPickupSummaryRef.current = opts?.resumePickupSummary ? reservation.id : null
       setSelectedReservationForPickupTime(reservation)
-      setPickupTimeValue(reservation.pickUpTime || '')
+      // <input type="time"> 값은 HH:mm — DB의 HH:mm:ss 등을 정규화
+      setPickupTimeValue(timeToHHmm(reservation.pickUpTime || '') || '')
       setShowPickupTimeModal(true)
     },
     []
   )
 
-  // ??? ??? ????
+  // 픽업 시간 저장
   const handleSavePickupTime = useCallback(async () => {
     if (!selectedReservationForPickupTime) return
 
     try {
-      const { error } = await (supabase as any)
+      const hhmm = timeToHHmm(pickupTimeValue || '')
+      const timeValue = hhmm ? `${hhmm}:00` : null
+
+      const { data: updatedRow, error } = await (supabase as any)
         .from('reservations')
-        .update({ pickup_time: pickupTimeValue || null })
+        .update({ pickup_time: timeValue })
         .eq('id', selectedReservationForPickupTime.id)
+        .select('id, pickup_time')
+        .maybeSingle()
 
       if (error) {
-        console.error('??? ??? ?????? ???:', error)
+        console.error('픽업 시간 업데이트 오류:', error)
         alert(t('messages.pickupTimeUpdateError'))
         return
       }
 
-      // ??? ??? ???? ??? (??? ?? ?? ???)
+      if (!updatedRow) {
+        console.error('픽업 시간 업데이트 실패: 권한이 없거나 행을 찾을 수 없음')
+        alert(t('messages.pickupTimeUpdateError'))
+        return
+      }
 
       await refreshReservations()
       closePickupTimeModalAndMaybeReshowSummary()
     } catch (error) {
-      console.error('??? ??? ???????:', error)
+      console.error('픽업 시간 저장 오류:', error)
       alert(t('messages.pickupTimeSaveError'))
     }
-  }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations, closePickupTimeModalAndMaybeReshowSummary])
+  }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations, closePickupTimeModalAndMaybeReshowSummary, t])
 
   // ??? ??? ??? ?? ???
   const handlePickupHotelClick = useCallback(

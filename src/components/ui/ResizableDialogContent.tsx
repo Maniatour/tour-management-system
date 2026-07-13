@@ -34,6 +34,11 @@ type Props = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   elevated?: boolean
   /** false면 헤더 아래 inset 없이 전체 뷰포트 사용 */
   respectHeaderInset?: boolean
+  /**
+   * 자식에 DialogTitle이 잠깐 없을 때(닫힘 애니메이션 등) 스크린 리더용 제목.
+   * 보이는 DialogTitle이 있으면 함께 써도 경고는 막히지만, 가능하면 둘 중 하나만 두세요.
+   */
+  accessibilityTitle?: string
 }
 
 const ResizableDialogContent = React.forwardRef<
@@ -53,6 +58,7 @@ const ResizableDialogContent = React.forwardRef<
       stackLevel,
       elevated = false,
       respectHeaderInset = true,
+      accessibilityTitle,
       style: propsStyle,
       ...props
     },
@@ -157,6 +163,9 @@ const ResizableDialogContent = React.forwardRef<
           style={{ ...contentStyle, ...propsStyle }}
           {...props}
         >
+          {accessibilityTitle ? (
+            <DialogPrimitive.Title className="sr-only">{accessibilityTitle}</DialogPrimitive.Title>
+          ) : null}
           {children}
           {!isMobile
             ? (Object.keys(HANDLE_CLASS) as ResizeHandle[]).map((handle) => (

@@ -443,16 +443,22 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const modalUiEn = modalViewLang === 'en'
   const printDoc = adminCrud ? readEditDoc : readDoc
+  const printTitleFallback = modalUiEn ? 'Operations Hub document' : '운영 허브 문서'
   const printTitle =
     readArticle
       ? sopText(readArticle.title_ko, readArticle.title_en, modalViewLang) ||
         (modalUiEn ? readArticle.title_en : readArticle.title_ko) ||
         readArticle.title_ko ||
         readArticle.title_en ||
-        (modalUiEn ? 'Operations Hub document' : '운영 허브 문서')
-      : modalUiEn
-        ? 'Operations Hub document'
-        : '운영 허브 문서'
+        printTitleFallback
+      : printTitleFallback
+  const readModalHasBody = !!(readArticle && (adminCrud ? readEditDoc : readDoc))
+  // 닫힘 애니메이션 중 readArticle이 먼저 비워져도 DialogTitle이 남도록 유지
+  const lastReadTitleRef = useRef(printTitle)
+  useEffect(() => {
+    if (readModalHasBody) lastReadTitleRef.current = printTitle
+  }, [printTitle, readModalHasBody])
+  const readModalTitle = readModalHasBody ? printTitle : lastReadTitleRef.current
 
   const openReadDocSettings = () => {
     if (!readArticle) return
@@ -675,7 +681,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       {/* 읽기 모달 — 관리자는 미리보기에서 바로 편집 */}
       <Dialog
         modal={!printPreviewOpen}
-        open={!!readArticle && !!(adminCrud ? readEditDoc : readDoc)}
+        open={readModalHasBody}
         onOpenChange={(open) => {
           if (!open) {
             setPrintPreviewOpen(false)
@@ -689,8 +695,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           defaultHeight={760}
           stackLevel="elevated"
           className="gap-0"
+          accessibilityTitle={readModalTitle}
         >
-          {readArticle && (adminCrud ? readEditDoc : readDoc) ? (
+          {readModalHasBody && readArticle ? (
             <>
               <DialogHeader
                 data-dialog-drag-handle
@@ -783,12 +790,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                 >
                   <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <DialogTitle className="text-base leading-snug sm:text-lg">
-                      {sopText(readArticle.title_ko, readArticle.title_en, modalViewLang) ||
-                        (modalUiEn ? readArticle.title_en : readArticle.title_ko) ||
-                        readArticle.title_ko ||
-                        readArticle.title_en}
-                    </DialogTitle>
+                    <h2 className="text-base font-semibold leading-snug tracking-tight sm:text-lg">
+                      {readModalTitle}
+                    </h2>
                     <p className="text-xs font-normal text-gray-500">
                       {hubCategoryLabel(readArticle.hub_category, modalViewLang)}
                       {' · '}

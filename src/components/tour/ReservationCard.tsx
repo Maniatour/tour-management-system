@@ -882,14 +882,24 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         })
       })
 
-      await parseApiJsonResponse<Record<string, unknown>>(response, '픽업 정보 저장에 실패했습니다.')
+      const result = await parseApiJsonResponse<{
+        success?: boolean
+        reservation?: { id?: string; pickup_time?: string | null; pickup_hotel?: string | null }
+      }>(response, '픽업 정보 저장에 실패했습니다.')
 
-      console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime, pickupHotel })
+      if (!result.success || !result.reservation?.id) {
+        throw new Error('픽업 정보 저장에 실패했습니다.')
+      }
+
+      const savedTime = result.reservation.pickup_time ?? pickupTime
+      const savedHotel = result.reservation.pickup_hotel ?? pickupHotel
+
+      console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime: savedTime, pickupHotel: savedHotel })
 
       // 성공 시 부모에 수정된 픽업 정보 전달 후 새로고침 (픽업 스케줄 섹션 즉시 반영)
       if (onRefresh) {
         try {
-          await onRefresh({ reservationId, pickup_time: pickupTime, pickup_hotel: pickupHotel })
+          await onRefresh({ reservationId, pickup_time: savedTime || '', pickup_hotel: savedHotel || '' })
           console.log('예약 데이터 새로고침 완료')
         } catch (refreshError) {
           console.error('데이터 새로고침 중 오류:', refreshError)
