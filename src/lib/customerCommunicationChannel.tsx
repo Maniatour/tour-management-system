@@ -10,6 +10,7 @@ export const CUSTOMER_COMMUNICATION_CHANNELS = [
   'whatsapp',
   'text_message',
   'kakaotalk',
+  'line',
   'phone_call',
   'chatroom',
 ] as const
@@ -82,6 +83,18 @@ function WhatsAppIcon({ className }: { className?: string }) {
   )
 }
 
+function LineIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <rect width="24" height="24" rx="5" fill="#06C755" />
+      <path
+        fill="#FFFFFF"
+        d="M19.5 10.8c0-3.6-3.4-6.5-7.5-6.5S4.5 7.2 4.5 10.8c0 3.2 2.8 5.9 6.7 6.4.3.1.6.2.9.4l.7.4c.2.1.4 0 .5-.2.1-.2 0-.4-.1-.5l-.5-.8c-.1-.2-.2-.4-.2-.6 2.8-.9 4.5-3 4.5-5.1z"
+      />
+    </svg>
+  )
+}
+
 function KakaoTalkIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden>
@@ -106,6 +119,7 @@ export const CUSTOMER_COMMUNICATION_CHANNEL_VISUAL: Record<CustomerCommunication
   whatsapp: { Icon: WhatsAppIcon, toneClass: 'text-green-600' },
   text_message: { Icon: Smartphone, toneClass: 'text-violet-600' },
   kakaotalk: { Icon: KakaoTalkIcon, toneClass: 'text-[#3C1E1E]' },
+  line: { Icon: LineIcon, toneClass: 'text-[#06C755]' },
   phone_call: { Icon: Phone, toneClass: 'text-amber-700' },
   chatroom: { Icon: MessagesSquare, toneClass: 'text-teal-600' },
 }
@@ -116,7 +130,7 @@ export function renderCustomerCommunicationChannelIcon(
 ): React.ReactNode {
   const { Icon, toneClass } = CUSTOMER_COMMUNICATION_CHANNEL_VISUAL[channel]
   const merged = `${className} ${toneClass}`.trim()
-  if (channel === 'whatsapp' || channel === 'kakaotalk') {
+  if (channel === 'whatsapp' || channel === 'kakaotalk' || channel === 'line') {
     const BrandIcon = Icon as (props: { className?: string }) => React.ReactNode
     return <BrandIcon className={merged} />
   }

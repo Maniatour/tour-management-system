@@ -447,21 +447,21 @@ export const CartSidebar: React.FC<{
                     {item.selectedChoices && item.selectedChoices.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <div className="text-xs font-medium text-gray-700 mb-2">
-                          {translate('선택 사항', 'Selected Options')}
+                          {translate('선택 초이스', 'Selected Choices')}
                         </div>
                         <div className="space-y-1">
                           {item.selectedChoices.map((choice, idx) => (
                             <div key={idx} className="text-xs text-gray-600">
                               <span className="font-medium">
                                 {isEnglish 
-                                  ? choice.choiceNameEn || choice.choiceNameKo || choice.choiceName 
-                                  : choice.choiceNameKo || choice.choiceName}
+                                  ? choice.choiceNameEn || choice.choiceName || choice.choiceNameKo 
+                                  : choice.choiceNameKo || choice.choiceName || choice.choiceNameEn}
                               </span>
                               <span className="mx-1">:</span>
                               <span>
                                 {isEnglish 
-                                  ? choice.optionNameEn || choice.optionNameKo || choice.optionName 
-                                  : choice.optionNameKo || choice.optionName}
+                                  ? choice.optionNameEn || choice.optionName || choice.optionNameKo 
+                                  : choice.optionNameKo || choice.optionName || choice.optionNameEn}
                               </span>
                               {choice.optionPrice !== null && choice.optionPrice > 0 && (
                                 <span className="ml-1 text-green-600">

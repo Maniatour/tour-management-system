@@ -7,6 +7,7 @@ import ReactCountryFlag from 'react-country-flag'
 import { useLocale, useTranslations } from 'next-intl'
 import { useContext, useEffect, useState, type ReactNode } from 'react'
 import { CartSidebar, useCart } from '@/components/cart/CartProvider'
+import CartCheckout from '@/components/cart/CartCheckout'
 import { AuthContext } from '@/contexts/AuthContext'
 import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
 import type { AuthUser } from '@/lib/auth'
@@ -140,6 +141,7 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
   const context = useContext(AuthContext)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [showCart, setShowCart] = useState(false)
+  const [showCheckout, setShowCheckout] = useState(false)
 
   const loading = context?.loading ?? true
   const currentUser = context?.authUser ?? null
@@ -288,7 +290,16 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
       <CartSidebar
         isOpen={showCart}
         onClose={() => setShowCart(false)}
-        onCheckout={() => setShowCart(false)}
+        onCheckout={() => {
+          setShowCart(false)
+          setShowCheckout(true)
+        }}
+      />
+
+      <CartCheckout
+        isOpen={showCheckout}
+        onClose={() => setShowCheckout(false)}
+        onSuccess={() => setShowCheckout(false)}
       />
     </>
   )

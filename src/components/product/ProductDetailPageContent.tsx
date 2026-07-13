@@ -32,6 +32,10 @@ import {
 import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
 import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
+import {
+  DEFAULT_TRAVELER_COUNTS,
+  type TravelerCounts,
+} from '@/lib/productDetailTravelers'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
@@ -89,6 +93,12 @@ function ProductDetailPageContentInner({
 
   const { selectedOptions, groupedChoices, totalPrice, handleOptionChange } =
     useProductDetailChoices(productChoices, product?.base_price, isEnglish)
+
+  // 상세 페이지에서 선택한 날짜/인원 — 예약 모달로 그대로 전달하기 위해 상위에서 관리
+  const [selectedDate, setSelectedDate] = useState('')
+  const [travelerCounts, setTravelerCounts] = useState<TravelerCounts>(
+    DEFAULT_TRAVELER_COUNTS
+  )
 
   const showDetailOnCustomerPage = useCallback(
     (field: string) =>
@@ -270,6 +280,10 @@ function ProductDetailPageContentInner({
             ? { reviewRating, reviewCount }
             : {})}
           totalPrice={totalPrice}
+          selectedDate={selectedDate}
+          onSelectedDateChange={setSelectedDate}
+          travelerCounts={travelerCounts}
+          onTravelerCountsChange={setTravelerCounts}
           forceShowOptions={forceShowOptions}
           forceShowPromo={forceShowPromo || forceShowOptions}
           bookingPanelProps={bookingPanelProps}
@@ -280,6 +294,9 @@ function ProductDetailPageContentInner({
             product={product}
             productChoices={productChoices}
             groupedChoices={groupedChoices}
+            initialDate={selectedDate}
+            initialParticipants={travelerCounts}
+            initialSelectedOptions={selectedOptions}
             showBookingFlow={showBookingFlow}
             onCloseBookingFlow={() => setShowBookingFlow(false)}
             showChoiceDescriptionModal={showChoiceDescriptionModal}

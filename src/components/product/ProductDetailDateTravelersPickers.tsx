@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Minus, Plus, Users } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, Minus, Plus, Users, X } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import ProductDetailBookingCalendar from '@/components/product/ProductDetailBookingCalendar'
 import {
@@ -131,13 +132,31 @@ export default function ProductDetailDateTravelersPickers({
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
-        setDateOpen(false)
         setTravelersOpen(false)
       }
     }
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [])
+
+  useEffect(() => {
+    if (!dateOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDateOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [dateOpen])
 
   const applyTravelers = () => {
     onTravelerCountsChange(clampTravelerCounts(draftCounts, ageLimits))
@@ -168,18 +187,46 @@ export default function ProductDetailDateTravelersPickers({
             <ChevronDown className="booking-picker-field-chevron" aria-hidden />
           </button>
 
-          {dateOpen ? (
-            <div className="booking-picker-popover booking-picker-calendar-popover">
-              <ProductDetailBookingCalendar
-                productId={productId}
-                selectedDate={selectedDate}
-                onDateChange={onDateChange}
-                onClose={() => setDateOpen(false)}
-                customerTourName={customerTourName}
-                product={product}
-              />
-            </div>
-          ) : null}
+          {dateOpen && typeof document !== 'undefined'
+            ? createPortal(
+                <div
+                  className="booking-picker-date-modal fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+                  onClick={() => setDateOpen(false)}
+                  role="presentation"
+                >
+                  <div
+                    className="booking-picker-date-modal-panel flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xl"
+                    onClick={(event) => event.stopPropagation()}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={t('dateLabel')}
+                  >
+                    <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-5 py-4">
+                      <h3 className="text-lg font-semibold text-foreground">{t('dateLabel')}</h3>
+                      <button
+                        type="button"
+                        onClick={() => setDateOpen(false)}
+                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label="Close"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="overflow-y-auto">
+                      <ProductDetailBookingCalendar
+                        productId={productId}
+                        selectedDate={selectedDate}
+                        onDateChange={onDateChange}
+                        onClose={() => setDateOpen(false)}
+                        customerTourName={customerTourName}
+                        product={product}
+                      />
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )
+            : null}
         </div>
 
         <div className="relative booking-picker-field-wrap booking-picker-field-wrap-travelers">

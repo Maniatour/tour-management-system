@@ -3688,11 +3688,20 @@ main:has(.maniatour-home) {
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 9999px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  background: var(--booking);
+  color: var(--booking-foreground);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--booking) 35%, transparent);
+}
+
+.kv-header-icon-btn:has(.kv-header-account-initial):hover {
+  background: transparent;
+}
+
+.kv-header-icon-btn:has(.kv-header-account-initial):hover .kv-header-account-initial {
+  background: var(--booking-hover);
 }
 
 .kv-header-flag-icon svg {
@@ -6636,6 +6645,27 @@ button.airbnb-itinerary-card-header:disabled {
 .booking-calendar-day.is-disabled {
   color: #d1d5db;
   cursor: not-allowed;
+}
+
+.booking-calendar-day.is-primary-tour {
+  box-shadow: inset 0 0 0 2px #0b5fff;
+  color: #0b5fff;
+  font-weight: 700;
+  cursor: default;
+}
+
+.booking-calendar-day.is-primary-tour:hover {
+  background: transparent;
+}
+
+.booking-alternate-dates-calendar .booking-calendar-months {
+  gap: 1rem;
+}
+
+@media (max-width: 639px) {
+  .booking-alternate-dates-calendar .booking-calendar-months {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .booking-calendar-legend {

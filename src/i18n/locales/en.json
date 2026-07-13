@@ -3126,6 +3126,7 @@
         "whatsapp": "WhatsApp",
         "text_message": "Text message",
         "kakaotalk": "KakaoTalk",
+        "line": "Line",
         "phone_call": "Phone call",
         "chatroom": "Chat room"
       },

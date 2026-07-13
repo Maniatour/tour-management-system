@@ -10,11 +10,16 @@ import ProductDetailChoiceDescriptionModal, {
 } from '@/components/product/ProductDetailChoiceDescriptionModal'
 import ProductDetailPaymentModal from '@/components/product/ProductDetailPaymentModal'
 import type { Product, ProductChoice } from '@/components/product/productDetailTypes'
+import type { TravelerCounts } from '@/lib/productDetailTravelers'
 
 type ProductDetailCheckoutLayerProps = {
   product: Product
   productChoices: ProductChoice[]
   groupedChoices: Record<string, ProductChoiceGroup>
+  /** 상세 페이지에서 선택한 값들을 예약 모달 초기값으로 전달 */
+  initialDate?: string
+  initialParticipants?: TravelerCounts
+  initialSelectedOptions?: Record<string, string>
 }
 
 export function useProductDetailCheckoutActions() {
@@ -39,6 +44,9 @@ export default function ProductDetailCheckoutLayer({
   product,
   productChoices,
   groupedChoices,
+  initialDate,
+  initialParticipants,
+  initialSelectedOptions,
   showBookingFlow,
   onCloseBookingFlow,
   showChoiceDescriptionModal,
@@ -123,6 +131,9 @@ export default function ProductDetailCheckoutLayer({
         <BookingFlow
           product={product}
           productChoices={productChoices}
+          {...(initialDate ? { initialDate } : {})}
+          {...(initialParticipants ? { initialParticipants } : {})}
+          {...(initialSelectedOptions ? { initialSelectedOptions } : {})}
           onClose={onCloseBookingFlow}
           onComplete={handleBookingComplete}
         />

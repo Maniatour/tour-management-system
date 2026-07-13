@@ -3138,6 +3138,7 @@
         "whatsapp": "WhatsApp",
         "text_message": "문자",
         "kakaotalk": "카카오톡",
+        "line": "라인",
         "phone_call": "전화",
         "chatroom": "채팅방"
       },

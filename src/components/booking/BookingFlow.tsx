@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2, Minus, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -14,6 +14,18 @@ import { useCart } from '@/components/cart/CartProvider'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZoneLayoutRenderer'
+import BookingFlowSelectionSummary from '@/components/booking/BookingFlowSelectionSummary'
+import BookingFlowGuestDetailsSection from '@/components/booking/BookingFlowGuestDetailsSection'
+import BookingFlowAlertModal from '@/components/booking/BookingFlowAlertModal'
+import { buildBookingGuestEventNote } from '@/lib/bookingFlowGuestNotes'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+import {
+  findResidentsOptionId,
+  getAutoQuantityForOption,
+  getTotalQuantityForGroup,
+  isPassQuantityOption,
+  isResidentsOnlyOption,
+} from '@/lib/bookingFlowQuantityChoices'
 
 interface Product {
   id: string
@@ -160,6 +172,10 @@ interface BookingData {
   }
   selectedOptions: Record<string, string>
   totalPrice: number
+  pickupHotelId: string
+  pickupHotelCustom: string
+  pickupHotelLabel: string
+  alternativeDates: string[]
   customerInfo: {
     name: string
     email: string
@@ -168,6 +184,9 @@ interface BookingData {
     customerLanguage: string // 고객의 국가 언어 (단일 선택)
     tourLanguages: string[] // 투어 언어 (복수 선택 가능)
     specialRequests: string
+    localContactChannel: CustomerCommunicationChannel | ''
+    localContactHandle: string
+    smsConsent: boolean
   }
 }
 
@@ -187,6 +206,16 @@ interface Coupon {
 interface BookingFlowProps {
   product: Product
   productChoices: ProductChoice[]
+  /** 상세 페이지에서 선택한 날짜 (예약 모달 초기값) */
+  initialDate?: string
+  /** 상세 페이지에서 선택한 인원 (예약 모달 초기값) */
+  initialParticipants?: {
+    adults: number
+    children: number
+    infants: number
+  }
+  /** 상세 페이지에서 선택한 초이스 (예약 모달 초기값) */
+  initialSelectedOptions?: Record<string, string>
   onClose: () => void
   onComplete: (bookingData: BookingData) => void
 }
@@ -263,14 +292,13 @@ function PaymentForm({
   totalPrice: number
   onPaymentComplete: (result: { success: boolean; transactionId?: string | null }) => Promise<void>
   translate: (ko: string, en: string) => string
-  onPaymentSubmit?: (submitHandler: () => Promise<void>) => void
+  onPaymentSubmit?: (submitHandler: (() => Promise<void>) | null) => void
 }) {
   const stripe = useStripe()
   const elements = useElements()
   const [cardError, setCardError] = useState<string>('')
   const [_processing, setProcessing] = useState(false)
   const handleSubmitRef = React.useRef<(() => Promise<void>) | null>(null)
-  const onPaymentSubmitRef = React.useRef(onPaymentSubmit)
 
   const handleSubmit = React.useCallback(async (event?: React.FormEvent) => {
     if (event) {
@@ -372,55 +400,30 @@ function PaymentForm({
     }
   }, [stripe, elements, totalPrice, bookingData, onPaymentComplete, translate])
 
-  // 외부에서 제출할 수 있도록 핸들러 노출
-  // handleSubmit이 변경될 때마다 ref 업데이트
   useEffect(() => {
     handleSubmitRef.current = handleSubmit
   }, [handleSubmit])
 
-  // onPaymentSubmit을 ref로 저장
+  // 부모 BookingFlow 렌더 중 setState가 발생하지 않도록 effect + rAF로 핸들러 등록
   useEffect(() => {
-    onPaymentSubmitRef.current = onPaymentSubmit
-  }, [onPaymentSubmit])
-
-  // onPaymentSubmit 호출을 완전히 분리하여 렌더링 완료 후 실행
-  // handleSubmit은 의존성 배열에서 제거하고 ref를 통해 접근
-  // 한 번만 실행되도록 플래그 사용
-  const hasRegisteredHandler = React.useRef(false)
-  
-  useEffect(() => {
-    // 이미 등록되었거나 필요한 조건이 없으면 리턴
-    if (hasRegisteredHandler.current || !onPaymentSubmit || !stripe || !elements) {
+    if (!onPaymentSubmit || !stripe || !elements) {
       return
     }
 
-    // 여러 단계의 지연을 사용하여 렌더링 완료 보장
-    const timeoutId1 = setTimeout(() => {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          // onPaymentSubmit을 호출하기 전에 한 번 더 확인
-          // handleSubmit은 ref를 통해 접근하므로 항상 최신 버전 사용
-          if (onPaymentSubmitRef.current && !hasRegisteredHandler.current) {
-            try {
-              hasRegisteredHandler.current = true
-              onPaymentSubmitRef.current(async () => {
-                // ref를 통해 항상 최신 handleSubmit에 접근
-                if (handleSubmitRef.current) {
-                  await handleSubmitRef.current()
-                }
-              })
-            } catch (error) {
-              // 에러가 발생해도 무한 루프를 방지
-              hasRegisteredHandler.current = false
-              console.error('Payment submit handler error:', error)
-            }
-          }
-        }, 0)
+    let cancelled = false
+    const frameId = requestAnimationFrame(() => {
+      if (cancelled) return
+      onPaymentSubmit(async () => {
+        if (handleSubmitRef.current) {
+          await handleSubmitRef.current()
+        }
       })
-    }, 0)
+    })
 
     return () => {
-      clearTimeout(timeoutId1)
+      cancelled = true
+      cancelAnimationFrame(frameId)
+      onPaymentSubmit(null)
     }
   }, [onPaymentSubmit, stripe, elements])
 
@@ -476,11 +479,25 @@ function PaymentForm({
   )
 }
 
-export default function BookingFlow({ product, productChoices, onClose, onComplete }: BookingFlowProps) {
+export default function BookingFlow({ product, productChoices, initialDate, initialParticipants, initialSelectedOptions, onClose, onComplete }: BookingFlowProps) {
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const translate = useCallback((ko: string, en: string) => (isEnglish ? en : ko), [isEnglish])
   const localeTag = isEnglish ? 'en-US' : 'ko-KR'
+  const getChoiceGroupLabel = useCallback(
+    (group: ChoiceGroup) =>
+      isEnglish
+        ? group.choice_name_en || group.choice_name || group.choice_name_ko || ''
+        : group.choice_name_ko || group.choice_name || group.choice_name_en || '',
+    [isEnglish]
+  )
+  const getChoiceOptionLabel = useCallback(
+    (option: ChoiceOption) =>
+      isEnglish
+        ? option.option_name_en || option.option_name || option.option_name_ko || ''
+        : option.option_name_ko || option.option_name || option.option_name_en || '',
+    [isEnglish]
+  )
   const dayNames = isEnglish ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['일', '월', '화', '수', '목', '금', '토']
   
   // 장바구니 훅
@@ -495,15 +512,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   }
   const steps = isEnglish
     ? [
-        { id: 'booking', title: 'Booking Details', icon: Calendar },
-        { id: 'required', title: 'Required Options', icon: Ticket },
+        { id: 'booking', title: 'Your Selection', icon: Calendar },
         { id: 'optional', title: 'Optional Add-ons', icon: ShoppingCart },
         { id: 'customer', title: 'Guest Details', icon: Users },
         { id: 'payment', title: 'Payment', icon: CreditCard }
       ]
     : [
-        { id: 'booking', title: '예약 정보', icon: Calendar },
-        { id: 'required', title: '필수 선택', icon: Ticket },
+        { id: 'booking', title: '예약 확인', icon: Calendar },
         { id: 'optional', title: '추가 선택', icon: ShoppingCart },
         { id: 'customer', title: '고객 정보', icon: Users },
         { id: 'payment', title: '결제', icon: CreditCard }
@@ -513,9 +528,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   const [tourSchedules, setTourSchedules] = useState<TourSchedule[]>([])
   const [loading, setLoading] = useState(false)
   
-  // 캘린더 관련 상태
-  const [currentMonth, setCurrentMonth] = useState(new Date())
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  // 캘린더 관련 상태 (상세 페이지에서 선택한 날짜를 초기값으로 사용)
+  const [currentMonth, setCurrentMonth] = useState(
+    initialDate ? new Date(`${initialDate}T00:00:00`) : new Date()
+  )
+  const [selectedDate, setSelectedDate] = useState<string | null>(initialDate || null)
   
   // 추가 선택 옵션 상태
   const [productOptions, setProductOptions] = useState<ProductOption[]>([])
@@ -549,9 +566,32 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   const [couponError, setCouponError] = useState<string>('')
   const [validatingCoupon, setValidatingCoupon] = useState(false)
 
-  // PaymentForm의 handleSubmit 저장
-  const [paymentSubmitHandler, setPaymentSubmitHandler] = useState<(() => Promise<void>) | null>(null)
+  // PaymentForm의 handleSubmit 저장 (ref로 보관해 렌더 중 부모 setState 방지)
+  const paymentSubmitHandlerRef = useRef<(() => Promise<void>) | null>(null)
+  const [paymentHandlerReady, setPaymentHandlerReady] = useState(false)
   const [paymentProcessing, setPaymentProcessing] = useState(false)
+
+  const registerPaymentSubmitHandler = useCallback((handler: (() => Promise<void>) | null) => {
+    paymentSubmitHandlerRef.current = handler
+    queueMicrotask(() => {
+      setPaymentHandlerReady(Boolean(handler))
+    })
+  }, [])
+
+  useEffect(() => {
+    if (currentStep !== steps.length - 1 || paymentMethod !== 'card') {
+      paymentSubmitHandlerRef.current = null
+      setPaymentHandlerReady(false)
+    }
+  }, [currentStep, paymentMethod, steps.length])
+
+  const [validationAlertMessage, setValidationAlertMessage] = useState<string | null>(null)
+
+  const showValidationAlert = useCallback((message?: string) => {
+    if (message) {
+      setValidationAlertMessage(message)
+    }
+  }, [])
 
   // Stripe 초기화
   useEffect(() => {
@@ -594,15 +634,19 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
   const [bookingData, setBookingData] = useState<BookingData>({
     productId: product.id,
-    tourDate: '',
+    tourDate: initialDate || '',
     departureTime: '',
     participants: {
-      adults: 1,
-      children: 0,
-      infants: 0
+      adults: initialParticipants?.adults ?? 1,
+      children: initialParticipants?.children ?? 0,
+      infants: initialParticipants?.infants ?? 0
     },
-    selectedOptions: {},
+    selectedOptions: initialSelectedOptions ? { ...initialSelectedOptions } : {},
     totalPrice: product.base_price || 0,
+    pickupHotelId: '',
+    pickupHotelCustom: '',
+    pickupHotelLabel: '',
+    alternativeDates: [],
     customerInfo: {
       name: '',
       email: '',
@@ -610,7 +654,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       country: defaultCustomerInfo.country,
       customerLanguage: defaultCustomerInfo.customerLanguage,
       tourLanguages: defaultCustomerInfo.tourLanguages,
-      specialRequests: ''
+      specialRequests: '',
+      localContactChannel: '',
+      localContactHandle: '',
+      smsConsent: false,
     }
   })
 
@@ -620,6 +667,48 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   const productDisplayName = isEnglish
     ? product.customer_name_en || product.name_en || product.customer_name_ko || product.name
     : product.customer_name_ko || product.name
+
+  const getLocalContactChannelLabel = useCallback(
+    (channel: CustomerCommunicationChannel) => {
+      if (channel === 'chatroom') return translate('투어 채팅', 'Tour Chat')
+      const labels: Record<CustomerCommunicationChannel, [string, string]> = {
+        no_reply: ['답변없음', 'No reply'],
+        platform: ['플랫폼', 'Platform'],
+        email: ['이메일', 'Email'],
+        whatsapp: ['WhatsApp', 'WhatsApp'],
+        text_message: ['문자', 'Text message'],
+        kakaotalk: ['카카오톡', 'KakaoTalk'],
+        line: ['라인', 'Line'],
+        phone_call: ['전화', 'Phone call'],
+        chatroom: ['투어 채팅', 'Tour Chat'],
+      }
+      const [ko, en] = labels[channel]
+      return translate(ko, en)
+    },
+    [translate]
+  )
+
+  const buildGuestEventNoteForBooking = useCallback(() => {
+    return buildBookingGuestEventNote({
+      localContactChannel: bookingData.customerInfo.localContactChannel,
+      localContactHandle: bookingData.customerInfo.localContactHandle,
+      localContactChannelLabel: bookingData.customerInfo.localContactChannel
+        ? getLocalContactChannelLabel(bookingData.customerInfo.localContactChannel)
+        : null,
+      alternativeDates: bookingData.alternativeDates,
+      pickupHotelCustom: bookingData.pickupHotelId ? null : bookingData.pickupHotelCustom,
+      smsConsent: bookingData.customerInfo.smsConsent,
+      formatDateLabel: (ymd) => {
+        const date = new Date(`${ymd}T12:00:00`)
+        return date.toLocaleDateString(localeTag, {
+          weekday: 'short',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        })
+      },
+    })
+  }, [bookingData, getLocalContactChannelLabel, localeTag])
 
   // 투어 스케줄 로드 (매일 출발 가능, 고객은 모든 날짜 선택 가능)
   useEffect(() => {
@@ -1071,11 +1160,108 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       }
     })
     
+    // 상세 페이지에서 이미 선택한 초이스가 있으면 유지하고, 없는 것만 기본값으로 채움
     setBookingData(prev => ({
       ...prev,
-      selectedOptions: defaultOptions
+      selectedOptions: { ...defaultOptions, ...prev.selectedOptions }
     }))
   }, [productChoices])
+
+  // 수량형 필수 초이스: Residents 등 기본 옵션 자동 선택 + 수량 자동 입력
+  useEffect(() => {
+    if (productChoices.length === 0) return
+
+    const quantityGroups = Object.values(
+      productChoices.reduce((groups, choice) => {
+        if (choice.choice_type !== 'quantity') return groups
+        const groupKey = choice.choice_id
+        if (!groups[groupKey]) {
+          groups[groupKey] = { choice_id: choice.choice_id, options: [] as ProductChoice[] }
+        }
+        groups[groupKey].options.push(choice)
+        return groups
+      }, {} as Record<string, { choice_id: string; options: ProductChoice[] }>)
+    )
+
+    if (quantityGroups.length === 0) return
+
+    const totalParticipants =
+      bookingData.participants.adults +
+      bookingData.participants.children +
+      bookingData.participants.infants
+
+    if (totalParticipants <= 0) return
+
+    let quantitiesChanged = false
+    const nextQuantities = { ...selectedChoiceQuantities }
+    const selectedPatch: Record<string, string> = {}
+
+    for (const group of quantityGroups) {
+      const groupId = group.choice_id
+      const residentsId = findResidentsOptionId(group.options)
+      const selectedOptionId = bookingData.selectedOptions[groupId]
+
+      if (getTotalQuantityForGroup(groupId, nextQuantities) === 0) {
+        const targetOptionId =
+          selectedOptionId ||
+          residentsId ||
+          group.options.find((option) => option.is_default)?.option_id ||
+          group.options[0]?.option_id
+
+        if (!targetOptionId) continue
+
+        const targetOption = group.options.find((option) => option.option_id === targetOptionId)
+        if (!targetOption) continue
+
+        const autoQuantity = getAutoQuantityForOption(targetOption, totalParticipants)
+        if (autoQuantity <= 0) continue
+
+        if (!nextQuantities[groupId]) nextQuantities[groupId] = {}
+        nextQuantities[groupId][targetOptionId] = autoQuantity
+        quantitiesChanged = true
+
+        if (!selectedOptionId) {
+          selectedPatch[groupId] = residentsId ?? targetOptionId
+        }
+        continue
+      }
+
+      if (!residentsId) continue
+
+      const groupMap = nextQuantities[groupId] ?? {}
+      const otherActiveQty = Object.entries(groupMap)
+        .filter(([optionId, qty]) => optionId !== residentsId && qty > 0)
+        .reduce((sum, [, qty]) => sum + qty, 0)
+
+      if (otherActiveQty > 0) continue
+
+      const currentResidentsQty = groupMap[residentsId] ?? 0
+      if (currentResidentsQty > 0 && currentResidentsQty !== totalParticipants) {
+        if (!nextQuantities[groupId]) nextQuantities[groupId] = {}
+        nextQuantities[groupId][residentsId] = totalParticipants
+        quantitiesChanged = true
+        selectedPatch[groupId] = residentsId
+      }
+    }
+
+    if (quantitiesChanged) {
+      setSelectedChoiceQuantities(nextQuantities)
+    }
+
+    if (Object.keys(selectedPatch).length > 0) {
+      setBookingData((prev) => ({
+        ...prev,
+        selectedOptions: { ...prev.selectedOptions, ...selectedPatch },
+      }))
+    }
+  }, [
+    productChoices,
+    bookingData.participants.adults,
+    bookingData.participants.children,
+    bookingData.participants.infants,
+    bookingData.selectedOptions,
+    selectedChoiceQuantities,
+  ])
 
   // 필수 선택: productChoices에서 필수인 것들 (현재 추가 선택에 있던 내용을 필수로 이동)
   const groupedChoices = productChoices.reduce((groups, choice) => {
@@ -1106,6 +1292,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       option_id: choice.option_id,
       option_name: choice.option_name,
       option_name_ko: choice.option_name_ko,
+      option_name_en: (choice as ProductChoice & { option_name_en?: string | null }).option_name_en || null,
       option_price: choice.option_price,
       option_child_price: choice.option_child_price || null,
       option_infant_price: choice.option_infant_price || null,
@@ -1480,6 +1667,186 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     return Math.max(0, basePrice - discount) + choicesPrice
   }
 
+  type ReservationPriceLine = {
+    label: string
+    description?: string
+    amount: number
+  }
+
+  const formatUsd = (amount: number) => `$${amount.toFixed(2)}`
+
+  const getGuestCount = () =>
+    bookingData.participants.adults +
+    bookingData.participants.children +
+    bookingData.participants.infants
+
+  const getMultiplierLabel = (
+    unitPrice: number,
+    count: number,
+    unitLabelKo: string,
+    unitLabelEn: string
+  ) =>
+    translate(
+      `${formatUsd(unitPrice)} × ${unitLabelKo} ${count}명`,
+      `${formatUsd(unitPrice)} × ${count} ${unitLabelEn}`
+    )
+
+  const getGuestMultiplierLabel = (unitPrice: number, count: number) =>
+    translate(
+      `${formatUsd(unitPrice)} × ${count}명`,
+      `${formatUsd(unitPrice)} × ${count} guest${count === 1 ? '' : 's'}`
+    )
+
+  const getReservationBasePriceLines = (): ReservationPriceLine[] => {
+    const basePrice = product.base_price || 0
+    const { adults, children, infants } = bookingData.participants
+    const lines: ReservationPriceLine[] = []
+
+    if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
+      const pricing = datePrices[bookingData.tourDate]
+
+      if (adults > 0) {
+        const unitPrice = pricing.adult_price || basePrice
+        lines.push({
+          label: translate('성인 투어 요금', 'Adult tour fare'),
+          description: getMultiplierLabel(
+            unitPrice,
+            adults,
+            translate('성인', 'Adult'),
+            adults === 1 ? 'adult' : 'adults'
+          ),
+          amount: unitPrice * adults,
+        })
+      }
+
+      if (children > 0) {
+        const unitPrice = pricing.child_price || 0
+        lines.push({
+          label: translate('아동 투어 요금', 'Child tour fare'),
+          description: getMultiplierLabel(
+            unitPrice,
+            children,
+            translate('아동', 'Child'),
+            children === 1 ? 'child' : 'children'
+          ),
+          amount: unitPrice * children,
+        })
+      }
+
+      if (infants > 0) {
+        const unitPrice = pricing.infant_price || 0
+        lines.push({
+          label: translate('유아 투어 요금', 'Infant tour fare'),
+          description: getMultiplierLabel(
+            unitPrice,
+            infants,
+            translate('유아', 'Infant'),
+            infants === 1 ? 'infant' : 'infants'
+          ),
+          amount: unitPrice * infants,
+        })
+      }
+
+      return lines
+    }
+
+    const guestCount = getGuestCount()
+    if (guestCount <= 0) return lines
+
+    lines.push({
+      label: translate('투어 기본 요금', 'Tour base fare'),
+      description: getGuestMultiplierLabel(basePrice, guestCount),
+      amount: basePrice * guestCount,
+    })
+
+    return lines
+  }
+
+  const getReservationChoicePriceLines = (): ReservationPriceLine[] => {
+    const lines: ReservationPriceLine[] = []
+    const allChoices = [...requiredChoices, ...optionalChoices]
+    const totalParticipants = getGuestCount()
+    if (totalParticipants <= 0) return lines
+
+    const nationalParkFeeGroups: ChoiceGroup[] = []
+    allChoices.forEach((group: ChoiceGroup) => {
+      const groupName = (group.choice_name || group.choice_name_ko || '').toLowerCase()
+      if (
+        groupName.includes('입장료') ||
+        groupName.includes('fee') ||
+        groupName.includes('grand') ||
+        groupName.includes('zion') ||
+        groupName.includes('bryce') ||
+        groupName.includes('canyon')
+      ) {
+        nationalParkFeeGroups.push(group)
+      }
+    })
+
+    let hasAnnualPassBuyer = false
+    nationalParkFeeGroups.forEach((group: ChoiceGroup) => {
+      const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+      if (!selectedOptionId) return
+      const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+      if (!option) return
+      const optionKey = (option.option_name || '').toLowerCase()
+      if (optionKey.includes('annual') && optionKey.includes('pass') && optionKey.includes('buyer')) {
+        hasAnnualPassBuyer = true
+      }
+    })
+
+    if (hasAnnualPassBuyer && nationalParkFeeGroups.length > 0) {
+      let annualPassCount = 0
+      nationalParkFeeGroups.forEach((group: ChoiceGroup) => {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (!selectedOptionId) return
+        const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+        if (!option) return
+        const optionKey = (option.option_name || '').toLowerCase()
+        if (optionKey.includes('annual') && optionKey.includes('pass') && optionKey.includes('buyer')) {
+          annualPassCount++
+        }
+      })
+
+      if (annualPassCount > 0) {
+        lines.push({
+          label: translate('애뉴얼 패스', 'Annual Pass'),
+          description: translate(
+            `${formatUsd(250)} × ${annualPassCount}매`,
+            `${formatUsd(250)} × ${annualPassCount} ${annualPassCount === 1 ? 'pass' : 'passes'}`
+          ),
+          amount: annualPassCount * 250,
+        })
+      }
+
+      return lines
+    }
+
+    allChoices.forEach((group: ChoiceGroup) => {
+      const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+      if (!selectedOptionId) return
+
+      const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+      if (!option?.option_price) return
+
+      const optionLabel = getChoiceOptionLabel(option)
+      const groupLabel = getChoiceGroupLabel(group)
+
+      lines.push({
+        label: groupLabel,
+        description: [
+          optionLabel,
+          getGuestMultiplierLabel(option.option_price, totalParticipants),
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        amount: option.option_price * totalParticipants,
+      })
+    })
+
+    return lines
+  }
+
   // 전화번호를 국제 형식으로 변환하는 함수
   const getFullPhoneNumber = () => {
     if (!bookingData.customerInfo.country || !bookingData.customerInfo.phone) {
@@ -1490,18 +1857,18 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   }
 
   const handleNext = () => {
-    // 초이스 선택 단계에서 애뉴얼 패스 검증
-    if (currentStep === 1) {
+    // 통합된 첫 단계(날짜+인원+필수 초이스)에서 애뉴얼 패스 검증
+    if (currentStep === 0) {
       const validation = validateAnnualPassSelection()
       if (!validation.valid) {
-        alert(validation.error)
+        showValidationAlert(validation.error)
         return
       }
       
       // 수량 선택 초이스 검증
       const quantityValidation = validateQuantityChoices()
       if (!quantityValidation.valid) {
-        alert(quantityValidation.error)
+        showValidationAlert(quantityValidation.error)
         return
       }
     }
@@ -1518,42 +1885,49 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     
     for (const group of requiredChoices) {
       if (group.choice_type === 'quantity') {
-        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (!selectedOptionId) {
+        const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+        const activeOptions = group.options.filter(
+          (option) => (groupQuantities[option.option_id] ?? 0) > 0
+        )
+
+        if (activeOptions.length === 0) {
+          const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+          if (!selectedOptionId) {
+            return {
+              valid: false,
+              error: isEnglish
+                ? `Please select a quantity for ${group.choice_name || group.choice_name_ko}`
+                : `${group.choice_name_ko || group.choice_name}에 대한 수량을 선택해주세요.`,
+            }
+          }
+
           return {
             valid: false,
-            error: isEnglish 
-              ? `Please select a quantity for ${group.choice_name || group.choice_name_ko}` 
-              : `${group.choice_name_ko || group.choice_name}에 대한 수량을 선택해주세요.`
+            error: isEnglish
+              ? `Please select a quantity greater than 0 for ${group.choice_name || group.choice_name_ko}`
+              : `${group.choice_name_ko || group.choice_name}의 수량을 1개 이상 선택해주세요.`,
           }
         }
-        
-        const quantity = selectedChoiceQuantities[group.choice_id]?.[selectedOptionId] || 0
-        if (quantity <= 0) {
-          return {
-            valid: false,
-            error: isEnglish 
-              ? `Please select a quantity greater than 0 for ${group.choice_name || group.choice_name_ko}` 
-              : `${group.choice_name_ko || group.choice_name}의 수량을 1개 이상 선택해주세요.`
-          }
-        }
-        
-        // 선택된 옵션 찾기
-        const selectedOption = group.options.find(opt => opt.option_id === selectedOptionId)
-        if (selectedOption) {
-          const optionName = (selectedOption.option_name || selectedOption.option_name_ko || selectedOption.option_name_en || '').toLowerCase()
-          // 패스 옵션인지 확인: "비 거주자 (패스 소유)", "비 거주자 (패스 구매)", "non-resident with pass" 등
-          // 패스가 포함되고, 비거주자 관련 키워드가 있으면 패스 옵션으로 판단
+
+        for (const option of activeOptions) {
+          const quantity = groupQuantities[option.option_id] ?? 0
+          const optionName = (
+            option.option_name ||
+            option.option_name_ko ||
+            option.option_name_en ||
+            ''
+          ).toLowerCase()
           const hasPass = optionName.includes('pass') || optionName.includes('패스')
-          const hasNonResident = optionName.includes('non-resident') || optionName.includes('비 거주자') || optionName.includes('nonresident')
+          const hasNonResident =
+            optionName.includes('non-resident') ||
+            optionName.includes('비 거주자') ||
+            optionName.includes('nonresident')
           const isPassOption = hasPass && hasNonResident
-          
+
           if (isPassOption) {
-            // 패스 1장당 4인 커버
             totalCoveredPeople += quantity * 4
           } else {
-            // 일반 옵션: 수량 × 예약 인원
-            totalCoveredPeople += quantity * totalParticipants
+            totalCoveredPeople += quantity
           }
         }
       }
@@ -1604,18 +1978,16 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       // 애뉴얼 패스 선택 검증
       const validation = validateAnnualPassSelection()
       if (!validation.valid) {
-        alert(validation.error)
+        showValidationAlert(validation.error)
         return
       }
       
       // 수량 선택 초이스 검증
       const quantityValidation = validateQuantityChoices()
       if (!quantityValidation.valid) {
-        alert(quantityValidation.error)
+        showValidationAlert(quantityValidation.error)
         return
       }
-
-      // CartProvider 확인
       if (!cart || !cart.addItem) {
         console.error('CartProvider가 제대로 초기화되지 않았습니다.')
         alert(isEnglish 
@@ -1638,55 +2010,61 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         quantity?: number
       }> = []
 
+      const pushChoiceSelection = (
+        group: ChoiceGroup,
+        option: ChoiceOption,
+        quantity?: number
+      ) => {
+        if (quantity !== undefined && quantity <= 0) return
+        selectedChoices.push({
+          choiceId: group.choice_id,
+          choiceName: getChoiceGroupLabel(group),
+          choiceNameKo: group.choice_name_ko || group.choice_name || null,
+          choiceNameEn: group.choice_name_en || null,
+          optionId: option.option_id,
+          optionName: getChoiceOptionLabel(option),
+          optionNameKo: option.option_name_ko || option.option_name || null,
+          optionNameEn: option.option_name_en || null,
+          optionPrice: option.option_price,
+          ...(quantity !== undefined ? { quantity } : {}),
+        })
+      }
+
       // 필수 선택에서 선택된 항목 찾기
       requiredChoices.forEach((group) => {
+        if (group.choice_type === 'quantity') {
+          const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+          group.options.forEach((option) => {
+            const quantity = groupQuantities[option.option_id] ?? 0
+            pushChoiceSelection(group, option, quantity)
+          })
+          return
+        }
+
         const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
-          if (selectedOption) {
-            const quantity = group.choice_type === 'quantity' 
-              ? (selectedChoiceQuantities[group.choice_id]?.[selectedOptionId] || 0)
-              : undefined
-            
-            // 수량 선택 초이스인 경우 수량이 0보다 큰 경우만 추가
-            if (group.choice_type === 'quantity' && (!quantity || quantity <= 0)) {
-              return
-            }
-            
-            selectedChoices.push({
-              choiceId: group.choice_id,
-              choiceName: group.choice_name,
-              choiceNameKo: group.choice_name_ko,
-              choiceNameEn: group.choice_name_en || null,
-              optionId: selectedOption.option_id,
-              optionName: selectedOption.option_name,
-              optionNameKo: selectedOption.option_name_ko,
-              optionNameEn: selectedOption.option_name_en || null,
-              optionPrice: selectedOption.option_price,
-              ...(quantity !== undefined && { quantity })
-            })
-          }
+        if (!selectedOptionId) return
+        const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
+        if (selectedOption) {
+          pushChoiceSelection(group, selectedOption)
         }
       })
 
       // 추가 선택에서 선택된 항목 찾기
       optionalChoices.forEach((group) => {
+        if (group.choice_type === 'quantity') {
+          const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+          group.options.forEach((option) => {
+            const quantity = groupQuantities[option.option_id] ?? 0
+            pushChoiceSelection(group, option, quantity)
+          })
+          return
+        }
+
         const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
-          if (selectedOption) {
-            selectedChoices.push({
-              choiceId: group.choice_id,
-              choiceName: group.choice_name,
-              choiceNameKo: group.choice_name_ko,
-              choiceNameEn: group.choice_name_en || null,
-              optionId: selectedOption.option_id,
-              optionName: selectedOption.option_name,
-              optionNameKo: selectedOption.option_name_ko,
-              optionNameEn: selectedOption.option_name_en || null,
-              optionPrice: selectedOption.option_price
-            })
-          }
+        if (!selectedOptionId) return
+        const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
+        if (selectedOption) {
+          pushChoiceSelection(group, selectedOption)
         }
       })
 
@@ -1708,7 +2086,14 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           email: bookingData.customerInfo.email,
           phone: fullPhoneNumber,
           nationality: bookingData.customerInfo.country || '',
-          specialRequests: bookingData.customerInfo.specialRequests || ''
+          specialRequests: bookingData.customerInfo.specialRequests || '',
+          localContactChannel: bookingData.customerInfo.localContactChannel,
+          localContactHandle: bookingData.customerInfo.localContactHandle,
+          smsConsent: bookingData.customerInfo.smsConsent,
+          pickupHotelId: bookingData.pickupHotelId,
+          pickupHotelCustom: bookingData.pickupHotelCustom,
+          pickupHotelLabel: bookingData.pickupHotelLabel,
+          alternativeDates: bookingData.alternativeDates,
         }
       }
 
@@ -1751,9 +2136,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       // 1. 예약 기본 정보 생성
       const reservationId = generateReservationId()
       
+      const guestEventNote = buildGuestEventNoteForBooking()
+      
       const reservationData = {
         id: reservationId,
         product_id: product.id,
+        channel_id: 'M00001',
         customer_name: bookingData.customerInfo.name,
         customer_email: bookingData.customerInfo.email,
         customer_phone: fullPhoneNumber,
@@ -1767,6 +2155,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         choices_total: 0,
         status: transactionId ? 'confirmed' : 'inquiry',
         notes: bookingData.customerInfo.specialRequests || null,
+        pickup_hotel: bookingData.pickupHotelId || null,
+        customer_communication_channel: bookingData.customerInfo.localContactChannel || null,
+        event_note: guestEventNote,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
@@ -2139,6 +2530,16 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }))
   }
 
+  // 상세 페이지에서 넘어온 초기 날짜에 대한 출발 시간을 스케줄 로드 후 채움
+  useEffect(() => {
+    if (!bookingData.tourDate || bookingData.departureTime) return
+    const schedule = tourSchedules.find(s => s.tour_date === bookingData.tourDate)
+    if (schedule?.departure_time) {
+      setBookingData(prev => ({ ...prev, departureTime: schedule.departure_time || '' }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourSchedules, bookingData.tourDate])
+
   const goToPreviousMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
   }
@@ -2149,17 +2550,19 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
   const isStepValid = useCallback(() => {
     switch (currentStep) {
-      case 0: // 날짜만
-        return bookingData.tourDate !== null && bookingData.tourDate !== ''
-      case 1: // 필수 선택 + 인원
-        return bookingData.participants.adults > 0 &&
-               requiredChoices.every((group: ChoiceGroup) => {
-                 const selectedOption = bookingData.selectedOptions[group.choice_id]
-                 return selectedOption && selectedOption !== ''
-               })
-      case 2: // 추가 선택
+      case 0: // 날짜 + 인원 + 필수 초이스 (한 페이지에서 확인/수정)
+        return (
+          bookingData.tourDate !== null &&
+          bookingData.tourDate !== '' &&
+          bookingData.participants.adults > 0 &&
+          requiredChoices.every((group: ChoiceGroup) => {
+            const selectedOption = bookingData.selectedOptions[group.choice_id]
+            return selectedOption && selectedOption !== ''
+          })
+        )
+      case 1: // 추가 선택
         return true // 추가 선택은 선택사항
-      case 3: // 고객 정보
+      case 2: // 고객 정보
         const { name, email, phone, customerLanguage, country } = bookingData.customerInfo
         return !!(
           name && 
@@ -2172,7 +2575,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           phone.trim() &&
           customerLanguage
         )
-      case 4: // 결제
+      case 3: // 결제
         // Stripe Elements가 자동으로 카드 정보를 검증하므로 여기서는 항상 true
         // 카드 결제는 PaymentForm에서 처리
         return true
@@ -2181,343 +2584,105 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   }, [currentStep, bookingData, requiredChoices])
 
+  const handleDateStringChange = useCallback(
+    (dateString: string) => {
+      setSelectedDate(dateString)
+      const schedule = tourSchedules.find((item) => item.tour_date === dateString)
+      setBookingData((prev) => ({
+        ...prev,
+        tourDate: dateString,
+        departureTime: schedule?.departure_time || '',
+      }))
+    },
+    [tourSchedules]
+  )
+
+  const handleParticipantsChange = useCallback(
+    (counts: { adults: number; children: number; infants: number }) => {
+      setBookingData((prev) => ({
+        ...prev,
+        participants: counts,
+      }))
+    },
+    []
+  )
+
+  const applyQuantityChoiceChange = useCallback(
+    (groupId: string, optionId: string, newQuantity: number) => {
+      setSelectedChoiceQuantities((prev) => ({
+        ...prev,
+        [groupId]: {
+          ...(prev[groupId] || {}),
+          [optionId]: newQuantity,
+        },
+      }))
+
+      if (newQuantity <= 0) {
+        setBookingData((prev) => {
+          const nextOptions = { ...prev.selectedOptions }
+          if (nextOptions[groupId] === optionId) {
+            delete nextOptions[groupId]
+          }
+          return { ...prev, selectedOptions: nextOptions }
+        })
+        return
+      }
+
+      setBookingData((prev) => ({
+        ...prev,
+        selectedOptions: {
+          ...prev.selectedOptions,
+          [groupId]: optionId,
+        },
+      }))
+    },
+    []
+  )
+
+  // currentStep을 논리 섹션으로 매핑: 첫 페이지는 요약 + 모달 편집
   const renderStepContent = () => {
     switch (currentStep) {
       case 0:
         return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('예약 정보', 'Booking Details')}</h3>
-              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-primary">
-                      <strong>{translate('매일 출발 가능합니다!', 'Tours depart daily!')}</strong> {translate('날짜를 선택해주세요.', 'Please select a date.')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              {loading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-booking mx-auto mb-4"></div>
-                  <p className="text-gray-600">{translate('투어 스케줄을 불러오는 중...', 'Loading tour availability...')}</p>
-                </div>
-              ) : (
-                <div className="flex justify-center">
-                  {/* 달력 */}
-                  <div className="w-full max-w-2xl">
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 min-h-[600px] flex flex-col">
-                  {/* 캘린더 헤더 */}
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={goToPreviousMonth}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <ChevronLeft className="h-5 w-5 text-gray-600" />
-                    </button>
-                    <h4 className="text-lg font-semibold text-gray-900">
-                      {currentMonth.toLocaleDateString(localeTag, { 
-                            year: 'numeric',
-                        month: 'long' 
-                      })}
-                    </h4>
-                    <button
-                      onClick={goToNextMonth}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <ChevronRight className="h-5 w-5 text-gray-600" />
-                    </button>
-                        </div>
-
-                  {/* 요일 헤더 */}
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {dayNames.map((day) => (
-                      <div key={day} className="text-center text-sm font-medium text-gray-500 py-2">
-                        {day}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 캘린더 그리드 */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {getDaysInMonth(currentMonth).map((day, index) => {
-                      const dateString = day.date.toISOString().split('T')[0]
-                      const isSelected = selectedDate === dateString
-                      const isToday = dateString === new Date().toISOString().split('T')[0]
-                      
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => handleDateSelect(day.date)}
-                          disabled={!day.isAvailable || closedDates.has(dateString)}
-                          className={`
-                            relative p-2 text-sm rounded-lg transition-colors
-                            ${!day.isCurrentMonth ? 'text-gray-300' : ''}
-                            ${!day.isAvailable || closedDates.has(dateString) ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer'}
-                            ${isSelected ? 'bg-primary text-primary-foreground' : ''}
-                            ${!isSelected && day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) ? 'hover:bg-muted/50 text-gray-900' : ''}
-                            ${isToday && !isSelected ? 'bg-yellow-100 text-yellow-800 font-semibold' : ''}
-                            ${closedDates.has(dateString) ? 'bg-red-100 text-red-500' : ''}
-                          `}
-                        >
-                          <div className="text-center">
-                            <div>{day.date.getDate()}</div>
-                            {/* 날짜별 가격 표시 */}
-                            {day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) && (
-                              <div className="text-xs font-semibold mt-1 text-primary">
-                                {datePrices[dateString] 
-                                  ? `$${datePrices[dateString].adult_price}`
-                                  : product.base_price 
-                                    ? `$${product.base_price}`
-                                    : ''}
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* 상태 표시 */}
-                          {day.isAvailable && day.isCurrentMonth && (
-                            <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-                              <div className={`
-                                w-1 h-1 rounded-full
-                                ${getDateStatus(day.date) === 'available' ? 'bg-green-500' : ''}
-                                ${getDateStatus(day.date) === 'recruiting' ? 'bg-orange-500' : ''}
-                                ${getDateStatus(day.date) === 'confirmed' ? 'bg-primary' : ''}
-                                ${getDateStatus(day.date) === 'almost_full' ? 'bg-yellow-500' : ''}
-                                ${getDateStatus(day.date) === 'closed' ? 'bg-red-500' : ''}
-                              `} />
-                            </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                      </div>
-
-                  {/* 범례 */}
-                  <div className="mt-4 flex items-center justify-center space-x-3 text-xs text-gray-600">
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                      {statusLabelMap.available}
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
-                      {statusLabelMap.recruiting}
-                    </div>
-                    <div className="flex items-center">
-                      <div className="mr-1 h-2 w-2 rounded-full bg-primary"></div>
-                      {statusLabelMap.confirmed}
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
-                      {statusLabelMap.almost_full}
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                      {statusLabelMap.closed}
-                    </div>
-                  </div>
-                  
-                  {/* 선택된 날짜 정보 */}
-                  <div className="mt-auto pt-4">
-                    {selectedDate && (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="text-sm text-gray-700">
-                          <div className="font-medium text-xs mb-1">{translate('선택된 날짜', 'Selected Date')}</div>
-                          <div className="text-xs">
-                            {new Date(selectedDate).toLocaleDateString(localeTag, {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                              weekday: 'short'
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <BookingFlowSelectionSummary
+            isEnglish={isEnglish}
+            translate={translate}
+            productId={product.id}
+            productDisplayName={productDisplayName}
+            product={product}
+            selectedDate={selectedDate}
+            onDateChange={handleDateStringChange}
+            participants={bookingData.participants}
+            onParticipantsChange={handleParticipantsChange}
+            requiredChoices={requiredChoices}
+            selectedOptions={bookingData.selectedOptions}
+            selectedChoiceQuantities={selectedChoiceQuantities}
+            departureTime={bookingData.departureTime}
+            renderChoiceGroupEditor={(choiceId) => {
+              const groupIndex = requiredChoices.findIndex((group) => group.choice_id === choiceId)
+              const group = requiredChoices[groupIndex]
+              if (!group) return null
+              return renderRequiredChoiceGroupEditor(group, groupIndex, { hideHeader: true })
+            }}
+          />
         )
-
       case 1:
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('필수 선택', 'Required Options')}</h3>
-              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-primary">
-                      <strong>{translate('필수 선택입니다!', 'These are required!')}</strong> {translate('초이스와 인원을 선택해주세요.', 'Please select your choice and number of participants.')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              {requiredChoices.length > 0 ? (
-                <div className="space-y-6">
-                  {/* 인원 선택 - 상단 가로 배치 */}
-                  <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 className="text-base font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{translate('성인', 'Adult')}</div>
-                          <div className="text-xs text-gray-600">
-                            {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => {
-                              if (bookingData.participants.adults > 1) {
-                                setBookingData(prev => ({
-                                  ...prev,
-                                  participants: {
-                                    ...prev.participants,
-                                    adults: prev.participants.adults - 1
-                                  }
-                                }))
-                              }
-                            }}
-                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          <span className="w-8 text-center font-medium text-sm">{bookingData.participants.adults}</span>
-                          <button
-                            onClick={() => {
-                              const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                              if (totalParticipants < (product.max_participants || 20)) {
-                                setBookingData(prev => ({
-                                  ...prev,
-                                  participants: {
-                                    ...prev.participants,
-                                    adults: prev.participants.adults + 1
-                                  }
-                                }))
-                              }
-                            }}
-                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
+        return renderSection(2)
+      case 2:
+        return renderSection(3)
+      case 3:
+        return renderSection(4)
+      default:
+        return null
+    }
+  }
 
-                      {product.child_age_min && product.child_age_max && (
-                        <div className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <div className="font-medium text-gray-900 text-sm">{translate('아동', 'Child')}</div>
-                            <div className="text-xs text-gray-600">
-                              {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => {
-                                if (bookingData.participants.children > 0) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      children: prev.participants.children - 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.children}</span>
-                            <button
-                              onClick={() => {
-                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                if (totalParticipants < (product.max_participants || 20)) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      children: prev.participants.children + 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
 
-                      {product.infant_age && (
-                        <div className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <div className="font-medium text-gray-900 text-sm">{translate('유아', 'Infant')}</div>
-                            <div className="text-xs text-gray-600">
-                              {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => {
-                                if (bookingData.participants.infants > 0) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      infants: prev.participants.infants - 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.infants}</span>
-                            <button
-                              onClick={() => {
-                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                if (totalParticipants < (product.max_participants || 20)) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      infants: prev.participants.infants + 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 초이스 그룹들 */}
-                  <div className="space-y-6">
-                  {requiredChoices.map((group: ChoiceGroup, groupIndex: number) => {
+  function renderRequiredChoiceGroupEditor(
+    group: ChoiceGroup,
+    groupIndex: number,
+    options?: { hideHeader?: boolean }
+  ) {
                     const groupDescription = isEnglish 
                       ? (group.choice_description_en || group.choice_description || '')
                       : (group.choice_description_ko || group.choice_description || '')
@@ -2540,10 +2705,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     
                     return (
                     <div key={group.choice_id} className="mb-6">
+                      {!options?.hideHeader ? (
                       <h4 className="text-base font-semibold text-gray-900 mb-3 flex items-center">
                         <span className="text-primary mr-1">*</span>
-                        {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                        {getChoiceGroupLabel(group)}
                       </h4>
+                      ) : null}
                       {hasDescription && (
                         <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
                           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
@@ -2585,170 +2752,120 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         return null
                       })()}
                       
-                      {/* 수량 선택 초이스인 경우 */}
+                      {/* 수량 선택 초이스인 경우 — 옵션명 옆 인라인 수량 입력 */}
                       {isQuantityChoice ? (
-                        <div className="space-y-4">
+                        <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-white">
                           {group.options.map((option: ChoiceOption) => {
-                            const currentQuantity = selectedChoiceQuantities[group.choice_id]?.[option.option_id] || 0
+                            const currentQuantity =
+                              selectedChoiceQuantities[group.choice_id]?.[option.option_id] || 0
                             const adultPrice = option.option_price || 0
                             const childPrice = option.option_child_price || 0
                             const infantPrice = option.option_infant_price || 0
-                            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                            const totalPrice = (adultPrice * bookingData.participants.adults + 
-                                              childPrice * bookingData.participants.children + 
-                                              infantPrice * bookingData.participants.infants) * currentQuantity
-                            
-                            const optionDescription = isEnglish 
-                              ? (option.option_description || option.option_description_ko)
-                              : (option.option_description_ko || option.option_description)
-                            
-                            // 옵션 이름을 확인하여 인원인지 장수인지 판단
-                            const optionName = (option.option_name || option.option_name_ko || option.option_name_en || '').toLowerCase()
-                            // 패스 옵션인지 확인: "비 거주자 (패스 소유)", "비 거주자 (패스 구매)", "non-resident with pass" 등
-                            const hasPass = optionName.includes('pass') || optionName.includes('패스')
-                            const hasNonResident = optionName.includes('non-resident') || optionName.includes('비 거주자') || optionName.includes('nonresident')
-                            const isPassOption = hasPass && hasNonResident
-                            const quantityUnit = isPassOption ? translate('장수', 'passes') : translate('인원', 'people')
-                            
+                            const optionLabel = isEnglish
+                              ? option.option_name_en ||
+                                option.option_name ||
+                                option.option_name_ko
+                              : option.option_name_ko ||
+                                option.option_name ||
+                                option.option_name_en
+                            const optionDescription = isEnglish
+                              ? option.option_description || option.option_description_ko
+                              : option.option_description_ko || option.option_description
+                            const isPassOption = isPassQuantityOption(option)
+                            const isResidentsOption = isResidentsOnlyOption(option)
+                            const quantityUnit = isPassOption
+                              ? translate('장수', 'passes')
+                              : translate('명', 'people')
+                            const isActive =
+                              currentQuantity > 0 ||
+                              bookingData.selectedOptions[group.choice_id] === option.option_id
+
                             return (
-                              <div key={option.option_id} className="border rounded-lg p-4 bg-white">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div className="flex-1">
-                                    <h5 className="font-semibold text-gray-900">
-                                      {isEnglish ? option.option_name_en || option.option_name || option.option_name_ko : option.option_name_ko || option.option_name || option.option_name_en}
-                                    </h5>
-                                    {(adultPrice > 0 || childPrice > 0 || infantPrice > 0) && (
-                                      <div className="mt-1 text-sm text-gray-600">
-                                        {adultPrice > 0 && (
-                                          <span>{translate('성인', 'Adult')}: ${adultPrice.toFixed(2)} </span>
-                                        )}
-                                        {childPrice > 0 && (
-                                          <span>{translate('아동', 'Child')}: ${childPrice.toFixed(2)} </span>
-                                        )}
-                                        {infantPrice > 0 && (
-                                          <span>{translate('유아', 'Infant')}: ${infantPrice.toFixed(2)}</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center space-x-2 ml-4">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const newQuantity = Math.max(0, currentQuantity - 1)
-                                        setSelectedChoiceQuantities(prev => ({
-                                          ...prev,
-                                          [group.choice_id]: {
-                                            ...(prev[group.choice_id] || {}),
-                                            [option.option_id]: newQuantity
-                                          }
-                                        }))
-                                        if (newQuantity === 0) {
-                                          setBookingData(prev => {
-                                            const newOptions = { ...prev.selectedOptions }
-                                            delete newOptions[group.choice_id]
-                                            return { ...prev, selectedOptions: newOptions }
-                                          })
-                                        } else {
-                                          setBookingData(prev => ({
-                                            ...prev,
-                                            selectedOptions: {
-                                              ...prev.selectedOptions,
-                                              [group.choice_id]: option.option_id
-                                            }
-                                          }))
-                                        }
-                                      }}
-                                      disabled={currentQuantity <= 0}
-                                      className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      <Minus className="h-4 w-4" />
-                                    </button>
-                                    <div className="flex items-center border border-gray-300 rounded">
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={currentQuantity}
-                                        onChange={(e) => {
-                                          const newQuantity = Math.max(0, parseInt(e.target.value) || 0)
-                                          setSelectedChoiceQuantities(prev => ({
-                                            ...prev,
-                                            [group.choice_id]: {
-                                              ...(prev[group.choice_id] || {}),
-                                              [option.option_id]: newQuantity
-                                            }
-                                          }))
-                                          if (newQuantity === 0) {
-                                            setBookingData(prev => {
-                                              const newOptions = { ...prev.selectedOptions }
-                                              delete newOptions[group.choice_id]
-                                              return { ...prev, selectedOptions: newOptions }
-                                            })
-                                          } else {
-                                            setBookingData(prev => ({
-                                              ...prev,
-                                              selectedOptions: {
-                                                ...prev.selectedOptions,
-                                                [group.choice_id]: option.option_id
-                                              }
-                                            }))
-                                          }
-                                        }}
-                                        className="w-16 text-center px-2 py-1 text-sm border-0 focus:outline-none focus:ring-0"
-                                      />
-                                      <span className="px-2 py-1 text-xs font-medium text-gray-600 bg-gray-50 border-l border-gray-300">
-                                        {quantityUnit}
+                              <div
+                                key={option.option_id}
+                                className={`flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
+                                  isActive ? 'bg-primary/5' : ''
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold text-gray-900">{optionLabel}</p>
+                                    {isResidentsOption && currentQuantity > 0 ? (
+                                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                        {translate('선택됨', 'Selected')}
                                       </span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const newQuantity = currentQuantity + 1
-                                        setSelectedChoiceQuantities(prev => ({
-                                          ...prev,
-                                          [group.choice_id]: {
-                                            ...(prev[group.choice_id] || {}),
-                                            [option.option_id]: newQuantity
-                                          }
-                                        }))
-                                        setBookingData(prev => ({
-                                          ...prev,
-                                          selectedOptions: {
-                                            ...prev.selectedOptions,
-                                            [group.choice_id]: option.option_id
-                                          }
-                                        }))
-                                      }}
-                                      className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                                    >
-                                      <Plus className="h-4 w-4" />
-                                    </button>
+                                    ) : null}
                                   </div>
-                                </div>
-                                
-                                {/* 옵션 설명 */}
-                                {optionDescription && optionDescription.trim() && (
-                                  <div className="mb-3">
-                                    <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                  {(adultPrice > 0 || childPrice > 0 || infantPrice > 0) && (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {adultPrice > 0
+                                        ? `${translate('성인', 'Adult')}: $${adultPrice.toFixed(2)}`
+                                        : ''}
+                                      {childPrice > 0
+                                        ? ` · ${translate('아동', 'Child')}: $${childPrice.toFixed(2)}`
+                                        : ''}
+                                      {infantPrice > 0
+                                        ? ` · ${translate('유아', 'Infant')}: $${infantPrice.toFixed(2)}`
+                                        : ''}
+                                    </p>
+                                  )}
+                                  {optionDescription?.trim() ? (
+                                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                                       {optionDescription}
                                     </p>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      applyQuantityChoiceChange(
+                                        group.choice_id,
+                                        option.option_id,
+                                        Math.max(0, currentQuantity - 1)
+                                      )
+                                    }
+                                    disabled={currentQuantity <= 0}
+                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-40"
+                                    aria-label={`${optionLabel} decrease`}
+                                  >
+                                    <Minus className="h-4 w-4" />
+                                  </button>
+                                  <div className="flex items-center overflow-hidden rounded-lg border border-border">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={currentQuantity}
+                                      onChange={(e) =>
+                                        applyQuantityChoiceChange(
+                                          group.choice_id,
+                                          option.option_id,
+                                          Math.max(0, parseInt(e.target.value, 10) || 0)
+                                        )
+                                      }
+                                      className="w-14 border-0 bg-white px-2 py-2 text-center text-sm font-semibold focus:outline-none focus:ring-0"
+                                      aria-label={`${optionLabel} quantity`}
+                                    />
+                                    <span className="border-l border-border bg-muted/40 px-2 py-2 text-xs font-medium text-muted-foreground">
+                                      {quantityUnit}
+                                    </span>
                                   </div>
-                                )}
-                                
-                                {currentQuantity > 0 && (
-                                  <div className="mt-2 pt-2 border-t border-gray-200 text-sm text-gray-600">
-                                    {isPassOption ? (
-                                      <div>
-                                        <p>{translate('수량', 'Quantity')}: {currentQuantity} {quantityUnit}</p>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                          {translate('패스 1장당 최대 4인까지 커버', '1 pass covers up to 4 people')}
-                                        </p>
-                                      </div>
-                                    ) : (
-                                      <p>{translate('수량', 'Quantity')}: {currentQuantity} {quantityUnit} × {totalParticipants} {translate('명', 'people')} = {translate('총', 'Total')} ${totalPrice.toFixed(2)}</p>
-                                    )}
-                                  </div>
-                                )}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      applyQuantityChoiceChange(
+                                        group.choice_id,
+                                        option.option_id,
+                                        currentQuantity + 1
+                                      )
+                                    }
+                                    className="flex h-9 w-9 items-center justify-center rounded-full border border-border hover:bg-muted"
+                                    aria-label={`${optionLabel} increase`}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
                               </div>
                             )
                           })}
@@ -3081,7 +3198,348 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       )}
                     </div>
                     )
-                  })}
+                  
+  }
+
+  const renderSection = (section: number) => {
+    switch (section) {
+      case 0:
+        return (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('날짜 선택', 'Select Date')}</h3>
+              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-primary">
+                      <strong>{translate('매일 출발 가능합니다!', 'Tours depart daily!')}</strong> {translate('선택하신 날짜를 확인하거나 변경하세요.', 'Review or change your selected date.')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-booking mx-auto mb-4"></div>
+                  <p className="text-gray-600">{translate('투어 스케줄을 불러오는 중...', 'Loading tour availability...')}</p>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  {/* 달력 */}
+                  <div className="w-full max-w-2xl">
+                    <div className="bg-white border border-gray-200 rounded-lg p-4 min-h-[600px] flex flex-col">
+                  {/* 캘린더 헤더 */}
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={goToPreviousMonth}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ChevronLeft className="h-5 w-5 text-gray-600" />
+                    </button>
+                    <h4 className="text-lg font-semibold text-gray-900">
+                      {currentMonth.toLocaleDateString(localeTag, { 
+                            year: 'numeric',
+                        month: 'long' 
+                      })}
+                    </h4>
+                    <button
+                      onClick={goToNextMonth}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ChevronRight className="h-5 w-5 text-gray-600" />
+                    </button>
+                        </div>
+
+                  {/* 요일 헤더 */}
+                  <div className="grid grid-cols-7 gap-1 mb-2">
+                    {dayNames.map((day) => (
+                      <div key={day} className="text-center text-sm font-medium text-gray-500 py-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 캘린더 그리드 */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {getDaysInMonth(currentMonth).map((day, index) => {
+                      const dateString = day.date.toISOString().split('T')[0]
+                      const isSelected = selectedDate === dateString
+                      const isToday = dateString === new Date().toISOString().split('T')[0]
+                      
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => handleDateSelect(day.date)}
+                          disabled={!day.isAvailable || closedDates.has(dateString)}
+                          className={`
+                            relative p-2 text-sm rounded-lg transition-colors
+                            ${!day.isCurrentMonth ? 'text-gray-300' : ''}
+                            ${!day.isAvailable || closedDates.has(dateString) ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer'}
+                            ${isSelected ? 'bg-primary text-primary-foreground' : ''}
+                            ${!isSelected && day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) ? 'hover:bg-muted/50 text-gray-900' : ''}
+                            ${isToday && !isSelected ? 'bg-yellow-100 text-yellow-800 font-semibold' : ''}
+                            ${closedDates.has(dateString) ? 'bg-red-100 text-red-500' : ''}
+                          `}
+                        >
+                          <div className="text-center">
+                            <div>{day.date.getDate()}</div>
+                            {/* 날짜별 가격 표시 */}
+                            {day.isAvailable && day.isCurrentMonth && !closedDates.has(dateString) && (
+                              <div className="text-xs font-semibold mt-1 text-primary">
+                                {datePrices[dateString] 
+                                  ? `$${datePrices[dateString].adult_price}`
+                                  : product.base_price 
+                                    ? `$${product.base_price}`
+                                    : ''}
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* 상태 표시 */}
+                          {day.isAvailable && day.isCurrentMonth && (
+                            <div className="absolute bottom-0 left-0 right-0 flex justify-center">
+                              <div className={`
+                                w-1 h-1 rounded-full
+                                ${getDateStatus(day.date) === 'available' ? 'bg-green-500' : ''}
+                                ${getDateStatus(day.date) === 'recruiting' ? 'bg-orange-500' : ''}
+                                ${getDateStatus(day.date) === 'confirmed' ? 'bg-primary' : ''}
+                                ${getDateStatus(day.date) === 'almost_full' ? 'bg-yellow-500' : ''}
+                                ${getDateStatus(day.date) === 'closed' ? 'bg-red-500' : ''}
+                              `} />
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                      </div>
+
+                  {/* 범례 */}
+                  <div className="mt-4 flex items-center justify-center space-x-3 text-xs text-gray-600">
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                      {statusLabelMap.available}
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
+                      {statusLabelMap.recruiting}
+                    </div>
+                    <div className="flex items-center">
+                      <div className="mr-1 h-2 w-2 rounded-full bg-primary"></div>
+                      {statusLabelMap.confirmed}
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
+                      {statusLabelMap.almost_full}
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
+                      {statusLabelMap.closed}
+                    </div>
+                  </div>
+                  
+                  {/* 선택된 날짜 정보 */}
+                  <div className="mt-auto pt-4">
+                    {selectedDate && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="text-sm text-gray-700">
+                          <div className="font-medium text-xs mb-1">{translate('선택된 날짜', 'Selected Date')}</div>
+                          <div className="text-xs">
+                            {new Date(selectedDate).toLocaleDateString(localeTag, {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              weekday: 'short'
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 1:
+        return (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('인원 및 필수 선택', 'Guests & Required Options')}</h3>
+              <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-booking" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-primary">
+                      <strong>{translate('선택 내용을 확인하세요!', 'Review your selection!')}</strong> {translate('인원과 초이스를 확인하고 필요하면 변경하세요.', 'Confirm your guests and choices, and change them if needed.')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {requiredChoices.length > 0 ? (
+                <div className="space-y-6">
+                  {/* 인원 선택 - 상단 가로 배치 */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-base font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <div className="font-medium text-gray-900 text-sm">{translate('성인', 'Adult')}</div>
+                          <div className="text-xs text-gray-600">
+                            {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              if (bookingData.participants.adults > 1) {
+                                setBookingData(prev => ({
+                                  ...prev,
+                                  participants: {
+                                    ...prev.participants,
+                                    adults: prev.participants.adults - 1
+                                  }
+                                }))
+                              }
+                            }}
+                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="w-8 text-center font-medium text-sm">{bookingData.participants.adults}</span>
+                          <button
+                            onClick={() => {
+                              const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                              if (totalParticipants < (product.max_participants || 20)) {
+                                setBookingData(prev => ({
+                                  ...prev,
+                                  participants: {
+                                    ...prev.participants,
+                                    adults: prev.participants.adults + 1
+                                  }
+                                }))
+                              }
+                            }}
+                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {product.child_age_min && product.child_age_max && (
+                        <div className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">{translate('아동', 'Child')}</div>
+                            <div className="text-xs text-gray-600">
+                              {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => {
+                                if (bookingData.participants.children > 0) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      children: prev.participants.children - 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.children}</span>
+                            <button
+                              onClick={() => {
+                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                                if (totalParticipants < (product.max_participants || 20)) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      children: prev.participants.children + 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {product.infant_age && (
+                        <div className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">{translate('유아', 'Infant')}</div>
+                            <div className="text-xs text-gray-600">
+                              {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => {
+                                if (bookingData.participants.infants > 0) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      infants: prev.participants.infants - 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.infants}</span>
+                            <button
+                              onClick={() => {
+                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                                if (totalParticipants < (product.max_participants || 20)) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      infants: prev.participants.infants + 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 초이스 그룹들 */}
+                  <div className="space-y-6">
+                  {requiredChoices.map((group, groupIndex) =>
+                    renderRequiredChoiceGroupEditor(group, groupIndex)
+                  )}
                   </div>
                 </div>
               ) : (
@@ -3254,169 +3712,44 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">{translate('고객 정보', 'Guest Information')}</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('이름 *', 'Name *')}</label>
-                  <input
-                    type="text"
-                    value={bookingData.customerInfo.name}
-                    onChange={(e) => {
-                      setBookingData(prev => ({
-                        ...prev,
-                        customerInfo: {
-                          ...prev.customerInfo,
-                          name: e.target.value
-                        }
-                      }))
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    placeholder={translate('이름을 입력하세요', 'Enter your name')}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('이메일 *', 'Email *')}</label>
-                  <input
-                    type="email"
-                    value={bookingData.customerInfo.email}
-                    onChange={(e) => {
-                      setBookingData(prev => ({
-                        ...prev,
-                        customerInfo: {
-                          ...prev.customerInfo,
-                          email: stripSpacesFromContactInput(e.target.value)
-                        }
-                      }))
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    placeholder={translate('이메일을 입력하세요', 'Enter your email')}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('전화번호 *', 'Phone Number *')}</label>
-                  <div className="flex space-x-2">
-                    <select
-                      value={bookingData.customerInfo.country}
-                      onChange={(e) => {
-                        setBookingData(prev => ({
-                          ...prev,
-                          customerInfo: {
-                            ...prev.customerInfo,
-                            country: e.target.value
-                          }
-                        }))
-                      }}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    >
-                      <option value="">{translate('국가', 'Country')}</option>
-                      {countries.map(country => (
-                        <option key={country.code} value={country.code}>
-                          {country.phoneCode} {translate(country.nameKo, country.nameEn)}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="tel"
-                      value={bookingData.customerInfo.phone}
-                      onChange={(e) => {
-                        // 숫자만 입력 허용
-                        const phoneNumber = e.target.value.replace(/[^0-9]/g, '')
-                        setBookingData(prev => ({
-                          ...prev,
-                          customerInfo: {
-                            ...prev.customerInfo,
-                            phone: phoneNumber
-                          }
-                        }))
-                      }}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                      placeholder={translate('전화번호를 입력하세요', 'Enter your phone number')}
-                    />
-                  </div>
-                  {bookingData.customerInfo.country && bookingData.customerInfo.phone && (
-                    <div className="mt-2 text-sm text-gray-600">
-                      <span className="font-medium">{translate('전체 번호:', 'Full number:')}</span>{' '}
-                      {countries.find(c => c.code === bookingData.customerInfo.country)?.phoneCode}
-                      {bookingData.customerInfo.phone}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('고객의 국가 언어 *', 'Customer\'s Native Language *')}</label>
-                  <select
-                    value={bookingData.customerInfo.customerLanguage}
-                    onChange={(e) => {
-                      setBookingData(prev => ({
-                        ...prev,
-                        customerInfo: {
-                          ...prev.customerInfo,
-                          customerLanguage: e.target.value
-                        }
-                      }))
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    required
-                  >
-                    <option value="">{translate('언어를 선택하세요', 'Select your native language')}</option>
-                    {allLanguages.map(language => (
-                      <option key={language.code} value={language.code}>
-                        {isEnglish ? language.nameEn : language.nameKo}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {translate('고객님의 모국어를 선택해주세요', 'Please select your native language')}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{translate('선호 투어 언어 (복수 선택 가능)', 'Preferred Tour Languages (multiple selection)')}</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3">
-                    {tourLanguages.map(language => (
-                      <label key={language.code} className="flex items-center space-x-2 cursor-pointer p-2 rounded hover:bg-gray-50 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={bookingData.customerInfo.tourLanguages.includes(language.code)}
-                          onChange={(e) => {
-                            const newLanguages = e.target.checked
-                              ? [...bookingData.customerInfo.tourLanguages, language.code]
-                              : bookingData.customerInfo.tourLanguages.filter(lang => lang !== language.code)
-                            
-                            setBookingData(prev => ({
-                              ...prev,
-                              customerInfo: {
-                                ...prev.customerInfo,
-                                tourLanguages: newLanguages
-                              }
-                            }))
-                          }}
-                          className="h-4 w-4 rounded text-primary focus:ring-ring"
-                        />
-                        <span className="text-sm text-gray-900">{isEnglish ? language.nameEn : language.nameKo}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {translate('투어 중 원하시는 언어를 선택해주세요 (여러 개 선택 가능)', 'Select languages you prefer during the tour (multiple selection allowed)')}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('특별 요청사항', 'Special Requests')}</label>
-                  <textarea
-                    value={bookingData.customerInfo.specialRequests}
-                    onChange={(e) => {
-                      setBookingData(prev => ({
-                        ...prev,
-                        customerInfo: {
-                          ...prev.customerInfo,
-                          specialRequests: e.target.value
-                        }
-                      }))
-                    }}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    placeholder={translate('특별 요청사항이 있다면 입력하세요', 'Let us know if you have any special requests')}
-                  />
-                </div>
-              </div>
+              <BookingFlowGuestDetailsSection
+                isEnglish={isEnglish}
+                translate={translate}
+                customerInfo={bookingData.customerInfo}
+                countries={countries}
+                allLanguages={allLanguages}
+                tourLanguages={tourLanguages}
+                selectedTourDate={bookingData.tourDate}
+                productId={product.id}
+                pickupHotelId={bookingData.pickupHotelId}
+                pickupHotelCustom={bookingData.pickupHotelCustom}
+                alternativeDates={bookingData.alternativeDates}
+                onCustomerInfoChange={(patch) =>
+                  setBookingData((prev) => ({
+                    ...prev,
+                    customerInfo: { ...prev.customerInfo, ...patch },
+                  }))
+                }
+                onPickupHotelIdChange={(hotelId, label) =>
+                  setBookingData((prev) => ({
+                    ...prev,
+                    pickupHotelId: hotelId,
+                    pickupHotelLabel: label || '',
+                  }))
+                }
+                onPickupHotelCustomChange={(value) =>
+                  setBookingData((prev) => ({
+                    ...prev,
+                    pickupHotelCustom: value,
+                    ...(value ? { pickupHotelLabel: '' } : {}),
+                  }))
+                }
+                onAlternativeDatesChange={(dates) =>
+                  setBookingData((prev) => ({ ...prev, alternativeDates: dates }))
+                }
+                stripSpacesFromContactInput={stripSpacesFromContactInput}
+              />
+            </div>
               
               {/* 로그인/회원가입 섹션 */}
               <div className="border-t border-gray-200 pt-4 mt-4">
@@ -3472,11 +3805,18 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </div>
                 )}
               </div>
-            </div>
           </div>
         )
 
-      case 4:
+      case 4: {
+        const basePriceLines = getReservationBasePriceLines()
+        const choicePriceLines = getReservationChoicePriceLines()
+        const baseSubtotal = calculateBasePrice()
+        const choicesSubtotal = calculateChoicesPrice()
+        const subtotal = baseSubtotal + choicesSubtotal
+        const couponDiscount = appliedCoupon ? calculateCouponDiscount(appliedCoupon) : 0
+        const guestCount = getGuestCount()
+
         return (
           <div className="space-y-6">
             <div>
@@ -3492,7 +3832,6 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     <span className="text-gray-600">{translate('날짜', 'Date')}</span>
                     <span className="font-medium">
                       {bookingData.tourDate && (() => {
-                        // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
                         const [year, month, day] = bookingData.tourDate.split('-').map(Number)
                         const date = new Date(year, month - 1, day)
                         return date.toLocaleDateString(localeTag)
@@ -3507,41 +3846,104 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       {bookingData.participants.infants > 0 && `, ${translate(`유아 ${bookingData.participants.infants}명`, `${bookingData.participants.infants} infant${bookingData.participants.infants === 1 ? '' : 's'}`)}`}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">{translate('기본 가격', 'Base price')}</span>
-                    <span className="font-medium">${product.base_price}</span>
+                  {bookingData.customerInfo.localContactChannel &&
+                  bookingData.customerInfo.localContactHandle ? (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">{translate('현지 연락', 'Local contact')}</span>
+                      <span className="text-right font-medium">
+                        {getLocalContactChannelLabel(bookingData.customerInfo.localContactChannel)}
+                        <span className="mt-0.5 block text-xs text-gray-500">
+                          {bookingData.customerInfo.localContactHandle}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
+                  {bookingData.pickupHotelCustom || bookingData.pickupHotelLabel ? (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">{translate('픽업 호텔', 'Pickup hotel')}</span>
+                      <span className="text-right font-medium">
+                        {bookingData.pickupHotelCustom || bookingData.pickupHotelLabel}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between gap-4">
+                    <span className="text-gray-600">{translate('SMS 수신 동의', 'SMS consent')}</span>
+                    <span className="text-right font-medium">
+                      {bookingData.customerInfo.smsConsent
+                        ? translate('동의함', 'Opted in')
+                        : translate('동의 안 함', 'Not opted in')}
+                    </span>
                   </div>
-                  {(() => {
-                    const allChoices = [...requiredChoices, ...optionalChoices]
-                    return allChoices.map((group: ChoiceGroup) => {
-                    const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-                    if (selectedOptionId) {
-                      const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-                      if (option && option.option_price) {
-                        return (
-                          <div key={group.choice_id} className="flex justify-between">
-                              <span className="text-gray-600">
-                                {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
-                                {group.is_required && <span className="text-red-500 ml-1">*</span>}
-                              </span>
-                            <span className="font-medium">+${option.option_price}</span>
-                          </div>
-                        )
-                      }
-                    }
-                    return null
-                    })
-                  })()}
-                  <div className="border-t pt-2 mt-2">
-                    {appliedCoupon && (
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-gray-600">{translate('쿠폰 할인', 'Coupon Discount')}</span>
-                        <span className="text-red-600">-${calculateCouponDiscount(appliedCoupon).toFixed(2)}</span>
-                      </div>
-                    )}
+                  {bookingData.alternativeDates.length > 0 ? (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">
+                        {translate('대체 가능 날짜', 'Alternate dates')}
+                      </span>
+                      <span className="text-right font-medium">
+                        {bookingData.alternativeDates
+                          .map((ymd) => {
+                            const date = new Date(`${ymd}T12:00:00`)
+                            return date.toLocaleDateString(localeTag, {
+                              month: 'short',
+                              day: 'numeric',
+                            })
+                          })
+                          .join(', ')}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {(basePriceLines.length > 0 || choicePriceLines.length > 0) && (
+                    <div className="space-y-2 border-t border-border/60 pt-3 mt-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {translate('요금 내역', 'Price breakdown')}
+                      </p>
+                      {basePriceLines.map((line) => (
+                        <div key={line.label} className="flex justify-between gap-4">
+                          <span className="text-gray-600">
+                            {line.label}
+                            {line.description ? (
+                              <span className="mt-0.5 block text-xs text-gray-500">{line.description}</span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 font-medium">{formatUsd(line.amount)}</span>
+                        </div>
+                      ))}
+                      {choicePriceLines.map((line) => (
+                        <div key={`${line.label}-${line.description}`} className="flex justify-between gap-4">
+                          <span className="text-gray-600">
+                            {line.label}
+                            {line.description ? (
+                              <span className="mt-0.5 block text-xs text-gray-500">{line.description}</span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 font-medium">{formatUsd(line.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="border-t border-border/60 pt-2 mt-2 space-y-2">
+                    {couponDiscount > 0 ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">{translate('소계', 'Subtotal')}</span>
+                          <span className="font-medium">{formatUsd(subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">{translate('쿠폰 할인', 'Coupon Discount')}</span>
+                          <span className="text-red-600">-{formatUsd(couponDiscount)}</span>
+                        </div>
+                      </>
+                    ) : null}
                     <div className="flex justify-between font-semibold text-lg">
-                      <span>{translate('총 가격', 'Total price')}</span>
-                      <span className="text-primary">${calculateFinalPrice().toFixed(2)}</span>
+                      <span>
+                        {translate(
+                          `총 ${guestCount}명 요금`,
+                          `Total for ${guestCount} guest${guestCount === 1 ? '' : 's'}`
+                        )}
+                      </span>
+                      <span className="text-primary">{formatUsd(calculateFinalPrice())}</span>
                     </div>
                   </div>
                 </div>
@@ -3646,7 +4048,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       totalPrice={calculateFinalPrice()}
                       onPaymentComplete={handlePaymentComplete}
                       translate={translate}
-                      onPaymentSubmit={setPaymentSubmitHandler}
+                      onPaymentSubmit={registerPaymentSubmitHandler}
                     />
                   </Elements>
                 )}
@@ -3678,6 +4080,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
             </div>
           </div>
         )
+      }
 
       default:
         return null
@@ -3811,18 +4214,18 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           </button>
                           <button
                             onClick={async () => {
-                              if (paymentSubmitHandler) {
+                              if (paymentSubmitHandlerRef.current) {
                                 setPaymentProcessing(true)
                                 try {
-                                  await paymentSubmitHandler()
+                                  await paymentSubmitHandlerRef.current()
                                 } finally {
                                   setPaymentProcessing(false)
                                 }
                               }
                             }}
-                            disabled={!isStepValid() || !paymentSubmitHandler || paymentProcessing || !stripePromise}
+                            disabled={!isStepValid() || !paymentHandlerReady || paymentProcessing || !stripePromise}
                             className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
-                              isStepValid() && paymentSubmitHandler && !paymentProcessing && stripePromise
+                              isStepValid() && paymentHandlerReady && !paymentProcessing && stripePromise
                                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             }`}
@@ -3926,6 +4329,14 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           </div>
         </div>
       )}
+
+      <BookingFlowAlertModal
+        open={validationAlertMessage !== null}
+        title={translate('확인 필요', 'Please check')}
+        message={validationAlertMessage ?? ''}
+        confirmLabel={translate('확인', 'OK')}
+        onClose={() => setValidationAlertMessage(null)}
+      />
     </div>
   )
 }

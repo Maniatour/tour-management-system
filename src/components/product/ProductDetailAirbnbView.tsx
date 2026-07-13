@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Heart, Share2, Star } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -20,7 +20,6 @@ import { useProductDetailTrustBadges } from '@/components/product/useProductDeta
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import {
   DEFAULT_TRAVELER_AGE_LIMITS,
-  DEFAULT_TRAVELER_COUNTS,
   type TravelerCounts,
 } from '@/lib/productDetailTravelers'
 import type { ProductReviewItem } from '@/components/product/ProductDetailReviewsSection'
@@ -68,6 +67,12 @@ type ProductDetailAirbnbViewProps = {
   reviewRating?: number
   reviewCount?: number
   totalPrice: number
+  /** 상세 페이지에서 선택한 날짜 (예약 모달로 그대로 전달) */
+  selectedDate: string
+  onSelectedDateChange: (date: string) => void
+  /** 상세 페이지에서 선택한 인원 (예약 모달로 그대로 전달) */
+  travelerCounts: TravelerCounts
+  onTravelerCountsChange: (counts: TravelerCounts) => void
   /** 관리자 직접 편집 화면에서는 날짜 선택 전에도 옵션 영역 표시 */
   forceShowOptions?: boolean
   /** 관리자 직접 편집 화면에서는 날짜 선택 전에도 프로모 코드 영역 표시 */
@@ -112,14 +117,16 @@ export default function ProductDetailAirbnbView({
   reviewRating,
   reviewCount,
   totalPrice,
+  selectedDate,
+  onSelectedDateChange: setSelectedDate,
+  travelerCounts,
+  onTravelerCountsChange: setTravelerCounts,
   forceShowOptions = false,
   forceShowPromo = false,
   bookingPanelProps,
 }: ProductDetailAirbnbViewProps) {
   const t = useTranslations('productDetail')
   const trustBadges = useProductDetailTrustBadges()
-  const [selectedDate, setSelectedDate] = useState('')
-  const [travelerCounts, setTravelerCounts] = useState<TravelerCounts>(DEFAULT_TRAVELER_COUNTS)
   const optionsAnchorRef = useRef<HTMLDivElement>(null)
   const previousDateRef = useRef('')
   const locationLine = product.departure_city || 'Las Vegas'
