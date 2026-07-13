@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { X, Mail, Eye, Loader2, Send, Copy, Check, Printer } from 'lucide-react'
 import ProductDetailFieldEditModal from '@/components/reservation/ProductDetailFieldEditModal'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { emailHtmlToPlainText } from '@/lib/emailHtmlToPlainText'
 import {
   isProductDetailEmailEditableField,
@@ -211,7 +212,7 @@ ${printHtml}
           return
         }
 
-        response = await fetch('/api/preview-pickup-schedule-notification', {
+        response = await fetchApiWithAuth('/api/preview-pickup-schedule-notification', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -224,7 +225,7 @@ ${printHtml}
         })
       } else {
         const type = emailType === 'confirmation' ? 'both' : 'voucher'
-        response = await fetch('/api/preview-email', {
+        response = await fetchApiWithAuth('/api/preview-email', {
           method: 'POST',
           cache: 'no-store',
           headers: {

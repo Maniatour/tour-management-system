@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   getEmailDestinationLabel,
   type ProductEmailDestinationKey,
@@ -32,7 +33,7 @@ export default function ProductEmailPreviewPanel({
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/preview-product-email', {
+      const response = await fetchApiWithAuth('/api/preview-product-email', {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },

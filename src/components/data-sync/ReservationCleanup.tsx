@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Database, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { CleanupStatus, SyncResult } from '@/types/data-sync'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface ReservationCleanupProps {
   cleanupStatus: CleanupStatus | null
@@ -22,7 +23,7 @@ export default function ReservationCleanup({ cleanupStatus, onRefresh }: Reserva
     setCleanupResult(null)
 
     try {
-      const response = await fetch('/api/sync/reservation-cleanup', {
+      const response = await fetchApiWithAuth('/api/sync/reservation-cleanup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

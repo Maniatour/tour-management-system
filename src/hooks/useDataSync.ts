@@ -11,6 +11,7 @@ import {
 } from '@/types/data-sync'
 import { getAutoMapping, getFallbackColumns } from '@/utils/columnMapping'
 import { saveColumnMapping, loadColumnMapping } from '@/utils/localStorage'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 export function useDataSync() {
   const [spreadsheetId] = useState('15pu3wMPDwOHlVM0LhRsOYW5WZDZ3SUPVU4h0G4hyLc0')
@@ -47,7 +48,7 @@ export function useDataSync() {
         return
       }
 
-      const response = await fetch('/api/sync/all-tables')
+      const response = await fetchApiWithAuth('/api/sync/all-tables')
       const result = await response.json()
       
       if (result.success) {
@@ -70,7 +71,7 @@ export function useDataSync() {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       try {
-        const response = await fetch(`/api/sync/schema?table=${tableName}`, { signal: controller.signal })
+        const response = await fetchApiWithAuth(`/api/sync/schema?table=${tableName}`, { signal: controller.signal })
         clearTimeout(timeoutId)
         return await response.json()
       } catch (err) {
@@ -154,7 +155,7 @@ export function useDataSync() {
       }, 120000)
 
       console.log('Sending request to /api/sync/sheets')
-      const response = await fetch('/api/sync/sheets', {
+      const response = await fetchApiWithAuth('/api/sync/sheets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -224,7 +225,7 @@ export function useDataSync() {
     try {
       console.log(`📊 Loading columns for ${sheetName}...`)
       
-      const response = await fetch('/api/sync/sheet-columns', {
+      const response = await fetchApiWithAuth('/api/sync/sheet-columns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -297,7 +298,7 @@ export function useDataSync() {
     if (!spreadsheetId) return
     
     try {
-      const response = await fetch(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
+      const response = await fetchApiWithAuth(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
       const result = await response.json()
       
       if (result.success && result.data.lastSyncTime) {
@@ -338,7 +339,7 @@ export function useDataSync() {
   // 예약 데이터 정리 상태 확인
   const checkCleanupStatus = async () => {
     try {
-      const response = await fetch('/api/sync/reservation-cleanup')
+      const response = await fetchApiWithAuth('/api/sync/reservation-cleanup')
       const result = await response.json()
       
       if (result.success) {
@@ -387,7 +388,7 @@ export function useDataSync() {
     setEtaMs(null) // 최적화된 동기화는 정확한 예측이 어려움
 
     try {
-      const response = await fetch('/api/sync/optimized', {
+      const response = await fetchApiWithAuth('/api/sync/optimized', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -492,7 +493,7 @@ export function useDataSync() {
     }, 200)
 
     try {
-      const response = await fetch('/api/sync/flexible/stream', {
+      const response = await fetchApiWithAuth('/api/sync/flexible/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

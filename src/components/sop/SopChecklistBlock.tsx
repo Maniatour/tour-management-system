@@ -383,6 +383,7 @@ function ChecklistRootRow({
   sectionId,
   categoryId,
   viewLang,
+  flat = false,
   anchors,
   searchFocusRowId,
   callbacks,
@@ -392,6 +393,7 @@ function ChecklistRootRow({
   sectionId: string
   categoryId: string
   viewLang: SopEditLocale
+  flat?: boolean
   anchors?: boolean
   searchFocusRowId?: string | null
   callbacks: RowCallbacks
@@ -410,8 +412,8 @@ function ChecklistRootRow({
   const isEn = viewLang === 'en'
   const [expanded, setExpanded] = useState(false)
   const hasManual = hasChecklistManualSource(row, viewLang)
-  const canAccordion = isListRow && hasManual
-  const showInlineManual = !isListRow && hasManual
+  const canAccordion = isListRow && hasManual && !flat
+  const showInlineManual = (!isListRow && hasManual) || (flat && hasManual)
   const openManual = callbacks.onEditChecklistManual
     ? () => callbacks.onEditChecklistManual!(sectionId, categoryId, row.id)
     : undefined
@@ -529,6 +531,7 @@ export default function SopChecklistBlock({
   categoryId,
   items,
   viewLang,
+  flat = false,
   anchors,
   searchFocusRowId = null,
   ...callbacks
@@ -547,6 +550,7 @@ export default function SopChecklistBlock({
           sectionId={sectionId}
           categoryId={categoryId}
           viewLang={viewLang}
+          flat={flat}
           {...(anchors ? { anchors } : {})}
           searchFocusRowId={searchFocusRowId}
           callbacks={callbacks}

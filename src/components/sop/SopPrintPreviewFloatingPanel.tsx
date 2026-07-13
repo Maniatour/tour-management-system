@@ -48,7 +48,7 @@ export default function SopPrintPreviewFloatingPanel({
   storageKey: string
   title: string
   children: ReactNode
-  /** 인쇄·PDF: A4 본문 루트(getA4Root)를 캡처 */
+  /** 인쇄·PDF: Letter 본문 루트(getA4Root)를 캡처 — 이름 유지(호출부 호환) */
   printActions?: { getA4Root: () => HTMLElement | null; fileBaseName: string }
 }) {
   const [mounted, setMounted] = useState(false)
@@ -194,6 +194,7 @@ export default function SopPrintPreviewFloatingPanel({
         'fixed flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl',
         'ring-1 ring-black/10 pointer-events-auto touch-auto isolate'
       )}
+      data-sop-print-preview=""
       style={{
         left: rect.x,
         top: rect.y,
@@ -220,9 +221,10 @@ export default function SopPrintPreviewFloatingPanel({
               className="h-8 shrink-0 gap-1 px-2"
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={(ev) => {
+                ev.preventDefault()
                 ev.stopPropagation()
                 const el = printActions.getA4Root()
-                if (el) printDomCloneWithStyles(el, title)
+                if (el) printDomCloneWithStyles(el, title, { format: 'letter' })
               }}
             >
               <Printer className="h-3.5 w-3.5" aria-hidden />
@@ -235,12 +237,13 @@ export default function SopPrintPreviewFloatingPanel({
               className="h-8 shrink-0 gap-1 px-2"
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={(ev) => {
+                ev.preventDefault()
                 ev.stopPropagation()
                 void (async () => {
                   const el = printActions.getA4Root()
                   if (!el) return
                   try {
-                    await downloadDomAsA4Pdf(el, printActions.fileBaseName)
+                    await downloadDomAsA4Pdf(el, printActions.fileBaseName, { format: 'letter' })
                   } catch (e) {
                     console.warn('SOP preview PDF:', e)
                   }

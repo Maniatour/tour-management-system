@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Database } from '@/lib/database.types'
@@ -64,7 +65,7 @@ function createMiddlewareSupabase(req: NextRequest, res: NextResponse) {
 }
 
 async function isActiveStaffEmail(
-  supabase: ReturnType<typeof createMiddlewareSupabase>,
+  supabase: SupabaseClient<Database>,
   emailLower: string
 ): Promise<boolean> {
   if (STAFF_EMAIL_WHITELIST.has(emailLower)) return true
@@ -85,24 +86,36 @@ async function isActiveStaffEmail(
   return !error && !!data
 }
 
+function createBearerSupabase(token: string): SupabaseClient<Database> {
+  return createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    }
+  )
+}
+
 async function verifyStaffSession(
   req: NextRequest,
   res: NextResponse
 ): Promise<boolean> {
   const authHeader = req.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
-  const supabase = createMiddlewareSupabase(req, res)
 
+  // localStorage JWT(Bearer) — 쿠키 세션이 없어도 authenticated 로 is_staff/team 조회
   if (token) {
+    const bearerSb = createBearerSupabase(token)
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser(token)
+    } = await bearerSb.auth.getUser(token)
     if (!error && user?.email) {
-      return isActiveStaffEmail(supabase, user.email.trim().toLowerCase())
+      return isActiveStaffEmail(bearerSb, user.email.trim().toLowerCase())
     }
   }
 
+  const supabase = createMiddlewareSupabase(req, res)
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -133,6 +146,8 @@ function verifyCronRequest(req: NextRequest): NextResponse | null {
 }
 
 function requiresStaffAuth(pathname: string, method: string): boolean {
+  // 고객 결제 직후 확인 메일 — 라우트에서 소유권 검증
+  if (pathname === '/api/send-email') return false
   if (matchesPrefix(pathname, STAFF_PATH_PREFIXES)) return true
   if (STAFF_EXACT_PATHS.has(pathname)) return true
   if (pathname === '/api/messenger-contact-settings' && method === 'PUT') return true

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog } from 'lucide-react'
 import { getGoblinTourWeatherData, normalizeDate, type LocationWeather } from '@/lib/weatherApi'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface TourWeatherProps {
   tourDate?: string
@@ -229,7 +230,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       
       // 오늘 날짜 데이터를 수집 (날씨와 일출/일몰 모두)
       const today = new Date().toISOString().split('T')[0]
-      const response = await fetch('/api/weather-collector', {
+      const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

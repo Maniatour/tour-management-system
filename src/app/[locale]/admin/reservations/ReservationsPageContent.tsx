@@ -30,6 +30,7 @@ import ReservationsPagination from '@/components/reservation/ReservationsPaginat
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { useAuth } from '@/contexts/AuthContext'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import {
@@ -3844,7 +3845,7 @@ export default function AdminReservations() {
       const locale = resolveReservationEmailLocale(customer?.language ?? null, null)
 
       if (emailPreviewData.emailType === 'resident_inquiry') {
-        response = await fetch('/api/send-resident-inquiry-email', {
+        response = await fetchApiWithAuth('/api/send-resident-inquiry-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3857,7 +3858,7 @@ export default function AdminReservations() {
         })
       } else if (emailPreviewData.emailType === 'confirmation') {
         // ??? ??? ?????
-        response = await fetch('/api/send-email', {
+        response = await fetchApiWithAuth('/api/send-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3873,7 +3874,7 @@ export default function AdminReservations() {
         })
       } else if (emailPreviewData.emailType === 'departure') {
         // ??? ?? ??? ?????
-        response = await fetch('/api/send-email', {
+        response = await fetchApiWithAuth('/api/send-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3893,7 +3894,7 @@ export default function AdminReservations() {
           throw new Error('??? ???????? ???? ????????')
         }
 
-        response = await fetch('/api/send-pickup-schedule-notification', {
+        response = await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

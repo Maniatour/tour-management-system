@@ -1,7 +1,12 @@
 'use client'
 
 import { markdownToHtml } from '@/components/LightRichEditor'
+import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
 import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
+import {
+  SopPrintLinkedManualsProvider,
+  usePrintLinkedManuals,
+} from '@/components/sop/SopPrintLinkedManualsContext'
 import {
   getLinkedHubArticleIds,
   getManualValue,
@@ -12,6 +17,7 @@ import {
 import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
 import type { SopEditLocale } from '@/types/sopStructure'
 import { Link2, FileText } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 type Props = {
   source: SopManualFields
@@ -21,6 +27,15 @@ type Props = {
   className?: string
 }
 
+/** 연결 문서 안쪽에선 재귀 확장 끄기 */
+function NestedPrintOff({ children }: { children: ReactNode }) {
+  return (
+    <SopPrintLinkedManualsProvider value={{ byId: {}, expandInline: false }}>
+      {children}
+    </SopPrintLinkedManualsProvider>
+  )
+}
+
 export default function SopManualContentPanel({
   source,
   viewLang,
@@ -28,10 +43,12 @@ export default function SopManualContentPanel({
   hubArticles = [],
   className,
 }: Props) {
+  const printLinked = usePrintLinkedManuals()
   const inline = getManualValue(source, viewLang)
   const hasInline = hasChecklistManualContent(inline)
   const linkedIds = getLinkedHubArticleIds(source)
   const hasLinked = hasManualLink(source)
+  const expandLinkedForPrint = Boolean(printLinked?.expandInline && hasLinked)
 
   if (!hasInline && !hasLinked) {
     return (
@@ -67,14 +84,47 @@ export default function SopManualContentPanel({
             <Link2 className="h-3.5 w-3.5" aria-hidden />
             {isEn ? 'Linked hub documents' : '허브 문서'}
           </div>
-          <SopManualLinkedArticlePanel
-            articleIds={linkedIds}
-            hubArticles={hubArticles}
-            viewLang={viewLang}
-            uiLocaleEn={isEn}
-            readOnly
-            embedded
-          />
+          {expandLinkedForPrint ? (
+            <div className="space-y-6">
+              {printLinked?.loading ? (
+                <p className="text-sm text-slate-500">
+                  {isEn ? 'Loading linked manuals…' : '연결 메뉴얼 불러오는 중…'}
+                </p>
+              ) : null}
+              {linkedIds.map((id) => {
+                const entry = printLinked?.byId[id]
+                if (!entry) {
+                  return (
+                    <p key={id} className="text-sm text-amber-800">
+                      {isEn
+                        ? 'Linked document could not be loaded.'
+                        : '연결 문서를 불러오지 못했습니다.'}
+                    </p>
+                  )
+                }
+                return (
+                  <div
+                    key={id}
+                    className="rounded-lg border border-indigo-200/80 bg-white px-3 py-4 break-inside-avoid"
+                  >
+                    <p className="mb-3 text-sm font-semibold text-indigo-900">{entry.title}</p>
+                    <NestedPrintOff>
+                      <SopDocumentReadonly doc={entry.doc} viewLang={viewLang} layout="flat" />
+                    </NestedPrintOff>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <SopManualLinkedArticlePanel
+              articleIds={linkedIds}
+              hubArticles={hubArticles}
+              viewLang={viewLang}
+              uiLocaleEn={isEn}
+              readOnly
+              embedded
+            />
+          )}
         </div>
       ) : null}
     </div>

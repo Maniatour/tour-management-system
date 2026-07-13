@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocale } from 'next-intl'
 import { Upload, Folder, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface GoogleDriveReceiptImporterProps {
   onImportComplete?: () => void
@@ -46,7 +47,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
     setImportResults(null)
 
     try {
-      const response = await fetch(`/api/google-drive/receipts?folderId=${encodeURIComponent(folderId)}`)
+      const response = await fetchApiWithAuth(`/api/google-drive/receipts?folderId=${encodeURIComponent(folderId)}`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -83,7 +84,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
         for (const fileId of fileIds) {
           const matchedFile = receipts.find(r => r.fileId === fileId)
           try {
-            const res = await fetch('/api/google-drive/receipts', {
+            const res = await fetchApiWithAuth('/api/google-drive/receipts', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -153,7 +154,7 @@ export default function GoogleDriveReceiptImporter({ onImportComplete }: GoogleD
           const timeoutId = setTimeout(() => controller.abort(), 360000) // 6분 타임아웃 (4분 → 6분)
 
           try {
-            response = await fetch('/api/google-drive/receipts', {
+            response = await fetchApiWithAuth('/api/google-drive/receipts', {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',

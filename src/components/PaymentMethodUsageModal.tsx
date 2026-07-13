@@ -10,6 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 const TABLE_LABELS: Record<string, string> = {
   payment_records: '결제 기록',
@@ -150,7 +151,7 @@ export default function PaymentMethodUsageModal({
     setSelectedRowKeys({})
     setBulkError(null)
     try {
-      const res = await fetch(`/api/admin/payment-methods/${encodeURIComponent(methodId)}/references`)
+      const res = await fetchApiWithAuth(`/api/admin/payment-methods/${encodeURIComponent(methodId)}/references`)
       const json = await res.json()
       if (!res.ok || !json.success) {
         throw new Error(json.message || '내역을 불러오지 못했습니다.')
@@ -218,7 +219,7 @@ export default function PaymentMethodUsageModal({
       }
 
       const tasks = Object.entries(idsByTable).map(async ([table, ids]) => {
-        const res = await fetch('/api/admin/payment-method-references', {
+        const res = await fetchApiWithAuth('/api/admin/payment-method-references', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ table, ids, payment_method: bulkPaymentMethod }),
@@ -365,7 +366,7 @@ export default function PaymentMethodUsageModal({
         patch.status = draft.status || null
       }
 
-      const res = await fetch('/api/admin/payment-method-references', {
+      const res = await fetchApiWithAuth('/api/admin/payment-method-references', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ table, id: rowId, patch }),

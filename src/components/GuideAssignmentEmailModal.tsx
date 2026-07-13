@@ -9,6 +9,7 @@ import {
   guideAssignmentEmailKindLabel,
   guideAssignmentRoleLabel,
 } from '@/lib/guideAssignmentSchedule'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface GuideAssignmentEmailModalProps {
   isOpen: boolean
@@ -71,7 +72,7 @@ export default function GuideAssignmentEmailModal({
     setLoadingPreview(true)
     setError(null)
     try {
-      const res = await fetch('/api/preview-guide-assignment-email', {
+      const res = await fetchApiWithAuth('/api/preview-guide-assignment-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -109,7 +110,7 @@ export default function GuideAssignmentEmailModal({
     setSending(true)
     setError(null)
     try {
-      const res = await fetch('/api/send-guide-assignment-email', {
+      const res = await fetchApiWithAuth('/api/send-guide-assignment-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

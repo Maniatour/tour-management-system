@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
-import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
+import { apiBearerAuthHeaders, fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { buildReceiptOcrCandidates } from '@/lib/receiptOcrParse'
 import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
 import { loadTourExpenseReceiptImageBytes } from '@/lib/tourExpenseReceiptImageBytes'
@@ -214,7 +214,7 @@ export default function ReceiptOcrParseRulesAdmin() {
   const loadReceiptPickList = useCallback(async () => {
     setReceiptsLoading(true)
     try {
-      const res = await fetch('/api/admin/receipt-ocr-parse-rules/receipt-picks', {
+      const res = await fetchApiWithAuth('/api/admin/receipt-ocr-parse-rules/receipt-picks', {
         credentials: 'include',
         cache: 'no-store',
         headers: {

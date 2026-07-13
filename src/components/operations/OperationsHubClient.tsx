@@ -696,6 +696,21 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           stackLevel="elevated"
           className="gap-0"
           accessibilityTitle={readModalTitle}
+          onPointerDownOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onInteractOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onFocusOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (printPreviewOpen) {
+              e.preventDefault()
+              setPrintPreviewOpen(false)
+            }
+          }}
         >
           {readModalHasBody && readArticle ? (
             <>
@@ -930,8 +945,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             viewLang={modalViewLang}
             caption={
               modalUiEn
-                ? `A4 preview · ${printTitle}`
-                : `A4 미리보기 · ${printTitle}`
+                ? `Letter preview · ${printTitle}`
+                : `Letter 미리보기 · ${printTitle}`
             }
             signatureNote={
               modalUiEn

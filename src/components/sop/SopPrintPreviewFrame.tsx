@@ -1,7 +1,13 @@
 'use client'
 
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useMemo, useState } from 'react'
 import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
+import {
+  SopPrintLinkedManualsProvider,
+  type PrintLinkedManualEntry,
+} from '@/components/sop/SopPrintLinkedManualsContext'
+import { fetchHubArticleDocumentsByIds } from '@/lib/hubArticleManualLink'
+import { collectLinkedHubArticleIdsFromDocument } from '@/lib/sopQuickEdit'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
 
 type Props = {
@@ -19,13 +25,57 @@ type Props = {
 }
 
 /**
- * 게시 직전·인쇄 시와 비슷한 폭(A4)으로 본문을 보여 주는 미리보기 프레임.
+ * 게시 직전·인쇄 시와 비슷한 폭(US Letter)으로 본문을 보여 주는 미리보기 프레임.
+ * 카테고리/줄에 연결된 허브 메뉴얼 본문도 함께 펼쳐 인쇄·PDF에 포함합니다.
  */
 const SopPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function SopPrintPreviewFrame(
   { doc, viewLang, caption, signatureNote, scrollMode = 'default' },
   ref
 ) {
   const floating = scrollMode === 'floating'
+  const isEn = viewLang === 'en'
+  const linkedIds = useMemo(() => collectLinkedHubArticleIdsFromDocument(doc), [doc])
+  const [linkedById, setLinkedById] = useState<Record<string, PrintLinkedManualEntry>>({})
+  const [linkedLoading, setLinkedLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (linkedIds.length === 0) {
+      setLinkedById({})
+      setLinkedLoading(false)
+      return
+    }
+
+    setLinkedLoading(true)
+    void (async () => {
+      const rows = await fetchHubArticleDocumentsByIds(linkedIds, viewLang)
+      if (cancelled) return
+      const next: Record<string, PrintLinkedManualEntry> = {}
+      for (const row of rows) {
+        next[row.id] = {
+          id: row.id,
+          title: row.title,
+          doc: row.doc,
+        }
+      }
+      setLinkedById(next)
+      setLinkedLoading(false)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [linkedIds, viewLang])
+
+  const printLinkedValue = useMemo(
+    () => ({
+      byId: linkedById,
+      expandInline: true,
+      loading: linkedLoading,
+    }),
+    [linkedById, linkedLoading]
+  )
+
   return (
     <div
       className={
@@ -35,7 +85,18 @@ const SopPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function SopPrint
       }
     >
       <p className="mb-2 shrink-0 text-xs font-medium text-slate-600">{caption}</p>
-      {/* 가로: A4(210mm) 고정 폭 — 좁은 열에서는 스크롤로 전체 폭 확인 */}
+      {linkedIds.length > 0 ? (
+        <p className="mb-2 shrink-0 text-[11px] text-slate-500">
+          {linkedLoading
+            ? isEn
+              ? `Loading ${linkedIds.length} linked manual(s)…`
+              : `연결 메뉴얼 ${linkedIds.length}개 불러오는 중…`
+            : isEn
+              ? `${Object.keys(linkedById).length} linked manual(s) included below.`
+              : `연결 메뉴얼 ${Object.keys(linkedById).length}개 본문 포함`}
+        </p>
+      ) : null}
+      {/* 가로: Letter(8.5in) 고정 폭 — 좁은 열에서는 스크롤로 전체 폭 확인 */}
       <div
         className={
           floating
@@ -46,9 +107,12 @@ const SopPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function SopPrint
       >
         <div
           ref={ref}
-          className="mx-auto box-border min-w-[210mm] w-[210mm] bg-white px-[18mm] py-[12mm] text-[12pt] leading-relaxed text-black shadow-md print:shadow-none"
+          data-print-linked-pending={linkedLoading ? '1' : undefined}
+          className="mx-auto box-border min-w-[8.5in] w-[8.5in] bg-white px-[0.75in] py-[0.5in] text-[12pt] leading-relaxed text-black shadow-md print:shadow-none"
         >
-          <SopDocumentReadonly doc={doc} viewLang={viewLang} layout="flat" />
+          <SopPrintLinkedManualsProvider value={printLinkedValue}>
+            <SopDocumentReadonly doc={doc} viewLang={viewLang} layout="flat" />
+          </SopPrintLinkedManualsProvider>
           <div className="mt-10 border-t border-dashed border-slate-300 pt-5 text-sm text-slate-500">
             {signatureNote}
           </div>

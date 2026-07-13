@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
-import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
+import { apiBearerAuthHeaders, fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
@@ -1457,7 +1457,7 @@ export default function PaymentMethodManager({
     }
     setMergeSubmitting(true)
     try {
-      const res = await fetch('/api/admin/payment-methods/merge', {
+      const res = await fetchApiWithAuth('/api/admin/payment-methods/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1510,7 +1510,7 @@ export default function PaymentMethodManager({
       void (async () => {
         setMergePreviewLoading(true)
         try {
-          const res = await fetch(
+          const res = await fetchApiWithAuth(
             `/api/admin/payment-methods/merge?sources=${encodeURIComponent(ids.join(','))}`,
             { signal: ac.signal }
           )

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 const PerformanceMonitor = dynamic(() => import('@/components/data-sync/PerformanceMonitor'), {
   ssr: false,
@@ -309,7 +310,7 @@ export default function DataSyncPage() {
         return
       }
 
-      const response = await fetch('/api/sync/all-tables')
+      const response = await fetchApiWithAuth('/api/sync/all-tables')
       const result = await response.json()
       
       if (result.success) {
@@ -338,7 +339,7 @@ export default function DataSyncPage() {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       try {
-        const response = await fetch(`/api/sync/schema?table=${tableName}`, { signal: controller.signal })
+        const response = await fetchApiWithAuth(`/api/sync/schema?table=${tableName}`, { signal: controller.signal })
         clearTimeout(timeoutId)
         return await response.json()
       } catch (err) {
@@ -688,7 +689,7 @@ export default function DataSyncPage() {
   // 예약 데이터 정리 상태 확인
   const checkCleanupStatus = async () => {
     try {
-      const response = await fetch('/api/sync/reservation-cleanup')
+      const response = await fetchApiWithAuth('/api/sync/reservation-cleanup')
       const result = await response.json()
       
       if (result.success) {
@@ -717,7 +718,7 @@ export default function DataSyncPage() {
     setCleanupResult(null)
 
     try {
-      const response = await fetch('/api/sync/reservation-cleanup', {
+      const response = await fetchApiWithAuth('/api/sync/reservation-cleanup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -774,7 +775,7 @@ export default function DataSyncPage() {
   // selected_options UUID 마이그레이션 상태 확인
   const checkMigrationStatus = async () => {
     try {
-      const response = await fetch('/api/sync/selected-options-migration')
+      const response = await fetchApiWithAuth('/api/sync/selected-options-migration')
       const result = await response.json()
       
       if (result.success) {
@@ -802,7 +803,7 @@ export default function DataSyncPage() {
     setMigrationResult(null)
 
     try {
-      const response = await fetch('/api/sync/selected-options-migration', {
+      const response = await fetchApiWithAuth('/api/sync/selected-options-migration', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -876,7 +877,7 @@ export default function DataSyncPage() {
       }, 120000)
 
       console.log('Sending request to /api/sync/sheets')
-      const response = await fetch('/api/sync/sheets', {
+      const response = await fetchApiWithAuth('/api/sync/sheets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -958,7 +959,7 @@ export default function DataSyncPage() {
     try {
       console.log(`📊 Loading columns for ${sheetName}...`)
       
-      const response = await fetch('/api/sync/sheet-columns', {
+      const response = await fetchApiWithAuth('/api/sync/sheet-columns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1014,7 +1015,7 @@ export default function DataSyncPage() {
     if (!spreadsheetId) return
     
     try {
-      const response = await fetch(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
+      const response = await fetchApiWithAuth(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
       const result = await response.json()
       
       if (result.success && result.data.lastSyncTime) {
@@ -1135,7 +1136,7 @@ export default function DataSyncPage() {
     }, 200)
 
     try {
-      const response = await fetch('/api/sync/flexible/stream', {
+      const response = await fetchApiWithAuth('/api/sync/flexible/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

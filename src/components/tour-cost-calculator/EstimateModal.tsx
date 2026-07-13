@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Send, DollarSign, Users, Calendar, MapPin, Route, Plus, Save, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import type { Database } from '@/lib/database.types'
@@ -2042,7 +2043,7 @@ export default function EstimateModal({
       const estimateHTML = generateEstimateHTML()
       
       // 이메일 발송 API 호출 (실제 구현 필요)
-      const response = await fetch('/api/send-estimate-email', {
+      const response = await fetchApiWithAuth('/api/send-estimate-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

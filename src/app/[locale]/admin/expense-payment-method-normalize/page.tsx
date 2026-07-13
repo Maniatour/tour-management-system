@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { RefreshCw, ArrowRight, CreditCard, AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
 import type { NormalizePreviewRow, ExpenseTableName } from '@/lib/expensePaymentMethodNormalize'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 type ApiPreview = NormalizePreviewRow
 
@@ -58,7 +59,7 @@ export default function ExpensePaymentMethodNormalizePage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/expense-payment-method-normalize')
+      const res = await fetchApiWithAuth('/api/admin/expense-payment-method-normalize')
       const json = await res.json()
       if (!res.ok || !json.success) {
         setError(json.message || t('loadError'))
@@ -128,7 +129,7 @@ export default function ExpensePaymentMethodNormalizePage() {
     }
     setApplyingKey(k)
     try {
-      const res = await fetch('/api/admin/expense-payment-method-normalize', {
+      const res = await fetchApiWithAuth('/api/admin/expense-payment-method-normalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

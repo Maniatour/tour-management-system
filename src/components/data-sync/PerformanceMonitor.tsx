@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Activity, Zap, Clock, Database, TrendingUp, RefreshCw } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface PerformanceMetrics {
   dataReadTime: number
@@ -33,7 +34,7 @@ export default function PerformanceMonitor({
 
   const fetchCacheStats = async () => {
     try {
-      const response = await fetch('/api/sync/optimized?action=cache-stats')
+      const response = await fetchApiWithAuth('/api/sync/optimized?action=cache-stats')
       const result = await response.json()
       if (result.success) {
         setCacheStats(result.data)
@@ -45,7 +46,7 @@ export default function PerformanceMonitor({
 
   const handleClearCache = async () => {
     try {
-      const response = await fetch('/api/sync/optimized?action=clear-cache', {
+      const response = await fetchApiWithAuth('/api/sync/optimized?action=clear-cache', {
         method: 'GET'
       })
       const result = await response.json()

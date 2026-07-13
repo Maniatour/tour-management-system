@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Eye, Loader2, Copy, Check, Share2, Link2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 export interface TourChatRoomEmailPreviewModalProps {
   isOpen: boolean
@@ -38,7 +39,7 @@ export default function TourChatRoomEmailPreviewModal({
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/preview-tour-chat-room-email', {
+      const response = await fetchApiWithAuth('/api/preview-tour-chat-room-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { X, Eye, Loader2, Send, Pencil, RotateCcw, Check, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { PRE_TOUR_CONTACT_SMS_PLACEHOLDER_HINT } from '@/lib/preTourContactSms'
 import type { PreTourContactSmsLocale } from '@/lib/preTourContactSmsLocale'
 import type { MessengerContactSettings } from '@/lib/preTourContactSms'
@@ -84,7 +85,7 @@ export default function PreTourContactSmsPreviewModal({
     setLoading(true)
     setNotice(null)
     try {
-      const res = await fetch('/api/preview-pre-tour-contact-sms', {
+      const res = await fetchApiWithAuth('/api/preview-pre-tour-contact-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,7 +185,7 @@ export default function PreTourContactSmsPreviewModal({
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      const res = await fetch('/api/messenger-contact-settings', {
+      const res = await fetchApiWithAuth('/api/messenger-contact-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -225,7 +226,7 @@ export default function PreTourContactSmsPreviewModal({
     setSending(true)
     setNotice(null)
     try {
-      const res = await fetch('/api/send-pre-tour-contact-sms', {
+      const res = await fetchApiWithAuth('/api/send-pre-tour-contact-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

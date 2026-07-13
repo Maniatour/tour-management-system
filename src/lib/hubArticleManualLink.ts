@@ -87,3 +87,35 @@ export async function fetchHubArticleDocumentBySlug(
   if (!doc) return null
   return { doc, row }
 }
+
+/** 인쇄용 — 연결된 허브 문서 본문을 ID 목록으로 일괄 조회 */
+export async function fetchHubArticleDocumentsByIds(
+  articleIds: string[],
+  lang: SopEditLocale = 'ko'
+): Promise<Array<{ id: string; title: string; doc: SopDocument }>> {
+  const ids = [...new Set(articleIds.map((id) => id.trim()).filter(Boolean))]
+  if (ids.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('company_knowledge_articles')
+    .select(KNOWLEDGE_ARTICLE_SELECT)
+    .in('id', ids)
+
+  if (error || !data) return []
+
+  const byId = new Map<string, KnowledgeArticleRow>()
+  for (const row of data as KnowledgeArticleRow[]) {
+    byId.set(row.id, row)
+  }
+
+  const out: Array<{ id: string; title: string; doc: SopDocument }> = []
+  for (const id of ids) {
+    const row = byId.get(id)
+    if (!row) continue
+    const doc = articleBodyToDocument(row)
+    if (!doc) continue
+    const title = sopText(row.title_ko, row.title_en, lang).trim() || row.slug || id
+    out.push({ id, title, doc })
+  }
+  return out
+}

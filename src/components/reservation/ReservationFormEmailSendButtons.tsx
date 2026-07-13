@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Customer, Reservation } from '@/types/reservation'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { resolveReservationEmailLocale } from '@/lib/reservationEmailLocale'
 
 export type ReservationFormEmailSendKind = 'confirmation' | 'departure' | 'pickup'
@@ -70,7 +71,7 @@ export function ReservationFormEmailSendButtons({
 
       let response: Response
       if (kind === 'confirmation') {
-        response = await fetch('/api/send-email', {
+        response = await fetchApiWithAuth('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -83,7 +84,7 @@ export function ReservationFormEmailSendButtons({
           }),
         })
       } else if (kind === 'departure') {
-        response = await fetch('/api/send-email', {
+        response = await fetchApiWithAuth('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -98,7 +99,7 @@ export function ReservationFormEmailSendButtons({
       } else {
         const pt = reservation.pickUpTime!.trim()
         const pickupTime = pt.includes(':') ? pt : `${pt}:00`
-        response = await fetch('/api/send-pickup-schedule-notification', {
+        response = await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

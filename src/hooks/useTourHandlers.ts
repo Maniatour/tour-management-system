@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import type { Database } from '@/lib/supabase'
 import { timeToHHmm } from '@/lib/utils'
 import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/tourStatusUtils'
@@ -522,7 +523,7 @@ export function useTourHandlers() {
       // 픽업 시간이 설정되었고 알림을 보내야 하는 경우
       if (timeValue && sendNotification && reservationData?.tour_date) {
         try {
-          await fetch('/api/send-pickup-schedule-notification', {
+          await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

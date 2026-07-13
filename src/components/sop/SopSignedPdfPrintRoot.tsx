@@ -45,11 +45,11 @@ const SopSignedPdfPrintRoot = forwardRef<HTMLDivElement, SopSignedPdfPrintRootPr
       <div
         aria-hidden
         className="pointer-events-none fixed left-0 top-0 z-[-1] opacity-0"
-        style={{ width: '210mm' }}
+        style={{ width: '8.5in' }}
       >
         <div
           ref={ref}
-          className="box-border w-[210mm] bg-white px-[18mm] py-[12mm] text-[12pt] leading-relaxed text-black"
+          className="box-border w-[8.5in] bg-white px-[0.75in] py-[0.5in] text-[12pt] leading-relaxed text-black"
         >
           <div
             className="mb-2 text-xl font-bold prose prose-sm max-w-none text-black [&_p]:my-0"

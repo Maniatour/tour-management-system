@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { generateTourId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
@@ -1451,7 +1452,7 @@ export function TourDetailPageView({
             continue
           }
 
-          const response = await fetch('/api/send-pickup-schedule-notification', {
+          const response = await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

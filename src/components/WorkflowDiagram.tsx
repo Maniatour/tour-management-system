@@ -16,6 +16,7 @@ import {
   ZoomOut,
   RotateCcw
 } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 // UUID 생성 함수
 function generateUUID(): string {
@@ -830,7 +831,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
           rich_description_en: step.rich_description_en
         })
         
-        const response = await fetch('/api/workflow-steps', {
+        const response = await fetchApiWithAuth('/api/workflow-steps', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -876,7 +877,7 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
       saveToHistory(updatedSteps)
       
       // 데이터베이스에 저장
-      const response = await fetch('/api/workflow-steps', {
+      const response = await fetchApiWithAuth('/api/workflow-steps', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

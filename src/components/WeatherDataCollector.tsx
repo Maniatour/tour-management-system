@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Cloud, Download, Calendar, RefreshCw, Sun } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface WeatherDataCollectorProps {
   className?: string
@@ -19,7 +20,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       setError('')
       setMessage('')
 
-      const response = await fetch('/api/weather-collector', {
+      const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -47,7 +48,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       setError('')
       setMessage('')
 
-      const response = await fetch('/api/weather-collector', {
+      const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -102,7 +103,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       setError('')
       setMessage('')
 
-      const response = await fetch('/api/weather-collector', {
+      const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

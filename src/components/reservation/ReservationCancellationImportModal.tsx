@@ -11,6 +11,7 @@ import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 type ImportRow = {
   id: string
@@ -240,7 +241,7 @@ export function ReservationCancellationImportModal({
     setFetchError(null)
     setLoading(true)
     try {
-      const res = await fetch(`/api/reservation-imports/${importId}`)
+      const res = await fetchApiWithAuth(`/api/reservation-imports/${importId}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || '불러오기 실패')
       if (!isCancellationRequestEmailSubject(data.subject)) {
@@ -367,7 +368,7 @@ export function ReservationCancellationImportModal({
     if (!importId || !row || row.status !== 'pending') return
     setReparsing(true)
     try {
-      const reparseRes = await fetch(`/api/reservation-imports/${importId}/reparse`, { method: 'POST' })
+      const reparseRes = await fetchApiWithAuth(`/api/reservation-imports/${importId}/reparse`, { method: 'POST' })
       const data = await reparseRes.json()
       if (!reparseRes.ok) throw new Error((data as { error?: string })?.error || '재파싱 실패')
       await loadRow()
@@ -383,7 +384,7 @@ export function ReservationCancellationImportModal({
     if (!confirm('이 항목을 무시하시겠습니까?')) return
     setRejecting(true)
     try {
-      const res = await fetch(`/api/reservation-imports/${importId}/reject`, { method: 'POST' })
+      const res = await fetchApiWithAuth(`/api/reservation-imports/${importId}/reject`, { method: 'POST' })
       if (!res.ok) throw new Error('Reject failed')
       onResolved?.()
       onClose()

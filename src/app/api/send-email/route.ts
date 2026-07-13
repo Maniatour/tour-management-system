@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Resend } from 'resend'
 import { requireStaffApiAuth } from '@/lib/api-security'
+import { assertCustomerBookingEmailAllowed } from '@/lib/assertCustomerBookingEmailAllowed'
 import {
   fetchProductDetailsForReservationEmail,
   isProductDetailVisibleOnCustomerPage,
@@ -42,13 +43,31 @@ import { getOperationsCc } from '@/lib/emailConfig'
  * }
  */
 export async function POST(request: NextRequest) {
+  const emailRouteDb = supabaseAdmin ?? supabase
+  let body: Record<string, unknown>
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: '잘못된 요청 본문입니다.' }, { status: 400 })
+  }
+
   const auth = await requireStaffApiAuth(request)
-  if (!auth.ok) return auth.response
+  if (!auth.ok) {
+    const guest = await assertCustomerBookingEmailAllowed(emailRouteDb, body)
+    if (!guest.ok) {
+      return NextResponse.json({ error: guest.error || '인증이 필요합니다.' }, { status: 401 })
+    }
+  }
 
   try {
-    const emailRouteDb = supabaseAdmin ?? supabase
-    const body = await request.json()
-    const { reservationId, email, type = 'both', locale: localeParam, sentBy, includePriceInfo } = body
+    const { reservationId, email, type = 'both', locale: localeParam, sentBy, includePriceInfo } = body as {
+      reservationId?: string
+      email?: string
+      type?: string
+      locale?: string
+      sentBy?: string
+      includePriceInfo?: boolean
+    }
 
     if (!reservationId || !email) {
       return NextResponse.json(

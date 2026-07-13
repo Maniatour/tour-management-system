@@ -18,6 +18,7 @@ import {
   Sunset
 } from 'lucide-react'
 import { getGoblinTourWeatherData, get7DayWeatherForecast, type LocationWeather } from '@/lib/weatherApi'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface AdminWeatherWidgetProps {
   className?: string
@@ -173,7 +174,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       setError(null)
       
       const today = new Date().toISOString().split('T')[0]
-      const response = await fetch('/api/weather-collector', {
+      const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

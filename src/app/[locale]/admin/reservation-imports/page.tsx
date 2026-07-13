@@ -27,6 +27,7 @@ import {
   useGmailReservationImportSync,
   type GmailReservationImportSyncDetail,
 } from '@/contexts/GmailReservationImportSyncContext'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface ImportItem {
   id: string
@@ -267,7 +268,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         params.set('from_utc', localDateToUtcStart(dateStart))
         params.set('to_utc', localDateToUtcEnd(dateEnd))
       }
-      fetch(`/api/reservation-imports?${params}`)
+      fetchApiWithAuth(`/api/reservation-imports?${params}`)
         .then((res) => res.json())
         .then((json) => setItems(json.data ?? []))
         .catch(() => setItems([]))
@@ -490,7 +491,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       if (current === want) return
       setPatchingId(id)
       try {
-        const res = await fetch(`/api/reservation-imports/${id}`, {
+        const res = await fetchApiWithAuth(`/api/reservation-imports/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ is_booking_confirmed: want }),
@@ -505,7 +506,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   )
 
   const fetchGmailStatus = useCallback(() => {
-    return fetch('/api/email/gmail/status')
+    return fetchApiWithAuth('/api/email/gmail/status')
       .then((res) => res.json().catch(() => ({})).then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         const status = normalizeGmailStatus(data)
@@ -524,7 +525,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/email/gmail/status')
+    fetchApiWithAuth('/api/email/gmail/status')
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
         if (!cancelled) setGmailStatus(normalizeGmailStatus(data))
@@ -586,7 +587,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     }
     setPasteSubmitting(true)
     try {
-      const res = await fetch('/api/reservation-imports', {
+      const res = await fetchApiWithAuth('/api/reservation-imports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

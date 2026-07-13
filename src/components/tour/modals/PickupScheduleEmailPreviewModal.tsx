@@ -6,6 +6,7 @@ import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as Im
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { loadHtml2Canvas } from '@/lib/lazyPdfLibs'
 import { downloadDomAsA4Pdf } from '@/lib/sopPreviewPrintAndPdf'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
@@ -428,7 +429,7 @@ export default function PickupScheduleEmailPreviewModal({
       if (preparationInfoOverride !== undefined && preparationInfoOverride !== null) {
         body.preparationInfo = preparationInfoOverride
       }
-      const response = await fetch('/api/preview-pickup-schedule-notification', {
+      const response = await fetchApiWithAuth('/api/preview-pickup-schedule-notification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -882,7 +883,7 @@ export default function PickupScheduleEmailPreviewModal({
       const dateStr = new Date().toISOString().split('T')[0]
       const fileBaseName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}`
 
-      await downloadDomAsA4Pdf(captureRoot, fileBaseName)
+      await downloadDomAsA4Pdf(captureRoot, fileBaseName, { format: 'a4' })
     } catch (error) {
       console.error('PDF 다운로드 오류:', error)
       alert(t('emailPreviewPDFDownloadFailed'))
@@ -919,7 +920,7 @@ export default function PickupScheduleEmailPreviewModal({
         tourDate: reservationTourDate
       })
 
-      const response = await fetch('/api/send-pickup-schedule-notification', {
+      const response = await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -888,7 +888,25 @@ export default function AdminStructuredDocPublishTab({
           }
         }}
       >
-        <DialogContent stackLevel="nested" className="flex max-h-[95vh] max-w-[min(96vw,1100px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1100px)]">
+        <DialogContent
+          stackLevel="nested"
+          className="flex max-h-[95vh] max-w-[min(96vw,1100px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1100px)]"
+          onPointerDownOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onInteractOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onFocusOutside={(e) => {
+            if (printPreviewOpen) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (printPreviewOpen) {
+              e.preventDefault()
+              setPrintPreviewOpen(false)
+            }
+          }}
+        >
           <DialogHeader className="shrink-0 border-b border-slate-200 px-4 py-3 pr-12 text-left sm:px-6">
             <DialogTitle>{uiLocaleEn ? 'Edit document' : '문서 편집'}</DialogTitle>
             <DialogDescription className="text-left text-xs">
@@ -1315,7 +1333,7 @@ export default function AdminStructuredDocPublishTab({
             ref={previewA4Ref}
             scrollMode="floating"
             markdown={freeformMarkdown}
-            caption={uiLocaleEn ? 'A4 preview · Esc closes.' : 'A4 미리보기 · Esc로 닫기'}
+            caption={uiLocaleEn ? 'Letter preview · Esc closes.' : 'Letter 미리보기 · Esc로 닫기'}
             signatureNote={
               uiLocaleEn
                 ? 'Staff-facing signing uses structured sections; freeform is stored with the version for reference.'
@@ -1328,7 +1346,7 @@ export default function AdminStructuredDocPublishTab({
             scrollMode="floating"
             doc={structureDoc}
             viewLang={sopEditLang}
-            caption={uiLocaleEn ? 'A4 width preview.' : 'A4 폭 미리보기.'}
+            caption={uiLocaleEn ? 'Letter width preview.' : 'Letter 폭 미리보기.'}
             signatureNote={
               uiLocaleEn ? 'Signers appear on the signed PDF.' : '서명 완료 PDF에 서명자 정보가 포함됩니다.'
             }

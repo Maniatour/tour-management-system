@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Send, DollarSign, Package, Plus, Trash2, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
 import { loadHtml2Pdf } from '@/lib/lazyPdfLibs'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
 import { NewDynamicPricingService } from '@/lib/newDynamicPricingService'
@@ -1461,7 +1462,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     try {
       const invoiceHtml = generateInvoiceHTML()
 
-      const response = await fetch('/api/send-invoice', {
+      const response = await fetchApiWithAuth('/api/send-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

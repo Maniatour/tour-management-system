@@ -68,6 +68,29 @@ export function getLinkedHubArticleIds(fields: SopManualFields): string[] {
   return legacy ? [legacy] : []
 }
 
+/** 문서 내 카테고리·체크리스트에 연결된 허브 문서 ID (중복 제거, 등장 순) */
+export function collectLinkedHubArticleIdsFromDocument(doc: SopDocument): string[] {
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  const push = (ids: string[]) => {
+    for (const id of ids) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      ordered.push(id)
+    }
+  }
+
+  for (const section of doc.sections ?? []) {
+    for (const category of section.categories ?? []) {
+      push(getLinkedHubArticleIds(category))
+      for (const item of category.checklist_items ?? []) {
+        push(getLinkedHubArticleIds(item))
+      }
+    }
+  }
+  return ordered
+}
+
 export function getManualValue(fields: SopManualFields, lang: SopEditLocale): string {
   return sopText(fields.manual_ko ?? '', fields.manual_en ?? '', lang)
 }

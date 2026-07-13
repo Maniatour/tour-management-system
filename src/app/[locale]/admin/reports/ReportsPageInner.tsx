@@ -10,6 +10,7 @@ import AdminPageLoadingSkeleton from '@/components/admin/AdminPageLoadingSkeleto
 import AdminPageContentSkeleton from '@/components/admin/AdminPageContentSkeleton'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 const ComprehensiveReportTab = dynamic(() => import('@/components/reports/ComprehensiveReportTab'), {
   loading: () => <AdminPageContentSkeleton rows={10} />,
@@ -254,7 +255,7 @@ export default function AdminReports() {
         throw new Error('인증이 필요합니다.')
       }
 
-      const response = await fetch('/api/reports/generate', {
+      const response = await fetchApiWithAuth('/api/reports/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

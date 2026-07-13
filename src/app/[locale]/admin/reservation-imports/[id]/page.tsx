@@ -28,6 +28,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Channel, Customer, PickupHotel } from '@/types/reservation'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 interface ImportRow {
   id: string
@@ -102,7 +103,7 @@ export default function ReservationImportDetailPage() {
   const loadImport = useCallback(async () => {
     if (!id) return
     setNotFound(false)
-    let res = await fetch(`/api/reservation-imports/${id}`)
+    let res = await fetchApiWithAuth(`/api/reservation-imports/${id}`)
     let data = await res.json()
     if (res.status === 404) {
       setRow(null)
@@ -155,7 +156,7 @@ export default function ReservationImportDetailPage() {
           (!ext.tour_date || ext.adults == null || !ext.product_name))) ||
         (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
-      const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
+      const reparseRes = await fetchApiWithAuth(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
       if (reparseRes.ok) {
         const reparsed = await reparseRes.json()
         data = reparsed
@@ -399,7 +400,7 @@ export default function ReservationImportDetailPage() {
     async (payload: Record<string, unknown>) => {
       if (!row || row.status !== 'pending' || !user?.email) return
       const totalPeople = (Number(payload.adults) || 0) + (Number(payload.child) || 0) + (Number(payload.infant) || 0)
-      const res = await fetch(`/api/reservation-imports/${id}/confirm`, {
+      const res = await fetchApiWithAuth(`/api/reservation-imports/${id}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -447,7 +448,7 @@ export default function ReservationImportDetailPage() {
     }
     setReparsing(true)
     try {
-      const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
+      const reparseRes = await fetchApiWithAuth(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
       const data = await reparseRes.json()
       if (!reparseRes.ok) throw new Error((data as { error?: string })?.error || '재파싱 실패')
       setReparseKey((k) => k + 1)
@@ -464,7 +465,7 @@ export default function ReservationImportDetailPage() {
     if (!confirm('이 항목을 무시하시겠습니까?')) return
     setRejecting(true)
     try {
-      const res = await fetch(`/api/reservation-imports/${id}/reject`, { method: 'POST' })
+      const res = await fetchApiWithAuth(`/api/reservation-imports/${id}/reject`, { method: 'POST' })
       if (!res.ok) throw new Error('Reject failed')
       router.push(`/${locale}/admin/reservation-imports`)
     } catch {

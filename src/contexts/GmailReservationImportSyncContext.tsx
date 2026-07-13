@@ -11,6 +11,7 @@ import React, {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Mail, GripVertical, X } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 export const GMAIL_RESERVATION_SYNC_COMPLETE = 'gmail-reservation-sync-complete'
 export const GMAIL_RESERVATION_SYNC_UNAUTHORIZED = 'gmail-reservation-sync-unauthorized'
@@ -139,7 +140,7 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
     setPos((p) => p ?? initPosition())
 
     try {
-      const res = await fetch('/api/email/gmail/sync', {
+      const res = await fetchApiWithAuth('/api/email/gmail/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullSync: full }),

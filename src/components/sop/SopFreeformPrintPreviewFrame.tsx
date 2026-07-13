@@ -11,7 +11,7 @@ type Props = {
   scrollMode?: 'default' | 'floating'
 }
 
-/** 자유 서식(한 페이지) 본문을 A4 폭으로 미리보기 */
+/** 자유 서식(한 페이지) 본문을 US Letter 폭으로 미리보기 */
 const SopFreeformPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function SopFreeformPrintPreviewFrame(
   { markdown, caption, signatureNote, scrollMode = 'default' },
   ref
@@ -37,7 +37,7 @@ const SopFreeformPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function 
       >
         <div
           ref={ref}
-          className="mx-auto box-border min-h-[260mm] min-w-[210mm] w-[210mm] bg-white px-[18mm] py-[12mm] text-[12pt] leading-relaxed text-black shadow-md print:shadow-none"
+          className="mx-auto box-border min-h-[10in] min-w-[8.5in] w-[8.5in] bg-white px-[0.75in] py-[0.5in] text-[12pt] leading-relaxed text-black shadow-md print:shadow-none"
         >
           {html ? (
             <div

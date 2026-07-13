@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { fromUntypedTable } from './supabaseUntypedTable'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
 // 고성능 캐싱 시스템
 export class HighPerformanceCache {
@@ -183,7 +184,7 @@ export class DatabaseOptimizer {
     try {
       console.log(`🔄 폴백 컬럼 정보 조회: ${tableName}`)
       
-      const response = await fetch(`/api/sync/schema?table=${tableName}`)
+      const response = await fetchApiWithAuth(`/api/sync/schema?table=${tableName}`)
       if (!response.ok) {
         throw new Error(`Schema API failed: ${response.status}`)
       }
