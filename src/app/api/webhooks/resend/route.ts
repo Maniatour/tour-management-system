@@ -1,5 +1,49 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+
+function verifyResendWebhookSignature(
+  payload: string,
+  headers: Headers,
+  secret: string
+): boolean {
+  const msgId = headers.get('svix-id')
+  const msgTimestamp = headers.get('svix-timestamp')
+  const msgSignature = headers.get('svix-signature')
+
+  if (!msgId || !msgTimestamp || !msgSignature) return false
+
+  const timestamp = Number.parseInt(msgTimestamp, 10)
+  if (!Number.isFinite(timestamp)) return false
+  if (Math.abs(Date.now() / 1000 - timestamp) > 300) return false
+
+  const signedContent = `${msgId}.${msgTimestamp}.${payload}`
+  const secretBytes = Buffer.from(secret.replace(/^whsec_/, ''), 'base64')
+
+  for (const versionedSig of msgSignature.split(' ')) {
+    const [version, signature] = versionedSig.split(',')
+    if (version !== 'v1' || !signature) continue
+
+    const expected = createHmac('sha256', secretBytes)
+      .update(signedContent)
+      .digest('base64')
+
+    try {
+      const expectedBuf = Buffer.from(expected)
+      const actualBuf = Buffer.from(signature)
+      if (
+        expectedBuf.length === actualBuf.length &&
+        timingSafeEqual(expectedBuf, actualBuf)
+      ) {
+        return true
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return false
+}
 
 /**
  * POST /api/webhooks/resend
@@ -9,7 +53,25 @@ import { supabaseAdmin } from '@/lib/supabase'
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.text()
+    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET
+
+    if (process.env.NODE_ENV === 'production') {
+      if (!webhookSecret) {
+        console.error('[webhook/resend] RESEND_WEBHOOK_SECRET is not configured')
+        return NextResponse.json({ error: 'Service unavailable' }, { status: 503 })
+      }
+      if (!verifyResendWebhookSignature(rawBody, request.headers, webhookSecret)) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      }
+    } else if (
+      webhookSecret &&
+      !verifyResendWebhookSignature(rawBody, request.headers, webhookSecret)
+    ) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    const body = JSON.parse(rawBody)
     const event = body
 
     console.log('[webhook/resend] 이벤트 수신:', {

@@ -56,7 +56,11 @@ export default async function LocaleLayout({
   const isCustomerProductDetail = /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname);
   const isCustomerTravelGuide = /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname);
   const isFullWidthCustomerPage =
-    isCustomerHome || isCustomerProductsListing || isCustomerProductDetail || isCustomerTravelGuide;
+    headersList.get('x-is-full-width-customer-page') === '1' ||
+    isCustomerHome ||
+    isCustomerProductsListing ||
+    isCustomerProductDetail ||
+    isCustomerTravelGuide;
 
   const siteBranding = await getCachedCustomerSiteBranding();
 

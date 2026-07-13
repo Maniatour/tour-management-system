@@ -4,6 +4,7 @@ import {
   upsertMessengerContactSettings,
 } from '@/lib/messengerContactSettingsDb'
 import { DEFAULT_MESSENGER_CONTACT_SETTINGS } from '@/lib/preTourContactSms'
+import { requireStaffApiAuth } from '@/lib/api-security'
 
 /** GET: 메신저 연락처 설정 */
 export async function GET() {
@@ -13,6 +14,9 @@ export async function GET() {
 
 /** PUT: 메신저 연락처 설정 저장 */
 export async function PUT(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     const body = await request.json()
     const line_id = typeof body.line_id === 'string' ? body.line_id.trim() : ''

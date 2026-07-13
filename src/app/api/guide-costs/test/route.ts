@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { blockDevEndpointsInProduction } from '@/lib/api-security'
 
 // 테이블 존재 여부 확인 및 간단한 테스트
 export async function GET() {
+  const blocked = blockDevEndpointsInProduction()
+  if (blocked) return blocked
+
   try {
     // 1. products 테이블에서 Mania Tour/Service 상품 조회
     const { data: products, error: productsError } = await supabase

@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { verifyCronAuth } from '@/lib/api-security'
 
 export async function GET(request: NextRequest) {
+  const cronDenied = verifyCronAuth(request)
+  if (cronDenied) return cronDenied
+
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
-    }
-
     if (!supabaseAdmin) {
       return NextResponse.json(
         { error: 'SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.' },

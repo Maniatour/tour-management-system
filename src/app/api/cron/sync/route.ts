@@ -1,8 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/syncService'
+import { verifyCronAuth } from '@/lib/api-security'
 
 // Vercel Cron Job을 위한 엔드포인트
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const cronDenied = verifyCronAuth(request)
+  if (cronDenied) return cronDenied
+
   try {
     // 환경 변수에서 기본 설정 가져오기
     const spreadsheetId = process.env.DEFAULT_SPREADSHEET_ID
@@ -45,6 +49,6 @@ export async function GET() {
 }
 
 // POST 요청도 지원 (수동 실행용)
-export async function POST() {
-  return GET()
+export async function POST(request: NextRequest) {
+  return GET(request)
 }

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { syncReservations, syncTours } from '@/lib/syncService'
+import { blockDevEndpointsInProduction } from '@/lib/api-security'
 
 export async function POST(request: NextRequest) {
+  const blocked = blockDevEndpointsInProduction()
+  if (blocked) return blocked
+
   try {
     const body = await request.json()
     const { spreadsheetId, reservationsSheet, toursSheet } = body

@@ -154,6 +154,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         return
       }
 
+      if (!canUseAuthenticatedRest()) {
+        return
+      }
+
       const now = new Date()
       const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
       

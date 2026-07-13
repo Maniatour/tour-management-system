@@ -15,12 +15,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'url required' }, { status: 400 })
     }
     const imageUrl = decodeURIComponent(encoded)
-    if (!imageUrl.startsWith('http')) {
+    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
       return NextResponse.json({ error: 'Invalid url' }, { status: 400 })
     }
-    const allowed = SUPABASE_PUBLIC
-      ? imageUrl.startsWith(SUPABASE_PUBLIC)
-      : imageUrl.includes('supabase.co')
+
+    let parsedUrl: URL
+    try {
+      parsedUrl = new URL(imageUrl)
+    } catch {
+      return NextResponse.json({ error: 'Invalid url' }, { status: 400 })
+    }
+
+    if (parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'Only HTTPS URLs allowed' }, { status: 403 })
+    }
+
+    const supabaseHost = SUPABASE_PUBLIC
+      ? new URL(SUPABASE_PUBLIC).hostname
+      : null
+    const allowed =
+      supabaseHost != null
+        ? parsedUrl.hostname === supabaseHost
+        : parsedUrl.hostname.endsWith('.supabase.co')
+
     if (!allowed) {
       return NextResponse.json({ error: 'Only Supabase storage URLs allowed' }, { status: 403 })
     }

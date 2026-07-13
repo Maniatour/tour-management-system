@@ -12,6 +12,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Printer,
   Save,
   Settings2,
   Shield,
@@ -41,6 +42,8 @@ import {
 } from '@/components/ui/dialog'
 import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import SopDocumentInlinePreviewEditor from '@/components/sop/SopDocumentInlinePreviewEditor'
+import SopPrintPreviewFloatingPanel from '@/components/sop/SopPrintPreviewFloatingPanel'
+import SopPrintPreviewFrame from '@/components/sop/SopPrintPreviewFrame'
 import KnowledgeArticleEditorPanel from '@/components/operations/KnowledgeArticleEditorPanel'
 import { hydrateDocumentForRowEditing } from '@/lib/sopQuickEdit'
 import { parseSopDocumentJson, sopText, type SopDocument, type SopEditLocale } from '@/types/sopStructure'
@@ -110,6 +113,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [crudMsg, setCrudMsg] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeArticleRow | null>(null)
   const [legalPagesOpen, setLegalPagesOpen] = useState(false)
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false)
+  const previewA4Ref = useRef<HTMLDivElement | null>(null)
 
   const staffOk =
     userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
@@ -307,8 +312,13 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (readArticle?.id) {
       setModalViewLang(viewLang)
       setReadSaveMsg(null)
+      setPrintPreviewOpen(false)
     }
   }, [readArticle?.id, viewLang])
+
+  useEffect(() => {
+    if (!readArticle) setPrintPreviewOpen(false)
+  }, [readArticle])
 
   const clearUrlParams = useCallback(() => {
     const article = searchParams.get('article')
@@ -432,6 +442,17 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   }
 
   const modalUiEn = modalViewLang === 'en'
+  const printDoc = adminCrud ? readEditDoc : readDoc
+  const printTitle =
+    readArticle
+      ? sopText(readArticle.title_ko, readArticle.title_en, modalViewLang) ||
+        (modalUiEn ? readArticle.title_en : readArticle.title_ko) ||
+        readArticle.title_ko ||
+        readArticle.title_en ||
+        (modalUiEn ? 'Operations Hub document' : '운영 허브 문서')
+      : modalUiEn
+        ? 'Operations Hub document'
+        : '운영 허브 문서'
 
   const openReadDocSettings = () => {
     if (!readArticle) return
@@ -653,8 +674,14 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
       {/* 읽기 모달 — 관리자는 미리보기에서 바로 편집 */}
       <Dialog
+        modal={!printPreviewOpen}
         open={!!readArticle && !!(adminCrud ? readEditDoc : readDoc)}
-        onOpenChange={(open) => !open && setReadArticle(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPrintPreviewOpen(false)
+            setReadArticle(null)
+          }
+        }}
       >
         <ResizableDialogContent
           storageKey="operations-hub-article-modal-rect"
@@ -670,9 +697,21 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                 className="relative shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
               >
                 <div
-                  className="absolute right-12 top-3 z-20 flex max-w-[min(calc(100%-2.5rem),42rem)] flex-nowrap items-center gap-1 sm:top-3.5 sm:gap-1.5"
+                  className="absolute right-12 top-3 z-20 flex max-w-[min(calc(100%-2.5rem),48rem)] flex-nowrap items-center gap-1 sm:top-3.5 sm:gap-1.5"
                   data-no-drag
                 >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                    disabled={!printDoc}
+                    onClick={() => setPrintPreviewOpen(true)}
+                  >
+                    <Printer className="mr-1 h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{modalUiEn ? 'Print / PDF' : '인쇄 · PDF'}</span>
+                    <span className="sm:hidden">PDF</span>
+                  </Button>
                   {adminCrud ? (
                     <>
                       <Button
@@ -739,7 +778,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                 <div
                   className={cn(
                     'flex items-start gap-2',
-                    adminCrud ? 'pr-0 sm:pr-[22rem] md:pr-[24rem]' : 'pr-0 sm:pr-[9.5rem]'
+                    adminCrud ? 'pr-0 sm:pr-[28rem] md:pr-[30rem]' : 'pr-0 sm:pr-[14rem]'
                   )}
                 >
                   <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
@@ -867,6 +906,37 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           isEn={isEn}
         />
       ) : null}
+
+      <SopPrintPreviewFloatingPanel
+        open={printPreviewOpen && !!printDoc}
+        onOpenChange={setPrintPreviewOpen}
+        uiLocaleEn={modalUiEn}
+        storageKey="operations-hub-print-preview-rect"
+        title={modalUiEn ? 'Print / PDF preview' : '인쇄 · PDF 미리보기'}
+        printActions={{
+          getA4Root: () => previewA4Ref.current,
+          fileBaseName: `operations-hub-${readArticle?.slug || 'document'}`,
+        }}
+      >
+        {printDoc ? (
+          <SopPrintPreviewFrame
+            ref={previewA4Ref}
+            scrollMode="floating"
+            doc={printDoc}
+            viewLang={modalViewLang}
+            caption={
+              modalUiEn
+                ? `A4 preview · ${printTitle}`
+                : `A4 미리보기 · ${printTitle}`
+            }
+            signatureNote={
+              modalUiEn
+                ? 'Operations Hub document — Kovegas / Las Vegas Mania Tour'
+                : '운영 허브 문서 — Kovegas / 라스베가스 마니아투어'
+            }
+          />
+        ) : null}
+      </SopPrintPreviewFloatingPanel>
     </>
   )
 }

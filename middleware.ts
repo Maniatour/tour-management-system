@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import createIntlMiddleware from 'next-intl/middleware'
+import {
+  applySecurityHeaders,
+  handleApiSecurity,
+} from '@/lib/middleware-api-security'
 
 const intlMiddleware = createIntlMiddleware({
   locales: ['ko', 'en'],
@@ -11,6 +15,11 @@ const intlMiddleware = createIntlMiddleware({
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
 
+  const apiSecurityResponse = await handleApiSecurity(req)
+  if (apiSecurityResponse) {
+    return applySecurityHeaders(apiSecurityResponse)
+  }
+
   // OAuth 콜백: URL hash(#access_token) 유지, next-intl 리다이렉트로 404·이중 locale 방지
   if (
     pathname === '/auth/callback' ||
@@ -18,7 +27,9 @@ export async function middleware(req: NextRequest) {
   ) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-pathname', pathname)
-    return NextResponse.next({ request: { headers: requestHeaders } })
+    return applySecurityHeaders(
+      NextResponse.next({ request: { headers: requestHeaders } })
+    )
   }
 
   // 정적 파일들은 미들웨어를 건너뛰도록 처리
@@ -28,26 +39,26 @@ export async function middleware(req: NextRequest) {
     req.nextUrl.pathname.includes('.') ||
     req.nextUrl.pathname === '/favicon.ico'
   ) {
-    return NextResponse.next()
+    return applySecurityHeaders(NextResponse.next())
   }
 
   // Serwist 오프라인 폴백 (next-intl 접두 없음)
   if (req.nextUrl.pathname === '/~offline') {
-    return NextResponse.next()
+    return applySecurityHeaders(NextResponse.next())
   }
 
   // /chat/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
   if (req.nextUrl.pathname.startsWith('/chat/')) {
     const response = NextResponse.next()
     response.headers.set('x-pathname', req.nextUrl.pathname)
-    return response
+    return applySecurityHeaders(response)
   }
 
   // /photos/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
   if (req.nextUrl.pathname.startsWith('/photos/')) {
     const response = NextResponse.next()
     response.headers.set('x-pathname', req.nextUrl.pathname)
-    return response
+    return applySecurityHeaders(response)
   }
 
   // 개발 환경에서만 로그 출력
@@ -61,7 +72,7 @@ export async function middleware(req: NextRequest) {
 
   // 리다이렉트인 경우 그대로 반환 (pathname은 다음 요청에서 설정됨)
   if (response.status >= 300 && response.status < 400) {
-    return response
+    return applySecurityHeaders(response)
   }
 
   // pathname을 서버(레이아웃)로 전달: 요청 헤더에 설정해야 layout의 headers()에서 읽을 수 있음
@@ -72,8 +83,14 @@ export async function middleware(req: NextRequest) {
   const isResidentCheckRoute =
     /^\/(ko|en)\/resident-check(\/|$)/.test(pathname) ||
     /^\/(ko|en)\/dashboard\/resident-check(\/|$)/.test(pathname)
+  const isFullWidthCustomerPage =
+    /^\/(ko|en)\/?$/.test(pathname) ||
+    /^\/(ko|en)\/products\/?$/.test(pathname) ||
+    /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname) ||
+    /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname)
   requestHeaders.set('x-is-guide-route', isGuideRoute ? '1' : '0')
   requestHeaders.set('x-is-resident-check-route', isResidentCheckRoute ? '1' : '0')
+  requestHeaders.set('x-is-full-width-customer-page', isFullWidthCustomerPage ? '1' : '0')
 
   const res = NextResponse.next({
     request: { headers: requestHeaders }
@@ -86,6 +103,11 @@ export async function middleware(req: NextRequest) {
     sameSite: 'lax',
   })
   res.cookies.set('x-is-resident-check-route', isResidentCheckRoute ? '1' : '0', {
+    path: '/',
+    maxAge: 60,
+    sameSite: 'lax',
+  })
+  res.cookies.set('x-is-full-width-customer-page', isFullWidthCustomerPage ? '1' : '0', {
     path: '/',
     maxAge: 60,
     sameSite: 'lax',
@@ -110,7 +132,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return res
+  return applySecurityHeaders(res)
 }
 
 export const config = {

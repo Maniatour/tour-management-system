@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { blockDevEndpointsInProduction } from '@/lib/api-security'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -9,6 +10,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export async function GET() {
+  const blocked = blockDevEndpointsInProduction()
+  if (blocked) return blocked
+
   try {
     const supabase = createClient(supabaseUrl!, supabaseAnonKey!)
 

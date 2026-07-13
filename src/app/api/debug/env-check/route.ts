@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
+import { blockDevEndpointsInProduction } from '@/lib/api-security'
 
 export async function GET() {
+  const blocked = blockDevEndpointsInProduction()
+  if (blocked) return blocked
+
   try {
     const requiredEnvVars = [
       'GOOGLE_PROJECT_ID',

@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { Resend } from 'resend'
+import { verifyCronAuth } from '@/lib/api-security'
 
 export async function GET(request: NextRequest) {
-  try {
-    // Vercel Cron Job 인증 확인
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-    
-    // Vercel Cron은 자동으로 인증 헤더를 추가하지만, 추가 보안을 위해 확인
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
-    }
+  const cronDenied = verifyCronAuth(request)
+  if (cronDenied) return cronDenied
 
+  try {
     const now = new Date()
     const currentHour = now.getHours()
     const currentMinute = now.getMinutes()

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireStaffApiAuth } from '@/lib/api-security'
 
 // Google Translate API 사용
 async function translateText(text: string, fromLang: string, toLang: string): Promise<string> {
@@ -38,6 +39,9 @@ function detectLanguage(text: string): 'ko' | 'en' {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     console.log('번역 API 호출됨')
     

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import { requireStaffApiAuth } from '@/lib/api-security'
 
 /**
  * POST /api/send-invoice
@@ -7,6 +8,9 @@ import { Resend } from 'resend'
  * 인보이스 이메일 발송 API
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     const body = await request.json()
     const { to, subject, html, invoiceNumber } = body

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Resend } from 'resend'
+import { requireStaffApiAuth } from '@/lib/api-security'
 import {
   fetchProductDetailsForReservationEmail,
   isProductDetailVisibleOnCustomerPage,
@@ -41,6 +42,9 @@ import { getOperationsCc } from '@/lib/emailConfig'
  * }
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     const emailRouteDb = supabaseAdmin ?? supabase
     const body = await request.json()

@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { Resend } from 'resend'
+import { verifyCronAuth } from '@/lib/api-security'
 
 export async function POST(request: NextRequest) {
-  try {
-    // 인증 확인 (cron job에서 호출하는 경우 헤더에 특별한 키 포함)
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-    
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
-    }
+  const cronDenied = verifyCronAuth(request)
+  if (cronDenied) return cronDenied
 
+  try {
     const body = await request.json()
     const { period, dateRange } = body
 
