@@ -893,11 +893,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             option_name?: string | null
             option_name_ko?: string | null
           }) => {
-            optionInfoById.set(o.id, {
-              ...(usableKey(o.option_key) ? { option_key: usableKey(o.option_key) } : {}),
-              ...(o.option_name != null ? { option_name: o.option_name } : {}),
-              ...(o.option_name_ko != null ? { option_name_ko: o.option_name_ko } : {}),
-            })
+            const key = usableKey(o.option_key)
+            const info: { option_key?: string; option_name?: string; option_name_ko?: string } = {}
+            if (key) info.option_key = key
+            if (o.option_name != null) info.option_name = o.option_name
+            if (o.option_name_ko != null) info.option_name_ko = o.option_name_ko
+            optionInfoById.set(o.id, info)
           }
         )
       }
