@@ -96,6 +96,15 @@ NEXT_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
 # 자세한 설정 방법은 STRIPE_SETUP_GUIDE.md 참고
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key_here
 STRIPE_SECRET_KEY=your_stripe_secret_key_here
+# 고객 웹 예약 확정용 웹훅 (/api/webhooks/stripe). Stripe CLI 또는 Dashboard에서 signing secret 발급
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_signing_secret_here
+# 서버에서 customers / payment_records 생성에 필요 (고객 체크아웃)
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+# 고객 셀프 무료 취소·자동 환불 가능 시간 (투어 시작 기준, 기본 24시간)
+# ※ 카드(Stripe) 결제 확정 예약은 셀프 취소 불가. Admin Stripe 환불 사용.
+CUSTOMER_FREE_CANCEL_HOURS_BEFORE_TOUR=24
+# 웹훅 확정 후 메일 발송용 공개 URL (프로덕션 필수)
+NEXT_PUBLIC_SITE_URL=https://www.maniatour.com
 
 # Resend 이메일 발송 설정 (결제 완료 후 영수증/바우처 발송용)
 # https://resend.com/ 에서 API 키 생성

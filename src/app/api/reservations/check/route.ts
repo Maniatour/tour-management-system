@@ -1,143 +1,173 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
+import { findConfirmedStripePaymentIntentId } from '@/lib/customerBookingCancel'
 
-// 예약 확인 (고객용 - 인증 없이 이메일과 예약 ID로 확인)
+/**
+ * POST /api/reservations/check
+ * 고객용 예약 조회 — reservation id + customers.email 소유 확인
+ */
 export async function POST(request: NextRequest) {
   try {
+    const db = supabaseAdmin ?? supabase
     const body = await request.json()
-    const { reservation_id, customer_email } = body
+    const reservationId =
+      typeof body.reservation_id === 'string'
+        ? body.reservation_id.trim()
+        : typeof body.reservationId === 'string'
+          ? body.reservationId.trim()
+          : ''
+    const customerEmail =
+      typeof body.customer_email === 'string'
+        ? body.customer_email.trim().toLowerCase()
+        : typeof body.email === 'string'
+          ? body.email.trim().toLowerCase()
+          : ''
 
-    // 필수 필드 검증
-    if (!reservation_id || !customer_email) {
-      return NextResponse.json({ 
-        error: '예약 ID와 고객 이메일을 입력해주세요' 
-      }, { status: 400 })
+    if (!reservationId || !customerEmail) {
+      return NextResponse.json(
+        { error: '예약 ID와 고객 이메일을 입력해주세요' },
+        { status: 400 }
+      )
     }
 
-    // 예약 조회
-    const { data: reservation, error } = await fromUntypedTable(supabase, 'reservations')
-      .select(`
-        *,
-        product:products(
-          id,
-          name,
-          name_ko,
-          customer_name_ko,
-          base_price,
-          duration,
-          max_participants,
-          departure_city,
-          arrival_city,
-          departure_country,
-          arrival_country
-        ),
-        customer:customers(
-          id,
-          name,
-          email,
-          phone,
-          resident_status
-        ),
-        payment_records:payment_records(
-          id,
-          payment_status,
-          amount,
-          payment_method,
-          submit_on,
-          confirmed_on
-        )
-      `)
-      .eq('id', reservation_id)
-      .eq('customer_email', customer_email)
-      .single()
+    const { data: reservation, error } = await db
+      .from('reservations')
+      .select(
+        `
+        id,
+        status,
+        tour_date,
+        tour_time,
+        adults,
+        child,
+        infant,
+        total_people,
+        event_note,
+        pickup_hotel,
+        created_at,
+        customer_id,
+        product_id
+      `
+      )
+      .eq('id', reservationId)
+      .maybeSingle()
 
     if (error || !reservation) {
-      return NextResponse.json({ 
-        error: '예약을 찾을 수 없습니다. 예약 ID와 이메일을 확인해주세요.' 
-      }, { status: 404 })
+      return NextResponse.json(
+        { error: '예약을 찾을 수 없습니다. 예약 ID와 이메일을 확인해주세요.' },
+        { status: 404 }
+      )
     }
+
+    if (!reservation.customer_id) {
+      return NextResponse.json(
+        { error: '예약을 찾을 수 없습니다. 예약 ID와 이메일을 확인해주세요.' },
+        { status: 404 }
+      )
+    }
+
+    const { data: customer } = await db
+      .from('customers')
+      .select('id, name, email, phone, language, special_requests')
+      .eq('id', reservation.customer_id)
+      .maybeSingle()
+
+    if (!customer?.email || customer.email.trim().toLowerCase() !== customerEmail) {
+      return NextResponse.json(
+        { error: '예약을 찾을 수 없습니다. 예약 ID와 이메일을 확인해주세요.' },
+        { status: 404 }
+      )
+    }
+
+    const [{ data: product }, { data: pricing }, { data: paymentRecords }] = await Promise.all([
+      reservation.product_id
+        ? db
+            .from('products')
+            .select(
+              'id, name, name_ko, customer_name_ko, customer_name_en, base_price, duration, max_participants, departure_city, arrival_city, departure_country, arrival_country'
+            )
+            .eq('id', reservation.product_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      db
+        .from('reservation_pricing')
+        .select('total_price, coupon_code, coupon_discount')
+        .eq('reservation_id', reservationId)
+        .maybeSingle(),
+      db
+        .from('payment_records')
+        .select('id, payment_status, amount, payment_method, submit_on, confirmed_on, note')
+        .eq('reservation_id', reservationId)
+        .order('submit_on', { ascending: false }),
+    ])
 
     const optionsClient = supabaseAdmin ?? supabase
     const reservation_options = await fetchReservationOptionsLegacyByReservationId(
       optionsClient,
-      reservation_id
+      reservationId
+    )
+
+    const stripePaid = await findConfirmedStripePaymentIntentId(db, reservationId)
+    const statusOk = ['inquiry', 'pending', 'confirmed'].includes(
+      (reservation.status || '').toLowerCase()
     )
 
     return NextResponse.json({
-      reservation: { ...reservation, reservation_options },
+      reservation: {
+        id: reservation.id,
+        status: reservation.status,
+        tour_date: reservation.tour_date,
+        departure_time: reservation.tour_time,
+        adults: reservation.adults ?? 0,
+        children: reservation.child ?? 0,
+        infants: reservation.infant ?? 0,
+        total_people: reservation.total_people,
+        total_price: Number(pricing?.total_price) || 0,
+        special_requests: customer.special_requests || null,
+        nationality: null,
+        created_at: reservation.created_at,
+        customer_name: customer.name || '',
+        customer_email: customer.email || '',
+        customer_phone: customer.phone || '',
+        product: product || {
+          id: reservation.product_id,
+          name: '',
+          name_ko: null,
+          customer_name_ko: '',
+          customer_name_en: '',
+          base_price: 0,
+          duration: null,
+          max_participants: null,
+          departure_city: null,
+          arrival_city: null,
+          departure_country: null,
+          arrival_country: null,
+        },
+        reservation_options,
+        payment_records: paymentRecords || [],
+        coupon_code: pricing?.coupon_code || null,
+        /** Stripe 결제 확정 건은 셀프 취소 불가 */
+        can_self_cancel: statusOk && !stripePaid,
+        has_stripe_payment: Boolean(stripePaid),
+      },
     })
-
   } catch (error) {
     console.error('예약 확인 오류:', error)
-    return NextResponse.json({ 
-      error: '서버 오류가 발생했습니다' 
-    }, { status: 500 })
+    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
 }
 
-// 예약 상태 업데이트 (간단한 상태 변경용)
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { reservation_id, status, customer_email } = body
-
-    // 필수 필드 검증
-    if (!reservation_id || !status || !customer_email) {
-      return NextResponse.json({ 
-        error: '필수 필드가 누락되었습니다' 
-      }, { status: 400 })
-    }
-
-    // 유효한 상태인지 확인
-    const validStatuses = ['inquiry', 'confirmed', 'pending', 'cancelled', 'completed']
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json({ 
-        error: '유효하지 않은 상태입니다' 
-      }, { status: 400 })
-    }
-
-    // 예약 존재 확인 및 소유자 확인
-    const { data: existingReservation, error: fetchError } = await fromUntypedTable(supabase, 'reservations')
-      .select('*')
-      .eq('id', reservation_id)
-      .eq('customer_email', customer_email)
-      .single()
-
-    if (fetchError || !existingReservation) {
-      return NextResponse.json({ 
-        error: '예약을 찾을 수 없습니다' 
-      }, { status: 404 })
-    }
-
-    // 상태 업데이트
-    const { data: updatedReservation, error } = await supabase
-      .from('reservations')
-      .update({
-        status,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', reservation_id)
-      .select('*')
-      .single()
-
-    if (error) {
-      console.error('예약 상태 업데이트 오류:', error)
-      return NextResponse.json({ 
-        error: '예약 상태를 업데이트할 수 없습니다' 
-      }, { status: 500 })
-    }
-
-    return NextResponse.json({ 
-      reservation: updatedReservation,
-      message: '예약 상태가 성공적으로 업데이트되었습니다'
-    })
-
-  } catch (error) {
-    console.error('예약 상태 업데이트 오류:', error)
-    return NextResponse.json({ 
-      error: '서버 오류가 발생했습니다' 
-    }, { status: 500 })
-  }
+/**
+ * PATCH — 보안상 비활성화.
+ * 고객 취소는 POST /api/booking/cancel 을 사용하세요.
+ */
+export async function PATCH() {
+  return NextResponse.json(
+    {
+      error: '이 엔드포인트는 더 이상 사용할 수 없습니다. /api/booking/cancel 을 사용하세요.',
+      code: 'PATCH_DISABLED',
+    },
+    { status: 405 }
+  )
 }

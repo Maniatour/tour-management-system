@@ -19,9 +19,18 @@
 ```env
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=여기에_pk_test_붙여넣기
 STRIPE_SECRET_KEY=여기에_sk_test_붙여넣기
+STRIPE_WEBHOOK_SECRET=여기에_whsec_붙여넣기
+SUPABASE_SERVICE_ROLE_KEY=서버용_서비스롤_키
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-3. 파일 저장!
+3. Webhook (프로덕션/로컬 필수에 가깝게):
+   - Stripe Dashboard → Developers → Webhooks
+   - 엔드포인트: `https://your-domain.com/api/webhooks/stripe` (로컬은 `stripe listen --forward-to localhost:3000/api/webhooks/stripe`)
+   - 이벤트: `payment_intent.succeeded`
+   - Signing secret → `STRIPE_WEBHOOK_SECRET`
+
+4. 파일 저장!
 
 ### 3단계: 서버 재시작하고 테스트! (2분)
 

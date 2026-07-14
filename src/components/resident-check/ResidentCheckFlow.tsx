@@ -20,7 +20,10 @@ import {
 import ResidentCheckStripePay from '@/components/resident-check/ResidentCheckStripePay'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import { Button } from '@/components/ui/button'
-import { residentCheckFinalizeBlockers } from '@/lib/residentCheckFinalize'
+import {
+  residentCheckCanPayByCard,
+  residentCheckFinalizeBlockers,
+} from '@/lib/residentCheckFinalize'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
 
 type SessionReservation = {
@@ -239,7 +242,9 @@ export default function ResidentCheckFlow() {
     setLoading(true)
     setLoadError(null)
     try {
-      const res = await fetch(`/api/resident-check/session?t=${encodeURIComponent(rawToken)}`)
+      const res = await fetch(
+        `/api/resident-check/session?t=${encodeURIComponent(rawToken)}&locale=${encodeURIComponent(locale)}`
+      )
       const data = await res.json()
       if (!res.ok) {
         setLoadError(data.error || t('linkLoadError'))
@@ -262,7 +267,7 @@ export default function ResidentCheckFlow() {
     } finally {
       setLoading(false)
     }
-  }, [rawToken, t])
+  }, [rawToken, locale, t])
 
   useEffect(() => {
     void loadSession()
@@ -270,6 +275,7 @@ export default function ResidentCheckFlow() {
 
   const submission = session?.submission ?? null
   const blockers = submission ? residentCheckFinalizeBlockers(submission) : []
+  const canPayByCard = Boolean(submission && residentCheckCanPayByCard(submission))
 
   const blockerLabels = useMemo(
     () =>
@@ -288,13 +294,20 @@ export default function ResidentCheckFlow() {
     !(submission?.residency === 'non_resident' &&
       submission?.has_annual_pass === true &&
       !submission?.pass_photo_url)
-  const step3Done = blockers.length === 0
+  const step3Done =
+    canPayByCard ||
+    (Boolean(submission) && blockers.length === 0 && (submission?.total_charge_usd_cents ?? 0) === 0)
 
-  const handleSave = async () => {
+  const handleSave = async (override?: { paymentMethod?: 'card' | 'cash' | '' }) => {
     if (!rawToken.trim()) return
     setSaving(true)
     setActionMsg(null)
     try {
+      const nextPayment =
+        residency === 'us_resident'
+          ? null
+          : (override?.paymentMethod !== undefined ? override.paymentMethod : paymentMethod) ||
+            null
       const res = await fetch('/api/resident-check/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -303,7 +316,7 @@ export default function ResidentCheckFlow() {
           residency,
           non_resident_16_plus_count: nonResidentCount,
           agreed,
-          payment_method: residency === 'us_resident' ? null : paymentMethod || null,
+          payment_method: nextPayment || null,
           pass_assistance_requested: passAssistance,
           has_annual_pass: residency === 'non_resident' ? hasAnnualPass : null,
         }),
@@ -315,8 +328,24 @@ export default function ResidentCheckFlow() {
       }
       setActionMsg(t('saved'))
       await loadSession()
+      if (nextPayment === 'card') {
+        requestAnimationFrame(() => {
+          document.getElementById('resident-check-card-pay')?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        })
+      }
     } finally {
       setSaving(false)
+    }
+  }
+
+  const selectPaymentMethod = (value: 'card' | 'cash') => {
+    setPaymentMethod(value)
+    // Persist card choice immediately so the Stripe form can show without an extra save click.
+    if (value === 'card' && agreed) {
+      void handleSave({ paymentMethod: value })
     }
   }
 
@@ -590,7 +619,7 @@ export default function ResidentCheckFlow() {
                     type="radio"
                     name="pm"
                     checked={paymentMethod === value}
-                    onChange={() => setPaymentMethod(value)}
+                    onChange={() => selectPaymentMethod(value)}
                     className="h-4 w-4 accent-primary"
                   />
                   {value === 'card' ? (
@@ -690,25 +719,72 @@ export default function ResidentCheckFlow() {
       )}
 
       {submission && (
-        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm space-y-3">
-          <h2 className="text-lg font-semibold text-foreground">{t('amountSummary')}</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('npsAddon')}</span>
-              <span className="font-medium">{formatUsd(nps)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{t('cardFee')}</span>
-              <span className="font-medium">{formatUsd(cardFee)}</span>
-            </div>
-            <div className="flex justify-between border-t border-border/60 pt-3 text-base">
-              <span className="font-semibold">{t('totalCard')}</span>
-              <span className="font-semibold text-primary">{formatUsd(total)}</span>
+        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              {t('amountSummary')}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t.has('amountSummaryHint')
+                ? t('amountSummaryHint')
+                : locale === 'ko'
+                  ? '국립공원 입장 관련 항목과 선택한 결제 방식에 따른 상세 금액입니다.'
+                  : 'Itemized charges for park entry and selected payment method.'}
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/20">
+            <div className="divide-y divide-border/60 text-sm">
+              <div className="flex items-start justify-between gap-4 px-4 py-3.5">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{t('npsAddon')}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t.has('npsAddonHint')
+                      ? t('npsAddonHint')
+                      : locale === 'ko'
+                        ? '비거주자(만 16세 이상) 국립공원 추가 입장료입니다.'
+                        : 'Additional park entry amount for non-U.S. residents (age 16+).'}
+                  </p>
+                </div>
+                <span className="shrink-0 tabular-nums font-medium text-foreground">
+                  {formatUsd(nps)}
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-4 px-4 py-3.5">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{t('cardFee')}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t.has('cardFeeHint')
+                      ? t('cardFeeHint')
+                      : locale === 'ko'
+                        ? '카드 결제 선택 시에만 적용됩니다.'
+                        : 'Applied only when paying by card.'}
+                  </p>
+                </div>
+                <span className="shrink-0 tabular-nums font-medium text-foreground">
+                  {formatUsd(cardFee)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4 bg-background px-4 py-4">
+                <span className="text-base font-semibold text-foreground">{t('totalCard')}</span>
+                <span className="text-lg font-semibold tabular-nums text-primary">
+                  {formatUsd(total)}
+                </span>
+              </div>
             </div>
           </div>
-          {blockerLabels.length > 0 && (
+          {paymentMethod === 'card' && total > 0 && canPayByCard ? (
+            <div className="rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-xs text-success">
+              {t('cardPayReadyHint')}
+            </div>
+          ) : null}
+          {paymentMethod !== 'card' && blockerLabels.length > 0 && (
             <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
               {t('beforeFinish')} {blockerLabels.join(' · ')}
+            </div>
+          )}
+          {paymentMethod === 'card' && total > 0 && !submission.agreed && (
+            <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
+              {t('beforeFinish')} {t('blockerAgreed')}
             </div>
           )}
           <div className="flex flex-wrap gap-3 pt-1 text-xs text-muted-foreground">
@@ -755,21 +831,33 @@ export default function ResidentCheckFlow() {
         </div>
       )}
 
-      {submission && blockers.length === 0 && total > 0 && paymentMethod === 'card' && stripePromise && (
-        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-foreground">{t('cardPayment')}</h2>
+      {submission && canPayByCard && stripePromise && (
+        <div
+          id="resident-check-card-pay"
+          className="rounded-2xl border border-primary/25 bg-card p-6 shadow-sm"
+        >
+          <h2 className="mb-1 text-lg font-semibold text-foreground">{t('cardPayment')}</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {t('cardPayAmountHint', { amount: formatUsd(total) })}
+          </p>
+          {!submission.id_proof_url ? (
+            <p className="mb-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              {t('cardPayUploadOptional')}
+            </p>
+          ) : null}
           <Elements stripe={stripePromise}>
             <ResidentCheckStripePay
               token={rawToken}
               customerName={r.customerName || ''}
               customerEmail={r.customerEmail || ''}
+              amountLabel={formatUsd(total)}
               onPaid={() => void loadSession()}
             />
           </Elements>
         </div>
       )}
 
-      {submission && blockers.length === 0 && total > 0 && paymentMethod === 'card' && !stripePromise && (
+      {submission && canPayByCard && !stripePromise && (
         <div className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
           {t('stripeNotConfigured')}
         </div>

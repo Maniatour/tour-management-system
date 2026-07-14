@@ -66,6 +66,7 @@ export default function PaymentRecordsList({
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
   const [teamDisplayByEmail, setTeamDisplayByEmail] = useState<Record<string, string>>({})
   const [addingCancelRefund, setAddingCancelRefund] = useState(false)
+  const [addingStripeRefund, setAddingStripeRefund] = useState(false)
   const locale = useLocale()
 
   // 결제 방법 정보 로드
@@ -360,6 +361,56 @@ export default function PaymentRecordsList({
     }
   }
 
+  const hasStripeIntent = paymentRecords.some(
+    (r) => typeof r.note === 'string' && /pi_[A-Za-z0-9]+/.test(r.note)
+  )
+
+  const handleStripeRefund = async () => {
+    const ok = confirm(
+      locale === 'en'
+        ? 'Issue a Stripe card refund for this reservation? A “Refunded (us)” payment line will be added.'
+        : '이 예약에 대해 Stripe 카드 환불을 진행할까요? 「환불됨 (우리)」 입금 라인이 추가됩니다.'
+    )
+    if (!ok) return
+
+    setAddingStripeRefund(true)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error(locale === 'en' ? 'Authentication required.' : '인증이 필요합니다.')
+      }
+
+      const response = await fetch('/api/payment/stripe-refund', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ reservationId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(
+          data.error || (locale === 'en' ? 'Stripe refund failed.' : 'Stripe 환불에 실패했습니다.')
+        )
+      }
+      alert(
+        locale === 'en'
+          ? `Stripe refund completed: $${Number(data.amountUsd || 0).toFixed(2)}`
+          : `Stripe 환불 완료: $${Number(data.amountUsd || 0).toFixed(2)}`
+      )
+      await fetchPaymentRecords()
+      onPaymentRecordsUpdated?.()
+    } catch (error) {
+      console.error('Stripe refund error:', error)
+      alert(error instanceof Error ? error.message : locale === 'en' ? 'Refund error' : '환불 오류')
+    } finally {
+      setAddingStripeRefund(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4">
@@ -381,6 +432,27 @@ export default function PaymentRecordsList({
           </h3>
         )}
         <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+          {hasStripeIntent ? (
+            <button
+              type="button"
+              onClick={() => void handleStripeRefund()}
+              disabled={addingStripeRefund}
+              title={
+                locale === 'en'
+                  ? 'Refund via Stripe (card PaymentIntent)'
+                  : 'Stripe 카드 결제 환불'
+              }
+              className="inline-flex items-center gap-1 px-2 py-1.5 border border-red-300 bg-red-50 text-red-900 rounded-lg hover:bg-red-100 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {addingStripeRefund
+                ? locale === 'en'
+                  ? 'Refunding…'
+                  : '환불 중…'
+                : locale === 'en'
+                  ? 'Stripe refund'
+                  : 'Stripe 환불'}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void handleAddCancelDepositRefund()}

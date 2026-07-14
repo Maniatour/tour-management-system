@@ -20,11 +20,13 @@ export default function ResidentCheckStripePay({
   token,
   customerName,
   customerEmail,
+  amountLabel,
   onPaid,
 }: {
   token: string
   customerName: string
   customerEmail: string
+  amountLabel?: string
   onPaid: () => void
 }) {
   const stripe = useStripe()
@@ -108,7 +110,11 @@ export default function ResidentCheckStripePay({
         onClick={() => void handlePay()}
         className="w-full"
       >
-        {processing ? t('stripeProcessing') : t('stripePayButton')}
+        {processing
+          ? t('stripeProcessing')
+          : amountLabel
+            ? t('stripePayButtonAmount', { amount: amountLabel })
+            : t('stripePayButton')}
       </Button>
     </div>
   )

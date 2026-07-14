@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2, Minus, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { generateReservationId } from '@/lib/entityIds'
 import { useLocale } from 'next-intl'
+import { getAppOrigin } from '@/lib/appOrigin'
 import LoginForm from '@/components/auth/LoginForm'
 import SignUpForm from '@/components/auth/SignUpForm'
 import Image from 'next/image'
@@ -17,7 +17,6 @@ import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZon
 import BookingFlowSelectionSummary from '@/components/booking/BookingFlowSelectionSummary'
 import BookingFlowGuestDetailsSection from '@/components/booking/BookingFlowGuestDetailsSection'
 import BookingFlowAlertModal from '@/components/booking/BookingFlowAlertModal'
-import { buildBookingGuestEventNote } from '@/lib/bookingFlowGuestNotes'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
   findResidentsOptionId,
@@ -271,28 +270,44 @@ const tourLanguages = [
   { code: 'en', nameKo: '영어', nameEn: 'English' }
 ]
 
-// Stripe Elements를 사용하는 결제 컴포넌트
-interface BookingDataForPayment {
-  customerInfo: {
-    name: string
-    email: string
+type BookingPaymentCompleteResult = {
+  success: boolean
+  transactionId?: string | null
+  reservationId?: string | null
+  amountUsd?: number | null
+}
+
+type BookingCheckoutRequestBody = {
+  productId: string
+  tourDate: string
+  departureTime?: string | null
+  adults: number
+  children: number
+  infants: number
+  selectedOptions: Record<string, string>
+  pickupHotelId?: string | null
+  couponCode?: string | null
+  customerInfo: BookingData['customerInfo'] & {
+    phone: string
+    pickupHotelCustom?: string
+    alternativeDates?: string[]
   }
 }
 
 function PaymentForm({ 
   paymentMethod, 
-  bookingData, 
-  totalPrice, 
+  buildCheckoutBody,
   onPaymentComplete, 
   translate,
-  onPaymentSubmit
+  onPaymentSubmit,
+  locale,
 }: {
   paymentMethod: string
-  bookingData: BookingDataForPayment
-  totalPrice: number
-  onPaymentComplete: (result: { success: boolean; transactionId?: string | null }) => Promise<void>
+  buildCheckoutBody: () => BookingCheckoutRequestBody
+  onPaymentComplete: (result: BookingPaymentCompleteResult) => Promise<void>
   translate: (ko: string, en: string) => string
   onPaymentSubmit?: (submitHandler: (() => Promise<void>) | null) => void
+  locale: 'ko' | 'en'
 }) {
   const stripe = useStripe()
   const elements = useElements()
@@ -319,24 +334,19 @@ function PaymentForm({
       return
     }
 
-    // Payment Intent 생성
     try {
-      const reservationId = generateReservationId()
-      
-      const response = await fetch('/api/payment/create-payment-intent', {
+      const checkoutBody = buildCheckoutBody()
+
+      const response = await fetch('/api/booking/create-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: totalPrice,
-          currency: 'usd',
-          reservationId: reservationId,
-          customerInfo: {
-            name: bookingData.customerInfo.name,
-            email: bookingData.customerInfo.email
-          }
-        })
+          ...checkoutBody,
+          customerInfo: checkoutBody.customerInfo,
+          locale,
+        }),
       })
 
       if (!response.ok) {
@@ -344,22 +354,21 @@ function PaymentForm({
         try {
           const errorData = await response.json()
           errorMessage = errorData.error || errorMessage
-        } catch (e) {
-          // JSON 파싱 실패 시 텍스트로 읽기 시도
+        } catch {
           try {
             const text = await response.text()
             errorMessage = text || errorMessage
-          } catch (textError) {
-            // 텍스트 읽기도 실패하면 기본 메시지 사용
+          } catch {
             errorMessage = `서버 오류 (${response.status}): ${response.statusText}`
           }
         }
         throw new Error(errorMessage)
       }
 
-      const { clientSecret } = await response.json()
+      const checkoutResult = await response.json()
+      const { clientSecret, reservationId, paymentIntentId, amountUsd } = checkoutResult
 
-      if (!clientSecret) {
+      if (!clientSecret || !reservationId) {
         throw new Error(
           translate(
             '결제 시크릿을 받지 못했습니다. 서버 설정을 확인해주세요.',
@@ -368,13 +377,12 @@ function PaymentForm({
         )
       }
 
-      // Stripe Elements로 결제 확인
       const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: cardElement,
           billing_details: {
-            name: bookingData.customerInfo.name,
-            email: bookingData.customerInfo.email,
+            name: checkoutBody.customerInfo.name,
+            email: checkoutBody.customerInfo.email,
           },
         },
       })
@@ -386,9 +394,35 @@ function PaymentForm({
       }
 
       if (paymentIntent?.status === 'succeeded') {
+        const confirmRes = await fetch('/api/booking/confirm-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reservationId,
+            paymentIntentId: paymentIntent.id || paymentIntentId,
+            locale,
+            origin: getAppOrigin(),
+          }),
+        })
+        if (!confirmRes.ok) {
+          let confirmError = translate(
+            '결제는 완료되었으나 예약 확정에 실패했습니다. 예약 조회로 확인해 주세요.',
+            'Payment succeeded but reservation confirmation failed. Please check your reservation.'
+          )
+          try {
+            const errBody = await confirmRes.json()
+            if (errBody?.error) confirmError = errBody.error
+          } catch {
+            /* keep default */
+          }
+          throw new Error(confirmError)
+        }
+
         await onPaymentComplete({
           success: true,
-          transactionId: paymentIntent.id
+          transactionId: paymentIntent.id,
+          reservationId,
+          amountUsd: typeof amountUsd === 'number' ? amountUsd : null,
         })
       } else {
         throw new Error(translate('결제가 완료되지 않았습니다.', 'Payment was not completed.'))
@@ -398,7 +432,7 @@ function PaymentForm({
       setCardError(error instanceof Error ? error.message : translate('결제 처리 중 오류가 발생했습니다.', 'An error occurred during payment processing.'))
       setProcessing(false)
     }
-  }, [stripe, elements, totalPrice, bookingData, onPaymentComplete, translate])
+  }, [stripe, elements, buildCheckoutBody, onPaymentComplete, translate, locale])
 
   useEffect(() => {
     handleSubmitRef.current = handleSubmit
@@ -687,28 +721,6 @@ export default function BookingFlow({ product, productChoices, initialDate, init
     },
     [translate]
   )
-
-  const buildGuestEventNoteForBooking = useCallback(() => {
-    return buildBookingGuestEventNote({
-      localContactChannel: bookingData.customerInfo.localContactChannel,
-      localContactHandle: bookingData.customerInfo.localContactHandle,
-      localContactChannelLabel: bookingData.customerInfo.localContactChannel
-        ? getLocalContactChannelLabel(bookingData.customerInfo.localContactChannel)
-        : null,
-      alternativeDates: bookingData.alternativeDates,
-      pickupHotelCustom: bookingData.pickupHotelId ? null : bookingData.pickupHotelCustom,
-      smsConsent: bookingData.customerInfo.smsConsent,
-      formatDateLabel: (ymd) => {
-        const date = new Date(`${ymd}T12:00:00`)
-        return date.toLocaleDateString(localeTag, {
-          weekday: 'short',
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })
-      },
-    })
-  }, [bookingData, getLocalContactChannelLabel, localeTag])
 
   // 투어 스케줄 로드 (매일 출발 가능, 고객은 모든 날짜 선택 가능)
   useEffect(() => {
@@ -2116,266 +2128,127 @@ export default function BookingFlow({ product, productChoices, initialDate, init
     }
   }
 
-  // 결제 완료 핸들러 (PaymentForm에서 호출)
-  const handlePaymentComplete = async (result: { success: boolean; transactionId?: string | null }) => {
-    // 결제가 성공하면 예약 생성 진행
-    if (result.success) {
-      await handleCompleteBooking(result.transactionId)
+  const buildCheckoutBody = useCallback((): BookingCheckoutRequestBody => {
+    const fullPhoneNumber = getFullPhoneNumber()
+    return {
+      productId: product.id,
+      tourDate: bookingData.tourDate,
+      departureTime: bookingData.departureTime || null,
+      adults: bookingData.participants.adults,
+      children: bookingData.participants.children,
+      infants: bookingData.participants.infants,
+      selectedOptions: bookingData.selectedOptions,
+      pickupHotelId: bookingData.pickupHotelId || null,
+      couponCode: appliedCoupon?.coupon_code || null,
+      customerInfo: {
+        ...bookingData.customerInfo,
+        phone: fullPhoneNumber,
+        pickupHotelCustom: bookingData.pickupHotelCustom,
+        alternativeDates: bookingData.alternativeDates,
+      },
     }
-  }
+  }, [product.id, bookingData, appliedCoupon])
 
-  // 예약 생성 (결제 완료 후)
-  const handleCompleteBooking = async (transactionId: string | null | undefined) => {
+  // 카드 결제 완료: 서버에서 이미 예약·결제·이메일을 처리함 → confirmation 페이지로 이동
+  const handlePaymentComplete = async (result: BookingPaymentCompleteResult) => {
+    if (!result.success || !result.reservationId) return
+
     try {
       setLoading(true)
-      
-      // 전화번호를 국제 형식으로 변환하여 저장
       const fullPhoneNumber = getFullPhoneNumber()
-      const totalPrice = calculateTotalPrice()
-      
-      // 1. 예약 기본 정보 생성
-      const reservationId = generateReservationId()
-      
-      const guestEventNote = buildGuestEventNoteForBooking()
-      
-      const reservationData = {
-        id: reservationId,
-        product_id: product.id,
-        channel_id: 'M00001',
-        customer_name: bookingData.customerInfo.name,
-        customer_email: bookingData.customerInfo.email,
-        customer_phone: fullPhoneNumber,
-        tour_date: bookingData.tourDate,
-        departure_time: bookingData.departureTime || null,
-        adults: bookingData.participants.adults,
-        children: bookingData.participants.children,
-        infants: bookingData.participants.infants,
-        total_people: bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants,
-        total_price: totalPrice,
-        choices_total: 0,
-        status: transactionId ? 'confirmed' : 'inquiry',
-        notes: bookingData.customerInfo.specialRequests || null,
-        pickup_hotel: bookingData.pickupHotelId || null,
-        customer_communication_channel: bookingData.customerInfo.localContactChannel || null,
-        event_note: guestEventNote,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-
-      // 2. 예약 생성
-      const { error: reservationError } = await supabase
-        .from('reservations')
-        .insert(reservationData as never)
-
-      if (reservationError) {
-        throw new Error(`예약 생성 오류: ${reservationError.message}`)
-      }
-
-      // 3. 선택된 필수/선택 옵션들을 저장
-      const choicesToInsert: Array<{
-        reservation_id: string
-        choice_id: string
-        option_id: string
-        quantity: number
-        total_price: number
-      }> = []
-      let choicesTotal = 0
-
-      // 필수 선택 (productChoices)
-      requiredChoices.forEach((group) => {
-        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-          if (option) {
-            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-            const optionPrice = option.option_price || 0
-            const totalPrice = optionPrice * totalParticipants
-            
-            choicesToInsert.push({
-              reservation_id: reservationId,
-              choice_id: group.choice_id,
-              option_id: selectedOptionId,
-              quantity: totalParticipants,
-              total_price: totalPrice
-            })
-            
-            choicesTotal += totalPrice
-          }
-        }
-      })
-
-      // 추가 선택 (productOptions)
-      const optionsToInsert: Array<{
-        reservation_id: string
-        option_id: string
-        ea: number
-        price: number
-        total_price: number
-        status: string
-      }> = []
-      optionalChoices.forEach((group) => {
-        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const productOption = productOptions.find(po => po.id === selectedOptionId)
-          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-          
-          if (option && productOption) {
-            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-            const optionPrice = option.option_price || 0
-            const totalPrice = optionPrice * totalParticipants
-            
-            optionsToInsert.push({
-              reservation_id: reservationId,
-              option_id: selectedOptionId,
-              ea: totalParticipants,
-              price: optionPrice,
-              total_price: totalPrice,
-              status: 'confirmed'
-            })
-          }
-        }
-      })
-
-      // reservation_options에 삽입
-      if (optionsToInsert.length > 0) {
-        const { error: optionsError } = await supabase
-          .from('reservation_options')
-          .insert(optionsToInsert as never)
-
-        if (optionsError) {
-          console.error('예약 추가 선택 상품 저장 오류:', optionsError)
-        } else {
-          try {
-            await fetch('/api/reservation-pricing/sync-aggregates', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ reservation_id: reservationId }),
-            })
-          } catch (syncErr) {
-            console.warn('reservation_pricing option_total 동기화 호출 실패:', syncErr)
-          }
-        }
-      }
-
-      // reservation_choices에 삽입
-      if (choicesToInsert.length > 0) {
-        const { error: choicesError } = await supabase
-          .from('reservation_choices')
-          .insert(choicesToInsert as never)
-
-        if (choicesError) {
-          console.error('예약 선택사항 저장 오류:', choicesError)
-        }
-      }
-
-      // choices_total 업데이트
-      if (choicesTotal > 0) {
-        await supabase
-          .from('reservations')
-          .update({ choices_total: choicesTotal } as never)
-          .eq('id', reservationId)
-      }
-
-      // 결제 기록 생성
-      if (paymentMethod === 'card' && transactionId) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.access_token) {
-            await fetch('/api/payment-records', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`
-              },
-              body: JSON.stringify({
-                reservation_id: reservationId,
-                payment_status: 'confirmed',
-                amount: totalPrice,
-                payment_method: paymentMethod,
-                note: transactionId ? `Transaction ID: ${transactionId}` : null
-              })
-            })
-          }
-        } catch (error) {
-          console.error('결제 기록 생성 오류:', error)
-        }
-      }
+      const totalPrice =
+        typeof result.amountUsd === 'number' ? result.amountUsd : calculateTotalPrice()
 
       const finalBookingData = {
         ...bookingData,
-        totalPrice: totalPrice,
+        totalPrice,
         customerInfo: {
           ...bookingData.customerInfo,
-          phone: fullPhoneNumber
-        }
+          phone: fullPhoneNumber,
+        },
       }
 
-      // 이메일 발송 (결제 완료 시)
-      if (paymentMethod === 'card' && transactionId) {
-        try {
-          await fetch('/api/send-email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              reservationId: reservationId,
-              email: bookingData.customerInfo.email,
-              type: 'both', // 영수증과 투어 바우처 모두 발송
-              locale: isEnglish ? 'en' : 'ko'
-            })
-          }).catch(error => {
-            console.error('이메일 발송 오류 (무시):', error)
-            // 이메일 발송 실패해도 예약은 완료된 것으로 처리
-          })
-        } catch (error) {
-          console.error('이메일 발송 오류 (무시):', error)
-        }
-      }
-
-      // 성공 메시지 표시
-      if (paymentMethod === 'card' && transactionId) {
-        alert(isEnglish 
-          ? `Payment successful! Your reservation has been confirmed. Receipt and tour voucher have been sent to ${bookingData.customerInfo.email}. Reservation ID: ${reservationId}` 
-          : `결제가 완료되었습니다! 예약이 확정되었습니다. 영수증과 투어 바우처가 ${bookingData.customerInfo.email}로 발송되었습니다. 예약 ID: ${reservationId}`)
-      } else {
-        alert(isEnglish 
-          ? 'Your reservation has been submitted successfully! We will contact you soon.' 
-          : '예약이 성공적으로 제출되었습니다! 곧 연락드리겠습니다.')
-      }
-      
       onComplete(finalBookingData)
-      
+
+      const params = new URLSearchParams({
+        status: 'success',
+        id: result.reservationId,
+        email: bookingData.customerInfo.email || '',
+      })
+      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 은행 이체 등 비카드: 서버 create-inquiry
+  const handleCompleteBooking = async () => {
+    try {
+      setLoading(true)
+      const checkoutBody = buildCheckoutBody()
+
+      const response = await fetch('/api/booking/create-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkoutBody),
+      })
+
+      if (!response.ok) {
+        let message = translate('예약 문의 제출에 실패했습니다.', 'Failed to submit reservation inquiry.')
+        try {
+          const errBody = await response.json()
+          if (errBody?.error) message = errBody.error
+        } catch {
+          /* keep default */
+        }
+        throw new Error(message)
+      }
+
+      const data = await response.json()
+      const reservationId = data.reservationId as string
+      const amountUsd =
+        typeof data.amountUsd === 'number' ? data.amountUsd : calculateTotalPrice()
+
+      const finalBookingData = {
+        ...bookingData,
+        totalPrice: amountUsd,
+        customerInfo: {
+          ...bookingData.customerInfo,
+          phone: checkoutBody.customerInfo.phone,
+        },
+      }
+
+      onComplete(finalBookingData)
+
+      const params = new URLSearchParams({
+        status: 'success',
+        id: reservationId,
+        email: checkoutBody.customerInfo.email || '',
+      })
+      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
     } catch (error) {
       console.error('예약 생성 오류:', error)
-      alert(isEnglish 
-        ? `Failed to create reservation: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      alert(
+        isEnglish
+          ? `Failed to create reservation: ${error instanceof Error ? error.message : 'Unknown error'}`
+          : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+      )
     } finally {
       setLoading(false)
     }
   }
 
   const handleComplete = async () => {
-    // 카드 결제는 PaymentForm에서 처리하므로, 여기서는 은행 이체만 처리
     if (paymentMethod === 'card') {
-      // PaymentForm에서 결제가 완료되면 handlePaymentComplete가 호출됨
-      // 여기서는 아무것도 하지 않음
       return
     }
-
-    // 은행 이체인 경우
-    try {
-      setLoading(true)
-      await handleCompleteBooking(null)
-    } catch (error) {
-      console.error('예약 생성 오류:', error)
-      alert(isEnglish 
-        ? `Failed to create reservation: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
-    } finally {
-      setLoading(false)
+    if (paymentMethod === 'paypal') {
+      alert(
+        translate('PayPal 결제는 현재 준비 중입니다.', 'PayPal payment is currently being prepared.')
+      )
+      return
     }
+    await handleCompleteBooking()
   }
 
   // 기존 예약 생성 로직은 handleCompleteBooking으로 이동됨
@@ -4044,11 +3917,11 @@ export default function BookingFlow({ product, productChoices, initialDate, init
                   >
                     <PaymentForm
                       paymentMethod={paymentMethod}
-                      bookingData={bookingData}
-                      totalPrice={calculateFinalPrice()}
+                      buildCheckoutBody={buildCheckoutBody}
                       onPaymentComplete={handlePaymentComplete}
                       translate={translate}
                       onPaymentSubmit={registerPaymentSubmitHandler}
+                      locale={isEnglish ? 'en' : 'ko'}
                     />
                   </Elements>
                 )}

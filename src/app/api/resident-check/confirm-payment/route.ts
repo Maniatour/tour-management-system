@@ -5,9 +5,10 @@ import {
   getTokenBundleByRawToken,
   tokenIsExpired,
 } from '@/lib/residentCheckTokenService'
-import { residentCheckFinalizeBlockers } from '@/lib/residentCheckFinalize'
+import { residentCheckCardPaymentBlockers } from '@/lib/residentCheckFinalize'
 import {
   markResidentCheckTokenCompleted,
+  recordResidentCheckCardPayment,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
 
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This link has expired.' }, { status: 400 })
     }
 
-    const blockers = residentCheckFinalizeBlockers(submission)
+    const blockers = residentCheckCardPaymentBlockers(submission)
     if (blockers.length > 0) {
       return NextResponse.json({ error: 'Incomplete form.', blockers }, { status: 400 })
     }
@@ -87,6 +88,12 @@ export async function POST(request: NextRequest) {
       })
       .eq('token_id', token.id)
 
+    const paymentRecord = await recordResidentCheckCardPayment(supabaseAdmin, {
+      reservationId: token.reservation_id,
+      paymentIntentId: pi.id,
+      amountUsdCents: pi.amount,
+    })
+
     const { data: reservation } = await supabaseAdmin
       .from('reservations')
       .select('customer_id')
@@ -104,7 +111,11 @@ export async function POST(request: NextRequest) {
     })
     await markResidentCheckTokenCompleted(token.id)
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({
+      ok: true,
+      paymentRecorded: true,
+      alreadyRecorded: paymentRecord.alreadyRecorded,
+    })
   } catch (e) {
     console.error('resident-check/confirm-payment', e)
     const msg = e instanceof Error ? e.message : 'Unexpected error.'

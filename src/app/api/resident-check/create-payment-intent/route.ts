@@ -5,7 +5,7 @@ import {
   getTokenBundleByRawToken,
   tokenIsExpired,
 } from '@/lib/residentCheckTokenService'
-import { residentCheckFinalizeBlockers } from '@/lib/residentCheckFinalize'
+import { residentCheckCardPaymentBlockers } from '@/lib/residentCheckFinalize'
 
 let stripeInstance: Stripe | null = null
 
@@ -49,13 +49,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This link has expired.' }, { status: 400 })
     }
 
-    const blockers = residentCheckFinalizeBlockers(submission)
+    const blockers = residentCheckCardPaymentBlockers(submission)
     if (blockers.length > 0) {
       return NextResponse.json({ error: 'Incomplete form.', blockers }, { status: 400 })
-    }
-
-    if (submission.payment_method !== 'card') {
-      return NextResponse.json({ error: 'Card payment is not selected.' }, { status: 400 })
     }
 
     const amount = submission.total_charge_usd_cents
@@ -85,18 +81,41 @@ export async function POST(request: NextRequest) {
       customerName = (c?.name || '').trim()
     }
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'usd',
-      metadata: {
-        resident_check_token_id: token.id,
-        reservation_id: token.reservation_id,
-        purpose: 'resident_check_nps',
-      },
-      automatic_payment_methods: { enabled: true },
-      ...(customerEmail ? { receipt_email: customerEmail } : {}),
-      description: `NPS / residency — reservation ${token.reservation_id}`,
-    })
+    let paymentIntent: Stripe.PaymentIntent | null = null
+    const existingPiId = submission.stripe_payment_intent_id
+    if (existingPiId) {
+      try {
+        const existing = await stripe.paymentIntents.retrieve(existingPiId)
+        const reusable =
+          (existing.status === 'requires_payment_method' ||
+            existing.status === 'requires_confirmation' ||
+            existing.status === 'requires_action') &&
+          existing.amount === amount &&
+          existing.currency === 'usd' &&
+          existing.metadata?.resident_check_token_id === token.id
+        if (reusable) {
+          paymentIntent = existing
+        }
+      } catch {
+        paymentIntent = null
+      }
+    }
+
+    if (!paymentIntent) {
+      paymentIntent = await stripe.paymentIntents.create({
+        amount,
+        currency: 'usd',
+        metadata: {
+          resident_check_token_id: token.id,
+          reservation_id: token.reservation_id,
+          purpose: 'resident_check_nps',
+        },
+        // CardElement + confirmCardPayment — avoid redirect-based APMs
+        payment_method_types: ['card'],
+        ...(customerEmail ? { receipt_email: customerEmail } : {}),
+        description: `NPS / residency — reservation ${token.reservation_id}`,
+      })
+    }
 
     await supabaseAdmin
       .from('resident_check_submissions')

@@ -22,28 +22,16 @@ function getStripe(): Stripe {
 
 /**
  * POST /api/payment/create-payment-intent
- * 
- * 결제 의도(Payment Intent)를 생성하는 API
- * 
- * 요청 본문:
- * {
- *   amount: number,           // 결제 금액 (센트 단위, 예: $10.00 = 1000)
- *   currency: string,         // 통화 (예: 'usd', 'krw')
- *   reservationId: string,    // 예약 ID
- *   customerInfo: {           // 고객 정보
- *     name: string,
- *     email: string
- *   }
- * }
- * 
- * 응답:
- * {
- *   clientSecret: string,     // 클라이언트에서 결제 완료에 사용할 시크릿
- *   paymentIntentId: string   // 결제 의도 ID
- * }
+ *
+ * @deprecated 고객 웹 예약은 `/api/booking/create-checkout`를 사용하세요.
+ * 이 엔드포인트는 클라이언트 amount를 신뢰하므로 신규 결제에 사용하지 마세요.
+ * (레거시/내부 호환용으로만 유지)
  */
 export async function POST(request: NextRequest) {
   try {
+    console.warn(
+      '[create-payment-intent] deprecated: use /api/booking/create-checkout for customer bookings'
+    )
     // 1. 요청 본문 파싱
     const body = await request.json()
     const { amount, currency = 'usd', reservationId, customerInfo } = body

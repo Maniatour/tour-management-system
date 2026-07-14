@@ -1,8 +1,9 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
-import { Calendar, Users, MapPin, Clock, CreditCard, CheckCircle, AlertCircle, Search, ArrowLeft } from 'lucide-react'
+import { Suspense, useState, useEffect, useCallback } from 'react'
+import { Calendar, Users, MapPin, Clock, CreditCard, CheckCircle, AlertCircle, Search, ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
@@ -61,6 +62,8 @@ interface Reservation {
     submit_on: string
     confirmed_on: string | null
   }>
+  can_self_cancel?: boolean
+  has_stripe_payment?: boolean
 }
 
 export default function ReservationCheckPage() {
@@ -74,6 +77,7 @@ export default function ReservationCheckPage() {
 function ReservationCheckPageInner() {
   const t = useTranslations('reservationCheck')
   const locale = useLocale()
+  const searchParams = useSearchParams()
   const dateLocale = locale === 'en' ? 'en-US' : 'ko-KR'
   const { isPreview, isEditMode } = useCustomerPageEditMode()
   const contentEditMode = isPreview && isEditMode
@@ -82,6 +86,7 @@ function ReservationCheckPageInner() {
   const [customerEmail, setCustomerEmail] = useState('')
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const [loading, setLoading] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
 
@@ -105,8 +110,10 @@ function ReservationCheckPageInner() {
     loadPaymentMethods()
   }, [])
 
-  const handleSearch = async () => {
-    if (!reservationId || !customerEmail) {
+  const handleSearch = useCallback(async (idOverride?: string, emailOverride?: string) => {
+    const id = (idOverride ?? reservationId).trim()
+    const email = (emailOverride ?? customerEmail).trim()
+    if (!id || !email) {
       setError(t('missingFields'))
       return
     }
@@ -119,8 +126,8 @@ function ReservationCheckPageInner() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reservation_id: reservationId,
-          customer_email: customerEmail,
+          reservation_id: id,
+          customer_email: email,
         }),
       })
 
@@ -136,6 +143,53 @@ function ReservationCheckPageInner() {
       setError(err instanceof Error ? err.message : t('searchError'))
     } finally {
       setLoading(false)
+    }
+  }, [reservationId, customerEmail, t])
+
+  useEffect(() => {
+    const id = searchParams.get('id') || searchParams.get('reservationId') || ''
+    const email = searchParams.get('email') || ''
+    if (id) setReservationId(id)
+    if (email) setCustomerEmail(email)
+    if (id && email) {
+      void handleSearch(id, email)
+    }
+    // URL 프리필은 최초 1회
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleCancel = async () => {
+    if (!reservation) return
+    if (!confirm(t('cancelConfirm'))) return
+
+    setCancelling(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/booking/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: reservation.id,
+          email: customerEmail || reservation.customer_email,
+          confirm: true,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.error || t('cancelError'))
+      }
+
+      if (data.refunded && data.refundAmountUsd != null) {
+        alert(t('cancelRefundSuccess', { amount: Number(data.refundAmountUsd).toFixed(2) }))
+      } else {
+        alert(t('cancelSuccess'))
+      }
+      await handleSearch(reservation.id, customerEmail || reservation.customer_email)
+    } catch (err) {
+      console.error('Cancel error:', err)
+      setError(err instanceof Error ? err.message : t('cancelError'))
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -269,7 +323,7 @@ function ReservationCheckPageInner() {
               />
             </div>
             <button
-              onClick={handleSearch}
+              onClick={() => void handleSearch()}
               disabled={loading}
               className="cp-ui-btn-primary w-full py-3 px-4 rounded-lg transition-colors font-medium flex items-center justify-center disabled:opacity-50"
             >
@@ -455,6 +509,50 @@ function ReservationCheckPageInner() {
                   </div>
                 </div>
               )}
+
+              {reservation.can_self_cancel ? (
+                <div className="mb-8 rounded-xl border border-border/60 bg-muted/40 p-4">
+                  <p className="text-sm text-muted-foreground">{t('unpaidCancelNote')}</p>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => void handleCancel()}
+                      disabled={cancelling}
+                      className="inline-flex h-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-5 text-sm font-semibold text-red-800 transition hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {cancelling ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {t('cancelling')}
+                        </>
+                      ) : (
+                        t('cancelButton')
+                      )}
+                    </button>
+                    <Link
+                      href={`/${locale}/cancellation-refund-policy`}
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('policyLink')}
+                    </Link>
+                  </div>
+                </div>
+              ) : reservation.has_stripe_payment &&
+                ['confirmed', 'pending', 'inquiry'].includes(
+                  (reservation.status || '').toLowerCase()
+                ) ? (
+                <div className="mb-8 rounded-xl border border-border/60 bg-muted/40 p-4">
+                  <p className="text-sm text-muted-foreground">{t('paidCancelContactNote')}</p>
+                  <div className="mt-3">
+                    <Link
+                      href={`/${locale}/cancellation-refund-policy`}
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      {t('policyLink')}
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="border-t pt-6">
                 <div className="flex items-center justify-between text-sm text-gray-600">

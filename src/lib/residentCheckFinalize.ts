@@ -20,3 +20,22 @@ export function residentCheckFinalizeBlockers(
   if (total > 0 && !s.payment_method) out.push('payment_method')
   return out
 }
+
+/**
+ * Card pay can proceed once terms + card method + charge amount are ready.
+ * Proof uploads remain recommended but do not block paying the due amount.
+ */
+export function residentCheckCardPaymentBlockers(
+  s: ResidentCheckSubmissionRow
+): string[] {
+  const out: string[] = []
+  if (!s.agreed) out.push('agreed')
+  if (s.payment_method !== 'card') out.push('payment_method')
+  const total = s.total_charge_usd_cents ?? 0
+  if (!total || total < 50) out.push('amount')
+  return out
+}
+
+export function residentCheckCanPayByCard(s: ResidentCheckSubmissionRow): boolean {
+  return residentCheckCardPaymentBlockers(s).length === 0
+}

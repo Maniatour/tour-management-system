@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
     }
 
     const raw = request.nextUrl.searchParams.get('t') || ''
+    const localeParam = (request.nextUrl.searchParams.get('locale') || '').toLowerCase()
+    const isEn = localeParam === 'en'
     const bundle = await getTokenBundleByRawToken(raw)
     if (!bundle) {
       return NextResponse.json({ error: 'Invalid or unknown link.' }, { status: 404 })
@@ -41,12 +43,22 @@ export async function GET(request: NextRequest) {
     if (reservation.product_id) {
       const { data: product } = await supabaseAdmin
         .from('products')
-        .select('name, name_ko, name_en')
+        .select('name, name_ko, name_en, customer_name_ko, customer_name_en')
         .eq('id', reservation.product_id)
         .maybeSingle()
-      const p = product as { name?: string; name_ko?: string; name_en?: string } | null
+      const p = product as {
+        name?: string | null
+        name_ko?: string | null
+        name_en?: string | null
+        customer_name_ko?: string | null
+        customer_name_en?: string | null
+      } | null
       if (p) {
-        productName = (p.name_ko || p.name_en || p.name || '').trim() || null
+        productName = (
+          isEn
+            ? p.customer_name_en || p.name_en || p.name || p.customer_name_ko || p.name_ko
+            : p.customer_name_ko || p.name_ko || p.name || p.customer_name_en || p.name_en
+        )?.trim() || null
       }
     }
 
