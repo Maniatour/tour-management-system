@@ -856,13 +856,24 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         return
       }
 
+      const usableKey = (value: string | null | undefined): string | undefined => {
+        if (value == null) return undefined
+        const trimmed = String(value).trim()
+        if (!trimmed || isChoiceOptionUuid(trimmed)) return undefined
+        return trimmed
+      }
+
+      // 표시명(이름 또는 비-UUID option_key)이 없으면 choice_options 재조회
       const missingOptionIds = choiceOptionIdsForSupabaseIn(
         rows.map((item) => {
           const opt = unwrap(item.choice_options)
-          const hasName =
-            !!(opt?.option_name_ko || opt?.option_name || opt?.option_key) ||
-            !!(item.option_key && !isChoiceOptionUuid(item.option_key))
-          return hasName ? null : item.option_id
+          const hasDisplayName = !!(
+            (opt?.option_name_ko && String(opt.option_name_ko).trim()) ||
+            (opt?.option_name && String(opt.option_name).trim()) ||
+            usableKey(opt?.option_key) ||
+            usableKey(item.option_key)
+          )
+          return hasDisplayName ? null : item.option_id
         })
       )
 
@@ -883,7 +894,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             option_name_ko?: string | null
           }) => {
             optionInfoById.set(o.id, {
-              ...(o.option_key != null ? { option_key: o.option_key } : {}),
+              ...(usableKey(o.option_key) ? { option_key: usableKey(o.option_key) } : {}),
               ...(o.option_name != null ? { option_name: o.option_name } : {}),
               ...(o.option_name_ko != null ? { option_name_ko: o.option_name_ko } : {}),
             })
@@ -898,9 +909,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const pc = unwrap(item.product_choices)
           const fallback = item.option_id ? optionInfoById.get(item.option_id) : undefined
           const option_key =
-            opt?.option_key ||
-            fallback?.option_key ||
-            (item.option_key && !isChoiceOptionUuid(item.option_key) ? item.option_key : undefined)
+            usableKey(opt?.option_key) ||
+            usableKey(fallback?.option_key) ||
+            usableKey(item.option_key)
           const choiceItem: {
             choice_id: string
             option_id: string
@@ -1138,6 +1149,67 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     return colorPalette[Math.abs(hash) % colorPalette.length]
   }
 
+  /** reservations.choices JSON → option_id별 표시명/키 (조인 실패 시 보강용) */
+  const getChoiceNameHintsFromJson = (): Map<
+    string,
+    { option_name?: string; option_name_ko?: string; option_key?: string }
+  > => {
+    const map = new Map<
+      string,
+      { option_name?: string; option_name_ko?: string; option_key?: string }
+    >()
+    if (!reservation.choices) return map
+    try {
+      const choicesData = safeJsonParse(reservation.choices)
+      if (!choicesData || typeof choicesData !== 'object') return map
+      const choicesObj = choicesData as Record<string, unknown>
+      if (!Array.isArray(choicesObj.required)) return map
+      for (const item of choicesObj.required as Array<Record<string, unknown>>) {
+        if (item.option_id && item.choice_id) {
+          const optionId = String(item.option_id)
+          const hint: { option_name?: string; option_name_ko?: string; option_key?: string } = {}
+          if (typeof item.option_name === 'string' && item.option_name) hint.option_name = item.option_name
+          if (typeof item.option_name_ko === 'string' && item.option_name_ko) {
+            hint.option_name_ko = item.option_name_ko
+          }
+          if (
+            typeof item.option_key === 'string' &&
+            item.option_key &&
+            !isChoiceOptionUuid(item.option_key)
+          ) {
+            hint.option_key = item.option_key
+          }
+          if (hint.option_name || hint.option_name_ko || hint.option_key) {
+            map.set(optionId, hint)
+          }
+          continue
+        }
+        if (!item.options || !Array.isArray(item.options)) continue
+        for (const option of item.options as Array<Record<string, unknown>>) {
+          if (!(option.selected || option.is_default)) continue
+          const optionId = String(option.id || option.option_id || '')
+          if (!optionId) continue
+          const hint: { option_name?: string; option_name_ko?: string; option_key?: string } = {}
+          if (typeof option.name === 'string' && option.name) hint.option_name = option.name
+          if (typeof option.name_ko === 'string' && option.name_ko) hint.option_name_ko = option.name_ko
+          if (
+            typeof option.option_key === 'string' &&
+            option.option_key &&
+            !isChoiceOptionUuid(option.option_key)
+          ) {
+            hint.option_key = option.option_key
+          }
+          if (hint.option_name || hint.option_name_ko || hint.option_key) {
+            map.set(optionId, hint)
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return map
+  }
+
   const getSelectedChoices = (): Array<{
     name: string
     choice_id: string
@@ -1152,16 +1224,26 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       choice_group?: string
       choice_group_ko?: string
     }> = []
-    
+    const jsonHints = getChoiceNameHintsFromJson()
+
     // 1. reservation_choices 테이블에서 직접 조회한 데이터 사용 (우선순위 1)
+    //    조인으로 이름이 비면 reservations.choices JSON으로 보강 — 빈 결과면 JSON 전체 폴백
     if (reservationChoices.length > 0) {
       reservationChoices.forEach((choice) => {
+        const hint = jsonHints.get(choice.option_id)
+        const optionKey =
+          (choice.option_key && !isChoiceOptionUuid(choice.option_key)
+            ? choice.option_key
+            : undefined) ||
+          hint?.option_key
         const optionName =
           choice.option_name_ko ||
           choice.option_name ||
-          (choice.option_key && !isChoiceOptionUuid(choice.option_key) ? choice.option_key : '') ||
+          hint?.option_name_ko ||
+          hint?.option_name ||
+          (optionKey && !isChoiceOptionUuid(optionKey) ? optionKey : '') ||
           ''
-        const simplifiedName = simplifyChoiceLabel(optionName, choice.option_key)
+        const simplifiedName = simplifyChoiceLabel(optionName, optionKey)
         if (!simplifiedName) return
         const choiceItem: {
           name: string
@@ -1178,16 +1260,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         if (choice.choice_group_ko) choiceItem.choice_group_ko = choice.choice_group_ko
         selectedChoices.push(choiceItem)
       })
-      return selectedChoices
+      if (selectedChoices.length > 0) return selectedChoices
     }
-    
+
     // 2. reservation.choices JSON 필드에서 파싱 (fallback) — option_id UUID는 표시하지 않음
     if (reservation.choices) {
       try {
         const choicesData = safeJsonParse(reservation.choices)
         if (choicesData && typeof choicesData === 'object') {
           const choicesObj = choicesData as Record<string, unknown>
-          
+
           // 새로운 초이스 시스템: required 배열에 choice_id, option_id가 직접 저장된 경우
           if (choicesObj.required && Array.isArray(choicesObj.required)) {
             (choicesObj.required as Array<Record<string, unknown>>).forEach((item) => {
@@ -1223,7 +1305,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   choiceItem.choice_group_ko = item.choice_group_ko
                 }
                 selectedChoices.push(choiceItem)
-              } 
+              }
               // 기존 시스템: choice.options 배열에서 selected/is_default 찾기
               else if (item.options && Array.isArray(item.options)) {
                 (item.options as Array<Record<string, unknown>>).forEach((option) => {
@@ -1263,7 +1345,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         console.error('Error parsing choices:', error)
       }
     }
-    
+
     return selectedChoices
   }
 

@@ -23,9 +23,15 @@ export function simplifyChoiceLabel(
   const key =
     keyRaw && !isChoiceOptionUuid(keyRaw) ? keyRaw.toLowerCase() : ''
 
-  if (key === 'antelope_x' || key === 'x') return `${ANTLOPE_EMOJI} X`
-  if (key === 'lower_antelope' || key === 'l') return `${ANTLOPE_EMOJI} L`
-  if (key === 'upper_antelope' || key === 'u') return `${ANTLOPE_EMOJI} U`
+  if (key === 'antelope_x' || key === 'x' || key === 'antelope x') {
+    return `${ANTLOPE_EMOJI} X`
+  }
+  if (key === 'lower_antelope' || key === 'l' || key === 'lower antelope') {
+    return `${ANTLOPE_EMOJI} L`
+  }
+  if (key === 'upper_antelope' || key === 'u' || key === 'upper antelope') {
+    return `${ANTLOPE_EMOJI} U`
+  }
 
   const effective =
     label && !isChoiceOptionUuid(label)
@@ -42,6 +48,8 @@ export function simplifyChoiceLabel(
   if (
     labelLower.includes('antelope x canyon') ||
     /\bantelope\s+x\b/i.test(labelLower) ||
+    /\bx\s*canyon\b/i.test(labelLower) ||
+    labelLower.includes('antelope x') ||
     /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo) ||
     /앤텔롭\s*x|앤텔로프\s*x/i.test(labelKo)
   ) {
@@ -50,6 +58,8 @@ export function simplifyChoiceLabel(
   // 로어 앤텔롭 캐년 (Lower Antelope Canyon) → 🏜️ L
   if (
     labelLower.includes('lower antelope canyon') ||
+    labelLower.includes('lower antelope') ||
+    labelLower.includes('lower_antelope') ||
     /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)
   ) {
     return `${ANTLOPE_EMOJI} L`
@@ -57,6 +67,8 @@ export function simplifyChoiceLabel(
   // 어퍼 앤텔롭 (Upper Antelope Canyon) → 🏜️ U
   if (
     labelLower.includes('upper antelope canyon') ||
+    labelLower.includes('upper antelope') ||
+    labelLower.includes('upper_antelope') ||
     /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)
   ) {
     return `${ANTLOPE_EMOJI} U`
