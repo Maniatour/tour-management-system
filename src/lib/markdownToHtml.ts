@@ -197,9 +197,12 @@ export const markdownToHtml = (
 
   // bold+italic (`***x***`)를 먼저 처리해야 ** / * 패턴이 깨지지 않음
   // 마커 안 줄바꿈은 <br>로 바꿔 이후 줄 단위 파서가 서식을 쪼개지 않게 함
+  html = html.replace(/\*\*\*([^*\n]+)\*\*\*/g, '<strong><em>$1</em></strong>')
   html = html.replace(/\*\*\*([\s\S]+?)\*\*\*/g, (_m, inner: string) => {
     return `<strong><em>${String(inner).replace(/\n/g, '<br>')}</em></strong>`
   })
+  // 흔한 인라인 볼드(`**abc**,def`)는 * / 줄바꿈 없이 매칭 → 범위 확장을 막음
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*\*([\s\S]+?)\*\*/g, (_m, inner: string) => {
     return `<strong>${String(inner).replace(/\n/g, '<br>')}</strong>`
   })

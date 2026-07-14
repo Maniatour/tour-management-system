@@ -123,6 +123,17 @@ function isBoldFontWeight(value: string): boolean {
   return Number.isFinite(n) && n >= 600
 }
 
+/** strong/b 안에서 Chrome이 붙이는 font-weight:normal(또는 400) → 명시적 비해제 */
+function isExplicitNonBoldFontWeight(value: string): boolean {
+  const v = value.trim().toLowerCase()
+  if (!v) return false
+  if (v === 'normal' || v === 'lighter' || v === 'inherit' || v === 'initial' || v === 'unset') {
+    return true
+  }
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n < 600
+}
+
 function isItalicFontStyle(value: string): boolean {
   const v = value.trim().toLowerCase()
   return v === 'italic' || v === 'oblique'
@@ -130,6 +141,111 @@ function isItalicFontStyle(value: string): boolean {
 
 function hasUnderlineDecoration(value: string): boolean {
   return /\bunderline\b/i.test(value)
+}
+
+function readInlineStyle(el: Element, prop: string): string | null {
+  const style = el.getAttribute('style') || ''
+  const re = new RegExp(`${prop}\\s*:\\s*([^;]+)`, 'i')
+  return re.exec(style)?.[1]?.trim() ?? null
+}
+
+/**
+ * Chrome partial bold/unbold 패턴 교정:
+ *   <strong>abc<span style="font-weight:normal">,def</span></strong>
+ * → <strong>abc</strong><span style="font-weight:normal">,def</span>
+ * (naive ** 치환 시 전체가 볼드로 저장되는 문제 방지)
+ */
+function splitNonBoldOverridesOutOfBoldTags(html: string): string {
+  if (typeof DOMParser === 'undefined' || !html) return html
+
+  let doc: Document
+  try {
+    doc = new DOMParser().parseFromString(`<div id="__sop_bold_root">${html}</div>`, 'text/html')
+  } catch {
+    return html
+  }
+  const root = doc.getElementById('__sop_bold_root')
+  if (!root) return html
+
+  const shouldForceUnbold = (el: Element): boolean => {
+    const fw = readInlineStyle(el, 'font-weight')
+    return Boolean(fw && isExplicitNonBoldFontWeight(fw))
+  }
+
+  const splitBoldContainer = (bold: HTMLElement): Node[] => {
+    const out: Node[] = []
+    let acc = doc.createElement('strong')
+
+    const flushAcc = () => {
+      if (acc.childNodes.length > 0) out.push(acc)
+      acc = doc.createElement('strong')
+    }
+
+    for (const child of Array.from(bold.childNodes)) {
+      if (child.nodeType === Node.ELEMENT_NODE && shouldForceUnbold(child as Element)) {
+        flushAcc()
+        out.push(child)
+        continue
+      }
+
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as HTMLElement
+        const nestedForced = Array.from(el.querySelectorAll('*')).filter(shouldForceUnbold)
+        if (nestedForced.length > 0 || shouldForceUnbold(el)) {
+          // 중첩 strong이면 재귀, 그 외는 자식만 펼쳐 비해제 우선
+          if (/^(STRONG|B)$/i.test(el.tagName)) {
+            flushAcc()
+            out.push(...splitBoldContainer(el))
+          } else {
+            // <em>abc<span style="font-weight:normal">x</span></em> 등
+            // 자식을 현재 bold 컨텍스트에서 다시 처리하기 위해 임시 strong으로 감싸 분할
+            const tmp = doc.createElement('strong')
+            while (el.firstChild) tmp.appendChild(el.firstChild)
+            const pieces = splitBoldContainer(tmp)
+            for (const piece of pieces) {
+              if (
+                piece.nodeType === Node.ELEMENT_NODE &&
+                (piece as Element).tagName === 'STRONG'
+              ) {
+                const wrap = el.cloneNode(false) as HTMLElement
+                while (piece.firstChild) wrap.appendChild(piece.firstChild)
+                const strongWrap = doc.createElement('strong')
+                strongWrap.appendChild(wrap)
+                out.push(strongWrap)
+              } else {
+                const wrap = el.cloneNode(false) as HTMLElement
+                wrap.appendChild(piece)
+                out.push(wrap)
+              }
+            }
+          }
+          continue
+        }
+      }
+
+      acc.appendChild(child)
+    }
+    flushAcc()
+    return out
+  }
+
+  // deepest-first so nested strong이 먼저 정리됨
+  const boldEls = Array.from(root.querySelectorAll('strong, b')).reverse()
+  for (const bold of boldEls) {
+    if (!(bold instanceof HTMLElement)) continue
+    if (!Array.from(bold.querySelectorAll('*')).some(shouldForceUnbold) && !shouldForceUnbold(bold)) {
+      continue
+    }
+    const parent = bold.parentNode
+    if (!parent) continue
+    const pieces = splitBoldContainer(bold)
+    for (const piece of pieces) {
+      parent.insertBefore(piece, bold)
+    }
+    parent.removeChild(bold)
+  }
+
+  return root.innerHTML
 }
 
 /**
@@ -155,9 +271,13 @@ function normalizeContentEditableSpans(html: string): string {
         wrapped = `<em>${wrapped}</em>`
         known = true
       }
-      if (isBoldFontWeight(/font-weight\s*:\s*([^;]+)/i.exec(style)?.[1] ?? '')) {
+      const fw = /font-weight\s*:\s*([^;]+)/i.exec(style)?.[1] ?? ''
+      if (isBoldFontWeight(fw)) {
         wrapped = `<strong>${wrapped}</strong>`
         known = true
+      } else if (fw && isExplicitNonBoldFontWeight(fw)) {
+        // 비해제 span은 껍데기만 제거 (내용은 볼드 바깥으로 이미 split됨)
+        return inner
       }
 
       const fsMatch = /font-size\s*:\s*([^;"'\s]+)/i.exec(style)
@@ -286,6 +406,8 @@ function htmlTablesToMarkdown(html: string): string {
 // HTML을 마크다운으로 변환하는 함수
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
+  // 부분 볼드 해제 시 strong 안 font-weight:normal span 분리 (전체 볼드화 방지)
+  markdown = splitNonBoldOverridesOutOfBoldTags(markdown)
   markdown = normalizeContentEditableSpans(markdown)
   markdown = tokenizeSopImages(markdown)
   markdown = htmlTablesToMarkdown(markdown)
