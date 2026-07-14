@@ -9,11 +9,26 @@ import type { KnowledgeArticleDraftForm } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
 import { sopDocumentToJson } from '@/types/sopStructure'
 
+export type SaveKnowledgeArticleResult =
+  | { ok: true; slug: string; id: string; updated_at: string | null }
+  | {
+      ok: false
+      error: string
+      conflict?: boolean
+      serverUpdatedAt?: string | null
+    }
+
 export async function saveKnowledgeArticle(
   form: KnowledgeArticleDraftForm,
   userId: string | null,
-  options?: { metadataOnly?: boolean }
-): Promise<{ ok: true; slug: string; id: string } | { ok: false; error: string }> {
+  options?: {
+    metadataOnly?: boolean
+    /** 열었을 때의 updated_at — 다르면 충돌로 거절 */
+    expectedUpdatedAt?: string | null
+    /** 충돌이어도 덮어쓰기 */
+    force?: boolean
+  }
+): Promise<SaveKnowledgeArticleResult> {
   const slugSource = form.slug.trim() || form.title_en.trim() || form.title_ko.trim()
   if (!slugSource) {
     return { ok: false, error: 'slug or title required' }
@@ -46,12 +61,42 @@ export async function saveKnowledgeArticle(
             ...basePayload,
             body_structure: sopDocumentToJson(form.bodyDoc) as Json,
           }
-    const { error } = await supabase
+
+    let query = supabase
       .from('company_knowledge_articles')
       .update(updatePayload)
       .eq('id', form.id)
+
+    if (options?.expectedUpdatedAt && !options.force) {
+      query = query.eq('updated_at', options.expectedUpdatedAt)
+    }
+
+    const { data, error } = await query.select('id, updated_at').maybeSingle()
     if (error) return { ok: false, error: error.message }
-    return { ok: true, slug, id: form.id }
+
+    if (!data) {
+      if (options?.expectedUpdatedAt && !options.force) {
+        const { data: server } = await supabase
+          .from('company_knowledge_articles')
+          .select('updated_at')
+          .eq('id', form.id)
+          .maybeSingle()
+        return {
+          ok: false,
+          error: 'conflict',
+          conflict: true,
+          serverUpdatedAt: (server as { updated_at?: string } | null)?.updated_at ?? null,
+        }
+      }
+      return { ok: false, error: 'article not found' }
+    }
+
+    return {
+      ok: true,
+      slug,
+      id: form.id,
+      updated_at: (data as { updated_at?: string }).updated_at ?? null,
+    }
   }
 
   const insertPayload = {
@@ -62,10 +107,11 @@ export async function saveKnowledgeArticle(
   const { data, error } = await supabase
     .from('company_knowledge_articles')
     .insert(insertPayload)
-    .select('id')
+    .select('id, updated_at')
     .single()
   if (error) return { ok: false, error: error.message }
-  return { ok: true, slug, id: (data as { id: string }).id }
+  const row = data as { id: string; updated_at?: string }
+  return { ok: true, slug, id: row.id, updated_at: row.updated_at ?? null }
 }
 
 export async function deleteKnowledgeArticle(

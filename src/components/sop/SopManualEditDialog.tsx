@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
+import { uploadHubManualImageFile } from '@/lib/hubManualImageUpload'
 import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
 import { useAuth } from '@/contexts/AuthContext'
 import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
@@ -424,10 +425,12 @@ export default function SopManualEditDialog({
                     }
                     height={220}
                     enableImageUpload={!isViewMode}
-                    enableResize
-                    resizeWhenReadOnly
-                    minHeight={MANUAL_EDITOR_MIN_HEIGHT}
-                    maxHeight={MANUAL_EDITOR_MAX_HEIGHT}
+                    uploadImageFile={uploadHubManualImageFile}
+                    enableResize={!isViewMode}
+                    resizeWhenReadOnly={false}
+                    autoHeight={isViewMode}
+                    minHeight={isViewMode ? 80 : MANUAL_EDITOR_MIN_HEIGHT}
+                    maxHeight={isViewMode ? 2400 : MANUAL_EDITOR_MAX_HEIGHT}
                     readOnly={isViewMode}
                     uiLocale={isEn ? 'en' : 'ko'}
                   />

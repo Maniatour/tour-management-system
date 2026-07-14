@@ -357,13 +357,18 @@ export default function SopDocumentInlinePreviewEditor({
     setQuickEdit({ scope: 'category', sectionId, categoryId, field: 'manual' })
   }
 
+  const commitDoc = (nextDoc: SopDocument) => {
+    onChange(nextDoc)
+    void onPersistDocument?.(nextDoc)
+  }
+
   const handleChangeRowDisplay = (
     sectionId: string,
     categoryId: string,
     itemId: string,
     display: 'list' | 'text'
   ) => {
-    onChange(
+    commitDoc(
       prefillSortOrders(
         updateDocCategory(doc, sectionId, categoryId, (category) => {
           const items = category.checklist_items?.map((item) => {
@@ -389,8 +394,7 @@ export default function SopDocumentInlinePreviewEditor({
           return items?.length ? { ...category, checklist_items: items } : category
         })
       )
-      onChange(nextDoc)
-      void onPersistDocument?.(nextDoc)
+      commitDoc(nextDoc)
       return
     }
 
@@ -400,8 +404,7 @@ export default function SopDocumentInlinePreviewEditor({
           applyCategoryManualSave(category, editLang, payload)
         )
       )
-      onChange(nextDoc)
-      void onPersistDocument?.(nextDoc)
+      commitDoc(nextDoc)
     }
   }
 
@@ -409,7 +412,7 @@ export default function SopDocumentInlinePreviewEditor({
     if (!quickEdit) return
 
     if (quickEdit.scope === 'section') {
-      onChange(
+      commitDoc(
         prefillSortOrders({
           ...doc,
           sections: doc.sections.map((section) =>
@@ -431,7 +434,7 @@ export default function SopDocumentInlinePreviewEditor({
       return
     }
 
-    onChange(
+    commitDoc(
       prefillSortOrders(
         updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) =>
           quickEdit.field === 'title'
@@ -444,7 +447,7 @@ export default function SopDocumentInlinePreviewEditor({
 
   const handleChecklistTitleSave = (value: string, display: 'list' | 'text') => {
     if (!quickEdit || quickEdit.scope !== 'checklist' || quickEdit.field !== 'title') return
-    onChange(
+    commitDoc(
       prefillSortOrders(
         updateDocCategory(doc, quickEdit.sectionId, quickEdit.categoryId, (category) => {
           const items = category.checklist_items?.map((item) => {
@@ -474,7 +477,7 @@ export default function SopDocumentInlinePreviewEditor({
       titles,
       editLang
     )
-    if (next) onChange(next)
+    if (next) commitDoc(next)
   }
 
   const isChecklistTitleEdit =
@@ -482,14 +485,14 @@ export default function SopDocumentInlinePreviewEditor({
 
   const handleAddSection = () => {
     const result = addSopSection(doc)
-    onChange(result.doc)
+    commitDoc(result.doc)
     setQuickEdit({ scope: 'section', sectionId: result.sectionId, field: 'title' })
   }
 
   const handleAddCategory = (sectionId: string, afterCategoryId?: string) => {
     const result = addSopCategory(doc, sectionId, afterCategoryId)
     if (!result) return
-    onChange(result.doc)
+    commitDoc(result.doc)
     setQuickEdit({
       scope: 'category',
       sectionId,
@@ -510,7 +513,7 @@ export default function SopDocumentInlinePreviewEditor({
       afterItemId ? { afterItemId } : undefined
     )
     if (!result) return
-    onChange(result.doc)
+    commitDoc(result.doc)
     setQuickEdit({
       scope: 'checklist',
       sectionId,
@@ -523,7 +526,7 @@ export default function SopDocumentInlinePreviewEditor({
   const handleConvertCategoryToRow = (sectionId: string, categoryId: string) => {
     const result = convertSopCategoryToRow(doc, sectionId, categoryId)
     if (!result) return
-    onChange(result.doc)
+    commitDoc(result.doc)
     if (
       quickEdit?.scope === 'category' &&
       quickEdit.categoryId === categoryId
@@ -546,7 +549,7 @@ export default function SopDocumentInlinePreviewEditor({
   ) => {
     const result = convertSopRowToCategory(doc, sectionId, categoryId, itemId)
     if (!result) return
-    onChange(result.doc)
+    commitDoc(result.doc)
     if (
       quickEdit?.scope === 'checklist' &&
       quickEdit.itemId === itemId
@@ -577,7 +580,7 @@ export default function SopDocumentInlinePreviewEditor({
 
   const handleSaveAttachments = (attachments: SopRowAttachment[]) => {
     if (!attachmentTarget) return
-    onChange(
+    commitDoc(
       prefillSortOrders(
         setChecklistItemAttachments(
           doc,
@@ -596,7 +599,7 @@ export default function SopDocumentInlinePreviewEditor({
     if (deleteTarget.scope === 'section') {
       const next = removeSopSection(doc, deleteTarget.sectionId)
       if (next) {
-        onChange(next)
+        commitDoc(next)
         if (quickEdit?.scope === 'section' && quickEdit.sectionId === deleteTarget.sectionId) {
           setQuickEdit(null)
         }
@@ -604,7 +607,7 @@ export default function SopDocumentInlinePreviewEditor({
     } else if (deleteTarget.scope === 'category') {
       const next = removeSopCategory(doc, deleteTarget.sectionId, deleteTarget.categoryId)
       if (next) {
-        onChange(next)
+        commitDoc(next)
         if (
           quickEdit?.scope === 'category' &&
           quickEdit.categoryId === deleteTarget.categoryId
@@ -626,7 +629,7 @@ export default function SopDocumentInlinePreviewEditor({
         deleteTarget.itemId
       )
       if (next) {
-        onChange(next)
+        commitDoc(next)
         if (
           quickEdit?.scope === 'checklist' &&
           quickEdit.itemId === deleteTarget.itemId
@@ -665,15 +668,15 @@ export default function SopDocumentInlinePreviewEditor({
           direction: -1 | 1
         ) => {
           const next = moveSopChecklistItem(doc, sectionId, categoryId, itemId, direction)
-          if (next) onChange(next)
+          if (next) commitDoc(next)
         },
         onMoveSection: (sectionId: string, direction: -1 | 1) => {
           const next = moveSopSection(doc, sectionId, direction)
-          if (next) onChange(next)
+          if (next) commitDoc(next)
         },
         onMoveCategory: (sectionId: string, categoryId: string, direction: -1 | 1) => {
           const next = moveSopCategory(doc, sectionId, categoryId, direction)
-          if (next) onChange(next)
+          if (next) commitDoc(next)
         },
         onConvertCategoryToRow: handleConvertCategoryToRow,
         onConvertRowToCategory: handleConvertRowToCategory,

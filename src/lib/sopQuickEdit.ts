@@ -404,8 +404,12 @@ function mergeManualFieldsInto<T extends SopManualFields>(base: T, saved: SopMan
   const linkIds = getLinkedHubArticleIds(saved)
   return {
     ...rest,
-    ...(saved.manual_ko ? { manual_ko: saved.manual_ko } : {}),
-    ...(saved.manual_en ? { manual_en: saved.manual_en } : {}),
+    ...(typeof saved.manual_ko === 'string' && saved.manual_ko.length > 0
+      ? { manual_ko: saved.manual_ko }
+      : {}),
+    ...(typeof saved.manual_en === 'string' && saved.manual_en.length > 0
+      ? { manual_en: saved.manual_en }
+      : {}),
     ...(saved.manual_status ? { manual_status: saved.manual_status } : {}),
     ...(linkIds.length > 1
       ? { linked_hub_article_ids: linkIds }

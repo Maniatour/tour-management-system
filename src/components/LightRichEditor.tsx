@@ -345,13 +345,19 @@ const htmlToMarkdown = (html: string): string => {
   // 남은 단독 li (ul 밖) 처리
   markdown = markdown.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner: string) => `- ${liInnerToMarkdownLine(inner)}\n`)
 
-  // div, p 태그를 줄바꿈으로 변환 (블록 요소 처리)
-  markdown = markdown.replace(/<\/div>/gi, '\n')
-  markdown = markdown.replace(/<\/p>/gi, '\n')
-  markdown = markdown.replace(/<div[^>]*>/gi, '')
-  markdown = markdown.replace(/<p[^>]*>/gi, '')
+  // 제목 블록 (닫는 태그만 먼저 치환하면 매칭이 깨지므로 통째로 변환)
+  markdown = markdown.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level: string, inner: string) => {
+    const text = inlineHtmlToMarkdown(inner)
+    return text ? `${'#'.repeat(Number(level))} ${text}\n\n` : '\n\n'
+  })
 
-  // 줄바꿈 변환: <br> -> \n
+  // 블록 단락: </p>·</div>는 단락 구분(\n\n). contentEditable이 Enter로 만드는 줄 컨테이너 보존.
+  markdown = markdown.replace(/<\/p>/gi, '\n\n')
+  markdown = markdown.replace(/<p[^>]*>/gi, '')
+  markdown = markdown.replace(/<\/div>/gi, '\n\n')
+  markdown = markdown.replace(/<div[^>]*>/gi, '')
+
+  // 소프트 줄바꿈: <br> -> \n
   markdown = markdown.replace(/<br\s*\/?>/gi, '\n')
 
   // HTML 태그 제거
@@ -359,17 +365,25 @@ const htmlToMarkdown = (html: string): string => {
 
   // 흔한 HTML 엔티티 복원
   markdown = markdown.replace(/&nbsp;/gi, ' ')
+  markdown = markdown.replace(/&#160;/gi, ' ')
   markdown = markdown.replace(/&amp;/gi, '&')
   markdown = markdown.replace(/&lt;/gi, '<')
   markdown = markdown.replace(/&gt;/gi, '>')
   markdown = markdown.replace(/&quot;/gi, '"')
-  
+  markdown = markdown.replace(/&#10;/gi, '\n')
+  markdown = markdown.replace(/&#13;/gi, '')
+
+  // 줄 끝 공백 정리 (줄바꿈 자체는 유지)
+  markdown = markdown.replace(/[ \t]+\n/g, '\n')
+  markdown = markdown.replace(/\n[ \t]+/g, '\n')
+
   // 연속된 줄바꿈을 최대 2개로 제한 (너무 많은 빈 줄 방지)
   markdown = markdown.replace(/\n{3,}/g, '\n\n')
-  
-  // 앞뒤 공백 제거
-  markdown = markdown.trim()
-  
+
+  // 앞뒤 공백만 제거 — String.trim()은 trailing \n\n 단락까지 지워 Enter 줄바꿈이 사라짐
+  markdown = markdown.replace(/^[ \t\u00a0]+|[ \t\u00a0]+$/g, '')
+  markdown = markdown.replace(/^\n+/, '').replace(/\n+$/, '')
+
   return markdown
 }
 
@@ -402,6 +416,8 @@ interface LightRichEditorProps {
   resizeWhenReadOnly?: boolean
   minHeight?: number
   maxHeight?: number
+  /** 읽기 전용 표시 시 내용 높이에 맞춤 (잘림 방지) */
+  autoHeight?: boolean
   /** 툴바·프롬프트 UI 언어 (en: 아이콘 중심 영문) */
   uiLocale?: LightRichEditorUiLocale
 }
@@ -431,6 +447,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   resizeWhenReadOnly = false,
   minHeight = 100,
   maxHeight = 800,
+  autoHeight = false,
   uiLocale = 'ko',
 }) => {
   const strings = useMemo(() => getLightRichEditorStrings(uiLocale), [uiLocale])
@@ -516,6 +533,11 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 에디터 초기화 및 값 동기화
   React.useEffect(() => {
     if (editorRef.current) {
+      try {
+        document.execCommand('defaultParagraphSeparator', false, 'p')
+      } catch {
+        /* ignore */
+      }
       if (!isInitializedRef.current) {
         // 초기화: value가 있으면 설정, 없으면 빈 문자열로 초기화
         const htmlContent = value ? markdownToHtml(value, htmlOptions) : ''
@@ -532,8 +554,15 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           editorRef.current.innerHTML = expectedContent
         }
       }
+
+      if (autoHeight && readOnly && editorRef.current) {
+        const el = editorRef.current
+        // 측정 전 고정 height 해제 효과: scrollHeight 기준
+        const next = Math.max(minHeight, Math.min(maxHeight, el.scrollHeight + 4))
+        setCurrentHeight(next)
+      }
     }
-  }, [value, readOnly, htmlOptions.editableImages])
+  }, [value, readOnly, htmlOptions.editableImages, autoHeight, minHeight, maxHeight])
 
   // 에디터 내용 업데이트
   const updateEditorContent = useCallback(() => {
@@ -1192,22 +1221,18 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               return
             }
             e.preventDefault()
-            const selection = window.getSelection()
-            if (selection && selection.rangeCount > 0) {
-              const range = selection.getRangeAt(0)
-              const br = document.createElement('br')
-              range.deleteContents()
-              range.insertNode(br)
-              range.setStartAfter(br)
-              range.collapse(true)
-              selection.removeAllRanges()
-              selection.addRange(range)
-              setTimeout(updateEditorContent, 0)
+            // 단락 분리(저장 시 \n\n) — 단일 <br>만 넣으면 trailing trim/왕복에서 줄바꿈이 사라짐
+            const inserted = document.execCommand('insertParagraph')
+            if (!inserted) {
+              document.execCommand('insertHTML', false, '<p><br></p>')
             }
+            setTimeout(updateEditorContent, 0)
           }
-          // Shift+Enter: 기본 동작 허용 (줄바꿈)
+          // Shift+Enter: 소프트 줄바꿈(<br> → 저장 시 \n)
           else if (e.key === 'Enter' && e.shiftKey) {
-            // 기본 동작 허용
+            e.preventDefault()
+            document.execCommand('insertHTML', false, '<br>')
+            setTimeout(updateEditorContent, 0)
           }
           // Ctrl+B: 굵게
           else if (e.ctrlKey && e.key === 'b' && enableBold) {
@@ -1231,7 +1256,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         }
         className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-slate-200 [&_td]:p-2 [&_td]:align-top [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
         style={{ 
-          height: `${currentHeight}px`,
+          height: autoHeight && readOnly ? 'auto' : `${currentHeight}px`,
           minHeight: `${minHeight}px`,
           maxHeight: `${maxHeight}px`,
           lineHeight: '1.6',

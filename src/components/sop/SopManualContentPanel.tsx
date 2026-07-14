@@ -1,6 +1,6 @@
 'use client'
 
-import { markdownToHtml } from '@/components/LightRichEditor'
+import LightRichEditor, { sopPlainDisplayText } from '@/components/LightRichEditor'
 import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
 import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
 import {
@@ -16,8 +16,8 @@ import {
 } from '@/lib/sopQuickEdit'
 import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
 import type { SopEditLocale } from '@/types/sopStructure'
-import { Link2, FileText } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Check, Copy, Link2, FileText } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 type Props = {
   source: SopManualFields
@@ -49,6 +49,27 @@ export default function SopManualContentPanel({
   const linkedIds = getLinkedHubArticleIds(source)
   const hasLinked = hasManualLink(source)
   const expandLinkedForPrint = Boolean(printLinked?.expandInline && hasLinked)
+  const [copied, setCopied] = useState(false)
+  const copiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetRef.current) clearTimeout(copiedResetRef.current)
+    }
+  }, [])
+
+  const copyNotes = async () => {
+    const text = sopPlainDisplayText(inline).trim()
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      if (copiedResetRef.current) clearTimeout(copiedResetRef.current)
+      copiedResetRef.current = setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  }
 
   if (!hasInline && !hasLinked) {
     return (
@@ -67,13 +88,44 @@ export default function SopManualContentPanel({
     >
       {hasInline ? (
         <div>
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
-            <FileText className="h-3.5 w-3.5" aria-hidden />
-            {isEn ? 'Notes' : '직접 작성'}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              <FileText className="h-3.5 w-3.5" aria-hidden />
+              {isEn ? 'Notes' : '직접 작성'}
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyNotes()}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-indigo-200 bg-white/80 px-2 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-white hover:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 print:hidden"
+              title={isEn ? 'Copy notes' : '본문 복사'}
+              aria-label={isEn ? 'Copy notes to clipboard' : '본문을 클립보드에 복사'}
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                  {isEn ? 'Copied' : '복사됨'}
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                  {isEn ? 'Copy' : '복사'}
+                </>
+              )}
+            </button>
           </div>
-          <div
-            className="prose prose-sm max-w-none break-words text-gray-800 [&_img]:h-auto [&_img]:max-w-full"
-            dangerouslySetInnerHTML={{ __html: markdownToHtml(inline) }}
+          <LightRichEditor
+            value={inline}
+            onChange={() => {}}
+            readOnly
+            autoHeight
+            showToolbar={false}
+            enableImageUpload={false}
+            enableResize={false}
+            minHeight={80}
+            maxHeight={2400}
+            height={120}
+            uiLocale={isEn ? 'en' : 'ko'}
+            className="overflow-hidden rounded-lg border border-indigo-100/80 bg-white print:border-0 [&_[contenteditable]]:!bg-white"
           />
         </div>
       ) : null}

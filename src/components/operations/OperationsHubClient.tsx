@@ -70,6 +70,7 @@ import {
   type KnowledgeArticleDraftForm,
 } from '@/lib/knowledgeArticleForm'
 import { deleteKnowledgeArticle, saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
+import { migrateHubDocDataImages } from '@/lib/hubManualImageUpload'
 import LegalPagesHubPanel from '@/components/operations/LegalPagesHubPanel'
 import { cn } from '@/lib/utils'
 
@@ -98,21 +99,28 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [readEditDoc, setReadEditDoc] = useState<SopDocument | null>(null)
   const readEditDocRef = useRef<SopDocument | null>(null)
   const [readSaveMsg, setReadSaveMsg] = useState<string | null>(null)
+  const [readConflict, setReadConflict] = useState(false)
   const [readDirty, setReadDirty] = useState(false)
   const readDirtyRef = useRef(false)
   const persistInFlightRef = useRef(false)
   const editGenerationRef = useRef(0)
   const savedGenerationRef = useRef(0)
+  const expectedUpdatedAtRef = useRef<string | null>(null)
   const AUTOSAVE_MS = 2500
 
   useEffect(() => {
     readEditDocRef.current = readEditDoc
   }, [readEditDoc])
 
+  useEffect(() => {
+    expectedUpdatedAtRef.current = readArticle?.updated_at ?? null
+  }, [readArticle?.updated_at])
+
   const markReadDirty = useCallback(() => {
     editGenerationRef.current += 1
     readDirtyRef.current = true
     setReadDirty(true)
+    setReadConflict(false)
   }, [])
 
   const clearReadDirty = useCallback(() => {
@@ -184,7 +192,12 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const persistReadDoc = useCallback(
     async (
       doc: SopDocument,
-      opts?: { silent?: boolean; keepLocalDoc?: boolean; label?: string }
+      opts?: {
+        silent?: boolean
+        keepLocalDoc?: boolean
+        label?: string
+        force?: boolean
+      }
     ) => {
       if (!adminCrud || !readArticle) return false
       if (persistInFlightRef.current) {
@@ -203,23 +216,49 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       } else {
         setReadSaveMsg(isEn ? 'Auto-saving…' : '자동 저장 중…')
       }
+
+      let bodyDoc = doc
+      try {
+        bodyDoc = await migrateHubDocDataImages(doc)
+        if (bodyDoc !== doc) {
+          readEditDocRef.current = bodyDoc
+          setReadEditDoc(bodyDoc)
+        }
+      } catch (e) {
+        console.warn('[operations-hub] image migrate skipped', e)
+      }
+
       const draft = knowledgeArticleRowToForm(readArticle)
-      draft.bodyDoc = doc
+      draft.bodyDoc = bodyDoc
       const saveGen = editGenerationRef.current
-      const result = await saveKnowledgeArticle(draft, authUser?.id ?? null)
+      const result = await saveKnowledgeArticle(draft, authUser?.id ?? null, {
+        expectedUpdatedAt: expectedUpdatedAtRef.current,
+        force: opts?.force === true,
+      })
       persistInFlightRef.current = false
       if (!opts?.silent) setBusy(false)
+
       if (!result.ok) {
+        if (result.conflict) {
+          setReadConflict(true)
+          setReadSaveMsg(
+            isEn
+              ? 'Conflict: someone else saved this document. Reload or overwrite.'
+              : '충돌: 다른 사람이 이미 저장했습니다. 다시 불러오거나 덮어쓰세요.'
+          )
+          return false
+        }
         setReadSaveMsg(result.error)
         return false
       }
+
+      setReadConflict(false)
       if (!opts?.silent) {
         setReadSaveMsg(isEn ? 'Saved.' : '저장했습니다.')
       } else {
-        setReadSaveMsg(
-          opts.label ?? (isEn ? 'Auto-saved' : '자동 저장됨')
-        )
+        setReadSaveMsg(opts.label ?? (isEn ? 'Auto-saved' : '자동 저장됨'))
       }
+
       const { data: refreshed } = await supabase
         .from('company_knowledge_articles')
         .select(KNOWLEDGE_ARTICLE_SELECT)
@@ -227,6 +266,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
         .maybeSingle()
       const saved = refreshed as KnowledgeArticleRow | null
       if (saved) {
+        expectedUpdatedAtRef.current = saved.updated_at
         upsertArticleInState(saved)
         setReadArticle(saved)
         const localStillMatches = editGenerationRef.current === saveGen
@@ -256,6 +296,38 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     },
     [adminCrud, authUser?.id, clearReadDirty, isEn, readArticle, reloadArticles, upsertArticleInState]
   )
+
+  const reloadCurrentArticleFromServer = useCallback(async () => {
+    if (!readArticle?.id) return
+    const { data } = await supabase
+      .from('company_knowledge_articles')
+      .select(KNOWLEDGE_ARTICLE_SELECT)
+      .eq('id', readArticle.id)
+      .maybeSingle()
+    const saved = data as KnowledgeArticleRow | null
+    if (!saved) return
+    expectedUpdatedAtRef.current = saved.updated_at
+    upsertArticleInState(saved)
+    setReadArticle(saved)
+    const savedDoc = articleBodyToDocument(saved)
+    const hydrated = savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null
+    readEditDocRef.current = hydrated
+    setReadEditDoc(hydrated)
+    clearReadDirty()
+    setReadConflict(false)
+    setReadSaveMsg(isEn ? 'Reloaded latest version.' : '최신 버전을 불러왔습니다.')
+  }, [clearReadDirty, isEn, readArticle?.id, upsertArticleInState])
+
+  const overwriteWithLocalDoc = useCallback(async () => {
+    const doc = readEditDocRef.current
+    if (!doc) return
+    await persistReadDoc(doc, {
+      silent: false,
+      keepLocalDoc: true,
+      force: true,
+      label: isEn ? 'Overwrote with your version.' : '내 내용으로 덮어썼습니다.',
+    })
+  }, [isEn, persistReadDoc])
 
   const handlePersistReadDocFromEditor = useCallback(
     async (doc: SopDocument) => {
@@ -505,12 +577,23 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (!adminCrud) return
     setBusy(true)
     setCrudMsg(null)
-    const result = await saveKnowledgeArticle(form, authUser?.id ?? null, {
-      metadataOnly: !!form.id,
-    })
+    const saveOpts: {
+      metadataOnly?: boolean
+      expectedUpdatedAt?: string | null
+    } = { metadataOnly: !!form.id }
+    if (form.id && readArticle?.id === form.id) {
+      saveOpts.expectedUpdatedAt = expectedUpdatedAtRef.current
+    }
+    const result = await saveKnowledgeArticle(form, authUser?.id ?? null, saveOpts)
     setBusy(false)
     if (!result.ok) {
-      setCrudMsg(result.error)
+      setCrudMsg(
+        result.conflict
+          ? isEn
+            ? 'Conflict: document was updated elsewhere. Close and reopen, then try again.'
+            : '충돌: 문서가 다른 곳에서 수정되었습니다. 닫았다가 다시 연 뒤 저장하세요.'
+          : result.error
+      )
       return
     }
     setCrudMsg(isEn ? 'Saved.' : '저장했습니다.')
@@ -523,6 +606,9 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     const saved = refreshed as KnowledgeArticleRow | null
     if (saved) {
       upsertArticleInState(saved)
+      if (readArticle?.id === saved.id) {
+        expectedUpdatedAtRef.current = saved.updated_at
+      }
     } else {
       await reloadArticles()
     }
@@ -940,17 +1026,46 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                       {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
                     </p>
                     {adminCrud ? (
-                      <p className="pt-1 text-xs text-gray-600">
-                        {readSaveMsg
-                          ? readSaveMsg
-                          : readDirty
-                            ? modalUiEn
-                              ? 'Unsaved changes — auto-saving soon…'
-                              : '저장되지 않은 변경 — 곧 자동 저장…'
-                            : modalUiEn
-                              ? 'Changes auto-save after you pause editing.'
-                              : '편집을 잠시 멈추면 자동 저장됩니다.'}
-                      </p>
+                      <div className="space-y-1.5 pt-1">
+                        <p
+                          className={cn(
+                            'text-xs',
+                            readConflict ? 'font-medium text-amber-800' : 'text-gray-600'
+                          )}
+                        >
+                          {readSaveMsg
+                            ? readSaveMsg
+                            : readDirty
+                              ? modalUiEn
+                                ? 'Unsaved changes — auto-saving soon…'
+                                : '저장되지 않은 변경 — 곧 자동 저장…'
+                              : modalUiEn
+                                ? 'Saved · edits auto-save when you pause.'
+                                : '저장됨 · 편집을 잠시 멈추면 자동 저장됩니다.'}
+                        </p>
+                        {readConflict ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px]"
+                              onClick={() => void reloadCurrentArticleFromServer()}
+                            >
+                              {modalUiEn ? 'Reload theirs' : '최신본 불러오기'}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="h-7 px-2 text-[11px]"
+                              onClick={() => void overwriteWithLocalDoc()}
+                            >
+                              {modalUiEn ? 'Overwrite with mine' : '내 내용으로 덮어쓰기'}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </div>

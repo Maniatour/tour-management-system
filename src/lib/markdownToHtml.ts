@@ -62,13 +62,18 @@ function decodeSopFontSizeTokens(markdown: string): string {
       continue
     }
     const safe = size.trim()
-    out = out.replace(m[0], `<span style="font-size: ${safe}">${inner}</span>`)
+    out = out.replace(
+      m[0],
+      `<span style="font-size: ${safe}">${String(inner).replace(/\n/g, '<br>')}</span>`
+    )
   }
   return out
 }
 
 function decodeSopUnderlineTokens(markdown: string): string {
-  return markdown.replace(/\[\[sopu\]\]([\s\S]*?)\[\[\/sopu\]\]/g, '<u>$1</u>')
+  return markdown.replace(/\[\[sopu\]\]([\s\S]*?)\[\[\/sopu\]\]/g, (_m, inner: string) => {
+    return `<u>${String(inner).replace(/\n/g, '<br>')}</u>`
+  })
 }
 
 function stripSopUnderlineTokens(markdown: string): string {
@@ -191,9 +196,14 @@ export const markdownToHtml = (
   )
 
   // bold+italic (`***x***`)를 먼저 처리해야 ** / * 패턴이 깨지지 않음
-  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  // 마커 안 줄바꿈은 <br>로 바꿔 이후 줄 단위 파서가 서식을 쪼개지 않게 함
+  html = html.replace(/\*\*\*([\s\S]+?)\*\*\*/g, (_m, inner: string) => {
+    return `<strong><em>${String(inner).replace(/\n/g, '<br>')}</em></strong>`
+  })
+  html = html.replace(/\*\*([\s\S]+?)\*\*/g, (_m, inner: string) => {
+    return `<strong>${String(inner).replace(/\n/g, '<br>')}</strong>`
+  })
+  html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">$1</a>'

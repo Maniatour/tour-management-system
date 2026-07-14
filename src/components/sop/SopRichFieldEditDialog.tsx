@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
+import { uploadHubManualImageFile } from '@/lib/hubManualImageUpload'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -97,6 +98,7 @@ export default function SopRichFieldEditDialog({
                     : '내용을 입력하세요…'
             }
             uiLocale={uiLocaleEn ? 'en' : 'ko'}
+            uploadImageFile={uploadHubManualImageFile}
             {...editorProps}
           />
         </div>
