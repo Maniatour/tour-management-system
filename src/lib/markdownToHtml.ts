@@ -67,6 +67,14 @@ function decodeSopFontSizeTokens(markdown: string): string {
   return out
 }
 
+function decodeSopUnderlineTokens(markdown: string): string {
+  return markdown.replace(/\[\[sopu\]\]([\s\S]*?)\[\[\/sopu\]\]/g, '<u>$1</u>')
+}
+
+function stripSopUnderlineTokens(markdown: string): string {
+  return markdown.replace(/\[\[sopu\]\]([\s\S]*?)\[\[\/sopu\]\]/g, '$1')
+}
+
 export function stripSopFontSizeTokens(markdown: string): string {
   let out = markdown ?? ''
   for (let g = 0; g < 100; g++) {
@@ -79,8 +87,10 @@ export function stripSopFontSizeTokens(markdown: string): string {
 
 export function sopPlainDisplayText(raw: string): string {
   let t = stripSopFontSizeTokens(raw ?? '')
+  t = stripSopUnderlineTokens(t)
   t = stripSopImageWidthTokens(t)
   t = t.replace(/<[^>]+>/g, ' ')
+  t = t.replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
   t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
   t = t.replace(/\*([^*]+)\*/g, '$1')
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -168,6 +178,7 @@ export const markdownToHtml = (
 
   let html = markdown.replace(/\r\n/g, '\n')
   html = decodeSopFontSizeTokens(html)
+  html = decodeSopUnderlineTokens(html)
   html = decodeSopImageWidthTokens(html, options?.editableImages ?? false)
 
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) =>
@@ -179,6 +190,8 @@ export const markdownToHtml = (
     '<code style="padding: 0.1em 0.35em; border-radius: 0.25rem; background: #f1f5f9; font-size: 0.875em; color: #0f172a;">$1</code>'
   )
 
+  // bold+italic (`***x***`)를 먼저 처리해야 ** / * 패턴이 깨지지 않음
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
   html = html.replace(
@@ -264,28 +277,25 @@ export const markdownToHtml = (
           collected.push(t)
           i += 1
         }
-        if (collected.length > 1) {
-          if (collected.every(isNumberedLine)) {
-            chunks.push(renderOrderedList(collected))
-          } else if (collected.every(isBulletLine)) {
-            chunks.push(renderBulletList(collected))
-          } else {
-            const lis = collected
-              .map((line) => {
-                const num = line.match(/^(\d+)\.\s+(.+)$/)
-                if (num) return `<li style="margin: 0.15em 0;">${num[2]}</li>`
-                const bu = line.match(/^(\s*)([-*•])\s+(.+)$/)
-                return bu ? `<li style="margin: 0.15em 0;">${bu[3]}</li>` : ''
-              })
-              .filter(Boolean)
-            if (lis.length) {
-              chunks.push(
-                `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
-              )
-            }
-          }
+        // 1줄 목록도 목록으로 렌더 (저장 후 하이픈이 문장부호처럼 남는 왕복 불일치 방지)
+        if (collected.every(isNumberedLine)) {
+          chunks.push(renderOrderedList(collected))
+        } else if (collected.every(isBulletLine)) {
+          chunks.push(renderBulletList(collected))
         } else {
-          chunks.push(`<p style="${pStyle}">${collected[0] ?? ''}</p>`)
+          const lis = collected
+            .map((line) => {
+              const num = line.match(/^(\d+)\.\s+(.+)$/)
+              if (num) return `<li style="margin: 0.15em 0;">${num[2]}</li>`
+              const bu = line.match(/^(\s*)([-*•])\s+(.+)$/)
+              return bu ? `<li style="margin: 0.15em 0;">${bu[3]}</li>` : ''
+            })
+            .filter(Boolean)
+          if (lis.length) {
+            chunks.push(
+              `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
+            )
+          }
         }
       } else {
         const textLines: string[] = []

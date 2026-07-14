@@ -104,6 +104,9 @@ function tokenizeSopImages(html: string): string {
 /** LightRichEditor 글자 크기(span style font-size) — htmlToMarkdown이 태그를 지우기 전에 직렬화 */
 const SOPFS_OPEN = '[[sopfs:'
 const SOPFS_CLOSE = '[[/sopfs]]'
+/** underline — markdown에 표준 문법이 없어 토큰으로 보존 */
+const SOPU_OPEN = '[[sopu]]'
+const SOPU_CLOSE = '[[/sopu]]'
 
 function isSafeSopFontSizeToken(size: string): boolean {
   const s = size.trim()
@@ -112,8 +115,28 @@ function isSafeSopFontSizeToken(size: string): boolean {
   return /^[0-9.]+\s*(px|pt|rem|em|%)?$/i.test(s)
 }
 
-/** contentEditable이 만든 font-size span을 토큰으로 바꿔 htmlToMarkdown 이후 단계에서 보존 */
-function tokenizeSopFontSizeSpans(html: string): string {
+function isBoldFontWeight(value: string): boolean {
+  const v = value.trim().toLowerCase()
+  if (!v || v === 'normal' || v === 'lighter') return false
+  if (v === 'bold' || v === 'bolder') return true
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) && n >= 600
+}
+
+function isItalicFontStyle(value: string): boolean {
+  const v = value.trim().toLowerCase()
+  return v === 'italic' || v === 'oblique'
+}
+
+function hasUnderlineDecoration(value: string): boolean {
+  return /\bunderline\b/i.test(value)
+}
+
+/**
+ * Chrome contentEditable이 만든 style span을 시맨틱 태그/토큰으로 정규화.
+ * (font-weight:700 / bold 등이 태그 제거 단계에서 사라지는 것 방지)
+ */
+function normalizeContentEditableSpans(html: string): string {
   const re =
     /<span\b[^>]*\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>((?:(?!<span\b)[\s\S])*?)<\/span>/gi
   let out = html
@@ -121,9 +144,30 @@ function tokenizeSopFontSizeSpans(html: string): string {
     const before = out
     out = out.replace(re, (full, dblQuoted: string | undefined, sglQuoted: string | undefined, inner: string) => {
       const style = dblQuoted ?? sglQuoted ?? ''
+      let wrapped = inner
+      let known = false
+
+      if (hasUnderlineDecoration(style)) {
+        wrapped = `<u>${wrapped}</u>`
+        known = true
+      }
+      if (isItalicFontStyle(/font-style\s*:\s*([^;]+)/i.exec(style)?.[1] ?? '')) {
+        wrapped = `<em>${wrapped}</em>`
+        known = true
+      }
+      if (isBoldFontWeight(/font-weight\s*:\s*([^;]+)/i.exec(style)?.[1] ?? '')) {
+        wrapped = `<strong>${wrapped}</strong>`
+        known = true
+      }
+
       const fsMatch = /font-size\s*:\s*([^;"'\s]+)/i.exec(style)
-      if (!fsMatch || !isSafeSopFontSizeToken(fsMatch[1])) return full
-      return `${SOPFS_OPEN}${fsMatch[1].trim()}]]${inner}${SOPFS_CLOSE}`
+      if (fsMatch && isSafeSopFontSizeToken(fsMatch[1])) {
+        wrapped = `${SOPFS_OPEN}${fsMatch[1].trim()}]]${wrapped}${SOPFS_CLOSE}`
+        known = true
+      }
+
+      // 인식한 서식이 없으면 원본 span 유지 (색상 등 기타 스타일)
+      return known ? wrapped : full
     })
     if (out === before) break
   }
@@ -162,6 +206,7 @@ const liInnerToMarkdownSegments = (inner: string): string[] => {
   t = t.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
   t = t.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
   t = t.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
+  t = t.replace(/<u[^>]*>([\s\S]*?)<\/u>/gi, `${SOPU_OPEN}$1${SOPU_CLOSE}`)
   t = t.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
   t = t.replace(/<\/div>/gi, '\n')
   t = t.replace(/<div[^>]*>/gi, '')
@@ -184,6 +229,7 @@ const inlineHtmlToMarkdown = (inner: string): string => {
   t = t.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
   t = t.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
   t = t.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
+  t = t.replace(/<u[^>]*>([\s\S]*?)<\/u>/gi, `${SOPU_OPEN}$1${SOPU_CLOSE}`)
   t = t.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
   t = t.replace(/<br\s*\/?>/gi, ' ')
   t = t.replace(/&nbsp;/gi, ' ')
@@ -240,20 +286,23 @@ function htmlTablesToMarkdown(html: string): string {
 // HTML을 마크다운으로 변환하는 함수
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
-  markdown = tokenizeSopFontSizeSpans(markdown)
+  markdown = normalizeContentEditableSpans(markdown)
   markdown = tokenizeSopImages(markdown)
   markdown = htmlTablesToMarkdown(markdown)
 
+  // 밑줄 보존 (태그 제거 전에 토큰화)
+  markdown = markdown.replace(/<u[^>]*>([\s\S]*?)<\/u>/gi, `${SOPU_OPEN}$1${SOPU_CLOSE}`)
+
   // 굵게 변환: <strong>text</strong> -> **text**
-  markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**')
-  markdown = markdown.replace(/<b[^>]*>(.*?)<\/b>/g, '**$1**')
+  markdown = markdown.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**')
+  markdown = markdown.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
 
   // 기울임 변환: <em>text</em> -> *text*
-  markdown = markdown.replace(/<em[^>]*>(.*?)<\/em>/g, '*$1*')
-  markdown = markdown.replace(/<i[^>]*>(.*?)<\/i>/g, '*$1*')
+  markdown = markdown.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
+  markdown = markdown.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
 
   // 링크 변환: <a href="url">text</a> -> [text](url)
-  markdown = markdown.replace(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/g, '[$2]($1)')
+  markdown = markdown.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
 
   // 순서 목록: <ol>…</ol> -> "1. …\n2. …"
   markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner: string) => {
@@ -307,6 +356,13 @@ const htmlToMarkdown = (html: string): string => {
 
   // HTML 태그 제거
   markdown = markdown.replace(/<[^>]*>/g, '')
+
+  // 흔한 HTML 엔티티 복원
+  markdown = markdown.replace(/&nbsp;/gi, ' ')
+  markdown = markdown.replace(/&amp;/gi, '&')
+  markdown = markdown.replace(/&lt;/gi, '<')
+  markdown = markdown.replace(/&gt;/gi, '>')
+  markdown = markdown.replace(/&quot;/gi, '"')
   
   // 연속된 줄바꿈을 최대 2개로 제한 (너무 많은 빈 줄 방지)
   markdown = markdown.replace(/\n{3,}/g, '\n\n')
