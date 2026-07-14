@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
 import SopManualLinkedArticlePanel from '@/components/sop/SopManualLinkedArticlePanel'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,6 +28,8 @@ const MANUAL_MODAL_DEFAULT_HEIGHT = 800
 const MANUAL_MODAL_RECT_STORAGE_KEY = 'sop-manual-modal-rect-v2'
 const MANUAL_EDITOR_MIN_HEIGHT = 140
 const MANUAL_EDITOR_MAX_HEIGHT = 560
+/** 메뉴얼 편집 중 DB 자동 저장 지연 (입력 멈춘 뒤) */
+const MANUAL_AUTOSAVE_MS = 2000
 
 type Props = {
   open: boolean
@@ -133,6 +135,12 @@ export default function SopManualEditDialog({
   const [isEditing, setIsEditing] = useState(false)
   const [converting, setConverting] = useState(false)
   const [convertError, setConvertError] = useState<string | null>(null)
+  const [autosaveMsg, setAutosaveMsg] = useState<string | null>(null)
+  const draftRef = useRef(draft)
+  const draftStatusRef = useRef(draftStatus)
+  const draftLinkedIdsRef = useRef(draftLinkedIds)
+  const lastAutosavedKeyRef = useRef<string | null>(null)
+  const skipCancelAutosaveRef = useRef(false)
 
   const isEn = uiLocaleEn
   const canEdit = !readOnly
@@ -154,9 +162,21 @@ export default function SopManualEditDialog({
     : '직접 작성 내용 또는 허브 문서 연결 후 작성완료로 변경할 수 있습니다.'
 
   useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+  useEffect(() => {
+    draftStatusRef.current = draftStatus
+  }, [draftStatus])
+  useEffect(() => {
+    draftLinkedIdsRef.current = draftLinkedIds
+  }, [draftLinkedIds])
+
+  useEffect(() => {
     if (!open) return
     setIsEditing(!startInViewMode && canEdit)
     setConvertError(null)
+    setAutosaveMsg(null)
+    lastAutosavedKeyRef.current = null
   }, [open, startInViewMode, canEdit])
 
   useEffect(() => {
@@ -176,17 +196,70 @@ export default function SopManualEditDialog({
     status: nextStatus,
   })
 
-  const handleClose = () => onOpenChange(false)
+  const payloadKey = (payload: ManualSavePayload) =>
+    JSON.stringify({
+      value: payload.value,
+      status: payload.status,
+      linkedHubArticleIds: payload.linkedHubArticleIds,
+    })
+
+  const flushAutosave = (opts?: { force?: boolean }) => {
+    if (!canEdit || !isEditing) return
+    const payload = buildSavePayload(
+      draftStatusRef.current,
+      draftRef.current,
+      draftLinkedIdsRef.current
+    )
+    const key = payloadKey(payload)
+    const baseline = JSON.stringify({
+      value,
+      status,
+      linkedHubArticleIds,
+    })
+    if (!opts?.force && key === baseline) return
+    if (!opts?.force && key === lastAutosavedKeyRef.current) return
+    lastAutosavedKeyRef.current = key
+    onSave(payload)
+    setAutosaveMsg(isEn ? 'Auto-saved' : '자동 저장됨')
+  }
+
+  useEffect(() => {
+    if (!open || !canEdit || !isEditing) return
+    const timer = window.setTimeout(() => flushAutosave(), MANUAL_AUTOSAVE_MS)
+    return () => window.clearTimeout(timer)
+    // draft / status / links change → debounce
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flush reads refs
+  }, [open, canEdit, isEditing, draft, draftStatus, draftLinkedIds, value, status, linkedHubArticleIds])
+
+  useEffect(() => {
+    if (!open || !canEdit || !isEditing) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      flushAutosave({ force: true })
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, canEdit, isEditing])
+
+  const handleClose = () => {
+    if (canEdit && isEditing) flushAutosave({ force: true })
+    onOpenChange(false)
+  }
 
   const handleCancelEdit = () => {
+    skipCancelAutosaveRef.current = true
     setDraft(value)
     setDraftStatus(status)
     setDraftLinkedIds(linkedHubArticleIds)
     setConvertError(null)
+    setAutosaveMsg(null)
+    lastAutosavedKeyRef.current = null
     if (startInViewMode) {
       setIsEditing(false)
     } else {
-      handleClose()
+      onOpenChange(false)
     }
   }
 
@@ -199,12 +272,28 @@ export default function SopManualEditDialog({
   }
 
   const handleApply = () => {
-    onSave(buildSavePayload(draftStatus, draft, draftLinkedIds))
+    const payload = buildSavePayload(draftStatus, draft, draftLinkedIds)
+    lastAutosavedKeyRef.current = payloadKey(payload)
+    onSave(payload)
     if (startInViewMode) {
       setIsEditing(false)
+      setAutosaveMsg(null)
     } else {
-      handleClose()
+      onOpenChange(false)
     }
+  }
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (skipCancelAutosaveRef.current) {
+        skipCancelAutosaveRef.current = false
+        onOpenChange(false)
+        return
+      }
+      handleClose()
+      return
+    }
+    onOpenChange(true)
   }
 
   const handleConvertToDocument = async () => {
@@ -253,7 +342,7 @@ export default function SopManualEditDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <ResizableDialogContent
         storageKey={MANUAL_MODAL_RECT_STORAGE_KEY}
         defaultWidth={MANUAL_MODAL_DEFAULT_WIDTH}
@@ -340,6 +429,7 @@ export default function SopManualEditDialog({
                     minHeight={MANUAL_EDITOR_MIN_HEIGHT}
                     maxHeight={MANUAL_EDITOR_MAX_HEIGHT}
                     readOnly={isViewMode}
+                    uiLocale={isEn ? 'en' : 'ko'}
                   />
                   {canEdit && hasInlineContent ? (
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -399,7 +489,16 @@ export default function SopManualEditDialog({
           </div>
         </div>
 
-        <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:px-5" data-no-drag>
+        <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5" data-no-drag>
+          <p className="min-h-4 w-full text-center text-[11px] text-gray-500 sm:w-auto sm:text-left">
+            {!isViewMode && canEdit
+              ? autosaveMsg ||
+                (isEn
+                  ? 'Edits auto-save a few seconds after you stop typing.'
+                  : '입력 후 잠시 멈추면 자동 저장됩니다.')
+              : null}
+          </p>
+          <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end">
           {isViewMode ? (
             <>
               <Button
@@ -440,6 +539,7 @@ export default function SopManualEditDialog({
               </Button>
             </>
           )}
+          </div>
         </DialogFooter>
       </ResizableDialogContent>
     </Dialog>

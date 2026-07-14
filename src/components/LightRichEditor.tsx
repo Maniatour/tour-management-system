@@ -917,7 +917,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               aria-label={strings.listTitle}
             >
               <List className="h-4 w-4" aria-hidden />
-              {!strings.iconOnlyToolbar ? <span>목록</span> : null}
+              {!strings.iconOnlyToolbar ? <span>{strings.listButton}</span> : null}
             </button>
           )}
           {enableTable && (
@@ -930,7 +930,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 aria-label={strings.tableTitle}
               >
                 <Table2 className="h-4 w-4" aria-hidden />
-                {!strings.iconOnlyToolbar ? <span>표</span> : null}
+                {!strings.iconOnlyToolbar ? <span>{strings.tableButton}</span> : null}
               </button>
               {showTablePicker && (
                 <div className="absolute top-full left-0 z-20 mt-1 w-52 rounded border border-gray-300 bg-white p-3 shadow-lg">
@@ -979,7 +979,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               aria-label={strings.linkTitle}
             >
               <Link2 className="h-4 w-4" aria-hidden />
-              {!strings.iconOnlyToolbar ? <span>링크</span> : null}
+              {!strings.iconOnlyToolbar ? <span>{strings.linkButton}</span> : null}
             </button>
           )}
           {enableImageUpload && (
@@ -991,7 +991,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
               aria-label={strings.imageTitle}
             >
               <ImageIcon className="h-4 w-4" aria-hidden />
-              {!strings.iconOnlyToolbar ? <span>이미지</span> : null}
+              {!strings.iconOnlyToolbar ? <span>{strings.imageButton}</span> : null}
             </button>
           )}
           {(enableList || enableTable || enableLink || enableImageUpload) && (

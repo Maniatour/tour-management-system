@@ -1050,6 +1050,7 @@ export default function AdminStructuredDocPublishTab({
                         readOnly={structureContentFocus === 'en'}
                         className="rounded-md border border-sky-200 bg-white overflow-hidden"
                         placeholder={titlePlaceholderKo}
+                        uiLocale="ko"
                       />
                     </div>
                     <div className="rounded-lg border-2 border-violet-300 bg-violet-50/90 p-3 shadow-sm">
@@ -1071,6 +1072,7 @@ export default function AdminStructuredDocPublishTab({
                         readOnly={structureContentFocus === 'ko'}
                         className="rounded-md border border-violet-200 bg-white overflow-hidden"
                         placeholder={titlePlaceholderEn}
+                        uiLocale="en"
                       />
                     </div>
                   </div>
@@ -1108,6 +1110,7 @@ export default function AdminStructuredDocPublishTab({
                   enableResize
                   className="rounded-md border border-indigo-200 bg-white overflow-hidden"
                   placeholder={uiLocaleEn ? 'Optional one-page notes…' : '선택 사항 — 한 페이지 메모…'}
+                  uiLocale={uiLocaleEn ? 'en' : 'ko'}
                 />
               </div>
             )}

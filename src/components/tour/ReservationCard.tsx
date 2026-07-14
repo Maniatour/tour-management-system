@@ -40,7 +40,8 @@ import {
   fetchTeamDisplayNameByEmail,
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
-import { simplifyChoiceLabel } from '@/utils/choiceLabels'
+import { isChoiceOptionUuid, simplifyChoiceLabel } from '@/utils/choiceLabels'
+import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
@@ -792,45 +793,137 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
-  // reservation_choices 테이블에서 초이스 정보 가져오기 (그룹 정보 포함)
+  // reservation_choices → choice_options (AutoAssign과 동일: inner 실패 시 option_id 재조회)
   const fetchReservationChoices = useCallback(async () => {
     if (!reservation.id) return
-    
+
+    type ChoiceOptEmbed = {
+      option_key?: string | null
+      option_name?: string | null
+      option_name_ko?: string | null
+    }
+    type ProductChoiceEmbed = {
+      choice_group?: string | null
+      choice_group_ko?: string | null
+    }
+    type RcRow = {
+      choice_id?: string | null
+      option_id?: string | null
+      option_key?: string | null
+      choice_options?: ChoiceOptEmbed | ChoiceOptEmbed[] | null
+      product_choices?: ProductChoiceEmbed | ProductChoiceEmbed[] | null
+    }
+
+    const unwrap = <T,>(raw: T | T[] | null | undefined): T | null => {
+      if (raw == null) return null
+      return Array.isArray(raw) ? (raw[0] ?? null) : raw
+    }
+
     try {
+      let rows: RcRow[] = []
+
       const { data: choicesData, error } = await supabase
         .from('reservation_choices')
         .select(`
           choice_id,
           option_id,
-          choice_options!inner (
+          option_key,
+          choice_options (
             option_key,
             option_name,
             option_name_ko
           ),
-          product_choices!inner (
+          product_choices (
             choice_group,
             choice_group_ko
           )
         `)
         .eq('reservation_id', reservation.id)
-      
+
       if (error) {
         if (!isAbortError(error)) console.error('예약 초이스 조회 오류:', error)
+        const { data: plain } = await supabase
+          .from('reservation_choices')
+          .select('choice_id, option_id, option_key')
+          .eq('reservation_id', reservation.id)
+        rows = (plain as RcRow[]) || []
+      } else {
+        rows = (choicesData as RcRow[]) || []
+      }
+
+      if (rows.length === 0) {
+        setReservationChoices([])
         return
       }
-      
-      if (choicesData && choicesData.length > 0) {
-        const choices = choicesData.map((item: any) => ({
-          choice_id: item.choice_id,
-          option_id: item.option_id,
-          option_name: item.choice_options?.option_name,
-          option_name_ko: item.choice_options?.option_name_ko,
-          option_key: item.choice_options?.option_key,
-          choice_group: item.product_choices?.choice_group,
-          choice_group_ko: item.product_choices?.choice_group_ko
-        }))
-        setReservationChoices(choices)
+
+      const missingOptionIds = choiceOptionIdsForSupabaseIn(
+        rows.map((item) => {
+          const opt = unwrap(item.choice_options)
+          const hasName =
+            !!(opt?.option_name_ko || opt?.option_name || opt?.option_key) ||
+            !!(item.option_key && !isChoiceOptionUuid(item.option_key))
+          return hasName ? null : item.option_id
+        })
+      )
+
+      const optionInfoById = new Map<
+        string,
+        { option_key?: string; option_name?: string; option_name_ko?: string }
+      >()
+      if (missingOptionIds.length > 0) {
+        const { data: optData } = await supabase
+          .from('choice_options')
+          .select('id, option_key, option_name_ko, option_name')
+          .in('id', missingOptionIds)
+        ;(optData || []).forEach(
+          (o: {
+            id: string
+            option_key?: string | null
+            option_name?: string | null
+            option_name_ko?: string | null
+          }) => {
+            optionInfoById.set(o.id, {
+              ...(o.option_key != null ? { option_key: o.option_key } : {}),
+              ...(o.option_name != null ? { option_name: o.option_name } : {}),
+              ...(o.option_name_ko != null ? { option_name_ko: o.option_name_ko } : {}),
+            })
+          }
+        )
       }
+
+      const choices = rows
+        .filter((item) => item.choice_id && item.option_id)
+        .map((item) => {
+          const opt = unwrap(item.choice_options)
+          const pc = unwrap(item.product_choices)
+          const fallback = item.option_id ? optionInfoById.get(item.option_id) : undefined
+          const option_key =
+            opt?.option_key ||
+            fallback?.option_key ||
+            (item.option_key && !isChoiceOptionUuid(item.option_key) ? item.option_key : undefined)
+          const choiceItem: {
+            choice_id: string
+            option_id: string
+            option_name?: string
+            option_name_ko?: string
+            option_key?: string
+            choice_group?: string
+            choice_group_ko?: string
+          } = {
+            choice_id: item.choice_id as string,
+            option_id: item.option_id as string,
+          }
+          const option_name = opt?.option_name || fallback?.option_name
+          const option_name_ko = opt?.option_name_ko || fallback?.option_name_ko
+          if (option_name) choiceItem.option_name = option_name
+          if (option_name_ko) choiceItem.option_name_ko = option_name_ko
+          if (option_key) choiceItem.option_key = option_key
+          if (pc?.choice_group) choiceItem.choice_group = pc.choice_group
+          if (pc?.choice_group_ko) choiceItem.choice_group_ko = pc.choice_group_ko
+          return choiceItem
+        })
+
+      setReservationChoices(choices)
     } catch (error) {
       if (!isAbortError(error)) console.error('예약 초이스 조회 중 오류:', error)
     }
@@ -1063,11 +1156,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     // 1. reservation_choices 테이블에서 직접 조회한 데이터 사용 (우선순위 1)
     if (reservationChoices.length > 0) {
       reservationChoices.forEach((choice) => {
-        const optionName = choice.option_name_ko || 
-                          choice.option_name || 
-                          choice.option_key || 
-                          'Unknown'
-        const simplifiedName = simplifyChoiceLabel(optionName)
+        const optionName =
+          choice.option_name_ko ||
+          choice.option_name ||
+          (choice.option_key && !isChoiceOptionUuid(choice.option_key) ? choice.option_key : '') ||
+          ''
+        const simplifiedName = simplifyChoiceLabel(optionName, choice.option_key)
+        if (!simplifiedName) return
         const choiceItem: {
           name: string
           choice_id: string
@@ -1086,7 +1181,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       return selectedChoices
     }
     
-    // 2. reservation.choices JSON 필드에서 파싱 (fallback)
+    // 2. reservation.choices JSON 필드에서 파싱 (fallback) — option_id UUID는 표시하지 않음
     if (reservation.choices) {
       try {
         const choicesData = safeJsonParse(reservation.choices)
@@ -1098,13 +1193,18 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             (choicesObj.required as Array<Record<string, unknown>>).forEach((item) => {
               // 새로운 시스템: choice_id와 option_id가 직접 있는 경우
               if (item.option_id && item.choice_id) {
-                // option_id를 사용하여 옵션 이름 찾기
-                const optionName = (item.option_name as string) || 
-                                  (item.option_name_ko as string) || 
-                                  (item.option_key as string) ||
-                                  (item.option_id as string) || 
-                                  'Unknown'
-                const simplifiedName = simplifyChoiceLabel(optionName)
+                const rawKey =
+                  typeof item.option_key === 'string' && !isChoiceOptionUuid(item.option_key)
+                    ? item.option_key
+                    : undefined
+                const optionName =
+                  (typeof item.option_name_ko === 'string' && item.option_name_ko) ||
+                  (typeof item.option_name === 'string' && item.option_name) ||
+                  rawKey ||
+                  ''
+                if (!optionName || isChoiceOptionUuid(optionName)) return
+                const simplifiedName = simplifyChoiceLabel(optionName, rawKey)
+                if (!simplifiedName) return
                 const choiceItem: {
                   name: string
                   choice_id: string
@@ -1128,10 +1228,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               else if (item.options && Array.isArray(item.options)) {
                 (item.options as Array<Record<string, unknown>>).forEach((option) => {
                   if (option.selected || option.is_default) {
-                    const originalName = (option.name as string) || 
-                                       (option.name_ko as string) || 
-                                       'Unknown'
+                    const originalName =
+                      (typeof option.name_ko === 'string' && option.name_ko) ||
+                      (typeof option.name === 'string' && option.name) ||
+                      ''
+                    if (!originalName || isChoiceOptionUuid(originalName)) return
                     const simplifiedName = simplifyChoiceLabel(originalName)
+                    if (!simplifiedName) return
                     const choiceItem: {
                       name: string
                       choice_id: string

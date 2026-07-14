@@ -99,7 +99,7 @@ export const ChoicesDisplay = React.memo(function ChoicesDisplay({
       {selectedChoices.map((choice, index) => {
         const optionName = choice.choice_options?.option_name_ko || choice.choice_options?.option_name || 'Unknown'
         const groupName = choice.choice_options?.product_choices?.choice_group_ko || 'Unknown'
-        const displayLabel = simplifyChoiceLabel(optionName)
+        const displayLabel = simplifyChoiceLabel(optionName, choice.choice_options?.option_key)
         const badgeClass = getGroupColorClasses(choice.choice_id, groupName, displayLabel)
 
         return (

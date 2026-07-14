@@ -7,6 +7,11 @@ export type LightRichEditorStrings = {
   underlineTitle: string
   listTitle: string
   tableTitle: string
+  /** 툴바에 텍스트 라벨을 보일 때 쓰는 짧은 이름 */
+  listButton: string
+  tableButton: string
+  linkButton: string
+  imageButton: string
   tableSize: string
   rows: string
   cols: string
@@ -36,6 +41,10 @@ const EN_STRINGS: LightRichEditorStrings = {
   underlineTitle: 'Underline (Ctrl+U)',
   listTitle: 'Bullet list',
   tableTitle: 'Insert table',
+  listButton: 'List',
+  tableButton: 'Table',
+  linkButton: 'Link',
+  imageButton: 'Image',
   tableSize: 'Table size',
   rows: 'Rows',
   cols: 'Columns',
@@ -64,6 +73,10 @@ const KO_STRINGS: LightRichEditorStrings = {
   underlineTitle: '밑줄 (Ctrl+U)',
   listTitle: '목록',
   tableTitle: '표 삽입',
+  listButton: '목록',
+  tableButton: '표',
+  linkButton: '링크',
+  imageButton: '이미지',
   tableSize: '표 크기',
   rows: '행',
   cols: '열',

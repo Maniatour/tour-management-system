@@ -96,6 +96,7 @@ export default function SopRichFieldEditDialog({
                     ? 'Enter content…'
                     : '내용을 입력하세요…'
             }
+            uiLocale={uiLocaleEn ? 'en' : 'ko'}
             {...editorProps}
           />
         </div>

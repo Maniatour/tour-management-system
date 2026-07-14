@@ -178,6 +178,7 @@ function DualRichPair({
             value={koValue}
             onChange={onKoChange}
             placeholder={koPlaceholder}
+            uiLocale="ko"
             className="bg-white rounded-md border border-sky-200 overflow-hidden"
           />
         </div>
@@ -193,6 +194,7 @@ function DualRichPair({
             value={enValue}
             onChange={onEnChange}
             placeholder={enPlaceholder}
+            uiLocale="en"
             className="bg-white rounded-md border border-violet-200 overflow-hidden"
           />
         </div>
@@ -225,6 +227,7 @@ function DualRichPair({
           value={editKo ? koValue : enValue}
           onChange={editKo ? onKoChange : onEnChange}
           placeholder={editKo ? koPlaceholder : enPlaceholder}
+          uiLocale={editKo ? 'ko' : 'en'}
           className={`bg-white rounded-md border overflow-hidden ${editKo ? 'border-sky-200' : 'border-violet-200'}`}
         />
       </div>
@@ -236,6 +239,7 @@ function DualRichPair({
           value={editKo ? enValue : koValue}
           onChange={() => {}}
           placeholder={editKo ? enPlaceholder : koPlaceholder}
+          uiLocale={editKo ? 'en' : 'ko'}
           className="bg-white/90 rounded-md border border-slate-200 overflow-hidden"
         />
       </div>

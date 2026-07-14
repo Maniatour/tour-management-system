@@ -2505,6 +2505,7 @@ export function TourDetailPageView({
           pickupHotels={tourData.pickupHotels}
           coupons={reservationFormData.coupons}
           useServerCustomerInsert
+          modalStackLevel="nested"
           titleAction={
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button

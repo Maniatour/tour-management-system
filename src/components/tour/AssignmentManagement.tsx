@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
@@ -13,6 +14,7 @@ import {
 } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
+import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
 interface Reservation {
   id: string
@@ -766,85 +768,89 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         />
       )}
 
-      {moveToTourModalReservationId && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="move-to-tour-modal-title"
-        >
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <h2 id="move-to-tour-modal-title" className="text-base font-semibold text-gray-900">
-                {t('moveToOtherTourModalTitle')}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setMoveToTourModalReservationId(null)}
-                className="p-1 rounded hover:bg-gray-100 text-gray-500"
-                aria-label={t('moveToOtherTourCancel')}
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {moveToTourModalReservationId &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4 bg-black/50"
+            style={{ zIndex: DIALOG_Z_INDEX.nested }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="move-to-tour-modal-title"
+          >
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <h2 id="move-to-tour-modal-title" className="text-base font-semibold text-gray-900">
+                  {t('moveToOtherTourModalTitle')}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setMoveToTourModalReservationId(null)}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                  aria-label={t('moveToOtherTourCancel')}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-4 py-3 overflow-y-auto flex-1">
+                <p className="text-sm text-gray-600 mb-3">{t('moveToOtherTourModalHint')}</p>
+                {peerPickerLoading ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-2">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+                    <span className="text-xs text-gray-500">{t('moveToOtherTourLoading')}</span>
+                  </div>
+                ) : peerPickerRows.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">{t('moveToOtherTourNoTargets')}</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {peerPickerRows.map((row) => {
+                      const selected = selectedTargetTourId === row.id
+                      return (
+                        <li key={row.id}>
+                          <label
+                            className={`flex items-start gap-2 cursor-pointer rounded-lg border p-3 ${
+                              selected
+                                ? 'border-indigo-500 bg-indigo-50/50'
+                                : 'border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="move-to-tour-target"
+                              value={row.id}
+                              checked={selected}
+                              onChange={() => setSelectedTargetTourId(row.id)}
+                              className="mt-1"
+                            />
+                            <span className="text-sm text-gray-900">{row.label}</span>
+                          </label>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 border-t px-4 py-3 bg-gray-50 rounded-b-lg">
+                <button
+                  type="button"
+                  onClick={() => setMoveToTourModalReservationId(null)}
+                  className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 rounded"
+                >
+                  {t('moveToOtherTourCancel')}
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedTargetTourId || moveSubmitting || peerPickerLoading || peerPickerRows.length === 0}
+                  onClick={() => void handleConfirmMoveToTour()}
+                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {moveSubmitting ? '…' : t('moveToOtherTourConfirm')}
+                </button>
+              </div>
             </div>
-            <div className="px-4 py-3 overflow-y-auto flex-1">
-              <p className="text-sm text-gray-600 mb-3">{t('moveToOtherTourModalHint')}</p>
-              {peerPickerLoading ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-                  <span className="text-xs text-gray-500">{t('moveToOtherTourLoading')}</span>
-                </div>
-              ) : peerPickerRows.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4 text-center">{t('moveToOtherTourNoTargets')}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {peerPickerRows.map((row) => {
-                    const selected = selectedTargetTourId === row.id
-                    return (
-                      <li key={row.id}>
-                        <label
-                          className={`flex items-start gap-2 cursor-pointer rounded-lg border p-3 ${
-                            selected
-                              ? 'border-indigo-500 bg-indigo-50/50'
-                              : 'border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="move-to-tour-target"
-                            value={row.id}
-                            checked={selected}
-                            onChange={() => setSelectedTargetTourId(row.id)}
-                            className="mt-1"
-                          />
-                          <span className="text-sm text-gray-900">{row.label}</span>
-                        </label>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 border-t px-4 py-3 bg-gray-50 rounded-b-lg">
-              <button
-                type="button"
-                onClick={() => setMoveToTourModalReservationId(null)}
-                className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 rounded"
-              >
-                {t('moveToOtherTourCancel')}
-              </button>
-              <button
-                type="button"
-                disabled={!selectedTargetTourId || moveSubmitting || peerPickerLoading || peerPickerRows.length === 0}
-                onClick={() => void handleConfirmMoveToTour()}
-                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {moveSubmitting ? '…' : t('moveToOtherTourConfirm')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

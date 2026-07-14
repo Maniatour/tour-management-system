@@ -8,6 +8,7 @@ import {
   ClipboardList,
   FileText,
   GraduationCap,
+  History,
   ListChecks,
   Loader2,
   Pencil,
@@ -45,6 +46,7 @@ import SopDocumentInlinePreviewEditor from '@/components/sop/SopDocumentInlinePr
 import SopPrintPreviewFloatingPanel from '@/components/sop/SopPrintPreviewFloatingPanel'
 import SopPrintPreviewFrame from '@/components/sop/SopPrintPreviewFrame'
 import KnowledgeArticleEditorPanel from '@/components/operations/KnowledgeArticleEditorPanel'
+import KnowledgeArticleHistoryPanel from '@/components/operations/KnowledgeArticleHistoryPanel'
 import { hydrateDocumentForRowEditing } from '@/lib/sopQuickEdit'
 import { parseSopDocumentJson, sopText, type SopDocument, type SopEditLocale } from '@/types/sopStructure'
 import {
@@ -96,15 +98,36 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [readEditDoc, setReadEditDoc] = useState<SopDocument | null>(null)
   const readEditDocRef = useRef<SopDocument | null>(null)
   const [readSaveMsg, setReadSaveMsg] = useState<string | null>(null)
+  const [readDirty, setReadDirty] = useState(false)
+  const readDirtyRef = useRef(false)
+  const persistInFlightRef = useRef(false)
+  const editGenerationRef = useRef(0)
+  const savedGenerationRef = useRef(0)
+  const AUTOSAVE_MS = 2500
 
   useEffect(() => {
     readEditDocRef.current = readEditDoc
   }, [readEditDoc])
 
-  const handleReadEditDocChange = useCallback((doc: SopDocument) => {
-    readEditDocRef.current = doc
-    setReadEditDoc(doc)
+  const markReadDirty = useCallback(() => {
+    editGenerationRef.current += 1
+    readDirtyRef.current = true
+    setReadDirty(true)
   }, [])
+
+  const clearReadDirty = useCallback(() => {
+    readDirtyRef.current = false
+    setReadDirty(false)
+  }, [])
+
+  const handleReadEditDocChange = useCallback(
+    (doc: SopDocument) => {
+      readEditDocRef.current = doc
+      setReadEditDoc(doc)
+      markReadDirty()
+    },
+    [markReadDirty]
+  )
 
   const [modalViewLang, setModalViewLang] = useState<SopEditLocale>(viewLang)
   const [editOpen, setEditOpen] = useState(false)
@@ -114,6 +137,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeArticleRow | null>(null)
   const [legalPagesOpen, setLegalPagesOpen] = useState(false)
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const previewA4Ref = useRef<HTMLDivElement | null>(null)
 
   const staffOk =
@@ -158,20 +182,43 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   }, [])
 
   const persistReadDoc = useCallback(
-    async (doc: SopDocument, opts?: { silent?: boolean }) => {
+    async (
+      doc: SopDocument,
+      opts?: { silent?: boolean; keepLocalDoc?: boolean; label?: string }
+    ) => {
       if (!adminCrud || !readArticle) return false
-      setBusy(true)
-      if (!opts?.silent) setReadSaveMsg(null)
+      if (persistInFlightRef.current) {
+        window.setTimeout(() => {
+          const next = readEditDocRef.current
+          if (next && readDirtyRef.current && !persistInFlightRef.current) {
+            void persistReadDoc(next, { silent: true, keepLocalDoc: true })
+          }
+        }, 800)
+        return false
+      }
+      persistInFlightRef.current = true
+      if (!opts?.silent) {
+        setBusy(true)
+        setReadSaveMsg(null)
+      } else {
+        setReadSaveMsg(isEn ? 'Auto-saving…' : '자동 저장 중…')
+      }
       const draft = knowledgeArticleRowToForm(readArticle)
       draft.bodyDoc = doc
+      const saveGen = editGenerationRef.current
       const result = await saveKnowledgeArticle(draft, authUser?.id ?? null)
-      setBusy(false)
+      persistInFlightRef.current = false
+      if (!opts?.silent) setBusy(false)
       if (!result.ok) {
         setReadSaveMsg(result.error)
         return false
       }
       if (!opts?.silent) {
         setReadSaveMsg(isEn ? 'Saved.' : '저장했습니다.')
+      } else {
+        setReadSaveMsg(
+          opts.label ?? (isEn ? 'Auto-saved' : '자동 저장됨')
+        )
       }
       const { data: refreshed } = await supabase
         .from('company_knowledge_articles')
@@ -182,27 +229,73 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       if (saved) {
         upsertArticleInState(saved)
         setReadArticle(saved)
-        const savedDoc = articleBodyToDocument(saved)
-        const hydrated = savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null
-        readEditDocRef.current = hydrated
-        setReadEditDoc(hydrated)
+        const localStillMatches = editGenerationRef.current === saveGen
+        if (localStillMatches) {
+          savedGenerationRef.current = saveGen
+          clearReadDirty()
+        }
+        if (!opts?.keepLocalDoc) {
+          const savedDoc = articleBodyToDocument(saved)
+          const hydrated = savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null
+          readEditDocRef.current = hydrated
+          setReadEditDoc(hydrated)
+          clearReadDirty()
+        } else if (!localStillMatches) {
+          window.setTimeout(() => {
+            const next = readEditDocRef.current
+            if (next && readDirtyRef.current && !persistInFlightRef.current) {
+              void persistReadDoc(next, { silent: true, keepLocalDoc: true })
+            }
+          }, 600)
+        }
       } else {
         await reloadArticles()
+        clearReadDirty()
       }
       return true
     },
-    [adminCrud, authUser?.id, isEn, readArticle, reloadArticles, upsertArticleInState]
+    [adminCrud, authUser?.id, clearReadDirty, isEn, readArticle, reloadArticles, upsertArticleInState]
   )
 
   const handlePersistReadDocFromEditor = useCallback(
     async (doc: SopDocument) => {
-      const ok = await persistReadDoc(doc, { silent: true })
-      if (ok) {
-        setReadSaveMsg(isEn ? 'Manual saved.' : '메뉴얼을 저장했습니다.')
+      const ok = await persistReadDoc(doc, {
+        silent: true,
+        keepLocalDoc: true,
+        label: isEn ? 'Manual saved.' : '메뉴얼을 저장했습니다.',
+      })
+      if (!ok && !persistInFlightRef.current) {
+        // in-flight: will be covered by dirty autosave retry
+        markReadDirty()
       }
     },
-    [isEn, persistReadDoc]
+    [isEn, markReadDirty, persistReadDoc]
   )
+
+  /** 문서 구조 변경 등 dirty → 디바운스 자동 저장 */
+  useEffect(() => {
+    if (!adminCrud || !readArticle || !readDirty || !readEditDoc) return
+    const timer = window.setTimeout(() => {
+      const doc = readEditDocRef.current
+      if (!doc || !readDirtyRef.current) return
+      void persistReadDoc(doc, { silent: true, keepLocalDoc: true })
+    }, AUTOSAVE_MS)
+    return () => window.clearTimeout(timer)
+  }, [AUTOSAVE_MS, adminCrud, persistReadDoc, readArticle, readDirty, readEditDoc])
+
+  useEffect(() => {
+    if (!adminCrud || !readDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const doc = readEditDocRef.current
+      if (doc && readDirtyRef.current) {
+        void persistReadDoc(doc, { silent: true, keepLocalDoc: true })
+      }
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [adminCrud, persistReadDoc, readDirty])
 
   const load = useCallback(async () => {
     if (!isInitialized || loading || !authUser?.email) return
@@ -302,17 +395,26 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (!readArticle) {
       setReadEditDoc(null)
       setReadSaveMsg(null)
+      clearReadDirty()
       return
     }
+  }, [clearReadDirty, readArticle])
+
+  useEffect(() => {
+    if (!readArticle?.id) return
     const parsed = articleBodyToDocument(readArticle)
     setReadEditDoc(parsed ? hydrateDocumentForRowEditing(parsed) : null)
-  }, [readArticle])
+    clearReadDirty()
+    // 문서 전환 시에만 서버본으로 에디터를 리셋 (저장 후 setReadArticle로 덮어쓰지 않음)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally id-only
+  }, [readArticle?.id])
 
   useEffect(() => {
     if (readArticle?.id) {
       setModalViewLang(viewLang)
       setReadSaveMsg(null)
       setPrintPreviewOpen(false)
+      setHistoryOpen(false)
     }
   }, [readArticle?.id, viewLang])
 
@@ -684,7 +786,14 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
         open={readModalHasBody}
         onOpenChange={(open) => {
           if (!open) {
+            if (adminCrud && readDirtyRef.current && readEditDocRef.current) {
+              void persistReadDoc(readEditDocRef.current, {
+                silent: true,
+                keepLocalDoc: true,
+              })
+            }
             setPrintPreviewOpen(false)
+            setHistoryOpen(false)
             setReadArticle(null)
           }
         }}
@@ -697,15 +806,20 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           className="gap-0"
           accessibilityTitle={readModalTitle}
           onPointerDownOutside={(e) => {
-            if (printPreviewOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen) e.preventDefault()
           }}
           onInteractOutside={(e) => {
-            if (printPreviewOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen) e.preventDefault()
           }}
           onFocusOutside={(e) => {
-            if (printPreviewOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen) e.preventDefault()
           }}
           onEscapeKeyDown={(e) => {
+            if (historyOpen) {
+              e.preventDefault()
+              setHistoryOpen(false)
+              return
+            }
             if (printPreviewOpen) {
               e.preventDefault()
               setPrintPreviewOpen(false)
@@ -713,7 +827,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           }}
         >
           {readModalHasBody && readArticle ? (
-            <>
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <DialogHeader
                 data-dialog-drag-handle
                 className="relative shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
@@ -745,6 +859,17 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                       >
                         <Save className="mr-1 h-3.5 w-3.5" />
                         {modalUiEn ? 'Save' : '저장'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                        onClick={() => setHistoryOpen(true)}
+                      >
+                        <History className="mr-1 h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">{modalUiEn ? 'History' : '이력'}</span>
+                        <span className="sm:hidden">{modalUiEn ? 'Hist.' : '이력'}</span>
                       </Button>
                       <Button
                         type="button"
@@ -814,8 +939,18 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                       {contentTypeLabel(readArticle.content_type, modalViewLang)}
                       {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
                     </p>
-                    {adminCrud && readSaveMsg ? (
-                      <p className="pt-1 text-xs text-gray-600">{readSaveMsg}</p>
+                    {adminCrud ? (
+                      <p className="pt-1 text-xs text-gray-600">
+                        {readSaveMsg
+                          ? readSaveMsg
+                          : readDirty
+                            ? modalUiEn
+                              ? 'Unsaved changes — auto-saving soon…'
+                              : '저장되지 않은 변경 — 곧 자동 저장…'
+                            : modalUiEn
+                              ? 'Changes auto-save after you pause editing.'
+                              : '편집을 잠시 멈추면 자동 저장됩니다.'}
+                      </p>
                     ) : null}
                   </div>
                 </div>
@@ -848,7 +983,40 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                   />
                 ) : null}
               </div>
-            </>
+              {adminCrud ? (
+                <KnowledgeArticleHistoryPanel
+                  open={historyOpen}
+                  onClose={() => setHistoryOpen(false)}
+                  articleId={readArticle.id}
+                  isEn={modalUiEn}
+                  onRestored={() => {
+                    void (async () => {
+                      const { data: refreshed } = await supabase
+                        .from('company_knowledge_articles')
+                        .select(KNOWLEDGE_ARTICLE_SELECT)
+                        .eq('id', readArticle.id)
+                        .maybeSingle()
+                      const saved = refreshed as KnowledgeArticleRow | null
+                      if (saved) {
+                        upsertArticleInState(saved)
+                        setReadArticle(saved)
+                        const savedDoc = articleBodyToDocument(saved)
+                        const hydrated = savedDoc ? hydrateDocumentForRowEditing(savedDoc) : null
+                        readEditDocRef.current = hydrated
+                        setReadEditDoc(hydrated)
+                        clearReadDirty()
+                        setReadSaveMsg(
+                          modalUiEn ? 'Restored from history.' : '이력에서 복원했습니다.'
+                        )
+                      } else {
+                        await reloadArticles()
+                      }
+                      setHistoryOpen(false)
+                    })()
+                  }}
+                />
+              ) : null}
+            </div>
           ) : null}
         </ResizableDialogContent>
       </Dialog>

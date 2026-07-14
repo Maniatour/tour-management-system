@@ -773,8 +773,8 @@ export default function SopDocumentInlinePreviewEditor({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {isEn
-                ? `“${deleteLabel}” will be removed. Save the document to persist changes.`
-                : `「${deleteLabel}」이(가) 삭제됩니다. 문서 저장 후 반영됩니다.`}
+                ? `“${deleteLabel}” will be removed. Changes auto-save shortly.`
+                : `「${deleteLabel}」이(가) 삭제됩니다. 잠시 후 자동 저장됩니다.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -20,6 +20,7 @@ import { generateCustomerId } from '@/lib/entityIds'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import type { Database } from '@/lib/supabase'
+import { DIALOG_Z_INDEX, type DialogStackLevel } from '@/lib/dialogZIndex'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
 async function insertCustomerForReservationForm(
@@ -380,6 +381,14 @@ interface ReservationFormProps {
   useServerCustomerInsert?: boolean
   /** Follow-up 파이프라인(컨펌·거주·출발·픽업) 스냅샷 재조회 트리거 — 예: 상단 이메일 발송 성공 시 증가 */
   followUpPipelineSnapshotRefreshToken?: number
+  /**
+   * 모달 오버레이 z-index 스택.
+   * 스케줄뷰 투어 상세 Dialog(default 10050) 위에 열 때는 `nested`(10200) 권장.
+   * 미지정 시 기존 동작(1100) 유지 — 예약목록 등 낮은 z 부모 위에서만 쓰면 됨.
+   */
+  modalStackLevel?: DialogStackLevel
+  /** modalStackLevel 대신 직접 z-index 지정 */
+  modalZIndex?: number
 }
 
 /** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
@@ -464,6 +473,8 @@ export default function ReservationForm({
   importSubmitDisabled = false,
   useServerCustomerInsert = false,
   followUpPipelineSnapshotRefreshToken = 0,
+  modalStackLevel,
+  modalZIndex,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -6244,9 +6255,16 @@ export default function ReservationForm({
   }, [])
 
   const isModal = layout !== 'page'
+  /** 예약목록 커스텀 오버레이(≈100) 위: 1100. 스케줄뷰 Dialog(10050) 위: nested 10200+ */
+  const resolvedModalZIndex =
+    modalZIndex ??
+    (modalStackLevel != null ? DIALOG_Z_INDEX[modalStackLevel] : 1100)
 
   const content = (
-    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
+    <div
+      className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}
+      style={isModal ? { zIndex: resolvedModalZIndex } : undefined}
+    >
       <div className={isModal 
         ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden"}
