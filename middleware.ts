@@ -5,6 +5,10 @@ import {
   applySecurityHeaders,
   handleApiSecurity,
 } from '@/lib/middleware-api-security'
+import {
+  isSafePwaStartPath,
+  PWA_START_PATH_COOKIE,
+} from '@/lib/pwaStartUrl'
 
 const intlMiddleware = createIntlMiddleware({
   locales: ['ko', 'en'],
@@ -27,6 +31,24 @@ export async function middleware(req: NextRequest) {
   ) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-pathname', pathname)
+    return applySecurityHeaders(
+      NextResponse.next({ request: { headers: requestHeaders } })
+    )
+  }
+
+  // PWA/홈 화면 바로가기: start_url이 예전에 `/` 이거나, 쿠키에 저장된 경로가 있으면
+  // next-intl이 `/` → `/ko`(고객 홈)로 보내기 전에 가이드·채팅·관리자로 복원
+  if (pathname === '/') {
+    const rawCookie = req.cookies.get(PWA_START_PATH_COOKIE)?.value
+    const savedPath = rawCookie ? decodeURIComponent(rawCookie) : ''
+    if (savedPath && isSafePwaStartPath(savedPath)) {
+      const url = req.nextUrl.clone()
+      url.pathname = savedPath
+      return applySecurityHeaders(NextResponse.redirect(url))
+    }
+    // 쿠키 없음: RootPage(클라이언트)에서 localStorage / 역할 기반 분기
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-pathname', '/')
     return applySecurityHeaders(
       NextResponse.next({ request: { headers: requestHeaders } })
     )

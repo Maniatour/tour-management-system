@@ -14,6 +14,7 @@ import { usePublicChatMessages } from '@/hooks/usePublicChatMessages'
 import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
 import PublicChatTutorialOverlay from '@/components/chat/PublicChatTutorialOverlay'
 import type { ChatRoom, PublicChatRoomBundle } from '@/types/chat'
+import { persistPwaStartPath } from '@/lib/pwaStartUrl'
 
 interface TourInfo {
   id: string
@@ -99,7 +100,7 @@ export default function PublicChatPage() {
       setShowInstallButton(false)
       // standalone 모드에서 현재 URL이 채팅방이면 저장
       if (typeof window !== 'undefined' && window.location.pathname.startsWith('/chat/')) {
-        localStorage.setItem('pwa_install_url', window.location.pathname)
+        persistPwaStartPath(window.location.pathname)
       }
     }
 
@@ -181,7 +182,7 @@ export default function PublicChatPage() {
         setShowInstallButton(false)
         // 설치 시점의 현재 URL 저장 (채팅방 URL)
         if (typeof window !== 'undefined' && window.location.pathname.startsWith('/chat/')) {
-          localStorage.setItem('pwa_install_url', window.location.pathname)
+          persistPwaStartPath(window.location.pathname)
         }
         alert(t('pwaAddedSuccess'))
       } else {

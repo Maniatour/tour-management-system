@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Copy, Share2, QrCode, MessageCircle, Calendar, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { persistPwaStartPath } from '@/lib/pwaStartUrl'
 
 interface ChatRoomShareModalProps {
   isOpen: boolean
@@ -112,7 +113,7 @@ export default function ChatRoomShareModal({
         setShowInstallButton(false)
         // 설치 시점의 현재 URL 저장 (채팅방 URL)
         if (typeof window !== 'undefined' && roomCode) {
-          localStorage.setItem('pwa_install_url', `/chat/${roomCode}`)
+          persistPwaStartPath(`/chat/${roomCode}`)
         }
         alert(language === 'ko' 
           ? '홈 화면에 추가되었습니다!'

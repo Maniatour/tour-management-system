@@ -26,6 +26,7 @@ import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
 import { guidePathWithAppLocale, guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
+import { persistPwaStartPath } from '@/lib/pwaStartUrl'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -63,22 +64,15 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     void recoverAuthSession()
   }, [recoverAuthSession])
 
-  // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 저장 (루트 `/` + manifest start_url이 `/`일 때 대비)
+  // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 localStorage + 쿠키에 저장
+  // (manifest start_url이 `/`였던 기존 바로가기가 `/` → 고객홈으로 가는 것 방지)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const path = window.location.pathname
     if (!/^\/(ko|en)\/guide(\/|$)/.test(path)) return
-    try {
-      localStorage.setItem('pwa_install_url', path)
-    } catch {
-      /* ignore quota / private mode */
-    }
+    persistPwaStartPath(path)
     const onPageShow = () => {
-      try {
-        localStorage.setItem('pwa_install_url', window.location.pathname)
-      } catch {
-        /* ignore */
-      }
+      persistPwaStartPath(window.location.pathname)
     }
     window.addEventListener('pageshow', onPageShow)
     return () => window.removeEventListener('pageshow', onPageShow)
@@ -211,9 +205,12 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           isLoading,
           simulatedUser: !!simulatedUser
         })
-        // 현재 경로에서 locale 추출
+        // 현재 경로에서 locale 추출 — 로그인 후 가이드로 복귀
         const currentLocale = pathname.split('/')[1] || 'ko'
-        router.push(`/${currentLocale}/auth`)
+        const returnPath = pathname.startsWith('/') ? pathname : `/${currentLocale}/guide`
+        router.push(
+          `/${currentLocale}/auth?redirectTo=${encodeURIComponent(returnPath)}`,
+        )
         return
       }
     } else {
@@ -225,7 +222,10 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           isSimulating
         })
         const currentLocale = pathname.split('/')[1] || 'ko'
-        router.push(`/${currentLocale}/auth`)
+        const returnPath = pathname.startsWith('/') ? pathname : `/${currentLocale}/guide`
+        router.push(
+          `/${currentLocale}/auth?redirectTo=${encodeURIComponent(returnPath)}`,
+        )
         return
       }
     }

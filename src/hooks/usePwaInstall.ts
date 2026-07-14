@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
+import { persistPwaStartPath } from '@/lib/pwaStartUrl'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -117,7 +118,7 @@ export function usePwaInstall(options: {
       if (outcome === 'accepted') {
         const path = getSavePathOnAccept()
         if (path.startsWith('/')) {
-          localStorage.setItem('pwa_install_url', path)
+          persistPwaStartPath(path)
         }
         alert(language === 'ko' ? '홈 화면에 추가되었습니다!' : 'Added to home screen!')
       }

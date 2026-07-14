@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClientSupabase } from '@/lib/supabase'
 import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
+import { isSafePwaStartPath, persistPwaStartPath } from '@/lib/pwaStartUrl'
 
-const PWA_SAVED_PATH_RE = /^\/(ko|en)\/guide(\/|$)/
-const PWA_ADMIN_PATH_RE = /^\/(ko|en)\/admin(\/|$)/
 const ROOT_REDIRECT_FAILSAFE_MS = 12_000
 
 export default function RootPage() {
@@ -19,6 +18,17 @@ export default function RootPage() {
 
     const redirectFailsafe = setTimeout(() => {
       if (cancelled) return
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      const savedUrl = localStorage.getItem('pwa_install_url')
+      if (isStandalone && savedUrl && isSafePwaStartPath(savedUrl)) {
+        router.replace(savedUrl)
+        return
+      }
+      // 가이드용 PWA인데 저장 경로가 없으면 가이드 홈으로
+      if (isStandalone) {
+        router.replace('/ko/guide')
+        return
+      }
       const pl = localStorage.getItem('preferred-locale')
       router.replace(pl === 'en' ? '/en' : '/ko')
     }, ROOT_REDIRECT_FAILSAFE_MS)
@@ -30,15 +40,16 @@ export default function RootPage() {
       const savedUrl = localStorage.getItem('pwa_install_url')
 
       // PWA 단독 실행: 설치 시점에 저장한 URL(채팅·가이드)로 복원
-      if (isStandalone && savedUrl?.startsWith('/')) {
-        if (
-          savedUrl.startsWith('/chat/') ||
-          PWA_SAVED_PATH_RE.test(savedUrl) ||
-          PWA_ADMIN_PATH_RE.test(savedUrl)
-        ) {
-          if (!cancelled) router.replace(savedUrl)
-          return
-        }
+      if (isStandalone && savedUrl && isSafePwaStartPath(savedUrl)) {
+        persistPwaStartPath(savedUrl)
+        if (!cancelled) router.replace(savedUrl)
+        return
+      }
+
+      // 기존 바로가기(start_url `/`) + 저장 URL 없음 → 가이드 앱으로
+      if (isStandalone) {
+        if (!cancelled) router.replace('/ko/guide')
+        return
       }
 
       if (!isInitialized || loading) return

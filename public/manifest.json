@@ -2,7 +2,7 @@
   "name": "MANIATOUR",
   "short_name": "MANIATOUR",
   "description": "Tour schedule and customer management system for guides",
-  "start_url": "/",
+  "start_url": "/ko/guide",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
