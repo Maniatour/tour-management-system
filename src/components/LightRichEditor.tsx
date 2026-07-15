@@ -7,6 +7,7 @@ import {
   markdownToHtml,
   markdownToHeadingHtml,
   normalizeMarkdownBlockStructure,
+  sanitizeMarkdownBoldMarkers,
   stripSopFontSizeTokens,
   sopPlainDisplayText,
 } from '@/lib/markdownToHtml'
@@ -15,6 +16,7 @@ export {
   markdownToHtml,
   markdownToHeadingHtml,
   normalizeMarkdownBlockStructure,
+  sanitizeMarkdownBoldMarkers,
   stripSopFontSizeTokens,
   sopPlainDisplayText,
 }
@@ -471,7 +473,10 @@ const htmlToMarkdown = (html: string): string => {
 
   // 제목 블록 (닫는 태그만 먼저 치환하면 매칭이 깨지므로 통째로 변환)
   markdown = markdown.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level: string, inner: string) => {
-    const text = inlineHtmlToMarkdown(inner)
+    let text = inlineHtmlToMarkdown(inner)
+    // 헤딩 CSS가 이미 bold — 전체를 감싼 **는 저장하지 않음
+    const wrapped = text.match(/^\*\*([\s\S]+)\*\*$/)
+    if (wrapped) text = wrapped[1]!.trim()
     return text ? `${'#'.repeat(Number(level))} ${text}\n\n` : '\n\n'
   })
 
@@ -507,6 +512,10 @@ const htmlToMarkdown = (html: string): string => {
   // 앞뒤 공백만 제거 — String.trim()은 trailing \n\n 단락까지 지워 Enter 줄바꿈이 사라짐
   markdown = markdown.replace(/^[ \t\u00a0]+|[ \t\u00a0]+$/g, '')
   markdown = markdown.replace(/^\n+/, '').replace(/\n+$/, '')
+
+  // 저장 직전 고아/깨진 bold 마커 정리 (게시 시 본문 전체 볼드화 방지)
+  markdown = sanitizeMarkdownBoldMarkers(markdown)
+  markdown = markdown.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\n+$/, '')
 
   return markdown
 }

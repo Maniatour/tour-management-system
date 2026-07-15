@@ -169,7 +169,10 @@ function renderMarkdownHeadingHtml(line: string): string | null {
   const match = line.trim().match(/^(#{1,6})\s+(.+)$/)
   if (!match) return null
   const level = match[1]!.length
-  const text = match[2]!.trim()
+  // 헤딩 자체에 font-weight:700 — 전체를 감싼 bold는 중복이라 풀어줌
+  let text = match[2]!.trim()
+  text = text.replace(/^\*\*([^*\n]+)\*\*$/, '$1')
+  text = text.replace(/^<strong>([\s\S]+)<\/strong>$/i, '$1')
   const styles: Record<number, string> = {
     1: 'margin: 1.25em 0 0.5em; font-size: 1.35rem; font-weight: 700; color: #0f172a;',
     2: 'margin: 1.1em 0 0.45em; font-size: 1.2rem; font-weight: 700; color: #0f172a;',
@@ -179,6 +182,43 @@ function renderMarkdownHeadingHtml(line: string): string | null {
     6: 'margin: 0.65em 0 0.25em; font-size: 0.9rem; font-weight: 600; color: #334155;',
   }
   return `<h${level} style="${styles[level] ?? styles[3]}">${text}</h${level}>`
+}
+
+/**
+ * 깨진/고아 ** 마커를 줄 단위로 정리.
+ * (이전 구현은 직전 80자에 다른 줄 **까지 합산해 닫는 **을 지워 버리고,
+ * 이어지는 본문 전체가 볼드가 되는 버그가 있었음)
+ */
+export function sanitizeMarkdownBoldMarkers(markdown: string): string {
+  let s = (markdown ?? '').replace(/\r\n/g, '\n')
+  if (!s) return s
+
+  // 빈 볼드 런 (****, ******) 제거
+  s = s.replace(/\*{4,}/g, '')
+  s = s.replace(/\*\*[ \t]*\*\*/g, '')
+
+  s = s
+    .split('\n')
+    .map((line) => {
+      let t = line
+      if (/^\s*\*\*\s*$/.test(t)) return ''
+
+      // 이 줄에서 ** 개수가 홀수면 마지막 고아 마커만 제거
+      const markers = t.match(/\*\*/g)
+      if (markers && markers.length % 2 === 1) {
+        const idx = t.lastIndexOf('**')
+        if (idx >= 0) t = `${t.slice(0, idx)}${t.slice(idx + 2)}`
+      }
+
+      // 헤딩은 CSS로 이미 bold → 전체를 감싼 **는 중복이므로 제거
+      t = t.replace(/^(#{1,6}\s+)\*\*([^*\n]+)\*\*\s*$/, '$1$2')
+      // 헤딩 끝이 공백만인 bold 껍데기 (`### ** **`) 제거
+      t = t.replace(/^(#{1,6}\s+)\*\*\s*\*\*\s*$/, '$1')
+      return t
+    })
+    .join('\n')
+
+  return s
 }
 
 /**
@@ -200,14 +240,7 @@ export function normalizeMarkdownBlockStructure(markdown: string): string {
   // 줄바꿈만으로 이어진 헤딩 앞에 빈 줄 보장
   s = s.replace(/([^\n])\n(#{1,6}\s+)/g, '$1\n\n$2')
 
-  // 고아 bold 마커 정리
-  s = s.replace(/^\s*\*\*\s*$/gm, '')
-  s = s.replace(/\*\*\s*$/gm, (m, offset: number, whole: string) => {
-    const before = whole.slice(Math.max(0, offset - 80), offset)
-    // 열린 ** 없이 끝난 경우만 제거
-    const opens = (before.match(/\*\*/g) || []).length
-    return opens % 2 === 0 ? '' : m
-  })
+  s = sanitizeMarkdownBoldMarkers(s)
 
   // `### Title - a - b - c` 형태를 제목 + 목록으로 복구
   s = s
@@ -247,17 +280,12 @@ export const markdownToHtml = (
     '<code style="padding: 0.1em 0.35em; border-radius: 0.25rem; background: #f1f5f9; font-size: 0.875em; color: #0f172a;">$1</code>'
   )
 
-  // bold+italic (`***x***`)를 먼저 처리해야 ** / * 패턴이 깨지지 않음
-  // 마커 안 줄바꿈은 <br>로 바꿔 이후 줄 단위 파서가 서식을 쪼개지 않게 함
+  // bold/italic — 같은 줄 안에서만 매칭
+  // (여러 줄 [\s\S] 매칭은 닫히지 않은 ** 때문에 본문 전체가 볼드가 되는 사고 원인)
   html = html.replace(/\*\*\*([^*\n]+)\*\*\*/g, '<strong><em>$1</em></strong>')
-  html = html.replace(/\*\*\*([\s\S]+?)\*\*\*/g, (_m, inner: string) => {
-    return `<strong><em>${String(inner).replace(/\n/g, '<br>')}</em></strong>`
-  })
-  // 흔한 인라인 볼드(`**abc**,def`)는 * / 줄바꿈 없이 매칭 → 범위 확장을 막음
   html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*\*([\s\S]+?)\*\*/g, (_m, inner: string) => {
-    return `<strong>${String(inner).replace(/\n/g, '<br>')}</strong>`
-  })
+  // 변환 후 남은 고아 ** 제거
+  html = html.replace(/\*\*/g, '')
   html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
