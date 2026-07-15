@@ -71,6 +71,43 @@ export function slugifyTravelGuideTitle(value: string): string {
     .slice(0, 80)
 }
 
+/** 기존 글과 slug가 겹치면 -2, -3… 을 붙여 고유한 값 반환 */
+export async function ensureUniqueTravelGuideSlug(
+  desired: string,
+  options?: { excludeId?: string }
+): Promise<string> {
+  const base =
+    slugifyTravelGuideTitle(desired) ||
+    desired
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '')
+      .slice(0, 80) ||
+    `article-${Date.now().toString(36)}`
+
+  const db = getDb()
+  const excludeId = options?.excludeId?.trim() || null
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate =
+      attempt === 0 ? base : `${base.slice(0, 70)}-${attempt + 1}`
+
+    let query = db.from('travel_guide_articles').select('id').eq('slug', candidate)
+    if (excludeId) {
+      query = query.neq('id', excludeId)
+    }
+
+    const { data, error } = await query.maybeSingle()
+    if (error) {
+      console.error('[travelGuideArticles] ensureUniqueSlug', error.message)
+      return `${base.slice(0, 60)}-${Date.now().toString(36)}`
+    }
+    if (!data) return candidate
+  }
+
+  return `${base.slice(0, 60)}-${Date.now().toString(36)}`
+}
+
 /** 목록·카드용 요약 — 본문에서 자동 생성 (에디터 토큰·마크다운 기호 제거) */
 export function deriveTravelGuideExcerpt(body: string, maxLength = 160): string {
   const plain = sopPlainDisplayText(body)
@@ -202,9 +239,10 @@ export async function createTravelGuideArticle(
   const db = getDb()
   const isPublished = input.isPublished ?? false
   const now = new Date().toISOString()
+  const slug = await ensureUniqueTravelGuideSlug(input.slug.trim() || input.titleEn)
 
   const payload = {
-    slug: input.slug.trim(),
+    slug,
     title_en: input.titleEn.trim(),
     title_ko: input.titleKo.trim() || input.titleEn.trim(),
     excerpt_en: input.excerptEn?.trim() ?? '',
@@ -224,6 +262,20 @@ export async function createTravelGuideArticle(
   const { data, error } = await db.from('travel_guide_articles').insert(payload).select('*').single()
 
   if (error) {
+    // 동시 저장 레이스: slug 다시 잡고 1회 재시도
+    if (error.code === '23505' || /duplicate key|slug_unique/i.test(error.message)) {
+      const retrySlug = await ensureUniqueTravelGuideSlug(`${slug}-${Date.now().toString(36)}`)
+      const retry = await db
+        .from('travel_guide_articles')
+        .insert({ ...payload, slug: retrySlug })
+        .select('*')
+        .single()
+      if (!retry.error && retry.data) {
+        return retry.data as TravelGuideArticleRow
+      }
+      console.error('[travelGuideArticles] create retry', retry.error?.message ?? error.message)
+      return null
+    }
     console.error('[travelGuideArticles] create', error.message)
     return null
   }
@@ -243,9 +295,12 @@ export async function updateTravelGuideArticle(
   const isPublished = input.isPublished ?? existing.is_published
   const publishedAt =
     isPublished && !existing.published_at ? new Date().toISOString() : existing.published_at
+  const slug = await ensureUniqueTravelGuideSlug(input.slug.trim() || input.titleEn, {
+    excludeId: id,
+  })
 
   const payload = {
-    slug: input.slug.trim(),
+    slug,
     title_en: input.titleEn.trim(),
     title_ko: input.titleKo.trim() || input.titleEn.trim(),
     excerpt_en: input.excerptEn?.trim() ?? '',

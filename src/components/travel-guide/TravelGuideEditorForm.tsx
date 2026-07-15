@@ -40,6 +40,7 @@ export type TravelGuideEditorFormVariant = 'page' | 'modal'
 export type TravelGuideEditorSavedArticle = {
   id: string
   slug: string
+  isPublished: boolean
 }
 
 type Props = {
@@ -295,7 +296,11 @@ export default function TravelGuideEditorForm({
 
       const savedSlug = result.article?.slug ?? slug
       const savedId = result.article?.id ?? editId
-      onSaved?.({ id: savedId, slug: savedSlug })
+      onSaved?.({
+        id: savedId,
+        slug: savedSlug,
+        isPublished: result.article?.is_published ?? form.isPublished,
+      })
     } catch (saveError) {
       console.error('[TravelGuideEditorForm] save failed', saveError)
       setError(t('travelGuideSaveFailed'))

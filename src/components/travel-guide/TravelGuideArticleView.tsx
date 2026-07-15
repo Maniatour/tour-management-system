@@ -135,6 +135,10 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
           articleId={article.id}
           t={t}
           onSaved={(saved) => {
+            if (!saved.isPublished) {
+              router.push(`/${locale}/travel-guide`)
+              return
+            }
             if (saved.slug !== slug) {
               router.replace(`/${locale}/travel-guide/${saved.slug}`)
               return

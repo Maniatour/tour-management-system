@@ -38,7 +38,13 @@ export default function TravelGuideEditorView({ locale, t }: Props) {
             t={t}
             editId={editId}
             variant="page"
-            onSaved={({ slug }) => router.push(`/${locale}/travel-guide/${slug}`)}
+            onSaved={({ slug, isPublished }) => {
+              if (isPublished) {
+                router.push(`/${locale}/travel-guide/${slug}`)
+              } else {
+                router.push(`/${locale}/travel-guide`)
+              }
+            }}
             onDeleted={() => router.push(`/${locale}/travel-guide`)}
           />
         </div>

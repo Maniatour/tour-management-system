@@ -63,7 +63,14 @@ export async function POST(request: NextRequest) {
 
   const article = await createTravelGuideArticle(input, staff.user.id)
   if (!article) {
-    return NextResponse.json({ error: 'Failed to create article' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error:
+          'Failed to create article. The URL slug may already be in use — try a slightly different English title.',
+        code: 'create_failed',
+      },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({ ok: true, article })

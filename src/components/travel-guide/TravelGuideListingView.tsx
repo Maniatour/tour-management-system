@@ -259,7 +259,9 @@ export default function TravelGuideListingView({ locale, t }: Props) {
           t={t}
           onSaved={(article) => {
             void loadArticles(searchQuery)
-            router.push(`/${locale}/travel-guide/${article.slug}`)
+            if (article.isPublished) {
+              router.push(`/${locale}/travel-guide/${article.slug}`)
+            }
           }}
           onDeleted={() => void loadArticles(searchQuery)}
         />
