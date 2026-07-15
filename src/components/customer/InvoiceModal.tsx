@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { X, Send, DollarSign, Package, Plus, Trash2, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
+import { X, Send, DollarSign, Package, Plus, Trash2, Eye, FileText, Search, ChevronDown, Download, Loader2, CreditCard, Copy, ExternalLink } from 'lucide-react'
 import { loadHtml2Pdf } from '@/lib/lazyPdfLibs'
 import { supabase } from '@/lib/supabase'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
@@ -316,6 +316,10 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const [productChoicesMap, setProductChoicesMap] = useState<Record<string, ProductChoice[]>>({})
   const [showProductSelector, setShowProductSelector] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [hostedInvoiceUrl, setHostedInvoiceUrl] = useState<string | null>(null)
+  const [sitePayUrl, setSitePayUrl] = useState<string | null>(null)
+  const [creatingPayLink, setCreatingPayLink] = useState(false)
+  const [includePayLinkInEmail, setIncludePayLinkInEmail] = useState(true)
   const [showAddMenu, setShowAddMenu] = useState<string | null>(null)
   const [itemSearchQueries, setItemSearchQueries] = useState<Record<string, string>>({})
   const [itemDropdownOpen, setItemDropdownOpen] = useState<Record<string, boolean>>({})
@@ -474,6 +478,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         setExchangeRate(toNum(row.exchange_rate) || 1300)
         setNotes(String(row.notes || ''))
         setSavedInvoiceId(String(row.id || ''))
+        setHostedInvoiceUrl(row.hosted_invoice_url ? String(row.hosted_invoice_url) : null)
+        {
+          const token = row.payment_token ? String(row.payment_token) : ''
+          if (token) {
+            const origin =
+              typeof window !== 'undefined'
+                ? window.location.origin
+                : (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+            setSitePayUrl(origin ? `${origin}/${locale}/pay/invoice/${token}` : null)
+          } else {
+            setSitePayUrl(null)
+          }
+        }
 
         const searchQueries: Record<string, string> = {}
         items.forEach((item) => {
@@ -1091,7 +1108,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       .replace(/"/g, '&quot;')
 
   // 인보이스 HTML 생성 (미리보기·PDF 공통 — 스타일은 <body> 내부에 두어 PDF 캡처 시 유지)
-  const generateInvoiceHTML = () => {
+  const generateInvoiceHTML = (payUrl?: string | null) => {
+    const paymentUrl = (payUrl || sitePayUrl || hostedInvoiceUrl || '').trim()
     const invoiceCustomerName = locale === 'ko' ? `${customer.name}님` : customer.name
     const emailForInvoice =
       customer.email != null &&
@@ -1289,6 +1307,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           </tbody>
         </table>
         ${notes ? `<div style="margin-top: 20px; padding: 12px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;"><strong>${locale === 'ko' ? '메모' : 'Notes'}:</strong> ${escapeInvoiceHtml(notes)}</div>` : ''}
+        ${paymentUrl ? `
+        <div style="margin-top: 28px; padding: 20px; background: #0f172a; border-radius: 10px; text-align: center;">
+          <p style="margin: 0 0 14px; color: #f8fafc; font-size: 15px; font-weight: 600;">
+            ${locale === 'ko' ? '아래 버튼으로 안전하게 결제할 수 있습니다.' : 'Pay securely online with the button below.'}
+          </p>
+          <a href="${escapeInvoiceHtml(paymentUrl)}" style="display: inline-block; background: #ea580c; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 15px; padding: 14px 28px; border-radius: 10px;">
+            ${locale === 'ko' ? '지금 결제하기' : 'Pay Now'}
+          </a>
+          <p style="margin: 14px 0 0; color: #94a3b8; font-size: 11px; word-break: break-all;">
+            ${escapeInvoiceHtml(paymentUrl)}
+          </p>
+        </div>
+        ` : ''}
         <div class="invoice-footer">
           ${locale === 'ko' ? '라스베가스 매니아 투어를 선택해 주셔서 감사합니다.' : 'Thanks for choosing Las Vegas Mania Tour'}
         </div>
@@ -1388,51 +1419,10 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const handleSaveInvoice = async () => {
     setSaving(true)
     try {
-      const invoiceData = {
-        customer_id: customer.id,
-        invoice_number: invoiceNumber,
-        invoice_date: invoiceDate,
-        items: invoiceItems,
-        subtotal,
-        tax,
-        tax_percent: applyTax ? taxPercent : 0,
-        apply_tax: applyTax,
-        discount: applyDiscount ? computedDiscountAmount : 0,
-        discount_percent: applyDiscount ? discountPercent : 0,
-        discount_reason: applyDiscount ? discountReason : '',
-        apply_discount: applyDiscount,
-        discount_applies_to_options: true,
-        processing_fee: applyProcessingFee ? (subtotal + tax - computedDiscountAmount) * 0.05 : 0,
-        apply_processing_fee: applyProcessingFee,
-        total,
-        exchange_rate: exchangeRate,
-        notes,
-        status: 'draft'
-      }
-
-      let response
-      if (savedInvoiceId) {
-        // 업데이트
-        response = await supabase
-          .from('invoices')
-          .update(invoiceData as never)
-          .eq('id', savedInvoiceId)
-          .select()
-          .single()
-      } else {
-        // 새로 생성
-        response = await supabase
-          .from('invoices')
-          .insert(invoiceData as never)
-          .select()
-          .single()
-      }
-
-      if (response.error) throw response.error
-
-      const isUpdate = !!savedInvoiceId
-      setSavedInvoiceId(response.data.id)
-      alert(isUpdate
+      const wasSaved = !!savedInvoiceId
+      const id = await persistInvoiceDraft()
+      setSavedInvoiceId(id)
+      alert(wasSaved
         ? (locale === 'ko' ? '인보이스가 다시 저장되었습니다.' : 'Invoice has been updated.')
         : (locale === 'ko' ? '인보이스가 임시 저장되었습니다.' : 'Invoice has been saved as draft.'))
     } catch (error) {
@@ -1440,6 +1430,116 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       alert(locale === 'ko' ? '인보이스 저장 중 오류가 발생했습니다.' : 'An error occurred while saving invoice.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const persistInvoiceDraft = async (statusOverride?: string): Promise<string> => {
+    const invoiceData = {
+      customer_id: customer.id,
+      invoice_number: invoiceNumber,
+      invoice_date: invoiceDate,
+      due_date: dueDate || null,
+      items: invoiceItems,
+      subtotal,
+      tax,
+      tax_percent: applyTax ? taxPercent : 0,
+      apply_tax: applyTax,
+      discount: applyDiscount ? computedDiscountAmount : 0,
+      discount_percent: applyDiscount ? discountPercent : 0,
+      discount_reason: applyDiscount ? discountReason : '',
+      apply_discount: applyDiscount,
+      discount_applies_to_options: true,
+      processing_fee: applyProcessingFee ? (subtotal + tax - computedDiscountAmount) * 0.05 : 0,
+      apply_processing_fee: applyProcessingFee,
+      total,
+      exchange_rate: exchangeRate,
+      notes,
+      status: statusOverride || 'draft',
+    }
+
+    if (savedInvoiceId) {
+      const { data, error } = await supabase
+        .from('invoices')
+        .update(invoiceData as never)
+        .eq('id', savedInvoiceId)
+        .select('id')
+        .single()
+      if (error) throw error
+      return String((data as { id: string }).id)
+    }
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert(invoiceData as never)
+      .select('id')
+      .single()
+    if (error) throw error
+    const id = String((data as { id: string }).id)
+    setSavedInvoiceId(id)
+    return id
+  }
+
+  const createStripePaymentLink = async (invoiceId: string, forceNew = false) => {
+    const response = await fetchApiWithAuth(`/api/invoices/${invoiceId}/create-payment-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locale, forceNew }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || (locale === 'ko' ? '결제 링크 생성 실패' : 'Failed to create payment link'))
+    }
+    setHostedInvoiceUrl(data.hostedInvoiceUrl || null)
+    setSitePayUrl(data.sitePayUrl || null)
+    return {
+      hostedInvoiceUrl: String(data.hostedInvoiceUrl || ''),
+      sitePayUrl: String(data.sitePayUrl || ''),
+    }
+  }
+
+  const handleCreatePaymentLink = async (forceNew = false) => {
+    if (!hasInvoiceValidLines(invoiceItems)) {
+      alert(locale === 'ko' ? '최소 하나의 상품 또는 통합 옵션을 선택해주세요.' : 'Please select at least one product or integrated option.')
+      return
+    }
+    if (!customer.email) {
+      alert(locale === 'ko' ? '고객 이메일이 없습니다.' : 'Customer email is missing.')
+      return
+    }
+    if (total <= 0) {
+      alert(locale === 'ko' ? '결제 금액이 0보다 커야 합니다.' : 'Invoice total must be greater than zero.')
+      return
+    }
+
+    setCreatingPayLink(true)
+    try {
+      const invoiceId = await persistInvoiceDraft()
+      const links = await createStripePaymentLink(invoiceId, forceNew)
+      alert(
+        locale === 'ko'
+          ? `결제 링크가 준비되었습니다.\n${links.sitePayUrl}`
+          : `Payment link ready.\n${links.sitePayUrl}`
+      )
+    } catch (error) {
+      console.error('결제 링크 생성 오류:', error)
+      alert(
+        locale === 'ko'
+          ? `결제 링크 생성 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+          : `Failed to create payment link: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    } finally {
+      setCreatingPayLink(false)
+    }
+  }
+
+  const copyPayUrl = async () => {
+    const url = sitePayUrl || hostedInvoiceUrl
+    if (!url) return
+    try {
+      await navigator.clipboard.writeText(url)
+      alert(locale === 'ko' ? '결제 링크가 복사되었습니다.' : 'Payment link copied.')
+    } catch {
+      alert(url)
     }
   }
 
@@ -1460,7 +1560,26 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
     setSending(true)
     try {
-      const invoiceHtml = generateInvoiceHTML()
+      const invoiceId = await persistInvoiceDraft('sent')
+
+      let payUrlForEmail: string | null = sitePayUrl || hostedInvoiceUrl
+      if (includePayLinkInEmail) {
+        try {
+          const links = await createStripePaymentLink(invoiceId, false)
+          payUrlForEmail = links.sitePayUrl || links.hostedInvoiceUrl
+        } catch (payErr) {
+          console.error('결제 링크 생성 실패 (이메일만 발송 계속):', payErr)
+          const continueSend = window.confirm(
+            locale === 'ko'
+              ? `결제 링크 생성에 실패했습니다.\n${payErr instanceof Error ? payErr.message : ''}\n결제 버튼 없이 이메일을 보낼까요?`
+              : `Failed to create payment link.\n${payErr instanceof Error ? payErr.message : ''}\nSend email without Pay Now button?`
+          )
+          if (!continueSend) return
+          payUrlForEmail = null
+        }
+      }
+
+      const invoiceHtml = generateInvoiceHTML(includePayLinkInEmail ? payUrlForEmail : null)
 
       const response = await fetchApiWithAuth('/api/send-invoice', {
         method: 'POST',
@@ -1481,51 +1600,16 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       const data = await response.json()
 
       if (response.ok) {
-        // 이메일 발송 성공 시 인보이스 저장
-        const invoiceData = {
-          customer_id: customer.id,
-          invoice_number: invoiceNumber,
-          invoice_date: invoiceDate,
-          due_date: dueDate || null,
-          items: invoiceItems,
-          subtotal,
-          tax,
-          tax_percent: applyTax ? taxPercent : 0,
-          apply_tax: applyTax,
-          discount: applyDiscount ? computedDiscountAmount : 0,
-          discount_percent: applyDiscount ? discountPercent : 0,
-          discount_reason: applyDiscount ? discountReason : '',
-          apply_discount: applyDiscount,
-          discount_applies_to_options: true,
-          processing_fee: applyProcessingFee ? (subtotal + tax - computedDiscountAmount) * 0.05 : 0,
-          apply_processing_fee: applyProcessingFee,
-          total,
-          exchange_rate: exchangeRate,
-          notes,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          email_id: data.emailId
-        }
+        await supabase
+          .from('invoices')
+          .update({
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            email_id: data.emailId,
+          } as never)
+          .eq('id', invoiceId)
 
-        if (savedInvoiceId) {
-          // 업데이트
-          await supabase
-            .from('invoices')
-            .update(invoiceData as never)
-            .eq('id', savedInvoiceId)
-        } else {
-          // 새로 생성
-          const { data: savedData, error: saveError } = await supabase
-            .from('invoices')
-            .insert(invoiceData as never)
-            .select()
-            .single()
-          
-          if (!saveError && savedData) {
-            setSavedInvoiceId(savedData.id)
-          }
-        }
-
+        setSavedInvoiceId(invoiceId)
         alert(locale === 'ko' ? '인보이스가 발송되었습니다.' : 'Invoice has been sent.')
         onClose()
       } else {
@@ -2382,15 +2466,51 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         </div>
 
         {/* 푸터 */}
-        <div className="flex items-center justify-between p-6 border-t">
-          <div className="flex items-center space-x-2">
-            {savedInvoiceId && (
-              <span className="text-sm text-green-600">
-                {locale === 'ko' ? '임시 저장됨 (다시 저장 가능)' : 'Saved as draft (can save again)'}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center space-x-3">
+        <div className="flex flex-col gap-3 p-6 border-t">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-1">
+              {savedInvoiceId && (
+                <span className="text-sm text-green-600">
+                  {locale === 'ko' ? '임시 저장됨 (다시 저장 가능)' : 'Saved as draft (can save again)'}
+                </span>
+              )}
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includePayLinkInEmail}
+                  onChange={(e) => setIncludePayLinkInEmail(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                {locale === 'ko'
+                  ? '이메일에 Stripe 결제 버튼 포함'
+                  : 'Include Stripe Pay Now button in email'}
+              </label>
+              {(sitePayUrl || hostedInvoiceUrl) && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                  <span className="truncate max-w-[280px] sm:max-w-md">
+                    {sitePayUrl || hostedInvoiceUrl}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyPayUrl}
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {locale === 'ko' ? '복사' : 'Copy'}
+                  </button>
+                  <a
+                    href={hostedInvoiceUrl || sitePayUrl || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {locale === 'ko' ? '열기' : 'Open'}
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 justify-end">
             <button
               onClick={() => setShowPreview(true)}
               disabled={!hasInvoiceValidLines(invoiceItems)}
@@ -2398,6 +2518,21 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             >
               <Eye className="h-4 w-4" />
               <span>{locale === 'ko' ? '미리보기' : 'Preview'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCreatePaymentLink(!!sitePayUrl)}
+              disabled={creatingPayLink || sending || !hasInvoiceValidLines(invoiceItems)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              <CreditCard className="h-4 w-4" />
+              <span>
+                {creatingPayLink
+                  ? (locale === 'ko' ? '링크 생성 중...' : 'Creating link...')
+                  : sitePayUrl
+                    ? (locale === 'ko' ? '결제 링크 재생성' : 'Regenerate Pay Link')
+                    : (locale === 'ko' ? '결제 링크 생성' : 'Create Pay Link')}
+              </span>
             </button>
             <button
               onClick={onClose}
@@ -2418,12 +2553,13 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </button>
             <button
               onClick={handleSendEmail}
-              disabled={sending || !hasInvoiceValidLines(invoiceItems)}
+              disabled={sending || creatingPayLink || !hasInvoiceValidLines(invoiceItems)}
               className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send className="h-4 w-4" />
               <span>{sending ? (locale === 'ko' ? '발송 중...' : 'Sending...') : (locale === 'ko' ? '이메일 발송' : 'Send Email')}</span>
             </button>
+            </div>
           </div>
         </div>
       </div>

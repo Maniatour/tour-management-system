@@ -6,12 +6,14 @@ import {
   finalizeCustomerBookingPaymentByIntent,
   getStripeClient,
 } from '@/lib/customerBookingCheckout'
+import { markInvoicePaidFromStripeWebhook } from '@/lib/payableInvoice'
 
 export const runtime = 'nodejs'
 
 /**
  * POST /api/webhooks/stripe
- * Stripe payment_intent.succeeded → 예약 확정 (브라우저 끊김 복구용, idempotent)
+ * - payment_intent.succeeded → 고객 웹 예약 확정 (idempotent)
+ * - invoice.paid → 스태프 발행 인보이스 paid 처리 (idempotent)
  */
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -50,6 +52,15 @@ export async function POST(request: NextRequest) {
           alreadyFinalized: result.alreadyFinalized,
         })
       }
+    }
+
+    if (event.type === 'invoice.paid') {
+      const stripeInvoice = event.data.object as Stripe.Invoice
+      const result = await markInvoicePaidFromStripeWebhook(supabaseAdmin, stripeInvoice)
+      console.log('[webhooks/stripe] invoice.paid', {
+        stripeInvoiceId: stripeInvoice.id,
+        ...result,
+      })
     }
 
     return NextResponse.json({ received: true })

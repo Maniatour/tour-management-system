@@ -28,15 +28,20 @@ export default function CustomerSiteLogo({
   variant = 'header',
   compact = false,
 }: CustomerSiteLogoProps) {
-  const { logoUrl, hasCustomLogo } = useCustomerSiteBranding()
+  const { logoUrl } = useCustomerSiteBranding()
   const [imageFailed, setImageFailed] = useState(false)
   const [logoShape, setLogoShape] = useState<'wide' | 'square' | null>(null)
 
   const wordmark = formatBrandWordmark(brandName)
-  const useFallback = !hasCustomLogo || imageFailed
   const iconUrl = imageFailed ? FALLBACK_SITE_LOGO_URL : logoUrl
-  const showWordmark = compact || useFallback || logoShape !== 'wide'
-  const imageClassName = compact || showWordmark ? 'kv-logo-favicon' : 'kv-logo-brand'
+  /**
+   * company-logo.png 등 가로형 브랜드 로고는 이미지만 표시.
+   * 정사각/아이콘형만 워드마크(MANIATOUR)를 옆에 붙인다.
+   * compact(모바일)는 파비콘 + 워드마크 유지.
+   */
+  const showWordmark = compact || logoShape === 'square'
+  const imageClassName =
+    compact || logoShape === 'square' ? 'kv-logo-favicon' : 'kv-logo-brand'
   const wordmarkClassName =
     variant === 'footer' || variant === 'dark'
       ? 'kv-logo-wordmark kv-logo-wordmark--light'
@@ -69,7 +74,7 @@ export default function CustomerSiteLogo({
           setImageFailed(true)
           setLogoShape('square')
         }}
-        onLoad={hasCustomLogo && !imageFailed ? handleImageLoad : undefined}
+        onLoad={handleImageLoad}
       />
       {showWordmark ? <span className={wordmarkClassName}>{wordmark}</span> : null}
     </Link>

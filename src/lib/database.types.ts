@@ -3127,17 +3127,26 @@ export type Database = {
           customer_id: string | null
           discount: number
           discount_percent: number | null
+          discount_reason: string | null
+          discount_applies_to_options: boolean | null
+          due_date: string | null
           email_id: string | null
           exchange_rate: number | null
+          hosted_invoice_url: string | null
           id: string
           invoice_date: string
           invoice_number: string
           items: Json
           notes: string | null
+          paid_at: string | null
+          payment_token: string
           processing_fee: number
           sent_at: string | null
           sent_by: string | null
           status: string | null
+          stripe_customer_id: string | null
+          stripe_invoice_id: string | null
+          stripe_invoice_status: string | null
           subtotal: number
           tax: number
           tax_percent: number | null
@@ -3153,17 +3162,26 @@ export type Database = {
           customer_id?: string | null
           discount?: number
           discount_percent?: number | null
+          discount_reason?: string | null
+          discount_applies_to_options?: boolean | null
+          due_date?: string | null
           email_id?: string | null
           exchange_rate?: number | null
+          hosted_invoice_url?: string | null
           id?: string
           invoice_date: string
           invoice_number: string
           items?: Json
           notes?: string | null
+          paid_at?: string | null
+          payment_token?: string
           processing_fee?: number
           sent_at?: string | null
           sent_by?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_status?: string | null
           subtotal?: number
           tax?: number
           tax_percent?: number | null
@@ -3179,17 +3197,26 @@ export type Database = {
           customer_id?: string | null
           discount?: number
           discount_percent?: number | null
+          discount_reason?: string | null
+          discount_applies_to_options?: boolean | null
+          due_date?: string | null
           email_id?: string | null
           exchange_rate?: number | null
+          hosted_invoice_url?: string | null
           id?: string
           invoice_date?: string
           invoice_number?: string
           items?: Json
           notes?: string | null
+          paid_at?: string | null
+          payment_token?: string
           processing_fee?: number
           sent_at?: string | null
           sent_by?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_invoice_id?: string | null
+          stripe_invoice_status?: string | null
           subtotal?: number
           tax?: number
           tax_percent?: number | null
