@@ -116,6 +116,17 @@ interface BiweeklyTeamMember {
   is_active: boolean
 }
 
+function isGuideOrDriverPosition(position: string | null | undefined): boolean {
+  const p = position?.toLowerCase() || ''
+  return (
+    p === '가이드' ||
+    p === 'guide' ||
+    p === 'tour guide' ||
+    p === '드라이버' ||
+    p === 'driver'
+  )
+}
+
 function teamMemberMatchesSearch(member: BiweeklyTeamMember, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
@@ -1334,12 +1345,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     if (printWindow) {
       // 직원 포지션 확인
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
-      const position = selectedMember?.position?.toLowerCase() || ''
-      const isGuideOrDriver = position === '가이드' || 
-                              position === 'guide' || 
-                              position === 'tour guide' ||
-                              position === '드라이버' || 
-                              position === 'driver'
+      const isGuideOrDriver = isGuideOrDriverPosition(selectedMember?.position)
       const pr = getPrintLabels(selectedMember)
       const employeePhone =
         (selectedMember?.phone && String(selectedMember.phone).trim()) ? String(selectedMember.phone).trim() : '—'
@@ -1576,7 +1582,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             </table>
           ` : ''}
           
-          ${Object.keys(periodMealCounts).length > 0 ? `
+          ${!isGuideOrDriver && Object.keys(periodMealCounts).length > 0 ? `
             <div class="section-title">${pr.periodOfficeMeals}</div>
             <table class="table">
               <thead><tr><th>Name</th><th>Meals</th></tr></thead>
@@ -1775,6 +1781,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       // 프린트용 HTML 생성 (handlePrint 함수의 내용 재사용)
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const employeeName = selectedMember?.display_name || selectedMember?.name_ko || ''
+      const isGuideOrDriver = isGuideOrDriverPosition(selectedMember?.position)
       
       // Personal Car 소계 계산
       const personalCarTotal = tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
@@ -2009,7 +2016,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             </table>
           ` : ''}
           
-          ${Object.keys(periodMealCounts).length > 0 ? `
+          ${!isGuideOrDriver && Object.keys(periodMealCounts).length > 0 ? `
             <div class="section-title">${pr.periodOfficeMeals}</div>
             <table class="table">
               <thead><tr><th>Name</th><th>Meals</th></tr></thead>
@@ -2562,7 +2569,10 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               <p className="text-xs text-gray-500 leading-relaxed">
                 {OFFICE_MEAL_POLICY_START} 이전 출근일은 기존처럼「8시간 초과 시 30분」자동 차감입니다. 해당일 이후는 자동 차감 없이, 출퇴근 관리 화면의「사무실 식사」에서 체크한 날만 당일 첫 세션에서 30분 차감합니다.
               </p>
-              {Object.keys(periodMealCounts).length > 0 && (
+              {Object.keys(periodMealCounts).length > 0 &&
+                !isGuideOrDriverPosition(
+                  teamMembers.find((m) => m.email === selectedEmployee)?.position
+                ) && (
                 <div className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs">
                   <button
                     type="button"
