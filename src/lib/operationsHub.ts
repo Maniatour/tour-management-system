@@ -25,6 +25,13 @@ export type HubEntry = {
   sopAnchorId?: string
 }
 
+/** structured = 구조 보기 기본, plain = 원문 보기 기본 */
+export type KnowledgeBodyLayout = 'structured' | 'plain'
+
+export function normalizeBodyLayout(raw: unknown): KnowledgeBodyLayout {
+  return raw === 'plain' ? 'plain' : 'structured'
+}
+
 export type KnowledgeArticleRow = {
   id: string
   slug: string
@@ -36,6 +43,7 @@ export type KnowledgeArticleRow = {
   content_type: OperationsContentType
   target_roles: string[]
   body_structure: unknown
+  body_layout: KnowledgeBodyLayout
   sort_order: number
   is_published: boolean
   published_at: string | null

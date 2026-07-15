@@ -103,10 +103,13 @@ export function removeSopSection(
   doc: SopDocument,
   sectionId: string
 ): SopDocument | null {
-  if (doc.sections.length <= 1) return null
+  const remaining = doc.sections.filter((s) => s.id !== sectionId)
+  if (remaining.length === doc.sections.length) return null
+  // 문서 형태상 섹션 배열은 비울 수 없음 → 마지막 하나면 빈 섹션으로 교체
+  const sections = remaining.length > 0 ? remaining : [createEmptySopSection(0)]
   return prefillSortOrders({
     ...doc,
-    sections: doc.sections.filter((s) => s.id !== sectionId),
+    sections,
   })
 }
 

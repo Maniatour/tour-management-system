@@ -164,13 +164,21 @@ export default function SopSectionToolbar({
               <LayoutList className="h-3.5 w-3.5" />
             </Button>
           ) : null}
-          {onDeleteSection && sectionCount > 1 ? (
+          {onDeleteSection ? (
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className={cn(iconBtn, 'text-red-700 hover:bg-red-50')}
-              title={isEn ? 'Delete' : '삭제'}
+              title={
+                sectionCount <= 1
+                  ? isEn
+                    ? 'Clear section'
+                    : '섹션 비우기'
+                  : isEn
+                    ? 'Delete section'
+                    : '섹션 삭제'
+              }
               onClick={run(() => onDeleteSection(sectionId))}
             >
               <Trash2 className="h-3.5 w-3.5" />

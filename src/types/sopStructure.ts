@@ -96,6 +96,9 @@ export type SopDocument = {
   title_ko: string
   title_en: string
   sections: SopSection[]
+  /** 통짜 붙여넣기/업로드 원문 — 구조화와 별도로 보관·원문 보기에 사용 */
+  source_raw_ko?: string
+  source_raw_en?: string
 }
 
 export type SopEditLocale = 'ko' | 'en'
@@ -333,6 +336,8 @@ export function prefillSortOrders(doc: SopDocument): SopDocument {
   return {
     title_ko: doc.title_ko ?? '',
     title_en: doc.title_en ?? '',
+    ...(doc.source_raw_ko?.trim() ? { source_raw_ko: doc.source_raw_ko } : {}),
+    ...(doc.source_raw_en?.trim() ? { source_raw_en: doc.source_raw_en } : {}),
     sections: doc.sections.map((s, i) => ({
       ...s,
       title_ko: s.title_ko ?? '',
@@ -579,6 +584,12 @@ export function parseSopDocumentJson(raw: unknown): SopDocument | null {
     title_ko: typeof o.title_ko === 'string' ? o.title_ko : '',
     title_en: typeof o.title_en === 'string' ? o.title_en : '',
     sections,
+    ...(typeof o.source_raw_ko === 'string' && o.source_raw_ko.trim()
+      ? { source_raw_ko: o.source_raw_ko }
+      : {}),
+    ...(typeof o.source_raw_en === 'string' && o.source_raw_en.trim()
+      ? { source_raw_en: o.source_raw_en }
+      : {}),
   })
 }
 
@@ -879,8 +890,344 @@ function parseIndentedOutlinePlainText(cleaned: string, fill: SopPlainTextFill):
   return { title_ko: '', title_en: '', sections: sectionsOut }
 }
 
+function looksKoreanText(s: string): boolean {
+  return /[\uAC00-\uD7A3]/.test(s)
+}
+
+function pairBilingualTitles(a: string, b: string): { title_ko: string; title_en: string } {
+  const aKo = looksKoreanText(a)
+  const bKo = looksKoreanText(b)
+  if (aKo && !bKo) return { title_ko: a, title_en: b }
+  if (!aKo && bKo) return { title_ko: b, title_en: a }
+  if (aKo && bKo) return { title_ko: a, title_en: b }
+  return { title_ko: a, title_en: b }
+}
+
+function assignTitleByFillOrLang(
+  text: string,
+  fill: SopPlainTextFill
+): { title_ko: string; title_en: string } {
+  // Prefer script detection so EN section titles stay in title_en even when fill='ko'.
+  if (looksKoreanText(text)) {
+    return fill === 'en' ? { title_ko: '', title_en: text } : { title_ko: text, title_en: '' }
+  }
+  return fill === 'ko' ? { title_ko: '', title_en: text } : { title_ko: '', title_en: text }
+}
+
+function isMdSeparatorLine(line: string): boolean {
+  return /^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())
+}
+
+function isMdBulletOrNumberedLine(line: string): boolean {
+  return /^\s*(?:[-*+]|\d+[.)])\s+/.test(line) || /^\s*[-*+]\s*$/.test(line)
+}
+
+function stripMdBulletPrefix(line: string): string {
+  return line.replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '').trim()
+}
+
+function localeContentFields(
+  content: string,
+  fill: SopPlainTextFill
+): { content_ko: string; content_en: string } {
+  if (!content) return { content_ko: '', content_en: '' }
+  if (fill === 'ko') return { content_ko: content, content_en: '' }
+  if (fill === 'en') return { content_ko: '', content_en: content }
+  if (looksKoreanText(content)) return { content_ko: content, content_en: '' }
+  return { content_ko: '', content_en: content }
+}
+
+function bodyBlockToCategoryFields(
+  body: string,
+  fill: SopPlainTextFill
+): Pick<SopCategory, 'content_ko' | 'content_en' | 'checklist_items'> {
+  const lines = body.replace(/\r\n/g, '\n').split('\n')
+  const contentLines: string[] = []
+  const bulletTexts: string[] = []
+  let inTable = false
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, '')
+    if (!line.trim()) {
+      if (contentLines.length > 0 && contentLines[contentLines.length - 1] !== '') {
+        contentLines.push('')
+      }
+      inTable = false
+      continue
+    }
+    if (isMdSeparatorLine(line)) continue
+    if (line.trim().startsWith('|')) {
+      inTable = true
+      contentLines.push(line.trim())
+      continue
+    }
+    if (isMdBulletOrNumberedLine(line) && !inTable) {
+      bulletTexts.push(stripMdBulletPrefix(line))
+      continue
+    }
+    inTable = false
+    contentLines.push(line.trimEnd())
+  }
+
+  while (contentLines.length > 0 && contentLines[contentLines.length - 1] === '') {
+    contentLines.pop()
+  }
+
+  const content = contentLines.join('\n').trim()
+  const checklist_items =
+    bulletTexts.length > 0
+      ? bulletTexts.map((t, idx) => ({
+          id: newSopId(),
+          title_ko: fill === 'en' ? '' : t,
+          title_en: fill === 'ko' ? '' : t,
+          sort_order: idx,
+          parent_id: null as string | null,
+          row_display: 'text' as const,
+        }))
+      : undefined
+
+  return {
+    ...localeContentFields(content, fill),
+    ...(checklist_items ? { checklist_items } : {}),
+  }
+}
+
+function makeBodyCategory(
+  fields: Pick<SopCategory, 'content_ko' | 'content_en' | 'checklist_items'>,
+  fill: SopPlainTextFill,
+  sortOrder: number,
+  titles?: { title_ko: string; title_en: string }
+): SopCategory {
+  return {
+    id: newSopId(),
+    title_ko: titles?.title_ko || (fill === 'en' ? '' : '내용'),
+    title_en: titles?.title_en || (fill === 'ko' ? '' : 'Body'),
+    sort_order: sortOrder,
+    content_ko: fields.content_ko,
+    content_en: fields.content_en,
+    ...(fields.checklist_items ? { checklist_items: fields.checklist_items } : {}),
+  }
+}
+
+type MdOutlineToken =
+  | { kind: 'heading'; level: number; text: string }
+  | { kind: 'line'; text: string }
+
+function tokenizeMarkdownOutline(cleaned: string): MdOutlineToken[] {
+  const out: MdOutlineToken[] = []
+  for (const raw of cleaned.split('\n')) {
+    const heading = raw.match(/^(#{1,6})\s+(.+?)\s*$/)
+    if (heading) {
+      out.push({ kind: 'heading', level: heading[1].length, text: heading[2].trim() })
+      continue
+    }
+    out.push({ kind: 'line', text: raw })
+  }
+  return out
+}
+
+/**
+ * `#` / `##` / `###` 마크다운 개요(OTA 시장조사 보고서 템플릿 등) → 섹션·카테고리·줄 구조.
+ * 연속된 같은 레벨 제목이 한/영이면 한 쌍으로 병합합니다.
+ */
+export function parseMarkdownReportToDocument(raw: string, fill: SopPlainTextFill = 'ko'): SopDocument {
+  const cleaned = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/^--\s*\d+\s+of\s+\d+\s*--\s*$/gim, '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+
+  if (!cleaned) return emptySopDocument()
+
+  const tokens = tokenizeMarkdownOutline(cleaned)
+  let title_ko = ''
+  let title_en = ''
+  const sections: SopSection[] = []
+  let i = 0
+
+  const skipBlankLines = () => {
+    while (i < tokens.length && tokens[i].kind === 'line' && !tokens[i].text.trim()) {
+      i += 1
+    }
+  }
+
+  const takePairedHeading = (level: number): { title_ko: string; title_en: string } | null => {
+    const t = tokens[i]
+    if (!t || t.kind !== 'heading' || t.level !== level) return null
+    const first = t.text
+    i += 1
+    const saved = i
+    skipBlankLines()
+    const next = tokens[i]
+    if (
+      next &&
+      next.kind === 'heading' &&
+      next.level === level &&
+      looksKoreanText(first) !== looksKoreanText(next.text)
+    ) {
+      i += 1
+      return pairBilingualTitles(first, next.text)
+    }
+    i = saved
+    return assignTitleByFillOrLang(first, fill)
+  }
+
+  /** Collect lines until a heading at or above `stopLevel`. Deeper headings stay as markdown. */
+  const collectBodyUntil = (stopLevel: number): string => {
+    const parts: string[] = []
+    while (i < tokens.length) {
+      const t = tokens[i]
+      if (t.kind === 'heading' && t.level <= stopLevel) break
+      if (t.kind === 'heading') {
+        parts.push(`${'#'.repeat(t.level)} ${t.text}`)
+        i += 1
+        continue
+      }
+      parts.push(t.text)
+      i += 1
+    }
+    return parts.join('\n').trim()
+  }
+
+  const pushCategoriesFromSectionBody = (categories: SopCategory[]) => {
+    while (i < tokens.length) {
+      skipBlankLines()
+      if (i >= tokens.length) break
+      const cur = tokens[i]
+      if (cur.kind === 'heading' && cur.level <= 2) break
+
+      if (cur.kind === 'heading' && cur.level === 3) {
+        const catTitles = takePairedHeading(3)
+        if (!catTitles) {
+          i += 1
+          continue
+        }
+        const fields = bodyBlockToCategoryFields(collectBodyUntil(3), fill)
+        categories.push(
+          makeBodyCategory(fields, fill, categories.length, {
+            title_ko: catTitles.title_ko || (fill === 'en' ? '' : '—'),
+            title_en: catTitles.title_en || (fill === 'ko' ? '' : '—'),
+          })
+        )
+        continue
+      }
+
+      if (cur.kind === 'heading') {
+        // ####+ → fold into a Body category
+        const deep = `${'#'.repeat(cur.level)} ${cur.text}`
+        i += 1
+        const rest = collectBodyUntil(3)
+        const body = rest ? `${deep}\n${rest}` : deep
+        categories.push(makeBodyCategory(bodyBlockToCategoryFields(body, fill), fill, categories.length))
+        continue
+      }
+
+      const start = i
+      const body = collectBodyUntil(3)
+      if (body) {
+        categories.push(makeBodyCategory(bodyBlockToCategoryFields(body, fill), fill, categories.length))
+      } else if (i === start) {
+        // Could not advance (should not happen for non-heading); avoid infinite loop
+        i += 1
+      }
+      // If body was only whitespace/separators, i already advanced to the next heading — do not skip it
+    }
+  }
+
+  // Leading H1 → document title (pair EN/KO across blank lines)
+  skipBlankLines()
+  if (tokens[i]?.kind === 'heading' && (tokens[i] as { level: number }).level === 1) {
+    const paired = takePairedHeading(1)
+    if (paired) {
+      title_ko = paired.title_ko
+      title_en = paired.title_en
+    }
+  }
+
+  {
+    const preamble = collectBodyUntil(2)
+    if (preamble) {
+      sections.push({
+        id: newSopId(),
+        title_ko: fill === 'en' ? '' : '서두',
+        title_en: fill === 'ko' ? '' : 'Preamble',
+        sort_order: sections.length,
+        categories: [makeBodyCategory(bodyBlockToCategoryFields(preamble, fill), fill, 0)],
+      })
+    }
+  }
+
+  while (i < tokens.length) {
+    skipBlankLines()
+    if (i >= tokens.length) break
+    const t = tokens[i]
+
+    if (t.kind !== 'heading') {
+      const start = i
+      const orphan = collectBodyUntil(2)
+      if (orphan) {
+        const fields = bodyBlockToCategoryFields(orphan, fill)
+        const last = sections[sections.length - 1]
+        if (last) {
+          last.categories.push(makeBodyCategory(fields, fill, last.categories.length))
+        } else {
+          sections.push({
+            id: newSopId(),
+            title_ko: fill === 'en' ? '' : '문서',
+            title_en: fill === 'ko' ? '' : 'Document',
+            sort_order: 0,
+            categories: [makeBodyCategory(fields, fill, 0)],
+          })
+        }
+      } else if (i === start) {
+        i += 1
+      }
+      continue
+    }
+
+    // # / ## → section; ### without parent → section-like category group
+    const headingLevel = t.level === 1 || t.level === 2 ? t.level : t.level === 3 ? 3 : 2
+    const paired = takePairedHeading(t.level)
+    if (!paired) {
+      i += 1
+      continue
+    }
+
+    const categories: SopCategory[] = []
+    if (headingLevel === 3) {
+      // Standalone ### used as section title
+      const fields = bodyBlockToCategoryFields(collectBodyUntil(2), fill)
+      categories.push(
+        makeBodyCategory(fields, fill, 0, {
+          title_ko: fill === 'en' ? '' : '내용',
+          title_en: fill === 'ko' ? '' : 'Body',
+        })
+      )
+    } else {
+      pushCategoriesFromSectionBody(categories)
+    }
+
+    if (categories.length === 0) {
+      categories.push(makeBodyCategory({ content_ko: '', content_en: '' }, fill, 0))
+    }
+
+    sections.push({
+      id: newSopId(),
+      title_ko: paired.title_ko,
+      title_en: paired.title_en,
+      sort_order: sections.length,
+      categories,
+    })
+  }
+
+  if (sections.length === 0) return emptySopDocument()
+
+  return prefillSortOrders({ title_ko, title_en, sections })
+}
+
 /**
  * `섹션 N:` / `Section N:` 및 `● 카테고리` 규칙으로 구조 변환.
+ * 마크다운 `#`/`##`/`###` 보고서도 동일하게 섹션·카테고리·줄로 변환합니다.
  * `fill`: 한글 열만 채우거나(`ko`) 영문 열만 채웁니다(`en`). 두 열을 합치려면 `mergeParallelKoEnPasteDocs` 사용.
  */
 export function parseSopPlainTextToDocument(raw: string, fill: SopPlainTextFill = 'ko'): SopDocument {
@@ -891,6 +1238,11 @@ export function parseSopPlainTextToDocument(raw: string, fill: SopPlainTextFill 
     .trim()
 
   if (!cleaned) return emptySopDocument()
+
+  const hasMarkdownHeadings = /(?:^|\n)#{1,3}\s+\S/.test(cleaned)
+  if (hasMarkdownHeadings) {
+    return parseMarkdownReportToDocument(cleaned, fill)
+  }
 
   const hasSectionMarkers = /(?:^|\n)(?:섹션\s*\d+\s*:|Section\s+\d+\s*:)/im.test(cleaned)
 

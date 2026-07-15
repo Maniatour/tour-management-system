@@ -775,9 +775,13 @@ export default function SopDocumentInlinePreviewEditor({
                     : '영역을 삭제할까요?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {isEn
-                ? `“${deleteLabel}” will be removed. Changes auto-save shortly.`
-                : `「${deleteLabel}」이(가) 삭제됩니다. 잠시 후 자동 저장됩니다.`}
+              {deleteTarget?.scope === 'section' && doc.sections.length <= 1
+                ? isEn
+                  ? `“${deleteLabel}” is the only section — it will be cleared to an empty section. Changes auto-save shortly.`
+                  : `「${deleteLabel}」은(는) 유일한 섹션이라 빈 섹션으로 초기화됩니다. 잠시 후 자동 저장됩니다.`
+                : isEn
+                  ? `“${deleteLabel}” will be removed. Changes auto-save shortly.`
+                  : `「${deleteLabel}」이(가) 삭제됩니다. 잠시 후 자동 저장됩니다.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

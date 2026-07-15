@@ -481,6 +481,8 @@
     "travelGuideWriteFirst": "Write the first article",
     "travelGuideEditArticle": "Edit article",
     "travelGuideEmpty": "No articles published yet.",
+    "travelGuideEmptyStaff": "No articles yet.",
+    "travelGuideDraftBadge": "Draft",
     "travelGuideNotFoundTitle": "Article not found",
     "travelGuideNotFoundBody": "This article may have been removed or is not published yet.",
     "travelGuideStaffOnly": "Only staff accounts can write travel guide articles.",

@@ -1,4 +1,9 @@
-import { articleBodyToDocument, type KnowledgeArticleRow } from '@/lib/operationsHub'
+import {
+  articleBodyToDocument,
+  normalizeBodyLayout,
+  type KnowledgeArticleRow,
+  type KnowledgeBodyLayout,
+} from '@/lib/operationsHub'
 import {
   emptySopDocument,
   prefillSortOrders,
@@ -6,7 +11,7 @@ import {
 } from '@/types/sopStructure'
 
 export const KNOWLEDGE_ARTICLE_SELECT =
-  'id, slug, title_ko, title_en, summary_ko, summary_en, hub_category, content_type, target_roles, body_structure, sort_order, is_published, published_at, updated_at'
+  'id, slug, title_ko, title_en, summary_ko, summary_en, hub_category, content_type, target_roles, body_structure, body_layout, sort_order, is_published, published_at, updated_at'
 
 export type KnowledgeArticleDraftForm = {
   id: string | null
@@ -20,6 +25,7 @@ export type KnowledgeArticleDraftForm = {
   target_roles: string[]
   sort_order: number
   is_published: boolean
+  body_layout: KnowledgeBodyLayout
   bodyDoc: SopDocument
 }
 
@@ -36,6 +42,7 @@ export function emptyKnowledgeArticleForm(): KnowledgeArticleDraftForm {
     target_roles: [],
     sort_order: 0,
     is_published: false,
+    body_layout: 'structured',
     bodyDoc: prefillSortOrders(emptySopDocument()),
   }
 }
@@ -53,6 +60,15 @@ export function knowledgeArticleRowToForm(row: KnowledgeArticleRow): KnowledgeAr
     target_roles: row.target_roles ?? [],
     sort_order: row.sort_order,
     is_published: row.is_published,
+    body_layout: normalizeBodyLayout(row.body_layout),
     bodyDoc: articleBodyToDocument(row) ?? prefillSortOrders(emptySopDocument()),
+  }
+}
+
+/** API 행에 body_layout 누락 시 structured 로 보정 */
+export function coerceKnowledgeArticleRow(row: KnowledgeArticleRow): KnowledgeArticleRow {
+  return {
+    ...row,
+    body_layout: normalizeBodyLayout(row.body_layout),
   }
 }

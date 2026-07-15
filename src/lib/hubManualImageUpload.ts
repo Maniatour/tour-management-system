@@ -125,6 +125,12 @@ function mapDocStrings(doc: SopDocument, map: (s: string) => Promise<string>): P
       title_ko: await map(doc.title_ko || ''),
       title_en: await map(doc.title_en || ''),
       sections,
+      ...(doc.source_raw_ko != null
+        ? { source_raw_ko: await map(doc.source_raw_ko) }
+        : {}),
+      ...(doc.source_raw_en != null
+        ? { source_raw_en: await map(doc.source_raw_en) }
+        : {}),
     }
   }
   return walk()

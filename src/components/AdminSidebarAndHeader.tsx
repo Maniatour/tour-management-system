@@ -7,7 +7,8 @@ import {
   LogOut,
   Menu,
   X,
-  BookOpen,
+  ClipboardList,
+  ListTodo,
   Clock,
   CheckCircle,
   XCircle,
@@ -655,7 +656,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       className="inline-flex items-center justify-center w-9 h-9 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                       title="운영 허브 (매뉴얼·워크플로)"
                     >
-                      <BookOpen className="w-5 h-5" />
+                      <ClipboardList className="w-5 h-5" />
                     </Link>
                   </div>
 
@@ -666,7 +667,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       className="inline-flex items-center justify-center w-9 h-9 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                       title="팀 보드로 이동"
                     >
-                      <BookOpen className="w-5 h-5" />
+                      <ListTodo className="w-5 h-5" />
                     </Link>
                     {teamBoardCount > 0 && (
                       <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1">

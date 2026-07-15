@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { articleBodyToDocument, hubCategoryLabel, type KnowledgeArticleRow } from '@/lib/operationsHub'
+import { coerceKnowledgeArticleRow } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
 import type { SopDocument, SopEditLocale, OperationsHubCategory } from '@/types/sopStructure'
 import { sopText } from '@/types/sopStructure'
@@ -62,7 +63,7 @@ export async function fetchHubArticleDocumentById(
 
   if (error || !data) return null
 
-  const row = data as KnowledgeArticleRow
+  const row = coerceKnowledgeArticleRow(data as KnowledgeArticleRow)
   const doc = articleBodyToDocument(row)
   if (!doc) return null
   return { doc, row }
@@ -82,7 +83,7 @@ export async function fetchHubArticleDocumentBySlug(
 
   if (error || !data) return null
 
-  const row = data as KnowledgeArticleRow
+  const row = coerceKnowledgeArticleRow(data as KnowledgeArticleRow)
   const doc = articleBodyToDocument(row)
   if (!doc) return null
   return { doc, row }
@@ -105,7 +106,8 @@ export async function fetchHubArticleDocumentsByIds(
 
   const byId = new Map<string, KnowledgeArticleRow>()
   for (const row of data as KnowledgeArticleRow[]) {
-    byId.set(row.id, row)
+    const coerced = coerceKnowledgeArticleRow(row)
+    byId.set(coerced.id, coerced)
   }
 
   const out: Array<{ id: string; title: string; doc: SopDocument }> = []

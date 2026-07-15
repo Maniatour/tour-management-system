@@ -424,8 +424,25 @@ export default function SopStructureEditor({
   }
 
   const removeSection = (sectionId: string) => {
-    if (value.sections.length <= 1) return
-    emit({ ...value, sections: value.sections.filter((s) => s.id !== sectionId) })
+    const remaining = value.sections.filter((s) => s.id !== sectionId)
+    if (remaining.length === value.sections.length) return
+    emit({
+      ...value,
+      sections:
+        remaining.length > 0
+          ? remaining
+          : [
+              {
+                id: newSopId(),
+                title_ko: '',
+                title_en: '',
+                sort_order: 0,
+                content_ko: '',
+                content_en: '',
+                categories: [],
+              },
+            ],
+    })
   }
 
   const moveSection = (sectionId: string, dir: -1 | 1) => {
@@ -1208,7 +1225,7 @@ export default function SopStructureEditor({
                         size="icon"
                         className="h-8 w-8 text-red-700"
                         title={isEn ? 'Remove section' : '섹션 삭제'}
-                        disabled={disabled || value.sections.length <= 1}
+                        disabled={disabled}
                         onClick={() => removeSection(section.id)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1562,7 +1579,7 @@ export default function SopStructureEditor({
                   size="icon"
                   className="h-8 w-8 text-red-700"
                   title={isEn ? 'Remove section' : '섹션 삭제'}
-                  disabled={disabled || value.sections.length <= 1}
+                  disabled={disabled}
                   onClick={() => removeSection(section.id)}
                 >
                   <Trash2 className="h-4 w-4" />

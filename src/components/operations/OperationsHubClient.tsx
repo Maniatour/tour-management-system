@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   BookOpen,
   ClipboardList,
+  FileInput,
   FileText,
   GraduationCap,
   History,
@@ -47,7 +48,11 @@ import SopPrintPreviewFloatingPanel from '@/components/sop/SopPrintPreviewFloati
 import SopPrintPreviewFrame from '@/components/sop/SopPrintPreviewFrame'
 import KnowledgeArticleEditorPanel from '@/components/operations/KnowledgeArticleEditorPanel'
 import KnowledgeArticleHistoryPanel from '@/components/operations/KnowledgeArticleHistoryPanel'
+import HubDocumentBulkImportModal from '@/components/operations/HubDocumentBulkImportModal'
+import LightRichEditor from '@/components/LightRichEditor'
 import { hydrateDocumentForRowEditing } from '@/lib/sopQuickEdit'
+import { uploadHubManualImageFile } from '@/lib/hubManualImageUpload'
+import { markdownToHtml } from '@/lib/markdownToHtml'
 import { parseSopDocumentJson, sopText, type SopDocument, type SopEditLocale } from '@/types/sopStructure'
 import {
   articleBodyToDocument,
@@ -59,11 +64,13 @@ import {
   hubEntryTitle,
   matchesHubTargetRoles,
   mergeHubEntries,
+  normalizeBodyLayout,
   sopSectionsToHubEntries,
   type HubEntry,
   type KnowledgeArticleRow,
 } from '@/lib/operationsHub'
 import {
+  coerceKnowledgeArticleRow,
   emptyKnowledgeArticleForm,
   KNOWLEDGE_ARTICLE_SELECT,
   knowledgeArticleRowToForm,
@@ -146,7 +153,47 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [legalPagesOpen, setLegalPagesOpen] = useState(false)
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [bodyViewMode, setBodyViewMode] = useState<'structure' | 'raw'>('structure')
+  const [sourceRawEditing, setSourceRawEditing] = useState(false)
   const previewA4Ref = useRef<HTMLDivElement | null>(null)
+
+  const handleBulkImportStructure = useCallback(
+    (doc: SopDocument) => {
+      const hydrated = hydrateDocumentForRowEditing(doc)
+      readEditDocRef.current = hydrated
+      setReadEditDoc(hydrated)
+      setBodyViewMode('structure')
+      markReadDirty()
+      setReadSaveMsg(
+        modalViewLang === 'en'
+          ? 'Imported into sections (original kept). Auto-save will run shortly.'
+          : '섹션 구조로 반영했고 원문도 보관했습니다. 곧 자동 저장됩니다.'
+      )
+    },
+    [markReadDirty, modalViewLang]
+  )
+
+  const handleBulkImportRawOnly = useCallback(
+    (raw: { ko: string; en: string }) => {
+      const base = readEditDocRef.current
+      if (!base) return
+      const next: SopDocument = { ...base }
+      // 비어 있지 않은 칸만 갱신 — 한쪽만 올려도 다른 쪽 원문은 유지
+      if (raw.ko) next.source_raw_ko = raw.ko
+      if (raw.en) next.source_raw_en = raw.en
+      readEditDocRef.current = next
+      setReadEditDoc(next)
+      setBodyViewMode('raw')
+      markReadDirty()
+      setReadSaveMsg(
+        modalViewLang === 'en'
+          ? 'Original text saved. Structure unchanged. Auto-save will run shortly.'
+          : '원문만 저장했습니다. 구조는 그대로입니다. 곧 자동 저장됩니다.'
+      )
+    },
+    [markReadDirty, modalViewLang]
+  )
 
   const staffOk =
     userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
@@ -172,20 +219,21 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       return []
     }
 
-    const rows = (data || []) as KnowledgeArticleRow[]
+    const rows = ((data || []) as KnowledgeArticleRow[]).map(coerceKnowledgeArticleRow)
     setArticles(rows)
     return rows
   }, [authUser?.email, enableAdminCrud])
 
   const upsertArticleInState = useCallback((row: KnowledgeArticleRow) => {
+    const coerced = coerceKnowledgeArticleRow(row)
     setArticles((prev) => {
-      const index = prev.findIndex((a) => a.id === row.id)
+      const index = prev.findIndex((a) => a.id === coerced.id)
       if (index >= 0) {
         const next = [...prev]
-        next[index] = row
+        next[index] = coerced
         return next
       }
-      return [...prev, row]
+      return [...prev, coerced]
     })
   }, [])
 
@@ -416,7 +464,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     }
 
     setTeamPosition((teamRow as { position?: string | null } | null)?.position ?? null)
-    setArticles((articleRows || []) as KnowledgeArticleRow[])
+    setArticles(((articleRows || []) as KnowledgeArticleRow[]).map(coerceKnowledgeArticleRow))
 
     if (!sopErr && sopRow?.body_structure) {
       const doc = parseSopDocumentJson(sopRow.body_structure)
@@ -487,8 +535,13 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       setReadSaveMsg(null)
       setPrintPreviewOpen(false)
       setHistoryOpen(false)
+      setBulkImportOpen(false)
+      setSourceRawEditing(false)
+      setBodyViewMode(
+        normalizeBodyLayout(readArticle.body_layout) === 'plain' ? 'raw' : 'structure'
+      )
     }
-  }, [readArticle?.id, viewLang])
+  }, [readArticle?.id, readArticle?.body_layout, viewLang])
 
   useEffect(() => {
     if (!readArticle) setPrintPreviewOpen(false)
@@ -603,7 +656,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
       .select(KNOWLEDGE_ARTICLE_SELECT)
       .eq('id', result.id)
       .maybeSingle()
-    const saved = refreshed as KnowledgeArticleRow | null
+    const saved = refreshed ? coerceKnowledgeArticleRow(refreshed as KnowledgeArticleRow) : null
     if (saved) {
       upsertArticleInState(saved)
       if (readArticle?.id === saved.id) {
@@ -617,6 +670,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     if (saved) {
       if (readArticle?.id === saved.id) {
         setReadArticle(saved)
+        setSourceRawEditing(false)
+        setBodyViewMode(saved.body_layout === 'plain' ? 'raw' : 'structure')
       } else if (saved.is_published) {
         setReadArticle(saved)
       }
@@ -641,6 +696,44 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
         printTitleFallback
       : printTitleFallback
   const readModalHasBody = !!(readArticle && (adminCrud ? readEditDoc : readDoc))
+  const activeBodyDoc = adminCrud ? readEditDoc : readDoc
+  const isPlainDoc = normalizeBodyLayout(readArticle?.body_layout) === 'plain'
+  const hasSourceRaw = !!(
+    activeBodyDoc?.source_raw_ko?.trim() || activeBodyDoc?.source_raw_en?.trim()
+  )
+  const canShowRawTab = hasSourceRaw || isPlainDoc || (adminCrud && sourceRawEditing)
+  const sourceRawViewText = activeBodyDoc
+    ? sopText(
+        activeBodyDoc.source_raw_ko || '',
+        activeBodyDoc.source_raw_en || '',
+        modalViewLang
+      )
+    : ''
+  /** 편집은 fallback 없이 현재 언어 열만 (한→ko, 영→en) */
+  const sourceRawEditValue =
+    modalViewLang === 'en'
+      ? activeBodyDoc?.source_raw_en || ''
+      : activeBodyDoc?.source_raw_ko || ''
+
+  const handleSourceRawEditChange = useCallback(
+    (value: string) => {
+      const base = readEditDocRef.current
+      if (!base) return
+      const next: SopDocument = { ...base }
+      if (modalViewLang === 'en') {
+        if (value.trim()) next.source_raw_en = value
+        else delete next.source_raw_en
+      } else if (value.trim()) {
+        next.source_raw_ko = value
+      } else {
+        delete next.source_raw_ko
+      }
+      readEditDocRef.current = next
+      setReadEditDoc(next)
+      markReadDirty()
+    },
+    [markReadDirty, modalViewLang]
+  )
   // 닫힘 애니메이션 중 readArticle이 먼저 비워져도 DialogTitle이 남도록 유지
   const lastReadTitleRef = useRef(printTitle)
   useEffect(() => {
@@ -880,6 +973,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             }
             setPrintPreviewOpen(false)
             setHistoryOpen(false)
+            setBulkImportOpen(false)
             setReadArticle(null)
           }
         }}
@@ -892,15 +986,20 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           className="gap-0"
           accessibilityTitle={readModalTitle}
           onPointerDownOutside={(e) => {
-            if (printPreviewOpen || historyOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen || bulkImportOpen) e.preventDefault()
           }}
           onInteractOutside={(e) => {
-            if (printPreviewOpen || historyOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen || bulkImportOpen) e.preventDefault()
           }}
           onFocusOutside={(e) => {
-            if (printPreviewOpen || historyOpen) e.preventDefault()
+            if (printPreviewOpen || historyOpen || bulkImportOpen) e.preventDefault()
           }}
           onEscapeKeyDown={(e) => {
+            if (bulkImportOpen) {
+              e.preventDefault()
+              setBulkImportOpen(false)
+              return
+            }
             if (historyOpen) {
               e.preventDefault()
               setHistoryOpen(false)
@@ -916,188 +1015,326 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <DialogHeader
                 data-dialog-drag-handle
-                className="relative shrink-0 space-y-1 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-6 sm:py-4 sm:active:cursor-grabbing"
+                className="relative shrink-0 space-y-2 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:space-y-1 sm:px-6 sm:py-4 sm:active:cursor-grabbing"
               >
-                <div
-                  className="absolute right-12 top-3 z-20 flex max-w-[min(calc(100%-2.5rem),48rem)] flex-nowrap items-center gap-1 sm:top-3.5 sm:gap-1.5"
-                  data-no-drag
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
-                    disabled={!printDoc}
-                    onClick={() => setPrintPreviewOpen(true)}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-2">
+                    <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-base font-semibold leading-snug tracking-tight sm:text-lg">
+                        {readModalTitle}
+                      </h2>
+                      <p className="text-xs font-normal text-gray-500">
+                        {hubCategoryLabel(readArticle.hub_category, modalViewLang)}
+                        {' · '}
+                        {contentTypeLabel(readArticle.content_type, modalViewLang)}
+                        {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className="-mx-1 flex max-w-full flex-wrap items-center gap-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:max-w-[min(100%,28rem)] sm:flex-nowrap sm:justify-end sm:gap-1.5 sm:overflow-visible sm:px-0 sm:pb-0"
+                    data-no-drag
                   >
-                    <Printer className="mr-1 h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{modalUiEn ? 'Print / PDF' : '인쇄 · PDF'}</span>
-                    <span className="sm:hidden">PDF</span>
-                  </Button>
-                  {adminCrud ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={busy}
-                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
-                        onClick={() => void handleSaveReadDoc()}
-                      >
-                        <Save className="mr-1 h-3.5 w-3.5" />
-                        {modalUiEn ? 'Save' : '저장'}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
-                        onClick={() => setHistoryOpen(true)}
-                      >
-                        <History className="mr-1 h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">{modalUiEn ? 'History' : '이력'}</span>
-                        <span className="sm:hidden">{modalUiEn ? 'Hist.' : '이력'}</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
-                        onClick={openReadDocSettings}
-                      >
-                        <Settings2 className="mr-1 h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">{modalUiEn ? 'Document settings' : '문서 설정'}</span>
-                        <span className="sm:hidden">{modalUiEn ? 'Settings' : '설정'}</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
-                        onClick={() => setDeleteTarget(readArticle)}
-                      >
-                        <Trash2 className="mr-1 h-3.5 w-3.5" />
-                        {modalUiEn ? 'Delete' : '삭제'}
-                      </Button>
-                    </>
-                  ) : null}
-                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => setModalViewLang('ko')}
-                      className={cn(
-                        'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
-                        modalViewLang === 'ko'
-                          ? 'bg-white text-indigo-700 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      )}
+                      size="sm"
+                      variant="outline"
+                      className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                      disabled={!printDoc}
+                      onClick={() => setPrintPreviewOpen(true)}
                     >
-                      한국어
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModalViewLang('en')}
-                      className={cn(
-                        'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
-                        modalViewLang === 'en'
-                          ? 'bg-white text-indigo-700 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      )}
-                    >
-                      English
-                    </button>
+                      <Printer className="mr-1 h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">{modalUiEn ? 'Print / PDF' : '인쇄 · PDF'}</span>
+                      <span className="sm:hidden">PDF</span>
+                    </Button>
+                    {adminCrud ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy}
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={() => void handleSaveReadDoc()}
+                        >
+                          <Save className="mr-1 h-3.5 w-3.5" />
+                          {modalUiEn ? 'Save' : '저장'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={() => setBulkImportOpen(true)}
+                        >
+                          <FileInput className="mr-1 h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">
+                            {modalUiEn ? 'Import full doc' : '통짜 문서'}
+                          </span>
+                          <span className="sm:hidden">{modalUiEn ? 'Import' : '통짜'}</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={() => setHistoryOpen(true)}
+                        >
+                          <History className="mr-1 h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">{modalUiEn ? 'History' : '이력'}</span>
+                          <span className="sm:hidden">{modalUiEn ? 'Hist.' : '이력'}</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={openReadDocSettings}
+                        >
+                          <Settings2 className="mr-1 h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">{modalUiEn ? 'Document settings' : '문서 설정'}</span>
+                          <span className="sm:hidden">{modalUiEn ? 'Settings' : '설정'}</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={() => setDeleteTarget(readArticle)}
+                        >
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                          {modalUiEn ? 'Delete' : '삭제'}
+                        </Button>
+                      </>
+                    ) : null}
+                    <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setModalViewLang('ko')}
+                        className={cn(
+                          'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
+                          modalViewLang === 'ko'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        )}
+                      >
+                        한국어
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModalViewLang('en')}
+                        className={cn(
+                          'rounded-md px-2 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:px-2.5 sm:text-xs',
+                          modalViewLang === 'en'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        )}
+                      >
+                        English
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div
-                  className={cn(
-                    'flex items-start gap-2',
-                    adminCrud ? 'pr-0 sm:pr-[28rem] md:pr-[30rem]' : 'pr-0 sm:pr-[14rem]'
-                  )}
-                >
-                  <GripVertical className="mt-1 hidden h-4 w-4 shrink-0 text-gray-400 sm:block" aria-hidden />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-base font-semibold leading-snug tracking-tight sm:text-lg">
-                      {readModalTitle}
-                    </h2>
-                    <p className="text-xs font-normal text-gray-500">
-                      {hubCategoryLabel(readArticle.hub_category, modalViewLang)}
-                      {' · '}
-                      {contentTypeLabel(readArticle.content_type, modalViewLang)}
-                      {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
+                {adminCrud ? (
+                  <div className="space-y-1.5">
+                    <p
+                      className={cn(
+                        'text-xs',
+                        readConflict ? 'font-medium text-amber-800' : 'text-gray-600'
+                      )}
+                    >
+                      {readSaveMsg
+                        ? readSaveMsg
+                        : readDirty
+                          ? modalUiEn
+                            ? 'Unsaved changes — auto-saving soon…'
+                            : '저장되지 않은 변경 — 곧 자동 저장…'
+                          : modalUiEn
+                            ? 'Saved · edits auto-save when you pause.'
+                            : '저장됨 · 편집을 잠시 멈추면 자동 저장됩니다.'}
                     </p>
-                    {adminCrud ? (
-                      <div className="space-y-1.5 pt-1">
-                        <p
-                          className={cn(
-                            'text-xs',
-                            readConflict ? 'font-medium text-amber-800' : 'text-gray-600'
-                          )}
+                    {readConflict ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => void reloadCurrentArticleFromServer()}
                         >
-                          {readSaveMsg
-                            ? readSaveMsg
-                            : readDirty
-                              ? modalUiEn
-                                ? 'Unsaved changes — auto-saving soon…'
-                                : '저장되지 않은 변경 — 곧 자동 저장…'
-                              : modalUiEn
-                                ? 'Saved · edits auto-save when you pause.'
-                                : '저장됨 · 편집을 잠시 멈추면 자동 저장됩니다.'}
-                        </p>
-                        {readConflict ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[11px]"
-                              onClick={() => void reloadCurrentArticleFromServer()}
-                            >
-                              {modalUiEn ? 'Reload theirs' : '최신본 불러오기'}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="destructive"
-                              className="h-7 px-2 text-[11px]"
-                              onClick={() => void overwriteWithLocalDoc()}
-                            >
-                              {modalUiEn ? 'Overwrite with mine' : '내 내용으로 덮어쓰기'}
-                            </Button>
-                          </div>
-                        ) : null}
+                          {modalUiEn ? 'Reload theirs' : '최신본 불러오기'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => void overwriteWithLocalDoc()}
+                        >
+                          {modalUiEn ? 'Overwrite with mine' : '내 내용으로 덮어쓰기'}
+                        </Button>
                       </div>
                     ) : null}
                   </div>
-                </div>
+                ) : null}
                 <p className="hidden text-[11px] text-gray-400 sm:block">
                   {modalUiEn
                     ? 'Drag the title bar to move · edges/corners to resize'
                     : '제목 줄 드래그로 이동 · 가장자리/모서리로 크기 조절'}
                 </p>
               </DialogHeader>
-              <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4 md:px-6">
-                {adminCrud && readEditDoc ? (
-                  <SopDocumentInlinePreviewEditor
-                    doc={readEditDoc}
-                    onChange={handleReadEditDocChange}
-                    onPersistDocument={handlePersistReadDocFromEditor}
-                    viewLang={modalViewLang}
-                    uiLocaleEn={modalUiEn}
-                    resizableToc
-                    tocWidthStorageKey="operations-hub-article-toc-width"
-                  />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4 md:px-6">
+                {canShowRawTab || adminCrud ? (
+                  <div
+                    className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2"
+                    data-no-drag
+                  >
+                    <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBodyViewMode('structure')
+                          setSourceRawEditing(false)
+                        }}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:text-xs',
+                          bodyViewMode === 'structure'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        )}
+                      >
+                        {modalUiEn ? 'Structured' : '구조 보기'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBodyViewMode('raw')
+                          setSourceRawEditing(false)
+                        }}
+                        disabled={!canShowRawTab && bodyViewMode !== 'raw'}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors touch-manipulation sm:text-xs',
+                          bodyViewMode === 'raw'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900',
+                          !canShowRawTab &&
+                            bodyViewMode !== 'raw' &&
+                            'cursor-not-allowed opacity-40'
+                        )}
+                      >
+                        {modalUiEn ? 'Original' : '원문 보기'}
+                      </button>
+                    </div>
+                    {adminCrud && bodyViewMode === 'raw' ? (
+                      sourceRawEditing ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs"
+                          onClick={() => setSourceRawEditing(false)}
+                        >
+                          {modalUiEn ? 'Back to view' : '보기로'}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 px-2.5 text-xs"
+                          onClick={() => setSourceRawEditing(true)}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          {modalUiEn ? 'Edit original' : '원문 수정'}
+                        </Button>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {bodyViewMode === 'raw' && (canShowRawTab || (adminCrud && readEditDoc)) ? (
+                  adminCrud && readEditDoc && sourceRawEditing ? (
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+                      <p className="shrink-0 text-[11px] text-gray-500">
+                        {modalUiEn
+                          ? `Editing ${modalViewLang === 'en' ? 'English' : 'Korean'} original · auto-saves when you pause. Structure is unchanged.`
+                          : `${modalViewLang === 'en' ? '영문' : '한국어'} 원문 편집 · 잠시 멈추면 자동 저장됩니다. 구조 본문은 바뀌지 않습니다.`}
+                      </p>
+                      <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border/60 bg-white shadow-sm">
+                        <LightRichEditor
+                          key={`hub-source-raw-${readArticle.id}-${modalViewLang}`}
+                          className="flex w-full min-w-0 flex-col overflow-hidden rounded-xl"
+                          value={sourceRawEditValue}
+                          onChange={(v) => handleSourceRawEditChange(v ?? '')}
+                          placeholder={
+                            modalUiEn
+                              ? 'Edit the original document for this language…'
+                              : '이 언어의 원문 문서를 편집하세요…'
+                          }
+                          height={480}
+                          minHeight={280}
+                          maxHeight={2400}
+                          enableResize
+                          enableImageUpload
+                          uploadImageFile={uploadHubManualImageFile}
+                          uiLocale={modalViewLang === 'en' ? 'en' : 'ko'}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border/60 bg-white p-4 shadow-sm sm:p-6">
+                      {sourceRawViewText.trim() ? (
+                        <div
+                          className="prose prose-sm max-w-none text-foreground prose-headings:tracking-tight prose-p:leading-7 prose-table:text-sm"
+                          dangerouslySetInnerHTML={{ __html: markdownToHtml(sourceRawViewText) }}
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {modalUiEn
+                            ? 'No original text for this language yet. Use Edit original or Import full document.'
+                            : '이 언어의 원문이 아직 없습니다. 「원문 수정」또는 「통짜 문서」로 추가하세요.'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                ) : adminCrud && readEditDoc ? (
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <SopDocumentInlinePreviewEditor
+                      doc={readEditDoc}
+                      onChange={handleReadEditDocChange}
+                      onPersistDocument={handlePersistReadDocFromEditor}
+                      viewLang={modalViewLang}
+                      uiLocaleEn={modalUiEn}
+                      resizableToc
+                      tocWidthStorageKey="operations-hub-article-toc-width"
+                    />
+                  </div>
                 ) : readDoc ? (
-                  <SopDocumentInlinePreviewEditor
-                    doc={readDoc}
-                    onChange={() => {}}
-                    viewLang={modalViewLang}
-                    uiLocaleEn={modalUiEn}
-                    editable={false}
-                    resizableToc
-                    tocWidthStorageKey="operations-hub-article-toc-width"
-                  />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <SopDocumentInlinePreviewEditor
+                      doc={readDoc}
+                      onChange={() => {}}
+                      viewLang={modalViewLang}
+                      uiLocaleEn={modalUiEn}
+                      editable={false}
+                      resizableToc
+                      tocWidthStorageKey="operations-hub-article-toc-width"
+                    />
+                  </div>
                 ) : null}
               </div>
+              {adminCrud ? (
+                <HubDocumentBulkImportModal
+                  open={bulkImportOpen}
+                  onOpenChange={setBulkImportOpen}
+                  uiLocaleEn={modalUiEn}
+                  initialRawKo={readEditDoc?.source_raw_ko || ''}
+                  initialRawEn={readEditDoc?.source_raw_en || ''}
+                  onApplyStructure={handleBulkImportStructure}
+                  onApplyRawOnly={handleBulkImportRawOnly}
+                />
+              ) : null}
               {adminCrud ? (
                 <KnowledgeArticleHistoryPanel
                   open={historyOpen}

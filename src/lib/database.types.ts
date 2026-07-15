@@ -10129,6 +10129,8 @@ export type Database = {
           content_type: string
           target_roles: string[]
           body_structure: Json
+          /** structured | plain */
+          body_layout: string
           sort_order: number
           is_published: boolean
           published_at: string | null
@@ -10148,6 +10150,7 @@ export type Database = {
           content_type?: string
           target_roles?: string[]
           body_structure: Json
+          body_layout?: string
           sort_order?: number
           is_published?: boolean
           published_at?: string | null
@@ -10167,6 +10170,7 @@ export type Database = {
           content_type?: string
           target_roles?: string[]
           body_structure?: Json
+          body_layout?: string
           sort_order?: number
           is_published?: boolean
           published_at?: string | null

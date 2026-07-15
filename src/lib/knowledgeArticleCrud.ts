@@ -2,6 +2,7 @@ import type { Json } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import {
   ensureHubArticleSlug,
+  normalizeBodyLayout,
   normalizeContentType,
   normalizeHubCategory,
 } from '@/lib/operationsHub'
@@ -49,6 +50,7 @@ export async function saveKnowledgeArticle(
     target_roles: form.target_roles,
     sort_order: form.sort_order,
     is_published: form.is_published,
+    body_layout: normalizeBodyLayout(form.body_layout),
     published_at: form.is_published ? new Date().toISOString() : null,
     updated_by: userId,
   }

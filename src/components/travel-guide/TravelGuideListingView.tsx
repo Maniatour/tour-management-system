@@ -10,8 +10,13 @@ import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import TravelGuideEditorModal from '@/components/travel-guide/TravelGuideEditorModal'
 import { AuthContext } from '@/contexts/AuthContext'
 import { fetchTravelGuideArticles } from '@/lib/fetchTravelGuideArticles'
+import { fetchTravelGuideArticlesForStaff } from '@/lib/fetchTravelGuideArticlesForStaff'
 import { formatTravelGuideDisplayDate } from '@/lib/travelGuideAuthorDisplay'
-import type { TravelGuideArticle } from '@/lib/travelGuideArticles'
+import {
+  mapTravelGuideArticle,
+  type TravelGuideArticle,
+} from '@/lib/travelGuideArticles'
+import { filterTravelGuideRowsByQuery } from '@/lib/travelGuideSearch'
 
 type Props = {
   locale: string
@@ -22,16 +27,21 @@ function TravelGuideArticleCard({
   article,
   locale,
   t,
+  canWrite,
+  onEditDraft,
 }: {
   article: TravelGuideArticle
   locale: string
   t: Props['t']
+  canWrite: boolean
+  onEditDraft?: (articleId: string) => void
 }) {
-  return (
-    <Link
-      href={`/${locale}/travel-guide/${article.slug}`}
-      className="kv-travel-guide-card group"
-    >
+  const isDraft = !article.isPublished
+  const showDraftBadge = canWrite && isDraft
+  const editDraft = canWrite && isDraft && onEditDraft
+
+  const body = (
+    <>
       <div className="kv-travel-guide-card-image">
         {article.coverImageUrl ? (
           <Image
@@ -45,7 +55,12 @@ function TravelGuideArticleCard({
           <div className="kv-travel-guide-card-placeholder" aria-hidden />
         )}
       </div>
-      <span className="kv-guide-category">{article.category}</span>
+      <div className="kv-travel-guide-card-badges">
+        {showDraftBadge ? (
+          <span className="kv-travel-guide-draft-badge">{t('travelGuideDraftBadge')}</span>
+        ) : null}
+        <span className="kv-guide-category">{article.category}</span>
+      </div>
       <h2 className="kv-travel-guide-card-title">{article.title}</h2>
       {article.excerpt ? <p className="kv-travel-guide-card-excerpt">{article.excerpt}</p> : null}
       {article.authorName || article.updatedAt ? (
@@ -67,6 +82,27 @@ function TravelGuideArticleCard({
           ) : null}
         </p>
       ) : null}
+    </>
+  )
+
+  if (editDraft) {
+    return (
+      <button
+        type="button"
+        onClick={() => onEditDraft(article.id)}
+        className="kv-travel-guide-card group kv-travel-guide-card--button"
+      >
+        {body}
+      </button>
+    )
+  }
+
+  return (
+    <Link
+      href={`/${locale}/travel-guide/${article.slug}`}
+      className="kv-travel-guide-card group"
+    >
+      {body}
     </Link>
   )
 }
@@ -84,21 +120,32 @@ export default function TravelGuideListingView({ locale, t }: Props) {
   const [searchInput, setSearchInput] = useState(initialQuery)
   const [searchQuery, setSearchQuery] = useState(initialQuery)
 
-  const canWrite = auth?.hasPermission('canViewAdmin') ?? false
+  const authReady = auth ? !auth.loading : true
+  const canWrite = authReady && (auth?.hasPermission('canViewAdmin') ?? false)
   const hasSearchQuery = searchQuery.length > 0
 
   const loadArticles = useCallback(
     async (query: string) => {
+      if (!authReady) return
+
       setLoading(true)
-      const rows = await fetchTravelGuideArticles({
-        locale,
-        limit: 48,
-        ...(query ? { query } : {}),
-      })
-      setArticles(rows)
+
+      if (canWrite) {
+        const rows = await fetchTravelGuideArticlesForStaff()
+        const filtered = filterTravelGuideRowsByQuery(rows, query).slice(0, 48)
+        setArticles(filtered.map((row) => mapTravelGuideArticle(row, locale)))
+      } else {
+        const rows = await fetchTravelGuideArticles({
+          locale,
+          limit: 48,
+          ...(query ? { query } : {}),
+        })
+        setArticles(rows)
+      }
+
       setLoading(false)
     },
-    [locale]
+    [authReady, canWrite, locale]
   )
 
   useEffect(() => {
@@ -122,28 +169,43 @@ export default function TravelGuideListingView({ locale, t }: Props) {
   }, [locale, router, searchParams, searchQuery])
 
   useEffect(() => {
+    if (!authReady) return
+
     let cancelled = false
 
     void (async () => {
       setLoading(true)
-      const rows = await fetchTravelGuideArticles({
-        locale,
-        limit: 48,
-        ...(searchQuery ? { query: searchQuery } : {}),
-      })
-      if (!cancelled) {
+
+      if (canWrite) {
+        const rows = await fetchTravelGuideArticlesForStaff()
+        if (cancelled) return
+        const filtered = filterTravelGuideRowsByQuery(rows, searchQuery).slice(0, 48)
+        setArticles(filtered.map((row) => mapTravelGuideArticle(row, locale)))
+      } else {
+        const rows = await fetchTravelGuideArticles({
+          locale,
+          limit: 48,
+          ...(searchQuery ? { query: searchQuery } : {}),
+        })
+        if (cancelled) return
         setArticles(rows)
-        setLoading(false)
       }
+
+      if (!cancelled) setLoading(false)
     })()
 
     return () => {
       cancelled = true
     }
-  }, [locale, searchQuery])
+  }, [authReady, canWrite, locale, searchQuery])
 
   const openCreateModal = () => {
     setEditorArticleId(undefined)
+    setEditorOpen(true)
+  }
+
+  const openEditModal = (articleId: string) => {
+    setEditorArticleId(articleId)
     setEditorOpen(true)
   }
 
@@ -209,7 +271,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
             </p>
           ) : null}
 
-          {loading ? (
+          {loading || !authReady ? (
             <div className="kv-travel-guide-grid" aria-busy="true">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="kv-travel-guide-card kv-travel-guide-card--skeleton" />
@@ -232,7 +294,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
                 </>
               ) : (
                 <>
-                  <p>{t('travelGuideEmpty')}</p>
+                  <p>{canWrite ? t('travelGuideEmptyStaff') : t('travelGuideEmpty')}</p>
                   {canWrite ? (
                     <button type="button" onClick={openCreateModal} className="kv-travel-guide-write-btn">
                       {t('travelGuideWriteFirst')}
@@ -244,7 +306,14 @@ export default function TravelGuideListingView({ locale, t }: Props) {
           ) : (
             <div className="kv-travel-guide-grid">
               {articles.map((article) => (
-                <TravelGuideArticleCard key={article.id} article={article} locale={locale} t={t} />
+                <TravelGuideArticleCard
+                  key={article.id}
+                  article={article}
+                  locale={locale}
+                  t={t}
+                  canWrite={canWrite}
+                  onEditDraft={openEditModal}
+                />
               ))}
             </div>
           )}

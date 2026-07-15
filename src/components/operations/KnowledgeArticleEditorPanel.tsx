@@ -92,7 +92,7 @@ export default function KnowledgeArticleEditorPanel({
             />
           </label>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block text-sm">
             <span className="text-gray-700">{isEn ? 'Category' : '카테고리'}</span>
             <select
@@ -122,6 +122,29 @@ export default function KnowledgeArticleEditorPanel({
                 )
               )}
             </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">{isEn ? 'Document format' : '문서 형식'}</span>
+            <select
+              value={form.body_layout}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  body_layout: e.target.value === 'plain' ? 'plain' : 'structured',
+                }))
+              }
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+            >
+              <option value="structured">
+                {isEn ? 'Structured (sections)' : '구조화 문서'}
+              </option>
+              <option value="plain">{isEn ? 'Plain (original text)' : '일반 문서 (원문)'}</option>
+            </select>
+            <span className="mt-1 block text-[11px] text-gray-500">
+              {isEn
+                ? 'Structured opens in Structure view; Plain opens in Original view.'
+                : '구조화는 「구조 보기」, 일반은 「원문 보기」로 열립니다.'}
+            </span>
           </label>
           <label className="block text-sm">
             <span className="text-gray-700">{isEn ? 'Sort order' : '정렬'}</span>
