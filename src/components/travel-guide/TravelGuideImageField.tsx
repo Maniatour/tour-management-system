@@ -1,11 +1,14 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
-import { ClipboardPaste, Loader2, Upload } from 'lucide-react'
+import { ClipboardPaste, Expand, Loader2, Upload, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import { uploadTravelGuideImage } from '@/lib/uploadTravelGuideImage'
+import { cn } from '@/lib/utils'
 
 type Props = {
   id: string
@@ -16,7 +19,11 @@ type Props = {
   urlPlaceholder: string
   pasteHint: string
   emptyLabel: string
+  expandLabel?: string
+  className?: string
 }
+
+const LIGHTBOX_Z = DIALOG_Z_INDEX.nestedElevated + 100
 
 export default function TravelGuideImageField({
   id,
@@ -27,8 +34,11 @@ export default function TravelGuideImageField({
   urlPlaceholder,
   pasteHint,
   emptyLabel,
+  expandLabel = 'Click to view fullscreen',
+  className,
 }: Props) {
   const [uploading, setUploading] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -63,9 +73,32 @@ export default function TravelGuideImageField({
     [uploadFile]
   )
 
+  useEffect(() => {
+    if (!lightboxOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setLightboxOpen(false)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [lightboxOpen])
+
   return (
     <div
-      className="kv-travel-guide-image-field space-y-2 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'kv-travel-guide-image-field flex h-full flex-col space-y-2 rounded-xl border border-dashed border-border/70 bg-muted/20 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className
+      )}
       tabIndex={0}
       onPaste={handlePaste}
       aria-labelledby={id}
@@ -79,17 +112,29 @@ export default function TravelGuideImageField({
       </p>
 
       {value ? (
-        <div className="relative aspect-[16/9] overflow-hidden rounded-xl border border-border/60 bg-muted">
-          <Image src={value} alt="" fill className="object-cover" sizes="480px" unoptimized />
-        </div>
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          className="group relative aspect-[4/3] w-full max-h-56 overflow-hidden rounded-lg border border-border/60 bg-muted text-left transition-shadow hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={expandLabel}
+          title={expandLabel}
+        >
+          <Image src={value} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 360px" unoptimized />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/35">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <Expand className="h-3.5 w-3.5" aria-hidden />
+              {expandLabel}
+            </span>
+          </span>
+        </button>
       ) : (
-        <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-dashed border-border/60 bg-background text-xs text-muted-foreground">
+        <div className="flex aspect-[4/3] w-full max-h-56 items-center justify-center rounded-lg border border-dashed border-border/60 bg-background px-3 text-center text-xs text-muted-foreground">
           {emptyLabel}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted/60">
+      <div className="mt-auto flex flex-col gap-2">
+        <label className="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:bg-muted/60">
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           {uploadLabel}
           <input
@@ -110,9 +155,46 @@ export default function TravelGuideImageField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={urlPlaceholder}
-          className="min-w-[220px] flex-1"
+          className="w-full"
         />
       </div>
+
+      {lightboxOpen && value
+        ? createPortal(
+            <div
+              className="fixed inset-0 flex items-center justify-center bg-black/90 p-4 sm:p-8"
+              style={{ zIndex: LIGHTBOX_Z }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={expandLabel}
+              onClick={() => setLightboxOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div
+                className="relative h-full w-full max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <Image
+                  src={value}
+                  alt=""
+                  fill
+                  className="object-contain"
+                  sizes="100vw"
+                  unoptimized
+                  priority
+                />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }

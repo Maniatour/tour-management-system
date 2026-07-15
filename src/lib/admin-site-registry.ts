@@ -192,19 +192,19 @@ export const ADMIN_HEADER_QUICK_REGISTRY: readonly AdminHeaderQuickEntry[] = [
 /** 데스크톱 헤더 빠른 이동 버튼 스타일 — `ADMIN_HEADER_QUICK_REGISTRY` id와 동일 키 */
 export const ADMIN_HEADER_QUICK_BUTTON_CLASS: Record<string, string> = {
   'hq-team-board':
-    'px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-orange-600 bg-transparent px-3 py-1.5 text-sm text-orange-600 transition-colors hover:bg-orange-600 hover:text-white',
   'hq-consultation':
-    'px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-purple-600 bg-transparent px-3 py-1.5 text-sm text-purple-600 transition-colors hover:bg-purple-600 hover:text-white',
   'hq-customers':
-    'px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-teal-600 bg-transparent px-3 py-1.5 text-sm text-teal-600 transition-colors hover:bg-teal-600 hover:text-white',
   'hq-reservations':
-    'px-3 py-1.5 text-sm border rounded-md text-primary border-primary hover:bg-primary/90 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-primary bg-transparent px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary hover:text-primary-foreground',
   'hq-booking':
-    'px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-indigo-600 bg-transparent px-3 py-1.5 text-sm text-indigo-600 transition-colors hover:bg-indigo-600 hover:text-white',
   'hq-tours':
-    'px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors cursor-pointer relative z-10',
+    'relative z-10 cursor-pointer rounded-md border border-green-600 bg-transparent px-3 py-1.5 text-sm text-green-600 transition-colors hover:bg-green-600 hover:text-white',
   'hq-chat-management':
-    'px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10 inline-flex items-center',
+    'relative z-10 inline-flex cursor-pointer items-center rounded-md border border-purple-600 bg-transparent px-3 py-1.5 text-sm text-purple-600 transition-colors hover:bg-purple-600 hover:text-white',
 }
 
 export type BuiltAdminNavItem = {

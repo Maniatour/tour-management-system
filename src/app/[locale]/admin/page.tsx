@@ -33,7 +33,7 @@ export default function AdminDashboard(_props: AdminDashboardProps) {
       name: t('products'),
       href: `/${locale}/admin/products`,
       icon: Package,
-      color: 'bg-primary/50'
+      color: 'bg-blue-500'
     },
     {
       name: t('customers'),

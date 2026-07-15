@@ -504,6 +504,7 @@
     "travelGuideCoverUpload": "이미지 업로드",
     "travelGuideCoverUrlPlaceholder": "또는 이미지 URL 입력",
     "travelGuideCoverEmpty": "커버 이미지 없음",
+    "travelGuideCoverExpand": "클릭하여 전체화면으로 보기",
     "travelGuideImagePasteHint": "이 영역을 클릭한 뒤 스크린샷 붙여넣기(Ctrl+V) 또는 파일 업로드",
     "travelGuideFieldCategoryEn": "카테고리 (영문)",
     "travelGuideFieldCategoryKo": "카테고리 (한글)",

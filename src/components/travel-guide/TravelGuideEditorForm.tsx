@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Loader2, Save, Trash2 } from 'lucide-react'
 import { useContext } from 'react'
 import LightRichEditor from '@/components/LightRichEditor'
@@ -45,6 +46,8 @@ type Props = {
   t: (key: string, values?: Record<string, string | number>) => string
   editId?: string | undefined
   variant?: TravelGuideEditorFormVariant
+  /** 모달 헤더 등 외부 컨테이너에 언어 탭을 포털로 렌더 */
+  localeToolbarTarget?: HTMLElement | null
   onSaved?: (article: TravelGuideEditorSavedArticle) => void
   onCancel?: () => void
   onDeleted?: () => void
@@ -86,6 +89,7 @@ export default function TravelGuideEditorForm({
   t,
   editId = '',
   variant = 'page',
+  localeToolbarTarget = null,
   onSaved,
   onCancel,
   onDeleted,
@@ -335,20 +339,46 @@ export default function TravelGuideEditorForm({
     }
   }
 
+  const headerLocaleTabs =
+    localeToolbarTarget != null
+      ? createPortal(
+          <TravelGuideEditorLocaleTabs
+            compact
+            activeLocale={activeLocale}
+            onChange={setActiveLocale}
+            hasContent={localeHasContent}
+          />,
+          localeToolbarTarget
+        )
+      : null
+
   if (!authReady) {
     return (
-      <div className="flex justify-center py-12 text-muted-foreground">
-        <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
-      </div>
+      <>
+        {headerLocaleTabs}
+        <div className="flex justify-center py-12 text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
+        </div>
+      </>
     )
   }
 
   if (!canWrite) {
-    return <p className="py-6 text-sm text-muted-foreground">{t('travelGuideStaffOnly')}</p>
+    return (
+      <>
+        {headerLocaleTabs}
+        <p className="py-6 text-sm text-muted-foreground">{t('travelGuideStaffOnly')}</p>
+      </>
+    )
   }
 
   if (loading) {
-    return <div className="kv-travel-guide-article-skeleton min-h-[240px]" aria-busy="true" />
+    return (
+      <>
+        {headerLocaleTabs}
+        <div className="kv-travel-guide-article-skeleton min-h-[240px]" aria-busy="true" />
+      </>
+    )
   }
 
   const activeLocaleConfig = TRAVEL_GUIDE_EDITOR_LOCALES.find((item) => item.code === activeLocale)
@@ -387,87 +417,98 @@ export default function TravelGuideEditorForm({
         void saveArticle()
       }}
     >
-      <TravelGuideEditorLocaleTabs
-        activeLocale={activeLocale}
-        onChange={setActiveLocale}
-        hasContent={localeHasContent}
-        fallbackHint={t('travelGuideLocaleFallbackHint')}
-      />
-
-      <div className="space-y-2">
-        <Label htmlFor={`title-${activeLocale}`}>
-          {t('travelGuideFieldTitle', { language: activeLocaleConfig?.label ?? activeLocale })}
-          {isEnglishTab ? ' *' : null}
-        </Label>
-        <Input
-          id={`title-${activeLocale}`}
-          value={form.title[activeLocale]}
-          onChange={(event) => updateLocalizedField('title', activeLocale, event.target.value)}
-          required={isEnglishTab}
-          placeholder={
-            isEnglishTab
-              ? t('travelGuideFieldTitleEn')
-              : t('travelGuideFieldTitleOptional', {
-                  language: activeLocaleConfig?.label ?? activeLocale,
-                })
-          }
+      {headerLocaleTabs ?? (
+        <TravelGuideEditorLocaleTabs
+          activeLocale={activeLocale}
+          onChange={setActiveLocale}
+          hasContent={localeHasContent}
+          fallbackHint={t('travelGuideLocaleFallbackHint')}
         />
-      </div>
+      )}
 
-      {isEnglishTab && autoSlug ? (
-        <p className="text-xs text-muted-foreground">{t('travelGuideSlugAuto', { slug: autoSlug })}</p>
+      {localeToolbarTarget && activeLocale !== TRAVEL_GUIDE_FALLBACK_LOCALE ? (
+        <p className="text-xs text-muted-foreground">{t('travelGuideLocaleFallbackHint')}</p>
       ) : null}
 
-      <div className="space-y-2">
-        <Label htmlFor={`category-${activeLocale}`}>
-          {t('travelGuideFieldCategory', { language: activeLocaleConfig?.label ?? activeLocale })}
-        </Label>
-        <TravelGuideCategoryCombobox
-          id={`category-${activeLocale}`}
-          value={form.category[activeLocale]}
-          onChange={(next) => updateLocalizedField('category', activeLocale, next)}
-          options={mergedCategoryOptions[activeLocale]}
-          placeholder={
-            activeLocale === 'ko'
-              ? t('travelGuideCategoryKoPlaceholder')
-              : t('travelGuideCategoryEnPlaceholder')
-          }
-          addCustomLabel={addCustomCategoryLabel}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:items-stretch md:gap-5">
+        <TravelGuideImageField
+          id="coverImageUrl"
+          label={t('travelGuideFieldCover')}
+          value={form.coverImageUrl}
+          onChange={(next) => setForm((prev) => ({ ...prev, coverImageUrl: next }))}
+          uploadLabel={t('travelGuideCoverUpload')}
+          urlPlaceholder={t('travelGuideCoverUrlPlaceholder')}
+          pasteHint={t('travelGuideImagePasteHint')}
+          emptyLabel={t('travelGuideCoverEmpty')}
+          expandLabel={t('travelGuideCoverExpand')}
+          className="md:min-h-full"
         />
-      </div>
 
-      <TravelGuideImageField
-        id="coverImageUrl"
-        label={t('travelGuideFieldCover')}
-        value={form.coverImageUrl}
-        onChange={(next) => setForm((prev) => ({ ...prev, coverImageUrl: next }))}
-        uploadLabel={t('travelGuideCoverUpload')}
-        urlPlaceholder={t('travelGuideCoverUrlPlaceholder')}
-        pasteHint={t('travelGuideImagePasteHint')}
-        emptyLabel={t('travelGuideCoverEmpty')}
-      />
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`title-${activeLocale}`}>
+              {t('travelGuideFieldTitle', { language: activeLocaleConfig?.label ?? activeLocale })}
+              {isEnglishTab ? ' *' : null}
+            </Label>
+            <Input
+              id={`title-${activeLocale}`}
+              value={form.title[activeLocale]}
+              onChange={(event) => updateLocalizedField('title', activeLocale, event.target.value)}
+              required={isEnglishTab}
+              placeholder={
+                isEnglishTab
+                  ? t('travelGuideFieldTitleEn')
+                  : t('travelGuideFieldTitleOptional', {
+                      language: activeLocaleConfig?.label ?? activeLocale,
+                    })
+              }
+            />
+            {isEnglishTab && autoSlug ? (
+              <p className="text-xs text-muted-foreground">{t('travelGuideSlugAuto', { slug: autoSlug })}</p>
+            ) : null}
+          </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="sortOrder">{t('travelGuideFieldSortOrder')}</Label>
-          <Input
-            id="sortOrder"
-            type="number"
-            value={form.sortOrder}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, sortOrder: Number(event.target.value) || 0 }))
-            }
-          />
-        </div>
-        <div className="flex items-center gap-2 pt-8">
-          <Checkbox
-            id="isPublished"
-            checked={form.isPublished}
-            onCheckedChange={(checked) =>
-              setForm((prev) => ({ ...prev, isPublished: checked === true }))
-            }
-          />
-          <Label htmlFor="isPublished">{t('travelGuideFieldPublished')}</Label>
+          <div className="space-y-2">
+            <Label htmlFor={`category-${activeLocale}`}>
+              {t('travelGuideFieldCategory', { language: activeLocaleConfig?.label ?? activeLocale })}
+            </Label>
+            <TravelGuideCategoryCombobox
+              id={`category-${activeLocale}`}
+              value={form.category[activeLocale]}
+              onChange={(next) => updateLocalizedField('category', activeLocale, next)}
+              options={mergedCategoryOptions[activeLocale]}
+              placeholder={
+                activeLocale === 'ko'
+                  ? t('travelGuideCategoryKoPlaceholder')
+                  : t('travelGuideCategoryEnPlaceholder')
+              }
+              addCustomLabel={addCustomCategoryLabel}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="sortOrder">{t('travelGuideFieldSortOrder')}</Label>
+              <Input
+                id="sortOrder"
+                type="number"
+                value={form.sortOrder}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, sortOrder: Number(event.target.value) || 0 }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:pb-2">
+              <Checkbox
+                id="isPublished"
+                checked={form.isPublished}
+                onCheckedChange={(checked) =>
+                  setForm((prev) => ({ ...prev, isPublished: checked === true }))
+                }
+              />
+              <Label htmlFor="isPublished">{t('travelGuideFieldPublished')}</Label>
+            </div>
+          </div>
         </div>
       </div>
 

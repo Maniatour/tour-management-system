@@ -509,6 +509,7 @@
     "travelGuideCoverUpload": "Upload image",
     "travelGuideCoverUrlPlaceholder": "Or paste an image URL",
     "travelGuideCoverEmpty": "No cover image",
+    "travelGuideCoverExpand": "Click to view fullscreen",
     "travelGuideImagePasteHint": "Click here and paste a screenshot (Ctrl+V), or upload a file",
     "travelGuideFieldCategoryEn": "Category (English)",
     "travelGuideFieldCategoryKo": "Category (Korean)",

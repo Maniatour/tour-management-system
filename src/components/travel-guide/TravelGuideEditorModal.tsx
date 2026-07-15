@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { GripVertical } from 'lucide-react'
 import TravelGuideEditorForm, {
   type TravelGuideEditorSavedArticle,
@@ -30,6 +31,8 @@ export default function TravelGuideEditorModal({
   onSaved,
   onDeleted,
 }: Props) {
+  const [localeToolbarEl, setLocaleToolbarEl] = useState<HTMLDivElement | null>(null)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <ResizableDialogContent
@@ -42,20 +45,25 @@ export default function TravelGuideEditorModal({
       >
         <DialogHeader
           data-dialog-drag-handle
-          className="shrink-0 border-b px-4 py-3 pr-12 text-left sm:cursor-grab sm:px-5 sm:py-4 sm:active:cursor-grabbing"
+          className="shrink-0 border-b px-4 py-3 pr-16 text-left sm:cursor-grab sm:px-5 sm:py-4 sm:pr-[4.5rem] sm:active:cursor-grabbing"
         >
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2 sm:gap-3">
             <GripVertical
-              className="mt-0.5 hidden h-4 w-4 shrink-0 text-muted-foreground sm:block"
+              className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block"
               aria-hidden
             />
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="text-base sm:text-lg">
-                {articleId ? t('travelGuideEditArticle') : t('travelGuideWriteArticle')}
-              </DialogTitle>
-              <p className="text-sm font-normal text-muted-foreground">{t('travelGuideEditorSubtitle')}</p>
-            </div>
+            <DialogTitle className="min-w-0 flex-1 truncate text-base sm:text-lg">
+              {articleId ? t('travelGuideEditArticle') : t('travelGuideWriteArticle')}
+            </DialogTitle>
+            <div
+              ref={setLocaleToolbarEl}
+              className="shrink-0"
+              data-no-drag
+            />
           </div>
+          <p className="mt-1 text-sm font-normal text-muted-foreground sm:pl-7">
+            {t('travelGuideEditorSubtitle')}
+          </p>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
@@ -64,6 +72,7 @@ export default function TravelGuideEditorModal({
             t={t}
             editId={articleId ?? ''}
             variant="modal"
+            localeToolbarTarget={localeToolbarEl}
             onCancel={() => onOpenChange(false)}
             onSaved={(article) => {
               onSaved?.(article)
