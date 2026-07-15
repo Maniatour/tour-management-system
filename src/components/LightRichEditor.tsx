@@ -6,6 +6,7 @@ import { getLightRichEditorStrings, type LightRichEditorUiLocale } from '@/lib/l
 import {
   markdownToHtml,
   markdownToHeadingHtml,
+  normalizeMarkdownBlockStructure,
   stripSopFontSizeTokens,
   sopPlainDisplayText,
 } from '@/lib/markdownToHtml'
@@ -13,6 +14,7 @@ import {
 export {
   markdownToHtml,
   markdownToHeadingHtml,
+  normalizeMarkdownBlockStructure,
   stripSopFontSizeTokens,
   sopPlainDisplayText,
 }
@@ -941,25 +943,42 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }
 
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    if (readOnly || !enableImageUpload) {
-      setTimeout(updateEditorContent, 0)
-      return
-    }
+    if (readOnly) return
 
     const items = e.clipboardData?.items
-    if (!items) {
-      setTimeout(updateEditorContent, 0)
-      return
+    if (enableImageUpload && items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (!item?.type.startsWith('image/')) continue
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) continue
+        void insertImageFromFile(file)
+        return
+      }
     }
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (!item?.type.startsWith('image/')) continue
-      e.preventDefault()
-      const file = item.getAsFile()
-      if (!file) continue
-      void insertImageFromFile(file)
-      return
+    const plain = e.clipboardData?.getData('text/plain') ?? ''
+    const htmlClip = e.clipboardData?.getData('text/html') ?? ''
+    const looksLikeMarkdown =
+      plain.length > 0 &&
+      /(^|\n)\s{0,3}#{1,6}\s+\S|(^|\n)\s*[-*•]\s+\S|(^|\n)\|.+\|/.test(plain)
+
+    // ChatGPT/마크다운 원문 붙여넣기: 브라우저가 줄바꿈을 뭉개기 전에 HTML로 삽입
+    if (looksLikeMarkdown) {
+      const htmlIsMostlyPlain =
+        !htmlClip ||
+        !/<(h[1-6]|ul|ol|li|table|p)\b/i.test(htmlClip) ||
+        htmlClip.length < plain.length * 0.5
+
+      if (htmlIsMostlyPlain || /(?:^|\n)\s{0,3}#{1,6}\s+/.test(plain)) {
+        e.preventDefault()
+        const normalized = normalizeMarkdownBlockStructure(plain)
+        const insertHtml = markdownToHtml(normalized, htmlOptions)
+        document.execCommand('insertHTML', false, insertHtml || plain.replace(/\n/g, '<br>'))
+        setTimeout(updateEditorContent, 0)
+        return
+      }
     }
 
     setTimeout(updateEditorContent, 0)

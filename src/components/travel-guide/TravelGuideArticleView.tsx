@@ -64,7 +64,8 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
   return (
     <CustomerPageShell locale={locale} className="travel-guide-page">
       <section className="kv-section">
-        <div className="kv-container kv-travel-guide-article-wrap">
+        <div className="kv-container">
+          <div className="kv-travel-guide-article-wrap">
           <Link href={`/${locale}/travel-guide`} className="kv-travel-guide-back">
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {t('travelGuideBackToArticles')}
@@ -89,7 +90,7 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
                     alt={article.title}
                     fill
                     priority
-                    sizes="(max-width: 1024px) 100vw, 960px"
+                    sizes="(max-width: 1024px) 100vw, 768px"
                     className="object-cover"
                   />
                   <div className="kv-travel-guide-hero-overlay" />
@@ -123,6 +124,7 @@ export default function TravelGuideArticleView({ locale, slug, t }: Props) {
               </div>
             </article>
           )}
+          </div>
         </div>
       </section>
 

@@ -94,6 +94,12 @@ export function sopPlainDisplayText(raw: string): string {
   let t = stripSopFontSizeTokens(raw ?? '')
   t = stripSopUnderlineTokens(t)
   t = stripSopImageWidthTokens(t)
+  // 짝이 깨진 토큰·잔여 마커 제거
+  t = t.replace(/\[\[sopfs:[^\]]*\]\]/gi, '')
+  t = t.replace(/\[\[\/sopfs\]\]/gi, '')
+  t = t.replace(/\[\[sopu\]\]/gi, '')
+  t = t.replace(/\[\[\/sopu\]\]/gi, '')
+  t = t.replace(/\[\[sopimg:[^\]]*\]\]/gi, '')
   t = t.replace(/<[^>]+>/g, ' ')
   t = t.replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
   t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -175,13 +181,59 @@ function renderMarkdownHeadingHtml(line: string): string | null {
   return `<h${level} style="${styles[level] ?? styles[3]}">${text}</h${level}>`
 }
 
+/**
+ * ChatGPT 등에서 붙여넣은 마크다운이 한 줄로 뭉개졌을 때
+ * 제목·목록 경계를 복구해 렌더/에디터 왕복이 맞게 함.
+ */
+export function normalizeMarkdownBlockStructure(markdown: string): string {
+  let s = (markdown ?? '').replace(/\r\n/g, '\n')
+  if (!s.trim()) return s
+
+  // 중복 헤딩 마커 (`## ## Quick Summary` → `## Quick Summary`)
+  s = s.replace(/(#{1,6})\s+(#{1,6})\s+/g, (_m, a: string, b: string) =>
+    `${b.length >= a.length ? b : a} `
+  )
+
+  // 문장 중간에 붙은 헤딩 마커를 새 블록으로
+  s = s.replace(/([^\n#])[ \t]*(#{1,6})[ \t]+(?=\S)/g, '$1\n\n$2 ')
+
+  // 줄바꿈만으로 이어진 헤딩 앞에 빈 줄 보장
+  s = s.replace(/([^\n])\n(#{1,6}\s+)/g, '$1\n\n$2')
+
+  // 고아 bold 마커 정리
+  s = s.replace(/^\s*\*\*\s*$/gm, '')
+  s = s.replace(/\*\*\s*$/gm, (m, offset: number, whole: string) => {
+    const before = whole.slice(Math.max(0, offset - 80), offset)
+    // 열린 ** 없이 끝난 경우만 제거
+    const opens = (before.match(/\*\*/g) || []).length
+    return opens % 2 === 0 ? '' : m
+  })
+
+  // `### Title - a - b - c` 형태를 제목 + 목록으로 복구
+  s = s
+    .split('\n')
+    .map((line) => {
+      const hm = line.match(/^(#{1,6}\s+)(.+)$/)
+      if (!hm) return line
+      const rest = hm[2]!.trim()
+      const parts = rest.split(/\s+-\s+/).map((p) => p.trim()).filter(Boolean)
+      if (parts.length < 3) return line
+      const [title, ...items] = parts
+      return `${hm[1]}${title}\n\n${items.map((item) => `- ${item}`).join('\n')}`
+    })
+    .join('\n')
+
+  s = s.replace(/\n{3,}/g, '\n\n')
+  return s.replace(/^\n+/, '').replace(/\n+$/, '')
+}
+
 export const markdownToHtml = (
   markdown: string,
   options?: { editableImages?: boolean }
 ): string => {
   if (!markdown) return ''
 
-  let html = markdown.replace(/\r\n/g, '\n')
+  let html = normalizeMarkdownBlockStructure(markdown)
   html = decodeSopFontSizeTokens(html)
   html = decodeSopUnderlineTokens(html)
   html = decodeSopImageWidthTokens(html, options?.editableImages ?? false)
@@ -249,6 +301,7 @@ export const markdownToHtml = (
     const isListLine = (line: string) => listLineRe.test(line.trim())
     const isNumberedLine = (line: string) => /^\d+\.\s+/.test(line.trim())
     const isBulletLine = (line: string) => /^(\s*)([-*•])\s+/.test(line.trim())
+    const isHeadingLine = (line: string) => /^(#{1,6})\s+\S/.test(line.trim())
 
     while (i < lines.length) {
       const trimmed = lines[i]?.trim() ?? ''
@@ -316,7 +369,7 @@ export const markdownToHtml = (
           const raw = lines[i] ?? ''
           const t = raw.trim()
           if (!t) break
-          if (isListLine(t)) break
+          if (isListLine(t) || isHeadingLine(t) || isMarkdownTableRowLine(t)) break
           textLines.push(raw)
           i += 1
         }

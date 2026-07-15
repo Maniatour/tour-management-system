@@ -2766,6 +2766,28 @@ main:has(.maniatour-home) {
 }
 
 /* Travel Guide blog pages */
+.travel-guide-page .kv-container {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+
+.travel-guide-page .kv-section {
+  padding: 3rem 0;
+}
+
+@media (max-width: 767px) {
+  .travel-guide-page .kv-container {
+    max-width: none;
+    padding-inline: var(--kv-mobile-gutter, 1rem);
+  }
+
+  .travel-guide-page .kv-section {
+    padding: 2rem 0;
+  }
+}
+
 .travel-guide-page .kv-travel-guide-top {
   margin-bottom: 1.5rem;
 }
@@ -2897,6 +2919,7 @@ main:has(.maniatour-home) {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 1rem;
+  align-items: stretch;
 }
 
 @media (min-width: 640px) {
@@ -2915,6 +2938,8 @@ main:has(.maniatour-home) {
 .travel-guide-page .kv-travel-guide-card {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  height: 22.5rem;
   padding: 0.875rem;
   border-radius: 0.875rem;
   border: 1px solid rgb(0 0 0 / 0.06);
@@ -2922,6 +2947,7 @@ main:has(.maniatour-home) {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.05), 0 4px 14px rgb(0 0 0 / 0.06);
   text-decoration: none;
   color: inherit;
+  overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
@@ -2933,7 +2959,10 @@ main:has(.maniatour-home) {
 
 .travel-guide-page .kv-travel-guide-card-image {
   position: relative;
+  flex-shrink: 0;
+  width: 100%;
   aspect-ratio: 16 / 10;
+  height: auto;
   overflow: hidden;
   border-radius: 0.625rem;
   background: #eee;
@@ -2969,6 +2998,11 @@ main:has(.maniatour-home) {
   font-weight: 700;
   line-height: 1.35;
   color: var(--kv-navy, #1a1a1a);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.35em * 2);
 }
 
 .travel-guide-page .kv-travel-guide-card-excerpt {
@@ -2977,9 +3011,11 @@ main:has(.maniatour-home) {
   line-height: 1.5;
   color: var(--kv-muted, #64748b);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .travel-guide-page .kv-travel-guide-card-meta {
@@ -2992,6 +3028,7 @@ main:has(.maniatour-home) {
   font-size: 0.75rem;
   line-height: 1.4;
   color: var(--kv-muted, #64748b);
+  flex-shrink: 0;
 }
 
 .travel-guide-page .kv-travel-guide-card-meta-author {
@@ -3007,9 +3044,17 @@ main:has(.maniatour-home) {
   font-variant-numeric: tabular-nums;
 }
 
-.travel-guide-page .kv-travel-guide-card--skeleton,
+.travel-guide-page .kv-travel-guide-card--skeleton {
+  height: 22.5rem;
+  min-height: 22.5rem;
+  border-radius: 0.875rem;
+  background: linear-gradient(90deg, #f3f4f6 25%, #eceff3 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: kv-shimmer 1.4s ease infinite;
+}
+
 .travel-guide-page .kv-travel-guide-article-skeleton {
-  min-height: 18rem;
+  min-height: 28rem;
   border-radius: 0.875rem;
   background: linear-gradient(90deg, #f3f4f6 25%, #eceff3 50%, #f3f4f6 75%);
   background-size: 200% 100%;
@@ -3023,7 +3068,9 @@ main:has(.maniatour-home) {
 }
 
 .travel-guide-page .kv-travel-guide-article-wrap {
+  width: 100%;
   max-width: 48rem;
+  margin-inline: auto;
 }
 
 .travel-guide-page .kv-travel-guide-article {

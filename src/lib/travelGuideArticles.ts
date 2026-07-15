@@ -1,6 +1,7 @@
 import { resolveTravelGuideAuthorNames } from '@/lib/travelGuideAuthorDisplay'
 import { pickTravelGuideLocalizedField } from '@/lib/travelGuideEditorLocales'
 import { filterTravelGuideRowsByQuery } from '@/lib/travelGuideSearch'
+import { sopPlainDisplayText } from '@/lib/markdownToHtml'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 export type TravelGuideArticleRow = {
@@ -70,15 +71,9 @@ export function slugifyTravelGuideTitle(value: string): string {
     .slice(0, 80)
 }
 
-/** 목록·카드용 요약 — 본문에서 자동 생성 */
+/** 목록·카드용 요약 — 본문에서 자동 생성 (에디터 토큰·마크다운 기호 제거) */
 export function deriveTravelGuideExcerpt(body: string, maxLength = 160): string {
-  const plain = body
-    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[#>*_`~|-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const plain = sopPlainDisplayText(body)
 
   if (!plain) return ''
   if (plain.length <= maxLength) return plain
@@ -99,7 +94,7 @@ export function mapTravelGuideArticle(
     id: row.id,
     slug: row.slug,
     title: pickTravelGuideLocalizedField(locale, titles),
-    excerpt: pickTravelGuideLocalizedField(locale, excerpts),
+    excerpt: sopPlainDisplayText(pickTravelGuideLocalizedField(locale, excerpts)),
     body: pickTravelGuideLocalizedField(locale, bodies),
     category: pickTravelGuideLocalizedField(locale, categories),
     coverImageUrl: row.cover_image_url,
