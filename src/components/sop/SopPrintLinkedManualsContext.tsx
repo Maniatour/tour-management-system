@@ -1,12 +1,14 @@
 'use client'
 
 import { createContext, useContext } from 'react'
+import type { KnowledgeBodyLayout } from '@/lib/operationsHub'
 import type { SopDocument } from '@/types/sopStructure'
 
 export type PrintLinkedManualEntry = {
   id: string
   title: string
   doc: SopDocument
+  bodyLayout?: KnowledgeBodyLayout
 }
 
 type PrintLinkedManualsContextValue = {

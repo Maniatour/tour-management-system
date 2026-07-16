@@ -56,6 +56,7 @@ const SopPrintPreviewFrame = forwardRef<HTMLDivElement, Props>(function SopPrint
           id: row.id,
           title: row.title,
           doc: row.doc,
+          bodyLayout: row.bodyLayout,
         }
       }
       setLinkedById(next)

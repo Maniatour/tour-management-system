@@ -15,7 +15,9 @@ import {
   type SopManualFields,
 } from '@/lib/sopQuickEdit'
 import type { HubArticleLinkOption } from '@/lib/hubArticleManualLink'
+import { markdownToHtml } from '@/lib/markdownToHtml'
 import type { SopEditLocale } from '@/types/sopStructure'
+import { sopText } from '@/types/sopStructure'
 import { Check, Copy, Link2, FileText } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
@@ -154,6 +156,12 @@ export default function SopManualContentPanel({
                     </p>
                   )
                 }
+                const isPlain = entry.bodyLayout === 'plain'
+                const plainText = sopText(
+                  entry.doc.source_raw_ko || '',
+                  entry.doc.source_raw_en || '',
+                  viewLang
+                )
                 return (
                   <div
                     key={id}
@@ -161,7 +169,20 @@ export default function SopManualContentPanel({
                   >
                     <p className="mb-3 text-sm font-semibold text-indigo-900">{entry.title}</p>
                     <NestedPrintOff>
-                      <SopDocumentReadonly doc={entry.doc} viewLang={viewLang} layout="flat" />
+                      {isPlain ? (
+                        plainText.trim() ? (
+                          <div
+                            className="prose prose-sm max-w-none text-foreground prose-headings:tracking-tight prose-p:leading-7 prose-table:text-sm"
+                            dangerouslySetInnerHTML={{ __html: markdownToHtml(plainText) }}
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            {isEn ? 'No original text for this language yet.' : '이 언어의 원문이 아직 없습니다.'}
+                          </p>
+                        )
+                      ) : (
+                        <SopDocumentReadonly doc={entry.doc} viewLang={viewLang} layout="flat" />
+                      )}
                     </NestedPrintOff>
                   </div>
                 )

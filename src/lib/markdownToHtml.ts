@@ -162,7 +162,7 @@ function renderMarkdownTableHtml(lines: string[]): string {
     })
     .join('')
 
-  return `<div style="${TABLE_WRAPPER_STYLE}"><table style="${TABLE_STYLE}"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`
+  return `<div class="sop-editable-table-wrap" data-sop-table-wrap="1" style="${TABLE_WRAPPER_STYLE}"><table class="sop-editable-table" data-sop-table="1" style="${TABLE_STYLE}"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`
 }
 
 function renderMarkdownHeadingHtml(line: string): string | null {
@@ -308,15 +308,32 @@ export const markdownToHtml = (
     return `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
   }
 
+  // 카테고리형(항목 1개) 숫자 목록이 문단마다 끊겨도 문서 전체에서 번호가 이어지게 함
+  let nextOrderedNumber = 1
+
   const renderOrderedList = (nonEmpty: string[]): string => {
-    const lis = nonEmpty
-      .map((line) => {
-        const m = line.trim().match(/^(\d+)\.\s+(.+)$/)
-        return m ? `<li style="margin: 0.15em 0;">${m[2]}</li>` : ''
-      })
-      .filter(Boolean)
-    if (!lis.length) return ''
-    return `<ol style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: decimal;">${lis.join('')}</ol>`
+    const items: { num: number; body: string }[] = []
+    for (const line of nonEmpty) {
+      const m = line.trim().match(/^(\d+)\.\s+(.+)$/)
+      if (m) items.push({ num: parseInt(m[1], 10), body: m[2]! })
+    }
+    if (!items.length) return ''
+
+    let start = items[0]!.num >= 1 ? items[0]!.num : 1
+    // 저장본이 모두 "1."로 남은 단일 카테고리 → 이전 번호 이어서 표시
+    if (items.length === 1 && start === 1 && nextOrderedNumber > 1) {
+      start = nextOrderedNumber
+    } else if (items.length > 1) {
+      // 여러 항목 목록은 마크다운 시작 번호(보통 1)로 재시작 허용
+      start = items[0]!.num >= 1 ? items[0]!.num : 1
+    } else if (start === 1) {
+      start = nextOrderedNumber
+    }
+
+    const lis = items.map((it) => `<li style="margin: 0.15em 0;">${it.body}</li>`)
+    const startAttr = start > 1 ? ` start="${start}"` : ''
+    nextOrderedNumber = start + items.length
+    return `<ol${startAttr} style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: decimal;">${lis.join('')}</ol>`
   }
 
   const pStyle = 'margin-bottom: 1em; line-height: 1.6;'

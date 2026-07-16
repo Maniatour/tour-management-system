@@ -1,7 +1,18 @@
 'use client'
 
 import React, { useRef, useState, useCallback, useMemo } from 'react'
-import { ChevronDown, Image as ImageIcon, Link2, List, Table2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Image as ImageIcon,
+  Link2,
+  List,
+  ListOrdered,
+  Minus,
+  Plus,
+  Table2,
+} from 'lucide-react'
 import { getLightRichEditorStrings, type LightRichEditorUiLocale } from '@/lib/lightRichEditorStrings'
 import {
   markdownToHtml,
@@ -36,6 +47,30 @@ function selectionInsideList(root: HTMLElement | null): boolean {
     node = node.parentNode
   }
   return false
+}
+
+/**
+ * 문단 사이에 끊긴 카테고리형 `<ol>`(항목 1개)의 start를 문서 순서로 이어 붙인다.
+ * 여러 항목 목록은 1부터 다시 시작하고, 이후 카테고리 번호는 그 뒤를 이음.
+ */
+function syncOrderedListStarts(root: HTMLElement): void {
+  let next = 1
+  for (const ol of Array.from(root.querySelectorAll('ol'))) {
+    if (!(ol instanceof HTMLOListElement)) continue
+    // 중첩 목록은 건너뜀
+    if (ol.parentElement?.closest('li')) continue
+
+    const count = Array.from(ol.children).filter((el) => el.tagName === 'LI').length
+    if (count === 0) continue
+
+    if (count === 1) {
+      ol.start = next
+      next += 1
+    } else {
+      ol.start = 1
+      next = 1 + count
+    }
+  }
 }
 
 /** contentEditable 루트 안에서 커서가 table/td/th 안에 있는지 */
@@ -320,7 +355,117 @@ function buildEditableTableHtml(rows: number, cols: number): string {
     return `<tr style="${TABLE_TR_STYLE}">${cells}</tr>`
   }).join('')
 
-  return `<div style="${TABLE_WRAPPER_STYLE}"><table style="${TABLE_STYLE}"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div><p><br></p>`
+  return `<div class="sop-editable-table-wrap" data-sop-table-wrap="1" style="${TABLE_WRAPPER_STYLE}"><table class="sop-editable-table" data-sop-table="1" style="${TABLE_STYLE}"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div><p><br></p>`
+}
+
+function getTableBlockElement(table: HTMLTableElement): HTMLElement {
+  const parent = table.parentElement
+  if (
+    parent &&
+    (parent.classList.contains('sop-editable-table-wrap') || parent.getAttribute('data-sop-table-wrap') === '1')
+  ) {
+    return parent
+  }
+  return table
+}
+
+/** 래퍼가 없는 표는 이동·선택이 가능하도록 감싼다 */
+function ensureTableWrapped(table: HTMLTableElement): HTMLElement {
+  const existing = getTableBlockElement(table)
+  if (existing !== table) return existing
+  const parent = table.parentElement
+  if (!parent) return table
+  const wrap = document.createElement('div')
+  wrap.className = 'sop-editable-table-wrap'
+  wrap.setAttribute('data-sop-table-wrap', '1')
+  wrap.setAttribute('style', TABLE_WRAPPER_STYLE)
+  parent.insertBefore(wrap, table)
+  wrap.appendChild(table)
+  table.classList.add('sop-editable-table')
+  table.setAttribute('data-sop-table', '1')
+  if (!table.getAttribute('style')) table.setAttribute('style', TABLE_STYLE)
+  return wrap
+}
+
+function countTableRows(table: HTMLTableElement): number {
+  return table.rows.length
+}
+
+function countTableCols(table: HTMLTableElement): number {
+  let max = 0
+  for (const row of Array.from(table.rows)) {
+    max = Math.max(max, row.cells.length)
+  }
+  return max
+}
+
+function adjustTableRowCells(row: HTMLTableRowElement, safeCols: number, asHeader: boolean): void {
+  while (row.cells.length < safeCols) {
+    const idx = row.cells.length
+    if (asHeader) {
+      const th = document.createElement('th')
+      th.setAttribute('style', TABLE_TH_STYLE)
+      th.textContent = `열 ${idx + 1}`
+      row.appendChild(th)
+    } else {
+      const td = document.createElement('td')
+      td.setAttribute('style', TABLE_TD_STYLE)
+      td.innerHTML = '&nbsp;'
+      row.appendChild(td)
+    }
+  }
+  while (row.cells.length > safeCols) {
+    row.deleteCell(row.cells.length - 1)
+  }
+}
+
+function resizeEditorTable(table: HTMLTableElement, newRows: number, newCols: number): void {
+  const safeRows = Math.max(2, Math.min(newRows, 20))
+  const safeCols = Math.max(2, Math.min(newCols, 8))
+
+  let thead = table.tHead
+  if (!thead) {
+    thead = table.createTHead()
+    if (table.rows[0]) thead.appendChild(table.rows[0])
+    else thead.insertRow()
+  }
+  let tbody = table.tBodies[0]
+  if (!tbody) tbody = table.createTBody()
+
+  // thead에 남은 행이 여러 개면 첫 행만 헤더로 유지
+  while (thead.rows.length > 1) {
+    tbody.insertBefore(thead.rows[1]!, tbody.firstChild)
+  }
+  const headerRow = thead.rows[0] || thead.insertRow()
+  adjustTableRowCells(headerRow, safeCols, true)
+
+  const bodyTarget = safeRows - 1
+  while (tbody.rows.length < bodyTarget) {
+    const tr = tbody.insertRow()
+    tr.setAttribute('style', TABLE_TR_STYLE)
+    adjustTableRowCells(tr, safeCols, false)
+  }
+  while (tbody.rows.length > bodyTarget) {
+    tbody.deleteRow(tbody.rows.length - 1)
+  }
+  for (const row of Array.from(tbody.rows)) {
+    adjustTableRowCells(row, safeCols, false)
+  }
+}
+
+function moveTableBlock(block: HTMLElement, direction: 'up' | 'down'): boolean {
+  const parent = block.parentElement
+  if (!parent) return false
+  if (direction === 'up') {
+    const prev = block.previousElementSibling
+    if (!prev) return false
+    parent.insertBefore(block, prev)
+    return true
+  }
+  const next = block.nextElementSibling
+  if (!next) return false
+  parent.insertBefore(next, block)
+  return true
 }
 
 /** li 내부 HTML을 줄 단위 세그먼트로 (목록 항목 이후 본문 분리용) */
@@ -430,13 +575,14 @@ const htmlToMarkdown = (html: string): string => {
   // 링크 변환: <a href="url">text</a> -> [text](url)
   markdown = markdown.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
 
-  // 순서 목록: <ol>…</ol> -> "1. …\n2. …"
-  markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner: string) => {
+  // 순서 목록: <ol start="N">…</ol> -> "N. …\n…" (start 없으면 1부터)
+  markdown = markdown.replace(/<ol([^>]*)>([\s\S]*?)<\/ol>/gi, (_m, attrs: string, inner: string) => {
+    const startMatch = /\bstart\s*=\s*["']?(\d+)/i.exec(attrs)
+    let i = startMatch ? Math.max(1, parseInt(startMatch[1], 10)) : 1
     const listLines: string[] = []
     const trailingBlocks: string[] = []
     const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
     let match: RegExpExecArray | null
-    let i = 1
     while ((match = liRe.exec(inner)) !== null) {
       const segments = liInnerToMarkdownSegments(match[1])
       if (!segments.length) continue
@@ -594,8 +740,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isInitializedRef = useRef(false)
+  const savedSelectionRef = useRef<Range | null>(null)
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
   const [imageToolbarPos, setImageToolbarPos] = useState<{ top: number; left: number } | null>(null)
+  const [selectedTable, setSelectedTable] = useState<HTMLTableElement | null>(null)
+  const [tableToolbarPos, setTableToolbarPos] = useState<{ top: number; left: number } | null>(null)
+  const [selectedTableRows, setSelectedTableRows] = useState(3)
+  const [selectedTableCols, setSelectedTableCols] = useState(2)
   
   // 드롭다운 상태 관리
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -675,6 +826,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         // 초기화: value가 있으면 설정, 없으면 빈 문자열로 초기화
         const htmlContent = value ? markdownToHtml(value, htmlOptions) : ''
         editorRef.current.innerHTML = htmlContent
+        syncOrderedListStarts(editorRef.current)
         isInitializedRef.current = true
       } else {
         // 이미 초기화된 경우, value가 변경되면 에디터 내용도 업데이트
@@ -685,6 +837,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         // 현재 내용과 새로운 value가 다를 때만 업데이트 (외부에서 value가 변경된 경우)
         if (currentMarkdown !== value && !editorRef.current.matches(':focus-within')) {
           editorRef.current.innerHTML = expectedContent
+          syncOrderedListStarts(editorRef.current)
         }
       }
 
@@ -705,6 +858,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         isInitializedRef.current = true
       }
 
+      syncOrderedListStarts(editorRef.current)
       const htmlContent = editorRef.current.innerHTML
       const markdownContent = htmlToMarkdown(htmlContent)
       onChange(markdownContent)
@@ -761,19 +915,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     const imgWidth = img.getBoundingClientRect().width
     return Math.round((imgWidth / editorWidth) * 100)
   }, [])
-
-  const handleEditorImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!effectiveImageResize) return
-    const target = e.target
-    if (target instanceof HTMLImageElement && editorRef.current?.contains(target)) {
-      e.preventDefault()
-      selectEditorImage(target)
-      return
-    }
-    if (!(target instanceof HTMLElement && target.closest('.sop-image-resize-toolbar'))) {
-      clearSelectedImage()
-    }
-  }
 
   const startImageWidthDrag = (e: React.MouseEvent, img: HTMLImageElement) => {
     e.preventDefault()
@@ -897,12 +1038,202 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     setTimeout(updateEditorContent, 0)
   }
 
-  const insertTable = () => {
+  const insertOrderedList = () => {
     editorRef.current?.focus()
-    const html = buildEditableTableHtml(tableRows, tableCols)
-    document.execCommand('insertHTML', false, html)
-    setShowTablePicker(false)
+    document.execCommand('insertOrderedList', false)
+    if (editorRef.current) syncOrderedListStarts(editorRef.current)
     setTimeout(updateEditorContent, 0)
+  }
+
+  const saveEditorSelection = useCallback(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!editor.contains(range.commonAncestorContainer)) return
+    savedSelectionRef.current = range.cloneRange()
+  }, [])
+
+  const restoreEditorSelection = useCallback((): boolean => {
+    const editor = editorRef.current
+    const range = savedSelectionRef.current
+    if (!editor || !range) return false
+    try {
+      editor.focus()
+      const sel = window.getSelection()
+      if (!sel) return false
+      sel.removeAllRanges()
+      sel.addRange(range)
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  const insertHtmlAtCursor = useCallback(
+    (html: string): HTMLElement | null => {
+      const editor = editorRef.current
+      if (!editor || readOnly) return null
+      editor.focus()
+
+      const sel = window.getSelection()
+      const restored = restoreEditorSelection()
+      const hasValidSelection =
+        restored &&
+        sel &&
+        sel.rangeCount > 0 &&
+        !!sel.anchorNode &&
+        editor.contains(sel.anchorNode)
+
+      if (!hasValidSelection) {
+        const endRange = document.createRange()
+        endRange.selectNodeContents(editor)
+        endRange.collapse(false)
+        sel?.removeAllRanges()
+        sel?.addRange(endRange)
+      }
+
+      const range = window.getSelection()?.getRangeAt(0)
+      if (!range) {
+        document.execCommand('insertHTML', false, html)
+        return null
+      }
+
+      range.deleteContents()
+      const template = document.createElement('template')
+      template.innerHTML = html
+      const wrap =
+        (template.content.querySelector('[data-sop-table-wrap]') as HTMLElement | null) ??
+        (template.content.querySelector('table') as HTMLElement | null)
+      const lastChild = template.content.lastChild
+      range.insertNode(template.content)
+      if (lastChild) {
+        const after = document.createRange()
+        after.setStartAfter(lastChild)
+        after.collapse(true)
+        const s = window.getSelection()
+        s?.removeAllRanges()
+        s?.addRange(after)
+        savedSelectionRef.current = after.cloneRange()
+      }
+      return wrap
+    },
+    [readOnly, restoreEditorSelection]
+  )
+
+  const syncSelectedTableToolbar = useCallback((table: HTMLTableElement | null) => {
+    if (!table || !editorRef.current) {
+      setTableToolbarPos(null)
+      return
+    }
+    const block = getTableBlockElement(table)
+    const editorBox = editorRef.current.getBoundingClientRect()
+    const tableBox = block.getBoundingClientRect()
+    setTableToolbarPos({
+      top: tableBox.top - editorBox.top + editorRef.current.scrollTop - 4,
+      left: tableBox.left - editorBox.left + editorRef.current.scrollLeft,
+    })
+  }, [])
+
+  const clearSelectedTable = useCallback(() => {
+    editorRef.current
+      ?.querySelectorAll('.sop-editable-table-wrap--selected')
+      .forEach((node) => node.classList.remove('sop-editable-table-wrap--selected'))
+    setSelectedTable(null)
+    setTableToolbarPos(null)
+  }, [])
+
+  const selectEditorTable = useCallback(
+    (table: HTMLTableElement) => {
+      const wrap = ensureTableWrapped(table)
+      editorRef.current
+        ?.querySelectorAll('.sop-editable-table-wrap--selected')
+        .forEach((node) => node.classList.remove('sop-editable-table-wrap--selected'))
+      wrap.classList.add('sop-editable-table-wrap--selected')
+      setSelectedTable(table)
+      setSelectedTableRows(countTableRows(table))
+      setSelectedTableCols(countTableCols(table))
+      syncSelectedTableToolbar(table)
+    },
+    [syncSelectedTableToolbar]
+  )
+
+  React.useEffect(() => {
+    if (!selectedTable || readOnly) return
+    const editor = editorRef.current
+    if (!editor) return
+
+    const reposition = () => syncSelectedTableToolbar(selectedTable)
+    editor.addEventListener('scroll', reposition)
+    window.addEventListener('resize', reposition)
+    return () => {
+      editor.removeEventListener('scroll', reposition)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [selectedTable, readOnly, syncSelectedTableToolbar])
+
+  const handleEditorClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target
+    if (!(target instanceof Node) || !editorRef.current?.contains(target)) return
+
+    if (enableTable && !readOnly && target instanceof HTMLElement) {
+      if (target.closest('.sop-table-edit-toolbar')) return
+      const table = target.closest('table')
+      if (table instanceof HTMLTableElement && editorRef.current.contains(table)) {
+        selectEditorTable(table)
+      } else {
+        clearSelectedTable()
+      }
+    }
+
+    if (!effectiveImageResize) return
+    if (target instanceof HTMLImageElement && editorRef.current.contains(target)) {
+      e.preventDefault()
+      selectEditorImage(target)
+      return
+    }
+    if (!(target instanceof HTMLElement && target.closest('.sop-image-resize-toolbar'))) {
+      clearSelectedImage()
+    }
+  }
+
+  const applySelectedTableSize = useCallback(
+    (rows: number, cols: number) => {
+      if (!selectedTable || !editorRef.current?.contains(selectedTable)) return
+      const safeRows = Math.max(2, Math.min(rows, 20))
+      const safeCols = Math.max(2, Math.min(cols, 8))
+      resizeEditorTable(selectedTable, safeRows, safeCols)
+      setSelectedTableRows(safeRows)
+      setSelectedTableCols(safeCols)
+      syncSelectedTableToolbar(selectedTable)
+      updateEditorContent()
+    },
+    [selectedTable, syncSelectedTableToolbar, updateEditorContent]
+  )
+
+  const moveSelectedTable = useCallback(
+    (direction: 'up' | 'down') => {
+      if (!selectedTable || !editorRef.current?.contains(selectedTable)) return
+      const block = ensureTableWrapped(selectedTable)
+      if (!moveTableBlock(block, direction)) return
+      syncSelectedTableToolbar(selectedTable)
+      updateEditorContent()
+    },
+    [selectedTable, syncSelectedTableToolbar, updateEditorContent]
+  )
+
+  const insertTable = () => {
+    const wrap = insertHtmlAtCursor(buildEditableTableHtml(tableRows, tableCols))
+    setShowTablePicker(false)
+    setTimeout(() => {
+      const table =
+        wrap?.querySelector?.('table') ??
+        (wrap instanceof HTMLTableElement ? wrap : null) ??
+        editorRef.current?.querySelector('table:last-of-type')
+      if (table instanceof HTMLTableElement) selectEditorTable(table)
+      updateEditorContent()
+    }, 0)
   }
 
   // 이미지 삽입
@@ -1088,21 +1419,38 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             <div className="w-px bg-gray-300 mx-1"></div>
           )}
           {enableList && (
-            <button
-              type="button"
-              onClick={insertList}
-              className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
-              title={strings.listTitle}
-              aria-label={strings.listTitle}
-            >
-              <List className="h-4 w-4" aria-hidden />
-              {!strings.iconOnlyToolbar ? <span>{strings.listButton}</span> : null}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={insertList}
+                className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+                title={strings.listTitle}
+                aria-label={strings.listTitle}
+              >
+                <List className="h-4 w-4" aria-hidden />
+                {!strings.iconOnlyToolbar ? <span>{strings.listButton}</span> : null}
+              </button>
+              <button
+                type="button"
+                onClick={insertOrderedList}
+                className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
+                title={strings.orderedListTitle}
+                aria-label={strings.orderedListTitle}
+              >
+                <ListOrdered className="h-4 w-4" aria-hidden />
+                {!strings.iconOnlyToolbar ? <span>{strings.orderedListButton}</span> : null}
+              </button>
+            </>
           )}
           {enableTable && (
             <div className="relative">
               <button
                 type="button"
+                onMouseDown={(e) => {
+                  // 툴바 클릭으로 에디터 선택이 풀리기 전에 커서 위치 저장
+                  e.preventDefault()
+                  saveEditorSelection()
+                }}
                 onClick={() => setShowTablePicker(!showTablePicker)}
                 className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
                 title={strings.tableTitle}
@@ -1140,6 +1488,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                   </div>
                   <button
                     type="button"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={insertTable}
                     className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
                   >
@@ -1307,6 +1656,111 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       
       {/* 에디터 영역 */}
       <div className="relative flex-shrink-0">
+        {enableTable && !readOnly && selectedTable && tableToolbarPos && (
+          <div
+            className="sop-table-edit-toolbar absolute z-20 flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-md"
+            style={{
+              top: Math.max(4, tableToolbarPos.top - 48),
+              left: Math.max(4, tableToolbarPos.left),
+              maxWidth: 'calc(100% - 8px)',
+            }}
+            onMouseDown={(e) => {
+              if ((e.target as HTMLElement).tagName === 'INPUT') return
+              e.preventDefault()
+            }}
+          >
+            <span className="mr-0.5 text-[11px] font-medium text-slate-500">{strings.editTableTitle}</span>
+            <label className="flex items-center gap-1 text-[11px] text-slate-600">
+              {strings.rows}
+              <input
+                type="number"
+                min={2}
+                max={20}
+                value={selectedTableRows}
+                onChange={(e) => {
+                  const next = Math.max(2, Math.min(20, Number(e.target.value) || 2))
+                  setSelectedTableRows(next)
+                  applySelectedTableSize(next, selectedTableCols)
+                }}
+                className="w-12 rounded border border-gray-300 px-1 py-0.5 text-xs"
+              />
+            </label>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => applySelectedTableSize(selectedTableRows + 1, selectedTableCols)}
+                className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+                title={strings.addRow}
+                aria-label={strings.addRow}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => applySelectedTableSize(selectedTableRows - 1, selectedTableCols)}
+                className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+                title={strings.removeRow}
+                aria-label={strings.removeRow}
+              >
+                <Minus className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+            <label className="flex items-center gap-1 text-[11px] text-slate-600">
+              {strings.cols}
+              <input
+                type="number"
+                min={2}
+                max={8}
+                value={selectedTableCols}
+                onChange={(e) => {
+                  const next = Math.max(2, Math.min(8, Number(e.target.value) || 2))
+                  setSelectedTableCols(next)
+                  applySelectedTableSize(selectedTableRows, next)
+                }}
+                className="w-12 rounded border border-gray-300 px-1 py-0.5 text-xs"
+              />
+            </label>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => applySelectedTableSize(selectedTableRows, selectedTableCols + 1)}
+                className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+                title={strings.addCol}
+                aria-label={strings.addCol}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => applySelectedTableSize(selectedTableRows, selectedTableCols - 1)}
+                className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+                title={strings.removeCol}
+                aria-label={strings.removeCol}
+              >
+                <Minus className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+            <div className="mx-0.5 h-4 w-px bg-slate-200" />
+            <button
+              type="button"
+              onClick={() => moveSelectedTable('up')}
+              className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+              title={strings.moveTableUp}
+              aria-label={strings.moveTableUp}
+            >
+              <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => moveSelectedTable('down')}
+              className="rounded border border-slate-200 p-1 text-slate-700 hover:bg-slate-100"
+              title={strings.moveTableDown}
+              aria-label={strings.moveTableDown}
+            >
+              <ArrowDown className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+        )}
         {effectiveImageResize && selectedImage && imageToolbarPos && (
           <div
             className="sop-image-resize-toolbar absolute z-20 flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-md"
@@ -1356,10 +1810,31 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         ref={editorRef}
         contentEditable={!readOnly}
         suppressContentEditableWarning={true}
-        onClick={handleEditorImageClick}
+        onClick={handleEditorClick}
+        onMouseUp={
+          readOnly
+            ? undefined
+            : () => {
+                saveEditorSelection()
+              }
+        }
         onInput={readOnly ? undefined : updateEditorContent}
-        onBlur={readOnly ? undefined : updateEditorContent}
-        onKeyUp={readOnly ? undefined : updateEditorContent}
+        onBlur={
+          readOnly
+            ? undefined
+            : () => {
+                saveEditorSelection()
+                updateEditorContent()
+              }
+        }
+        onKeyUp={
+          readOnly
+            ? undefined
+            : () => {
+                saveEditorSelection()
+                updateEditorContent()
+              }
+        }
         onPaste={readOnly ? undefined : handlePaste}
         onKeyDown={
           readOnly
@@ -1404,7 +1879,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           }
         }
         }
-        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-slate-200 [&_td]:p-2 [&_td]:align-top [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
+        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:text-left [&_th]:font-semibold [&_td]:border [&_td]:border-slate-200 [&_td]:p-2 [&_td]:align-top [&_.sop-editable-image--selected]:outline [&_.sop-editable-image--selected]:outline-2 [&_.sop-editable-image--selected]:outline-blue-500 [&_.sop-editable-image--selected]:outline-offset-2 [&_.sop-editable-table-wrap--selected]:outline [&_.sop-editable-table-wrap--selected]:outline-2 [&_.sop-editable-table-wrap--selected]:outline-blue-500 [&_.sop-editable-table-wrap--selected]:outline-offset-2 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
         style={{ 
           height: autoHeight && readOnly ? 'auto' : `${currentHeight}px`,
           minHeight: `${minHeight}px`,

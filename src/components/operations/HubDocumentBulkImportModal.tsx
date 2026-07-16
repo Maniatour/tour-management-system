@@ -74,8 +74,8 @@ export default function HubDocumentBulkImportModal({
   onApplyStructure,
   onApplyRawOnly,
 }: Props) {
-  const fileInputKoRef = useRef<HTMLInputElement>(null)
-  const fileInputEnRef = useRef<HTMLInputElement>(null)
+  const fileInputKoRef = useRef<HTMLInputElement | null>(null)
+  const fileInputEnRef = useRef<HTMLInputElement | null>(null)
   const [rawKo, setRawKo] = useState('')
   const [rawEn, setRawEn] = useState('')
   const [busySide, setBusySide] = useState<LocaleSide | null>(null)
@@ -224,7 +224,7 @@ export default function HubDocumentBulkImportModal({
           </span>
           <div className="flex items-center gap-1.5">
             <input
-              ref={fileRef}
+              ref={fileRef as React.Ref<HTMLInputElement>}
               type="file"
               accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
               className="hidden"

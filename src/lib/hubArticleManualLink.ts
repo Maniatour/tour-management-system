@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase'
-import { articleBodyToDocument, hubCategoryLabel, type KnowledgeArticleRow } from '@/lib/operationsHub'
+import {
+  articleBodyToDocument,
+  hubCategoryLabel,
+  normalizeBodyLayout,
+  type KnowledgeArticleRow,
+  type KnowledgeBodyLayout,
+} from '@/lib/operationsHub'
 import { coerceKnowledgeArticleRow } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
 import type { SopDocument, SopEditLocale, OperationsHubCategory } from '@/types/sopStructure'
@@ -93,7 +99,7 @@ export async function fetchHubArticleDocumentBySlug(
 export async function fetchHubArticleDocumentsByIds(
   articleIds: string[],
   lang: SopEditLocale = 'ko'
-): Promise<Array<{ id: string; title: string; doc: SopDocument }>> {
+): Promise<Array<{ id: string; title: string; doc: SopDocument; bodyLayout: KnowledgeBodyLayout }>> {
   const ids = [...new Set(articleIds.map((id) => id.trim()).filter(Boolean))]
   if (ids.length === 0) return []
 
@@ -110,14 +116,14 @@ export async function fetchHubArticleDocumentsByIds(
     byId.set(coerced.id, coerced)
   }
 
-  const out: Array<{ id: string; title: string; doc: SopDocument }> = []
+  const out: Array<{ id: string; title: string; doc: SopDocument; bodyLayout: KnowledgeBodyLayout }> = []
   for (const id of ids) {
     const row = byId.get(id)
     if (!row) continue
     const doc = articleBodyToDocument(row)
     if (!doc) continue
     const title = sopText(row.title_ko, row.title_en, lang).trim() || row.slug || id
-    out.push({ id, title, doc })
+    out.push({ id, title, doc, bodyLayout: normalizeBodyLayout(row.body_layout) })
   }
   return out
 }

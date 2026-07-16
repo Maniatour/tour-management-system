@@ -6,9 +6,11 @@ export type LightRichEditorStrings = {
   italicTitle: string
   underlineTitle: string
   listTitle: string
+  orderedListTitle: string
   tableTitle: string
   /** 툴바에 텍스트 라벨을 보일 때 쓰는 짧은 이름 */
   listButton: string
+  orderedListButton: string
   tableButton: string
   linkButton: string
   imageButton: string
@@ -16,6 +18,13 @@ export type LightRichEditorStrings = {
   rows: string
   cols: string
   insertTable: string
+  editTableTitle: string
+  addRow: string
+  removeRow: string
+  addCol: string
+  removeCol: string
+  moveTableUp: string
+  moveTableDown: string
   linkTitle: string
   imageTitle: string
   textColorTitle: string
@@ -40,8 +49,10 @@ const EN_STRINGS: LightRichEditorStrings = {
   italicTitle: 'Italic (Ctrl+I)',
   underlineTitle: 'Underline (Ctrl+U)',
   listTitle: 'Bullet list',
+  orderedListTitle: 'Numbered list',
   tableTitle: 'Insert table',
   listButton: 'List',
+  orderedListButton: 'Numbered',
   tableButton: 'Table',
   linkButton: 'Link',
   imageButton: 'Image',
@@ -49,6 +60,13 @@ const EN_STRINGS: LightRichEditorStrings = {
   rows: 'Rows',
   cols: 'Columns',
   insertTable: 'Insert table',
+  editTableTitle: 'Edit table',
+  addRow: 'Add row',
+  removeRow: 'Remove row',
+  addCol: 'Add column',
+  removeCol: 'Remove column',
+  moveTableUp: 'Move table up',
+  moveTableDown: 'Move table down',
   linkTitle: 'Insert link',
   imageTitle: 'Insert image',
   textColorTitle: 'Text color',
@@ -71,9 +89,11 @@ const KO_STRINGS: LightRichEditorStrings = {
   boldTitle: '굵게 (Ctrl+B)',
   italicTitle: '기울임 (Ctrl+I)',
   underlineTitle: '밑줄 (Ctrl+U)',
-  listTitle: '목록',
+  listTitle: '글머리 목록',
+  orderedListTitle: '숫자 목록',
   tableTitle: '표 삽입',
   listButton: '목록',
+  orderedListButton: '숫자',
   tableButton: '표',
   linkButton: '링크',
   imageButton: '이미지',
@@ -81,6 +101,13 @@ const KO_STRINGS: LightRichEditorStrings = {
   rows: '행',
   cols: '열',
   insertTable: '표 삽입',
+  editTableTitle: '표 편집',
+  addRow: '행 추가',
+  removeRow: '행 삭제',
+  addCol: '열 추가',
+  removeCol: '열 삭제',
+  moveTableUp: '표 위로 이동',
+  moveTableDown: '표 아래로 이동',
   linkTitle: '링크',
   imageTitle: '이미지 삽입',
   textColorTitle: '글자색',

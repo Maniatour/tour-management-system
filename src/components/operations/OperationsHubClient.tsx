@@ -1258,8 +1258,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
                       <p className="shrink-0 text-[11px] text-gray-500">
                         {modalUiEn
-                          ? `Editing ${modalViewLang === 'en' ? 'English' : 'Korean'} original · auto-saves when you pause. Structure is unchanged.`
-                          : `${modalViewLang === 'en' ? '영문' : '한국어'} 원문 편집 · 잠시 멈추면 자동 저장됩니다. 구조 본문은 바뀌지 않습니다.`}
+                          ? 'Editing English original · auto-saves when you pause. Structure is unchanged.'
+                          : '한국어 원문 편집 · 잠시 멈추면 자동 저장됩니다. 구조 본문은 바뀌지 않습니다.'}
                       </p>
                       <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border/60 bg-white shadow-sm">
                         <LightRichEditor

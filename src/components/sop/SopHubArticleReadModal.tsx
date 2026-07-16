@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import SopDocumentWithToc from '@/components/sop/SopDocumentWithToc'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +16,10 @@ import {
   hubArticleLinkMeta,
   type HubArticleLinkOption,
 } from '@/lib/hubArticleManualLink'
+import { markdownToHtml } from '@/lib/markdownToHtml'
+import { normalizeBodyLayout, type KnowledgeBodyLayout } from '@/lib/operationsHub'
 import type { SopDocument, SopEditLocale } from '@/types/sopStructure'
+import { sopText } from '@/types/sopStructure'
 import { GripVertical, Loader2 } from 'lucide-react'
 
 const HUB_ARTICLE_READ_MODAL_RECT_KEY = 'sop-hub-article-read-modal-rect-v1'
@@ -41,6 +44,7 @@ export default function SopHubArticleReadModal({
   const isEn = uiLocaleEn
   const [loading, setLoading] = useState(false)
   const [doc, setDoc] = useState<SopDocument | null>(null)
+  const [bodyLayout, setBodyLayout] = useState<KnowledgeBodyLayout>('structured')
   const [title, setTitle] = useState('')
 
   const known = articleId ? hubArticles.find((a) => a.id === articleId) : undefined
@@ -49,6 +53,7 @@ export default function SopHubArticleReadModal({
     const id = articleId?.trim()
     if (!open || !id) {
       setDoc(null)
+      setBodyLayout('structured')
       setTitle('')
       setLoading(false)
       return
@@ -61,6 +66,7 @@ export default function SopHubArticleReadModal({
       if (cancelled) return
       if (!result) {
         setDoc(null)
+        setBodyLayout('structured')
         setTitle(
           known
             ? hubArticleLinkLabel(known, viewLang)
@@ -72,6 +78,7 @@ export default function SopHubArticleReadModal({
         return
       }
       setDoc(result.doc)
+      setBodyLayout(normalizeBodyLayout(result.row.body_layout))
       setTitle(hubArticleLinkLabel(result.row, viewLang))
       setLoading(false)
     })
@@ -82,6 +89,14 @@ export default function SopHubArticleReadModal({
   }, [articleId, open, viewLang, known, isEn])
 
   const meta = known ? hubArticleLinkMeta(known, viewLang) : ''
+  const isPlain = bodyLayout === 'plain'
+  const plainText = useMemo(
+    () =>
+      doc
+        ? sopText(doc.source_raw_ko || '', doc.source_raw_en || '', viewLang)
+        : '',
+    [doc, viewLang]
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,9 +127,26 @@ export default function SopHubArticleReadModal({
               <span className="sr-only">{isEn ? 'Loading document…' : '문서 불러오는 중…'}</span>
             </div>
           ) : doc ? (
-            <div className="h-full min-h-0 overflow-auto rounded-xl border border-gray-200 bg-white p-2 sm:p-3">
-              <SopDocumentWithToc doc={doc} viewLang={viewLang} uiLocaleEn={uiLocaleEn} resizableToc={false} />
-            </div>
+            isPlain ? (
+              <div className="h-full min-h-0 overflow-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+                {plainText.trim() ? (
+                  <div
+                    className="prose prose-sm max-w-none text-foreground prose-headings:tracking-tight prose-p:leading-7 prose-table:text-sm"
+                    dangerouslySetInnerHTML={{ __html: markdownToHtml(plainText) }}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {isEn
+                      ? 'No original text for this language yet.'
+                      : '이 언어의 원문이 아직 없습니다.'}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="h-full min-h-0 overflow-auto rounded-xl border border-gray-200 bg-white p-2 sm:p-3">
+                <SopDocumentWithToc doc={doc} viewLang={viewLang} uiLocaleEn={uiLocaleEn} resizableToc={false} />
+              </div>
+            )
           ) : (
             <div className="flex h-full min-h-[12rem] items-center justify-center rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 text-center text-sm text-amber-800">
               {isEn
