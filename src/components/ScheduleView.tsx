@@ -6338,7 +6338,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md border p-2">
+    <div className="bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2">
       {/* 헤더 */}
       <div className="mb-2">
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}

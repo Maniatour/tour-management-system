@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
@@ -837,20 +838,20 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const sectionHeading =
     'flex items-center gap-2 border-b border-gray-100 pb-3 mb-4 text-sm font-semibold tracking-tight text-gray-900'
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-[1200] flex items-end justify-center sm:items-center sm:p-4"
+      className="fixed inset-x-0 top-0 z-[1200] flex items-end justify-center bottom-[calc(var(--footer-height)+env(safe-area-inset-bottom,0px))] sm:items-center sm:p-4 lg:inset-0 lg:bottom-0"
       role="dialog"
       aria-modal="true"
       aria-labelledby="vehicle-edit-modal-title"
     >
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-[1px] transition-opacity"
+        className="absolute inset-0 bg-black/50 backdrop-blur-[1px] transition-opacity"
         aria-hidden
         onClick={onClose}
       />
 
-      <div className="relative z-10 flex max-h-[min(92vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white text-left shadow-2xl sm:rounded-xl">
+      <div className="relative z-10 flex h-auto max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white text-left shadow-2xl sm:max-h-[min(92vh,900px)] sm:rounded-xl">
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 via-white to-slate-50/80 px-4 py-3.5 sm:items-center sm:px-5">
             <div className="min-w-0 flex-1">
@@ -1725,14 +1726,14 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           <div className="flex shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-slate-50/90 px-4 py-3 sm:px-5">
               <button
                 type="submit"
-                className="inline-flex justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                className="inline-flex min-h-11 justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 저장
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                className="inline-flex min-h-11 justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
               >
                 취소
               </button>
@@ -1742,8 +1743,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
       {/* 사진 갤러리 모달 */}
       {showPhotoGallery && (
-        <div className="fixed inset-0 z-[1210] flex items-center justify-center bg-black bg-opacity-50 p-3">
-          <div className="max-h-[82vh] max-w-4xl overflow-y-auto rounded-lg bg-white p-4">
+        <div className="absolute inset-0 z-[1210] flex items-center justify-center bg-black/50 p-3">
+          <div className="max-h-[min(82vh,100%)] max-w-4xl overflow-y-auto rounded-lg bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-base font-semibold text-gray-900">
                 {formData.vehicle_type} 사진 갤러리
@@ -1820,4 +1821,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       />
     </div>
   )
+
+  if (typeof document === 'undefined') return modal
+  return createPortal(modal, document.body)
 }
