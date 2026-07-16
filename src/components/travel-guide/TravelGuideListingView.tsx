@@ -10,18 +10,37 @@ import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import TravelGuideEditorModal from '@/components/travel-guide/TravelGuideEditorModal'
 import { AuthContext } from '@/contexts/AuthContext'
 import { fetchTravelGuideArticles } from '@/lib/fetchTravelGuideArticles'
-import { fetchTravelGuideArticlesForStaff } from '@/lib/fetchTravelGuideArticlesForStaff'
+import { fetchTravelGuideListingForStaff } from '@/lib/fetchTravelGuideArticlesForStaff'
 import { formatTravelGuideDisplayDate } from '@/lib/travelGuideAuthorDisplay'
-import {
-  mapTravelGuideArticle,
-  type TravelGuideArticle,
-} from '@/lib/travelGuideArticles'
-import { filterTravelGuideRowsByQuery } from '@/lib/travelGuideSearch'
+import type { TravelGuideArticle } from '@/lib/travelGuideArticles'
 import { canAccessTravelGuideStaffApi } from '@/lib/travelGuideStaffAccess'
 
 type Props = {
   locale: string
   t: (key: string, values?: Record<string, string | number>) => string
+}
+
+function filterTravelGuideArticlesByQuery(
+  articles: TravelGuideArticle[],
+  query: string
+): TravelGuideArticle[] {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return articles
+
+  const tokens = normalized.split(/\s+/).filter(Boolean)
+  return articles.filter((article) => {
+    const haystack = [
+      article.slug,
+      article.title,
+      article.excerpt,
+      article.category,
+      article.body,
+      article.authorName ?? '',
+    ]
+      .join(' ')
+      .toLowerCase()
+    return tokens.every((token) => haystack.includes(token))
+  })
 }
 
 function TravelGuideArticleCard({
@@ -64,25 +83,29 @@ function TravelGuideArticleCard({
       </div>
       <h2 className="kv-travel-guide-card-title">{article.title}</h2>
       {article.excerpt ? <p className="kv-travel-guide-card-excerpt">{article.excerpt}</p> : null}
-      {article.authorName || article.updatedAt ? (
-        <p className="kv-travel-guide-card-meta">
-          {article.authorName ? (
-            <span className="kv-travel-guide-card-meta-author">{article.authorName}</span>
-          ) : null}
-          {article.authorName && article.updatedAt ? (
+      <p className="kv-travel-guide-card-meta">
+        {article.authorName ? (
+          <span className="kv-travel-guide-card-meta-author">
+            {t('travelGuideCardAuthor', { name: article.authorName })}
+          </span>
+        ) : (
+          <span className="kv-travel-guide-card-meta-author kv-travel-guide-card-meta-author--muted">
+            {t('travelGuideCardAuthorUnknown')}
+          </span>
+        )}
+        {article.updatedAt ? (
+          <>
             <span className="kv-travel-guide-card-meta-sep" aria-hidden>
               ·
             </span>
-          ) : null}
-          {article.updatedAt ? (
             <time className="kv-travel-guide-card-meta-date" dateTime={article.updatedAt}>
               {t('travelGuideCardUpdated', {
                 date: formatTravelGuideDisplayDate(article.updatedAt, locale),
               })}
             </time>
-          ) : null}
-        </p>
-      ) : null}
+          </>
+        ) : null}
+      </p>
     </>
   )
 
@@ -163,9 +186,8 @@ export default function TravelGuideListingView({ locale, t }: Props) {
       setLoading(true)
 
       if (canWrite) {
-        const rows = await fetchTravelGuideArticlesForStaff()
-        const filtered = filterTravelGuideRowsByQuery(rows, query).slice(0, 48)
-        setArticles(filtered.map((row) => mapTravelGuideArticle(row, locale)))
+        const rows = await fetchTravelGuideListingForStaff(locale)
+        setArticles(filterTravelGuideArticlesByQuery(rows, query).slice(0, 48))
       } else {
         const rows = await fetchTravelGuideArticles({
           locale,
@@ -209,10 +231,9 @@ export default function TravelGuideListingView({ locale, t }: Props) {
       setLoading(true)
 
       if (canWrite) {
-        const rows = await fetchTravelGuideArticlesForStaff()
+        const rows = await fetchTravelGuideListingForStaff(locale)
         if (cancelled) return
-        const filtered = filterTravelGuideRowsByQuery(rows, searchQuery).slice(0, 48)
-        setArticles(filtered.map((row) => mapTravelGuideArticle(row, locale)))
+        setArticles(filterTravelGuideArticlesByQuery(rows, searchQuery).slice(0, 48))
       } else {
         const rows = await fetchTravelGuideArticles({
           locale,

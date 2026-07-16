@@ -117,6 +117,10 @@ export function deriveTravelGuideExcerpt(body: string, maxLength = 160): string 
   return `${plain.slice(0, maxLength).trim()}…`
 }
 
+export function pickTravelGuideAuthorUserId(row: TravelGuideArticleRow): string | null {
+  return row.created_by?.trim() || row.updated_by?.trim() || null
+}
+
 export function mapTravelGuideArticle(
   row: TravelGuideArticleRow,
   locale: string,
@@ -142,6 +146,25 @@ export function mapTravelGuideArticle(
     updatedAt: row.updated_at,
     authorName,
   }
+}
+
+export async function mapTravelGuideArticleRowsWithAuthors(
+  rows: TravelGuideArticleRow[],
+  locale: string
+): Promise<TravelGuideArticle[]> {
+  const authorMap = await resolveTravelGuideAuthorNames(
+    rows.map((row) => pickTravelGuideAuthorUserId(row)),
+    locale
+  )
+
+  return rows.map((row) => {
+    const authorId = pickTravelGuideAuthorUserId(row)
+    return mapTravelGuideArticle(
+      row,
+      locale,
+      authorId ? authorMap.get(authorId) ?? null : null
+    )
+  })
 }
 
 export async function listPublishedTravelGuideArticles(options?: {
@@ -171,14 +194,8 @@ export async function listPublishedTravelGuideArticles(options?: {
     0,
     limit
   )
-  const authorMap = await resolveTravelGuideAuthorNames(
-    rows.map((row) => row.created_by),
-    locale
-  )
 
-  return rows.map((row) =>
-    mapTravelGuideArticle(row, locale, authorMap.get(row.created_by ?? '') ?? null)
-  )
+  return mapTravelGuideArticleRowsWithAuthors(rows, locale)
 }
 
 export async function getPublishedTravelGuideArticleBySlug(
@@ -201,8 +218,8 @@ export async function getPublishedTravelGuideArticleBySlug(
   if (!data) return null
 
   const row = data as TravelGuideArticleRow
-  const authorMap = await resolveTravelGuideAuthorNames([row.created_by], locale)
-  return mapTravelGuideArticle(row, locale, authorMap.get(row.created_by ?? '') ?? null)
+  const [article] = await mapTravelGuideArticleRowsWithAuthors([row], locale)
+  return article ?? null
 }
 
 export async function listAllTravelGuideArticlesForStaff(): Promise<TravelGuideArticleRow[]> {

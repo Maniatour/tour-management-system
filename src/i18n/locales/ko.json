@@ -521,6 +521,8 @@
     "travelGuideFieldBodyEn": "본문 (영문)",
     "travelGuideFieldBodyKo": "본문 (한글)",
     "travelGuideBodyPlaceholder": "여행 가이드 본문을 작성하세요. 툴바에서 글꼴, 색상, 링크, 이미지를 사용할 수 있습니다.",
+    "travelGuideCardAuthor": "{name}",
+    "travelGuideCardAuthorUnknown": "작성자 미상",
     "travelGuideCardUpdated": "{date} 수정",
     "travelGuideSearchPlaceholder": "제목, 카테고리, 키워드로 글 검색…",
     "travelGuideSearchClear": "검색 초기화",

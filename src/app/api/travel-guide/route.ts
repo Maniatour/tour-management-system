@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   createTravelGuideArticle,
   listAllTravelGuideArticlesForStaff,
+  mapTravelGuideArticleRowsWithAuthors,
   slugifyTravelGuideTitle,
   type TravelGuideArticleInput,
 } from '@/lib/travelGuideArticles'
@@ -39,8 +40,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const articles = await listAllTravelGuideArticlesForStaff()
-  return NextResponse.json({ ok: true, articles })
+  const rows = await listAllTravelGuideArticlesForStaff()
+  const localeParam = request.nextUrl.searchParams.get('locale')?.trim()
+  const locale = localeParam === 'ko' || localeParam === 'en' ? localeParam : null
+
+  // Card/list views pass locale to get localized fields + author names.
+  // Editor category loading keeps raw rows when locale is omitted.
+  if (locale) {
+    const articles = await mapTravelGuideArticleRowsWithAuthors(rows, locale)
+    return NextResponse.json({ ok: true, articles })
+  }
+
+  return NextResponse.json({ ok: true, articles: rows })
 }
 
 export async function POST(request: NextRequest) {

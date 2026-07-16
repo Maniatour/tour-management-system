@@ -526,6 +526,8 @@
     "travelGuideFieldBodyEn": "Body (English)",
     "travelGuideFieldBodyKo": "Body (Korean)",
     "travelGuideBodyPlaceholder": "Write your travel guide content. Use the toolbar for fonts, colors, links, and images.",
+    "travelGuideCardAuthor": "{name}",
+    "travelGuideCardAuthorUnknown": "Unknown author",
     "travelGuideCardUpdated": "Updated {date}",
     "travelGuideSearchPlaceholder": "Search articles by title, category, or keywords…",
     "travelGuideSearchClear": "Clear search",
