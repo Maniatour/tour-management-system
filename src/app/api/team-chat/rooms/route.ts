@@ -1,24 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { createSupabaseClientWithToken, isAbortLikeError, supabase } from '@/lib/supabase'
+
+function getBearerToken(request: NextRequest): string | null {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.split(' ')[1]?.trim()
+  return token || null
+}
 
 // 채팅방 목록 조회
 export async function GET(request: NextRequest) {
   try {
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getBearerToken(request)
+    if (!token) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     if (authError || !user) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // 시뮬레이션 중인 사용자 확인 (클라이언트에서 전달된 정보)
+    // RLS 적용을 위해 사용자 JWT로 쿼리 (anon 키는 team_chat_* 권한 없음)
+    const db = createSupabaseClientWithToken(token)
+
     const simulatedUserEmail = request.headers.get('x-simulated-user-email')
     const effectiveUserEmail = simulatedUserEmail || user.email
     if (!effectiveUserEmail) {
@@ -31,7 +36,7 @@ export async function GET(request: NextRequest) {
     // 사용자가 참여 중인 채팅방만 조회
     // team_chat_messages는 중첩 시 방마다 전체 메시지를 끌어와 지연·30초 fetch 타임아웃(Abort) 유발.
     // 클라이언트는 /api/team-chat/last-message 로 미리보기를 채움.
-    let query = supabase
+    let query = db
       .from('team_chat_rooms')
       .select(`
         *,
@@ -61,7 +66,10 @@ export async function GET(request: NextRequest) {
         )
       }
       console.error('채팅방 조회 오류:', error)
-      return NextResponse.json({ error: '채팅방을 불러올 수 없습니다' }, { status: 500 })
+      return NextResponse.json(
+        { error: '채팅방을 불러올 수 없습니다', details: error.message },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ rooms: data || [] })
@@ -82,25 +90,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { room_name, room_type, description, participant_emails, created_by } = body
+    const { room_name, room_type, description, participant_emails } = body
 
-    console.log('채팅방 생성 요청:', { room_name, room_type, description, created_by })
+    console.log('채팅방 생성 요청:', { room_name, room_type, description })
 
-    // 필수 필드 검증
     if (!room_name || !room_type) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
     }
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getBearerToken(request)
+    if (!token) {
       console.error('인증 헤더 없음')
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     if (authError || !user) {
       console.error('인증 오류:', authError)
@@ -111,10 +114,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    const db = createSupabaseClientWithToken(token)
+
     console.log('현재 사용자:', user.email)
 
-    // 팀 권한 확인
-    const { data: teamData, error: teamError } = await supabase
+    const { data: teamData, error: teamError } = await db
       .from('team')
       .select('email, position, is_active, name_ko')
       .eq('email', user.email)
@@ -128,23 +132,21 @@ export async function POST(request: NextRequest) {
 
     console.log('팀 데이터:', teamData)
 
-    // 권한 확인 (super, op, office manager)
     const allowedPositions = ['super', 'op', 'office manager']
     const userPosition = teamData.position?.toLowerCase() ?? ''
     console.log('사용자 직책:', userPosition, '허용된 직책:', allowedPositions)
-    
+
     if (!allowedPositions.includes(userPosition)) {
       console.error('권한 부족:', userPosition)
-      return NextResponse.json({ 
-        error: '채팅방 생성 권한이 없습니다', 
-        details: `현재 권한: ${teamData.position}, 필요 권한: ${allowedPositions.join(', ')}` 
+      return NextResponse.json({
+        error: '채팅방 생성 권한이 없습니다',
+        details: `현재 권한: ${teamData.position}, 필요 권한: ${allowedPositions.join(', ')}`,
       }, { status: 403 })
     }
 
     console.log('권한 확인 통과, 채팅방 생성 시도...')
 
-    // 채팅방 생성
-    const { data: room, error: roomError } = await supabase
+    const { data: room, error: roomError } = await db
       .from('team_chat_rooms')
       .insert({
         room_name,
@@ -157,24 +159,22 @@ export async function POST(request: NextRequest) {
 
     if (roomError) {
       console.error('채팅방 생성 오류:', roomError)
-      console.error('요청 데이터:', { room_name, room_type, description, created_by: body.created_by })
-      return NextResponse.json({ 
-        error: '채팅방을 생성할 수 없습니다', 
-        details: roomError.message 
+      console.error('요청 데이터:', { room_name, room_type, description, created_by: user.email })
+      return NextResponse.json({
+        error: '채팅방을 생성할 수 없습니다',
+        details: roomError.message,
       }, { status: 500 })
     }
 
-    // 참여자 추가
     if (participant_emails && participant_emails.length > 0) {
-      // 팀원 정보 조회
-      const { data: teamMembers, error: teamError } = await supabase
+      const { data: teamMembers, error: membersError } = await db
         .from('team')
         .select('email, name_ko, position')
         .in('email', participant_emails)
         .eq('is_active', true)
 
-      if (teamError) {
-        console.error('팀원 조회 오류:', teamError)
+      if (membersError) {
+        console.error('팀원 조회 오류:', membersError)
       } else {
         const participants = participant_emails.map((email: string) => {
           const teamMember = teamMembers?.find(member => member.email === email)
@@ -187,19 +187,17 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        const { error: participantsError } = await supabase
+        const { error: participantsError } = await db
           .from('team_chat_participants')
           .insert(participants)
 
         if (participantsError) {
           console.error('참여자 추가 오류:', participantsError)
-          // 채팅방은 생성되었으므로 에러를 무시하고 계속 진행
         }
       }
     }
 
-    // 생성자도 참여자로 추가
-    const { error: creatorError } = await supabase
+    const { error: creatorError } = await db
       .from('team_chat_participants')
       .insert({
         room_id: room.id,

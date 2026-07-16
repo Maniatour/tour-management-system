@@ -1,19 +1,51 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Image from 'next/image'
-import { X, Upload, MapPin, Globe, Video, Trash2, Languages, Loader2, Sparkles } from 'lucide-react'
+import {
+  Building2,
+  Check,
+  Clipboard,
+  Copy,
+  ExternalLink,
+  Footprints,
+  ImageIcon,
+  Languages,
+  Link2,
+  Loader2,
+  MapPin,
+  Navigation,
+  Plus,
+  Route,
+  Save,
+  Sparkles,
+  Trash2,
+  Upload,
+  Video,
+  X,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { translatePickupHotelFields, type PickupHotelTranslationFields } from '@/lib/translationService'
+import {
+  translatePickupHotelFields,
+  type PickupHotelTranslationFields,
+} from '@/lib/translationService'
 import { suggestHotelDescription } from '@/lib/chatgptService'
-import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import { findRoundedGroupHotel, type PickupHotel } from '@/utils/pickupHotelUtils'
+import PickupHotelDirectionStepsEditor from '@/components/pickup-hotel/PickupHotelDirectionStepsEditor'
 import PickupHotelVehicleAccessSelect from '@/components/pickup-hotel/PickupHotelVehicleAccessSelect'
+import {
+  parseDirectionSteps,
+  serializeDirectionSteps,
+} from '@/lib/pickupHotelDirectionSteps'
 
 interface PickupHotelFormProps {
   hotel?: PickupHotel | null
+  allHotels?: PickupHotel[]
   onSubmit: (hotelData: Omit<PickupHotel, 'id' | 'created_at' | 'updated_at'>) => void
   onCancel: () => void
-  onDelete?: (id: string) => void // 삭제 함수를 추가
+  onDelete?: (id: string) => void
+  onCopy?: () => void
+  onAddNew?: () => void
   translations: {
     title: string
     editTitle: string
@@ -31,13 +63,201 @@ interface PickupHotelFormProps {
   }
 }
 
-// YouTube URL 유효성 검사 함수
+type DirectionLanguage = 'ko' | 'en'
+
+const inputClass =
+  'h-9 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15'
+const textareaClass =
+  'w-full resize-y rounded-lg border border-border bg-white px-3 py-2 text-sm leading-5 text-foreground shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15'
+const secondaryButtonClass =
+  'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 text-xs font-medium text-foreground shadow-sm transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
+
 const isValidYouTubeUrl = (url: string): boolean => {
-  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/)|youtu\.be\/)[\w-]+/
+  const youtubeRegex =
+    /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/)|youtu\.be\/)[\w-]+/
   return youtubeRegex.test(url)
 }
 
-export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, translations }: PickupHotelFormProps) {
+const convertGoogleDriveUrl = (url: string): string => {
+  const trimmed = url.trim()
+  if (!trimmed.includes('drive.google.com/file/d/')) return trimmed
+  const fileId = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1]
+  return fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : trimmed
+}
+
+function FieldLabel({
+  children,
+  required = false,
+}: {
+  children: ReactNode
+  required?: boolean
+}) {
+  return (
+    <label className="mb-1 block text-xs font-semibold text-foreground">
+      {children}
+      {required && <span className="ml-0.5 text-red-500">*</span>}
+    </label>
+  )
+}
+
+function SectionCard({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: number
+  title: string
+  description?: string
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-card p-3 shadow-sm sm:p-3.5">
+      <div className="mb-2.5 flex items-center gap-2 border-b border-border/50 pb-2">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">
+          {number}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold tracking-tight text-card-foreground">
+            {title}
+          </h3>
+          {description && (
+            <p className="text-[11px] leading-4 text-muted-foreground">{description}</p>
+          )}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  tone,
+}: {
+  checked: boolean
+  onChange: () => void
+  label: string
+  tone: 'blue' | 'green'
+}) {
+  const enabledClass = tone === 'green' ? 'bg-emerald-600' : 'bg-blue-600'
+  return (
+    <div className="flex items-center gap-2">
+      <span className="whitespace-nowrap text-xs font-semibold text-muted-foreground sm:text-sm">
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={onChange}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
+          checked ? enabledClass : 'bg-gray-200'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+            checked ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
+      </button>
+    </div>
+  )
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyValue = async () => {
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch {
+      alert('클립보드에 복사하지 못했습니다.')
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copyValue}
+      disabled={!value}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-white text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      aria-label={`${label} 복사`}
+      title={`${label} 복사`}
+    >
+      {copied ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+    </button>
+  )
+}
+
+function LocalFilePreview({ file, alt }: { file: File; alt: string }) {
+  const [url, setUrl] = useState('')
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
+
+  if (!url) return <div className="h-full w-full animate-pulse bg-muted" />
+  if (!file.type.startsWith('image/')) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted">
+        <Video className="text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return <Image src={url} alt={alt} fill unoptimized className="object-cover" />
+}
+
+function RemoteImagePreview({
+  url,
+  alt,
+  onClick,
+}: {
+  url: string
+  alt: string
+  onClick: () => void
+}) {
+  if (!url.trim()) {
+    return (
+      <div className="flex h-full min-h-24 flex-col items-center justify-center gap-1 bg-muted/60 text-muted-foreground">
+        <ImageIcon size={20} />
+        <span className="text-[11px]">URL 입력</span>
+      </div>
+    )
+  }
+
+  return (
+    <button type="button" onClick={onClick} className="relative block h-full w-full">
+      <Image
+        src={convertGoogleDriveUrl(url)}
+        alt={alt}
+        fill
+        unoptimized
+        className="object-cover transition duration-300 hover:scale-[1.02]"
+      />
+    </button>
+  )
+}
+
+export default function PickupHotelForm({
+  hotel,
+  allHotels = [],
+  onSubmit,
+  onCancel,
+  onDelete,
+  onCopy,
+  onAddNew,
+  translations,
+}: PickupHotelFormProps) {
   const [formData, setFormData] = useState({
     hotel: hotel?.hotel || '',
     pick_up_location: hotel?.pick_up_location || '',
@@ -47,213 +267,223 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     from_inside_hotel_en: hotel?.from_inside_hotel_en || '',
     from_outside_hotel_ko: hotel?.from_outside_hotel_ko || '',
     from_outside_hotel_en: hotel?.from_outside_hotel_en || '',
+    to_representative_hotel_ko: hotel?.to_representative_hotel_ko || '',
+    to_representative_hotel_en: hotel?.to_representative_hotel_en || '',
     allowed_pickup_access_classes: hotel?.allowed_pickup_access_classes ?? null,
     address: hotel?.address || '',
     pin: hotel?.pin || '',
     link: hotel?.link || '',
+    landmark: hotel?.landmark || '',
     youtube_link: hotel?.youtube_link || '',
+    memo: hotel?.memo || '',
+    display_order: hotel?.display_order ?? null,
+    map_image: hotel?.map_image || '',
     media: hotel?.media || [],
     is_active: hotel?.is_active ?? true,
     use_for_pickup: hotel?.use_for_pickup ?? true,
-    group_number: hotel?.group_number || null
+    group_number: hotel?.group_number ?? null,
   })
 
+  const [insideLanguage, setInsideLanguage] = useState<DirectionLanguage>('ko')
+  const [outsideLanguage, setOutsideLanguage] = useState<DirectionLanguage>('ko')
   const [uploading, setUploading] = useState(false)
-  const [mediaFiles, setMediaFiles] = useState<File[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [mainMediaFile, setMainMediaFile] = useState<File | null>(null)
+  const [additionalMediaFiles, setAdditionalMediaFiles] = useState<File[]>([])
+  const [mapImageFile, setMapImageFile] = useState<File | null>(null)
+  const mainMediaInputRef = useRef<HTMLInputElement>(null)
+  const additionalMediaInputRef = useRef<HTMLInputElement>(null)
+  const mapImageInputRef = useRef<HTMLInputElement>(null)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [showMapModal, setShowMapModal] = useState(false)
-  const [googleDriveUrls, setGoogleDriveUrls] = useState<string[]>([''])
+  const [showToRepresentativeModal, setShowToRepresentativeModal] = useState(false)
+  const [translatingToRepresentative, setTranslatingToRepresentative] = useState(false)
+  const [toRepresentativeTranslateError, setToRepresentativeTranslateError] =
+    useState<string | null>(null)
   const [showImageModal, setShowImageModal] = useState(false)
-  const [selectedImageUrl, setSelectedImageUrl] = useState<string>('')
-  const [selectedAddress, setSelectedAddress] = useState<string>('')
-  const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState<string>('')
+  const [selectedImageUrl, setSelectedImageUrl] = useState('')
+  const [selectedAddress, setSelectedAddress] = useState('')
+  const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState('')
   const [mapLoaded, setMapLoaded] = useState(false)
 
-  // 기존 호텔 데이터 로드 시 구글 드라이브 URL 초기화
-  useEffect(() => {
-    if (hotel?.media && hotel.media.length > 0) {
-      const driveUrls = hotel.media.filter(url => url.includes('drive.google.com'))
-      if (driveUrls.length > 0) {
-        setGoogleDriveUrls(driveUrls)
-      }
-    }
-  }, [hotel])
+  const mainMedia = formData.media[0] || ''
+  const additionalMedia = formData.media.slice(1)
+  const representativeHotel =
+    formData.group_number != null
+      ? findRoundedGroupHotel(formData.group_number, allHotels)
+      : null
+  const isRepresentativeHotel =
+    representativeHotel != null &&
+    (hotel?.id
+      ? representativeHotel.id === hotel.id
+      : representativeHotel.group_number === formData.group_number)
+  const hasToRepresentativeDirections = Boolean(
+    formData.to_representative_hotel_ko.trim() ||
+      formData.to_representative_hotel_en.trim()
+  )
 
-  // 구글맵에서 좌표 선택
+  const updateMedia = (index: number, value: string) => {
+    setFormData((prev) => {
+      const media = [...prev.media]
+      while (media.length <= index) media.push('')
+      media[index] = value
+      return { ...prev, media }
+    })
+  }
+
+  const removeMedia = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      media: prev.media.filter((_, mediaIndex) => mediaIndex !== index),
+    }))
+  }
+
+  const openImageModal = (url: string) => {
+    if (!url.trim()) return
+    setSelectedImageUrl(convertGoogleDriveUrl(url))
+    setShowImageModal(true)
+  }
+
+  const uploadFile = async (file: File): Promise<string> => {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const fileName = `${Date.now()}_${crypto.randomUUID()}_${safeName}`
+    const { error } = await supabase.storage
+      .from('pickup-hotel-media')
+      .upload(fileName, file)
+
+    if (error) throw error
+
+    const { data } = supabase.storage
+      .from('pickup-hotel-media')
+      .getPublicUrl(fileName)
+    return data.publicUrl
+  }
+
   const handleMapCoordinateSelect = (lat: number, lng: number, address?: string) => {
     const coordinates = `${lat}, ${lng}`
     const googleMapLink = `https://www.google.com/maps?q=${lat},${lng}`
-    
-    setFormData(prev => ({
+
+    setFormData((prev) => ({
       ...prev,
       pin: coordinates,
       address: address || prev.address,
-      link: googleMapLink
+      link: googleMapLink,
     }))
     setShowMapModal(false)
   }
 
-  // Google Maps 초기화
   const initializeMap = () => {
-    if (typeof window !== 'undefined' && window.google && window.google.maps) {
-      const mapElement = document.getElementById('map')
-      if (!mapElement) return
+    if (typeof window === 'undefined' || !window.google?.maps) return
+    const mapElement = document.getElementById('map')
+    if (!mapElement) return
 
-      // Map ID 설정
-      const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
-      console.log('PickupHotelForm Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
-      
-      const mapOptions: {
-        center: { lat: number; lng: number }
-        zoom: number
-        mapTypeId: string
-        mapId?: string
-      } = {
-        center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
-        zoom: 12,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP
-      }
-      
-      // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
-      if (mapId) {
-        mapOptions.mapId = mapId
-        console.log('PickupHotelForm - Advanced Markers Map ID 설정:', mapId)
+    const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+    const mapOptions: {
+      center: { lat: number; lng: number }
+      zoom: number
+      mapTypeId: string
+      mapId?: string
+    } = {
+      center: { lat: 36.1699, lng: -115.1398 },
+      zoom: 12,
+      mapTypeId: window.google.maps.MapTypeId.ROADMAP,
+    }
+    if (mapId) mapOptions.mapId = mapId
+
+    const map = new window.google.maps.Map(mapElement, mapOptions)
+    let marker: google.maps.Marker | google.maps.marker.AdvancedMarkerElement | null = null
+
+    map.addListener('click', (event: google.maps.MapMouseEvent) => {
+      const lat = event.latLng?.lat()
+      const lng = event.latLng?.lng()
+      if (lat == null || lng == null) return
+
+      if (marker && 'setMap' in marker) marker.setMap(null)
+      if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+        marker = new window.google.maps.marker.AdvancedMarkerElement({
+          position: { lat, lng },
+          map,
+          title: '선택된 위치',
+        })
       } else {
-        console.warn('PickupHotelForm - Map ID 없음, 기본 마커 사용')
+        marker = new window.google.maps.Marker({
+          position: { lat, lng },
+          map,
+          title: '선택된 위치',
+        })
       }
 
-      const map = new window.google.maps.Map(mapElement, mapOptions)
+      const latInput = document.getElementById('latitude') as HTMLInputElement
+      const lngInput = document.getElementById('longitude') as HTMLInputElement
+      if (latInput) latInput.value = lat.toString()
+      if (lngInput) lngInput.value = lng.toString()
 
-      let marker: google.maps.Marker | google.maps.marker.AdvancedMarkerElement | null = null
-
-      // 지도 클릭 이벤트
-      map.addListener('click', (event: google.maps.MapMouseEvent) => {
-        const lat = event.latLng?.lat()
-        const lng = event.latLng?.lng()
-        
-        if (lat != null && lng != null) {
-          // 기존 마커 제거
-          if (marker && 'setMap' in marker) {
-            marker.setMap(null)
-          }
-
-          // 새로운 Advanced Marker 추가
-          if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-            marker = new window.google.maps.marker.AdvancedMarkerElement({
-              position: { lat, lng },
-              map: map,
-              title: '선택된 위치'
-            })
-            console.log('PickupHotelForm 클릭 - Advanced Marker 생성 성공')
-          } else {
-            marker = new window.google.maps.Marker({
-              position: { lat, lng },
-              map: map,
-              title: '선택된 위치'
-            })
-            console.log('PickupHotelForm 클릭 - 기본 Marker 사용')
-          }
-
-          // 좌표 입력 필드 업데이트
-          const latInput = document.getElementById('latitude') as HTMLInputElement
-          const lngInput = document.getElementById('longitude') as HTMLInputElement
-          if (latInput) latInput.value = lat.toString()
-          if (lngInput) lngInput.value = lng.toString()
-
-          // 역지오코딩으로 주소 가져오기
-          const geocoder = new window.google.maps.Geocoder()
-          geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-            if (status === 'OK' && results && results[0]) {
-              const address = results[0].formatted_address
-              if (address) {
-                setSelectedAddress(address)
-                setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
-              }
-            }
-          })
+      const geocoder = new window.google.maps.Geocoder()
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === 'OK' && results?.[0]) {
+          setSelectedAddress(results[0].formatted_address ?? '')
+          setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
         }
       })
-
-      setMapLoaded(true)
-    }
+    })
+    setMapLoaded(true)
   }
 
-  // 지도 검색 함수
   const handleMapSearch = async () => {
     const searchTerm = (document.getElementById('mapSearch') as HTMLInputElement)?.value
-    if (!searchTerm) return
+    if (!searchTerm || !window.google?.maps) return
 
     try {
       const geocoder = new window.google.maps.Geocoder()
-      geocoder.geocode({ address: searchTerm + ' Las Vegas' }, (results, status) => {
-        if (status === 'OK' && results && results[0]) {
-          const location = results[0].geometry.location
-          const lat = location.lat()
-          const lng = location.lng()
-          const address = results[0].formatted_address ?? ''
-
-          // 지도 중심 이동
-          const mapElement = document.getElementById('map')
-          if (mapElement && window.google && window.google.maps) {
-            // Map ID 설정
-            const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
-            console.log('PickupHotelForm Search Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
-            
-            const mapOptions: {
-              center: { lat: number; lng: number }
-              zoom: number
-              mapTypeId: string
-              mapId?: string
-            } = {
-              center: { lat, lng },
-              zoom: 15,
-              mapTypeId: window.google.maps.MapTypeId.ROADMAP
-            }
-            
-            // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
-            if (mapId) {
-              mapOptions.mapId = mapId
-              console.log('PickupHotelForm Search - Advanced Markers Map ID 설정:', mapId)
-            } else {
-              console.warn('PickupHotelForm Search - Map ID 없음, 기본 마커 사용')
-            }
-
-            const map = new window.google.maps.Map(mapElement, mapOptions)
-
-            // 새로운 Advanced Marker 추가
-            if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-              new window.google.maps.marker.AdvancedMarkerElement({
-                position: { lat, lng },
-                map: map,
-                title: searchTerm
-              })
-              console.log('PickupHotelForm 검색 - Advanced Marker 생성 성공')
-            } else {
-              new window.google.maps.Marker({
-                position: { lat, lng },
-                map: map,
-                title: searchTerm
-              })
-              console.log('PickupHotelForm 검색 - 기본 Marker 사용')
-            }
-
-            // 좌표 입력 필드 업데이트
-            const latInput = document.getElementById('latitude') as HTMLInputElement
-            const lngInput = document.getElementById('longitude') as HTMLInputElement
-            if (latInput) latInput.value = lat.toString()
-            if (lngInput) lngInput.value = lng.toString()
-
-            // 주소 정보 업데이트
-            setSelectedAddress(address)
-            setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
-          }
-        } else {
+      geocoder.geocode({ address: `${searchTerm} Las Vegas` }, (results, status) => {
+        if (status !== 'OK' || !results?.[0]) {
           alert('검색 결과를 찾을 수 없습니다.')
+          return
         }
+
+        const location = results[0].geometry.location
+        const lat = location.lat()
+        const lng = location.lng()
+        const address = results[0].formatted_address ?? ''
+        const mapElement = document.getElementById('map')
+        if (!mapElement || !window.google?.maps) return
+
+        const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+        const mapOptions: {
+          center: { lat: number; lng: number }
+          zoom: number
+          mapTypeId: string
+          mapId?: string
+        } = {
+          center: { lat, lng },
+          zoom: 15,
+          mapTypeId: window.google.maps.MapTypeId.ROADMAP,
+        }
+        if (mapId) mapOptions.mapId = mapId
+
+        const map = new window.google.maps.Map(mapElement, mapOptions)
+        if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+          new window.google.maps.marker.AdvancedMarkerElement({
+            position: { lat, lng },
+            map,
+            title: searchTerm,
+          })
+        } else {
+          new window.google.maps.Marker({
+            position: { lat, lng },
+            map,
+            title: searchTerm,
+          })
+        }
+
+        const latInput = document.getElementById('latitude') as HTMLInputElement
+        const lngInput = document.getElementById('longitude') as HTMLInputElement
+        if (latInput) latInput.value = lat.toString()
+        if (lngInput) lngInput.value = lng.toString()
+        setSelectedAddress(address)
+        setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
       })
     } catch (error) {
       console.error('검색 오류:', error)
@@ -261,130 +491,137 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     }
   }
 
-  // 모달이 열릴 때 지도 초기화
   useEffect(() => {
-    if (showMapModal && !mapLoaded) {
-      // Google Maps API 스크립트 로드
-      if (!window.google) {
-        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-        if (!apiKey) {
-          alert('Google Maps API 키가 설정되지 않았습니다. 환경변수 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY를 설정해주세요.')
-          return
-        }
-        
-        const script = document.createElement('script')
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
-        script.async = true
-        script.defer = true
-        script.onload = () => {
-          setTimeout(initializeMap, 100)
-        }
-        script.onerror = () => {
-          alert('Google Maps API 로드 중 오류가 발생했습니다. API 키를 확인해주세요.')
-        }
-        document.head.appendChild(script)
-      } else {
-        setTimeout(initializeMap, 100)
+    if (!showMapModal || mapLoaded) return
+
+    if (!window.google) {
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+      if (!apiKey) {
+        alert(
+          'Google Maps API 키가 설정되지 않았습니다. 환경변수 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY를 설정해주세요.'
+        )
+        return
       }
+
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        'script[src*="maps.googleapis.com/maps/api/js"]'
+      )
+      if (existingScript) {
+        existingScript.addEventListener('load', initializeMap, { once: true })
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&loading=async`
+      script.async = true
+      script.defer = true
+      script.onload = () => window.setTimeout(initializeMap, 100)
+      script.onerror = () =>
+        alert('Google Maps API 로드 중 오류가 발생했습니다. API 키를 확인해주세요.')
+      document.head.appendChild(script)
+    } else {
+      window.setTimeout(initializeMap, 100)
     }
   }, [showMapModal, mapLoaded])
 
-  // 구글 드라이브 URL 추가
-  const addGoogleDriveUrl = () => {
-    setGoogleDriveUrls(prev => [...prev, ''])
+  const translateHotelData = async () => {
+    setTranslating(true)
+    setTranslationError(null)
+    try {
+      const fieldsToTranslate: PickupHotelTranslationFields = {
+        hotel: formData.hotel,
+        pick_up_location: formData.pick_up_location,
+        description_ko: formData.description_ko,
+        from_inside_hotel_ko: formData.from_inside_hotel_ko,
+        from_outside_hotel_ko: formData.from_outside_hotel_ko,
+        to_representative_hotel_ko: formData.to_representative_hotel_ko,
+        address: formData.address,
+      }
+      const result = await translatePickupHotelFields(fieldsToTranslate)
+      if (result.success && result.translatedFields) {
+        const translated = result.translatedFields
+        setFormData((prev) => ({
+          ...prev,
+          description_en: translated.description_ko || prev.description_en,
+          from_inside_hotel_en:
+            translated.from_inside_hotel_ko || prev.from_inside_hotel_en,
+          from_outside_hotel_en:
+            translated.from_outside_hotel_ko || prev.from_outside_hotel_en,
+          to_representative_hotel_en:
+            translated.to_representative_hotel_ko ||
+            prev.to_representative_hotel_en,
+        }))
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      setTranslationError(
+        `번역 중 오류가 발생했습니다: ${
+          error instanceof Error ? error.message : '알 수 없는 오류'
+        }`
+      )
+    } finally {
+      setTranslating(false)
+    }
   }
 
-  // 구글 드라이브 URL 업데이트
-  const updateGoogleDriveUrl = (index: number, value: string) => {
-    setGoogleDriveUrls(prev => {
-      const newUrls = [...prev]
-      newUrls[index] = value
-      return newUrls
-    })
+  const suggestHotelDescriptionContent = async () => {
+    setSuggesting(true)
+    setSuggestionError(null)
+    try {
+      const suggestedDescription = await suggestHotelDescription(
+        formData.hotel,
+        formData.address
+      )
+      setFormData((prev) => ({ ...prev, description_ko: suggestedDescription }))
+    } catch (error) {
+      setSuggestionError(
+        error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.'
+      )
+    } finally {
+      setSuggesting(false)
+    }
   }
 
-  // 구글 드라이브 URL 제거
-  const removeGoogleDriveUrl = (index: number) => {
-    setGoogleDriveUrls(prev => prev.filter((_, i) => i !== index))
-  }
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
 
-  // 이미지 확대 보기
-  const handleImageClick = (url: string) => {
-    setSelectedImageUrl(url)
-    setShowImageModal(true)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
     if (!formData.hotel.trim()) {
       alert('호텔명을 입력해주세요.')
       return
     }
-
     if (!formData.pick_up_location.trim()) {
       alert('픽업 위치를 입력해주세요.')
       return
     }
-
     if (!formData.address.trim()) {
       alert('주소를 입력해주세요.')
       return
     }
-
-    // YouTube 링크 유효성 검사
     if (formData.youtube_link && !isValidYouTubeUrl(formData.youtube_link)) {
       alert('올바른 YouTube 링크를 입력해주세요. (예: https://www.youtube.com/watch?v=...)')
       return
     }
 
+    setUploading(true)
     try {
-      // 새로 업로드된 파일이 있는 경우 Supabase Storage에 업로드
-      let uploadedMediaUrls = [...(formData.media || [])]
-      
-      if (mediaFiles.length > 0) {
-        setUploading(true)
-        const uploadPromises = mediaFiles.map(async (file) => {
-          const fileName = `${Date.now()}_${file.name}`
-          const { error } = await supabase.storage
-            .from('pickup-hotel-media')
-            .upload(fileName, file)
+      const [uploadedMain, uploadedAdditional, uploadedMapImage] = await Promise.all([
+        mainMediaFile ? uploadFile(mainMediaFile) : Promise.resolve(''),
+        Promise.all(additionalMediaFiles.map(uploadFile)),
+        mapImageFile ? uploadFile(mapImageFile) : Promise.resolve(''),
+      ])
 
-          if (error) {
-            throw error
-          }
+      const rebuiltMedia = [
+        uploadedMain || convertGoogleDriveUrl(mainMedia),
+        ...additionalMedia.map(convertGoogleDriveUrl),
+        ...uploadedAdditional,
+      ].filter(Boolean)
 
-          const { data: urlData } = supabase.storage
-            .from('pickup-hotel-media')
-            .getPublicUrl(fileName)
-
-          return urlData.publicUrl
-        })
-
-        const newUrls = await Promise.all(uploadPromises)
-        uploadedMediaUrls = [...uploadedMediaUrls, ...newUrls]
-      }
-
-      // 구글 드라이브 URL을 다운로드 URL로 변환
-      const convertedGoogleDriveUrls = googleDriveUrls
-        .filter(url => url.trim())
-        .map(url => {
-          // 구글 드라이브 공유 링크인 경우 다운로드 URL로 변환
-          if (url.includes('drive.google.com/file/d/')) {
-            const fileId = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1]
-            if (fileId) {
-              return `https://drive.google.com/uc?export=view&id=${fileId}`
-            }
-          }
-          return url
-        })
-
-      const hotelData = {
+      onSubmit({
         ...formData,
-        media: [...uploadedMediaUrls, ...convertedGoogleDriveUrls]
-      }
-
-      onSubmit(hotelData)
+        media: rebuiltMedia,
+        map_image: uploadedMapImage || convertGoogleDriveUrl(formData.map_image),
+      })
     } catch (error) {
       console.error('Error uploading media:', error)
       alert('미디어 파일 업로드 중 오류가 발생했습니다.')
@@ -393,783 +630,900 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    setMediaFiles(prev => [...prev, ...files])
+  const directionValue = (
+    location: 'inside' | 'outside',
+    language: DirectionLanguage
+  ) => {
+    const key = `from_${location}_hotel_${language}` as
+      | 'from_inside_hotel_ko'
+      | 'from_inside_hotel_en'
+      | 'from_outside_hotel_ko'
+      | 'from_outside_hotel_en'
+    return { key, steps: parseDirectionSteps(formData[key]) }
   }
 
-  const removeFile = (index: number) => {
-    setMediaFiles(prev => prev.filter((_, i) => i !== index))
-  }
+  const renderLanguageTabs = (
+    language: DirectionLanguage,
+    setLanguage: (language: DirectionLanguage) => void,
+    accent: 'blue' | 'green'
+  ) => (
+    <div className="inline-flex rounded-lg border border-border bg-white p-1 shadow-sm">
+      {(['ko', 'en'] as const).map((item) => (
+        <button
+          key={item}
+          type="button"
+          onClick={() => setLanguage(item)}
+          className={`rounded-md px-3 py-1 text-xs font-bold transition ${
+            language === item
+              ? accent === 'green'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-blue-600 text-white'
+              : 'text-muted-foreground hover:bg-muted'
+          }`}
+        >
+          {item.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  )
 
-  const removeExistingMedia = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      media: prev.media?.filter((_, i) => i !== index) || []
-    }))
-  }
-
-
-
-  // 번역 함수
-  const translateHotelData = async () => {
-    setTranslating(true)
-    setTranslationError(null)
-
-    try {
-      // 번역할 필드들 수집
-      const fieldsToTranslate: PickupHotelTranslationFields = {
-        hotel: formData.hotel,
-        pick_up_location: formData.pick_up_location,
-        description_ko: formData.description_ko,
-        from_inside_hotel_ko: formData.from_inside_hotel_ko,
-        from_outside_hotel_ko: formData.from_outside_hotel_ko,
-        address: formData.address
-      }
-
-      // 번역 실행
-      const result = await translatePickupHotelFields(fieldsToTranslate)
-
-      if (result.success && result.translatedFields) {
-        const translated = result.translatedFields
-        setFormData(prev => ({
-          ...prev,
-          description_en: translated.description_ko || prev.description_en,
-          from_inside_hotel_en: translated.from_inside_hotel_ko || prev.from_inside_hotel_en,
-          from_outside_hotel_en: translated.from_outside_hotel_ko || prev.from_outside_hotel_en,
-        }))
-
-        // 번역된 호텔명과 픽업 위치를 별도로 표시하거나 처리할 수 있습니다
-        console.log('번역된 호텔명:', result.translatedFields?.hotel)
-        console.log('번역된 픽업 위치:', result.translatedFields?.pick_up_location)
-        console.log('번역된 주소:', result.translatedFields?.address)
-      } else {
-        setTranslationError(result.error || '번역에 실패했습니다.')
-      }
-    } catch (error) {
-      console.error('번역 오류:', error)
-      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
-    } finally {
-      setTranslating(false)
-    }
-  }
-
-  // ChatGPT 추천 함수
-  const suggestHotelDescriptionContent = async () => {
-    setSuggesting(true)
-    setSuggestionError(null)
-
-    try {
-      const suggestedDescription = await suggestHotelDescription(formData.hotel, formData.address)
-      
-      setFormData(prev => ({
-        ...prev,
-        description_ko: suggestedDescription
-      }))
-    } catch (error) {
-      console.error('ChatGPT 추천 오류:', error)
-      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
-    } finally {
-      setSuggesting(false)
-    }
-  }
+  const insideDirection = directionValue('inside', insideLanguage)
+  const outsideDirection = directionValue('outside', outsideLanguage)
 
   return (
-    <div className="fixed inset-0 z-[10000] overflow-y-auto bg-black/50">
-      <div className="relative mx-auto mb-8 w-full max-w-4xl rounded-lg bg-white p-6 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-2xl font-bold">
-              {hotel ? translations.editTitle : translations.title}
-            </h2>
-            {hotel && (
-              <span className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-mono rounded-lg">
-                ID: {hotel.id}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:gap-x-6">
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">활성</span>
-              <button
-                type="button"
-                onClick={() =>
-                  setFormData((f) => ({
-                    ...f,
-                    is_active: !(f.is_active !== false),
-                  }))
-                }
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-                  formData.is_active !== false ? 'bg-blue-600' : 'bg-gray-200'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formData.is_active !== false ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 min-w-0">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">픽업 호텔로 사용</span>
-              <button
-                type="button"
-                onClick={() =>
-                  setFormData((f) => ({
-                    ...f,
-                    use_for_pickup: !(f.use_for_pickup !== false),
-                  }))
-                }
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
-                  formData.use_for_pickup !== false ? 'bg-emerald-600' : 'bg-gray-200'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formData.use_for_pickup !== false ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-            <button
-              type="button"
-              onClick={translateHotelData}
-              disabled={translating}
-              className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm"
-              title="한국어 내용을 영어로 번역"
-            >
-              {translating ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Languages className="h-4 w-4 mr-1" />
-              )}
-              {translating ? '번역 중...' : '번역'}
-            </button>
-            <button
-              type="button"
-              onClick={suggestHotelDescriptionContent}
-              disabled={suggesting}
-              className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
-              title="ChatGPT로 호텔 설명 추천받기"
-            >
-              {suggesting ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-1" />
-              )}
-              {suggesting ? '추천 중...' : 'AI 추천'}
-            </button>
-              <button
-                onClick={onCancel}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          </div>
-        </div>
+    <div className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-950/55 p-1.5 backdrop-blur-sm sm:p-3">
+      <div className="mx-auto flex min-h-full max-w-5xl items-start justify-center">
+        <div className="my-1 flex max-h-[calc(100dvh-0.75rem)] w-full flex-col overflow-hidden rounded-xl border border-white/20 bg-muted/40 shadow-2xl sm:my-2 sm:max-h-[calc(100dvh-1.5rem)]">
+          <header className="shrink-0 border-b border-border bg-white px-3 py-2.5 sm:px-4">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                      {hotel ? 'Edit Hotel' : 'Add Hotel'}
+                    </h2>
+                    {hotel && (
+                      <span className="max-w-full truncate rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        ID: {hotel.id}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-        {/* 번역 오류 메시지 */}
-        {translationError && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <X className="h-5 w-5 text-red-400" />
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{translationError}</p>
-              </div>
-              <div className="ml-auto pl-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Toggle
+                  checked={formData.is_active}
+                  label="Active"
+                  tone="blue"
+                  onChange={() =>
+                    setFormData((prev) => ({ ...prev, is_active: !prev.is_active }))
+                  }
+                />
+                <Toggle
+                  checked={formData.use_for_pickup}
+                  label="픽업 사용"
+                  tone="green"
+                  onChange={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      use_for_pickup: !prev.use_for_pickup,
+                    }))
+                  }
+                />
+                <span className="hidden h-5 w-px bg-border md:block" />
+                {onCopy && (
+                  <button type="button" onClick={onCopy} className={secondaryButtonClass}>
+                    <Clipboard size={14} />
+                    복사
+                  </button>
+                )}
+                {onAddNew && (
+                  <button type="button" onClick={onAddNew} className={secondaryButtonClass}>
+                    <Plus size={14} />
+                    새 호텔
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setTranslationError(null)}
-                  className="inline-flex text-red-400 hover:text-red-600"
+                  onClick={onCancel}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  aria-label="닫기"
                 >
-                  ×
+                  <X size={18} />
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          </header>
 
-        {/* ChatGPT 추천 오류 메시지 */}
-        {suggestionError && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <X className="h-5 w-5 text-red-400" />
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{suggestionError}</p>
-              </div>
-              <div className="ml-auto pl-3">
-                <button
-                  type="button"
-                  onClick={() => setSuggestionError(null)}
-                  className="inline-flex text-red-400 hover:text-red-600"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <main className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5 sm:px-4 sm:py-3">
+              <div className="space-y-2.5">
+                {(translationError || suggestionError) && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {translationError || suggestionError}
+                  </div>
+                )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 호텔명, 픽업 위치, 그룹 번호 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.hotel} *
-              </label>
-              <input
-                type="text"
-                value={formData.hotel}
-                onChange={(e) => setFormData({ ...formData, hotel: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={translations.hotel}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.pickUpLocation} *
-              </label>
-              <input
-                type="text"
-                value={formData.pick_up_location}
-                onChange={(e) => setFormData({ ...formData, pick_up_location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={translations.pickUpLocation}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                그룹 번호
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={formData.group_number || ''}
-                onChange={(e) => setFormData({ 
-                  ...formData, 
-                  group_number: e.target.value ? parseFloat(e.target.value) : null 
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="예: 1.0, 1.1, 2.0"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                소숫점 지원 (예: 1.0, 1.1, 2.0)
-              </p>
-            </div>
-          </div>
-
-          {/* Location Description */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Location Description</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Location Description (한국어)
-                </label>
-                <textarea
-                  value={formData.description_ko}
-                  onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: Rear Rotunda Tour Pickup Area (Back Entrance)."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Location Description (English)
-                </label>
-                <textarea
-                  value={formData.description_en}
-                  onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="e.g. Rear Rotunda Tour Pickup Area (Back Entrance)."
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* From Inside / Outside Hotel */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                From Inside Hotel (한국어)
-              </label>
-              <textarea
-                value={formData.from_inside_hotel_ko}
-                onChange={(e) => setFormData({ ...formData, from_inside_hotel_ko: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="호텔 내부에서 찾아가는 방법"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                From Inside Hotel (English)
-              </label>
-              <textarea
-                value={formData.from_inside_hotel_en}
-                onChange={(e) => setFormData({ ...formData, from_inside_hotel_en: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Directions from inside the hotel"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                From Outside Hotel (한국어)
-              </label>
-              <textarea
-                value={formData.from_outside_hotel_ko}
-                onChange={(e) => setFormData({ ...formData, from_outside_hotel_ko: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="호텔 밖에서 찾아가는 방법"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                From Outside Hotel (English)
-              </label>
-              <textarea
-                value={formData.from_outside_hotel_en}
-                onChange={(e) => setFormData({ ...formData, from_outside_hotel_en: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Directions from outside the hotel"
-              />
-            </div>
-          </div>
-
-          {/* Vehicle access */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              진입 가능 차량 등급 (Regular / High Top / Bus)
-            </label>
-            <PickupHotelVehicleAccessSelect
-              value={formData.allowed_pickup_access_classes}
-              onChange={(classes) => setFormData({ ...formData, allowed_pickup_access_classes: classes })}
-            />
-          </div>
-
-          {/* 주소 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {translations.address} *
-            </label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              placeholder={translations.address}
-              required
-            />
-          </div>
-
-          {/* 좌표와 구글 맵 링크 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.pin}
-              </label>
-              <div className="flex items-center space-x-2">
-                <MapPin size={20} className="text-gray-400" />
-                <input
-                  type="text"
-                  value={formData.pin}
-                  onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: 37.5665,126.9780"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowMapModal(true)}
-                  className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
-                >
-                  지도에서 선택
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {translations.link}
-              </label>
-              <div className="flex items-center space-x-2">
-                <Globe size={20} className="text-gray-400" />
-                <input
-                  type="url"
-                  value={formData.link}
-                  onChange={(e) => setFormData({ ...formData, link: e.target.value })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="https://maps.google.com/..."
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* YouTube 링크 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              YouTube 링크
-            </label>
-            <div className="flex items-center space-x-2">
-              <Video size={20} className="text-gray-400" />
-              <input
-                type="url"
-                value={formData.youtube_link}
-                onChange={(e) => setFormData({ ...formData, youtube_link: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="https://www.youtube.com/watch?v=..."
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              호텔 소개 영상이나 픽업 장소 안내 영상의 YouTube 링크를 입력하세요.
-            </p>
-          </div>
-
-
-          {/* 미디어 파일 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {translations.media}
-            </label>
-            
-            {/* 구글 드라이브 URL과 파일 업로드를 좌우로 배치 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* 구글 드라이브 URL 입력 */}
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-3">구글 드라이브 이미지 URL</h4>
-                <div className="space-y-3">
-                  {googleDriveUrls.map((url, index) => (
-                    <div key={index} className="flex items-center space-x-3">
-                      <span className="text-sm text-gray-500 w-8">#{index + 1}</span>
+                <SectionCard number={1} title="기본 정보">
+                  <div className="grid gap-2.5 md:grid-cols-[1.25fr_1.25fr_0.7fr]">
+                    <div>
+                      <FieldLabel required>{translations.hotel}</FieldLabel>
                       <input
-                        type="url"
-                        placeholder={`구글 드라이브 이미지 URL ${index + 1}`}
-                        value={url}
-                        onChange={(e) => updateGoogleDriveUrl(index, e.target.value)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+                        value={formData.hotel}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            hotel: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="예: Bellagio Hotel & Casino"
+                        required
                       />
-                      {url && (
-                        <button
-                          type="button"
-                          onClick={() => removeGoogleDriveUrl(index)}
-                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                          title="URL 제거"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
                     </div>
-                  ))}
-                  {googleDriveUrls.length < 5 && googleDriveUrls[googleDriveUrls.length - 1] && (
+                    <div>
+                      <FieldLabel required>{translations.pickUpLocation}</FieldLabel>
+                      <input
+                        value={formData.pick_up_location}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            pick_up_location: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="예: Rear Tour Lobby"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>그룹 번호</FieldLabel>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={formData.group_number ?? ''}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            group_number: event.target.value
+                              ? Number(event.target.value)
+                              : null,
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="1.0"
+                      />
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  number={2}
+                  title="위치 설명"
+                  >
+                  <div className="mb-2 flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      onClick={addGoogleDriveUrl}
-                      className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                      onClick={translateHotelData}
+                      disabled={translating}
+                      className={secondaryButtonClass}
                     >
-                      + URL 추가
+                      {translating ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Languages size={16} />
+                      )}
+                      {translating ? '번역 중' : 'KO → EN'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={suggestHotelDescriptionContent}
+                      disabled={suggesting}
+                      className={secondaryButtonClass}
+                    >
+                      {suggesting ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={16} />
+                      )}
+                      {suggesting ? '추천 중' : 'AI 추천'}
+                    </button>
+                  </div>
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <div>
+                      <FieldLabel>위치 설명 (한국어)</FieldLabel>
+                      <textarea
+                        rows={2}
+                        value={formData.description_ko}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            description_ko: event.target.value,
+                          }))
+                        }
+                        className={textareaClass}
+                        placeholder="고객이 픽업 장소를 쉽게 찾을 수 있도록 설명하세요."
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Location Description (English)</FieldLabel>
+                      <textarea
+                        rows={2}
+                        value={formData.description_en}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            description_en: event.target.value,
+                          }))
+                        }
+                        className={textareaClass}
+                        placeholder="Describe how guests can identify the pickup area."
+                      />
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  number={3}
+                  title="찾아가는 방법"
+                  >
+                  <div className="grid gap-2.5 lg:grid-cols-2">
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-1.5 text-blue-800">
+                          <span className="rounded-md bg-blue-100 p-1">
+                            <Building2 size={14} />
+                          </span>
+                          <div>
+                            <h4 className="text-sm font-semibold">From Inside</h4>
+                            </div>
+                        </div>
+                        {renderLanguageTabs(
+                          insideLanguage,
+                          setInsideLanguage,
+                          'blue'
+                        )}
+                      </div>
+                      <PickupHotelDirectionStepsEditor
+                        steps={insideDirection.steps}
+                        accent="blue"
+                        onChange={(steps) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            [insideDirection.key]: serializeDirectionSteps(steps),
+                          }))
+                        }
+                        placeholder={
+                          insideLanguage === 'ko'
+                            ? '예: 메인 로비에서 투어 로비 표지판을 따라가세요.'
+                            : 'e.g. Follow the Tour Lobby signs from the main lobby.'
+                        }
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-1.5 text-emerald-800">
+                          <span className="rounded-md bg-emerald-100 p-1">
+                            <Footprints size={14} />
+                          </span>
+                          <div>
+                            <h4 className="text-sm font-semibold">From Outside</h4>
+                            </div>
+                        </div>
+                        {renderLanguageTabs(
+                          outsideLanguage,
+                          setOutsideLanguage,
+                          'green'
+                        )}
+                      </div>
+                      <PickupHotelDirectionStepsEditor
+                        steps={outsideDirection.steps}
+                        accent="green"
+                        onChange={(steps) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            [outsideDirection.key]: serializeDirectionSteps(steps),
+                          }))
+                        }
+                        placeholder={
+                          outsideLanguage === 'ko'
+                            ? '예: 메인 입구 우측의 투어 픽업 구역으로 이동하세요.'
+                            : 'e.g. Walk to the tour pickup area right of the main entrance.'
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 flex flex-col gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-foreground">
+                        대표 호텔 이동 안내
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        {representativeHotel
+                          ? `대표: ${representativeHotel.hotel}`
+                          : formData.group_number != null
+                            ? '현재 그룹의 대표 호텔을 찾지 못했습니다.'
+                            : '그룹 번호를 설정하면 대표 호텔이 표시됩니다.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setToRepresentativeTranslateError(null)
+                        setShowToRepresentativeModal(true)
+                      }}
+                      className={secondaryButtonClass}
+                    >
+                      <Route size={14} />
+                      {hasToRepresentativeDirections ? '이동 안내 수정' : '이동 안내 작성'}
+                      {hasToRepresentativeDirections && (
+                        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary">
+                          작성됨
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  number={4}
+                  title="차량 이용 안내"
+                  >
+                  <PickupHotelVehicleAccessSelect
+                    value={formData.allowed_pickup_access_classes}
+                    onChange={(classes) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        allowed_pickup_access_classes: classes,
+                      }))
+                    }
+                  />
+                </SectionCard>
+
+                <SectionCard number={5} title="위치 정보">
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <div className="rounded-lg border border-border/70 bg-muted/25 p-2.5">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <MapPin size={14} className="text-primary" />
+                        <FieldLabel required>{translations.address}</FieldLabel>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          value={formData.address}
+                          onChange={(event) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              address: event.target.value,
+                            }))
+                          }
+                          className={inputClass}
+                          placeholder="호텔 전체 주소"
+                          required
+                        />
+                        <CopyButton value={formData.address} label="주소" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border/70 bg-muted/25 p-2.5">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <Navigation size={14} className="text-primary" />
+                        <FieldLabel>{translations.pin}</FieldLabel>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          value={formData.pin}
+                          onChange={(event) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              pin: event.target.value,
+                            }))
+                          }
+                          className={`${inputClass} min-w-44 flex-1`}
+                          placeholder="36.1699, -115.1398"
+                        />
+                        <CopyButton value={formData.pin} label="좌표" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMapLoaded(false)
+                            setShowMapModal(true)
+                          }}
+                          className={secondaryButtonClass}
+                        >
+                          <MapPin size={16} />
+                          지도
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border/70 bg-muted/25 p-2.5">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <Link2 size={14} className="text-primary" />
+                        <FieldLabel>{translations.link}</FieldLabel>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={formData.link}
+                          onChange={(event) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              link: event.target.value,
+                            }))
+                          }
+                          className={inputClass}
+                          placeholder="https://maps.google.com/..."
+                        />
+                        {formData.link && (
+                          <a
+                            href={formData.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-white text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            aria-label="Google Map 링크 열기"
+                          >
+                            <ExternalLink size={16} />
+                          </a>
+                        )}
+                        <CopyButton value={formData.link} label="Google Map 링크" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border/70 bg-muted/25 p-2.5">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <Building2 size={14} className="text-primary" />
+                        <FieldLabel>랜드마크</FieldLabel>
+                      </div>
+                      <input
+                        value={formData.landmark}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            landmark: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="예: Bell Desk 옆, 파란 Tour Lobby 표지판"
+                      />
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  number={6}
+                  title="미디어"
+                  >
+                  <div className="grid gap-2.5 lg:grid-cols-2">
+                    <div className="rounded-xl border border-border bg-muted/20 p-2.5">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-foreground">
+                          대표 이미지
+                        </h4>
+                        <span className="rounded-md bg-primary px-2 py-1 text-[11px] font-bold text-primary-foreground">
+                          대표
+                        </span>
+                      </div>
+                      <div className="relative mb-2 aspect-[16/10] overflow-hidden rounded-lg border border-border bg-muted">
+                        {mainMediaFile ? (
+                          <LocalFilePreview file={mainMediaFile} alt="새 대표 이미지" />
+                        ) : (
+                          <RemoteImagePreview
+                            url={mainMedia}
+                            alt={`${formData.hotel || '호텔'} 대표 이미지`}
+                            onClick={() => openImageModal(mainMedia)}
+                          />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="url"
+                          value={mainMedia}
+                          onChange={(event) => {
+                            setMainMediaFile(null)
+                            updateMedia(0, event.target.value)
+                          }}
+                          className={`${inputClass} flex-1`}
+                          placeholder="이미지 또는 Google Drive 공유 URL"
+                        />
+                        <input
+                          ref={mainMediaInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(event) =>
+                            setMainMediaFile(event.target.files?.[0] || null)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => mainMediaInputRef.current?.click()}
+                          className={secondaryButtonClass}
+                        >
+                          <Upload size={16} />
+                          업로드
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-muted/20 p-2.5">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Google Map 이미지
+                        </h4>
+                        <span className="rounded-md bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                          지도
+                        </span>
+                      </div>
+                      <div className="relative mb-2 aspect-[16/10] overflow-hidden rounded-lg border border-border bg-muted">
+                        {mapImageFile ? (
+                          <LocalFilePreview file={mapImageFile} alt="새 지도 이미지" />
+                        ) : (
+                          <RemoteImagePreview
+                            url={formData.map_image}
+                            alt={`${formData.hotel || '호텔'} 지도 이미지`}
+                            onClick={() => openImageModal(formData.map_image)}
+                          />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="url"
+                          value={formData.map_image}
+                          onChange={(event) => {
+                            setMapImageFile(null)
+                            setFormData((prev) => ({
+                              ...prev,
+                              map_image: event.target.value,
+                            }))
+                          }}
+                          className={`${inputClass} flex-1`}
+                          placeholder="지도 스크린샷 URL"
+                        />
+                        <input
+                          ref={mapImageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(event) =>
+                            setMapImageFile(event.target.files?.[0] || null)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => mapImageInputRef.current?.click()}
+                          className={secondaryButtonClass}
+                        >
+                          <Upload size={16} />
+                          업로드
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">
+                          추가 이미지
+                        </h4>
+                                              </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              media:
+                                prev.media.length > 0
+                                  ? [...prev.media, '']
+                                  : ['', ''],
+                            }))
+                          }
+                          className={secondaryButtonClass}
+                        >
+                          <Plus size={16} />
+                          URL 추가
+                        </button>
+                        <input
+                          ref={additionalMediaInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*,video/*"
+                          className="hidden"
+                          onChange={(event) =>
+                            setAdditionalMediaFiles((prev) => [
+                              ...prev,
+                              ...Array.from(event.target.files || []),
+                            ])
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => additionalMediaInputRef.current?.click()}
+                          className={secondaryButtonClass}
+                        >
+                          <Upload size={16} />
+                          파일 추가
+                        </button>
+                      </div>
+                    </div>
+
+                    {(additionalMedia.length > 0 ||
+                      additionalMediaFiles.length > 0) && (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {additionalMedia.map((url, index) => (
+                          <div
+                            key={`url-${index}`}
+                            className="overflow-hidden rounded-xl border border-border bg-white shadow-sm"
+                          >
+                            <div className="relative aspect-[4/3] bg-muted">
+                              <RemoteImagePreview
+                                url={url}
+                                alt={`추가 이미지 ${index + 1}`}
+                                onClick={() => openImageModal(url)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeMedia(index + 1)}
+                                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/65 text-white transition hover:bg-red-600"
+                                aria-label="추가 이미지 삭제"
+                              >
+                                <X size={15} />
+                              </button>
+                            </div>
+                            <input
+                              type="url"
+                              value={url}
+                              onChange={(event) =>
+                                updateMedia(index + 1, event.target.value)
+                              }
+                              className="h-10 w-full border-0 border-t border-border px-3 text-xs outline-none focus:ring-2 focus:ring-inset focus:ring-primary/20"
+                              placeholder="이미지 URL"
+                            />
+                          </div>
+                        ))}
+                        {additionalMediaFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.lastModified}-${index}`}
+                            className="overflow-hidden rounded-xl border border-border bg-white shadow-sm"
+                          >
+                            <div className="relative aspect-[4/3] bg-muted">
+                              <LocalFilePreview
+                                file={file}
+                                alt={`업로드 이미지 ${index + 1}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAdditionalMediaFiles((prev) =>
+                                    prev.filter((_, fileIndex) => fileIndex !== index)
+                                  )
+                                }
+                                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/65 text-white transition hover:bg-red-600"
+                                aria-label="업로드 파일 삭제"
+                              >
+                                <X size={15} />
+                              </button>
+                              <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-md bg-black/65 px-2 py-1 text-[11px] text-white">
+                                {file.name}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </SectionCard>
+
+                <SectionCard number={7} title="추가 정보">
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <FieldLabel>YouTube 링크</FieldLabel>
+                      <div className="relative">
+                        <Video
+                          size={17}
+                          className="pointer-events-none absolute left-3.5 top-3 text-muted-foreground"
+                        />
+                        <input
+                          type="url"
+                          value={formData.youtube_link}
+                          onChange={(event) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              youtube_link: event.target.value,
+                            }))
+                          }
+                          className={`${inputClass} pl-10`}
+                          placeholder="https://www.youtube.com/watch?v=..."
+                        />
+                      </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <FieldLabel>내부 메모</FieldLabel>
+                      <textarea
+                        rows={2}
+                        value={formData.memo}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            memo: event.target.value,
+                          }))
+                        }
+                        className={textareaClass}
+                        placeholder="운영팀만 확인할 수 있는 메모"
+                      />
+                    </div>
+                  </div>
+                </SectionCard>
+              </div>
+            </main>
+
+            <footer className="shrink-0 border-t border-border bg-white px-3 py-2.5 sm:px-4">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  {hotel && onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('정말로 이 호텔을 삭제하시겠습니까?')) {
+                          onDelete(hotel.id)
+                        }
+                      }}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 text-xs font-semibold text-red-600 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
+                    >
+                      <Trash2 size={17} />
+                      삭제
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* 파일 업로드 */}
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-3">파일 업로드</h4>
-
-                {/* 새 파일 업로드 */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*,video/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
+                <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center space-y-2 text-gray-600 hover:text-gray-800"
+                    onClick={onCancel}
+                    className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-border bg-white px-4 text-xs font-semibold text-foreground transition hover:bg-muted sm:flex-none"
                   >
-                    <Upload size={24} />
-                    <span className="text-sm">파일 선택</span>
-                    <span className="text-xs text-gray-500">JPG, PNG, GIF, MP4, MOV</span>
+                    {translations.cancel}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-950 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                  >
+                    {uploading ? (
+                      <Loader2 size={17} className="animate-spin" />
+                    ) : (
+                      <Save size={17} />
+                    )}
+                    {uploading ? '저장 중...' : '저장하기'}
                   </button>
                 </div>
-
-                {/* 선택된 파일 표시 */}
-                {mediaFiles.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">선택된 파일:</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      {mediaFiles.map((file, index) => (
-                        <div key={index} className="relative group">
-                          {file.type.startsWith('image/') ? (
-                            <Image
-                              src={URL.createObjectURL(file)}
-                              alt={`파일 ${index + 1}`}
-                              width={200}
-                              height={96}
-                              className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                              onClick={() => handleImageClick(URL.createObjectURL(file))}
-                            />
-                          ) : (
-                            <div className="w-full h-24 bg-gray-100 rounded-lg flex items-center justify-center">
-                              <Video size={24} className="text-gray-400" />
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removeFile(index)}
-                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                          <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                            {file.name}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
-          </div>
-
-          {/* 이미지 미리보기 - 전체 넓이 사용 */}
-          {formData.media && formData.media.length > 0 && (
-            <div className="mt-6">
-              <h4 className="text-sm font-medium text-gray-700 mb-3">미디어 미리보기</h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {formData.media.map((url, index) => (
-                  <div key={index} className="relative group">
-                    {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com') ? (
-                      <Image
-                        src={url}
-                        alt={`미디어 ${index + 1}`}
-                        width={200}
-                        height={128}
-                        className="w-full h-32 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => handleImageClick(url)}
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement
-                          target.style.display = 'none'
-                          const parent = target.parentElement
-                          if (parent) {
-                            parent.innerHTML = `
-                              <div class="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
-                                <div class="text-center">
-                                  <div class="text-red-500 text-xs">이미지 로드 실패</div>
-                                  <div class="text-gray-400 text-xs mt-1">URL 확인 필요</div>
-                                </div>
-                              </div>
-                            `
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <Video size={24} className="text-gray-400" />
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeExistingMedia(index)}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                    <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                      #{index + 1}
-                    </div>
-                    {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com') && (
-                      <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        클릭하여 확대
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 버튼 */}
-          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-            {hotel && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm('정말로 이 호텔을 삭제하시겠습니까?')) {
-                    // 삭제 함수를 props로 받아서 호출
-                    if (onDelete) {
-                      onDelete(hotel.id)
-                    }
-                  }
-                }}
-                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                삭제
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              {translations.cancel}
-            </button>
-            <button
-              type="submit"
-              disabled={uploading}
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {uploading ? '업로드 중...' : (hotel ? translations.edit : translations.add)}
-            </button>
-          </div>
-        </form>
+            </footer>
+          </form>
+        </div>
       </div>
 
-      {/* 구글맵 좌표 선택 모달 */}
       {showMapModal && (
-        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-black/50">
-          <div className="relative mx-auto mb-8 w-full max-w-5xl rounded-lg bg-white p-6 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">위치 선택</h3>
+        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm">
+          <div className="mx-auto my-4 max-w-5xl overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border px-5 py-4 sm:px-6">
+              <div>
+                <h3 className="text-xl font-semibold tracking-tight text-foreground">
+                  지도에서 위치 선택
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  호텔을 검색하거나 지도를 클릭해 정확한 좌표를 선택하세요.
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowMapModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="지도 모달 닫기"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">
-                라스베가스 지역에서 호텔 위치를 검색하거나 지도에서 클릭하여 좌표를 선택하세요.
-              </p>
-              
-              {/* 검색 기능 */}
-              <div className="mb-3">
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    id="mapSearch"
-                    placeholder="호텔명 또는 주소를 검색하세요 (예: Bellagio Hotel)"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleMapSearch()
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleMapSearch}
-                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                  >
-                    검색
-                  </button>
-                </div>
+
+            <div className="space-y-4 p-5 sm:p-6">
+              <div className="flex gap-2">
+                <input
+                  id="mapSearch"
+                  className={`${inputClass} flex-1`}
+                  placeholder="호텔명 또는 주소 검색 (예: Bellagio Hotel)"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      handleMapSearch()
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleMapSearch}
+                  className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                >
+                  검색
+                </button>
               </div>
 
-              {/* 검색 결과 미리보기 */}
               {selectedAddress && (
-                <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="text-sm font-medium text-green-800 mb-2">검색 결과:</h4>
-                  <p className="text-sm text-green-700 mb-1">
-                    <strong>주소:</strong> {selectedAddress}
-                  </p>
-                  <p className="text-sm text-green-700 mb-1">
-                    <strong>구글 맵 링크:</strong> 
-                    <a 
-                      href={selectedGoogleMapLink} 
-                      target="_blank" 
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  <p className="font-semibold">선택된 주소</p>
+                  <p className="mt-1">{selectedAddress}</p>
+                  {selectedGoogleMapLink && (
+                    <a
+                      href={selectedGoogleMapLink}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      className="ml-1 text-primary hover:text-primary/80 underline"
+                      className="mt-2 inline-flex items-center gap-1 font-medium underline"
                     >
-                      링크 열기
+                      Google Maps 열기 <ExternalLink size={14} />
                     </a>
-                  </p>
+                  )}
                 </div>
               )}
 
-              {/* 지도 컨테이너 */}
-              <div className="bg-gray-100 p-4 rounded-lg">
-                <div 
-                  id="map" 
-                  style={{ width: '100%', height: '400px' }}
-                  className="rounded-lg"
-                />
+              <div className="overflow-hidden rounded-2xl border border-border bg-muted p-2">
+                <div id="map" className="h-[420px] w-full rounded-xl" />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <FieldLabel>위도 (Latitude)</FieldLabel>
+                  <input
+                    id="latitude"
+                    type="number"
+                    step="any"
+                    className={inputClass}
+                    placeholder="36.1699"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>경도 (Longitude)</FieldLabel>
+                  <input
+                    id="longitude"
+                    type="number"
+                    step="any"
+                    className={inputClass}
+                    placeholder="-115.1398"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  위도 (Latitude)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  id="latitude"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: 36.1699"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  경도 (Longitude)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  id="longitude"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: -115.1398"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end gap-3 border-t border-border px-5 py-4 sm:px-6">
               <button
+                type="button"
                 onClick={() => setShowMapModal(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                className={secondaryButtonClass}
               >
                 취소
               </button>
               <button
+                type="button"
                 onClick={() => {
-                  const lat = (document.getElementById('latitude') as HTMLInputElement)?.value
-                  const lng = (document.getElementById('longitude') as HTMLInputElement)?.value
-                  if (lat && lng) {
-                    handleMapCoordinateSelect(
-                      parseFloat(lat), 
-                      parseFloat(lng), 
-                      selectedAddress || undefined
-                    )
-                  } else {
+                  const lat = (document.getElementById('latitude') as HTMLInputElement)
+                    ?.value
+                  const lng = (document.getElementById('longitude') as HTMLInputElement)
+                    ?.value
+                  if (!lat || !lng) {
                     alert('위도와 경도를 입력해주세요.')
+                    return
                   }
+                  handleMapCoordinateSelect(
+                    Number(lat),
+                    Number(lng),
+                    selectedAddress || undefined
+                  )
                 }}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
               >
+                <MapPin size={16} />
                 좌표 적용
               </button>
             </div>
@@ -1177,53 +1531,180 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
         </div>
       )}
 
-      {/* 이미지 확대 모달 */}
-      {showImageModal && (
-        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-black/75">
-          <div className="relative mx-auto mb-8 w-full max-w-4xl rounded-lg bg-white p-4 shadow-lg top-[calc(var(--header-height,4rem)+1rem)] max-h-[calc(100dvh-var(--header-height,4rem)-2rem)] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">이미지 확대 보기</h3>
+      {showToRepresentativeModal && (
+        <div className="fixed inset-0 z-[10010] overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm">
+          <div className="mx-auto my-6 max-w-3xl overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-border px-5 py-4 sm:px-6">
+              <div>
+                <h3 className="text-xl font-semibold tracking-tight text-foreground">
+                  대표 호텔 이동 안내
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {formData.hotel.trim() || '이 호텔'}에서 대표 픽업 호텔까지 이동하는
+                  방법을 입력하세요.
+                </p>
+              </div>
               <button
-                onClick={() => setShowImageModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                type="button"
+                onClick={() => setShowToRepresentativeModal(false)}
+                className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="대표 호텔 이동 안내 닫기"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
-            
-            <div className="flex justify-center">
-              <Image
-                src={selectedImageUrl}
-                alt="확대된 이미지"
-                width={800}
-                height={600}
-                className="max-w-full max-h-[70vh] object-contain rounded-lg"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement
-                  target.style.display = 'none'
-                  const parent = target.parentElement
-                  if (parent) {
-                    parent.innerHTML = `
-                      <div class="w-full h-64 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <div class="text-center">
-                          <div class="text-red-500 text-lg">이미지 로드 실패</div>
-                          <div class="text-gray-400 text-sm mt-2">URL을 확인해주세요</div>
-                        </div>
-                      </div>
-                    `
-                  }
-                }}
-              />
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm">
+                {representativeHotel ? (
+                  <>
+                    <p className="font-semibold text-foreground">
+                      대표 호텔: {representativeHotel.hotel}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      픽업 장소: {representativeHotel.pick_up_location || '-'}
+                      {representativeHotel.group_number != null &&
+                        ` · 그룹 ${representativeHotel.group_number}`}
+                    </p>
+                    {isRepresentativeHotel && (
+                      <p className="mt-2 text-xs font-medium text-amber-700">
+                        현재 호텔이 그룹 대표 호텔입니다. 필요 시 참고용으로 기록하세요.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    {formData.group_number != null
+                      ? '그룹 번호에 해당하는 대표 호텔을 찾지 못했습니다.'
+                      : '그룹 번호를 설정하면 대표 호텔이 자동으로 표시됩니다.'}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={translatingToRepresentative}
+                  onClick={async () => {
+                    if (!formData.to_representative_hotel_ko.trim()) {
+                      setToRepresentativeTranslateError(
+                        '한국어 안내를 먼저 입력하세요.'
+                      )
+                      return
+                    }
+                    setTranslatingToRepresentative(true)
+                    setToRepresentativeTranslateError(null)
+                    try {
+                      const result = await translatePickupHotelFields({
+                        to_representative_hotel_ko:
+                          formData.to_representative_hotel_ko,
+                      })
+                      if (
+                        result.success &&
+                        result.translatedFields?.to_representative_hotel_ko
+                      ) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          to_representative_hotel_en:
+                            result.translatedFields!.to_representative_hotel_ko ||
+                            prev.to_representative_hotel_en,
+                        }))
+                      } else {
+                        setToRepresentativeTranslateError(
+                          result.error || '번역에 실패했습니다.'
+                        )
+                      }
+                    } catch (error) {
+                      setToRepresentativeTranslateError(
+                        error instanceof Error
+                          ? error.message
+                          : '번역 중 오류가 발생했습니다.'
+                      )
+                    } finally {
+                      setTranslatingToRepresentative(false)
+                    }
+                  }}
+                  className={secondaryButtonClass}
+                >
+                  {translatingToRepresentative ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Languages size={16} />
+                  )}
+                  한국어 → 영어 번역
+                </button>
+                {toRepresentativeTranslateError && (
+                  <span className="text-xs font-medium text-red-600">
+                    {toRepresentativeTranslateError}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <div>
+                  <FieldLabel>대표 호텔까지 (한국어)</FieldLabel>
+                  <textarea
+                    rows={9}
+                    value={formData.to_representative_hotel_ko}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        to_representative_hotel_ko: event.target.value,
+                      }))
+                    }
+                    className={textareaClass}
+                    placeholder="대표 호텔까지 이동 경로를 입력하세요."
+                  />
+                </div>
+                <div>
+                  <FieldLabel>To Representative Hotel (English)</FieldLabel>
+                  <textarea
+                    rows={9}
+                    value={formData.to_representative_hotel_en}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        to_representative_hotel_en: event.target.value,
+                      }))
+                    }
+                    className={textareaClass}
+                    placeholder="Enter directions to the representative hotel."
+                  />
+                </div>
+              </div>
             </div>
-            
-            <div className="mt-4 text-center">
+
+            <div className="flex justify-end border-t border-border px-5 py-4 sm:px-6">
               <button
-                onClick={() => setShowImageModal(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                type="button"
+                onClick={() => setShowToRepresentativeModal(false)}
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
               >
-                닫기
+                완료
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showImageModal && selectedImageUrl && (
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm">
+          <div className="relative h-[85vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-black shadow-2xl">
+            <Image
+              src={selectedImageUrl}
+              alt="확대 이미지"
+              fill
+              unoptimized
+              className="object-contain"
+            />
+            <button
+              type="button"
+              onClick={() => setShowImageModal(false)}
+              className="absolute right-4 top-4 inline-flex h-9 w-11 items-center justify-center rounded-xl bg-white/90 text-slate-900 shadow-lg transition hover:bg-white"
+              aria-label="이미지 닫기"
+            >
+              <X size={22} />
+            </button>
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 // 픽업 호텔 그룹 번호 관련 유틸리티 함수들
 
 import type { PickupAccessClass } from '@/lib/pickupAccessClass'
+import type { PickupHotelContentI18n } from '@/lib/pickupHotelLocales'
 
 export interface PickupHotel {
   id: string
@@ -14,6 +15,19 @@ export interface PickupHotel {
   from_inside_hotel_en: string | null
   from_outside_hotel_ko: string | null
   from_outside_hotel_en: string | null
+  /** Directions from this hotel to the group representative hotel */
+  to_representative_hotel_ko: string | null
+  to_representative_hotel_en: string | null
+  /** Multi-locale text map (description + directions). Prefer over *_ko/*_en. */
+  content_i18n?: PickupHotelContentI18n | null
+  /** Reference landmark near pickup */
+  landmark: string | null
+  /** Staff memo */
+  memo: string | null
+  /** Manual sort order within a group */
+  display_order: number | null
+  /** Optional map screenshot URL */
+  map_image: string | null
   /** regular | high_top | bus; null/empty = all classes allowed */
   allowed_pickup_access_classes: PickupAccessClass[] | null
   address: string | null

@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Sparkles } from 'lucide-react'
+import { Plus, Search, MapPin, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Sparkles } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
@@ -12,15 +12,21 @@ import { useParams } from 'next/navigation'
 import PickupHotelForm from '@/components/PickupHotelForm'
 import PickupHotelAutoGroupModal from '@/components/PickupHotelAutoGroupModal'
 import PickupGroupPresetManager from '@/components/PickupGroupPresetManager'
-import PickupHotelLocationDescriptionDisplay from '@/components/pickup-hotel/PickupHotelLocationDescriptionDisplay'
+import PickupHotelCard from '@/components/pickup-hotel/PickupHotelCard'
+import PickupHotelSectionEditModal, {
+  type PickupHotelEditSection,
+} from '@/components/pickup-hotel/PickupHotelSectionEditModal'
+import PickupHotelMediaEditModal from '@/components/pickup-hotel/PickupHotelMediaEditModal'
+import PickupContentLocaleDropdown from '@/components/pickup-hotel/PickupContentLocaleDropdown'
+import {
+  isPickupContentLocale,
+  type PickupContentLocale,
+} from '@/lib/pickupHotelLocales'
 
 import { groupHotelsByGroupNumber, processPickupRequest, getRepresentativeHotelForGroupKey, validateGroupNumber, type PickupHotel } from '@/utils/pickupHotelUtils'
 import {
   filterHotelsByPickupAccessClass,
-  getBlockedPickupAccessClasses,
   getPickupAccessClassLabel,
-  getAllowedPickupAccessClasses,
-  isAllPickupAccessClassesAllowed,
   PICKUP_ACCESS_CLASSES,
   type PickupAccessClass,
 } from '@/lib/pickupHotelVehicleAccess'
@@ -28,6 +34,8 @@ import {
 type PickupHotelsListUiState = {
   searchTerm: string
   viewMode: 'grid' | 'table' | 'map'
+  cardsExpanded: boolean
+  contentLocale: PickupContentLocale
   sortField: keyof PickupHotel | null
   sortDirection: 'asc' | 'desc'
   groupFilter: 'integer' | 'all'
@@ -37,6 +45,8 @@ type PickupHotelsListUiState = {
 const PICKUP_HOTELS_LIST_UI_DEFAULT: PickupHotelsListUiState = {
   searchTerm: '',
   viewMode: 'grid',
+  cardsExpanded: true,
+  contentLocale: 'en',
   sortField: null,
   sortDirection: 'asc',
   groupFilter: 'all',
@@ -209,11 +219,20 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
   const [loading, setLoading] = useState(true)
 
   const [listUi, setListUi] = useRoutePersistedState('pickup-hotels-list', PICKUP_HOTELS_LIST_UI_DEFAULT)
-  const { searchTerm, viewMode, sortField, sortDirection, groupFilter, statusFilter } = listUi
+  const { searchTerm, viewMode, cardsExpanded, contentLocale, sortField, sortDirection, groupFilter, statusFilter } = listUi
 
   const [showAddForm, setShowAddForm] = useState(false)
 
-  const [editingHotel, setEditingHotel] = useState<PickupHotel | null>(null)
+  const [sectionEdit, setSectionEdit] = useState<{
+    hotel: PickupHotel
+    section: PickupHotelEditSection
+    contentLocale?: import('@/lib/pickupHotelLocales').PickupContentLocale
+  } | null>(null)
+
+  const [mediaEdit, setMediaEdit] = useState<{
+    hotel: PickupHotel
+    initialIndex: number
+  } | null>(null)
 
   const [imageViewer, setImageViewer] = useState<{
 
@@ -1167,7 +1186,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       if (hotel) {
 
-        setEditingHotel(hotel)
+        setSectionEdit({ hotel, section: 'basic' })
 
       }
 
@@ -1225,50 +1244,20 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
   }
 
+  const handleSectionSave = async (
+    hotelId: string,
+    patch: Partial<PickupHotel>
+  ) => {
+    const { error } = await supabase
+      .from('pickup_hotels')
+      .update(patch as never)
+      .eq('id', hotelId)
 
-
-  const handleEditHotel = async (hotelData: Omit<PickupHotel, 'id' | 'created_at' | 'updated_at'>) => {
-
-    if (editingHotel) {
-
-      try {
-
-        const { error } = await supabase
-
-          .from('pickup_hotels')
-
-          .update(hotelData as never)
-
-          .eq('id', editingHotel.id)
-
-
-
-        if (error) {
-
-          console.error('Error updating hotel:', error)
-
-          alert(locale === 'en' ? 'Error updating hotel: ' + error.message : '호텔 수정 중 오류가 발생했습니다: ' + error.message)
-
-          return
-
-        }
-
-
-
-        await fetchHotels()
-
-        setEditingHotel(null)
-
-      } catch (error) {
-
-        console.error('Error updating hotel:', error)
-
-        alert(locale === 'en' ? 'Error updating hotel.' : '호텔 수정 중 오류가 발생했습니다.')
-
-      }
-
+    if (error) {
+      throw new Error(error.message)
     }
 
+    await fetchHotels()
   }
 
 
@@ -1429,6 +1418,10 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
         from_outside_hotel_en: hotel.from_outside_hotel_en,
 
+        to_representative_hotel_ko: hotel.to_representative_hotel_ko,
+
+        to_representative_hotel_en: hotel.to_representative_hotel_en,
+
         allowed_pickup_access_classes: hotel.allowed_pickup_access_classes,
 
         address: hotel.address,
@@ -1437,7 +1430,19 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
         link: hotel.link,
 
+        youtube_link: hotel.youtube_link,
+
         media: hotel.media,
+
+        map_image: hotel.map_image ?? null,
+
+        landmark: hotel.landmark ?? null,
+
+        memo: hotel.memo ?? null,
+
+        display_order: hotel.display_order ?? null,
+
+        group_number: hotel.group_number,
 
         is_active: false, // 복사본은 비활성 상태로 생성
 
@@ -1579,7 +1584,15 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
 
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Pickup Hotel Management</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5 sm:gap-3">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Pickup Hotel Management</h1>
+          <PickupContentLocaleDropdown
+            value={isPickupContentLocale(contentLocale) ? contentLocale : 'en'}
+            onChange={(next) => setListUi((prev) => ({ ...prev, contentLocale: next }))}
+            size="md"
+            showLabel
+          />
+        </div>
 
         <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
 
@@ -1729,6 +1742,42 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
             className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm sm:text-base"
           />
         </div>
+        {viewMode === 'grid' && (
+          <div
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-gray-300 bg-white p-0.5"
+            role="group"
+            aria-label={locale === 'en' ? 'Card expand mode' : '카드 펼침 모드'}
+          >
+            <button
+              type="button"
+              onClick={() => setListUi((prev) => ({ ...prev, cardsExpanded: true }))}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                cardsExpanded
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={locale === 'en' ? 'Expanded cards' : '펼친 카드뷰'}
+              aria-pressed={cardsExpanded}
+            >
+              <ChevronUp size={16} />
+              <span className="hidden sm:inline">{locale === 'en' ? 'Expanded' : '펼침'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setListUi((prev) => ({ ...prev, cardsExpanded: false }))}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+                !cardsExpanded
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={locale === 'en' ? 'Collapsed cards' : '접힌 카드뷰'}
+              aria-pressed={!cardsExpanded}
+            >
+              <ChevronDown size={16} />
+              <span className="hidden sm:inline">{locale === 'en' ? 'Collapsed' : '접힘'}</span>
+            </button>
+          </div>
+        )}
         {/* 필터 버튼들 - 모바일에서 줄바꿈 */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1993,605 +2042,50 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                   <div className="p-3 sm:p-4 pt-0">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
 
                       {groupedHotels[groupKey].map((hotel) => (
 
-          <div 
-
-            key={hotel.id} 
-
-            className="bg-white rounded-lg shadow-md p-3 sm:p-4 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
-
-            onClick={() => setEditingHotel(hotel)}
-
-          >
-
-            {/* 호텔명 */}
-
-            <div className="mb-4">
-
-              <div className="flex items-center justify-between">
-
-                <div className="flex items-center space-x-2">
-
-                  <h3 className="text-base font-semibold text-gray-900">{hotel.hotel}</h3>
-
-                  {hotel.group_number != null && hotel.group_number !== undefined ? (
-                    <button
-                      type="button"
-                      onClick={(e) => openGroupNumberEditModal(hotel, e)}
-                      className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full hover:bg-green-200 transition-colors"
-                      title={locale === 'en' ? 'Edit group number' : '그룹 번호 수정'}
-                    >
-                      Group {hotel.group_number}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => openGroupNumberEditModal(hotel, e)}
-                      className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full hover:bg-gray-200 transition-colors"
-                      title={locale === 'en' ? 'Set group number' : '그룹 번호 설정'}
-                    >
-                      {locale === 'en' ? 'No group' : '그룹 미설정'}
-                    </button>
-                  )}
-
-                </div>
-
-                <div className="flex items-center space-x-2">
-
-                  {hotel.link && (
-
-                    <a
-
-                      href={hotel.link}
-
-                      target="_blank"
-
-                      rel="noopener noreferrer"
-
-                      className="text-primary hover:text-primary/80 transition-colors"
-
-                      onClick={(e) => e.stopPropagation()}
-
-                    >
-
-                      <MapPin size={16} />
-
-                    </a>
-
-                  )}
-
-                  {hotel.youtube_link && (
-
-                    <a
-
-                      href={hotel.youtube_link}
-
-                      target="_blank"
-
-                      rel="noopener noreferrer"
-
-                      className="text-red-600 hover:text-red-800 transition-colors"
-
-                      onClick={(e) => e.stopPropagation()}
-
-                      title="View YouTube Video"
-
-                    >
-
-                      <Video size={16} />
-
-                    </a>
-
-                  )}
-
-                  <button
-
-                    onClick={(e) => {
-
-                      e.stopPropagation()
-
-                      handleCopyHotel(hotel)
-
-                    }}
-
-                    className="text-primary hover:text-primary/80 transition-colors"
-
-                    title="Copy Hotel"
-
-                  >
-
-                    <Copy size={16} />
-
-                  </button>
-
-                  <button
-
-                    onClick={(e) => {
-
-                      e.stopPropagation()
-
-                      setDeleteConfirm({ isOpen: true, hotel })
-
-                    }}
-
-                    className="text-red-600 hover:text-red-800 transition-colors"
-
-                    title="Delete Hotel"
-
-                  >
-
-                    <Trash2 size={16} />
-
-                  </button>
-
-                </div>
-
-              </div>
-
-              <div
-
-                className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2"
-
-                onClick={(e) => e.stopPropagation()}
-
-              >
-
-                <div className="flex items-center gap-2 shrink-0">
-
-                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-
-                    {locale === 'en' ? 'Active' : '활성'}
-
-                  </span>
-
-                  <button
-
-                    type="button"
-
-                    onClick={() => handleToggleActive(hotel.id, hotel.is_active)}
-
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-
-                      hotel.is_active !== false ? 'bg-blue-600' : 'bg-gray-300'
-
-                    }`}
-
-                    title={locale === 'en' ? (hotel.is_active !== false ? 'Deactivate' : 'Activate') : (hotel.is_active !== false ? '비활성화' : '활성화')}
-
-                  >
-
-                    <span
-
-                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-
-                        hotel.is_active !== false ? 'translate-x-5' : 'translate-x-1'
-
-                      }`}
-
-                    />
-
-                  </button>
-
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 min-w-0">
-
-                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-
-                    {locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}
-
-                  </span>
-
-                  <button
-
-                    type="button"
-
-                    onClick={() => handleToggleUseForPickup(hotel.id, hotel.use_for_pickup ?? true)}
-
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
-
-                      hotel.use_for_pickup !== false ? 'bg-emerald-600' : 'bg-gray-300'
-
-                    }`}
-
-                    title={locale === 'en' ? (hotel.use_for_pickup !== false ? 'Turn off' : 'Turn on') : (hotel.use_for_pickup !== false ? '끄기' : '켜기')}
-
-                  >
-
-                    <span
-
-                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-
-                        hotel.use_for_pickup !== false ? 'translate-x-5' : 'translate-x-1'
-
-                      }`}
-
-                    />
-
-                  </button>
-
-                </div>
-
-              </div>
-
-            </div>
-
-
-
-            {/* 픽업 위치 */}
-
-            <div className="flex items-center mb-3">
-
-              <MapPin size={16} className="text-gray-400 mr-2" />
-
-              <span className="text-sm text-gray-700">{hotel.pick_up_location}</span>
-
-            </div>
-
-
-
-            {/* Location Description */}
-
-            <PickupHotelLocationDescriptionDisplay
-              hotel={hotel}
-              locale={locale === 'en' ? 'en' : 'ko'}
-              compact
-            />
-
-            {/* Vehicle access summary */}
-            {!isAllPickupAccessClassesAllowed(hotel) && (
-              <div className="mb-4">
-                <p className="text-xs font-medium text-emerald-800 mb-1">
-                  {locale === 'en' ? 'Allowed vehicle classes:' : '진입 가능 등급:'}
-                </p>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {getAllowedPickupAccessClasses(hotel).map((accessClass) => (
-                    <span
-                      key={accessClass}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800"
-                    >
-                      {getPickupAccessClassLabel(accessClass, locale === 'en' ? 'en' : 'ko')}
-                    </span>
-                  ))}
-                </div>
-                {getBlockedPickupAccessClasses(hotel).length > 0 && (
-                  <>
-                    <p className="text-xs font-medium text-red-800 mb-1">
-                      {locale === 'en' ? 'Not allowed:' : '진입 불가:'}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {getBlockedPickupAccessClasses(hotel).map((accessClass) => (
-                        <span
-                          key={accessClass}
-                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800"
-                        >
-                          {getPickupAccessClassLabel(accessClass, locale === 'en' ? 'en' : 'ko')}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {isAllPickupAccessClassesAllowed(hotel) && (
-              <div className="mb-4">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800">
-                  {locale === 'en' ? 'All classes allowed (Regular + High Top + Bus)' : '전체 등급 진입 가능 (Regular + High Top + Bus)'}
-                </span>
-              </div>
-            )}
-
-
-
-            {/* 주소 */}
-
-            <div className="text-sm text-gray-700 mb-3">
-
-              <span className="font-medium">Address:</span> {hotel.address}
-
-            </div>
-
-
-
-            {/* 좌표 */}
-
-            {hotel.pin && (
-
-              <div className="text-sm text-gray-600 mb-3">
-
-                <span className="font-medium">Coordinates:</span> {hotel.pin}
-
-              </div>
-
-            )}
-
-
-
-            {/* 구글맵 링크 */}
-
-            {hotel.link && (
-
-              <div className="text-sm text-gray-600 mb-3">
-
-                <div className="flex items-center">
-
-                  <span className="font-medium mr-2">Google Map:</span>
-
-                  <a
-
-                    href={hotel.link}
-
-                    target="_blank"
-
-                    rel="noopener noreferrer"
-
-                    className="text-primary hover:text-primary/80 underline break-all flex-1"
-
-                    onClick={(e) => e.stopPropagation()}
-
-                  >
-
-                    {hotel.link}
-
-                  </a>
-
-                  <button
-
-                    onClick={(e) => {
-
-                      e.stopPropagation()
-
-                      if (hotel.link) {
-
-                        navigator.clipboard.writeText(hotel.link)
-
-                        alert('링크가 클립보드에 복사되었습니다!')
-
-                      }
-
-                    }}
-
-                    className="ml-2 p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
-
-                    title="Copy Link"
-
-                  >
-
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-
-                    </svg>
-
-                  </button>
-
-                </div>
-
-              </div>
-
-            )}
-
-            {/* YouTube 링크 */}
-
-            {hotel.youtube_link && (
-
-              <div className="text-sm text-gray-600 mb-3">
-
-                <div className="flex items-center">
-
-                  <span className="font-medium mr-2">YouTube:</span>
-
-                  <a
-
-                    href={hotel.youtube_link}
-
-                    target="_blank"
-
-                    rel="noopener noreferrer"
-
-                    className="text-red-600 hover:text-red-800 underline break-all flex-1"
-
-                    onClick={(e) => e.stopPropagation()}
-
-                  >
-
-                    {hotel.youtube_link}
-
-                  </a>
-
-                  <button
-
-                    onClick={(e) => {
-
-                      e.stopPropagation()
-
-                      if (hotel.youtube_link) {
-
-                        navigator.clipboard.writeText(hotel.youtube_link)
-
-                        alert('YouTube 링크가 클립보드에 복사되었습니다!')
-
-                      }
-
-                    }}
-
-                    className="ml-2 p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-
-                    title="Copy YouTube Link"
-
-                  >
-
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-
-                    </svg>
-
-                  </button>
-
-                </div>
-
-              </div>
-
-            )}
-
-
-
-            {/* 미디어 */}
-
-            {hotel.media && hotel.media.length > 0 && (
-
-              <div className="mb-4">
-
-                 <div className="text-sm font-medium text-gray-700 mb-2">{locale === 'en' ? 'Media:' : '미디어:'}</div>
-
-                <div className="grid grid-cols-4 gap-2">
-
-                  {hotel.media.slice(0, 4).map((url, index) => {
-
-                    const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com')
-
-                    return (
-
-                      <div 
-
-                        key={index} 
-
-                        className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors relative group"
-
-                        onClick={(e) => {
-
-                          e.stopPropagation()
-
-                          if (isImage) {
-
-                            openImageViewer(hotel.media || [], index, hotel.hotel)
-
+                        <PickupHotelCard
+                          key={hotel.id}
+                          hotel={hotel}
+                          locale={locale === 'en' ? 'en' : 'ko'}
+                          contentLocale={
+                            isPickupContentLocale(contentLocale) ? contentLocale : 'en'
                           }
+                          defaultExpanded={cardsExpanded}
+                          onCopy={handleCopyHotel}
+                          onDelete={(h) => setDeleteConfirm({ isOpen: true, hotel: h })}
+                          onToggleActive={handleToggleActive}
+                          onToggleUseForPickup={handleToggleUseForPickup}
+                          onEditGroupNumber={openGroupNumberEditModal}
+                          onOpenImages={openImageViewer}
+                          onEditMedia={(h, initialIndex = 0) =>
+                            setMediaEdit({ hotel: h, initialIndex })
+                          }
+                          onEditSection={(h, section) =>
+                            setSectionEdit({
+                              hotel: h,
+                              section,
+                              contentLocale: isPickupContentLocale(contentLocale)
+                                ? contentLocale
+                                : 'en',
+                            })
+                          }
+                        />
 
-                        }}
-
-                      >
-
-                        {isImage ? (
-
-                          <NextImage
-                            src={url}
-
-                            alt={`${hotel.hotel} 이미지 ${index + 1}`}
-
-                            fill
-                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                            className="object-cover rounded-lg"
-                            onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-                              const target = e.target as HTMLImageElement
-
-                              target.style.display = 'none'
-
-                              const parent = target.parentElement
-
-                              if (parent) {
-
-                                parent.innerHTML = `
-
-                                  <div class="w-full h-full flex items-center justify-center">
-
-                                    <div class="text-center">
-
-                                      <div class="text-red-500 text-xs">이미지 로드 실패</div>
-
-                                      <div class="text-gray-400 text-xs mt-1">URL 확인 필요</div>
-
-                                    </div>
-
-                                  </div>
-
-                                `
-
-                              }
-
-                            }}
-
-                          />
-
-                        ) : (
-
-                          <Video size={16} className="text-primary" />
-
-                        )}
-
-                        
-
-                        {/* 호버 오버레이 */}
-
-                        {isImage && (
-
-                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded-lg flex items-center justify-center">
-
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-
-                              <ImageIcon size={20} className="text-white" />
-                            </div>
-
-                          </div>
-
-                        )}
-
-                      </div>
-
-                    )
-
-                  })}
-
-                  {hotel.media.length > 4 && (
-
-                    <div 
-
-                      className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-500 cursor-pointer hover:bg-gray-200 transition-colors"
-
-                      onClick={(e) => {
-
-                        e.stopPropagation()
-
-                        openImageViewer(hotel.media || [], 4, hotel.hotel)
-
-                      }}
-
-                    >
-
-                      +{hotel.media.length - 4}{locale === 'en' ? ' more' : '개 더'}
+                      ))}
 
                     </div>
-
-                  )}
-
-                </div>
-
-              </div>
-
-            )}
-
-
-
-            
-
                   </div>
 
-                  ))}
-
-                </div>
+                )}
 
               </div>
 
-            )}
-
-          </div>
-
         )})}
+
+
 
             </div>
 
@@ -3379,11 +2873,11 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                               <button
 
-                                onClick={() => setEditingHotel(hotel)}
+                                onClick={() => setSectionEdit({ hotel, section: 'basic' })}
 
                                 className="text-gray-600 hover:text-gray-900"
 
-                                title="상세 편집"
+                                title={locale === 'en' ? 'Edit basic info' : '기본 정보 수정'}
 
                               >
 
@@ -3475,11 +2969,11 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                               <button
 
-                                onClick={() => setEditingHotel(hotel)}
+                                onClick={() => setSectionEdit({ hotel, section: 'basic' })}
 
                                 className="text-gray-600 hover:text-gray-900"
 
-                                title="상세 편집"
+                                title={locale === 'en' ? 'Edit basic info' : '기본 정보 수정'}
 
                               >
 
@@ -3681,7 +3175,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                               onClick={() => {
                                 const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
                                 if (hotel) {
-                                  setEditingHotel(hotel)
+                                  setSectionEdit({ hotel, section: 'basic' })
                                   setSelectedHotelInfo(null)
                                 }
                               }}
@@ -3843,15 +3337,23 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
 
 
-      {/* 호텔 추가/편집 모달 */}
+      {/* 호텔 추가 모달 */}
 
       {showAddForm && (
 
         <PickupHotelForm
 
+          allHotels={hotels}
+
           onSubmit={handleAddHotel}
 
           onCancel={() => setShowAddForm(false)}
+
+          onAddNew={() => {
+
+            setShowAddForm(true)
+
+          }}
 
           translations={translations}
 
@@ -3859,57 +3361,55 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       )}
 
+      {sectionEdit && (
+        <PickupHotelSectionEditModal
+          hotel={sectionEdit.hotel}
+          section={sectionEdit.section}
+          contentLocale={sectionEdit.contentLocale ?? 'en'}
+          allHotels={hotels}
+          locale={locale === 'en' ? 'en' : 'ko'}
+          onClose={() => setSectionEdit(null)}
+          onSave={handleSectionSave}
+        />
+      )}
 
-
-             {editingHotel && (
-
-         <PickupHotelForm
-
-           hotel={editingHotel}
-
-           onSubmit={handleEditHotel}
-
-           onCancel={() => {
-
-             setEditingHotel(null)
-
-           }}
-
-           onDelete={(id: string) => {
-
-             const hotel = hotels.find(h => h.id === id)
-
-             if (hotel) handleDeleteHotel(hotel)
-
-           }}
-
-           translations={translations}
-
-         />
-
-       )}
+      {mediaEdit && (
+        <PickupHotelMediaEditModal
+          hotel={mediaEdit.hotel}
+          initialIndex={mediaEdit.initialIndex}
+          locale={locale === 'en' ? 'en' : 'ko'}
+          onClose={() => setMediaEdit(null)}
+          onSave={async (hotelId, patch) => {
+            await handleSectionSave(hotelId, patch)
+          }}
+        />
+      )}
 
 
 
-      {/* 이미지 뷰어 모달 */}
+      {/* 이미지 뷰어 모달 — admin 헤더(z-[9999])보다 위 */}
 
       {imageViewer.isOpen && (
 
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/90">
 
-          <div className="relative w-full h-full flex items-center justify-center">
+          <div className="relative flex h-full w-full items-center justify-center">
 
-            {/* 닫기 버튼 */}
+            {/* 닫기 버튼 — 사이트 헤더 아래 */}
 
             <button
 
+              type="button"
+
               onClick={closeImageViewer}
 
-              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+              className="absolute right-4 z-10 rounded-xl bg-black/40 p-2 text-white transition hover:bg-black/60 hover:text-gray-200 top-[calc(var(--header-height,4rem)+0.75rem)]"
+
+              aria-label={locale === 'en' ? 'Close' : '닫기'}
 
             >
 
-              <X size={32} />
+              <X size={28} />
 
             </button>
 
@@ -3917,7 +3417,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             {/* 호텔명 */}
 
-            <div className="absolute top-4 left-4 text-white text-lg font-semibold z-10">
+            <div className="absolute left-4 z-10 max-w-[40%] truncate text-lg font-semibold text-white top-[calc(var(--header-height,4rem)+1rem)]">
 
               {imageViewer.hotelName}
 
@@ -3927,7 +3427,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             {/* 이미지 카운터 */}
 
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-white text-sm z-10">
+            <div className="absolute left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-sm text-white top-[calc(var(--header-height,4rem)+1rem)]">
 
               {imageViewer.currentIndex + 1} / {imageViewer.images.length}
 

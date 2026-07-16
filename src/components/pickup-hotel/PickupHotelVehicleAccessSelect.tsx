@@ -1,6 +1,5 @@
 'use client'
 
-import { CheckSquare, Square } from 'lucide-react'
 import {
   PICKUP_ACCESS_CLASSES,
   PICKUP_ACCESS_CLASS_LABELS,
@@ -8,6 +7,7 @@ import {
   type PickupAccessClass,
 } from '@/lib/pickupAccessClass'
 import { isAllPickupAccessClassesAllowed } from '@/lib/pickupHotelVehicleAccess'
+import { PICKUP_VEHICLE_ICONS, PICKUP_VEHICLE_ICON_TONES } from '@/components/pickup-hotel/PickupVehicleIcons'
 
 interface PickupHotelVehicleAccessSelectProps {
   value: PickupAccessClass[] | null
@@ -36,73 +36,96 @@ export default function PickupHotelVehicleAccessSelect({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
         <button
           type="button"
           onClick={() => onChange(null)}
-          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+          className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
             allAllowed
-              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-              : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+              ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+              : 'border-border bg-white text-slate-700 hover:bg-muted'
           }`}
         >
-          {locale === 'en' ? 'All classes allowed' : '전체 허용 (Regular + High Top + Bus)'}
+          {locale === 'en' ? 'Allow all' : '전체 허용'}
         </button>
         <button
           type="button"
           onClick={() => onChange(['regular'])}
-          className="px-3 py-1.5 text-xs rounded-lg border border-border text-primary bg-primary/5 hover:bg-muted transition-colors"
+          className="rounded-lg border border-border bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted"
         >
-          {locale === 'en' ? 'Regular only' : 'Regular만 (표준 차량)'}
+          {locale === 'en' ? 'Low top only' : 'Low top만'}
         </button>
       </div>
 
-      <p className="text-xs text-gray-500">
-        {locale === 'en'
-          ? 'Select which vehicle size classes can enter this hotel. Most hotels allow Regular only; enable High Top or Bus if clearance allows.'
-          : '이 호텔에 진입 가능한 차량 크기 등급을 선택하세요. 대부분 Regular만 허용하고, 높이·진입 여유가 있으면 High Top·Bus도 선택합니다.'}
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="flex flex-wrap items-stretch justify-start gap-2">
         {PICKUP_ACCESS_CLASSES.map((accessClass) => {
           const checked = selected.has(accessClass)
           const labels = PICKUP_ACCESS_CLASS_LABELS[accessClass]
+          const Icon = PICKUP_VEHICLE_ICONS[accessClass]
+          const tone = PICKUP_VEHICLE_ICON_TONES[accessClass]
+          const name = locale === 'en' ? labels.en : labels.ko
+          const description = locale === 'en' ? labels.descriptionEn : labels.descriptionKo
+
           return (
-            <label
+            <button
               key={accessClass}
-              className={`flex flex-col gap-1 p-3 rounded-lg cursor-pointer border transition-colors ${
+              type="button"
+              onClick={() => toggleClass(accessClass)}
+              aria-pressed={checked}
+              aria-label={`${name}. ${description}`}
+              title={`${name}\n${description}`}
+              className={`group relative flex min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 transition-colors sm:max-w-[7.5rem] ${
                 checked
-                  ? 'bg-emerald-50 border-emerald-300'
-                  : 'bg-red-50 border-red-200'
+                  ? 'border-border/70 bg-white text-slate-800 hover:bg-muted/40'
+                  : 'border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300 hover:bg-slate-100'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={checked}
-                  onChange={() => toggleClass(accessClass)}
-                />
-                {checked ? (
-                  <CheckSquare size={18} className="text-emerald-600 shrink-0" />
-                ) : (
-                  <Square size={18} className="text-red-500 shrink-0" />
+              <span
+                className={`relative inline-flex h-11 w-11 items-center justify-center rounded-full ${
+                  checked ? `${tone.circle} ${tone.icon}` : `${tone.mutedCircle} ${tone.mutedIcon}`
+                }`}
+              >
+                <Icon size={22} />
+                {!checked && (
+                  <span
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                    aria-hidden
+                  >
+                    <span className="block h-0.5 w-[72%] rotate-[-32deg] rounded-full bg-slate-400/90" />
+                  </span>
                 )}
-                <span className="font-semibold text-gray-900">
-                  {locale === 'en' ? labels.en : labels.ko}
+              </span>
+              <span className={`text-xs font-semibold ${checked ? 'text-slate-800' : 'text-slate-400'}`}>
+                {name}
+              </span>
+
+              {/* Hover tooltip */}
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 top-[calc(100%+0.4rem)] z-20 w-max max-w-[14rem] -translate-x-1/2 rounded-lg border border-border bg-white px-3 py-2 text-left opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+              >
+                <span className="block text-xs font-semibold text-slate-900">{name}</span>
+                <span className="mt-0.5 block text-[11px] leading-4 text-slate-600">
+                  {description}
                 </span>
-              </div>
-              <p className="text-xs text-gray-600 pl-7">
-                {locale === 'en' ? labels.descriptionEn : labels.descriptionKo}
-              </p>
-            </label>
+                <span className="mt-1 block text-[10px] font-medium text-slate-500">
+                  {checked
+                    ? locale === 'en'
+                      ? 'Allowed — click to disable'
+                      : '진입 가능 — 클릭하여 해제'
+                    : locale === 'en'
+                      ? 'Not allowed — click to enable'
+                      : '진입 불가 — 클릭하여 허용'}
+                </span>
+              </span>
+            </button>
           )
         })}
       </div>
 
       {!allAllowed && (
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           {locale === 'en'
             ? `Allowed: ${getAllowedLabels(selected, locale)}`
             : `진입 가능: ${getAllowedLabels(selected, locale)}`}

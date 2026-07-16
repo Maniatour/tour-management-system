@@ -1,5 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
+
+function getBearerToken(request: NextRequest): string | null {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.split(' ')[1]?.trim()
+  return token || null
+}
+
+async function requireAuthDb(request: NextRequest) {
+  const token = getBearerToken(request)
+  if (!token) {
+    return { error: NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 }) }
+  }
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+  if (authError || !user) {
+    return { error: NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 }) }
+  }
+
+  return { user, db: createSupabaseClientWithToken(token) }
+}
 
 // 메시지 목록 조회
 export async function GET(request: NextRequest) {
@@ -13,21 +34,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '채팅방 ID가 필요합니다' }, { status: 400 })
     }
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
+    const auth = await requireAuthDb(request)
+    if ('error' in auth) return auth.error
+    const { db } = auth
 
-    const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: messages, error } = await supabase
+    const { data: messages, error } = await db
       .from('team_chat_messages')
       .select(`
         *,
@@ -61,41 +72,33 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { 
-      room_id, 
-      message, 
+    const {
+      room_id,
+      message,
       message_type = 'text',
       reply_to_id,
       file_url,
       file_name,
       file_size,
-      file_type
+      file_type,
     } = body
 
-    // 필수 필드 검증
     if (!room_id || !message) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
     }
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const auth = await requireAuthDb(request)
+    if ('error' in auth) return auth.error
+    const { user, db } = auth
+
+    if (!user.email) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    // 팀 정보 조회
-    const { data: teamData, error: teamError } = await supabase
+    const { data: teamData, error: teamError } = await db
       .from('team')
       .select('name_ko, position')
-      .eq('email', user.email!)
+      .eq('email', user.email)
       .eq('is_active', true)
       .single()
 
@@ -105,21 +108,12 @@ export async function POST(request: NextRequest) {
 
     const team = teamData as { name_ko: string; position: string }
 
-    // 메시지 생성
-    const { data: newMessage, error } = await (supabase as unknown as { 
-      from: (table: string) => { 
-        insert: (data: Record<string, unknown>) => { 
-          select: (query: string) => { 
-            single: () => Promise<{ data: unknown; error: unknown }> 
-          } 
-        } 
-      } 
-    })
+    const { data: newMessage, error } = await db
       .from('team_chat_messages')
       .insert({
         room_id,
-        sender_email: user.email!,
-        sender_name: team.name_ko || user.email!.split('@')[0],
+        sender_email: user.email,
+        sender_name: team.name_ko || user.email.split('@')[0],
         sender_position: team.position,
         message,
         message_type,
@@ -127,7 +121,7 @@ export async function POST(request: NextRequest) {
         file_url: file_url || null,
         file_name: file_name || null,
         file_size: file_size || null,
-        file_type: file_type || null
+        file_type: file_type || null,
       })
       .select(`
         *,
@@ -144,7 +138,7 @@ export async function POST(request: NextRequest) {
       console.error('메시지 데이터:', {
         room_id,
         sender_email: user.email,
-        sender_name: team.name_ko || user.email!.split('@')[0],
+        sender_name: team.name_ko || user.email.split('@')[0],
         sender_position: team.position,
         message,
         message_type,
@@ -152,22 +146,15 @@ export async function POST(request: NextRequest) {
         file_url: file_url || null,
         file_name: file_name || null,
         file_size: file_size || null,
-        file_type: file_type || null
+        file_type: file_type || null,
       })
-      return NextResponse.json({ 
-        error: '메시지를 전송할 수 없습니다', 
-        details: (error as { message?: string }).message || '알 수 없는 오류'
+      return NextResponse.json({
+        error: '메시지를 전송할 수 없습니다',
+        details: error.message || '알 수 없는 오류',
       }, { status: 500 })
     }
 
-    // 채팅방 업데이트 시간 갱신
-    await (supabase as unknown as { 
-      from: (table: string) => { 
-        update: (data: Record<string, unknown>) => { 
-          eq: (column: string, value: unknown) => Promise<unknown> 
-        } 
-      } 
-    })
+    await db
       .from('team_chat_rooms')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', room_id)
@@ -189,22 +176,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '메시지 ID가 필요합니다' }, { status: 400 })
     }
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
+    const auth = await requireAuthDb(request)
+    if ('error' in auth) return auth.error
+    const { user, db } = auth
 
-    const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    // 메시지 소유자 확인
-    const { data: message, error: messageError } = await supabase
+    const { data: message, error: messageError } = await db
       .from('team_chat_messages')
       .select('sender_email, created_at')
       .eq('id', message_id)
@@ -220,17 +196,15 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '본인의 메시지만 삭제할 수 있습니다' }, { status: 403 })
     }
 
-    // 5분 이내인지 확인
     const messageTime = new Date(messageData.created_at)
     const now = new Date()
     const diffMinutes = (now.getTime() - messageTime.getTime()) / (1000 * 60)
-    
+
     if (diffMinutes > 5) {
       return NextResponse.json({ error: '메시지는 전송 후 5분 이내에만 삭제할 수 있습니다' }, { status: 400 })
     }
 
-    // 메시지 삭제
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('team_chat_messages')
       .delete()
       .eq('id', message_id)
@@ -247,53 +221,40 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// 안읽은 메시지 수 조회
+// 안읽은 메시지 수 조회 / 읽음 처리
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { action, room_id, message_id, reader_email } = body
 
     if (action === 'mark_read') {
-      // 메시지를 읽음 처리
       if (!room_id || !message_id || !reader_email) {
         return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
       }
 
-      // Authorization 헤더에서 토큰 확인
-      const authHeader = request.headers.get('authorization')
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
+      const auth = await requireAuthDb(request)
+      if ('error' in auth) return auth.error
+      const { db } = auth
 
-      const token = authHeader.split(' ')[1]
-      
-      // 토큰으로 사용자 확인
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (authError || !user) {
-        return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-
-      // 이미 읽음 처리되었는지 확인
-      const { data: existingRead, error: readError } = await supabase
+      const { data: existingRead, error: readError } = await db
         .from('team_chat_read_status')
         .select('id')
         .eq('message_id', message_id)
         .eq('reader_email', reader_email)
         .single()
 
-      if (readError && readError.code !== 'PGRST116') { // PGRST116은 "not found" 에러
+      if (readError && readError.code !== 'PGRST116') {
         console.error('읽음 상태 확인 오류:', readError)
         return NextResponse.json({ error: '읽음 상태를 확인할 수 없습니다' }, { status: 500 })
       }
 
-      // 이미 읽음 처리되지 않은 경우에만 추가
       if (!existingRead) {
-        const { error: insertError } = await supabase
+        const { error: insertError } = await db
           .from('team_chat_read_status')
           .insert({
             message_id,
             reader_email,
-            read_at: new Date().toISOString()
+            read_at: new Date().toISOString(),
           })
 
         if (insertError) {

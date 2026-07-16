@@ -7,14 +7,14 @@ export const PICKUP_ACCESS_CLASS_LABELS: Record<
   { ko: string; en: string; descriptionKo: string; descriptionEn: string }
 > = {
   regular: {
-    ko: 'Regular',
-    en: 'Regular',
+    ko: 'Low top',
+    en: 'Low top',
     descriptionKo: '미니밴, Ford Transit 등 일반 높이 차량',
     descriptionEn: 'Minivan, Ford Transit, and similar standard-height vehicles',
   },
   high_top: {
-    ko: 'High Top',
-    en: 'High Top',
+    ko: 'High top',
+    en: 'High top',
     descriptionKo: 'Sprinter, Transit Hightop, Captain Seat 등',
     descriptionEn: 'Sprinter, Transit Hightop, Captain Seat, etc.',
   },

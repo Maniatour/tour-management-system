@@ -24,6 +24,13 @@ export interface PickupHotel {
   from_inside_hotel_en: string | null
   from_outside_hotel_ko: string | null
   from_outside_hotel_en: string | null
+  to_representative_hotel_ko: string | null
+  to_representative_hotel_en: string | null
+  content_i18n?: Record<string, unknown> | null
+  landmark: string | null
+  memo: string | null
+  display_order: number | null
+  map_image: string | null
   allowed_pickup_access_classes: PickupAccessClass[] | null
   address: string
   pin: string | null

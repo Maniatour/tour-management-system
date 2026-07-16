@@ -1,9 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
+
+function getBearerToken(request: NextRequest): string | null {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.split(' ')[1]?.trim()
+  return token || null
+}
+
+async function requireAuthDb(request: NextRequest) {
+  const token = getBearerToken(request)
+  if (!token) {
+    return { error: NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 }) }
+  }
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+  if (authError || !user) {
+    return { error: NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 }) }
+  }
+
+  return { user, db: createSupabaseClientWithToken(token) }
+}
 
 // 읽음 상태 업데이트
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuthDb(request)
+    if ('error' in auth) return auth.error
+    const { db } = auth
+
     const body = await request.json()
     const { message_ids, reader_email } = body
 
@@ -11,17 +36,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
     }
 
-    // 읽음 상태 데이터 준비
     const readStatusData = message_ids.map((messageId: string) => ({
       message_id: messageId,
-      reader_email
+      reader_email,
     }))
 
-    const { error } = await supabase
+    const { error } = await db
       .from('team_chat_read_status')
-      .upsert(readStatusData, { 
+      .upsert(readStatusData, {
         onConflict: 'message_id,reader_email',
-        ignoreDuplicates: true 
+        ignoreDuplicates: true,
       })
 
     if (error) {
@@ -39,6 +63,10 @@ export async function POST(request: NextRequest) {
 // 읽음 상태 조회
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuthDb(request)
+    if ('error' in auth) return auth.error
+    const { db } = auth
+
     const { searchParams } = new URL(request.url)
     const messageId = searchParams.get('message_id')
     const roomId = searchParams.get('room_id')
@@ -48,7 +76,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '사용자 이메일이 필요합니다' }, { status: 400 })
     }
 
-    let query = supabase
+    let query = db
       .from('team_chat_read_status')
       .select(`
         *,

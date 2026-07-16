@@ -4033,6 +4033,7 @@ export type Database = {
           created_at: string | null
           description_en: string | null
           description_ko: string | null
+          content_i18n: Record<string, unknown> | null
           from_inside_hotel_en: string | null
           from_inside_hotel_ko: string | null
           from_outside_hotel_en: string | null
@@ -4041,10 +4042,16 @@ export type Database = {
           hotel: string
           id: string
           is_active: boolean | null
+          landmark: string | null
           link: string | null
+          map_image: string | null
           media: string[] | null
+          memo: string | null
           pick_up_location: string
           pin: string | null
+          display_order: number | null
+          to_representative_hotel_en: string | null
+          to_representative_hotel_ko: string | null
           updated_at: string | null
           use_for_pickup: boolean
           youtube_link: string | null
@@ -4055,6 +4062,8 @@ export type Database = {
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
+          content_i18n?: Record<string, unknown> | null
+          display_order?: number | null
           from_inside_hotel_en?: string | null
           from_inside_hotel_ko?: string | null
           from_outside_hotel_en?: string | null
@@ -4063,10 +4072,15 @@ export type Database = {
           hotel: string
           id?: string
           is_active?: boolean | null
+          landmark?: string | null
           link?: string | null
+          map_image?: string | null
           media?: string[] | null
+          memo?: string | null
           pick_up_location: string
           pin?: string | null
+          to_representative_hotel_en?: string | null
+          to_representative_hotel_ko?: string | null
           updated_at?: string | null
           use_for_pickup?: boolean
           youtube_link?: string | null
@@ -4077,6 +4091,8 @@ export type Database = {
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
+          content_i18n?: Record<string, unknown> | null
+          display_order?: number | null
           from_inside_hotel_en?: string | null
           from_inside_hotel_ko?: string | null
           from_outside_hotel_en?: string | null
@@ -4085,10 +4101,15 @@ export type Database = {
           hotel?: string
           id?: string
           is_active?: boolean | null
+          landmark?: string | null
           link?: string | null
+          map_image?: string | null
           media?: string[] | null
+          memo?: string | null
           pick_up_location?: string
           pin?: string | null
+          to_representative_hotel_en?: string | null
+          to_representative_hotel_ko?: string | null
           updated_at?: string | null
           use_for_pickup?: boolean
           youtube_link?: string | null
