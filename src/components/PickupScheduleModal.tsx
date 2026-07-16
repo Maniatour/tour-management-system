@@ -1,6 +1,61 @@
-import { useState, useEffect } from 'react'
-import { X, Camera, MapPin, Play, Users } from 'lucide-react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
+import { X, ImageIcon, MapPin, Play, Users, Info, ChevronDown, ChevronUp, Building2, Footprints } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import { getPickupLocalizedText } from '@/lib/pickupHotelLocales'
+import { PICKUP_HOTEL_SECTION_TITLES } from '@/components/pickup-hotel/PickupHotelSectionEditModal'
+import PickupHotelDirectionStepsDisplay from '@/components/pickup-hotel/PickupHotelDirectionStepsDisplay'
+
+function LocationDescriptionSection({
+  title,
+  text,
+}: {
+  title: string
+  text: string
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-white">
+      <div className="flex items-center gap-1.5 border-b border-border/50 bg-blue-50/60 px-3 py-2.5 text-sm font-semibold text-blue-700">
+        <MapPin size={15} className="shrink-0" />
+        {title}
+      </div>
+      <div className="px-3 py-3">
+        <p className="rounded-lg bg-blue-50/80 px-3 py-2.5 text-sm leading-6 text-slate-700 whitespace-pre-line">
+          {text}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function DirectionSection({
+  title,
+  text,
+  accent,
+  icon,
+  emptyLabel,
+}: {
+  title: string
+  text: string
+  accent: 'blue' | 'green'
+  icon: ReactNode
+  emptyLabel: string
+}) {
+  const headerBg =
+    accent === 'green' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-white">
+      <div className={`flex items-center gap-1.5 px-3 py-2.5 ${headerBg}`}>
+        <span className="flex shrink-0 items-center">{icon}</span>
+        <span className="text-sm font-semibold">{title}</span>
+      </div>
+      <div className="px-3 py-3">
+        <PickupHotelDirectionStepsDisplay text={text} accent={accent} emptyLabel={emptyLabel} />
+      </div>
+    </div>
+  )
+}
 
 interface PickupScheduleModalProps {
   isOpen: boolean
@@ -37,17 +92,39 @@ function ScheduleItem({
   language: 'ko' | 'en'
   onPhotoClick?: (hotelName: string, mediaUrls: string[]) => void
 }) {
-  const [hotelMediaUrls, setHotelMediaUrls] = useState<string[]>([])
-  const [googleMapsLink, setGoogleMapsLink] = useState<string | null>(null)
-  const [youtubeLink, setYoutubeLink] = useState<string | null>(null)
+  const [hotelRecord, setHotelRecord] = useState<PickupHotel | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
 
-  // 픽업 호텔 미디어 데이터, 구글맵 링크, 유튜브 링크 가져오기
+  const contentLocale = language === 'ko' ? 'ko' : 'en'
+
+  const locationDetails = useMemo(() => {
+    if (!hotelRecord) {
+      return { description: '', fromInside: '', fromOutside: '' }
+    }
+    return {
+      description: getPickupLocalizedText(hotelRecord, 'description', contentLocale),
+      fromInside: getPickupLocalizedText(hotelRecord, 'from_inside_hotel', contentLocale),
+      fromOutside: getPickupLocalizedText(hotelRecord, 'from_outside_hotel', contentLocale),
+    }
+  }, [hotelRecord, contentLocale])
+
+  const hasLocationDetails = Boolean(
+    locationDetails.description || locationDetails.fromInside || locationDetails.fromOutside
+  )
+
+  const hotelMediaUrls = hotelRecord?.media ?? []
+  const googleMapsLink = hotelRecord?.link ?? null
+  const youtubeLink = hotelRecord?.youtube_link ?? null
+
+  // 픽업 호텔 데이터 가져오기
   useEffect(() => {
     const fetchHotelData = async () => {
       try {
         const { data: hotelData, error } = await supabase
           .from('pickup_hotels')
-          .select('media, link, youtube_link')
+          .select(
+            'media, link, youtube_link, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en, content_i18n'
+          )
           .eq('hotel', schedule.hotel)
           .eq('pick_up_location', schedule.location)
           .single()
@@ -57,16 +134,8 @@ function ScheduleItem({
           return
         }
 
-        if (hotelData?.media) {
-          setHotelMediaUrls(hotelData.media)
-        }
-        
-        if (hotelData?.link) {
-          setGoogleMapsLink(hotelData.link)
-        }
-
-        if (hotelData?.youtube_link) {
-          setYoutubeLink(hotelData.youtube_link)
+        if (hotelData) {
+          setHotelRecord(hotelData as PickupHotel)
         }
       } catch (error) {
         console.error('Error fetching hotel data:', error)
@@ -122,43 +191,96 @@ function ScheduleItem({
         </div>
       </div>
       
-      {/* 버튼들 - 항상 표시 */}
-      {(hotelMediaUrls.length > 0 || googleMapsLink || youtubeLink) && (
+      {/* 버튼들 */}
+      {(hasLocationDetails || hotelMediaUrls.length > 0 || googleMapsLink || youtubeLink) && (
         <div className="border-t border-gray-100 pt-3 mt-3">
-          <div className="flex items-center justify-end space-x-2">
-            {/* 사진 버튼 */}
-            {hotelMediaUrls.length > 0 && (
-              <button 
-                onClick={handlePhotoClick}
-                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                title={language === 'ko' ? '사진' : 'Photos'}
-              >
-                <Camera className="h-4 w-4 text-gray-600" />
-              </button>
-            )}
+          <div className="flex items-center justify-between gap-2">
+            {/* 왼쪽: 사진 · 지도 · 동영상 */}
+            <div className="flex items-center gap-2">
+              {hotelMediaUrls.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePhotoClick}
+                  className="flex items-center justify-center rounded-lg bg-gray-100 p-2 transition-colors hover:bg-gray-200"
+                  title={language === 'ko' ? '사진' : 'Photos'}
+                >
+                  <ImageIcon className="h-4 w-4 text-gray-600" />
+                </button>
+              )}
 
-            {/* 맵 버튼 */}
-            {googleMapsLink && (
-              <button 
-                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                onClick={handleMapClick}
-                title={language === 'ko' ? '구글맵 열기' : 'Open in Google Maps'}
-              >
-                <MapPin className="h-4 w-4 text-gray-600" />
-              </button>
-            )}
+              {googleMapsLink && (
+                <button
+                  type="button"
+                  className="flex items-center justify-center rounded-lg bg-gray-100 p-2 transition-colors hover:bg-gray-200"
+                  onClick={handleMapClick}
+                  title={language === 'ko' ? '구글맵 열기' : 'Open in Google Maps'}
+                >
+                  <MapPin className="h-4 w-4 text-gray-600" />
+                </button>
+              )}
 
-            {/* 유튜브 버튼 */}
-            {youtubeLink && (
-              <button 
-                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                onClick={handleYoutubeClick}
-                title={language === 'ko' ? '동영상 보기' : 'Watch Video'}
+              {youtubeLink && (
+                <button
+                  type="button"
+                  className="flex items-center justify-center rounded-lg bg-gray-100 p-2 transition-colors hover:bg-gray-200"
+                  onClick={handleYoutubeClick}
+                  title={language === 'ko' ? '동영상 보기' : 'Watch Video'}
+                >
+                  <Play className="h-4 w-4 text-gray-600" />
+                </button>
+              )}
+            </div>
+
+            {/* 오른쪽: 자세히 보기 */}
+            {hasLocationDetails && (
+              <button
+                type="button"
+                onClick={() => setShowDetails((open) => !open)}
+                className={`ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  showDetails
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
               >
-                <Play className="h-4 w-4 text-gray-600" />
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                <span>{language === 'ko' ? '자세히 보기' : 'View Details'}</span>
+                {showDetails ? (
+                  <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                )}
               </button>
             )}
           </div>
+
+          {showDetails && hasLocationDetails && (
+            <div className="mt-3 space-y-3">
+              {locationDetails.description && (
+                <LocationDescriptionSection
+                  title={PICKUP_HOTEL_SECTION_TITLES.description[language]}
+                  text={locationDetails.description}
+                />
+              )}
+              {locationDetails.fromInside && (
+                <DirectionSection
+                  title={PICKUP_HOTEL_SECTION_TITLES.inside[language]}
+                  text={locationDetails.fromInside}
+                  accent="blue"
+                  icon={<Building2 size={16} />}
+                  emptyLabel={language === 'ko' ? '안내 없음' : 'No directions'}
+                />
+              )}
+              {locationDetails.fromOutside && (
+                <DirectionSection
+                  title={PICKUP_HOTEL_SECTION_TITLES.outside[language]}
+                  text={locationDetails.fromOutside}
+                  accent="green"
+                  icon={<Footprints size={16} />}
+                  emptyLabel={language === 'ko' ? '안내 없음' : 'No directions'}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { ArrowLeft, ChevronDown, Menu, User, Bell, BellOff, Download, BookOpen } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { usePublicChatMessages } from '@/hooks/usePublicChatMessages'
-import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
+import { formatPublicChatRoomTitle, formatPublicChatTourLabel } from '@/lib/formatPublicChatRoomTitle'
 import PublicChatTutorialOverlay from '@/components/chat/PublicChatTutorialOverlay'
 import type { ChatRoom, PublicChatRoomBundle } from '@/types/chat'
 import { persistPwaStartPath } from '@/lib/pwaStartUrl'
@@ -40,13 +40,15 @@ export default function PublicChatPage() {
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(true)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
   const [showPublicTutorial, setShowPublicTutorial] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [, setShowInstallButton] = useState(false)
+  const [chatMessageCount, setChatMessageCount] = useState(0)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -433,6 +435,77 @@ export default function PublicChatPage() {
     )
   }, [room, selectedLanguage, productNames])
 
+  const publicChatTourLabel = useMemo(() => {
+    if (!room) return ''
+    return formatPublicChatTourLabel(
+      selectedLanguage === 'ko' ? 'ko' : 'en',
+      productNames,
+      room.room_name
+    )
+  }, [room, selectedLanguage, productNames])
+
+  const formattedTourDate = useMemo(() => {
+    if (!tourInfo?.tour_date) return ''
+    try {
+      const [year, month, day] = tourInfo.tour_date.split('-').map(Number)
+      const date = new Date(year, month - 1, day)
+      return date.toLocaleDateString(selectedLanguage === 'ko' ? 'ko-KR' : 'en-US')
+    } catch {
+      return tourInfo.tour_date
+    }
+  }, [tourInfo?.tour_date, selectedLanguage])
+
+  const publicHeaderTitle = useMemo(() => {
+    if (!formattedTourDate && !publicChatTourLabel) return ''
+    if (!formattedTourDate) return publicChatTourLabel
+    if (!publicChatTourLabel) return formattedTourDate
+    return `${formattedTourDate} ${publicChatTourLabel}`
+  }, [formattedTourDate, publicChatTourLabel])
+
+  const lastReadStorageKey = code ? `tms_public_chat_last_read_count_${code}` : null
+
+  const handleMessageCountChange = useCallback((count: number) => {
+    setChatMessageCount(count)
+    if (!lastReadStorageKey || typeof window === 'undefined') {
+      setUnreadMessageCount(0)
+      return
+    }
+    try {
+      const raw = localStorage.getItem(lastReadStorageKey)
+      const lastRead = raw != null ? Number.parseInt(raw, 10) : 0
+      const baseline = Number.isFinite(lastRead) ? lastRead : 0
+      setUnreadMessageCount(Math.max(0, count - baseline))
+    } catch {
+      setUnreadMessageCount(0)
+    }
+  }, [lastReadStorageKey])
+
+  // 채팅을 보고 있을 때만 읽음 처리 (백그라운드에서는 미읽음 유지)
+  useEffect(() => {
+    if (!customerName || !lastReadStorageKey || typeof window === 'undefined') return
+
+    const markRead = () => {
+      if (document.visibilityState === 'hidden') return
+      try {
+        localStorage.setItem(lastReadStorageKey, String(chatMessageCount))
+        setUnreadMessageCount(0)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (document.visibilityState === 'hidden') {
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') markRead()
+      }
+      document.addEventListener('visibilitychange', onVisible)
+      return () => document.removeEventListener('visibilitychange', onVisible)
+    }
+
+    const timer = window.setTimeout(markRead, 1200)
+    return () => window.clearTimeout(timer)
+  }, [customerName, chatMessageCount, lastReadStorageKey])
+
   useEffect(() => {
     if (!customerName || !code) return
     try {
@@ -611,42 +684,52 @@ export default function PublicChatPage() {
             </div>
           </div>
           
-          {/* 두 번째 줄: 날짜와 손님 이름 */}
-          <div className="flex items-center justify-between text-sm text-gray-600">
-            <div className="flex items-center">
-              {tourInfo && (() => {
-                // YYYY-MM-DD 형식을 안전하게 파싱
-                try {
-                  const [year, month, day] = tourInfo.tour_date.split('-').map(Number)
-                  const date = new Date(year, month - 1, day)
-                  return date.toLocaleDateString(selectedLanguage === 'ko' ? 'ko-KR' : 'en-US')
-                } catch {
-                  return tourInfo.tour_date
-                }
-              })()}
+          {/* 두 번째 줄: 날짜+투어명 (한 줄)과 손님 이름 */}
+          <div className="flex items-center justify-between gap-2 text-sm text-gray-600">
+            <div className="min-w-0 flex-1">
+              <p
+                className="truncate font-medium text-gray-900"
+                title={publicHeaderTitle}
+              >
+                {publicHeaderTitle || formattedTourDate}
+              </p>
             </div>
             {customerName && (
-              <div className="flex items-center space-x-2 ml-2">
+              <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
                 <span className="text-gray-700">{t('hiGuest', { name: customerName })}</span>
                 <button
                   onClick={() => {
                     setTempName(customerName)
                     setShowNameEdit(true)
                   }}
-                  className="flex-shrink-0 w-6 h-6 rounded-full overflow-hidden border-2 border-gray-300 hover:border-primary transition-colors"
+                  className="relative flex-shrink-0 w-6 h-6 rounded-full overflow-visible border-2 border-gray-300 hover:border-primary transition-colors"
                   aria-label={t('changeNameAvatar')}
                   title={t('changeNameAvatar')}
                 >
-                  {selectedAvatar ? (
-                    <img
-                      src={selectedAvatar}
-                      alt={t('avatarAlt')}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                      <User size={12} className="text-gray-400" />
-                    </div>
+                  <span className="block w-6 h-6 rounded-full overflow-hidden">
+                    {selectedAvatar ? (
+                      <img
+                        src={selectedAvatar}
+                        alt={t('avatarAlt')}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <User size={12} className="text-gray-400" />
+                      </div>
+                    )}
+                  </span>
+                  {unreadMessageCount > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center shadow-sm"
+                      aria-label={
+                        selectedLanguage === 'ko'
+                          ? `안읽은 메시지 ${unreadMessageCount}개`
+                          : `${unreadMessageCount} unread messages`
+                      }
+                    >
+                      {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                    </span>
                   )}
                 </button>
               </div>
@@ -826,6 +909,7 @@ export default function PublicChatPage() {
                 publicDisplayRoomName={publicChatRoomTitle}
                 externalMobileMenuOpen={isMobileMenuOpen}
                 onExternalMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                onMessageCountChange={handleMessageCountChange}
               />
             </div>
           </div>

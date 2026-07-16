@@ -11341,6 +11341,10 @@ export type Database = {
         Args: { p_room_code: string }
         Returns: Json
       }
+      get_public_chat_tour_staff: {
+        Args: { p_tour_id: string }
+        Returns: Json
+      }
       get_reservation_choices_json: {
         Args: { reservation_id_param: string }
         Returns: Json

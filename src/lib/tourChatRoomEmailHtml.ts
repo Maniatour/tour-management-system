@@ -1,4 +1,4 @@
-export const TOUR_CHAT_ROOM_BASE_URL = 'https://www.maniatour.com/chat'
+export const TOUR_CHAT_ROOM_BASE_URL = 'https://www.kovegas.com/chat'
 
 export function buildTourChatRoomUrl(chatRoomCode: string): string {
   return `${TOUR_CHAT_ROOM_BASE_URL}/${encodeURIComponent(chatRoomCode.trim())}`

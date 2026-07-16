@@ -1,9 +1,13 @@
 'use client'
 
-import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff, Car } from 'lucide-react'
+import { useMemo } from 'react'
+import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff, Car, Power } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import type { SupportedLanguage } from '@/lib/translation'
 import type { ChatRoom } from '@/types/chat'
+import AttendanceMobileDashboard, {
+  type AttendanceDashboardAction,
+} from '@/components/attendance/AttendanceMobileDashboard'
 
 interface ChatHeaderProps {
   room: ChatRoom
@@ -79,160 +83,204 @@ export default function ChatHeader({
       ? `총 ${totalMessageCount}개 메시지`
       : `${totalMessageCount} messages total`
 
+  const callDisabled = !room || callStatus !== 'idle' || availableCallUsersCount === 0
+
+  const mobileCoreActions = useMemo((): AttendanceDashboardAction[] => {
+    const ko = selectedLanguage === 'ko'
+    const actions: AttendanceDashboardAction[] = []
+
+    if (!isPublicView) {
+      actions.push({
+        id: 'toggle-active',
+        label: ko ? (room.is_active ? '활성' : '비활성') : (room.is_active ? 'Active' : 'Off'),
+        icon: Power,
+        onClick: () => {
+          if (!togglingActive) onToggleRoomActive()
+        },
+        tileClass: room.is_active
+          ? 'bg-gradient-to-br from-emerald-500 to-green-700'
+          : 'bg-gradient-to-br from-slate-400 to-slate-600',
+      })
+    }
+
+    actions.push(
+      {
+        id: 'announcements',
+        label: ko ? '공지' : 'Info',
+        icon: Megaphone,
+        onClick: onShowAnnouncements,
+        tileClass: 'bg-gradient-to-br from-amber-500 to-orange-600',
+      },
+      {
+        id: 'pickup',
+        label: ko ? '픽업' : 'Pickup',
+        icon: Calendar,
+        onClick: onShowPickupSchedule,
+        tileClass: 'bg-gradient-to-br from-blue-500 to-blue-700',
+      }
+    )
+
+    if (onShowVehicleInfo) {
+      actions.push({
+        id: 'vehicle',
+        label: ko ? '차량' : 'Vehicle',
+        icon: Car,
+        onClick: onShowVehicleInfo,
+        tileClass: 'bg-gradient-to-br from-orange-500 to-orange-700',
+      })
+    }
+
+    if (isPublicView) {
+      actions.push(
+        {
+          id: 'photos',
+          label: ko ? '사진' : 'Photos',
+          icon: ImageIcon,
+          onClick: onShowPhotoGallery,
+          tileClass: 'bg-gradient-to-br from-violet-500 to-purple-700',
+        },
+        {
+          id: 'guide',
+          label: ko ? '가이드' : 'Guide',
+          icon: Users,
+          onClick: onShowTeamInfo,
+          tileClass: 'bg-gradient-to-br from-indigo-500 to-indigo-700',
+        }
+      )
+    } else {
+      actions.push({
+        id: 'tour-detail',
+        label: ko ? '투어' : 'Tour',
+        icon: ExternalLink,
+        onClick: onGoToTourDetail,
+        tileClass: 'bg-gradient-to-br from-purple-500 to-fuchsia-700',
+      })
+    }
+
+    actions.push(
+      {
+        id: 'call',
+        label: ko ? '통화' : 'Call',
+        icon: Phone,
+        onClick: () => {
+          if (!callDisabled) onStartCall()
+        },
+        tileClass:
+          callStatus === 'connected'
+            ? 'bg-gradient-to-br from-emerald-500 to-green-700'
+            : callDisabled
+              ? 'bg-gradient-to-br from-slate-300 to-slate-500 opacity-70'
+              : 'bg-gradient-to-br from-green-500 to-emerald-700',
+      },
+      {
+        id: 'copy',
+        label: ko ? '복사' : 'Copy',
+        icon: Copy,
+        onClick: onCopyLink,
+        tileClass: 'bg-gradient-to-br from-sky-500 to-blue-700',
+      },
+      {
+        id: 'share',
+        label: ko ? '공유' : 'Share',
+        icon: Share2,
+        onClick: onShare,
+        tileClass: 'bg-gradient-to-br from-teal-500 to-teal-700',
+      }
+    )
+
+    return actions
+  }, [
+    selectedLanguage,
+    isPublicView,
+    room.is_active,
+    togglingActive,
+    onToggleRoomActive,
+    onShowAnnouncements,
+    onShowPickupSchedule,
+    onShowVehicleInfo,
+    onShowPhotoGallery,
+    onShowTeamInfo,
+    onGoToTourDetail,
+    callDisabled,
+    callStatus,
+    onStartCall,
+    onCopyLink,
+    onShare,
+  ])
+
+  const mobileCollapsedActions = useMemo((): AttendanceDashboardAction[] => {
+    const ko = selectedLanguage === 'ko'
+    return [
+      ...mobileCoreActions,
+      {
+        id: 'expand',
+        label: ko ? '더보기' : 'More',
+        icon: ChevronDown,
+        onClick: onToggleMobileMenu,
+        tileClass: 'bg-gradient-to-br from-slate-400 to-slate-600',
+      },
+    ]
+  }, [mobileCoreActions, selectedLanguage, onToggleMobileMenu])
+
+  const mobileExpandedActions = useMemo((): AttendanceDashboardAction[] => {
+    const ko = selectedLanguage === 'ko'
+    return [
+      ...mobileCoreActions.map((action) =>
+        action.id === 'announcements'
+          ? { ...action, label: ko ? '공지사항' : 'Announcements' }
+          : action.id === 'pickup'
+            ? { ...action, label: ko ? '픽업 스케줄' : 'Pickup Schedule' }
+            : action.id === 'photos'
+              ? { ...action, label: ko ? '투어 사진' : 'Tour Photos' }
+              : action.id === 'guide'
+                ? { ...action, label: ko ? '가이드 정보' : 'Guide Info' }
+                : action.id === 'tour-detail'
+                  ? { ...action, label: ko ? '투어 상세' : 'Tour Details' }
+                  : action
+      ),
+      {
+        id: 'collapse',
+        label: ko ? '접기' : 'Collapse',
+        icon: ChevronUp,
+        onClick: onToggleMobileMenu,
+        tileClass: 'bg-gradient-to-br from-slate-400 to-slate-600',
+      },
+    ]
+  }, [mobileCoreActions, selectedLanguage, onToggleMobileMenu])
+
   return (
     <div className="flex-shrink-0 px-2 lg:px-3 py-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
-      <div className="mb-1.5 flex items-center gap-2 min-w-0 pr-1">
-        <div
-          className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0 leading-tight"
-          title={headingText}
-          role="heading"
-          aria-level={2}
-        >
-          {headingText}
+      {!isPublicView && (
+        <div className="mb-1.5 flex items-center gap-2 min-w-0 pr-1">
+          <div
+            className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0 leading-tight"
+            title={headingText}
+            role="heading"
+            aria-level={2}
+          >
+            {headingText}
+          </div>
+          <span
+            className="flex-shrink-0 tabular-nums rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold shadow-sm"
+            title={countLabel}
+            aria-label={countLabel}
+          >
+            {totalMessageCount > 9999 ? '9999+' : totalMessageCount}
+          </span>
         </div>
-        <span
-          className="flex-shrink-0 tabular-nums rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold shadow-sm"
-          title={countLabel}
-          aria-label={countLabel}
-        >
-          {totalMessageCount > 9999 ? '9999+' : totalMessageCount}
-        </span>
-      </div>
+      )}
 
       {/* 버튼 영역 */}
-      <div className={`mt-1 flex items-center gap-1 lg:gap-2 ${isMobileMenuOpen ? 'justify-between' : 'justify-center'} lg:justify-between`}>
-        {/* 모바일: 접었을 때 아이콘만 표시 */}
-        <div className={`lg:hidden flex items-center gap-2 flex-wrap justify-center flex-1 ${isMobileMenuOpen ? 'hidden' : ''}`}>
-          {isPublicView && (
-            <>
-              <button
-                onClick={onShowAnnouncements}
-                className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
-                title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-              >
-                <Megaphone size={18} />
-              </button>
-              <button
-                onClick={onShowPickupSchedule}
-                className="p-2 bg-primary/10 text-primary rounded border border-border hover:bg-blue-200"
-                title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-              >
-                <Calendar size={18} />
-              </button>
-              {onShowVehicleInfo ? (
-                <button
-                  type="button"
-                  onClick={onShowVehicleInfo}
-                  className="p-2 bg-orange-100 text-orange-900 rounded border border-orange-200 hover:bg-orange-200"
-                  title={selectedLanguage === 'ko' ? '차량 정보' : 'Vehicle info'}
-                >
-                  <Car size={18} />
-                </button>
-              ) : null}
-              <button
-                onClick={onShowPhotoGallery}
-                className="p-2 bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200"
-                title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
-              >
-                <ImageIcon size={18} />
-              </button>
-              <button
-                onClick={onShowTeamInfo}
-                className="p-2 bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200"
-                title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
-              >
-                <Users size={18} />
-              </button>
-              <button
-                onClick={onStartCall}
-                disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
-                className={`p-2 rounded border ${
-                  callStatus === 'connected'
-                    ? 'bg-green-100 text-green-800 border-green-200'
-                    : callStatus !== 'idle'
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : availableCallUsersCount === 0
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                }`}
-                title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-              >
-                <Phone size={18} />
-              </button>
-            </>
-          )}
-          {!isPublicView && (
-            <>
-              <button
-                onClick={onShowAnnouncements}
-                className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
-                title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-              >
-                <Megaphone size={18} />
-              </button>
-              <button
-                onClick={onShowPickupSchedule}
-                className="p-2 bg-primary/10 text-primary rounded border border-border hover:bg-blue-200"
-                title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-              >
-                <Calendar size={18} />
-              </button>
-              {onShowVehicleInfo ? (
-                <button
-                  type="button"
-                  onClick={onShowVehicleInfo}
-                  className="p-2 bg-orange-100 text-orange-900 rounded border border-orange-200 hover:bg-orange-200"
-                  title={selectedLanguage === 'ko' ? '차량 정보' : 'Vehicle info'}
-                >
-                  <Car size={18} />
-                </button>
-              ) : null}
-              <button
-                onClick={onGoToTourDetail}
-                className="p-2 bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200"
-                title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
-              >
-                <ExternalLink size={18} />
-              </button>
-              <button
-                onClick={onStartCall}
-                disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
-                className={`p-2 rounded border ${
-                  callStatus === 'connected'
-                    ? 'bg-green-100 text-green-800 border-green-200'
-                    : callStatus !== 'idle'
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : availableCallUsersCount === 0
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                }`}
-                title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-              >
-                <Phone size={18} />
-              </button>
-            </>
-          )}
-          <button
-            onClick={onCopyLink}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-            title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-          >
-            <Copy size={18} />
-          </button>
-          <button
-            onClick={onShare}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-            title={selectedLanguage === 'ko' ? '공유' : 'Share'}
-          >
-            <Share2 size={18} />
-          </button>
-          <button
-            onClick={onToggleMobileMenu}
-            className="p-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded"
-            title={selectedLanguage === 'ko' ? '펼치기' : 'Expand'}
-          >
-            <ChevronDown size={18} />
-          </button>
+      <div
+        className={`${
+          isMobileMenuOpen ? 'flex flex-col w-full' : 'flex items-center gap-1 lg:gap-2'
+        } ${isPublicView ? '' : 'mt-1'} ${
+          isMobileMenuOpen ? '' : 'justify-center'
+        } lg:mt-1 lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-2`}
+      >
+        {/* 모바일: 접었을 때 — 출석 관리와 동일한 앱 아이콘 한 줄 */}
+        <div className={`lg:hidden w-full flex-1 min-w-0 ${isMobileMenuOpen ? 'hidden' : ''}`}>
+          <AttendanceMobileDashboard actions={mobileCollapsedActions} layout="strip" />
         </div>
 
         {/* 데스크톱: 왼쪽 버튼 그룹 */}
@@ -336,153 +384,11 @@ export default function ChatHeader({
           )}
         </div>
 
-        {/* 모바일: 접었다 폈다 할 수 있는 메뉴 */}
-        <div className={`lg:hidden relative p-3 space-y-2 ${isMobileMenuOpen ? '' : 'hidden'}`}>
+        {/* 모바일: 출석 관리와 동일한 앱 아이콘 대시보드 */}
+        <div className={`lg:hidden relative w-full ${isMobileMenuOpen ? '' : 'hidden'}`}>
           {isMobileMenuOpen && (
-            <>
-              {!isPublicView && (
-                <div>
-                  <button
-                    onClick={onToggleRoomActive}
-                    disabled={togglingActive}
-                    className="flex items-center gap-2 px-3 py-2 focus:outline-none w-full"
-                  >
-                    <span
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${room.is_active ? 'bg-green-500' : 'bg-gray-300'}`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
-                      />
-                    </span>
-                    <span className="text-[10px] text-gray-600">{selectedLanguage === 'ko' ? '활성화' : 'Active'}</span>
-                  </button>
-                </div>
-              )}
-              <div className={`grid gap-2 ${onShowVehicleInfo ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                <button
-                  onClick={onShowAnnouncements}
-                  className="flex items-center gap-2 px-3 py-2 bg-amber-100 text-amber-800 rounded-lg border border-amber-200 hover:bg-amber-200 transition-colors"
-                >
-                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                    <Megaphone size={20} />
-                  </div>
-                  <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</span>
-                </button>
-                <button
-                  onClick={onShowPickupSchedule}
-                  className="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary rounded-lg border border-border hover:bg-blue-200 transition-colors"
-                >
-                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                    <Calendar size={20} />
-                  </div>
-                  <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}</span>
-                </button>
-                {onShowVehicleInfo ? (
-                  <button
-                    type="button"
-                    onClick={onShowVehicleInfo}
-                    className="flex items-center gap-2 px-3 py-2 bg-orange-100 text-orange-900 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors"
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Car size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '차량' : 'Vehicle'}</span>
-                  </button>
-                ) : null}
-              </div>
-              {isPublicView && (
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={onShowPhotoGallery}
-                    className="flex items-center gap-2 px-3 py-2 bg-violet-100 text-violet-800 rounded-lg border border-violet-200 hover:bg-violet-200 transition-colors"
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <ImageIcon size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}</span>
-                  </button>
-                  <button
-                    onClick={onShowTeamInfo}
-                    className="flex items-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-200 hover:bg-indigo-200 transition-colors"
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Users size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}</span>
-                  </button>
-                  <button
-                    onClick={onStartCall}
-                    disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                      callStatus === 'connected'
-                        ? 'bg-green-100 text-green-800 border-green-200'
-                        : callStatus !== 'idle'
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : availableCallUsersCount === 0
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                    }`}
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Phone size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '통화' : 'Call'}</span>
-                  </button>
-                </div>
-              )}
-              {!isPublicView && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={onStartCall}
-                    disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                      callStatus === 'connected'
-                        ? 'bg-green-100 text-green-800 border-green-200'
-                        : callStatus !== 'idle'
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : availableCallUsersCount === 0
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                    }`}
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Phone size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '통화' : 'Call'}</span>
-                  </button>
-                </div>
-              )}
-            </>
+            <AttendanceMobileDashboard actions={mobileExpandedActions} />
           )}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={onCopyLink}
-              className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                <Copy size={20} />
-              </div>
-              <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '복사' : 'Copy'}</span>
-            </button>
-            <button
-              onClick={onShare}
-              className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                <Share2 size={20} />
-              </div>
-              <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공유' : 'Share'}</span>
-            </button>
-            <button
-              onClick={onToggleMobileMenu}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                {isMobileMenuOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </div>
-              <span className="text-[10px] font-medium">{isMobileMenuOpen ? (selectedLanguage === 'ko' ? '접기' : 'Collapse') : (selectedLanguage === 'ko' ? '펼치기' : 'Expand')}</span>
-            </button>
-          </div>
         </div>
 
         {/* 데스크톱: 오른쪽 버튼 그룹 */}

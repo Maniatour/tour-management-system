@@ -17,6 +17,7 @@ import TourPhotoGallery from './TourPhotoGallery'
 // import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
+import { buildTourChatRoomUrl } from '@/lib/tourChatRoomEmailHtml'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
 import { useChatMessages } from '@/hooks/useChatMessages'
@@ -80,6 +81,8 @@ interface TourChatRoomProps {
   publicDisplayRoomName?: string
   externalMobileMenuOpen?: boolean
   onExternalMobileMenuToggle?: () => void
+  /** 공개 채팅: 전체 메시지 수 변경 시 (미읽음 배지용) */
+  onMessageCountChange?: (count: number) => void
   // isModalView?: boolean // 사용되지 않음
 }
 
@@ -93,7 +96,8 @@ export default function TourChatRoom({
   customerLanguage = 'en',
   publicDisplayRoomName,
   externalMobileMenuOpen,
-  onExternalMobileMenuToggle
+  onExternalMobileMenuToggle,
+  onMessageCountChange
   // isModalView = false // 사용되지 않음
 }: TourChatRoomProps) {
   const router = useRouter()
@@ -282,7 +286,7 @@ export default function TourChatRoom({
     [room?.room_code, roomCode]
   )
   
-  const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
+  const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false)
   
   const [showParticipantsList, setShowParticipantsList] = useState(false)
   
@@ -1057,6 +1061,97 @@ export default function TourChatRoom({
         return
       }
 
+      type PublicStaffMember = {
+        name_ko?: string | null
+        name_en?: string | null
+        nick_name?: string | null
+        phone?: string | null
+        position?: string | null
+        languages?: string[] | null
+        email?: string | null
+      }
+
+      const applyStaffMember = (
+        member: PublicStaffMember | null | undefined,
+        fallbackEmail: string | null | undefined,
+        membersDetailMap: Map<string, {
+          name_ko?: string
+          name_en?: string
+          nick_name?: string | null
+          position?: string
+          email?: string
+          languages?: string[]
+        }>
+      ) => {
+        if (!member && !fallbackEmail) return undefined
+        const email = member?.email || fallbackEmail || undefined
+        const result: {
+          name_ko?: string
+          name_en?: string
+          phone?: string
+          email?: string
+          position?: string
+          languages?: string[]
+        } = {}
+        if (member?.name_ko) result.name_ko = member.name_ko
+        if (member?.name_en) result.name_en = member.name_en
+        if (member?.phone) result.phone = member.phone
+        if (member?.position) result.position = member.position
+        if (member?.languages) result.languages = member.languages
+        if (email) result.email = email
+        if (email) {
+          membersDetailMap.set(email, {
+            ...(member?.name_ko ? { name_ko: member.name_ko } : {}),
+            ...(member?.name_en ? { name_en: member.name_en } : {}),
+            ...(member?.nick_name != null && member.nick_name !== ''
+              ? { nick_name: member.nick_name }
+              : {}),
+            ...(member?.position ? { position: member.position } : {}),
+            email,
+            ...(member?.languages ? { languages: member.languages } : {}),
+          })
+        }
+        return Object.keys(result).length > 0 ? result : undefined
+      }
+
+      // 고객 공개 채팅: anon은 team/tours 직접 SELECT 불가 → SECURITY DEFINER RPC
+      if (isPublicView) {
+        const { data: staffBundle, error: staffError } = await supabase.rpc(
+          'get_public_chat_tour_staff',
+          { p_tour_id: tourId }
+        )
+        if (staffError) {
+          setIsGeofenceOperatorForTour(false)
+          console.error('Error loading public chat staff:', staffError)
+          return
+        }
+        const bundle = staffBundle as {
+          guide?: PublicStaffMember | null
+          assistant?: PublicStaffMember | null
+        } | null
+        const membersDetailMap = new Map<string, {
+          name_ko?: string
+          name_en?: string
+          nick_name?: string | null
+          position?: string
+          email?: string
+          languages?: string[]
+        }>()
+        const teamData: {
+          guide?: { name_ko?: string; name_en?: string; phone?: string; languages?: string[] }
+          assistant?: { name_ko?: string; name_en?: string; phone?: string; languages?: string[] }
+          driver?: { name?: string; phone?: string; languages?: string[] }
+        } = {}
+        const guide = applyStaffMember(bundle?.guide, bundle?.guide?.email, membersDetailMap)
+        const assistant = applyStaffMember(bundle?.assistant, bundle?.assistant?.email, membersDetailMap)
+        if (guide) teamData.guide = guide
+        if (assistant) teamData.assistant = assistant
+        setIsGeofenceOperatorForTour(false)
+        setTeamMembersDetail(membersDetailMap)
+        setTeamInfo(teamData)
+        return
+      }
+
       // 투어 정보 가져오기
       const { data: tour, error: tourError } = await supabase
         .from('tours')
@@ -1101,26 +1196,12 @@ export default function TourChatRoom({
           .maybeSingle<{ name_ko: string | null; name_en: string | null; nick_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (guideData) {
-          const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
-          if (guideData.name_ko) guide.name_ko = guideData.name_ko
-          if (guideData.name_en) guide.name_en = guideData.name_en
-          if (guideData.phone) guide.phone = guideData.phone
-          if (guideData.position) guide.position = guideData.position
-          if (guideData.languages) guide.languages = guideData.languages
-          guide.email = tour.tour_guide_id
-          teamData.guide = guide
-          
-          // 상세 정보 맵에 추가
-          membersDetailMap.set(tour.tour_guide_id, {
-            ...(guideData.name_ko ? { name_ko: guideData.name_ko } : {}),
-            ...(guideData.name_en ? { name_en: guideData.name_en } : {}),
-            ...(guideData.nick_name != null && guideData.nick_name !== ''
-              ? { nick_name: guideData.nick_name }
-              : {}),
-            ...(guideData.position ? { position: guideData.position } : {}),
-            email: tour.tour_guide_id,
-            ...(guideData.languages ? { languages: guideData.languages } : {})
-          })
+          const guide = applyStaffMember(
+            { ...guideData, email: tour.tour_guide_id },
+            tour.tour_guide_id,
+            membersDetailMap
+          )
+          if (guide) teamData.guide = guide
         }
       }
 
@@ -1133,26 +1214,12 @@ export default function TourChatRoom({
           .maybeSingle<{ name_ko: string | null; name_en: string | null; nick_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (assistantData) {
-          const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
-          if (assistantData.name_ko) assistant.name_ko = assistantData.name_ko
-          if (assistantData.name_en) assistant.name_en = assistantData.name_en
-          if (assistantData.phone) assistant.phone = assistantData.phone
-          if (assistantData.position) assistant.position = assistantData.position
-          if (assistantData.languages) assistant.languages = assistantData.languages
-          assistant.email = tour.assistant_id
-          teamData.assistant = assistant
-          
-          // 상세 정보 맵에 추가
-          membersDetailMap.set(tour.assistant_id, {
-            ...(assistantData.name_ko ? { name_ko: assistantData.name_ko } : {}),
-            ...(assistantData.name_en ? { name_en: assistantData.name_en } : {}),
-            ...(assistantData.nick_name != null && assistantData.nick_name !== ''
-              ? { nick_name: assistantData.nick_name }
-              : {}),
-            ...(assistantData.position ? { position: assistantData.position } : {}),
-            email: tour.assistant_id,
-            ...(assistantData.languages ? { languages: assistantData.languages } : {})
-          })
+          const assistant = applyStaffMember(
+            { ...assistantData, email: tour.assistant_id },
+            tour.assistant_id,
+            membersDetailMap
+          )
+          if (assistant) teamData.assistant = assistant
         }
       }
 
@@ -1166,7 +1233,7 @@ export default function TourChatRoom({
       setIsGeofenceOperatorForTour(false)
       console.error('Error loading team info:', error)
     }
-  }, [tourId, guideEmail])
+  }, [tourId, guideEmail, isPublicView])
   
   // loadTeamInfo를 ref에 저장
   useEffect(() => {
@@ -1623,6 +1690,10 @@ export default function TourChatRoom({
       supabase.removeChannel(countChannel)
     }
   }, [room?.id, isPublicView, roomCode])
+
+  useEffect(() => {
+    onMessageCountChange?.(totalChatMessageCount)
+  }, [totalChatMessageCount, onMessageCountChange])
 
   // 메시지 삭제 함수
   const deleteMessage = async (messageId: string) => {
@@ -2276,7 +2347,7 @@ export default function TourChatRoom({
 
   const copyRoomLink = () => {
     if (!room) return
-    const link = `https://www.maniatour.com/chat/${room.room_code}`
+    const link = buildTourChatRoomUrl(room.room_code)
     navigator.clipboard.writeText(link)
     alert('Chat room link has been copied to clipboard.')
   }

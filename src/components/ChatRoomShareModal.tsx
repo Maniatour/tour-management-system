@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Copy, Share2, QrCode, MessageCircle, Calendar, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { persistPwaStartPath } from '@/lib/pwaStartUrl'
+import { buildTourChatRoomUrl } from '@/lib/tourChatRoomEmailHtml'
 
 interface ChatRoomShareModalProps {
   isOpen: boolean
@@ -134,7 +135,7 @@ export default function ChatRoomShareModal({
 
   if (!isOpen) return null
 
-  const chatUrl = `https://www.maniatour.com/chat/${roomCode}`
+  const chatUrl = buildTourChatRoomUrl(roomCode)
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(chatUrl)}`
 
   const copyLink = async () => {

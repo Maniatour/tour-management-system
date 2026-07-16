@@ -2,6 +2,14 @@
 
 import { X, Car, Camera } from 'lucide-react'
 import type { SupportedLanguage } from '@/lib/translation'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 export type TourChatVehicleInfo = {
   vehicleType: string
@@ -27,7 +35,7 @@ const copy = {
     capacity: '정원',
     peopleSuffix: '명',
     photos: '차량 사진',
-    photoHint: '(사진을 누르면 크게 볼 수 있습니다)',
+    photoHint: '사진을 누르면 크게 볼 수 있습니다',
     empty: '등록된 차량 정보가 없습니다.',
     close: '닫기',
     color: '색상',
@@ -40,12 +48,23 @@ const copy = {
     capacity: 'Capacity',
     peopleSuffix: ' people',
     photos: 'Vehicle Photos',
-    photoHint: '(Click on images to view in full size)',
+    photoHint: 'Tap an image to view full size',
     empty: 'No vehicle is assigned for this tour yet.',
     close: 'Close',
     color: 'Color',
     loading: 'Loading…',
   },
+}
+
+function SpecItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/30 px-3.5 py-3">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm font-semibold text-foreground leading-snug">{value}</dd>
+    </div>
+  )
 }
 
 export default function VehicleInfoModal({
@@ -57,83 +76,79 @@ export default function VehicleInfoModal({
 }: VehicleInfoModalProps) {
   const t = copy[language === 'ko' ? 'ko' : 'en']
 
-  if (!isOpen) return null
-
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        hideCloseButton
+        className="max-w-lg gap-0 overflow-hidden rounded-2xl border border-border/60 p-0 shadow-xl sm:max-w-lg"
       >
-        <div className="flex items-center justify-between border-b border-amber-200 bg-amber-50/90 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-amber-900">
-            <Car className="h-5 w-5 shrink-0 text-red-600" aria-hidden />
-            {t.title}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-amber-800 hover:bg-amber-100"
-            aria-label={t.close}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        <DialogHeader className="space-y-0 border-b border-border/60 px-5 py-4 text-left sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="flex items-center gap-3 text-lg font-semibold tracking-tight text-foreground">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Car className="h-5 w-5" aria-hidden />
+              </span>
+              {t.title}
+            </DialogTitle>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={t.close}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="max-h-[min(70vh,32rem)] overflow-y-auto px-5 py-5 sm:px-6">
           {loading ? (
-            <p className="text-center text-sm text-amber-900/80">{t.loading}</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t.loading}</p>
           ) : !vehicle ? (
-            <p className="rounded-lg border border-amber-200 bg-white/80 px-3 py-3 text-sm text-amber-950">{t.empty}</p>
+            <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+              {t.empty}
+            </div>
           ) : (
-            <div className="space-y-4 border-l-4 border-orange-400 pl-4">
-              <dl className="space-y-2 text-sm">
-                <div>
-                  <dt className="font-bold text-gray-900">{t.type}</dt>
-                  <dd className="mt-0.5 text-gray-800">{vehicle.vehicleType}</dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-gray-900">{t.model}</dt>
-                  <dd className="mt-0.5 text-gray-800">{vehicle.model}</dd>
-                </div>
-                <div>
-                  <dt className="font-bold text-gray-900">{t.capacity}</dt>
-                  <dd className="mt-0.5 text-gray-800">
-                    {vehicle.capacity != null ? `${vehicle.capacity}${t.peopleSuffix}` : '—'}
-                  </dd>
-                </div>
+            <div className="space-y-5">
+              <dl className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <SpecItem label={t.type} value={vehicle.vehicleType} />
+                <SpecItem label={t.model} value={vehicle.model} />
+                <SpecItem
+                  label={t.capacity}
+                  value={
+                    vehicle.capacity != null
+                      ? `${vehicle.capacity}${t.peopleSuffix}`
+                      : '—'
+                  }
+                />
                 {vehicle.color ? (
-                  <div>
-                    <dt className="font-bold text-gray-900">{t.color}</dt>
-                    <dd className="mt-0.5 text-gray-800">{vehicle.color}</dd>
-                  </div>
+                  <SpecItem label={t.color} value={vehicle.color} />
                 ) : null}
               </dl>
 
               {vehicle.photos.length > 0 ? (
-                <div className="border-t border-amber-200/80 pt-4">
-                  <h3 className="mb-1 flex items-center gap-2 text-base font-semibold text-amber-900">
-                    <Camera className="h-4 w-4 text-orange-600" aria-hidden />
-                    {t.photos}
-                  </h3>
-                  <p className="mb-3 text-xs text-gray-600">{t.photoHint}</p>
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="border-t border-border/60 pt-5">
+                  <div className="mb-3 flex items-start gap-2">
+                    <Camera className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">{t.photos}</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{t.photoHint}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
                     {vehicle.photos.map((p, i) => (
                       <a
                         key={`${p.url}-${i}`}
                         href={p.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block overflow-hidden rounded-lg border border-amber-200 bg-white shadow-sm ring-1 ring-amber-100/80 transition hover:opacity-95"
+                        className="group block overflow-hidden rounded-xl border border-border/60 bg-muted/20 shadow-sm transition duration-200 hover:shadow-md"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={p.url}
                           alt={p.alt || `${t.photos} ${i + 1}`}
-                          className="h-36 w-full object-cover sm:h-40"
+                          className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                           loading="lazy"
                         />
                       </a>
@@ -145,16 +160,12 @@ export default function VehicleInfoModal({
           )}
         </div>
 
-        <div className="border-t border-amber-200 bg-amber-50/90 px-4 py-3 text-right">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
-          >
+        <DialogFooter className="border-t border-border/60 px-5 py-4 sm:px-6">
+          <Button type="button" onClick={onClose} className="h-11 rounded-xl px-6">
             {t.close}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

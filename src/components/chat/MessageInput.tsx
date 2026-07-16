@@ -35,22 +35,23 @@ export default function MessageInput({
 }: MessageInputProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      onSendMessage()
-    }
-  }
-
   const emojis = ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾']
 
   if (!roomActive) return null
 
   return (
     <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0 relative`}>
-      <div className="flex items-center space-x-1 w-full">
+      <form
+        autoComplete="off"
+        onSubmit={(e) => {
+          e.preventDefault()
+          onSendMessage()
+        }}
+        className="flex items-center space-x-1 w-full"
+      >
         {/* 이미지 업로드 버튼 */}
         <button
+          type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading || sending}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -73,10 +74,13 @@ export default function MessageInput({
             }
           }}
           className="hidden"
+          tabIndex={-1}
+          autoComplete="off"
         />
         
         {/* 이모티콘 버튼 */}
         <button
+          type="button"
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
           title={selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}
@@ -86,6 +90,7 @@ export default function MessageInput({
         
         {/* 위치 공유 버튼 (고객 및 가이드용) */}
         <button
+          type="button"
           onClick={onShareLocation}
           disabled={gettingLocation || sending || uploading}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -97,19 +102,58 @@ export default function MessageInput({
             <MapPin size={18} />
           )}
         </button>
-        
+
+        {/* Chrome 결제 autofill 방지: 숨김 decoy + 채팅 전용 textarea */}
         <input
           type="text"
+          name="prevent_autofill_username"
+          autoComplete="username"
+          tabIndex={-1}
+          aria-hidden="true"
+          className="sr-only absolute opacity-0 pointer-events-none h-0 w-0"
+          value=""
+          readOnly
+        />
+        <input
+          type="password"
+          name="prevent_autofill_password"
+          autoComplete="new-password"
+          tabIndex={-1}
+          aria-hidden="true"
+          className="sr-only absolute opacity-0 pointer-events-none h-0 w-0"
+          value=""
+          readOnly
+        />
+        
+        <textarea
+          id="tour-chat-message-input"
+          name="tourChatMessageBody"
+          rows={1}
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              onSendMessage()
+            }
+          }}
           placeholder={selectedLanguage === 'ko' ? '메시지를 입력하세요...' : 'Type your message...'}
-          className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm lg:text-base"
+          className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm lg:text-base resize-none overflow-hidden max-h-24"
           disabled={sending || uploading || gettingLocation}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck
+          inputMode="text"
+          enterKeyHint="send"
+          data-form-type="other"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
         />
         
         <button
-          onClick={onSendMessage}
+          type="submit"
           disabled={!newMessage.trim() || sending || uploading}
           className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
         >
@@ -117,7 +161,7 @@ export default function MessageInput({
           <span className="hidden lg:inline">{sending ? 'Sending...' : 'Send'}</span>
           <span className="lg:hidden">{sending ? '...' : 'Send'}</span>
         </button>
-      </div>
+      </form>
 
       {/* 이모티콘 선택기 */}
       {showEmojiPicker && (
