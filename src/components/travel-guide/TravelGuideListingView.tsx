@@ -17,6 +17,7 @@ import {
   type TravelGuideArticle,
 } from '@/lib/travelGuideArticles'
 import { filterTravelGuideRowsByQuery } from '@/lib/travelGuideSearch'
+import { canAccessTravelGuideStaffApi } from '@/lib/travelGuideStaffAccess'
 
 type Props = {
   locale: string
@@ -115,18 +116,49 @@ export default function TravelGuideListingView({ locale, t }: Props) {
 
   const [articles, setArticles] = useState<TravelGuideArticle[]>([])
   const [loading, setLoading] = useState(true)
+  const [staffAccessReady, setStaffAccessReady] = useState(false)
+  const [canWrite, setCanWrite] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorArticleId, setEditorArticleId] = useState<string | undefined>()
   const [searchInput, setSearchInput] = useState(initialQuery)
   const [searchQuery, setSearchQuery] = useState(initialQuery)
 
   const authReady = auth ? !auth.loading : true
-  const canWrite = authReady && (auth?.hasPermission('canViewAdmin') ?? false)
   const hasSearchQuery = searchQuery.length > 0
+
+  useEffect(() => {
+    if (!authReady) {
+      setStaffAccessReady(false)
+      setCanWrite(false)
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      if (auth?.hasPermission('canViewAdmin')) {
+        if (!cancelled) {
+          setCanWrite(true)
+          setStaffAccessReady(true)
+        }
+        return
+      }
+
+      const staffOk = Boolean(auth?.user) && (await canAccessTravelGuideStaffApi())
+      if (!cancelled) {
+        setCanWrite(staffOk)
+        setStaffAccessReady(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [auth, authReady])
 
   const loadArticles = useCallback(
     async (query: string) => {
-      if (!authReady) return
+      if (!authReady || !staffAccessReady) return
 
       setLoading(true)
 
@@ -145,7 +177,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
 
       setLoading(false)
     },
-    [authReady, canWrite, locale]
+    [authReady, canWrite, locale, staffAccessReady]
   )
 
   useEffect(() => {
@@ -169,7 +201,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
   }, [locale, router, searchParams, searchQuery])
 
   useEffect(() => {
-    if (!authReady) return
+    if (!authReady || !staffAccessReady) return
 
     let cancelled = false
 
@@ -197,7 +229,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
     return () => {
       cancelled = true
     }
-  }, [authReady, canWrite, locale, searchQuery])
+  }, [authReady, canWrite, locale, searchQuery, staffAccessReady])
 
   const openCreateModal = () => {
     setEditorArticleId(undefined)
@@ -271,7 +303,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
             </p>
           ) : null}
 
-          {loading || !authReady ? (
+          {loading || !authReady || !staffAccessReady ? (
             <div className="kv-travel-guide-grid" aria-busy="true">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div key={index} className="kv-travel-guide-card kv-travel-guide-card--skeleton" />

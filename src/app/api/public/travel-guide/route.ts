@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
     { ok: true, articles },
     {
       headers: {
+        // Keep short so newly published articles appear on the public listing quickly.
         'Cache-Control': query
-          ? 'public, s-maxage=60, stale-while-revalidate=300'
-          : 'public, s-maxage=300, stale-while-revalidate=3600',
+          ? 'public, s-maxage=30, stale-while-revalidate=120'
+          : 'public, s-maxage=60, stale-while-revalidate=300',
       },
     }
   )
