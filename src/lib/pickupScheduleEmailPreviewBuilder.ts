@@ -125,6 +125,9 @@ function samplePickupHotel(isEnglish: boolean) {
   }
 }
 
+const PICKUP_HOTEL_EMAIL_SELECT =
+  'id, hotel, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
+
 async function fetchPickupHotel(
   routeDb: SupabaseClient,
   pickupHotelId: string | null | undefined
@@ -132,7 +135,7 @@ async function fetchPickupHotel(
   if (!pickupHotelId) return null
   const { data: hotelData } = await routeDb
     .from('pickup_hotels')
-    .select('id, hotel, pick_up_location, address, link, media')
+    .select(PICKUP_HOTEL_EMAIL_SELECT)
     .eq('id', pickupHotelId)
     .maybeSingle()
   return hotelData
@@ -219,7 +222,9 @@ async function fetchAllPickups(
 
     const { data: hotelInfo } = await routeDb
       .from('pickup_hotels')
-      .select('hotel, pick_up_location, address, link')
+      .select(
+        'hotel, pick_up_location, address, link, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
+      )
       .eq('id', effectiveHotelId)
       .maybeSingle()
 
@@ -231,6 +236,12 @@ async function fetchAllPickups(
       pick_up_location: hotelInfo?.pick_up_location || '',
       address: hotelInfo?.address || '',
       link: hotelInfo?.link || '',
+      description_ko: hotelInfo?.description_ko ?? null,
+      description_en: hotelInfo?.description_en ?? null,
+      from_inside_hotel_ko: hotelInfo?.from_inside_hotel_ko ?? null,
+      from_inside_hotel_en: hotelInfo?.from_inside_hotel_en ?? null,
+      from_outside_hotel_ko: hotelInfo?.from_outside_hotel_ko ?? null,
+      from_outside_hotel_en: hotelInfo?.from_outside_hotel_en ?? null,
       customer_name: customerInfo?.name || 'Unknown Customer',
       total_people: res.total_people,
       tour_date: res.tour_date,

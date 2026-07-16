@@ -290,6 +290,12 @@ export async function POST(request: NextRequest) {
                 pick_up_location: hotelInfo?.pick_up_location || '',
                 address: hotelInfo?.address || '',
                 link: hotelInfo?.link || '',
+                description_ko: hotelInfo?.description_ko ?? null,
+                description_en: hotelInfo?.description_en ?? null,
+                from_inside_hotel_ko: hotelInfo?.from_inside_hotel_ko ?? null,
+                from_inside_hotel_en: hotelInfo?.from_inside_hotel_en ?? null,
+                from_outside_hotel_ko: hotelInfo?.from_outside_hotel_ko ?? null,
+                from_outside_hotel_en: hotelInfo?.from_outside_hotel_en ?? null,
                 customer_name: customerInfo?.name || 'Unknown Customer',
                 total_people: res.total_people,
                 tour_date: res.tour_date
@@ -923,6 +929,49 @@ function buildMapButtonHintHtml(isEnglish: boolean): string {
     : '위 버튼을 클릭하시면 구글 지도에서 정확한 픽업 장소를 확인하실 수 있고, <strong>Directions(길찾기)</strong> 버튼을 누르시면 이동 경로까지 모두 확인하실 수 있습니다. 라스베가스 호텔은 입구가 여러 곳이며 픽업 장소가 메인 로비와 다른 경우가 많으니, 반드시 이 버튼이 안내하는 픽업 포인트로 와 주시기 바랍니다.'
 }
 
+function buildAllPickupScheduleMapHintBoxHtml(isEnglish: boolean): string {
+  return `
+            <div style="background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 16px; margin-bottom: 18px;">
+              <p style="margin: 0; font-size: 13px; color: #4b5563; line-height: 1.65;">
+                ${buildMapButtonHintHtml(isEnglish)}
+              </p>
+            </div>`
+}
+
+function buildAllPickupLocationActionsHtml(
+  isEnglish: boolean,
+  pickup: PickupHotelEmailRow
+): string {
+  const hotelLike = pickup as PickupHotelUtil
+  const hasLink = Boolean(pickup.link)
+  const hasDetails = hasPickupLocationDescription(hotelLike)
+  if (!hasLink && !hasDetails) return ''
+
+  const mapLink = hasLink
+    ? `<a href="${pickup.link}" target="_blank" style="display: inline-block; padding: 6px 12px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}</a>`
+    : ''
+
+  const detailsBlock = hasDetails
+    ? `
+      <details style="display: inline-block; margin: 0; vertical-align: top;">
+        <summary style="display: inline-block; padding: 6px 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+          ${isEnglish ? 'View Details' : '자세히 보기'}
+        </summary>
+        <div style="margin-top: 10px; min-width: 240px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px;">
+          ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
+        </div>
+      </details>`
+    : ''
+
+  return `
+                    <div style="margin-top: 10px;">
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start;">
+                        ${mapLink}
+                        ${detailsBlock}
+                      </div>
+                    </div>`
+}
+
 function buildPickupNotificationRemindersHtml(isEnglish: boolean, hasChatRoom: boolean): string {
   const title = isEnglish ? 'Reminders for your tour' : '투어 전 참고 사항'
   const items = isEnglish
@@ -1233,6 +1282,14 @@ export function generatePickupScheduleEmailContent(
                 </div>
               `).join('')}
             </div>
+            ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
+          </div>
+          ` : pickupHotel && hasPickupLocationDescription(pickupHotel as PickupHotelUtil) ? `
+          <div class="info-box">
+            <div class="info-row">
+              <span class="label" style="font-size: 16px; margin-bottom: 10px; display: block;">${isEnglish ? '📸 Pickup Location Images:' : '📸 픽업 장소 이미지:'}</span>
+            </div>
+            ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
           </div>
           ` : ''}
 
@@ -1322,6 +1379,7 @@ export function generatePickupScheduleEmailContent(
             <h2 style="font-size: 20px; font-weight: bold; color: #1e40af; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
               ${isEnglish ? '🚌 All Pickup Schedule' : '🚌 모든 픽업 스케줄'}
             </h2>
+            ${buildAllPickupScheduleMapHintBoxHtml(isEnglish)}
             ${!pickupHotel ? `
             <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
               <p style="margin: 0; color: #92400e; font-weight: 600; font-size: 14px; line-height: 1.6;">
@@ -1358,16 +1416,7 @@ export function generatePickupScheduleEmailContent(
                       ${pickup.address}
                     </div>
                     ` : ''}
-                    ${pickup.link ? `
-                    <div style="margin-top: 10px;">
-                      <a href="${pickup.link}" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px;">
-                        ${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}
-                      </a>
-                      <p style="margin: 8px 0 0; font-size: 12px; color: #6b7280; line-height: 1.6;">
-                        ${buildMapButtonHintHtml(isEnglish)}
-                      </p>
-                    </div>
-                    ` : ''}
+                    ${buildAllPickupLocationActionsHtml(isEnglish, pickup)}
                   </div>
                 `
               }).join('')}
