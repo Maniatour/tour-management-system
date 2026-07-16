@@ -150,6 +150,9 @@ interface PickupVehicleAccessIconRowProps {
   showLabels?: boolean
   /** Floating circles on photo — no outer chrome/box. */
   variant?: 'default' | 'overlay'
+  /** When set, each icon toggles that vehicle class. */
+  onToggleClass?: (accessClass: PickupAccessClass) => void
+  disabled?: boolean
 }
 
 /** Shows Low top / High top / Bus icons; muted + slash when not allowed */
@@ -160,14 +163,17 @@ export function PickupVehicleAccessIconRow({
   className = '',
   showLabels = true,
   variant = 'default',
+  onToggleClass,
+  disabled = false,
 }: PickupVehicleAccessIconRowProps) {
   const allowedSet = new Set(allowed)
   const isOverlay = variant === 'overlay'
+  const interactive = typeof onToggleClass === 'function'
 
   return (
     <div
       className={`flex items-center ${isOverlay ? 'gap-1.5' : 'justify-center gap-2 sm:gap-3'} ${className}`}
-      role="list"
+      role={interactive ? 'group' : 'list'}
       aria-label={locale === 'en' ? 'Allowed vehicle classes' : '진입 가능 차량 등급'}
     >
       {(['regular', 'high_top', 'bus'] as const).map((accessClass) => {
@@ -175,35 +181,64 @@ export function PickupVehicleAccessIconRow({
         const isAllowed = allowedSet.has(accessClass)
         const label = PICKUP_ACCESS_CLASS_LABELS[accessClass][locale === 'en' ? 'en' : 'ko']
         const tone = PICKUP_VEHICLE_ICON_TONES[accessClass]
+        const title = interactive
+          ? isAllowed
+            ? `${label} — ${locale === 'en' ? 'Allowed (click to disable)' : '진입 가능 (클릭하여 해제)'}`
+            : `${label} — ${locale === 'en' ? 'Not allowed (click to enable)' : '진입 불가 (클릭하여 허용)'}`
+          : isAllowed
+            ? `${label} — ${locale === 'en' ? 'Allowed' : '진입 가능'}`
+            : `${label} — ${locale === 'en' ? 'Not allowed' : '진입 불가'}`
+
+        const circleClass = `relative inline-flex items-center justify-center rounded-full ${
+          isOverlay ? 'h-10 w-10' : 'h-12 w-12'
+        } ${isAllowed ? tone.circle : tone.mutedCircle} ${isAllowed ? tone.icon : tone.mutedIcon} ${
+          interactive
+            ? 'cursor-pointer transition hover:scale-105 hover:brightness-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60'
+            : ''
+        }`
+
+        const inner = (
+          <>
+            <Icon size={isOverlay ? Math.max(size, 24) : Math.max(size, 26)} />
+            {!isAllowed && (
+              <span
+                className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                aria-hidden
+              >
+                <span className="block h-[3px] w-[70%] rotate-[-32deg] rounded-full bg-slate-500/85" />
+              </span>
+            )}
+          </>
+        )
 
         return (
           <div
             key={accessClass}
-            role="listitem"
-            title={
-              isAllowed
-                ? `${label} — ${locale === 'en' ? 'Allowed' : '진입 가능'}`
-                : `${label} — ${locale === 'en' ? 'Not allowed' : '진입 불가'}`
-            }
+            role={interactive ? undefined : 'listitem'}
             className={`relative flex flex-col items-center ${
               showLabels && !isOverlay ? 'gap-1' : ''
             }`}
           >
-            <span
-              className={`relative inline-flex items-center justify-center rounded-full ${
-                isOverlay ? 'h-10 w-10' : 'h-12 w-12'
-              } ${isAllowed ? tone.circle : tone.mutedCircle} ${isAllowed ? tone.icon : tone.mutedIcon}`}
-            >
-              <Icon size={isOverlay ? Math.max(size, 24) : Math.max(size, 26)} />
-              {!isAllowed && (
-                <span
-                  className="pointer-events-none absolute inset-0 flex items-center justify-center"
-                  aria-hidden
-                >
-                  <span className="block h-[3px] w-[70%] rotate-[-32deg] rounded-full bg-slate-500/85" />
-                </span>
-              )}
-            </span>
+            {interactive ? (
+              <button
+                type="button"
+                className={circleClass}
+                title={title}
+                aria-pressed={isAllowed}
+                aria-label={title}
+                disabled={disabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleClass(accessClass)
+                }}
+              >
+                {inner}
+              </button>
+            ) : (
+              <span className={circleClass} title={title}>
+                {inner}
+              </span>
+            )}
             {showLabels && !isOverlay && (
               <span
                 className={`text-[10px] font-semibold leading-none ${

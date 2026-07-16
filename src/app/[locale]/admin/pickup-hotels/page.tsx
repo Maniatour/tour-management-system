@@ -2072,6 +2072,11 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                                 : 'en',
                             })
                           }
+                          onToggleVehicleAccess={async (h, nextClasses) => {
+                            await handleSectionSave(h.id, {
+                              allowed_pickup_access_classes: nextClasses,
+                            })
+                          }}
                         />
 
                       ))}

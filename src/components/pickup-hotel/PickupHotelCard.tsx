@@ -22,6 +22,11 @@ import {
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
 import { getAllowedPickupAccessClasses } from '@/lib/pickupHotelVehicleAccess'
 import {
+  PICKUP_ACCESS_CLASSES,
+  normalizeAllowedPickupAccessClasses,
+  type PickupAccessClass,
+} from '@/lib/pickupAccessClass'
+import {
   DEFAULT_PICKUP_CONTENT_LOCALE,
   getPickupLocalizedText,
   type PickupContentLocale,
@@ -48,6 +53,10 @@ interface PickupHotelCardProps {
     hotel: PickupHotel,
     section: PickupHotelEditSection
   ) => void
+  onToggleVehicleAccess?: (
+    hotel: PickupHotel,
+    nextClasses: PickupAccessClass[] | null
+  ) => void | Promise<void>
 }
 
 async function copyText(text: string, okMessage: string) {
@@ -77,8 +86,10 @@ export default function PickupHotelCard({
   onOpenImages,
   onEditMedia,
   onEditSection,
+  onToggleVehicleAccess,
 }: PickupHotelCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const [vehicleSaving, setVehicleSaving] = useState(false)
   const isEn = locale === 'en'
 
   useEffect(() => {
@@ -100,6 +111,22 @@ export default function PickupHotelCard({
   )
 
   const allowedClasses = getAllowedPickupAccessClasses(hotel)
+
+  const handleToggleVehicleClass = async (accessClass: PickupAccessClass) => {
+    if (!onToggleVehicleAccess || vehicleSaving) return
+    const current = new Set(allowedClasses)
+    if (current.has(accessClass)) current.delete(accessClass)
+    else current.add(accessClass)
+    const next = normalizeAllowedPickupAccessClasses(
+      PICKUP_ACCESS_CLASSES.filter((c) => current.has(c))
+    )
+    setVehicleSaving(true)
+    try {
+      await onToggleVehicleAccess(hotel, next)
+    } finally {
+      setVehicleSaving(false)
+    }
+  }
 
   const goPrev = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -274,12 +301,9 @@ export default function PickupHotelCard({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => onEditSection?.(hotel, 'vehicle')}
-                className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-none border-0 bg-transparent p-0 shadow-none"
-                title={isEn ? 'Edit vehicle access' : '차량 이용 안내 수정'}
-                aria-label={isEn ? 'Edit vehicle access' : '차량 이용 안내 수정'}
+              <div
+                className="absolute right-2 top-2 z-20"
+                onClick={(e) => e.stopPropagation()}
               >
                 <PickupVehicleAccessIconRow
                   allowed={allowedClasses}
@@ -287,8 +311,12 @@ export default function PickupHotelCard({
                   size={24}
                   showLabels={false}
                   variant="overlay"
+                  disabled={vehicleSaving}
+                  onToggleClass={
+                    onToggleVehicleAccess ? handleToggleVehicleClass : undefined
+                  }
                 />
-              </button>
+              </div>
 
               {gallery.length > 0 && (
                 <>
