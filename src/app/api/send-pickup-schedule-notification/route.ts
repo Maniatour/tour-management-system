@@ -891,10 +891,8 @@ function buildPickupLocationDescriptionBlockHtml(
   const hotelLike = pickupHotel as PickupHotelUtil
   if (!hasPickupLocationDescription(hotelLike)) return ''
   return `
-            <div class="info-row" style="margin-top: 12px;">
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px;">
-                ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
-              </div>
+            <div class="info-row" style="margin-top: 16px;">
+              ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
             </div>`
 }
 
@@ -947,28 +945,46 @@ function buildAllPickupLocationActionsHtml(
   const hasDetails = hasPickupLocationDescription(hotelLike)
   if (!hasLink && !hasDetails) return ''
 
-  const mapLink = hasLink
-    ? `<a href="${pickup.link}" target="_blank" style="display: inline-block; padding: 6px 12px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}</a>`
-    : ''
+  if (hasLink && hasDetails) {
+    return `
+                    <div style="margin-top: 10px;">
+                      <details style="display: block; margin: 0;">
+                        <summary style="display: block; list-style: none; cursor: pointer;">
+                          <table cellpadding="0" cellspacing="0" border="0" role="presentation">
+                            <tr>
+                              <td style="padding-right: 8px; vertical-align: middle;">
+                                <a href="${pickup.link}" target="_blank" onclick="event.stopPropagation();" style="display: inline-block; padding: 6px 12px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap;">${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}</a>
+                              </td>
+                              <td style="vertical-align: middle;">
+                                <span style="display: inline-block; padding: 6px 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap;">${isEnglish ? 'View Details' : '자세히 보기'}</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </summary>
+                        <div style="margin-top: 12px;">
+                          ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
+                        </div>
+                      </details>
+                    </div>`
+  }
 
-  const detailsBlock = hasDetails
-    ? `
-      <details style="display: inline-block; margin: 0; vertical-align: top;">
-        <summary style="display: inline-block; padding: 6px 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
-          ${isEnglish ? 'View Details' : '자세히 보기'}
-        </summary>
-        <div style="margin-top: 10px; min-width: 240px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px;">
-          ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
-        </div>
-      </details>`
-    : ''
+  if (hasLink) {
+    return `
+                    <div style="margin-top: 10px;">
+                      <a href="${pickup.link}" target="_blank" style="display: inline-block; padding: 6px 12px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap;">${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}</a>
+                    </div>`
+  }
 
   return `
                     <div style="margin-top: 10px;">
-                      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start;">
-                        ${mapLink}
-                        ${detailsBlock}
-                      </div>
+                      <details style="display: block; margin: 0;">
+                        <summary style="display: inline-block; padding: 6px 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; white-space: nowrap;">
+                          ${isEnglish ? 'View Details' : '자세히 보기'}
+                        </summary>
+                        <div style="margin-top: 12px;">
+                          ${formatPickupLocationDescriptionHtml(hotelLike, isEnglish ? 'en' : 'ko')}
+                        </div>
+                      </details>
                     </div>`
 }
 
@@ -1055,7 +1071,6 @@ function buildPickupHotelSectionHtml(
                 <span class="value" style="font-size: 15px;">${pickupHotel.address}</span>
               </div>
               ` : ''}
-              ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
               ${mapHint}
             </div>`
   }
@@ -1077,7 +1092,6 @@ function buildPickupHotelSectionHtml(
               <span class="value">${pickupHotel.address}</span>
             </div>
             ` : ''}
-            ${buildPickupLocationDescriptionBlockHtml(isEnglish, pickupHotel)}
             ${mapHint}`
 }
 

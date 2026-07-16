@@ -4,6 +4,7 @@ import {
   getPickupAccessClassLabel,
   type PickupAccessClass,
 } from '@/lib/pickupAccessClass'
+import { parseDirectionSteps } from '@/lib/pickupHotelDirectionSteps'
 
 export type { PickupAccessClass }
 export { PICKUP_ACCESS_CLASSES, getPickupAccessClassLabel }
@@ -98,6 +99,34 @@ export function formatPickupLocationDescriptionText(
   return lines.join('\n').trim()
 }
 
+function buildDirectionStepsEmailHtml(
+  text: string | null | undefined,
+  accent: 'blue' | 'green'
+): string {
+  const steps = parseDirectionSteps(text)
+  if (steps.length === 0) return ''
+
+  const badgeBg = accent === 'green' ? '#10b981' : '#2563eb'
+
+  const stepsHtml = steps
+    .map(
+      (step, index) => `
+    <tr>
+      <td style="vertical-align: top; padding: 0 0 10px 0; width: 32px;">
+        <div style="width: 24px; height: 24px; background: ${badgeBg}; color: #ffffff; border-radius: 50%; font-size: 12px; font-weight: 600; line-height: 24px; text-align: center;">
+          ${index + 1}
+        </div>
+      </td>
+      <td style="vertical-align: top; padding: 2px 0 10px 8px; font-size: 14px; line-height: 1.6; color: #334155;">
+        ${escapeHtml(step)}
+      </td>
+    </tr>`
+    )
+    .join('')
+
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" style="width: 100%;">${stepsHtml}</table>`
+}
+
 export function formatPickupLocationDescriptionHtml(
   hotel: PickupHotel,
   locale: 'ko' | 'en'
@@ -107,22 +136,40 @@ export function formatPickupLocationDescriptionHtml(
 
   if (fields.description?.trim()) {
     sections.push(`
-      <p style="margin: 0 0 4px; font-weight: 600; color: #374151;">Location Description:</p>
-      <p style="margin: 0 0 12px; color: #4b5563; white-space: pre-line;">${escapeHtml(fields.description.trim())}</p>
+      <div style="overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; margin-bottom: 12px;">
+        <div style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #2563eb; font-size: 14px; font-weight: 600;">
+          📍 Location Description
+        </div>
+        <div style="padding: 12px 14px; background: rgba(239, 246, 255, 0.8);">
+          <p style="margin: 0; font-size: 14px; line-height: 1.65; color: #334155; white-space: pre-line;">${escapeHtml(fields.description.trim())}</p>
+        </div>
+      </div>
     `)
   }
 
   if (fields.fromInside?.trim()) {
     sections.push(`
-      <p style="margin: 0 0 4px; font-weight: 600; color: #374151;">From Inside Hotel:</p>
-      <p style="margin: 0 0 12px; color: #4b5563; white-space: pre-line;">${escapeHtml(fields.fromInside.trim())}</p>
+      <div style="overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; margin-bottom: 12px;">
+        <div style="padding: 10px 14px; background: #eff6ff; color: #2563eb; font-size: 14px; font-weight: 600;">
+          🏨 From Inside Hotel
+        </div>
+        <div style="padding: 12px 14px;">
+          ${buildDirectionStepsEmailHtml(fields.fromInside, 'blue')}
+        </div>
+      </div>
     `)
   }
 
   if (fields.fromOutside?.trim()) {
     sections.push(`
-      <p style="margin: 0 0 4px; font-weight: 600; color: #374151;">From Outside Hotel:</p>
-      <p style="margin: 0; color: #4b5563; white-space: pre-line;">${escapeHtml(fields.fromOutside.trim())}</p>
+      <div style="overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+        <div style="padding: 10px 14px; background: #ecfdf5; color: #059669; font-size: 14px; font-weight: 600;">
+          👣 From Outside Hotel
+        </div>
+        <div style="padding: 12px 14px;">
+          ${buildDirectionStepsEmailHtml(fields.fromOutside, 'green')}
+        </div>
+      </div>
     `)
   }
 
