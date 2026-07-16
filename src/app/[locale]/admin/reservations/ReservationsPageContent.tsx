@@ -4759,7 +4759,9 @@ export default function AdminReservations() {
                 const statusListForSimple = statusList
 
                 const gridClass =
-                  'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
+                  cardLayout === 'simple'
+                    ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
+                    : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
 
                 const renderReservationCard = (reservation: Reservation) => (
                   <ReservationCardItem
@@ -4937,7 +4939,7 @@ export default function AdminReservations() {
                                   />
                                 </button>
                                 {regOpen && (
-                                  <div className="border-t border-gray-100 px-2 pb-3 pt-2">
+                                  <div className="border-t border-gray-100 pl-3 pr-2 pb-3 pt-2">
                                     {regList.length > 0 ? (
                                       <div className={gridClass}>{regList.map(renderReservationCard)}</div>
                                     ) : (
@@ -4978,7 +4980,7 @@ export default function AdminReservations() {
                                   />
                                 </button>
                                 {statusOpen && (
-                                  <div className="border-t border-gray-100 px-2 pb-3 pt-2 space-y-3">
+                                  <div className="border-t border-gray-100 pl-3 pr-2 pb-3 pt-2 space-y-3">
                                     {statusList.length > 0 ? (
                                       simpleCardStatusTransitionLoadingEffective ? (
                                         <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
@@ -5025,7 +5027,7 @@ export default function AdminReservations() {
                                                 />
                                               </button>
                                               {subOpen && (
-                                                <div className="border-t border-gray-100 bg-white px-2 pb-2 pt-2">
+                                                <div className="border-t border-gray-100 bg-white pl-3 pr-2 pb-2 pt-2">
                                                   <div className={gridClass}>{g.items.map(renderReservationCard)}</div>
                                                 </div>
                                               )}
@@ -5072,7 +5074,13 @@ export default function AdminReservations() {
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div
+                className={
+                  viewMode === 'list' || cardLayout === 'simple'
+                    ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
+                    : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
+                }
+              >
                 {paginatedReservations.map((reservation) => {
                   const gridCardLayout = viewMode === 'list' ? 'simple' : cardLayout
                   return (

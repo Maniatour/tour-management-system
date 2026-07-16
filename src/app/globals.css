@@ -4823,6 +4823,41 @@ main:has(.maniatour-home) {
   flex: 1;
 }
 
+/* 예약 관리 카드뷰 — 고정 너비 + 화면 너비에 따라 열 개수만 변경
+   간단 260px: 1920(사이드바 접힘)에서 5~6열, 사이드바 펼침에서도 5열 확보 */
+.admin-reservations-card-grid {
+  --admin-reservation-card-width: 280px;
+  display: grid;
+  gap: 0.75rem 0.625rem;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--admin-reservation-card-width)), var(--admin-reservation-card-width))
+  );
+  justify-content: start;
+  width: 100%;
+}
+
+.admin-reservations-card-grid--simple {
+  --admin-reservation-card-width: 340px;
+}
+
+.admin-reservations-card-grid--standard {
+  --admin-reservation-card-width: 340px;
+}
+
+.admin-reservations-card-grid > * {
+  width: 100%;
+  max-width: var(--admin-reservation-card-width);
+  min-width: 0;
+  justify-self: start;
+}
+
+@media (min-width: 1024px) {
+  .admin-reservations-card-grid {
+    gap: 1rem 0.75rem;
+  }
+}
+
 .gyg-listing-card-edit-btn {
   display: inline-flex;
   flex-shrink: 0;

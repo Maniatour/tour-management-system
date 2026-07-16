@@ -313,7 +313,7 @@ export function ReservationFollowUpPipelineIcons({
           const menuApplicable =
             manualEnabled && !!pipelineStep && !(key === 'r' && residentHidden)
           const manualPart = pipelineStep && stepManualFlag(effectiveSnapshot, pipelineStep)
-          const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(visual)}`
+          const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded border leading-none ${stepClasses(visual)}`
           const titleSuffix = manualPart ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
 
           const openMenu = (clientX: number, clientY: number) => {
@@ -332,7 +332,7 @@ export function ReservationFollowUpPipelineIcons({
               type="button"
               title={`${label}${titleSuffix}`}
               aria-label={`${label}${titleSuffix}`}
-              className={`${boxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
+              className={`${boxClass} cursor-pointer p-0 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
               onClick={(e) => {
                 e.stopPropagation()
                 onEmailPreviewClick(emailType)
@@ -344,7 +344,7 @@ export function ReservationFollowUpPipelineIcons({
                 openMenu(e.clientX, e.clientY)
               }}
             >
-              <Icon className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
+              <Icon className="block h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
             </button>
           ) : (
             <span
@@ -358,7 +358,7 @@ export function ReservationFollowUpPipelineIcons({
                 openMenu(e.clientX, e.clientY)
               }}
             >
-              <Icon className="h-3 w-3 shrink-0" aria-hidden />
+              <Icon className="block h-3 w-3 shrink-0" aria-hidden />
             </span>
           )
 
@@ -367,7 +367,7 @@ export function ReservationFollowUpPipelineIcons({
             const tourChatTitle = `${t('followUpPipeline.tourChatRoomPreviewButtonTitle')}${
               tourChatManual ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
             }`
-            const tourChatBoxClass = `inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(tourChatVisual)}`
+            const tourChatBoxClass = `inline-flex h-6 w-6 items-center justify-center rounded border leading-none ${stepClasses(tourChatVisual)}`
             const tourChatMenuApplicable = manualEnabled && prerequisitesMetForPickup(effectiveSnapshot)
             const openTourChatMenu = (clientX: number, clientY: number) => {
               if (!tourChatMenuApplicable) return
@@ -385,7 +385,7 @@ export function ReservationFollowUpPipelineIcons({
                   type="button"
                   title={tourChatTitle}
                   aria-label={tourChatTitle}
-                  className={`${tourChatBoxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
+                  className={`${tourChatBoxClass} cursor-pointer p-0 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
                   onClick={(e) => {
                     e.stopPropagation()
                     onTourChatRoomPreviewClick()
@@ -396,7 +396,7 @@ export function ReservationFollowUpPipelineIcons({
                     openTourChatMenu(e.clientX, e.clientY)
                   }}
                 >
-                  <MessageSquare className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
+                  <MessageSquare className="block h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
                 </button>
               </React.Fragment>
             )

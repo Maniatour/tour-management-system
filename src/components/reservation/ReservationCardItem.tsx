@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -68,6 +68,21 @@ function formatTourDateMmDdYyyy(tourDate: string | null | undefined): string {
     return `${mm}/${dd}/${d.getFullYear()}`
   }
   return raw
+}
+
+function normalizeReservationStatusKey(statusRaw: string): string {
+  return statusRaw.trim().toLowerCase().replace(/\s+/g, '_')
+}
+
+function reservationStatusIcon(statusRaw: string, className = 'h-4 w-4'): React.ReactNode {
+  const s = normalizeReservationStatusKey(statusRaw)
+  if (s === 'inquiry') return <MessageCircleQuestion className={`${className} text-sky-700`} aria-hidden />
+  if (s === 'pending') return <Clock className={`${className} text-amber-700`} aria-hidden />
+  if (s === 'confirmed') return <CheckCircle2 className={`${className} text-emerald-700`} aria-hidden />
+  if (s === 'completed') return <CircleCheck className={`${className} text-primary`} aria-hidden />
+  if (s === 'cancelled' || s === 'canceled') return <XCircle className={`${className} text-red-700`} aria-hidden />
+  if (s === 'no_show' || s === 'noshow') return <UserX className={`${className} text-orange-700`} aria-hidden />
+  return <HelpCircle className={`${className} text-gray-500`} aria-hidden />
 }
 
 function simpleCardTourStatusGlyph(statusRaw: string): React.ReactNode {
@@ -329,13 +344,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
-  const [simpleActionsExpanded, setSimpleActionsExpanded] = useState(false)
+  const [simpleMoreMenuOpen, setSimpleMoreMenuOpen] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
   const [tourChatRoomPreviewOpen, setTourChatRoomPreviewOpen] = useState(false)
   const [cancelReasonBadge, setCancelReasonBadge] = useState<string | null>(null)
   const [cancelReasonFetchIx, setCancelReasonFetchIx] = useState(0)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
+  const simpleMoreMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!reshowPickupSummaryRequest) return
@@ -358,6 +374,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [statusDropdownOpen])
+
+  useEffect(() => {
+    if (!simpleMoreMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (simpleMoreMenuRef.current && !simpleMoreMenuRef.current.contains(e.target as Node)) {
+        setSimpleMoreMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [simpleMoreMenuOpen])
 
   useEffect(() => {
     if (cardLayout !== 'simple' || !isReservationCancelled) {
@@ -388,7 +415,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     { value: 'pending', labelKey: 'status.pending' },
     { value: 'confirmed', labelKey: 'status.confirmed' },
     { value: 'completed', labelKey: 'status.completed' },
-    { value: 'cancelled', labelKey: 'status.cancelled' }
+    { value: 'cancelled', labelKey: 'status.cancelled' },
+    { value: 'no_show', labelKey: 'status.no_show' },
   ] as const
 
   const handleStatusSelect = async (newStatus: string) => {
@@ -460,7 +488,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   return (
     <div
       key={reservation.id}
-      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group`}
+      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0`}
     >
       {cardLayout === 'simple' ? (
         <div className="p-3 space-y-2">
@@ -472,13 +500,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   type="button"
                   onClick={() => setStatusModalOpen(true)}
                   disabled={statusUpdating}
-                  className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
+                  title={getStatusLabel(reservation.status, t)}
+                  aria-label={getStatusLabel(reservation.status, t)}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
                 >
-                  {getStatusLabel(reservation.status, t)}
+                  {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
                 </button>
               ) : (
-                <span className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusColor(reservation.status)}`}>
-                  {getStatusLabel(reservation.status, t)}
+                <span
+                  title={getStatusLabel(reservation.status, t)}
+                  aria-label={getStatusLabel(reservation.status, t)}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getStatusColor(reservation.status)}`}
+                >
+                  {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
                 </span>
               )}
               {(() => {
@@ -509,7 +543,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 {getCustomerName(reservation.customerId, customers || [])}
               </button>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 leading-none">
               {onCommunicationChannelChange ? (
                 <CustomerCommunicationChannelPicker
                   compact
@@ -523,17 +557,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   onChange={(channel) => onCommunicationChannelChange(reservation.id, channel)}
                 />
               ) : null}
-              {onCommunicationChannelChange ? (
-                <ReservationCardSimpleSmsButton
-                  reservationId={reservation.id}
-                  customer={customers.find((c) => c.id === reservation.customerId)}
-                  sentBy={sentBy}
-                  uiLocale={locale === 'en' ? 'en' : 'ko'}
-                  onSendSuccess={() => onPreTourSmsSendSuccess?.(reservation.id)}
-                />
-              ) : null}
               {showResidentStatusUi && (
                 <ResidentStatusIcon
+                  compact
                   reservationId={reservation.id}
                   customerId={reservation.customerId}
                   totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
@@ -546,92 +572,51 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               {(() => {
                 const channel = channels?.find((c) => c.id === reservation.channelId)
                 const chName = getChannelName(reservation.channelId, channels || [])
-                return channel?.favicon_url ? (
-                  <img
-                    src={channel.favicon_url}
-                    alt={chName || 'Channel'}
-                    className="h-4 w-4 shrink-0 rounded object-cover"
-                    title={chName}
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement
-                      target.style.display = 'none'
-                    }}
-                  />
-                ) : (
-                  <span className="h-4 w-4 shrink-0 rounded bg-gray-100 block" title={chName || ''} aria-hidden />
+                return (
+                  <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                    {channel?.favicon_url ? (
+                      <img
+                        src={channel.favicon_url}
+                        alt={chName || 'Channel'}
+                        className="block h-4 w-4 rounded object-cover"
+                        title={chName}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <span className="h-4 w-4 rounded bg-gray-100 block" title={chName || ''} aria-hidden />
+                    )}
+                  </span>
                 )
               })()}
-              <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-gray-800 tabular-nums" title={t('peopleLabel')}>
+              <span className="inline-flex h-4 items-center gap-0.5 text-[11px] font-semibold text-gray-800 tabular-nums" title={t('peopleLabel')}>
                 <Users className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
                 {(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
               </span>
             </div>
           </div>
 
-          {/* Row 2: 투어일·상품 + Follow-up 아이콘(오른쪽 정렬) — 한 줄 우선 */}
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-2 overflow-hidden">
-              <span className="shrink-0 text-xs font-medium text-gray-900 tabular-nums">
-                {formatTourDateMmDdYyyy(reservation.tourDate)}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-1 overflow-hidden text-xs font-medium text-gray-900">
-                <span className="min-w-0 truncate">
-                  {getProductName(reservation.productId, products as any || [])}
-                </span>
-                <span className="inline-flex shrink-0 flex-nowrap items-center gap-1 font-normal [&>span]:!px-1.5 [&>span]:!py-0.5 [&>span]:!text-[11px] [&>span]:!leading-tight">
-                  <ChoicesDisplay
-                    reservation={reservation}
-                    getGroupColorClasses={getGroupColorClasses}
-                    getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
-                    choicesCacheRef={choicesCacheRef}
-                  />
-                </span>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-              {cardLayout === 'simple' && isReservationCancelled ? (
-                <CancelledSimpleCardFollowUpStrip
-                  reservationId={reservation.id}
-                  snapshot={followUpPipelineSnapshot}
-                  customerEmail={
-                    customers.find((c) => c.id === reservation.customerId)?.email ?? ''
-                  }
-                  customerPhone={
-                    customers.find((c) => c.id === reservation.customerId)?.phone ?? null
-                  }
-                  customerName={getCustomerName(reservation.customerId, customers || [])}
-                  customerLanguage={
-                    customers.find((c) => c.id === reservation.customerId)?.language ?? null
-                  }
-                  tourDate={reservation.tourDate ?? null}
-                  productName={getProductName(reservation.productId, products as any || [])}
-                  channelRN={reservation.channelRN ?? null}
-                  {...(onCancelFollowUpManualChange !== undefined
-                    ? { onCancelFollowUpManualChange }
-                    : {})}
-                  onReasonSaved={() => setCancelReasonFetchIx((x) => x + 1)}
-                />
-              ) : (
-                <ReservationFollowUpPipelineIcons
-                  snapshot={followUpPipelineSnapshot}
-                  disabled={followUpPipelineIconsDisabled}
-                  alwaysShowResidentStep={cardLayout === 'simple'}
-                  onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
-                  showTourChatRoomPreviewButton
-                  onTourChatRoomPreviewClick={() => setTourChatRoomPreviewOpen(true)}
-                  {...(onFollowUpPipelineManualChange
-                    ? {
-                        allowManualCompletion: true as const,
-                        onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
-                          onFollowUpPipelineManualChange(reservation.id, step, action),
-                      }
-                    : {})}
-                />
-              )}
-            </div>
+          {/* Row 2: 투어일·상품·뱃지 */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
+            <span className="shrink-0 text-xs font-medium text-gray-900 tabular-nums">
+              {formatTourDateMmDdYyyy(reservation.tourDate)}
+            </span>
+            <span className="text-xs font-medium text-gray-900 break-words [overflow-wrap:anywhere]">
+              {getProductName(reservation.productId, products as any || [])}
+            </span>
+            <span className="inline-flex shrink-0 flex-wrap items-center gap-1 font-normal [&>span]:!px-1.5 [&>span]:!py-0.5 [&>span]:!text-[11px] [&>span]:!leading-tight">
+              <ChoicesDisplay
+                reservation={reservation}
+                getGroupColorClasses={getGroupColorClasses}
+                getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                choicesCacheRef={choicesCacheRef}
+              />
+            </span>
           </div>
 
-          {/* Row 3 */}
+          {/* Row 3: 가이드·차량·인원 (취소 시 등록일·사유) */}
           {(() => {
             if (hideAssignedTourUi) {
               return (
@@ -648,18 +633,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       </span>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSimpleActionsExpanded((x) => !x)
-                    }}
-                    className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100"
-                    title={t('card.simpleActionsToggle')}
-                    aria-expanded={simpleActionsExpanded}
-                  >
-                    <ChevronDown className={`h-4 w-4 transition-transform ${simpleActionsExpanded ? 'rotate-180' : ''}`} />
-                  </button>
                 </div>
               )
             }
@@ -714,205 +687,215 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     {simpleCardTourStatusGlyph(tourStatusLabel)}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setSimpleActionsExpanded((x) => !x)
-                  }}
-                  className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100"
-                  title={t('card.simpleActionsToggle')}
-                  aria-expanded={simpleActionsExpanded}
-                >
-                  <ChevronDown className={`h-4 w-4 transition-transform ${simpleActionsExpanded ? 'rotate-180' : ''}`} />
-                </button>
               </div>
             )
           })()}
 
-          {/* Row 4: icons only */}
-          {simpleActionsExpanded && (
-          <div className="flex flex-wrap gap-1 border-t border-gray-100 pt-2">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onPricingInfoClick(reservation)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-primary/5 text-primary hover:bg-muted"
-              title={t('actions.price')}
-            >
-              <Receipt className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setPickupSummaryModalOpen(true)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
-              title={t('card.pickupHotelIconTitle')}
-            >
-              <Hotel className="h-4 w-4" />
-            </button>
-            {(() => {
-              const product = products?.find((p) => p.id === reservation.productId)
-              const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
-              if (isManiaTour && !reservation.hasExistingTour) {
-                return (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onCreateTour(reservation)
-                    }}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-green-200 bg-green-50 text-green-600 hover:bg-green-100"
-                    title={t('card.createTourTitle')}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                )
-              }
-              return null
-            })()}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onPaymentClick(reservation)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-primary/5 text-primary hover:bg-muted"
-              title={t('card.paymentHistoryTitle')}
-            >
-              <DollarSign className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDetailClick(reservation)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-600 hover:bg-purple-100"
-              title={t('card.viewCustomerTitle')}
-            >
-              <Eye className="h-4 w-4" />
-            </button>
-            {onReceiptClick && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onReceiptClick(reservation)
-                }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                title={t('print')}
-              >
-                <Printer className="h-4 w-4" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setFollowUpModalOpen(true)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-              title="Follow up"
-            >
-              <FileText className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onReviewClick(reservation)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-pink-200 bg-pink-50 text-pink-600 hover:bg-pink-100"
-              title={t('card.reviewManagementTitle')}
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-            <div className="relative inline-block">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEmailDropdownToggle(reservation.id)
-                }}
-                disabled={sendingEmail === reservation.id}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-green-200 bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
-                title={t('card.emailTitle')}
-              >
-                <Mail className="h-4 w-4" />
-              </button>
-              {emailDropdownOpen === reservation.id && (
-                <div
-                  className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onEmailPreview(reservation, 'confirmation')}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <Mail className="w-3 h-3" />
-                    {t('card.emailConfirmation')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onEmailPreview(reservation, 'departure')}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <Mail className="w-3 h-3" />
-                    {t('card.emailDeparture')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onEmailPreview(reservation, 'pickup')}
-                    disabled={!reservation.pickUpTime || !reservation.tourDate}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    <Mail className="w-3 h-3 inline mr-2" />
-                    {t('card.emailPickup')}
-                  </button>
-                  {showResidentStatusUi && (
-                    <button
-                      type="button"
-                      onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
-                      className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <UserRound className="w-3 h-3 shrink-0" />
-                      {t('card.emailResidentInquiry')}
-                    </button>
-                  )}
-                  <div className="border-t border-gray-200 my-1" />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEmailLogsClick(reservation.id)
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-muted/50 flex items-center gap-2"
-                  >
-                    <Clock className="w-3 h-3" />
-                    {t('card.emailLogs')}
-                  </button>
-                </div>
+          {/* Row 4: Follow-up(취소 포함) 왼쪽 + 더보기(기존 액션) 오른쪽 */}
+          <div className="flex items-center gap-2 min-w-0 border-t border-gray-100 pt-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-1">
+              {isReservationCancelled ? (
+                <CancelledSimpleCardFollowUpStrip
+                  reservationId={reservation.id}
+                  snapshot={followUpPipelineSnapshot}
+                  customerEmail={
+                    customers.find((c) => c.id === reservation.customerId)?.email ?? ''
+                  }
+                  customerPhone={
+                    customers.find((c) => c.id === reservation.customerId)?.phone ?? null
+                  }
+                  customerName={getCustomerName(reservation.customerId, customers || [])}
+                  customerLanguage={
+                    customers.find((c) => c.id === reservation.customerId)?.language ?? null
+                  }
+                  tourDate={reservation.tourDate ?? null}
+                  productName={getProductName(reservation.productId, products as any || [])}
+                  channelRN={reservation.channelRN ?? null}
+                  {...(onCancelFollowUpManualChange !== undefined
+                    ? { onCancelFollowUpManualChange }
+                    : {})}
+                  onReasonSaved={() => setCancelReasonFetchIx((x) => x + 1)}
+                />
+              ) : (
+                <ReservationFollowUpPipelineIcons
+                  snapshot={followUpPipelineSnapshot}
+                  disabled={followUpPipelineIconsDisabled}
+                  alwaysShowResidentStep
+                  onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+                  showTourChatRoomPreviewButton
+                  onTourChatRoomPreviewClick={() => setTourChatRoomPreviewOpen(true)}
+                  {...(onFollowUpPipelineManualChange
+                    ? {
+                        allowManualCompletion: true as const,
+                        onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
+                          onFollowUpPipelineManualChange(reservation.id, step, action),
+                      }
+                    : {})}
+                />
               )}
             </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEditClick(reservation.id)
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
-              title={t('card.editReservationTitle')}
-            >
-              <Edit className="h-4 w-4" />
-            </button>
+            <div className="relative shrink-0" ref={simpleMoreMenuRef}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSimpleMoreMenuOpen((open) => !open)
+                }}
+                className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                title={t('card.simpleActionsToggle')}
+                aria-label={t('card.simpleActionsToggle')}
+                aria-expanded={simpleMoreMenuOpen}
+                aria-haspopup="menu"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+              <div
+                role="menu"
+                hidden={!simpleMoreMenuOpen}
+                className={`absolute right-0 bottom-full z-50 mb-1 w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg ${
+                  simpleMoreMenuOpen ? '' : 'invisible pointer-events-none'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                  {(() => {
+                    const closeMenu = () => setSimpleMoreMenuOpen(false)
+                    const menuBtnClass =
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50'
+                    const product = products?.find((p) => p.id === reservation.productId)
+                    const isManiaTour =
+                      product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
+                    const showCreateTour = Boolean(isManiaTour && !reservation.hasExistingTour)
+                    return (
+                      <>
+                        {onCommunicationChannelChange ? (
+                          <ReservationCardSimpleSmsButton
+                            variant="menuItem"
+                            reservationId={reservation.id}
+                            customer={customers.find((c) => c.id === reservation.customerId)}
+                            sentBy={sentBy}
+                            uiLocale={locale === 'en' ? 'en' : 'ko'}
+                            onSendSuccess={() => onPreTourSmsSendSuccess?.(reservation.id)}
+                            onBeforeOpen={closeMenu}
+                          />
+                        ) : null}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onPricingInfoClick(reservation)
+                          }}
+                        >
+                          <Receipt className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          {t('actions.price')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            setPickupSummaryModalOpen(true)
+                          }}
+                        >
+                          <Hotel className="h-3.5 w-3.5 shrink-0 text-teal-700" />
+                          {t('card.pickupHotelIconTitle')}
+                        </button>
+                        {showCreateTour ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={menuBtnClass}
+                            onClick={() => {
+                              closeMenu()
+                              onCreateTour(reservation)
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                            {t('card.createTourTitle')}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onPaymentClick(reservation)
+                          }}
+                        >
+                          <DollarSign className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          {t('card.paymentHistoryTitle')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onDetailClick(reservation)
+                          }}
+                        >
+                          <Eye className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+                          {t('card.viewCustomerTitle')}
+                        </button>
+                        {onReceiptClick ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={menuBtnClass}
+                            onClick={() => {
+                              closeMenu()
+                              onReceiptClick(reservation)
+                            }}
+                          >
+                            <Printer className="h-3.5 w-3.5 shrink-0 text-slate-600" />
+                            {t('print')}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            setFollowUpModalOpen(true)
+                          }}
+                        >
+                          <FileText className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                          Follow up
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onReviewClick(reservation)
+                          }}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-pink-600" />
+                          {t('card.reviewManagementTitle')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onEditClick(reservation.id)
+                          }}
+                        >
+                          <Edit className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+                          {t('card.editReservationTitle')}
+                        </button>
+                      </>
+                    )
+                  })()}
+              </div>
+            </div>
           </div>
-          )}
 
           {statusModalOpen && onStatusChange && (
             <div
@@ -940,15 +923,18 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 <div className="max-h-[60vh] space-y-1 overflow-y-auto p-2">
                   {statusOptions.map((opt) => {
                     const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
+                    const label = t(opt.labelKey)
                     return (
                       <button
                         key={opt.value}
                         type="button"
                         disabled={statusUpdating}
                         onClick={() => handleStatusSelect(opt.value)}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-gray-50 disabled:opacity-50 ${getStatusColor(opt.value)} ${isCurrent ? 'ring-2 ring-blue-300' : ''}`}
+                        title={label}
+                        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-gray-50 disabled:opacity-50 ${getStatusColor(opt.value)} ${isCurrent ? 'ring-2 ring-blue-300' : ''}`}
                       >
-                        {t(opt.labelKey)}
+                        {reservationStatusIcon(opt.value, 'h-4 w-4')}
+                        <span>{label}</span>
                       </button>
                     )
                   })}
@@ -1054,28 +1040,37 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 type="button"
                 onClick={() => setStatusDropdownOpen((v) => !v)}
                 disabled={statusUpdating}
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
+                title={getStatusLabel(reservation.status, t)}
+                aria-label={getStatusLabel(reservation.status, t)}
+                className={`inline-flex h-8 items-center gap-0.5 rounded-full px-1.5 cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
               >
-                {getStatusLabel(reservation.status, t)}
-                <ChevronDown className={`w-3 h-3 ml-0.5 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+                {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
+                <ChevronDown className={`w-3 h-3 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
             ) : (
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-                {getStatusLabel(reservation.status, t)}
+              <span
+                title={getStatusLabel(reservation.status, t)}
+                aria-label={getStatusLabel(reservation.status, t)}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${getStatusColor(reservation.status)}`}
+              >
+                {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
               </span>
             )}
             {onStatusChange && statusDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1 z-20 py-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[7rem]">
+              <div className="absolute left-0 top-full mt-1 z-20 py-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[8.5rem]">
                 {statusOptions.map((opt) => {
                   const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
+                  const label = t(opt.labelKey)
                   return (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => handleStatusSelect(opt.value)}
-                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 ${getStatusColor(opt.value)} ${isCurrent ? 'font-semibold' : ''}`}
+                      title={label}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-100 ${getStatusColor(opt.value)} ${isCurrent ? 'font-semibold' : ''}`}
                     >
-                      {t(opt.labelKey)}
+                      {reservationStatusIcon(opt.value, 'h-3.5 w-3.5')}
+                      <span>{label}</span>
                     </button>
                   )
                 })}

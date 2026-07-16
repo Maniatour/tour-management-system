@@ -64,7 +64,14 @@ export function CustomerCommunicationChannelPicker({
   }
 
   return (
-    <div className="relative shrink-0" ref={rootRef}>
+    <div
+      className={
+        compact
+          ? 'relative inline-flex h-4 w-4 shrink-0 items-center justify-center'
+          : 'relative inline-flex shrink-0 items-center justify-center'
+      }
+      ref={rootRef}
+    >
       <button
         type="button"
         disabled={disabled || saving}
@@ -74,15 +81,23 @@ export function CustomerCommunicationChannelPicker({
         }}
         className={
           compact
-            ? 'inline-flex h-4 w-4 items-center justify-center rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50'
-            : 'inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50'
+            ? 'inline-flex h-4 w-4 items-center justify-center rounded p-0 leading-none hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50'
+            : 'inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white p-0 leading-none hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50'
         }
         title={t(communicationChannelLabelKey(current))}
         aria-label={t('communicationChannel.pickerAria', { channel: t(communicationChannelLabelKey(current)) })}
         aria-expanded={open}
         aria-haspopup="listbox"
       >
-        {renderCustomerCommunicationChannelIcon(current, compact ? 'h-3 w-3' : 'h-4 w-4')}
+        <span
+          className={
+            compact
+              ? 'inline-flex h-4 w-4 items-center justify-center leading-none'
+              : 'inline-flex h-4 w-4 items-center justify-center leading-none'
+          }
+        >
+          {renderCustomerCommunicationChannelIcon(current, 'h-4 w-4')}
+        </span>
       </button>
       {open ? (
         <div

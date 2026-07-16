@@ -1079,9 +1079,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           sidebarCollapsed ? 'lg:pl-16 admin-main-shell--collapsed' : 'lg:pl-64'
         }`}
       >
-        {/* 페이지 콘텐츠 */}
+        {/* 페이지 콘텐츠 — 예약 관리는 좌우 패딩을 줄여 카드 열을 더 확보 */}
         <main className="main-safe-area min-w-0 max-w-full overflow-x-clip pt-2 sm:pt-4 lg:pt-6">
-          <div className="mx-auto w-full min-w-0 max-w-full px-2 sm:px-4">
+          <div
+            className={`mx-auto w-full min-w-0 max-w-full ${
+              pathname.includes('/admin/reservations')
+                ? 'px-0'
+                : 'px-2 sm:px-4'
+            }`}
+          >
             {children}
           </div>
         </main>

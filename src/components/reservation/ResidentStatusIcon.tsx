@@ -13,6 +13,8 @@ interface ResidentStatusIconProps {
   onUpdate?: () => void
   /** 목록 배치 프리패치로 전달 시 해당 예약에 대한 단건 GET 생략 */
   prefetchedResidentCustomerRows?: { resident_status: string | null }[]
+  /** 간단 카드 등: 좌측 여백 없이 아이콘만 (h-4) */
+  compact?: boolean
 }
 
 function mostCommonResidentStatusFromRows(
@@ -46,6 +48,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
   totalPeople,
   onUpdate,
   prefetchedResidentCustomerRows,
+  compact = false,
 }) => {
   const t = useTranslations('common')
   const locale = useLocale()
@@ -252,23 +255,24 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
   }, [reservationId, prefetchedResidentCustomerRows, fetchResidentStatus])
 
   const getStatusIcon = () => {
+    const iconCls = 'block h-4 w-4 shrink-0 cursor-pointer transition-transform hover:scale-110'
     if (residentStatus === 'us_resident') {
-      return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
+      return <Home className={`${iconCls} text-green-600`} />
     } else if (residentStatus === 'non_resident') {
-      return <Plane className="h-4 w-4 text-primary cursor-pointer hover:scale-110 transition-transform" />
+      return <Plane className={`${iconCls} text-primary`} />
     } else if (residentStatus === 'non_resident_with_pass') {
-      return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
+      return <PlaneTakeoff className={`${iconCls} text-purple-600`} />
     } else if (residentStatus === 'non_resident_under_16') {
-      return <Plane className="h-4 w-4 text-orange-600 cursor-pointer hover:scale-110 transition-transform" />
+      return <Plane className={`${iconCls} text-orange-600`} />
     } else {
-      return <HelpCircle className="h-4 w-4 text-gray-400 cursor-pointer hover:scale-110 transition-transform" />
+      return <HelpCircle className={`${iconCls} text-gray-400`} />
     }
   }
 
   return (
     <>
       <span 
-        className="ml-2 flex-shrink-0"
+        className={compact ? 'inline-flex h-4 w-4 shrink-0 items-center justify-center' : 'ml-2 flex-shrink-0'}
         onClick={(e) => {
           e.stopPropagation()
           handleOpenModal()

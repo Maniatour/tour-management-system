@@ -312,9 +312,9 @@ export default function PickupHotelCard({
                   showLabels={false}
                   variant="overlay"
                   disabled={vehicleSaving}
-                  onToggleClass={
-                    onToggleVehicleAccess ? handleToggleVehicleClass : undefined
-                  }
+                  {...(onToggleVehicleAccess
+                    ? { onToggleClass: handleToggleVehicleClass }
+                    : {})}
                 />
               </div>
 

@@ -12,15 +12,21 @@ type Props = {
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
   onSendSuccess?: () => void
+  /** icon: 상단 컴팩트 버튼 / menuItem: 더보기 메뉴 행 */
+  variant?: 'icon' | 'menuItem'
+  /** 메뉴에서 열기 직전(부모 더보기 닫기 등) */
+  onBeforeOpen?: () => void
 }
 
-/** 간단 카드: 소통 채널 아이콘(h-4)과 같은 크기의 사전연락 SMS 버튼 */
+/** 간단 카드: 투어 사전연락 SMS */
 export function ReservationCardSimpleSmsButton({
   reservationId,
   customer,
   sentBy,
   uiLocale = 'ko',
   onSendSuccess,
+  variant = 'icon',
+  onBeforeOpen,
 }: Props) {
   const t = useTranslations('reservations.card')
   const [open, setOpen] = useState(false)
@@ -29,6 +35,7 @@ export function ReservationCardSimpleSmsButton({
   const openModal = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
+      onBeforeOpen?.()
       if (!customer) {
         alert(uiLocale === 'en' ? 'Customer not found.' : '고객 정보를 찾을 수 없습니다.')
         return
@@ -40,32 +47,55 @@ export function ReservationCardSimpleSmsButton({
       }
       setOpen(true)
     },
-    [customer, uiLocale]
+    [customer, uiLocale, onBeforeOpen]
   )
+
+  const handleClick = (e: React.MouseEvent) => {
+    setBusy(true)
+    try {
+      openModal(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label = t('preTourSmsButtonTitle')
 
   return (
     <>
-      <button
-        type="button"
-        disabled={busy || open}
-        onClick={(e) => {
-          setBusy(true)
-          try {
-            openModal(e)
-          } finally {
-            setBusy(false)
-          }
-        }}
-        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
-        title={t('preTourSmsButtonTitle')}
-        aria-label={t('preTourSmsButtonTitle')}
-      >
-        {busy ? (
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-        ) : (
-          <Smartphone className="h-3 w-3" aria-hidden />
-        )}
-      </button>
+      {variant === 'menuItem' ? (
+        <button
+          type="button"
+          role="menuitem"
+          disabled={busy || open}
+          onClick={handleClick}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title={label}
+          aria-label={label}
+        >
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-700" aria-hidden />
+          ) : (
+            <Smartphone className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+          )}
+          {label}
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || open}
+          onClick={handleClick}
+          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title={label}
+          aria-label={label}
+        >
+          {busy ? (
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          ) : (
+            <Smartphone className="h-3 w-3" aria-hidden />
+          )}
+        </button>
+      )}
 
       {open && customer ? (
         <PreTourContactSmsPreviewModal
