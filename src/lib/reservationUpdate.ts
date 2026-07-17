@@ -109,6 +109,24 @@ export interface UpdateReservationResult {
   error?: string
 }
 
+/** ReservationForm onSubmit payload → `updateReservation` 인자 (가격·환불 포함) */
+export function toReservationUpdatePayload(
+  payload: Omit<Reservation, 'id'> & Partial<ReservationUpdatePayload>
+): ReservationUpdatePayload {
+  return {
+    ...payload,
+    pricingInfo: payload.pricingInfo,
+    customerLanguage: payload.customerLanguage,
+    variantKey: payload.variantKey,
+    selectedChoices: Array.isArray(payload.selectedChoices) ? payload.selectedChoices : undefined,
+    usResidentCount: payload.usResidentCount,
+    nonResidentCount: payload.nonResidentCount,
+    nonResidentWithPassCount: payload.nonResidentWithPassCount,
+    nonResidentUnder16Count: payload.nonResidentUnder16Count,
+    passCoveredCount: payload.passCoveredCount,
+  }
+}
+
 /**
  * 단일 예약 수정: reservations, choices, reservation_customers, customer language, reservation_pricing, 투어 자동 생성
  */

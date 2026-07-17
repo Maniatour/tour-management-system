@@ -856,6 +856,8 @@ export default function AdminCustomers() {
             coupon_discount: pricingInfo.couponDiscount || 0,
             additional_discount: pricingInfo.additionalDiscount || 0,
             additional_cost: pricingInfo.additionalCost || 0,
+            refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
+            refund_amount: Number(pricingInfo.refundAmount) || 0,
             card_fee: pricingInfo.cardFee || 0,
             tax: pricingInfo.tax || 0,
             prepayment_cost: pricingInfo.prepaymentCost || 0,

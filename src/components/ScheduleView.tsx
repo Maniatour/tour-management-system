@@ -6,6 +6,8 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
+import type { Reservation } from '@/types/reservation'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -10488,47 +10490,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             onSubmit={async (reservationData: Record<string, unknown>) => {
               const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
               try {
-                const dbReservationData = {
-                  customer_id: reservationData.customerId,
-                  product_id: reservationData.productId,
-                  tour_date: reservationData.tourDate,
-                  tour_time: reservationData.tourTime || null,
-                  event_note: reservationData.eventNote,
-                  pickup_hotel: reservationData.pickUpHotel,
-                  pickup_time: reservationData.pickUpTime || null,
-                  adults: reservationData.adults,
-                  child: reservationData.child,
-                  infant: reservationData.infant,
-                  total_people: reservationData.totalPeople,
-                  channel_id: reservationData.channelId,
-                  channel_rn: reservationData.channelRN,
-                  added_by: reservationData.addedBy,
-                  tour_id: reservationData.tourId || (scheduleEditingReservation as { tourId?: string }).tourId || null,
-                  status: reservationData.status,
-                  selected_options: reservationData.selectedOptions,
-                  selected_option_prices: reservationData.selectedOptionPrices,
-                  is_private_tour: reservationData.isPrivateTour || false
-                }
-                const { error } = await (supabase as any).from('reservations').update(dbReservationData).eq('id', editingId)
-                if (error) {
-                  showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
+                const fullPayload = toReservationUpdatePayload(reservationData as Omit<Reservation, 'id'>)
+                const result = await updateReservation(editingId, fullPayload)
+                if (!result.success) {
+                  showMessage(
+                    locale === 'ko' ? '오류' : 'Error',
+                    result.error ?? (locale === 'ko' ? '예약 수정 실패' : 'Update failed'),
+                    'error'
+                  )
                   return
-                }
-                const choicesObj = reservationData.choices as { required?: unknown[] } | undefined
-                if (choicesObj?.required && Array.isArray(choicesObj.required)) {
-                  await supabase.from('reservation_choices').delete().eq('reservation_id', editingId)
-                  const validChoices = (choicesObj.required as Record<string, unknown>[])
-                    .filter((c) => c.option_id)
-                    .map((c) => ({
-                      reservation_id: editingId,
-                      choice_id: c.choice_id,
-                      option_id: c.option_id,
-                      quantity: (c.quantity as number) || 1,
-                      total_price: (c.total_price as number) || 0
-                    }))
-                  if (validChoices.length > 0) {
-                    await (supabase as any).from('reservation_choices').insert(validChoices)
-                  }
                 }
                 handleCloseScheduleReservationEdit()
                 await fetchData()

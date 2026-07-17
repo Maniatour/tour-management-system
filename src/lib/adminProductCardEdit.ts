@@ -10,6 +10,7 @@ export type AdminProductCardEditSection =
   | 'tour-details'
   | 'pricing'
   | 'media'
+  | 'tags'
 
 export type AdminProductCardEditProduct = ProductRow & {
   primary_image?: string | null

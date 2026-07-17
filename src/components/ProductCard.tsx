@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
-import { Copy, Star } from 'lucide-react'
+import { Copy, Star, Tags } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import ProductsGygCard from '@/components/products/ProductsGygCard'
@@ -88,6 +88,9 @@ export default function ProductCard({
   const handleProductSaved = (productId: string, updates: Partial<Product>) => {
     if ('primary_image' in updates) {
       setImageError(false)
+    }
+    if (Array.isArray(updates.tags)) {
+      setLocalTags(updates.tags)
     }
     setLocalProduct((prev) => ({ ...prev, ...updates }))
     onProductUpdated?.(productId, updates)
@@ -282,6 +285,20 @@ export default function ProductCard({
       onKeyDown={(e) => e.stopPropagation()}
       role="presentation"
     >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          openEditSection('tags')
+        }}
+        className="rounded p-1 text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800"
+        title={tCardEdit('editTags')}
+        aria-label={tCardEdit('editTags')}
+      >
+        <Tags className="h-4 w-4" />
+      </button>
+
       <button
         type="button"
         onClick={handleFavoriteToggle}

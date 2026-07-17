@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { ReservationStatusIcon } from '@/components/reservation/ReservationStatusIcon'
 import { getStatusLabel } from '@/utils/reservationUtils'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -2628,50 +2629,11 @@ export default function ReservationExpenseManager({
             useServerCustomerInsert
             onSubmit={async (reservationData: any) => {
               try {
-                const dbReservationData = {
-                  customer_id: reservationData.customerId,
-                  product_id: reservationData.productId,
-                  tour_date: reservationData.tourDate,
-                  tour_time: reservationData.tourTime || null,
-                  event_note: reservationData.eventNote,
-                  pickup_hotel: reservationData.pickUpHotel,
-                  pickup_time: reservationData.pickUpTime || null,
-                  adults: reservationData.adults,
-                  child: reservationData.child,
-                  infant: reservationData.infant,
-                  total_people: reservationData.totalPeople,
-                  channel_id: reservationData.channelId,
-                  channel_rn: reservationData.channelRN,
-                  added_by: reservationData.addedBy,
-                  tour_id: reservationData.tourId || editingReservation.tourId || null,
-                  status: reservationData.status,
-                  selected_options: reservationData.selectedOptions,
-                  selected_option_prices: reservationData.selectedOptionPrices,
-                  is_private_tour: reservationData.isPrivateTour || false,
-                  choices: reservationData.choices,
-                }
-                const { error } = await supabase
-                  .from('reservations')
-                  .update(dbReservationData)
-                  .eq('id', editingReservation.id)
-                if (error) {
-                  alert(`${tRes('messages.reservationUpdateError')} ${error.message}`)
+                const fullPayload = toReservationUpdatePayload(reservationData)
+                const result = await updateReservation(editingReservation.id, fullPayload)
+                if (!result.success) {
+                  alert(`${tRes('messages.reservationUpdateError')} ${result.error ?? ''}`)
                   return
-                }
-                if (reservationData.choices?.required && Array.isArray(reservationData.choices.required)) {
-                  await supabase.from('reservation_choices').delete().eq('reservation_id', editingReservation.id)
-                  const validChoices = reservationData.choices.required
-                    .filter((c: any) => c.option_id)
-                    .map((c: any) => ({
-                      reservation_id: editingReservation.id,
-                      choice_id: c.choice_id,
-                      option_id: c.option_id,
-                      quantity: c.quantity || 1,
-                      total_price: c.total_price || 0,
-                    }))
-                  if (validChoices.length > 0) {
-                    await (supabase as any).from('reservation_choices').insert(validChoices)
-                  }
                 }
                 handleCloseReservationEditModal()
                 void loadExpenses()

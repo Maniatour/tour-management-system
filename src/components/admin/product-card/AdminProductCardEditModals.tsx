@@ -5,6 +5,10 @@ import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ProductMediaTab from '@/components/product/ProductMediaTab'
+import ProductTagsBilingualEditor, {
+  saveProductTagsWithTranslations,
+  type TagTranslationState,
+} from '@/components/product/ProductTagsBilingualEditor'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -78,6 +82,8 @@ export default function AdminProductCardEditModals({
   const [basicForm, setBasicForm] = useState(() => productToBasicForm(editProduct))
   const [tourForm, setTourForm] = useState(() => productToTourDetailsForm(editProduct))
   const [pricingForm, setPricingForm] = useState(() => productToPricingForm(editProduct))
+  const [tagKeys, setTagKeys] = useState<string[]>(() => product.tags ?? [])
+  const [tagTranslations, setTagTranslations] = useState<TagTranslationState>({})
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [editLocale, setEditLocale] = useState<AdminEditLocale>('ko')
 
@@ -92,6 +98,8 @@ export default function AdminProductCardEditModals({
     setBasicForm(productToBasicForm(current))
     setTourForm(productToTourDetailsForm(current))
     setPricingForm(productToPricingForm(current))
+    setTagKeys(product.tags ?? [])
+    setTagTranslations({})
     setNewDepartureTime('')
   }, [section, product])
 
@@ -125,6 +133,8 @@ export default function AdminProductCardEditModals({
         return t('pricingTitle')
       case 'media':
         return t('mediaTitle')
+      case 'tags':
+        return t('tagsTitle')
       default:
         return ''
     }
@@ -185,6 +195,13 @@ export default function AdminProductCardEditModals({
           infant_base_price: Number(pricingForm.infantBasePrice) || 0,
           homepage_pricing_type: pricingForm.homepagePricingType,
         }
+      }
+
+      if (section === 'tags') {
+        await saveProductTagsWithTranslations(product.id, tagKeys, tagTranslations)
+        onSaved(product.id, { tags: tagKeys } as Partial<Product>)
+        onClose()
+        return
       }
 
       const { error: updateError } = await supabase
@@ -587,6 +604,17 @@ export default function AdminProductCardEditModals({
               isNewProduct={false}
               formData={{}}
               setFormData={() => {}}
+            />
+          </div>
+        ) : null}
+
+        {section === 'tags' ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t('tagsHint')}</p>
+            <ProductTagsBilingualEditor
+              selectedTags={tagKeys}
+              onTagsChange={setTagKeys}
+              onTranslationsChange={setTagTranslations}
             />
           </div>
         ) : null}

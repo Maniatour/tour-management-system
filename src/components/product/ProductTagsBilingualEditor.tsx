@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 import TagSelector from '@/components/admin/TagSelector'
 import { supabase } from '@/lib/supabase'
 
-type TagTranslationState = Record<string, { ko: string; en: string; tagId?: string }>
+export type TagTranslationState = Record<string, { ko: string; en: string; tagId?: string }>
 
 type ProductTagsBilingualEditorProps = {
   selectedTags: string[]

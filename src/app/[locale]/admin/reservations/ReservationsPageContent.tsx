@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId } from '@/lib/entityIds'
-import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
+import { toReservationUpdatePayload, updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import { computeCustomerPaymentTotalLineFormula } from '@/utils/reservationPricingBalance'
@@ -3521,6 +3521,8 @@ export default function AdminReservations() {
             coupon_discount: pricingInfo.couponDiscount || 0,
             additional_discount: pricingInfo.additionalDiscount || 0,
             additional_cost: pricingInfo.additionalCost || 0,
+            refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
+            refund_amount: Number(pricingInfo.refundAmount) || 0,
             card_fee: pricingInfo.cardFee || 0,
             tax: pricingInfo.tax || 0,
             prepayment_cost: pricingInfo.prepaymentCost || 0,
@@ -3628,19 +3630,7 @@ export default function AdminReservations() {
   const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     if (!editingReservation) return
     try {
-      const fullPayload = {
-        ...reservation,
-        pricingInfo: (reservation as ReservationUpdatePayload).pricingInfo,
-        customerLanguage: (reservation as ReservationUpdatePayload).customerLanguage,
-        variantKey: (reservation as ReservationUpdatePayload).variantKey,
-        selectedChoices: Array.isArray((reservation as ReservationUpdatePayload).selectedChoices)
-          ? (reservation as ReservationUpdatePayload).selectedChoices
-          : undefined,
-        usResidentCount: (reservation as ReservationUpdatePayload).usResidentCount,
-        nonResidentCount: (reservation as ReservationUpdatePayload).nonResidentCount,
-        nonResidentWithPassCount: (reservation as ReservationUpdatePayload).nonResidentWithPassCount,
-        nonResidentUnder16Count: (reservation as ReservationUpdatePayload).nonResidentUnder16Count,
-      } as ReservationUpdatePayload
+      const fullPayload = toReservationUpdatePayload(reservation as ReservationUpdatePayload)
       const result = await updateReservation(editingReservation.id, fullPayload)
       if (!result.success) {
         alert(t('messages.reservationUpdateError') + (result.error ?? ''))
