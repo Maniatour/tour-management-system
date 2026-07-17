@@ -257,7 +257,7 @@ function CustomerPageEditWorkbenchInner({
         let query = supabase
           .from('products')
           .select('id, name, customer_name_ko, customer_name_en, status')
-          .in('status', ['active', 'draft'])
+          .in('status', ['active', 'draft', 'inactive'])
           .order('name', { ascending: true })
           .limit(trimmed ? 60 : 300)
 

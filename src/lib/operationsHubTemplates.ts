@@ -10,6 +10,7 @@ import {
 } from '@/types/sopStructure'
 import type { Json } from '@/lib/database.types'
 import { reservationAdminManualDocument } from '@/lib/reservationAdminManualDocument'
+import { productsHomeSectionsManualDocument } from '@/lib/productsHomeSectionsManualDocument'
 
 type ArticleSeed = {
   slug: string
@@ -682,6 +683,19 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
       ['op', 'office manager', 'office'],
       0,
       reservationAdminManualDocument
+    ),
+
+    seed(
+      'system-admin-products-home-sections',
+      '관리자 — 홈 Destinations·Adventure 상품 노출',
+      'Admin — home Destinations & Adventure visibility',
+      'Explore Top Destinations / Choose Your Adventure에 상품이 보이게 태그 설정',
+      'Tag products so they appear under Explore Top Destinations / Choose Your Adventure',
+      'system',
+      'system_guide',
+      ['op', 'office manager', 'office'],
+      5,
+      productsHomeSectionsManualDocument
     ),
 
     seed(

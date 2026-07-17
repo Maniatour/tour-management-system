@@ -149,7 +149,7 @@ function DetailWireframe({ target }: { target: CustomerPreviewTarget }) {
           <ZoneBlock active={isActive(target, 'detail-sidebar-price')} label="가격" className="h-10 text-xs px-2 flex items-center justify-center font-bold text-primary">
             $ 총액
           </ZoneBlock>
-          <ZoneBlock active={isActive(target, 'detail-sidebar-options')} label="옵션 선택" className="h-16 text-[10px] px-2 flex items-center text-gray-500">
+          <ZoneBlock active={isActive(target, 'detail-sidebar-options')} label="상품 초이스" className="h-16 text-[10px] px-2 flex items-center text-gray-500">
             초이스 / 옵션
           </ZoneBlock>
           <ZoneBlock active={isActive(target, 'detail-sidebar-included')} label="포함·불포함" className="h-12 text-[10px] px-2 flex items-center text-gray-500">

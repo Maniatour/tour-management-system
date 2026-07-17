@@ -10,9 +10,16 @@ import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
 import AdminProductCardPreviewLocaleToggle from '@/components/admin/AdminProductCardPreviewLocaleToggle'
+import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { AdminProductCardPreviewLocale } from '@/lib/adminProductCardPreviewLabels'
 import { buildAdminProductCustomerEditPath } from '@/lib/adminProductCustomerEdit'
+import {
+  PRODUCTS_HOME_SECTIONS_MANUAL_SLUG,
+  productsHomeSectionsManualDocument,
+  productsHomeSectionsManualTitles,
+} from '@/lib/productsHomeSectionsManualDocument'
+import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -343,7 +350,8 @@ export default function AdminProducts() {
         })
       )
       
-      setProducts(productsWithImages)
+      const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
+      setProducts(productsWithChoicePrices as Product[])
       
       // 초이스 가격 정보 가져오기
       if (data && data.length > 0) {
@@ -866,6 +874,12 @@ export default function AdminProducts() {
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('pageTitle')}</h1>
+            <AdminPageHubManualButton
+              slug={PRODUCTS_HOME_SECTIONS_MANUAL_SLUG}
+              fallbackDoc={productsHomeSectionsManualDocument}
+              fallbackTitle={productsHomeSectionsManualTitles}
+              storageKey="products-home-sections-manual-modal-rect-v1"
+            />
             <AdminProductCardPreviewLocaleToggle
               value={cardPreviewLocale}
               onChange={setCardPreviewLocale}
@@ -875,6 +889,7 @@ export default function AdminProducts() {
             />
           </div>
           <p className="mt-1 text-sm text-gray-600">{t('pageDescription')}</p>
+          <p className="mt-1 text-xs text-indigo-700">{t('homeSectionsManualHint')}</p>
           {viewMode === 'card' ? (
             <p className="mt-1 text-xs text-muted-foreground">
               {cardPreviewLocale === 'ko' ? t('cardPreviewLocaleKoHint') : t('cardPreviewLocaleEnHint')}

@@ -38,6 +38,8 @@ export type Product = {
   use_common_details: boolean
   choices: Record<string, unknown> | null
   tour_departure_times: Record<string, unknown> | null
+  /** 고객 상세 페이지 상품 초이스 표시 방식: list(리스트) | card(사진 카드뷰) */
+  choices_display_mode?: string | null
 }
 
 /** product_details_multilingual row (상품 상세 페이지용) */

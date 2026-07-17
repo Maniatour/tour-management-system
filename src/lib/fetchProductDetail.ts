@@ -28,10 +28,16 @@ const emptyProductPageData = (): ProductPageData => ({
   error: null,
 })
 
+export type FetchProductPageDataOptions = {
+  /** preview=1 등 관리자 미리보기 — inactive/draft도 로드 */
+  includeNonActive?: boolean
+}
+
 export async function fetchProductPageData(
   productId: string,
   locale: string,
-  isEnglish: boolean
+  isEnglish: boolean,
+  options?: FetchProductPageDataOptions
 ): Promise<ProductPageData> {
   const empty = emptyProductPageData()
   let product: Product | null = null
@@ -44,18 +50,22 @@ export async function fetchProductPageData(
 
   try {
     // 1. 기본 제품 정보 가져오기
-    const { data: productData, error: productError } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', productId)
-      .eq('status', 'active')
-      .single()
-    
+    // 공개 페이지는 active만, 미리보기는 상태 무관. maybeSingle로 0건 시 406(PGRST116) 방지.
+    let productQuery = supabase.from('products').select('*').eq('id', productId)
+    if (!options?.includeNonActive) {
+      productQuery = productQuery.eq('status', 'active')
+    }
+    const { data: productData, error: productError } = await productQuery.maybeSingle()
+
     if (productError) {
       console.error('Error fetching product:', productError)
       return { ...empty, error: isEnglish ? 'Product not found.' : '상품을 찾을 수 없습니다.' }
     }
-    
+
+    if (!productData) {
+      return { ...empty, error: isEnglish ? 'Product not found.' : '상품을 찾을 수 없습니다.' }
+    }
+
     product = productData as unknown as Product
     
     // 2. 다국어 상세 정보 가져오기

@@ -244,7 +244,11 @@ export default function AdminProductCardEditModals({
 
   return (
     <Dialog open={section != null} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className={dialogSize}>
+      <DialogContent
+        className={dialogSize}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <DialogTitle className="pr-2">{title}</DialogTitle>

@@ -21,6 +21,8 @@ type ProductDetailAirbnbBookingCardProps = {
   }
   customerTourName?: string
   basePrice: number | null
+  /** 날짜 미선택 시 상단 표시가 — 기본가 0이면 초이스 최저가 */
+  displayBasePrice?: number
   totalPrice: number
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
@@ -42,6 +44,7 @@ export default function ProductDetailAirbnbBookingCard({
   product = {},
   customerTourName = '',
   basePrice,
+  displayBasePrice,
   totalPrice,
   groupedChoices,
   selectedOptions,
@@ -59,12 +62,13 @@ export default function ProductDetailAirbnbBookingCard({
   const t = useTranslations('productDetail')
   const hasSelectedDate = Boolean(selectedDate)
   const showPromoSection = hasSelectedDate || forceShowPromo
+  const headlinePrice = displayBasePrice ?? basePrice ?? 0
 
   return (
     <div className="airbnb-detail-booking-card">
       {!hasSelectedDate ? (
         <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-[#1a2b49]">${basePrice ?? 0}</span>
+          <span className="text-3xl font-semibold text-[#1a2b49]">${headlinePrice}</span>
           <span className="text-sm text-[#6b7280]">{t('basePrice')}</span>
         </div>
       ) : null}

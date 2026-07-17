@@ -34,23 +34,53 @@ export function getProductCustomerDisplayName(product: Product, locale: string):
   return product.customer_name_ko || product.name_ko || product.name
 }
 
-/** 목록·홈 카드 가격 — adult_base_price 우선, 없으면 base_price */
-export function resolveProductListingPrice(product: Record<string, unknown>): number | null {
-  const parse = (value: unknown): number | null => {
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = Number(value)
-      return Number.isFinite(parsed) ? parsed : null
-    }
-    return null
+export function parseProductPriceValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
   }
+  return null
+}
 
-  const adult = parse(product.adult_base_price)
-  const base = parse(product.base_price)
+/** 기본 가격이 없거나 0인지 (빈 문자열·null·undefined·0) */
+export function isEmptyProductBasePrice(value: unknown): boolean {
+  if (value == null) return true
+  if (typeof value === 'string' && !value.trim()) return true
+  const parsed = parseProductPriceValue(value)
+  return parsed == null || parsed <= 0
+}
+
+/**
+ * 목록·홈 카드 가격 — adult_base_price 우선, 없으면 base_price.
+ * 둘 다 0/없으면 lowest_choice_price(초이스 최저가)로 폴백.
+ */
+export function resolveProductListingPrice(product: Record<string, unknown>): number | null {
+  const adult = parseProductPriceValue(product.adult_base_price)
+  const base = parseProductPriceValue(product.base_price)
+  const lowestChoice = parseProductPriceValue(product.lowest_choice_price)
 
   if (adult != null && adult > 0) return adult
   if (base != null && base > 0) return base
-  return adult ?? base
+  if (lowestChoice != null && lowestChoice > 0) return lowestChoice
+  return adult ?? base ?? lowestChoice
+}
+
+/**
+ * 상세 예약 패널 등 — 기본가가 0/빈칸이면 초이스 최저가를 표시용으로 사용.
+ * 예약 합계 계산용 basePrice는 바꾸지 말 것.
+ */
+export function resolveDisplayBasePrice(
+  basePrice: number | null | undefined,
+  lowestChoicePrice: number | null | undefined
+): number {
+  if (!isEmptyProductBasePrice(basePrice)) {
+    return parseProductPriceValue(basePrice) ?? 0
+  }
+  if (lowestChoicePrice != null && Number.isFinite(lowestChoicePrice) && lowestChoicePrice > 0) {
+    return lowestChoicePrice
+  }
+  return parseProductPriceValue(basePrice) ?? 0
 }
 
 export type ProductSummarySource = {

@@ -16,6 +16,10 @@ export type ProductDetailChoiceGroup = {
     option_name_ko: string | null
     option_price: number | null
     is_default: boolean | null
+    option_image_url?: string | null
+    option_thumbnail_url?: string | null
+    option_description?: string | null
+    option_description_ko?: string | null
   }>
 }
 

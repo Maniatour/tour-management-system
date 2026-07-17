@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { HomeSectionConfig } from '@/lib/customerPageHomeSectionCatalog'
 import { loadCustomerPageHomeContent } from '@/lib/customerPageHomeContentPersistence'
+import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 
 export const HOME_SECTION_PRODUCT_SELECT =
   'id, name, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en, base_price, adult_base_price, category, is_favorite, favorite_order, departure_city, departure_city_ko, departure_city_en, departure_country, departure_country_ko, departure_country_en, duration, max_participants, tags, created_at'
@@ -27,6 +28,7 @@ export type HomeSectionProductRow = {
   duration: string | null
   max_participants: number | null
   primary_image: string | null
+  lowest_choice_price?: number | null
 }
 
 export async function fetchHomeSectionProducts(
@@ -68,7 +70,7 @@ export async function fetchHomeSectionProducts(
     rows = (recent ?? []) as unknown as Omit<HomeSectionProductRow, 'primary_image'>[]
   }
 
-  return rows.map((row) => ({ ...row, primary_image: null }))
+  return withLowestChoicePrices(rows.map((row) => ({ ...row, primary_image: null })))
 }
 
 export async function fetchHomeSectionProductsByIds(
@@ -88,10 +90,12 @@ export async function fetchHomeSectionProductsByIds(
   const rows = (data ?? []) as unknown as Omit<HomeSectionProductRow, 'primary_image'>[]
   const rowMap = new Map(rows.map((row) => [row.id, row]))
 
-  return ids
+  const ordered = ids
     .map((id) => rowMap.get(id))
     .filter((row): row is Omit<HomeSectionProductRow, 'primary_image'> => row != null)
     .map((row) => ({ ...row, primary_image: null }))
+
+  return withLowestChoicePrices(ordered)
 }
 
 export async function fetchHomeSectionProductsForSection(

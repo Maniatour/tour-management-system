@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
 import { getProductSummaryByLocale, formatProductDepartureLine, resolveProductListingPrice } from '@/lib/productDetailDisplay'
+import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 import {
   getPreviewDepartureLine,
   getPreviewListingPrice,
@@ -32,9 +33,11 @@ interface Product {
   duration: string | null
   departure_city: string | null
   base_price: number
+  adult_base_price?: number | null
   max_participants: number | null
   tags: string[] | null
   primary_image?: string | null
+  lowest_choice_price?: number | null
 }
 
 export default function ProductsPage() {
@@ -80,7 +83,6 @@ export default function ProductsPage() {
             .from('products')
             .select('*')
             .eq('id', previewProductId)
-            .eq('status', 'active')
             .maybeSingle()
 
           if (previewError) {
@@ -115,7 +117,8 @@ export default function ProductsPage() {
               })
             )
 
-        setProducts(productsWithImages)
+        const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
+        setProducts(productsWithChoicePrices)
       } catch {
         setError(t('errorLoadingProducts'))
       } finally {

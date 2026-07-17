@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import TagTranslationManager from '@/components/admin/TagTranslationManager'
+import ChoicesDisplayModeSelector from '@/components/product/ChoicesDisplayModeSelector'
 import ChoicesTab from '@/components/product/ChoicesTabNew'
 import ProductOptionsEmbed from '@/components/product/ProductOptionsEmbed'
 import CustomerPageFavoriteOrderPanel from '@/components/product/CustomerPageFavoriteOrderPanel'
@@ -302,6 +303,13 @@ export default function CustomerPageZoneAdminEmbed({
             </button>
           ))}
         </div>
+      )}
+
+      {isBookingOptionsZone && productId && (
+        <ChoicesDisplayModeSelector
+          productId={productId}
+          {...(onSaved ? { onSaved } : {})}
+        />
       )}
 
       {isBookingOptionsZone && (

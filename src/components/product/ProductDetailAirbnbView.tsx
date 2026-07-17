@@ -79,6 +79,10 @@ type ProductDetailAirbnbViewProps = {
   forceShowPromo?: boolean
   bookingPanelProps: {
     basePrice: number | null
+    /** 기본가가 0일 때 초이스 최저가를 반영한 표시용 가격 */
+    displayBasePrice: number
+    /** 상품 초이스 표시 방식: list(리스트) | card(사진 카드뷰) */
+    choicesDisplayMode: 'list' | 'card'
     maxParticipants: number | null
     durationLabel: string
     groupSize: string | null
@@ -230,6 +234,7 @@ export default function ProductDetailAirbnbView({
                     <ProductDetailAirbnbOptionsSection
                       groupedChoices={bookingPanelProps.groupedChoices}
                       selectedOptions={bookingPanelProps.selectedOptions}
+                      displayMode={bookingPanelProps.choicesDisplayMode}
                       onOptionChange={bookingPanelProps.onOptionChange}
                       onCompareOptions={bookingPanelProps.onCompareOptions}
                       onBookNow={bookingPanelProps.onBookNow}
@@ -292,6 +297,7 @@ export default function ProductDetailAirbnbView({
                   product={product}
                   customerTourName={displayName}
                   basePrice={bookingPanelProps.basePrice}
+                  displayBasePrice={bookingPanelProps.displayBasePrice}
                   totalPrice={totalPrice}
                   groupedChoices={bookingPanelProps.groupedChoices}
                   selectedOptions={bookingPanelProps.selectedOptions}

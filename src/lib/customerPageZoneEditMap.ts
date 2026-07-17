@@ -495,7 +495,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     note: '채널·날짜별 가격은 동적 가격 탭에서 설정합니다.',
   },
   'detail-sidebar-options': {
-    label: '옵션 선택',
+    label: '상품 초이스',
     editType: 'admin-tab',
     adminTab: 'choices',
     note: '초이스·옵션 탭에서 예약 선택 UI를 구성합니다.',

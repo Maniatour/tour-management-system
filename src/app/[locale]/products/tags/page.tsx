@@ -13,6 +13,8 @@ import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZon
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import PriceDisplay from '@/components/customer/ui/PriceDisplay'
 import { getTagCategoryIcon } from '@/lib/tagCategoryIcons'
+import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
+import { resolveProductListingPrice } from '@/lib/productDetailDisplay'
 
 interface Product {
   id: string
@@ -44,6 +46,7 @@ interface Product {
   choices: Record<string, unknown> | null
   tour_departure_times: Record<string, unknown> | null
   primary_image?: string | null
+  lowest_choice_price?: number | null
 }
 
 interface TagCategory {
@@ -152,9 +155,11 @@ function ProductTagsPageInner() {
           })
         )
 
+        const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
+
         // 태그별로 상품 분류
         const categorizedTags = tagDefinitions.map(tagDef => {
-          const matchingProducts = productsWithImages.filter(product => {
+          const matchingProducts = productsWithChoicePrices.filter(product => {
             if (!product.tags) return false
             return product.tags.some(tag => 
               tag.toLowerCase().includes(tagDef.id.toLowerCase()) ||
@@ -319,7 +324,11 @@ function ProductTagsPageInner() {
                                       </h4>
                                       <div className="text-xs cp-ui-muted">
                                         <PriceDisplay
-                                          amount={product.base_price}
+                                          amount={
+                                            resolveProductListingPrice(
+                                              product as unknown as Record<string, unknown>
+                                            ) ?? product.base_price ?? 0
+                                          }
                                           {...(locale === 'en'
                                             ? { prefixLabel: 'From', suffixLabel: '/ person' }
                                             : { suffixLabel: '부터' })}

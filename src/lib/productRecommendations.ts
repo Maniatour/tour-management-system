@@ -8,6 +8,7 @@ import {
   getProductCustomerDisplayName,
   resolveProductListingPrice,
 } from '@/lib/productDetailDisplay'
+import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 import type { Product } from '@/components/product/productDetailTypes'
 
 export const PRODUCT_RECOMMENDATION_SECTIONS = [
@@ -114,8 +115,11 @@ async function hydrateProductRows(
   rows: Record<string, unknown>[],
   locale: string
 ): Promise<ProductRecommendationView[]> {
+  const withPrices = await withLowestChoicePrices(
+    rows.map((row) => ({ ...row, id: String(row.id) }))
+  )
   return Promise.all(
-    rows.map(async (row) =>
+    withPrices.map(async (row) =>
       mapProductRow(row, await fetchProductPrimaryImage(String(row.id)), locale)
     )
   )

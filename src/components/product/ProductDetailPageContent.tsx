@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
@@ -24,7 +24,9 @@ import {
   formatProductDuration,
   getProductCategoryLabel,
   getProductCustomerDisplayName,
+  resolveDisplayBasePrice,
 } from '@/lib/productDetailDisplay'
+import { getLowestChoiceAddonTotal, normalizeChoicesDisplayMode } from '@/lib/productChoiceGrouping'
 import {
   getPreviewDetailFieldHtml,
   getPreviewProductDisplayName,
@@ -66,6 +68,8 @@ function ProductDetailPageContentInner({
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
   const contentEditMode = isPreview && isEditMode
+  /** 관리자 미리보기/편집 — inactive·draft 상품도 로드 */
+  const isPreviewMode = isPreview || searchParams.get('preview') === '1'
 
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -118,7 +122,9 @@ function ProductDetailPageContentInner({
       }
       setError(null)
 
-      const data = await fetchProductPageData(productId, locale, isEnglish)
+      const data = await fetchProductPageData(productId, locale, isEnglish, {
+        includeNonActive: isPreviewMode,
+      })
 
       setProduct(data.product)
       setProductDetails(data.productDetails)
@@ -141,7 +147,7 @@ function ProductDetailPageContentInner({
         setLoading(false)
       }
     },
-    [productId, locale, isEnglish]
+    [productId, locale, isEnglish, isPreviewMode]
   )
 
   useEffect(() => {
@@ -174,6 +180,16 @@ function ProductDetailPageContentInner({
     const t = window.setTimeout(() => openBookingFlow(), 800)
     return () => window.clearTimeout(t)
   }, [enableCheckout, searchParams, product, loading, openBookingFlow])
+
+  const lowestChoicePrice = useMemo(
+    () => getLowestChoiceAddonTotal(productChoices),
+    [productChoices]
+  )
+
+  const displayBasePrice = useMemo(
+    () => resolveDisplayBasePrice(product?.base_price, lowestChoicePrice),
+    [product?.base_price, lowestChoicePrice]
+  )
 
   if (loading) {
     return <ProductDetailLoadingState />
@@ -237,6 +253,8 @@ function ProductDetailPageContentInner({
 
   const bookingPanelProps = {
     basePrice: product.base_price,
+    displayBasePrice,
+    choicesDisplayMode: normalizeChoicesDisplayMode(product.choices_display_mode),
     maxParticipants: product.max_participants,
     durationLabel,
     groupSize: product.group_size,

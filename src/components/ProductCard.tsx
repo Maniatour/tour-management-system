@@ -330,56 +330,64 @@ export default function ProductCard({
     </div>
   )
 
+  const openCustomerPageEdit = () => {
+    if (editSection) return
+    router.push(buildAdminProductCustomerEditPath(locale, localProduct.id))
+  }
+
   return (
-    <div
-      className="admin-product-gyg-card admin-product-gyg-card--open-editor"
-      onClick={() => router.push(buildAdminProductCustomerEditPath(locale, localProduct.id))}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          router.push(buildAdminProductCustomerEditPath(locale, localProduct.id))
-        }
-      }}
-      role="link"
-      tabIndex={0}
-      title={t('openCustomerPageEdit')}
-    >
-      <ProductsGygCard
-        locale={cardLocale}
-        href={`/${cardLocale}/products/${localProduct.id}`}
-        product={{
-          id: localProduct.id,
-          primary_image: primaryImage,
-          duration: localProduct.duration,
-          max_participants: localProduct.max_participants,
-          departure_city: localProduct.departure_city,
-          tags: localTags,
+    <>
+      <div
+        className="admin-product-gyg-card admin-product-gyg-card--open-editor"
+        onClick={openCustomerPageEdit}
+        onKeyDown={(event) => {
+          if (editSection) return
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            openCustomerPageEdit()
+          }
         }}
-        title={getCustomerDisplayName(localProduct, cardLocale)}
-        locationLine={formatProductDepartureLine(localProduct, cardLocale) || null}
-        price={getListingPrice(localProduct)}
-        priceLabel={previewLabels.listingFromPrice}
-        imageError={imageError}
-        onImageError={() => setImageError(true)}
-        likelyToSellOutLabel={previewLabels.likelyToSellOut}
-        imagePreparingLabel={previewLabels.imagePreparing}
-        priority={priority}
-        showWishlistButton={false}
-        imageOverlay={adminImageActions}
-        selloutBadgeSlot={adminSelloutBadge}
-        adminCardEdits={{
-          editLocationLabel: tCardEdit('editLocation'),
-          editTitleLabel: tCardEdit('editBasic'),
-          editDurationLabel: tCardEdit('editTourDetails'),
-          editPriceLabel: tCardEdit('editPricing'),
-          editMediaLabel: tCardEdit('editMedia'),
-          onEditLocation: () => openEditSection('location'),
-          onEditBasic: () => openEditSection('basic'),
-          onEditTourDetails: () => openEditSection('tour-details'),
-          onEditPricing: () => openEditSection('pricing'),
-          onEditMedia: () => openEditSection('media'),
-        }}
-      />
+        role="link"
+        tabIndex={0}
+        title={t('openCustomerPageEdit')}
+      >
+        <ProductsGygCard
+          locale={cardLocale}
+          href={`/${cardLocale}/products/${localProduct.id}`}
+          product={{
+            id: localProduct.id,
+            primary_image: primaryImage,
+            duration: localProduct.duration,
+            max_participants: localProduct.max_participants,
+            departure_city: localProduct.departure_city,
+            tags: localTags,
+          }}
+          title={getCustomerDisplayName(localProduct, cardLocale)}
+          locationLine={formatProductDepartureLine(localProduct, cardLocale) || null}
+          price={getListingPrice(localProduct)}
+          priceLabel={previewLabels.listingFromPrice}
+          imageError={imageError}
+          onImageError={() => setImageError(true)}
+          likelyToSellOutLabel={previewLabels.likelyToSellOut}
+          imagePreparingLabel={previewLabels.imagePreparing}
+          priority={priority}
+          showWishlistButton={false}
+          imageOverlay={adminImageActions}
+          selloutBadgeSlot={adminSelloutBadge}
+          adminCardEdits={{
+            editLocationLabel: tCardEdit('editLocation'),
+            editTitleLabel: tCardEdit('editBasic'),
+            editDurationLabel: tCardEdit('editTourDetails'),
+            editPriceLabel: tCardEdit('editPricing'),
+            editMediaLabel: tCardEdit('editMedia'),
+            onEditLocation: () => openEditSection('location'),
+            onEditBasic: () => openEditSection('basic'),
+            onEditTourDetails: () => openEditSection('tour-details'),
+            onEditPricing: () => openEditSection('pricing'),
+            onEditMedia: () => openEditSection('media'),
+          }}
+        />
+      </div>
 
       <AdminProductCardEditModals
         product={localProduct}
@@ -387,6 +395,6 @@ export default function ProductCard({
         onClose={() => setEditSection(null)}
         onSaved={handleProductSaved}
       />
-    </div>
+    </>
   )
 }
