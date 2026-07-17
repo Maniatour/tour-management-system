@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ReactCountryFlag from 'react-country-flag'
 import { ChevronDown } from 'lucide-react'
 import {
@@ -20,6 +21,11 @@ interface PickupContentLocaleDropdownProps {
   showLabel?: boolean
 }
 
+const MENU_MIN_WIDTH = 216
+const MENU_GAP = 6
+const VIEWPORT_MARGIN = 8
+const MENU_MAX_HEIGHT = 288
+
 export default function PickupContentLocaleDropdown({
   value,
   onChange,
@@ -28,28 +34,115 @@ export default function PickupContentLocaleDropdown({
   showLabel = false,
 }: PickupContentLocaleDropdownProps) {
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<{
+    top: number
+    left: number
+    maxHeight: number
+  } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLUListElement>(null)
   const current = getPickupContentLocaleMeta(value)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button) return
+
+    const rect = button.getBoundingClientRect()
+    const maxLeft = window.innerWidth - MENU_MIN_WIDTH - VIEWPORT_MARGIN
+    const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, maxLeft))
+
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN
+    const spaceAbove = rect.top - VIEWPORT_MARGIN
+    const openUpward = spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow
+    const available = openUpward ? spaceAbove : spaceBelow
+    const maxHeight = Math.min(MENU_MAX_HEIGHT, Math.max(120, available - MENU_GAP))
+
+    const top = openUpward
+      ? Math.max(VIEWPORT_MARGIN, rect.top - MENU_GAP - maxHeight)
+      : rect.bottom + MENU_GAP
+
+    setMenuStyle({ top, left, maxHeight })
+  }, [])
+
+  useLayoutEffect(() => {
     if (!open) return
+    updatePosition()
+  }, [open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+
     const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (buttonRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
+    const onReposition = () => updatePosition()
+
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onReposition, true)
+    window.addEventListener('resize', onReposition)
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onReposition, true)
+      window.removeEventListener('resize', onReposition)
     }
-  }, [open])
+  }, [open, updatePosition])
+
+  const menu =
+    open && menuStyle ? (
+      <ul
+        ref={menuRef}
+        role="listbox"
+        className="fixed z-[10050] min-w-[13.5rem] overflow-y-auto rounded-xl border border-border bg-white py-1 shadow-lg"
+        style={{
+          top: menuStyle.top,
+          left: menuStyle.left,
+          maxHeight: menuStyle.maxHeight,
+        }}
+      >
+        {PICKUP_CONTENT_LOCALES.map((item) => {
+          const selected = item.code === value
+          return (
+            <li key={item.code} role="option" aria-selected={selected}>
+              <button
+                type="button"
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition hover:bg-muted ${
+                  selected ? 'bg-muted/70 font-semibold text-slate-900' : 'text-slate-700'
+                }`}
+                onClick={() => {
+                  onChange(item.code)
+                  setOpen(false)
+                }}
+              >
+                <ReactCountryFlag
+                  countryCode={item.countryCode}
+                  svg
+                  style={{ width: '22px', height: '16px', borderRadius: '2px' }}
+                />
+                <span>{item.label}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    ) : null
 
   return (
-    <div ref={rootRef} className={`relative inline-flex ${className}`}>
+    <div className={`relative inline-flex ${className}`}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-1.5 rounded-lg border border-border bg-white transition hover:bg-muted ${
@@ -76,37 +169,7 @@ export default function PickupContentLocaleDropdown({
         />
       </button>
 
-      {open && (
-        <ul
-          role="listbox"
-          className="absolute left-0 top-[calc(100%+0.35rem)] z-50 max-h-72 min-w-[13.5rem] overflow-y-auto rounded-xl border border-border bg-white py-1 shadow-lg"
-        >
-          {PICKUP_CONTENT_LOCALES.map((item) => {
-            const selected = item.code === value
-            return (
-              <li key={item.code} role="option" aria-selected={selected}>
-                <button
-                  type="button"
-                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition hover:bg-muted ${
-                    selected ? 'bg-muted/70 font-semibold text-slate-900' : 'text-slate-700'
-                  }`}
-                  onClick={() => {
-                    onChange(item.code)
-                    setOpen(false)
-                  }}
-                >
-                  <ReactCountryFlag
-                    countryCode={item.countryCode}
-                    svg
-                    style={{ width: '22px', height: '16px', borderRadius: '2px' }}
-                  />
-                  <span>{item.label}</span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      {mounted && menu ? createPortal(menu, document.body) : null}
     </div>
   )
 }
