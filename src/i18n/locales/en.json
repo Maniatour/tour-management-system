@@ -6879,12 +6879,12 @@
     "paidCancelContactNote": "Card-paid bookings cannot be cancelled online. Please contact customer support for cancellation or refund. (Our team handles refunds.)"
   },
   "bookingConfirmation": {
-    "successTitle": "Booking confirmed",
-    "successBody": "Thank you. Your payment was successful and your reservation is confirmed. A receipt and tour voucher have been sent to your email.",
+    "successTitle": "Booking received",
+    "successBody": "Thank you. Your payment was successful and your reservation has been received. It is currently pending and will be confirmed after our review. A receipt has been sent to your email.",
     "failedTitle": "Booking incomplete",
     "failedBody": "We could not complete your booking. If you were charged, please contact support with your email and payment details.",
     "reservationIdLabel": "Reservation ID",
-    "emailSentHint": "Confirmation details were sent to {email}.",
+    "emailSentHint": "Booking details were sent to {email}.",
     "viewReservation": "View reservation",
     "backHome": "Back to home",
     "supportHint": "Need help? Message us or call customer support."

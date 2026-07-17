@@ -68,12 +68,12 @@ const Sidebar = () => {
   return (
     <div
       className={`sticky top-[var(--header-height,4rem)] hidden h-[calc(100vh-var(--header-height,4rem))] shrink-0 flex-col border-r bg-white shadow-lg transition-[width] duration-300 lg:flex ${
-        isCollapsed ? 'w-16' : 'w-64'
+        isCollapsed ? 'app-sidebar-shell--collapsed' : 'app-sidebar-shell'
       }`}
     >
       {/* 사이드바 헤더 */}
       <div
-        className={`flex items-center border-b p-4 ${
+        className={`flex items-center border-b p-3 ${
           isCollapsed ? 'justify-center' : 'justify-between gap-2'
         }`}
       >

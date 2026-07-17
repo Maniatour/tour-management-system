@@ -917,7 +917,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       )}
 
       {/* 모바일 사이드바 */}
-      <div className={`fixed inset-y-0 left-0 z-[1050] w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
+      <div className={`app-sidebar-shell fixed inset-y-0 left-0 z-[1050] bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 flex-shrink-0">
@@ -994,13 +994,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       {/* 데스크톱 사이드바 - 헤더 아래에 위치 */}
       <div
         className={`hidden lg:fixed lg:left-0 lg:bottom-0 lg:top-[var(--header-height,4rem)] lg:z-30 lg:flex lg:flex-col lg:transition-[width] lg:duration-300 ${
-          sidebarCollapsed ? 'lg:w-16' : 'lg:w-64'
+          sidebarCollapsed ? 'app-sidebar-shell--collapsed' : 'app-sidebar-shell'
         }`}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-gray-200 bg-white shadow-lg">
           <nav
             className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-2 ${
-              sidebarCollapsed ? 'px-1.5' : 'px-4'
+              sidebarCollapsed ? 'px-1.5' : 'px-2'
             }`}
           >
             {navigation.map((item) => {
@@ -1015,7 +1015,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   prefetch={true}
                   title={sidebarCollapsed ? item.name : undefined}
                   className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
-                    sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-4 py-2'
+                    sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
                   } ${
                     isActive
                       ? 'bg-primary/10 text-primary'
@@ -1056,7 +1056,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           {/* 데스크톱: 사이드바 접기 (로그아웃은 상단 사용자 메뉴) */}
           <div
             className={`flex flex-shrink-0 items-center border-t border-gray-200 bg-white py-2 ${
-              sidebarCollapsed ? 'justify-center px-1.5' : 'justify-end px-4'
+              sidebarCollapsed ? 'justify-center px-1.5' : 'justify-end px-2'
             }`}
           >
             <button
@@ -1075,17 +1075,17 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div
-        className={`admin-main-shell pt-[var(--header-height)] transition-[padding] duration-300 ${
-          sidebarCollapsed ? 'lg:pl-16 admin-main-shell--collapsed' : 'lg:pl-64'
+        className={`admin-main-shell pt-[var(--header-height)] transition-[padding-left] duration-300 ${
+          sidebarCollapsed ? 'admin-main-shell--collapsed' : ''
         }`}
       >
         {/* 페이지 콘텐츠 — 예약 관리는 좌우 패딩을 줄여 카드 열을 더 확보 */}
-        <main className="main-safe-area min-w-0 max-w-full overflow-x-clip pt-2 sm:pt-4 lg:pt-6">
+        <main className="main-safe-area min-w-0 max-w-full overflow-x-clip pt-2 sm:pt-3 lg:pt-4">
           <div
             className={`mx-auto w-full min-w-0 max-w-full ${
               pathname.includes('/admin/reservations')
                 ? 'px-0'
-                : 'px-2 sm:px-4'
+                : 'px-[var(--admin-main-gutter-x)] sm:px-2'
             }`}
           >
             {children}

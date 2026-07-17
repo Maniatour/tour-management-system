@@ -4,7 +4,8 @@ import { finalizeCustomerBookingPayment } from '@/lib/customerBookingCheckout'
 
 /**
  * POST /api/booking/confirm-payment
- * Stripe PaymentIntent 성공 여부를 서버에서 재검증한 뒤 예약을 confirmed로 확정합니다.
+ * Stripe PaymentIntent 성공 여부를 서버에서 재검증한 뒤 결제 기록을 확정합니다.
+ * 예약 status는 pending으로 유지되며, 관리자가 시스템에서 수동으로 confirmed 처리합니다.
  */
 export async function POST(request: NextRequest) {
   try {

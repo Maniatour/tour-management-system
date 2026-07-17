@@ -63,7 +63,8 @@ async function notifyOpsBookingEmailFailure(args: {
 }
 
 /**
- * 결제 확정 후 고객 영수증+바우처 발송.
+ * 결제 접수 후 고객 영수증(+바우처) 발송.
+ * 예약 status는 관리자 수동 확정까지 pending이므로, 메일 본문의 확정 문구는 reservation.status에 따릅니다.
  * 실패 시 운영자에게 알림 메일을 보냅니다. (결제는 이미 성공한 상태로 유지)
  */
 export async function deliverCustomerBookingConfirmationEmail(

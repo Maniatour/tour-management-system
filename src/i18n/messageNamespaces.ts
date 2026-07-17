@@ -45,6 +45,7 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'productDetail',
   'customTour',
   'reservationCheck',
+  'bookingConfirmation',
   'residentCheck',
   'publicChat',
   'reservationEvidence',
@@ -67,6 +68,7 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
       /^\/(ko|en)\/?$/.test(p) ||
       /\/products/.test(p) ||
       /\/reservation-check/.test(p) ||
+      /\/booking\/confirmation/.test(p) ||
       /\/(terms|privacy-policy|sms-terms|cancellation-refund-policy)(\/|$)/.test(p),
     namespaces: [
       'customerSiteFooter',
@@ -77,6 +79,7 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
       'productDetail',
       'customTour',
       'reservationCheck',
+      'bookingConfirmation',
     ],
   },
   {

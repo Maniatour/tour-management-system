@@ -215,6 +215,77 @@ async function classifySelectedOptions(
   return { choiceRows, additionalOptionIds, choiceOptionIds }
 }
 
+/**
+ * dynamic_pricing이 없을 때 고객 화면(BookingFlow)과 동일하게
+ * products / choice_options / product_options 카탈로그 가격으로 계산합니다.
+ */
+async function calculateCatalogFallbackPrice(
+  admin: AdminClient,
+  line: CustomerBookingLineInput,
+  choiceOptionIds: string[],
+  additionalOptionIds: string[]
+): Promise<{
+  basePrice: number
+  choicesPrice: number
+  additionalOptionsPrice: number
+  subtotal: number
+  calculationMethod: string
+}> {
+  const { data: product, error: productError } = await admin
+    .from('products')
+    .select('base_price, adult_base_price')
+    .eq('id', line.productId)
+    .maybeSingle()
+
+  if (productError || !product) {
+    throw new Error('상품 가격 정보를 찾을 수 없습니다.')
+  }
+
+  const totalPeople = line.adults + line.child + line.infant
+  // BookingFlow: 동적 가격 없을 때 base_price(또는 adult_base_price) × 전체 인원
+  const catalogBaseUnit =
+    Number(product.base_price) || Number(product.adult_base_price) || 0
+  const basePrice = roundMoney(catalogBaseUnit * totalPeople)
+
+  let choicesPrice = 0
+  if (choiceOptionIds.length > 0) {
+    const { data: choiceOptions } = await admin
+      .from('choice_options')
+      .select('id, adult_price, child_price, infant_price')
+      .in('id', choiceOptionIds)
+
+    for (const option of choiceOptions || []) {
+      const adultUnit = Number(option.adult_price) || 0
+      // BookingFlow 클라이언트는 option_price(adult) × 전체 인원으로 합산
+      choicesPrice += adultUnit * totalPeople
+    }
+    choicesPrice = roundMoney(choicesPrice)
+  }
+
+  let additionalOptionsPrice = 0
+  if (additionalOptionIds.length > 0) {
+    const { data: productOptions } = await admin
+      .from('product_options')
+      .select('id, adult_price_adjustment')
+      .in('id', additionalOptionIds)
+
+    for (const option of productOptions || []) {
+      const unit = Number(option.adult_price_adjustment) || 0
+      additionalOptionsPrice += unit * totalPeople
+    }
+    additionalOptionsPrice = roundMoney(additionalOptionsPrice)
+  }
+
+  const subtotal = roundMoney(basePrice + choicesPrice + additionalOptionsPrice)
+  return {
+    basePrice,
+    choicesPrice,
+    additionalOptionsPrice,
+    subtotal,
+    calculationMethod: 'catalog_fallback',
+  }
+}
+
 export async function calculateServerBookingPrice(
   admin: AdminClient,
   line: CustomerBookingLineInput,
@@ -248,13 +319,29 @@ export async function calculateServerBookingPrice(
   }
 
   const row = data?.[0]
-  const basePrice = Number(row?.base_price) || 0
-  const choicesPrice = Number(row?.choices_price) || 0
-  const additionalOptionsPrice = Number(row?.additional_options_price) || 0
-  const subtotal = roundMoney(
+  let basePrice = Number(row?.base_price) || 0
+  let choicesPrice = Number(row?.choices_price) || 0
+  let additionalOptionsPrice = Number(row?.additional_options_price) || 0
+  let subtotal = roundMoney(
     Number(row?.total_price) || basePrice + choicesPrice + additionalOptionsPrice
   )
-  const calculationMethod = row?.calculation_method || 'unknown'
+  let calculationMethod = row?.calculation_method || 'unknown'
+
+  // 동적 가격 미설정(not_found / $0)이면 상품 카탈로그 가격으로 폴백
+  // (맞춤 투어 MNCUSTOM 등: 화면은 base_price=$1인데 RPC만 0을 반환하던 케이스)
+  if (subtotal <= 0 || calculationMethod === 'not_found') {
+    const fallback = await calculateCatalogFallbackPrice(
+      admin,
+      line,
+      choiceOptionIds,
+      additionalOptionIds
+    )
+    basePrice = fallback.basePrice
+    choicesPrice = fallback.choicesPrice
+    additionalOptionsPrice = fallback.additionalOptionsPrice
+    subtotal = fallback.subtotal
+    calculationMethod = fallback.calculationMethod
+  }
 
   if (subtotal <= 0) {
     throw new Error('계산된 결제 금액이 올바르지 않습니다. 날짜/옵션을 다시 확인해 주세요.')
@@ -715,7 +802,8 @@ async function finalizeSingleReservationPayment(
     .ilike('note', `%${args.paymentIntentId}%`)
     .maybeSingle()
 
-  if (confirmedPayment?.id && reservation.status === 'confirmed') {
+  // 결제는 확인되었어도 예약 status는 관리자 수동 확정(pending → confirmed)까지 대기중 유지
+  if (confirmedPayment?.id) {
     if (args.sendEmail && reservation.customer_id) {
       const { data: customer } = await admin
         .from('customers')
@@ -771,13 +859,7 @@ async function finalizeSingleReservationPayment(
     if (payInsertError) throw new Error(`결제 기록 저장 실패: ${payInsertError.message}`)
   }
 
-  if (reservation.status !== 'confirmed') {
-    const { error: statusError } = await admin
-      .from('reservations')
-      .update({ status: 'confirmed', updated_at: new Date().toISOString() })
-      .eq('id', args.reservationId)
-    if (statusError) throw new Error(`예약 확정 실패: ${statusError.message}`)
-  }
+  // 예약 status는 pending/inquiry 유지 — 관리자가 시스템에서 수동으로 confirmed 처리
 
   if (args.sendEmail && reservation.customer_id) {
     const { data: customer } = await admin

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, CreditCard, Ticket, Lock, Loader2 } from 'lucide-react'
+import { X, CreditCard, Ticket, Lock, Loader2, AlertCircle, BadgeCheck } from 'lucide-react'
 import { useCart } from './CartProvider'
 import { useLocale } from 'next-intl'
 import { loadStripe } from '@stripe/stripe-js'
@@ -184,11 +184,11 @@ function CheckoutPaymentForm({
             </span>
           </div>
         </div>
-        <div className="mt-4">
+        <div className="mt-5">
           <button
             type="submit"
             disabled={!stripe || processing}
-            className={`w-full flex items-center justify-center px-6 py-2 rounded-lg font-medium transition-colors ${
+            className={`w-full flex min-h-12 items-center justify-center rounded-xl px-6 py-3 text-base font-semibold shadow-sm transition-colors ${
               stripe && !processing
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -225,11 +225,14 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
   const [couponError, setCouponError] = useState<string>('')
   const [validatingCoupon, setValidatingCoupon] = useState(false)
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
+  const [stripeLoadError, setStripeLoadError] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   // Stripe 초기화
   useEffect(() => {
     const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    setStripeLoadError('')
+
     if (publishableKey) {
       // Stripe 로딩 시 에러 처리 및 옵션 추가
       const stripePromiseValue = loadStripe(publishableKey, {
@@ -238,12 +241,36 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
       })
       
       // Promise에 에러 핸들러 추가
-      stripePromiseValue.catch((error) => {
-        console.error('Stripe 로딩 오류:', error)
-        // 에러가 발생해도 계속 진행 (사용자에게 알림)
+      stripePromiseValue
+        .then((stripe) => {
+          if (!stripe) {
+            setStripeLoadError(
+              translate(
+                '카드 결제 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하거나 문의해주세요.',
+                'Card payment could not be loaded. Please refresh the page or contact us.'
+              )
+            )
+          }
+        })
+        .catch((error) => {
+          console.error('Stripe 로딩 오류:', error)
+          setStripeLoadError(
+            translate(
+              '카드 결제 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하거나 문의해주세요.',
+              'Card payment could not be loaded. Please refresh the page or contact us.'
+            )
+          )
       })
       
       setStripePromise(stripePromiseValue)
+    } else {
+      setStripePromise(null)
+      setStripeLoadError(
+        translate(
+          '현재 카드 결제를 사용할 수 없습니다. 은행 이체를 선택하거나 문의해주세요.',
+          'Card payment is currently unavailable. Please choose bank transfer or contact us.'
+        )
+      )
     }
   }, [isEnglish])
 
@@ -621,12 +648,23 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
           </div>
 
           {/* 결제 방법 선택 */}
-          <div className="mb-6">
-            <h4 className="font-medium text-gray-900 mb-3">{translate('결제 방법', 'Payment Method')}</h4>
+          <div className="mb-6 rounded-2xl border border-border/60 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4 className="font-semibold text-gray-900">{translate('결제 방법', 'Payment Method')}</h4>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {translate('결제 방법을 선택한 뒤 아래의 결제 버튼을 눌러 예약을 완료하세요.', 'Choose a payment method, then use the payment button below to complete your reservation.')}
+                </p>
+              </div>
+              <div className="hidden items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary sm:flex">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                {translate('보안 결제', 'Secure payment')}
+              </div>
+            </div>
             <select
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              className="h-12 w-full rounded-xl border border-gray-300 px-3 text-base focus:border-transparent focus:ring-2 focus:ring-ring"
             >
               <option value="card">{translate('신용카드', 'Credit Card')}</option>
               <option value="bank_transfer">{translate('은행 이체', 'Bank Transfer')}</option>
@@ -654,6 +692,22 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                 locale={isEnglish ? 'en' : 'ko'}
               />
             </Elements>
+          )}
+
+          {paymentMethod === 'card' && !stripePromise && (
+            <div role="alert" className="rounded-2xl border border-warning/30 bg-warning/10 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" />
+                <div>
+                  <h5 className="font-semibold text-gray-900">
+                    {translate('카드 결제를 시작할 수 없습니다.', 'Card payment is not available.')}
+                  </h5>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {stripeLoadError || translate('결제 모듈을 불러오는 중입니다. 잠시 후 다시 시도해주세요.', 'The payment module is loading. Please try again shortly.')}
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* 은행 이체 안내 */}

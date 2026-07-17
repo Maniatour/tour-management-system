@@ -168,7 +168,10 @@ export default function ProductDetailDateTravelersPickers({
   }
 
   return (
-    <div ref={rootRef} className={`booking-picker-root ${className}`.trim()}>
+    <div
+      ref={rootRef}
+      className={`booking-picker-root ${travelersOpen ? 'is-popover-open' : ''} ${className}`.trim()}
+    >
       <div className="booking-picker-fields">
         <div className="relative booking-picker-field-wrap booking-picker-field-wrap-date">
           <button
@@ -229,7 +232,11 @@ export default function ProductDetailDateTravelersPickers({
             : null}
         </div>
 
-        <div className="relative booking-picker-field-wrap booking-picker-field-wrap-travelers">
+        <div
+          className={`relative booking-picker-field-wrap booking-picker-field-wrap-travelers ${
+            travelersOpen ? 'is-open' : ''
+          }`}
+        >
           <button
             type="button"
             className={`booking-picker-field booking-picker-field-travelers ${travelersOpen ? 'is-open' : ''}`}
