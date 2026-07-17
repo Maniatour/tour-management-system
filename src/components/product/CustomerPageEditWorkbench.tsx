@@ -739,7 +739,7 @@ function CustomerPageEditWorkbenchInner({
               onClick={requestCloseEditModal}
               aria-hidden
             />
-            <div className="relative flex flex-col w-full max-w-5xl h-[min(88vh,calc(100dvh-2rem))] min-h-[min(480px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+            <div className="relative flex flex-col w-full max-w-7xl h-[min(88vh,calc(100dvh-2rem))] min-h-[min(480px,calc(100dvh-2rem))] my-auto bg-white rounded-xl shadow-2xl overflow-hidden">
               <CustomerPageZoneEditPanel
                 key={`${selectedZone}-${activeEditProductId ?? 'none'}`}
                 zone={selectedZone}

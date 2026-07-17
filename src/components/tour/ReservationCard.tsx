@@ -42,6 +42,7 @@ import {
 } from '@/utils/paymentRecordNoteDisplay'
 import { isChoiceOptionUuid, simplifyChoiceLabel } from '@/utils/choiceLabels'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
+import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
@@ -163,7 +164,7 @@ interface ReservationCardProps {
   getCustomerLanguage: (customerId: string) => string
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
-  pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
+  pickupHotels?: PickupHotelAssignmentOption[]
   /** 새로고침. 픽업 수정 직후 픽업 스케줄 반영을 위해 수정된 픽업 정보를 넘기면 즉시 반영 후 서버 새로고침을 수행합니다. */
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   /** 예약 상품의 product_code (거주 상태 UI 표시용) */
@@ -244,6 +245,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     option_name?: string
     option_name_ko?: string
     option_key?: string
+    internal_name?: string
+    badge_icon_url?: string
     choice_group?: string
     choice_group_ko?: string
   }>>([])
@@ -801,6 +804,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       option_key?: string | null
       option_name?: string | null
       option_name_ko?: string | null
+      internal_name?: string | null
+      badge_icon_url?: string | null
     }
     type ProductChoiceEmbed = {
       choice_group?: string | null
@@ -822,23 +827,39 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     try {
       let rows: RcRow[] = []
 
-      const { data: choicesData, error } = await supabase
-        .from('reservation_choices')
-        .select(`
-          choice_id,
-          option_id,
-          option_key,
-          choice_options (
+      const selectChoices = async (includeExtras: boolean) => {
+        const choiceOptionsSelect = includeExtras
+          ? `choice_options (
+            option_key,
+            option_name,
+            option_name_ko,
+            internal_name,
+            badge_icon_url
+          )`
+          : `choice_options (
             option_key,
             option_name,
             option_name_ko
-          ),
+          )`
+        return supabase
+          .from('reservation_choices')
+          .select(`
+          choice_id,
+          option_id,
+          option_key,
+          ${choiceOptionsSelect},
           product_choices (
             choice_group,
             choice_group_ko
           )
         `)
-        .eq('reservation_id', reservation.id)
+          .eq('reservation_id', reservation.id)
+      }
+
+      let { data: choicesData, error } = await selectChoices(true)
+      if (error && /internal_name|badge_icon_url|column/i.test(error.message || '')) {
+        ;({ data: choicesData, error } = await selectChoices(false))
+      }
 
       if (error) {
         if (!isAbortError(error)) console.error('예약 초이스 조회 오류:', error)
@@ -879,25 +900,57 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
       const optionInfoById = new Map<
         string,
-        { option_key?: string; option_name?: string; option_name_ko?: string }
+        {
+          option_key?: string
+          option_name?: string
+          option_name_ko?: string
+          internal_name?: string
+          badge_icon_url?: string
+        }
       >()
       if (missingOptionIds.length > 0) {
-        const { data: optData } = await supabase
+        type OptRow = {
+          id: string
+          option_key?: string | null
+          option_name?: string | null
+          option_name_ko?: string | null
+          internal_name?: string | null
+          badge_icon_url?: string | null
+        }
+        let optData: OptRow[] | null = null
+        let optError: { message?: string } | null = null
+        ;({ data: optData, error: optError } = await supabase
           .from('choice_options')
-          .select('id, option_key, option_name_ko, option_name')
-          .in('id', missingOptionIds)
+          .select('id, option_key, option_name_ko, option_name, internal_name, badge_icon_url')
+          .in('id', missingOptionIds))
+        if (optError && /internal_name|badge_icon_url|column/i.test(optError.message || '')) {
+          ;({ data: optData, error: optError } = await supabase
+            .from('choice_options')
+            .select('id, option_key, option_name_ko, option_name')
+            .in('id', missingOptionIds))
+        }
         ;(optData || []).forEach(
           (o: {
             id: string
             option_key?: string | null
             option_name?: string | null
             option_name_ko?: string | null
+            internal_name?: string | null
+            badge_icon_url?: string | null
           }) => {
             const key = usableKey(o.option_key)
-            const info: { option_key?: string; option_name?: string; option_name_ko?: string } = {}
+            const info: {
+              option_key?: string
+              option_name?: string
+              option_name_ko?: string
+              internal_name?: string
+              badge_icon_url?: string
+            } = {}
             if (key) info.option_key = key
             if (o.option_name != null) info.option_name = o.option_name
             if (o.option_name_ko != null) info.option_name_ko = o.option_name_ko
+            if (o.internal_name != null) info.internal_name = o.internal_name
+            if (o.badge_icon_url != null) info.badge_icon_url = o.badge_icon_url
             optionInfoById.set(o.id, info)
           }
         )
@@ -919,6 +972,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             option_name?: string
             option_name_ko?: string
             option_key?: string
+            internal_name?: string
+            badge_icon_url?: string
             choice_group?: string
             choice_group_ko?: string
           } = {
@@ -927,9 +982,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           }
           const option_name = opt?.option_name || fallback?.option_name
           const option_name_ko = opt?.option_name_ko || fallback?.option_name_ko
+          const internal_name = opt?.internal_name || fallback?.internal_name
+          const badge_icon_url = opt?.badge_icon_url || fallback?.badge_icon_url
           if (option_name) choiceItem.option_name = option_name
           if (option_name_ko) choiceItem.option_name_ko = option_name_ko
           if (option_key) choiceItem.option_key = option_key
+          if (internal_name) choiceItem.internal_name = internal_name
+          if (badge_icon_url) choiceItem.badge_icon_url = badge_icon_url
           if (pc?.choice_group) choiceItem.choice_group = pc.choice_group
           if (pc?.choice_group_ko) choiceItem.choice_group_ko = pc.choice_group_ko
           return choiceItem
@@ -1215,6 +1274,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     name: string
     choice_id: string
     option_id: string
+    badge_icon_url?: string
     choice_group?: string
     choice_group_ko?: string
   }> => {
@@ -1222,6 +1282,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       name: string
       choice_id: string
       option_id: string
+      badge_icon_url?: string
       choice_group?: string
       choice_group_ko?: string
     }> = []
@@ -1244,19 +1305,25 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           hint?.option_name ||
           (optionKey && !isChoiceOptionUuid(optionKey) ? optionKey : '') ||
           ''
-        const simplifiedName = simplifyChoiceLabel(optionName, optionKey)
-        if (!simplifiedName) return
+        const simplifiedName = simplifyChoiceLabel(
+          optionName,
+          optionKey,
+          choice.internal_name
+        )
+        if (!simplifiedName && !choice.badge_icon_url) return
         const choiceItem: {
           name: string
           choice_id: string
           option_id: string
+          badge_icon_url?: string
           choice_group?: string
           choice_group_ko?: string
         } = {
-          name: simplifiedName,
+          name: simplifiedName || choice.internal_name || optionName || '·',
           choice_id: choice.choice_id,
           option_id: choice.option_id
         }
+        if (choice.badge_icon_url) choiceItem.badge_icon_url = choice.badge_icon_url
         if (choice.choice_group) choiceItem.choice_group = choice.choice_group
         if (choice.choice_group_ko) choiceItem.choice_group_ko = choice.choice_group_ko
         selectedChoices.push(choiceItem)
@@ -1358,7 +1425,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const hotel = pickupHotels.find(h => h.id === hotelId)
     
     if (hotel) {
-      return hotel.hotel
+      return hotel.internal_name?.trim() || hotel.hotel
     }
     
     // JSON 형태로 저장된 경우 파싱 (fallback)
@@ -1843,7 +1910,25 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           {/* 선택된 Choices 뱃지들 - 각 옵션별 색상 적용 */}
           {getSelectedChoices().map((choice, index) => {
             const colorClasses = getOptionColorClasses(choice.option_id, choice.name)
-            
+
+            if (choice.badge_icon_url) {
+              return (
+                <div
+                  key={index}
+                  className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-white"
+                  title={choice.name}
+                >
+                  <Image
+                    src={choice.badge_icon_url}
+                    alt={choice.name}
+                    fill
+                    sizes="28px"
+                    className="object-contain"
+                  />
+                </div>
+              )
+            }
+
             return (
               <div 
                 key={index} 

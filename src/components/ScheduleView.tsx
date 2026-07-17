@@ -7,7 +7,6 @@ import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
-import type { Reservation } from '@/types/reservation'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -10490,7 +10489,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             onSubmit={async (reservationData: Record<string, unknown>) => {
               const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
               try {
-                const fullPayload = toReservationUpdatePayload(reservationData as Omit<Reservation, 'id'>)
+                const fullPayload = toReservationUpdatePayload(
+                  reservationData as Parameters<typeof toReservationUpdatePayload>[0]
+                )
                 const result = await updateReservation(editingId, fullPayload)
                 if (!result.success) {
                   showMessage(

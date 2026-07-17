@@ -110,6 +110,7 @@ export interface ReservationActionRequiredTableProps {
       option_key: string
       option_name: string
       option_name_ko: string
+      internal_name?: string
       product_choices: { choice_group_ko: string }
     }
   }>>
@@ -121,6 +122,7 @@ export interface ReservationActionRequiredTableProps {
       option_key: string
       option_name: string
       option_name_ko: string
+      internal_name?: string
       product_choices: { choice_group_ko: string }
     }
   }>>>

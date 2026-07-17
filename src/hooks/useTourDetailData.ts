@@ -210,6 +210,11 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
         setTourNote((tourData as TourRow).tour_note || '')
         setProduct((tourData as any).products as ProductRow | null)
 
+        // 모달: 투어 헤더만이라도 즉시 그려 체감 대기 시간을 줄임
+        if (modalLightLoad) {
+          setPageLoading(false)
+        }
+
         const tour = tourData as TourRow
         const productFromTour = (tourData as { products?: ProductRow | null }).products ?? null
         if (tour.team_type) {
@@ -661,35 +666,32 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
         }
 
         if (modalLightLoad) {
-          const [reservationsExtended, sameDayTours, pickupHotelsResult, assignedVehicleRes, guideAssistantPair] =
-            await Promise.all([
-              loadAssignedReservationsOnly(),
-              loadSameDayTours(),
-              supabase
-                .from('pickup_hotels')
-                .select('*')
-                .eq('use_for_pickup', true)
-                .or('is_active.is.null,is_active.eq.true')
-                .order('hotel'),
-              assignedVehiclePromise,
-              guideAssistantPromise,
-            ])
+          // 모달 첫 페인트: 배정 예약 + 가이드/차량만 먼저 보여 체감 속도를 올림
+          const [reservationsExtended, assignedVehicleRes, guideAssistantPair] = await Promise.all([
+            loadAssignedReservationsOnly(),
+            assignedVehiclePromise,
+            guideAssistantPromise,
+          ])
 
           if (cancelled) return
 
           setAllReservations(reservationsExtended)
-
-          const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
-          if (pickupHotelsError) {
-            console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
-          } else {
-            setPickupHotels(pickupHotelsData || [])
-          }
-
           applyGuideVehicle(assignedVehicleRes, guideAssistantPair)
-          await processAssignmentBuckets(reservationsExtended, sameDayTours)
 
-          if (cancelled) return
+          const isCancelledQuick = (status: string | null | undefined): boolean => {
+            if (!status) return false
+            const normalizedStatus = String(status).toLowerCase().trim()
+            return (
+              normalizedStatus === 'cancelled' ||
+              normalizedStatus === 'canceled' ||
+              normalizedStatus.includes('cancel')
+            )
+          }
+          setAssignedReservations(
+            reservationsExtended.filter(
+              (r) => !isCancelledQuick(r.status) && !isReservationDeletedStatus(r.status)
+            )
+          )
           setPageLoading(false)
 
           scheduleDeferredWork(() => {
@@ -697,12 +699,32 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
               if (cancelled) return
               setLoadingStates((s) => ({ ...s, reservations: true }))
               try {
-                const [fullReservations, refBundle, vehiclesPack] = await Promise.all([
+                const [
+                  sameDayTours,
+                  pickupHotelsResult,
+                  fullReservations,
+                  refBundle,
+                  vehiclesPack,
+                ] = await Promise.all([
+                  loadSameDayTours(),
+                  supabase
+                    .from('pickup_hotels')
+                    .select('*')
+                    .eq('use_for_pickup', true)
+                    .or('is_active.is.null,is_active.eq.true')
+                    .order('hotel'),
                   loadReservationsForProductDate(),
                   loadCatalogRefBundle(),
                   loadVehicles(),
                 ])
                 if (cancelled) return
+
+                const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
+                if (pickupHotelsError) {
+                  console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
+                } else {
+                  setPickupHotels(pickupHotelsData || [])
+                }
 
                 setAllReservations(fullReservations)
                 applyRefBundle(refBundle)

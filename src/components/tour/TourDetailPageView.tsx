@@ -57,7 +57,6 @@ import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
-import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
   fetchActivePickupGroupPresets,
@@ -1901,7 +1900,9 @@ export function TourDetailPageView({
   }, [ticketBookings, showTicketBookingDetails])
 
   // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
-  if (loading || tourData.pageLoading) {
+  // 모달: 관리자 페이지에서 이미 로그인된 경우가 많아 auth loading 대기를 건너뛰어 첫 페인트 단축
+  const blockOnAuth = !modalLightLoad || (!authUser && loading)
+  if (blockOnAuth || tourData.pageLoading) {
     return (
       <div className="min-h-screen app-page-bg">
         {/* 헤더 스켈레톤 */}

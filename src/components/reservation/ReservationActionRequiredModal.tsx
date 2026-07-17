@@ -129,13 +129,13 @@ export interface ReservationActionRequiredModalProps {
     choice_id: string
     option_id: string
     quantity: number
-    choice_options: { option_key: string; option_name: string; option_name_ko: string; product_choices: { choice_group_ko: string } }
+    choice_options: { option_key: string; option_name: string; option_name_ko: string; internal_name?: string; product_choices: { choice_group_ko: string } }
   }>>
   choicesCacheRef: React.MutableRefObject<Map<string, Array<{
     choice_id: string
     option_id: string
     quantity: number
-    choice_options: { option_key: string; option_name: string; option_name_ko: string; product_choices: { choice_group_ko: string } }
+    choice_options: { option_key: string; option_name: string; option_name_ko: string; internal_name?: string; product_choices: { choice_group_ko: string } }
   }>>>
   emailDropdownOpen: string | null
   sendingEmail: string | null

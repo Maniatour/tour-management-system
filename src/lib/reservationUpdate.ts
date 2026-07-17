@@ -113,6 +113,7 @@ export interface UpdateReservationResult {
 export function toReservationUpdatePayload(
   payload: Omit<Reservation, 'id'> & Partial<ReservationUpdatePayload>
 ): ReservationUpdatePayload {
+  // exactOptionalPropertyTypes: 명시적 undefined 할당을 피하기 위해 캐스트
   return {
     ...payload,
     pricingInfo: payload.pricingInfo,
@@ -124,7 +125,7 @@ export function toReservationUpdatePayload(
     nonResidentWithPassCount: payload.nonResidentWithPassCount,
     nonResidentUnder16Count: payload.nonResidentUnder16Count,
     passCoveredCount: payload.passCoveredCount,
-  }
+  } as ReservationUpdatePayload
 }
 
 /**

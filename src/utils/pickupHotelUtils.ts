@@ -6,6 +6,8 @@ import type { PickupHotelContentI18n } from '@/lib/pickupHotelLocales'
 export interface PickupHotel {
   id: string
   hotel: string
+  /** 관리자 배정 화면 등에 표시할 내부용 짧은 이름 */
+  internal_name: string | null
   pick_up_location: string
   /** Location Description (Korean) */
   description_ko: string | null
@@ -42,6 +44,9 @@ export interface PickupHotel {
   created_at: string | null
   updated_at: string | null
 }
+
+export type PickupHotelAssignmentOption = Pick<PickupHotel, 'id' | 'hotel'> &
+  Partial<Pick<PickupHotel, 'internal_name' | 'pick_up_location'>>
 
 /** 예약·스케줄 등 픽업 호텔 선택 목록에 쓸 수 있는지 */
 export function isPickupHotelSelectable(hotel: PickupHotel): boolean {

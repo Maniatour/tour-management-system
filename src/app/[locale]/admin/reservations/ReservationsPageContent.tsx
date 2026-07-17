@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal, Printer, ChevronDown } from 'lucide-react'
@@ -72,7 +73,10 @@ import {
   fetchAdminReservationListActivityWindowRowCount,
   ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS,
 } from '@/lib/adminReservationListFetch'
-import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
+import {
+  createChoicesBatchFetcher,
+  prefetchAdminReservationCardSideData,
+} from '@/lib/adminReservationCardPrefetch'
 import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
 import {
   fetchOperationalQueueCandidateIds,
@@ -171,7 +175,16 @@ const DeletedReservationsTableModal = dynamic(
 )
 const TourDetailModalContent = dynamic(
   () => import('@/components/tour/TourDetailModalContent').then((mod) => mod.TourDetailModalContent),
-  { ssr: false, loading: () => null }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[320px] flex-col gap-3 p-4">
+        <div className="h-8 w-1/3 animate-pulse rounded bg-gray-200" />
+        <div className="h-24 animate-pulse rounded bg-gray-100" />
+        <div className="h-24 animate-pulse rounded bg-gray-100" />
+      </div>
+    ),
+  }
 )
 const AwayOtherUserChangesModal = dynamic(
   () => import('@/components/shared/AwayOtherUserChangesModal'),
@@ -387,21 +400,20 @@ export default function AdminReservations() {
   const { user, userPosition, hasPermission } = useAuth()
   const isSuper = userPosition === 'super'
   
-  // ???????????? ?? ??? (??? ??? ?????? ??? ??) - useCallback??? ????????
+  // 초이스 뱃지 색상 (앤텔롭 L/X/U 고정색 + 기타 해시 색상)
   const getGroupColorClasses = useCallback((groupId: string, groupName?: string, optionName?: string) => {
-    // ??????? ???? ?????L / ?????X / ?????U ?? ??? (??? ??? ?????? ???????)
     const opt = (optionName || '').trim()
-    if (opt === '??? L') {
+    // 🏜️ 이모지 유무와 무관하게 L/X/U 축약 라벨 매칭
+    if (/(?:^|[\s])L$/.test(opt) || opt === '🏜️ L' || opt.endsWith(' L')) {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300'
     }
-    if (opt === '??? X') {
+    if (/(?:^|[\s])X$/.test(opt) || opt === '🏜️ X' || opt.endsWith(' X')) {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-300'
     }
-    if (opt === '??? U') {
+    if (/(?:^|[\s])U$/.test(opt) || opt === '🏜️ U' || opt.endsWith(' U')) {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200'
     }
 
-    // ????????? ?????(??????? ??? ???)
     const colorPalette = [
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-border",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200",
@@ -421,7 +433,6 @@ export default function AdminReservations() {
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
     ]
     
-    // ??? ??????????? ??????? (??? ??? ????? ???? ??? ???)
     const hashSource = optionName || groupName || groupId
     let hash = 0
     for (let i = 0; i < hashSource.length; i++) {
@@ -431,38 +442,79 @@ export default function AdminReservations() {
     return colorPalette[Math.abs(hash) % colorPalette.length]
   }, [])
 
-  // ????????????????????????????????????
+  const fetchChoicesBatch = useMemo(
+    () => createChoicesBatchFetcher(fetchApiWithAuth),
+    []
+  )
+
+  // 카드별 초이스 캐시 (목록 prefetch 가 paint 전에 채움 — N+1 GET /choices 방지)
+  const choicesCacheRef = useRef<Map<string, Array<{
+    choice_id: string
+    option_id: string
+    quantity: number
+    choice_options: {
+      option_key: string
+      option_name: string
+      option_name_ko: string
+      internal_name?: string
+      badge_icon_url?: string
+      product_choices: {
+        choice_group_ko: string
+      }
+    }
+  }>>>(new Map())
+
+  // 목록 prefetch 캐시 우선 — 카드마다 GET /choices 를 치지 않음
   const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string, isRetry = false) => {
     if (!reservationId?.trim()) {
       return []
     }
 
-    const run = async () => {
-      // product_choices는 reservation_choices.choice_id FK로도 연결됨. choice_options 안에 중첩하면
-      // PostgREST/데이터 불일치 시 조회가 실패할 수 있어 ReservationCard와 동일하게 형제 임베드 사용.
-      const { data, error } = await supabase
-        .from('reservation_choices')
-        .select(`
-          choice_id,
-          option_id,
-          quantity,
-          choice_options!inner (
-            option_key,
-            option_name,
-            option_name_ko
-          ),
-          product_choices!inner (
-            choice_group_ko
-          )
-        `)
-        .eq('reservation_id', reservationId)
+    if (choicesCacheRef.current.has(reservationId)) {
+      return choicesCacheRef.current.get(reservationId) ?? []
+    }
 
-      if (error) throw error
-      return data || []
+    const unwrap = <T,>(raw: T | T[] | null | undefined): T | null => {
+      if (raw == null) return null
+      return Array.isArray(raw) ? (raw[0] ?? null) : raw
+    }
+
+    const run = async () => {
+      const response = await fetchApiWithAuth(
+        `/api/reservations/${encodeURIComponent(reservationId)}/choices`,
+        { cache: 'no-store' }
+      )
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(body?.error || `예약 초이스 조회 실패 (${response.status})`)
+      }
+      const body = await response.json() as { choices?: Array<Record<string, unknown>> }
+      return body.choices ?? []
     }
 
     try {
-      return await run()
+      const rows = await run()
+      // PostgREST가 embed를 배열로 줄 수 있어 정규화
+      return (rows as Array<Record<string, unknown>>).map((row) => {
+        const co = unwrap(row.choice_options as Record<string, unknown> | Record<string, unknown>[] | null)
+        const pc = unwrap(row.product_choices as Record<string, unknown> | Record<string, unknown>[] | null)
+        return {
+          choice_id: row.choice_id,
+          option_id: row.option_id,
+          quantity: row.quantity,
+          option_key: row.option_key ?? co?.option_key ?? null,
+          choice_options: co
+            ? {
+                option_key: co.option_key ?? row.option_key ?? null,
+                option_name: co.option_name ?? null,
+                option_name_ko: co.option_name_ko ?? null,
+                internal_name: co.internal_name ?? null,
+                badge_icon_url: co.badge_icon_url ?? null,
+              }
+            : null,
+          product_choices: pc ? { choice_group_ko: pc.choice_group_ko ?? null } : null,
+        }
+      })
     } catch (error) {
       // AbortError ???: Error ?????? ??? Supabase? ????? { message, code, details } ?? ?? ??
       const msg = typeof (error as { message?: string })?.message === 'string' ? (error as { message: string }).message : (error instanceof Error ? error.message : '')
@@ -514,43 +566,44 @@ export default function AdminReservations() {
         choice_id?: string | null
         option_id?: string | null
         quantity?: number | null
+        option_key?: string | null
         choice_options?: {
           option_key?: string | null
           option_name?: string | null
           option_name_ko?: string | null
-        }
-        product_choices?: { choice_group_ko?: string | null }
+          internal_name?: string | null
+          badge_icon_url?: string | null
+        } | null
+        product_choices?: { choice_group_ko?: string | null } | null
       }
-      const co = row.choice_options
+      const co = row.choice_options as {
+        option_key?: string | null
+        option_name?: string | null
+        option_name_ko?: string | null
+        internal_name?: string | null
+        badge_icon_url?: string | null
+        product_choices?: { choice_group_ko?: string | null } | null
+      } | null
       const pc = row.product_choices
+      const optionKey = co?.option_key || row.option_key || ''
       return {
         choice_id: row.choice_id ?? '',
         option_id: row.option_id ?? '',
         quantity: row.quantity ?? 0,
         choice_options: {
-          option_key: co?.option_key ?? '',
+          option_key: optionKey,
           option_name: co?.option_name ?? '',
           option_name_ko: co?.option_name_ko ?? '',
-          product_choices: { choice_group_ko: pc?.choice_group_ko ?? '' },
+          internal_name: co?.internal_name ?? '',
+          badge_icon_url: co?.badge_icon_url ?? '',
+          product_choices: {
+            choice_group_ko:
+              pc?.choice_group_ko ?? co?.product_choices?.choice_group_ko ?? '',
+          },
         },
       }
     })
   }, [getSelectedChoicesFromNewSystem])
-
-  // ??????????? (???? ???)
-  const choicesCacheRef = useRef<Map<string, Array<{
-    choice_id: string
-    option_id: string
-    quantity: number
-    choice_options: {
-      option_key: string
-      option_name: string
-      option_name_ko: string
-      product_choices: {
-        choice_group_ko: string
-      }
-    }
-  }>>>(new Map())
 
   const [residentCustomerBatchMap, setResidentCustomerBatchMap] = useState<
     Map<string, { resident_status: string | null }[]>
@@ -1377,6 +1430,15 @@ export default function AdminReservations() {
           }
         })
 
+        // 투어 배정 인원은 tours.reservation_ids 안의 실제 활성 예약만 집계
+        const isActiveAssignedReservation = (reservation: Reservation) => {
+          const status = String(reservation.status || '').toLowerCase().trim()
+          return (
+            !isReservationCancelledStatus(status) &&
+            !isReservationDeletedStatus(status)
+          )
+        }
+
         // ??? ??? TourHeader?? ???: ??= ??????(confirmed/recruiting) ???, ?? = ??? ????(?????????????
         const isConfirmedOrRecruiting = (status: string | undefined) => {
           const s = (status || '').toString().toLowerCase().trim()
@@ -1420,12 +1482,13 @@ export default function AdminReservations() {
             vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
           }
 
-          // ??????? ??? ??: reservation_ids??unique ?????????? total_people ???
+          // 해당 투어에 실제 배정된 활성 예약 인원만 합산 (취소/삭제 예약 제외)
           if (tour.reservation_ids && tour.reservation_ids.length > 0) {
             const uniqueReservationIds = [...new Set(tour.reservation_ids)]
             totalPeople = uniqueReservationIds.reduce((sum: number, id: string) => {
               const reservation = reservationById.get(id)
               if (!reservation) return sum
+              if (!isActiveAssignedReservation(reservation)) return sum
               return sum + getReservationPartySize(reservation as unknown as Record<string, unknown>)
             }, 0)
           }
@@ -1875,7 +1938,12 @@ export default function AdminReservations() {
       return
     }
     try {
-      const m = await prefetchAdminReservationCardSideData(supabase, ids, choicesCacheRef)
+      const m = await prefetchAdminReservationCardSideData(
+        supabase,
+        ids,
+        choicesCacheRef,
+        fetchChoicesBatch
+      )
       setResidentCustomerBatchMap(m)
     } catch (e) {
       if (process.env.NODE_ENV === 'development') {
@@ -1885,7 +1953,7 @@ export default function AdminReservations() {
       for (const id of ids) fallback.set(id, [])
       setResidentCustomerBatchMap(fallback)
     }
-  }, [])
+  }, [fetchChoicesBatch])
 
   const mergeReservationListSideDataPrefetch = useCallback(async (rows: Record<string, unknown>[] | null) => {
     const ids = (rows || [])
@@ -1895,14 +1963,19 @@ export default function AdminReservations() {
       .filter(Boolean)
     if (ids.length === 0) return
     try {
-      const m = await prefetchAdminReservationCardSideData(supabase, ids, choicesCacheRef)
+      const m = await prefetchAdminReservationCardSideData(
+        supabase,
+        ids,
+        choicesCacheRef,
+        fetchChoicesBatch
+      )
       setResidentCustomerBatchMap((prev) => new Map([...prev, ...m]))
     } catch (e) {
       if (process.env.NODE_ENV === 'development') {
         console.warn('[admin reservations] card side merge prefetch failed:', e)
       }
     }
-  }, [])
+  }, [fetchChoicesBatch])
 
   const reservationsPageLoadingProgress = useMemo(() => {
     if (adminListChunkProgress) {
@@ -1969,8 +2042,8 @@ export default function AdminReservations() {
         })
         if (error) throw error
         if (fetchGen !== adminCardWeekFetchGenRef.current) return
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         setServerListTotal(count ?? 0)
         return
       }
@@ -1989,8 +2062,8 @@ export default function AdminReservations() {
           sortOrder: 'desc',
         })
         if (error) throw error
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         setServerListTotal(count ?? 0)
         return
       }
@@ -2052,6 +2125,8 @@ export default function AdminReservations() {
                   return true
                 }
                 if (!firstPaintDone) {
+                  // 초이스 캐시를 paint 전에 채워 카드별 GET /choices N+1 을 막음
+                  await applyReservationListSideDataPrefetch(rows)
                   await replaceReservationsFromQueryResultRef.current(rows, {
                     skipLoadingFlags: true,
                     listProgress: {
@@ -2059,11 +2134,11 @@ export default function AdminReservations() {
                       total: totalForProgress ?? tierTotal,
                     },
                   })
-                  await applyReservationListSideDataPrefetch(rows)
                   setServerListTotal(totalForProgress ?? tierTotal ?? rows.length)
                   setServerListLoading(false)
                   firstPaintDone = true
                 } else {
+                  await mergeReservationListSideDataPrefetch(rows)
                   await mergeMoreReservationsFromQueryResultRef.current(rows, {
                     skipLoadingFlags: true,
                     listProgress: {
@@ -2071,7 +2146,6 @@ export default function AdminReservations() {
                       total: totalForProgress ?? tierTotal,
                     },
                   })
-                  await mergeReservationListSideDataPrefetch(rows)
                   setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + rows.length)
                 }
                 return true
@@ -2079,6 +2153,7 @@ export default function AdminReservations() {
               onAdditionalChunk: async ({ rows, mergedLoaded, totalCount: tierTotal }) => {
                 if (fetchGen !== adminCardWeekFetchGenRef.current) return false
                 if (rows.length === 0) return true
+                await mergeReservationListSideDataPrefetch(rows)
                 await mergeMoreReservationsFromQueryResultRef.current(rows, {
                   skipLoadingFlags: true,
                   listProgress: {
@@ -2086,7 +2161,6 @@ export default function AdminReservations() {
                     total: totalForProgress ?? tierTotal,
                   },
                 })
-                await mergeReservationListSideDataPrefetch(rows)
                 setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + mergedLoaded)
                 return true
               },
@@ -2117,11 +2191,11 @@ export default function AdminReservations() {
               setServerListLoading(false)
               return true
             }
+            await applyReservationListSideDataPrefetch(rows)
             await replaceReservationsFromQueryResultRef.current(rows, {
               skipLoadingFlags: true,
               listProgress: { current: rows.length, total: totalCount },
             })
-            await applyReservationListSideDataPrefetch(rows)
             setServerListTotal(totalCount ?? rows.length)
             setServerListLoading(false)
             return true
@@ -2129,11 +2203,11 @@ export default function AdminReservations() {
           onAdditionalChunk: async ({ rows, mergedLoaded, totalCount }) => {
             if (fetchGen !== adminCardWeekFetchGenRef.current) return false
             if (rows.length === 0) return true
+            await mergeReservationListSideDataPrefetch(rows)
             await mergeMoreReservationsFromQueryResultRef.current(rows, {
               skipLoadingFlags: true,
               listProgress: { current: mergedLoaded, total: totalCount },
             })
-            await mergeReservationListSideDataPrefetch(rows)
             setServerListTotal(totalCount ?? mergedLoaded)
             return true
           },
@@ -2142,8 +2216,8 @@ export default function AdminReservations() {
       } else {
         const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
         if (error) throw error
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
         setServerListTotal(count ?? 0)
       }
     } catch (e) {
@@ -3743,6 +3817,31 @@ export default function AdminReservations() {
   }, [])
   const handleOpenTourDetailModal = useCallback((tourId: string) => {
     setTourDetailModalTourId(tourId)
+  }, [])
+
+  /** 투어 상세 모달 JS 청크를 유휴 시간에 미리 받아 첫 클릭 지연을 줄임 */
+  useEffect(() => {
+    let cancelled = false
+    const preload = () => {
+      if (cancelled) return
+      void import('@/components/tour/TourDetailModalContent')
+    }
+    const ric = (window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }).requestIdleCallback
+    if (typeof ric === 'function') {
+      const id = ric(preload, { timeout: 2500 })
+      return () => {
+        cancelled = true
+        window.cancelIdleCallback?.(id)
+      }
+    }
+    const t = window.setTimeout(preload, 1200)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
   }, [])
 
 
@@ -5600,47 +5699,50 @@ export default function AdminReservations() {
         </div>
       )}
 
-      {tourDetailModalTourId ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-3"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reservations-tour-detail-modal-title"
-          onClick={() => setTourDetailModalTourId(null)}
-        >
+      {tourDetailModalTourId &&
+        typeof document !== 'undefined' &&
+        createPortal(
           <div
-            className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/60 p-2 sm:p-3"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reservations-tour-detail-modal-title"
+            onClick={() => setTourDetailModalTourId(null)}
           >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-              <h3 id="reservations-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
-                {t('card.tourDetailModalTitle')}
-              </h3>
-              <div className="flex shrink-0 items-center gap-2">
-                <a
-                  href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-                >
-                  {t('card.openTourInNewTab')}
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setTourDetailModalTourId(null)}
-                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-                  aria-label={t('card.close')}
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </button>
+            <div
+              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                <h3 id="reservations-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
+                  {t('card.tourDetailModalTitle')}
+                </h3>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
+                  >
+                    {t('card.openTourInNewTab')}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setTourDetailModalTourId(null)}
+                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                    aria-label={t('card.close')}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 bg-gray-50">
+                <TourDetailModalContent tourId={tourDetailModalTourId} />
               </div>
             </div>
-            <div className="min-h-0 flex-1 bg-gray-50">
-              <TourDetailModalContent tourId={tourDetailModalTourId} />
-            </div>
-          </div>
-        </div>
-      ) : null}
+          </div>,
+          document.body
+        )}
 
       <DeletedReservationsTableModal
         isOpen={showDeletedReservationsModal}

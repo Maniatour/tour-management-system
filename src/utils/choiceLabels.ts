@@ -14,11 +14,16 @@ export function isChoiceOptionUuid(value: string | null | undefined): boolean {
  * 표시용 초이스 라벨 축약.
  * @param label option_name_ko / option_name / option_key
  * @param optionKey stable key (lower_antelope, antelope_x 등) — 이름보다 우선
+ * @param internalName 관리자가 설정한 내부용 짧은 이름 (예: 🏜️ X) — 최우선
  */
 export function simplifyChoiceLabel(
   label: string,
-  optionKey?: string | null
+  optionKey?: string | null,
+  internalName?: string | null
 ): string {
+  const internal = internalName != null ? String(internalName).trim() : ''
+  if (internal) return internal
+
   const keyRaw = optionKey != null ? String(optionKey).trim() : ''
   const key =
     keyRaw && !isChoiceOptionUuid(keyRaw) ? keyRaw.toLowerCase() : ''

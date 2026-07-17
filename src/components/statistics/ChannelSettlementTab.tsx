@@ -15,7 +15,6 @@ import {
   updateReservation,
   type ReservationUpdatePayload,
 } from '@/lib/reservationUpdate'
-import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { type ChannelInvoiceItem } from '@/utils/pdfExport'
 import ChannelInvoicePreviewModal from '@/components/statistics/ChannelInvoicePreviewModal'
 import ChannelOtaReconciliationModal from '@/components/statistics/ChannelOtaReconciliationModal'
@@ -28,9 +27,6 @@ import {
   computeChannelSettlementAmount,
   computeCompanyTotalRevenueLikePricingSection,
   deriveCommissionGrossForSettlement,
-  resolveCommissionBasePriceForPersistence,
-  resolveCommissionGrossForPricingSave,
-  pickFiniteNumber,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
@@ -38,16 +34,8 @@ import { type SystemReservationForOta } from '@/utils/otaSettlementReconciliatio
 import {
   isRefundedPaymentStatus,
   isReturnedPaymentStatus,
-  summarizePaymentRecordsForBalance,
-  type PaymentRecordLike,
   computeCustomerPaymentNetForCompanyRevenueBase,
 } from '@/utils/reservationPricingBalance'
-import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
-import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
-import {
-  computeRefundAmountForCompanyRevenueBlock,
-  computeStoredCompanyRevenueFields,
-} from '@/utils/storedCompanyRevenue'
 import {
   aggregatePricingCalcTotals,
   buildChannelSettlementPricingCalcDisplay,

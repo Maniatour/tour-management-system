@@ -13,6 +13,7 @@ import {
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
+import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
@@ -73,7 +74,7 @@ interface AssignmentManagementProps {
   getCustomerLanguage: (customerId: string) => string
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
-  pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
+  pickupHotels?: PickupHotelAssignmentOption[]
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   hasMultipleToursOnSameDay?: boolean
   currentTourId?: string

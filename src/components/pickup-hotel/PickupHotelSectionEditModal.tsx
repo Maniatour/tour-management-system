@@ -84,6 +84,7 @@ export default function PickupHotelSectionEditModal({
   const [editLocale, setEditLocale] = useState<PickupContentLocale>(contentLocaleProp)
 
   const [hotelName, setHotelName] = useState(hotel.hotel || '')
+  const [internalName, setInternalName] = useState(hotel.internal_name || '')
   const [pickUpLocation, setPickUpLocation] = useState(hotel.pick_up_location || '')
   const [groupNumber, setGroupNumber] = useState<number | null>(hotel.group_number)
   const [descriptionText, setDescriptionText] = useState('')
@@ -105,6 +106,7 @@ export default function PickupHotelSectionEditModal({
 
   useEffect(() => {
     setHotelName(hotel.hotel || '')
+    setInternalName(hotel.internal_name || '')
     setPickUpLocation(hotel.pick_up_location || '')
     setGroupNumber(hotel.group_number)
     setAddress(hotel.address || '')
@@ -135,6 +137,7 @@ export default function PickupHotelSectionEditModal({
       case 'basic':
         return {
           hotel: hotelName.trim(),
+          internal_name: internalName.trim() || null,
           pick_up_location: pickUpLocation.trim(),
           group_number: groupNumber,
         }
@@ -246,6 +249,25 @@ export default function PickupHotelSectionEditModal({
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs font-semibold">{isEn ? 'Hotel' : '호텔 이름'}</label>
                 <input className={inputClass} value={hotelName} onChange={(e) => setHotelName(e.target.value)} />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {isEn ? 'Full name shown to customers' : '고객 안내에 표시되는 전체 이름'}
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-semibold">
+                  {isEn ? 'Internal name' : '내부용 이름'}
+                </label>
+                <input
+                  className={inputClass}
+                  value={internalName}
+                  onChange={(e) => setInternalName(e.target.value)}
+                  placeholder={isEn ? 'e.g. Bellagio' : '예: 벨라지오'}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {isEn
+                    ? 'Used only on assignment reservation cards. Falls back to the full name when blank.'
+                    : '배정 관리 예약 카드에만 표시되며, 비워두면 전체 이름을 사용합니다.'}
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold">{isEn ? 'Pickup location' : '픽업 위치'}</label>

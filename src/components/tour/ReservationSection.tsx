@@ -2,6 +2,7 @@ import React from 'react'
 import { ReservationCard } from './ReservationCard'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 
 interface Reservation {
   id: string
@@ -43,7 +44,7 @@ interface ReservationSectionProps {
   getCustomerLanguage: (customerId: string) => string
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
-  pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
+  pickupHotels?: PickupHotelAssignmentOption[]
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   getProductCodeForReservation?: (reservation: Reservation) => string | null | undefined
   headerBadges?: React.ReactNode

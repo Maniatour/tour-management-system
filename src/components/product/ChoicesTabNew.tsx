@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings, Pencil, Check, ImageOff, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -66,6 +66,10 @@ interface ChoiceOptionData {
   image_url?: string | undefined
   image_alt?: string | undefined
   thumbnail_url?: string | undefined
+  /** 예약 카드 뱃지용 내부 짧은 이름 (예: 🏜️ X) */
+  internal_name?: string | undefined
+  /** 예약 카드 뱃지용 아이콘 이미지 URL */
+  badge_icon_url?: string | undefined
 }
 
 interface SupabaseError {
@@ -94,6 +98,10 @@ interface ChoiceOption {
   image_url?: string | undefined
   image_alt?: string | undefined
   thumbnail_url?: string | undefined
+  /** 예약 카드 뱃지용 내부 짧은 이름 (예: 🏜️ X) */
+  internal_name?: string | undefined
+  /** 예약 카드 뱃지용 아이콘 이미지 URL */
+  badge_icon_url?: string | undefined
 }
 
 interface ProductChoice {
@@ -131,9 +139,8 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
   const [showExportTemplateModal, setShowExportTemplateModal] = useState(false)
   const [selectedChoiceIds, setSelectedChoiceIds] = useState<Set<string>>(new Set())
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
-  const [dragOverStates, setDragOverStates] = useState<{[key: string]: boolean}>({})
   const [draggedGroupIndex, setDraggedGroupIndex] = useState<number | null>(null)
-  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
+  const [editingOption, setEditingOption] = useState<{ groupIndex: number; optionId: string } | null>(null)
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [importData, setImportData] = useState('')
@@ -343,7 +350,9 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             sort_order,
             image_url,
             image_alt,
-            thumbnail_url
+            thumbnail_url,
+            internal_name,
+            badge_icon_url
           )
         `)
         .eq('product_id', productId)
@@ -363,7 +372,9 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           ...option,
           image_url: option.image_url || undefined,
           image_alt: option.image_alt || undefined,
-          thumbnail_url: option.thumbnail_url || undefined
+          thumbnail_url: option.thumbnail_url || undefined,
+          internal_name: option.internal_name || undefined,
+          badge_icon_url: option.badge_icon_url || undefined
         }))
       }))
       setProductChoices(convertedChoices)
@@ -415,7 +426,9 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             sort_order,
             image_url,
             image_alt,
-            thumbnail_url
+            thumbnail_url,
+            internal_name,
+            badge_icon_url
           )
         `)
         .eq('product_id', productId)
@@ -429,7 +442,9 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             ...option,
             image_url: option.image_url || undefined,
             image_alt: option.image_alt || undefined,
-            thumbnail_url: option.thumbnail_url || undefined
+            thumbnail_url: option.thumbnail_url || undefined,
+            internal_name: option.internal_name || undefined,
+            badge_icon_url: option.badge_icon_url || undefined
           }))
         }))
       }
@@ -553,12 +568,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           // UPDATE가 성공하고 결과가 있으면 사용
           if (!updateError && updatedChoices && updatedChoices.length > 0) {
             choiceData = updatedChoices[0]
-
-            // 기존 옵션 삭제
-            await supabase
-              .from('choice_options')
-              .delete()
-              .eq('choice_id', updateId)
+            // 옵션 ID를 유지하기 위해 전체 삭제하지 않음 (아래에서 upsert)
           } else {
             // UPDATE 실패 또는 레코드가 없으면 INSERT
             console.log(`Update failed or no record found for id ${updateId}, inserting new record`)
@@ -607,32 +617,79 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choiceData = insertedChoice
         }
 
-        // 초이스들 저장
+        // 초이스 옵션 저장 (ID 유지 upsert — 삭제 후 재삽입 시 예약 JSON의 option_id가 orphan 됨)
         if (choice.options && choice.options.length > 0) {
-          const optionsToInsert = choice.options.map(option => ({
-            choice_id: choiceData.id,
-            option_key: option.option_key,
-            option_name: option.option_name,
-            option_name_ko: option.option_name_ko,
-            description: option.description,
-            description_ko: option.description_ko,
-            adult_price: option.adult_price,
-            child_price: option.child_price,
-            infant_price: option.infant_price,
-            capacity: option.capacity,
-            is_default: option.is_default,
-            is_active: option.is_active,
-            sort_order: option.sort_order,
-            image_url: option.image_url,
-            image_alt: option.image_alt,
-            thumbnail_url: option.thumbnail_url
-          }))
+          const uuidRe =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          const keptOptionIds: string[] = []
 
-          const { error: optionsError } = await supabase
+          for (const option of choice.options) {
+            const payload = {
+              choice_id: choiceData.id,
+              option_key: option.option_key,
+              option_name: option.option_name,
+              option_name_ko: option.option_name_ko,
+              description: option.description,
+              description_ko: option.description_ko,
+              adult_price: option.adult_price,
+              child_price: option.child_price,
+              infant_price: option.infant_price,
+              capacity: option.capacity,
+              is_default: option.is_default,
+              is_active: option.is_active,
+              sort_order: option.sort_order,
+              image_url: option.image_url,
+              image_alt: option.image_alt,
+              thumbnail_url: option.thumbnail_url,
+              internal_name: option.internal_name?.trim() || null,
+              badge_icon_url: option.badge_icon_url?.trim() || null,
+            }
+
+            const hasValidId =
+              Boolean(option.id) &&
+              !String(option.id).startsWith('temp_') &&
+              uuidRe.test(String(option.id))
+
+            if (hasValidId) {
+              const { data: updatedOpt, error: optUpdateError } = await supabase
+                .from('choice_options')
+                .update(payload as never)
+                .eq('id', option.id)
+                .eq('choice_id', choiceData.id)
+                .select('id')
+
+              if (!optUpdateError && updatedOpt && updatedOpt.length > 0) {
+                keptOptionIds.push(String(option.id))
+                continue
+              }
+            }
+
+            const { data: insertedOpt, error: optInsertError } = await supabase
+              .from('choice_options')
+              .insert(payload as never)
+              .select('id')
+              .single()
+
+            if (optInsertError) throw optInsertError
+            if (insertedOpt?.id) keptOptionIds.push(String(insertedOpt.id))
+          }
+
+          // UI에서 제거된 옵션만 삭제
+          const { data: existingOpts } = await supabase
             .from('choice_options')
-            .insert(optionsToInsert as never)
+            .select('id')
+            .eq('choice_id', choiceData.id)
 
-          if (optionsError) throw optionsError
+          const toDelete = ((existingOpts || []) as Array<{ id: string }>)
+            .map((o) => o.id)
+            .filter((id) => !keptOptionIds.includes(id))
+
+          if (toDelete.length > 0) {
+            await supabase.from('choice_options').delete().in('id', toDelete)
+          }
+        } else {
+          // 옵션이 모두 비어 있으면 해당 그룹 옵션 삭제
+          await supabase.from('choice_options').delete().eq('choice_id', choiceData.id)
         }
       }
 
@@ -752,14 +809,17 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       sort_order: existingOptions.length,
       image_url: undefined,
       image_alt: undefined,
-      thumbnail_url: undefined
+      thumbnail_url: undefined,
+      internal_name: undefined,
+      badge_icon_url: undefined
     }
     
-    setProductChoices(prev => prev.map((group, i) => 
-      i === groupIndex 
+    setProductChoices(prev => prev.map((group, i) =>
+      i === groupIndex
         ? { ...group, options: [...group.options, newOption] }
         : group
     ))
+    setEditingOption({ groupIndex, optionId: newOption.id })
   }, [productChoices])
 
   // 초이스 삭제
@@ -833,8 +893,15 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
 
 
   // 이미지 업로드 처리 함수 - optionId로 찾아서 업데이트
-  const handleImageUpload = useCallback(async (file: File, groupIndex: number, optionId: string) => {
-    const uploadKey = `${groupIndex}-${optionId}`
+  const handleImageUpload = useCallback(async (
+    file: File,
+    groupIndex: number,
+    optionId: string,
+    targetField: 'image_url' | 'badge_icon_url' = 'image_url'
+  ) => {
+    const uploadKey = targetField === 'badge_icon_url'
+      ? `${groupIndex}-${optionId}-badge`
+      : `${groupIndex}-${optionId}`
     setUploadingImages(prev => ({ ...prev, [uploadKey]: true }))
     
     try {
@@ -867,7 +934,8 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       }
 
       // Supabase Storage에 업로드
-      const fileName = `choice-options/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+      const folder = targetField === 'badge_icon_url' ? 'choice-badges' : 'choice-options'
+      const fileName = `${folder}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
       const { error } = await supabase.storage
         .from(bucketName)
         .upload(fileName, file, {
@@ -886,9 +954,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         .from(bucketName)
         .getPublicUrl(fileName)
 
-      // 이미지 URL과 alt 텍스트 업데이트
-      updateChoiceOption(groupIndex, optionId, 'image_url', urlData.publicUrl)
-      updateChoiceOption(groupIndex, optionId, 'image_alt', file.name)
+      updateChoiceOption(groupIndex, optionId, targetField, urlData.publicUrl)
+      if (targetField === 'image_url') {
+        updateChoiceOption(groupIndex, optionId, 'image_alt', file.name)
+      }
     } catch (error) {
       console.error('이미지 업로드 오류:', error)
       alert(`이미지 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
@@ -1452,22 +1521,6 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                   </h4>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
-                      onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-                      className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-gray-600 hover:bg-gray-50 rounded border border-gray-200"
-                    >
-                      {allCardsCollapsed ? (
-                        <>
-                          <ChevronDown className="w-3 h-3 mr-1" />
-                          상세보기
-                        </>
-                      ) : (
-                        <>
-                          <ChevronUp className="w-3 h-3 mr-1" />
-                          접어보기
-                        </>
-                      )}
-                    </button>
-                    <button
                       onClick={() => addChoiceOption(groupIndex)}
                       className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-primary bg-primary/5 hover:bg-muted rounded border border-border/60"
                     >
@@ -1477,495 +1530,178 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                   </div>
                 </div>
 
-                {/* 세로형 카드뷰 그리드 레이아웃 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {/* 고객 미리보기 카드 — 고정 340px, 너비에 따라 열 수 자동 */}
+                <div className="flex flex-wrap gap-4">
                  {[...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((option) => {
                    const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
                    const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
                    const isFirst = actualIndex === 0
                    const isLast = actualIndex === sortedOptions.length - 1
+                   const descLines = (option.description_ko || '')
+                     .split('\n')
+                     .map((line) => line.replace(new RegExp('^[\\s✓✔✅•\\-*]+'), '').trim())
+                     .filter(Boolean)
+                   const priceLabel =
+                     option.adult_price > 0
+                       ? homepagePricingType === 'single'
+                         ? `+$${option.adult_price}`
+                         : `성인 $${option.adult_price}`
+                       : null
                    return (
-                   <div key={option.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group flex flex-col">
-                     {/* 이미지 섹션 (상단) */}
-                     <div className="relative w-full h-48 bg-gray-100">
+                   <div
+                     key={option.id}
+                     className="w-[340px] max-w-full bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col"
+                   >
+                     <div className="relative w-full aspect-[16/10] bg-gray-100">
                        {option.image_url ? (
-                         <div 
-                           className="relative w-full h-full"
-                           onDragOver={(e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: true }))
-                           }}
-                           onDragLeave={(e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
-                           }}
-                           onDrop={async (e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
-                             
-                             const files = Array.from(e.dataTransfer.files)
-                             const imageFiles = files.filter(file => file.type.startsWith('image/'))
-                             
-                             if (imageFiles.length > 0) {
-                               await handleImageUpload(imageFiles[0], groupIndex, option.id)
-                             }
-                           }}
-                         >
-                           <Image
-                             src={option.image_url}
-                             alt={option.image_alt || option.option_name_ko}
-                             fill
-                             sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                             className={`object-cover transition-all ${
-                               dragOverStates[`${groupIndex}-${option.id}`]
-                                 ? 'scale-105 brightness-110'
-                                 : ''
-                             }`}
-                           />
-                           {dragOverStates[`${groupIndex}-${option.id}`] && (
-                             <div className="absolute inset-0 bg-primary/50 bg-opacity-30 flex items-center justify-center z-10">
-                               <p className="text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg">이미지 놓기</p>
-                             </div>
-                           )}
-                           {/* 이미지 편집 버튼 */}
-                           <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <input
-                               type="file"
-                               accept="image/*"
-                               disabled={uploadingImages[`${groupIndex}-${option.id}`]}
-                               onChange={async (e) => {
-                                 const file = e.target.files?.[0]
-                                 if (file) {
-                                   await handleImageUpload(file, groupIndex, option.id)
-                                   e.target.value = ''
-                                 }
-                               }}
-                               className="hidden"
-                               id={`file-upload-${groupIndex}-${option.id}`}
-                             />
-                             <button
-                               onClick={() => {
-                                 if (!uploadingImages[`${groupIndex}-${option.id}`]) {
-                                   document.getElementById(`file-upload-${groupIndex}-${option.id}`)?.click()
-                                 }
-                               }}
-                               className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-md"
-                               title="이미지 변경"
-                             >
-                               <Upload className="w-4 h-4" />
-                             </button>
-                             <button
-                               onClick={() => {
-                                 updateChoiceOption(groupIndex, option.id, 'image_url', '')
-                                 updateChoiceOption(groupIndex, option.id, 'image_alt', '')
-                               }}
-                               className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-md"
-                               title="이미지 삭제"
-                             >
-                               <Trash2 className="w-4 h-4" />
-                             </button>
-                           </div>
-                         </div>
+                         <Image
+                           src={option.image_url}
+                           alt={option.image_alt || option.option_name_ko || 'choice'}
+                           fill
+                           sizes="340px"
+                           className="object-cover"
+                         />
                        ) : (
-                         <div 
-                           className={`w-full h-full border-2 border-dashed transition-all flex items-center justify-center ${
-                             dragOverStates[`${groupIndex}-${option.id}`]
-                               ? 'border-blue-400 bg-primary/5'
-                               : 'border-gray-200 bg-gray-50'
-                           } ${uploadingImages[`${groupIndex}-${option.id}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
-                           onDragOver={(e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: true }))
-                           }}
-                           onDragLeave={(e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
-                           }}
-                           onDrop={async (e) => {
-                             e.preventDefault()
-                             e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
-                             
-                             const files = Array.from(e.dataTransfer.files)
-                             const imageFiles = files.filter(file => file.type.startsWith('image/'))
-                             
-                             if (imageFiles.length > 0) {
-                               await handleImageUpload(imageFiles[0], groupIndex, option.id)
-                             }
-                           }}
-                           onClick={() => {
-                             if (!uploadingImages[`${groupIndex}-${option.id}`]) {
-                               document.getElementById(`file-upload-${groupIndex}-${option.id}`)?.click()
-                             }
-                           }}
-                         >
-                           <input
-                             type="file"
-                             accept="image/*"
-                             disabled={uploadingImages[`${groupIndex}-${option.id}`]}
-                             onChange={async (e) => {
-                               const file = e.target.files?.[0]
-                               if (file) {
-                                 await handleImageUpload(file, groupIndex, option.id)
-                                 e.target.value = ''
-                               }
-                             }}
-                             className="hidden"
-                             id={`file-upload-${groupIndex}-${option.id}`}
-                           />
-                           {uploadingImages[`${groupIndex}-${option.id}`] ? (
-                             <div className="flex flex-col items-center justify-center">
-                               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
-                               <p className="text-sm text-primary font-medium">업로드 중...</p>
-                             </div>
-                           ) : (
-                             <div className="flex flex-col items-center justify-center">
-                               <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                               <p className="text-sm text-gray-600 font-medium">이미지 업로드</p>
-                               <p className="text-xs text-gray-400 mt-1">클릭하거나 드래그</p>
-                             </div>
-                           )}
+                         <div className="flex h-full w-full items-center justify-center text-gray-400">
+                           <ImageOff className="h-8 w-8" aria-hidden />
                          </div>
                        )}
-                       {/* 번호 뱃지 */}
-                       <div className="absolute top-2 left-2 w-8 h-8 bg-gradient-to-br from-primary to-primary text-white rounded-lg flex items-center justify-center text-sm font-bold shadow-lg">
+                       <div className="absolute top-2 left-2 w-7 h-7 bg-primary text-primary-foreground rounded-lg flex items-center justify-center text-xs font-bold shadow">
                          {actualIndex + 1}
                        </div>
+                       {option.badge_icon_url ? (
+                         <div className="absolute top-2 right-2 h-8 w-8 overflow-hidden rounded-full bg-white/95 border border-gray-200 shadow-sm">
+                           <Image
+                             src={option.badge_icon_url}
+                             alt={option.internal_name || 'badge'}
+                             fill
+                             sizes="32px"
+                             className="object-contain"
+                           />
+                         </div>
+                       ) : option.internal_name?.trim() ? (
+                         <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-white/95 border border-gray-200 text-xs font-semibold text-gray-800 shadow-sm">
+                           {option.internal_name.trim()}
+                         </div>
+                       ) : null}
                      </div>
 
-                     {/* 정보 섹션 (하단) */}
-                     <div className="p-4 flex-1 flex flex-col">
-                       {/* 헤더 */}
-                       <div className="flex items-center justify-between mb-3">
-                         <h4 className="text-base font-semibold text-gray-800">
-                           {option.option_name_ko || option.option_name || `초이스 ${actualIndex + 1}`}
-                         </h4>
-                         <div className="flex items-center gap-2">
-                           <div className="flex flex-col space-y-0.5 mr-1">
-                             <button
-                               onClick={(e) => {
-                                 e.stopPropagation()
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 moveChoiceOption(groupIndex, actualIndex, 'up')
-                               }}
-                               disabled={isFirst}
-                               className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
-                                 isFirst ? 'opacity-30 cursor-not-allowed' : ''
-                               }`}
-                               title="위로 이동"
-                             >
-                               <ChevronUp size={12} />
-                             </button>
-                             <button
-                               onClick={(e) => {
-                                 e.stopPropagation()
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 moveChoiceOption(groupIndex, actualIndex, 'down')
-                               }}
-                               disabled={isLast}
-                               className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
-                                 isLast ? 'opacity-30 cursor-not-allowed' : ''
-                               }`}
-                               title="아래로 이동"
-                             >
-                               <ChevronDown size={12} />
-                             </button>
-                           </div>
-                           <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 hover:border-border transition-colors cursor-pointer">
-                             <input
-                               type="checkbox"
-                               checked={option.is_default}
-                               onChange={(e) => {
-                                 updateChoiceOption(groupIndex, option.id, 'is_default', e.target.checked)
-                               }}
-                               className="mr-1 w-3 h-3 text-primary rounded focus:ring-ring"
-                             />
-                             기본값
-                           </label>
+                     <div className="p-4 flex-1 flex flex-col gap-3">
+                       <div className="flex items-start justify-between gap-2">
+                         <div className="min-w-0 flex-1">
+                           <h4 className="text-base font-semibold text-gray-900 leading-snug">
+                             {option.option_name_ko || option.option_name || `초이스 ${actualIndex + 1}`}
+                           </h4>
+                           {option.option_name ? (
+                             <p className="mt-0.5 text-xs text-gray-500 truncate">{option.option_name}</p>
+                           ) : null}
+                         </div>
+                         {priceLabel ? (
+                           <span className="shrink-0 text-sm font-semibold text-gray-900">{priceLabel}</span>
+                         ) : null}
+                       </div>
+
+                       {descLines.length > 0 ? (
+                         <ul className="space-y-1 rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                           {descLines.slice(0, 4).map((line, i) => (
+                             <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
+                               <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" strokeWidth={3} />
+                               <span className="leading-snug">{line}</span>
+                             </li>
+                           ))}
+                           {descLines.length > 4 ? (
+                             <li className="text-[11px] text-gray-400 pl-5">+{descLines.length - 4}개 더보기</li>
+                           ) : null}
+                         </ul>
+                       ) : null}
+
+                       <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
+                         <div className="flex flex-col space-y-0.5 mr-0.5">
                            <button
+                             type="button"
                              onClick={(e) => {
                                e.stopPropagation()
-                               const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                               const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                               moveChoiceOption(groupIndex, actualIndex, 'up')
+                             }}
+                             disabled={isFirst}
+                             className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
+                               isFirst ? 'opacity-30 cursor-not-allowed' : ''
+                             }`}
+                             title="위로 이동"
+                           >
+                             <ChevronUp size={12} />
+                           </button>
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation()
+                               moveChoiceOption(groupIndex, actualIndex, 'down')
+                             }}
+                             disabled={isLast}
+                             className={`p-0.5 text-gray-600 hover:text-primary hover:bg-muted/50 rounded ${
+                               isLast ? 'opacity-30 cursor-not-allowed' : ''
+                             }`}
+                             title="아래로 이동"
+                           >
+                             <ChevronDown size={12} />
+                           </button>
+                         </div>
+                         <label className="flex items-center text-[11px] text-gray-600 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 cursor-pointer">
+                           <input
+                             type="checkbox"
+                             checked={option.is_default}
+                             onChange={(e) => updateChoiceOption(groupIndex, option.id, 'is_default', e.target.checked)}
+                             className="mr-1 w-3 h-3 text-primary rounded focus:ring-ring"
+                           />
+                           기본값
+                         </label>
+                         {!option.is_active ? (
+                           <span className="text-[11px] px-2 py-1 rounded-md bg-red-50 text-red-600 border border-red-100">비활성</span>
+                         ) : null}
+                         <div className="ml-auto flex items-center gap-1">
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation()
+                               setEditingOption({ groupIndex, optionId: option.id })
+                             }}
+                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 rounded-lg border border-border/60"
+                             title="수정"
+                           >
+                             <Pencil className="w-3.5 h-3.5" />
+                             수정
+                           </button>
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation()
                                copyChoiceOption(groupIndex, actualIndex)
                              }}
-                             className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-md transition-all"
+                             className="p-1.5 text-green-600 hover:bg-green-50 rounded-md"
                              title="초이스 복사"
                            >
                              <Copy className="w-4 h-4" />
                            </button>
                            <button
+                             type="button"
                              onClick={(e) => {
                                e.stopPropagation()
-                               const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                               const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
                                removeChoiceOption(groupIndex, actualIndex)
                              }}
-                             className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-all"
+                             className="p-1.5 text-red-500 hover:bg-red-50 rounded-md"
                              title="초이스 삭제"
                            >
                              <Trash2 className="w-4 h-4" />
                            </button>
                          </div>
                        </div>
-
-                       {/* 옵션 설명 표시 (항상 표시) */}
-                       {(option.description_ko || option.description) && (
-                         <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2">
-                           {option.description_ko && (
-                             <p className="text-xs text-gray-600 mb-1 whitespace-pre-wrap line-clamp-2">{option.description_ko}</p>
-                           )}
-                           {option.description && (
-                             <p className="text-xs text-gray-500 whitespace-pre-wrap line-clamp-2">{option.description}</p>
-                           )}
-                         </div>
-                       )}
-
-                       {!allCardsCollapsed && (
-                         <>
-                           {/* 초이스명 */}
-                           <div className="space-y-2 mb-3">
-                             <label className="block text-xs font-medium text-gray-600">
-                               한국어
-                               <span className="ml-2 text-xs text-gray-500 font-normal">
-                                 (ID: {option.id}, Key: {option.option_key})
-                               </span>
-                             </label>
-                             <input
-                               type="text"
-                               value={option.option_name_ko}
-                               onChange={(e) => {
-                                 updateChoiceOption(groupIndex, option.id, 'option_name_ko', e.target.value)
-                               }}
-                               placeholder="초이스명 (한국어)"
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
-                             <label className="block text-xs font-medium text-gray-600">영어</label>
-                             <input
-                               type="text"
-                               value={option.option_name}
-                               onChange={(e) => {
-                                 updateChoiceOption(groupIndex, option.id, 'option_name', e.target.value)
-                               }}
-                               placeholder="초이스명 (영어)"
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
-                           </div>
-
-                           {/* 설명 */}
-                           <div className="space-y-2 mb-3">
-                             <label className="block text-xs font-medium text-gray-600">설명 (한국어)</label>
-                             <textarea
-                               value={option.description_ko || ''}
-                               onChange={(e) => {
-                                 updateChoiceOption(groupIndex, option.id, 'description_ko', e.target.value)
-                               }}
-                               placeholder="설명 (한국어)"
-                               rows={2}
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
-                             />
-                             <label className="block text-xs font-medium text-gray-600">설명 (영어)</label>
-                             <textarea
-                               value={option.description || ''}
-                               onChange={(e) => {
-                                 updateChoiceOption(groupIndex, option.id, 'description', e.target.value)
-                               }}
-                               placeholder="Description (English)"
-                               rows={2}
-                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
-                             />
-                           </div>
-
-                           {/* 가격 */}
-                           <div className="space-y-2 mb-3">
-                             <label className="block text-xs font-medium text-gray-600">
-                               가격
-                               {homepagePricingType === 'single' && (
-                                 <span className="ml-2 text-xs text-primary font-normal">(단일 가격)</span>
-                               )}
-                             </label>
-                             {homepagePricingType === 'single' ? (
-                               // 단일 가격 모드
-                               <div>
-                                 <label className="block text-xs text-gray-500 mb-1">가격</label>
-                                 <input
-                                   type="number"
-                                   value={option.adult_price}
-                                   onChange={(e) => {
-                                     const price = parseInt(e.target.value) || 0
-                                     updateChoiceOption(groupIndex, option.id, 'adult_price', price)
-                                     // 단일 가격인 경우 아동/유아 가격도 동일하게 설정
-                                     updateChoiceOption(groupIndex, option.id, 'child_price', price)
-                                     updateChoiceOption(groupIndex, option.id, 'infant_price', price)
-                                   }}
-                                   placeholder="0"
-                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                 />
-                                 <p className="text-xs text-gray-500 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
-                               </div>
-                             ) : (
-                               // 분리 가격 모드
-                               <div className="grid grid-cols-3 gap-2">
-                                 <div>
-                                   <label className="block text-xs text-gray-500 mb-1">성인</label>
-                                   <input
-                                     type="number"
-                                     value={option.adult_price}
-                                     onChange={(e) => {
-                                       updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)
-                                     }}
-                                     placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="block text-xs text-gray-500 mb-1">아동</label>
-                                   <input
-                                     type="number"
-                                     value={option.child_price}
-                                     onChange={(e) => {
-                                       updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)
-                                     }}
-                                     placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="block text-xs text-gray-500 mb-1">유아</label>
-                                   <input
-                                     type="number"
-                                     value={option.infant_price}
-                                     onChange={(e) => {
-                                       updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)
-                                     }}
-                                     placeholder="0"
-                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                   />
-                                 </div>
-                               </div>
-                             )}
-                             <div className="flex items-center justify-between pt-2">
-                               {choice.choice_type === 'quantity' && (
-                                 <div>
-                                   <div className="flex items-center gap-1 mb-1">
-                                     <label className="block text-xs text-gray-500">수용</label>
-                                     <div className="relative inline-block">
-                                       <Info 
-                                         className="w-3.5 h-3.5 text-gray-400 hover:text-primary cursor-help transition-colors" 
-                                         onMouseEnter={(e) => {
-                                           const tooltip = e.currentTarget.parentElement?.querySelector('[data-tooltip]') as HTMLElement;
-                                           if (tooltip) {
-                                             // 아이콘 위치 기준으로 계산
-                                             const iconRect = e.currentTarget.getBoundingClientRect();
-                                             const tooltipWidth = 256;
-                                             const tooltipHeight = 90;
-                                             const margin = 8;
-                                             
-                                             let left = iconRect.left + iconRect.width / 2;
-                                             let top = iconRect.top - tooltipHeight - margin;
-                                             
-                                             // 화면 경계 체크 및 조정
-                                             if (left - tooltipWidth / 2 < margin) {
-                                               left = tooltipWidth / 2 + margin;
-                                             } else if (left + tooltipWidth / 2 > window.innerWidth - margin) {
-                                               left = window.innerWidth - tooltipWidth / 2 - margin;
-                                             }
-                                             
-                                             // 위쪽 공간이 부족하면 아래쪽에 표시
-                                             if (top < margin) {
-                                               top = iconRect.bottom + margin;
-                                               tooltip.style.transform = 'translate(-50%, 0)';
-                                               const arrow = tooltip.querySelector('.tooltip-arrow') as HTMLElement;
-                                               if (arrow) {
-                                                 arrow.style.top = '0';
-                                                 arrow.style.bottom = 'auto';
-                                                 arrow.style.transform = 'translate(-50%, -100%)';
-                                                 arrow.innerHTML = '<div class="border-4 border-transparent border-b-gray-900"></div>';
-                                               }
-                                             } else {
-                                               tooltip.style.transform = 'translate(-50%, -100%)';
-                                               const arrow = tooltip.querySelector('.tooltip-arrow') as HTMLElement;
-                                               if (arrow) {
-                                                 arrow.style.top = 'auto';
-                                                 arrow.style.bottom = '0';
-                                                 arrow.style.transform = 'translate(-50%, 100%)';
-                                                 arrow.innerHTML = '<div class="border-4 border-transparent border-t-gray-900"></div>';
-                                               }
-                                             }
-                                             
-                                             tooltip.style.top = `${top}px`;
-                                             tooltip.style.left = `${left}px`;
-                                             tooltip.classList.remove('opacity-0', 'invisible');
-                                             tooltip.classList.add('opacity-100', 'visible');
-                                           }
-                                         }}
-                                         onMouseLeave={(e) => {
-                                           const tooltip = e.currentTarget.parentElement?.querySelector('[data-tooltip]') as HTMLElement;
-                                           if (tooltip) {
-                                             tooltip.classList.remove('opacity-100', 'visible');
-                                             tooltip.classList.add('opacity-0', 'invisible');
-                                           }
-                                         }}
-                                       />
-                                       <div 
-                                         data-tooltip
-                                         className="fixed w-64 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible transition-opacity duration-200 z-[9999] pointer-events-none"
-                                         style={{
-                                           transform: 'translate(-50%, -100%)',
-                                           marginTop: '-8px'
-                                         }}>
-                                         <div className="mb-1 font-semibold">수용 인원</div>
-                                         <div className="text-gray-300">
-                                           해당 옵션이 수용할 수 있는 인원 수입니다.<br/>
-                                           예: 1인 1실 = 1, 2인 1실 = 2<br/>
-                                           수량 기반 선택 시 예약 인원과 비교하여 검증됩니다.
-                                         </div>
-                                         <div className="tooltip-arrow absolute bottom-0 left-1/2 transform translate-x-1/2 translate-y-full">
-                                           <div className="border-4 border-transparent border-t-gray-900"></div>
-                                         </div>
-                                       </div>
-                                     </div>
-                                   </div>
-                                   <input
-                                     type="number"
-                                     value={option.capacity}
-                                     onChange={(e) => {
-                                       updateChoiceOption(groupIndex, option.id, 'capacity', parseInt(e.target.value) || 1)
-                                     }}
-                                     placeholder="1"
-                                     className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                   />
-                                 </div>
-                               )}
-                               <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-border transition-colors cursor-pointer">
-                                 <input
-                                   type="checkbox"
-                                   checked={option.is_active}
-                                   onChange={(e) => {
-                                     updateChoiceOption(groupIndex, option.id, 'is_active', e.target.checked)
-                                   }}
-                                   className="mr-2 w-3 h-3 text-primary rounded focus:ring-ring"
-                                 />
-                                 활성
-                               </label>
-                             </div>
-                           </div>
-                         </>
-                       )}
                      </div>
                    </div>
                    )
                  })}
                </div>
+               </div>
               </div>
-            </div>
           ))}
 
           {productChoices.length === 0 && (
@@ -1988,6 +1724,343 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           {saving ? '저장 중...' : '초이스 저장'}
         </button>
       </div>
+
+      {/* 초이스 옵션 수정 모달 */}
+      {editingOption && (() => {
+        const group = productChoices[editingOption.groupIndex]
+        const option = group?.options.find((o) => o.id === editingOption.optionId)
+        if (!group || !option) return null
+        const groupIndex = editingOption.groupIndex
+        const uploadKey = `${groupIndex}-${option.id}`
+
+        return (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/45" onClick={() => setEditingOption(null)} aria-hidden />
+            <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-3">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">초이스 수정</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {option.option_name_ko || option.option_name || '새 초이스'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingOption(null)}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                  aria-label="닫기"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 p-5">
+                {/* 이미지 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">이미지</label>
+                  <div className="relative w-full h-44 rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                    {option.image_url ? (
+                      <>
+                        <Image
+                          src={option.image_url}
+                          alt={option.image_alt || option.option_name_ko || 'choice'}
+                          fill
+                          sizes="640px"
+                          className="object-cover"
+                        />
+                        <div className="absolute top-2 right-2 flex gap-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={uploadingImages[uploadKey]}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                await handleImageUpload(file, groupIndex, option.id)
+                                e.target.value = ''
+                              }
+                            }}
+                            className="hidden"
+                            id={`edit-file-upload-${uploadKey}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById(`edit-file-upload-${uploadKey}`)?.click()}
+                            className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md"
+                            title="이미지 변경"
+                          >
+                            <Upload className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateChoiceOption(groupIndex, option.id, 'image_url', '')
+                              updateChoiceOption(groupIndex, option.id, 'image_alt', '')
+                            }}
+                            className="p-2 bg-red-600 text-white rounded-lg shadow-md"
+                            title="이미지 삭제"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <label
+                        htmlFor={`edit-file-upload-${uploadKey}`}
+                        className="flex h-full w-full cursor-pointer flex-col items-center justify-center text-gray-500 hover:bg-gray-50"
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingImages[uploadKey]}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              await handleImageUpload(file, groupIndex, option.id)
+                              e.target.value = ''
+                            }
+                          }}
+                          className="hidden"
+                          id={`edit-file-upload-${uploadKey}`}
+                        />
+                        {uploadingImages[uploadKey] ? (
+                          <p className="text-sm text-primary">업로드 중...</p>
+                        ) : (
+                          <>
+                            <Upload className="w-8 h-8 mb-2 text-gray-400" />
+                            <p className="text-sm">이미지 업로드</p>
+                          </>
+                        )}
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* 내부용 이름 · 뱃지 아이콘 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      내부용 이름 (텍스트 뱃지)
+                    </label>
+                    <input
+                      type="text"
+                      value={option.internal_name || ''}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'internal_name', e.target.value)}
+                      placeholder="예: 🏜️ X, US, INTL"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      아이콘이 없을 때 예약 카드에 이 텍스트가 표시됩니다.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      뱃지 아이콘 (이미지)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-50">
+                        {option.badge_icon_url ? (
+                          <Image
+                            src={option.badge_icon_url}
+                            alt="badge"
+                            fill
+                            sizes="48px"
+                            className="object-contain"
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                            없음
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          id={`badge-icon-upload-${uploadKey}`}
+                          disabled={uploadingImages[`${uploadKey}-badge`]}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              await handleImageUpload(file, groupIndex, option.id, 'badge_icon_url')
+                              e.target.value = ''
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => document.getElementById(`badge-icon-upload-${uploadKey}`)?.click()}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 rounded-lg border border-border/60"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          {uploadingImages[`${uploadKey}-badge`] ? '업로드 중...' : '아이콘 업로드'}
+                        </button>
+                        {option.badge_icon_url ? (
+                          <button
+                            type="button"
+                            onClick={() => updateChoiceOption(groupIndex, option.id, 'badge_icon_url', '')}
+                            className="text-[11px] text-red-500 hover:underline text-left"
+                          >
+                            아이콘 삭제
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      PNG/SVG 원형 아이콘 권장 (US, INTL, PASS 등)
+                    </p>
+                  </div>
+                </div>
+
+                {/* 초이스명 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">한국어</label>
+                    <input
+                      type="text"
+                      value={option.option_name_ko}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'option_name_ko', e.target.value)}
+                      placeholder="초이스명 (한국어)"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">영어</label>
+                    <input
+                      type="text"
+                      value={option.option_name}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'option_name', e.target.value)}
+                      placeholder="초이스명 (영어)"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* 설명 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">설명 (한국어)</label>
+                    <textarea
+                      value={option.description_ko || ''}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'description_ko', e.target.value)}
+                      placeholder="한 줄에 하나씩 입력하면 고객 화면에 체크 목록으로 표시됩니다"
+                      rows={4}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring resize-none bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">설명 (영어)</label>
+                    <textarea
+                      value={option.description || ''}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'description', e.target.value)}
+                      placeholder="Description (English)"
+                      rows={4}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring resize-none bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* 가격 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    가격
+                    {homepagePricingType === 'single' ? (
+                      <span className="ml-2 text-xs text-primary font-normal">(단일 가격)</span>
+                    ) : null}
+                  </label>
+                  {homepagePricingType === 'single' ? (
+                    <input
+                      type="number"
+                      value={option.adult_price}
+                      onChange={(e) => {
+                        const price = parseInt(e.target.value) || 0
+                        updateChoiceOption(groupIndex, option.id, 'adult_price', price)
+                        updateChoiceOption(groupIndex, option.id, 'child_price', price)
+                        updateChoiceOption(groupIndex, option.id, 'infant_price', price)
+                      }}
+                      placeholder="0"
+                      className="w-full sm:w-48 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                    />
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">성인</label>
+                        <input
+                          type="number"
+                          value={option.adult_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">아동</label>
+                        <input
+                          type="number"
+                          value={option.child_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">유아</label>
+                        <input
+                          type="number"
+                          value={option.infant_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4">
+                  {group.choice_type === 'quantity' ? (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">수용</label>
+                      <input
+                        type="number"
+                        value={option.capacity}
+                        onChange={(e) => updateChoiceOption(groupIndex, option.id, 'capacity', parseInt(e.target.value) || 1)}
+                        className="w-24 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
+                      />
+                    </div>
+                  ) : null}
+                  <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={option.is_default}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'is_default', e.target.checked)}
+                      className="mr-2 w-3 h-3 text-primary rounded focus:ring-ring"
+                    />
+                    기본값
+                  </label>
+                  <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={option.is_active}
+                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'is_active', e.target.checked)}
+                      className="mr-2 w-3 h-3 text-primary rounded focus:ring-ring"
+                    />
+                    활성
+                  </label>
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-200 bg-white px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingOption(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  완료
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 복사 모달 */}
       {showCopyModal && (

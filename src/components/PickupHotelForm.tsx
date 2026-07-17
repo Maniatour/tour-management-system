@@ -260,6 +260,7 @@ export default function PickupHotelForm({
 }: PickupHotelFormProps) {
   const [formData, setFormData] = useState({
     hotel: hotel?.hotel || '',
+    internal_name: hotel?.internal_name || '',
     pick_up_location: hotel?.pick_up_location || '',
     description_ko: hotel?.description_ko || '',
     description_en: hotel?.description_en || '',
@@ -619,6 +620,7 @@ export default function PickupHotelForm({
 
       onSubmit({
         ...formData,
+        internal_name: formData.internal_name.trim() || null,
         media: rebuiltMedia,
         map_image: uploadedMapImage || convertGoogleDriveUrl(formData.map_image),
       })
@@ -746,7 +748,7 @@ export default function PickupHotelForm({
                 )}
 
                 <SectionCard number={1} title="기본 정보">
-                  <div className="grid gap-2.5 md:grid-cols-[1.25fr_1.25fr_0.7fr]">
+                  <div className="grid gap-2.5 md:grid-cols-2">
                     <div>
                       <FieldLabel required>{translations.hotel}</FieldLabel>
                       <input
@@ -761,6 +763,26 @@ export default function PickupHotelForm({
                         placeholder="예: Bellagio Hotel & Casino"
                         required
                       />
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        고객 안내에 표시되는 전체 이름
+                      </p>
+                    </div>
+                    <div>
+                      <FieldLabel>내부용 이름</FieldLabel>
+                      <input
+                        value={formData.internal_name}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            internal_name: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder="예: 벨라지오"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        배정 관리 예약 카드에만 표시되며, 비워두면 전체 이름을 사용합니다.
+                      </p>
                     </div>
                     <div>
                       <FieldLabel required>{translations.pickUpLocation}</FieldLabel>

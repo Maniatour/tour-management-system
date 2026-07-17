@@ -1,23 +1,6 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-
-const TourDetailPageView = dynamic(
-  () =>
-    import('@/components/tour/TourDetailPageView').then((m) => ({
-      default: m.TourDetailPageView,
-    })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[320px] flex-col gap-3 p-4">
-        <div className="h-8 w-1/3 animate-pulse rounded bg-gray-200" />
-        <div className="h-24 animate-pulse rounded bg-gray-100" />
-        <div className="h-24 animate-pulse rounded bg-gray-100" />
-      </div>
-    ),
-  }
-)
+import { TourDetailPageView } from '@/components/tour/TourDetailPageView'
 
 export type TourDetailModalContentProps = {
   tourId: string
@@ -25,6 +8,11 @@ export type TourDetailModalContentProps = {
   refreshNonce?: number
 }
 
+/**
+ * 모달용 투어 상세.
+ * TourDetailPageView 를 정적 import — 부모의 dynamic() 한 번만 받아
+ * (TourDetailModalContent → 다시 dynamic TourDetailPageView) 이중 청크 로딩을 피한다.
+ */
 export function TourDetailModalContent({ tourId, refreshNonce = 0 }: TourDetailModalContentProps) {
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-auto bg-white">

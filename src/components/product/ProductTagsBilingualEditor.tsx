@@ -190,5 +190,3 @@ export default function ProductTagsBilingualEditor({
     </div>
   )
 }
-
-export type { TagTranslationState }

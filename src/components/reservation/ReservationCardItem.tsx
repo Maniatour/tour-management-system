@@ -183,6 +183,7 @@ interface ReservationCardItemProps {
       option_key: string
       option_name: string
       option_name_ko: string
+      internal_name?: string
       product_choices: {
         choice_group_ko: string
       }
@@ -196,6 +197,7 @@ interface ReservationCardItemProps {
       option_key: string
       option_name: string
       option_name_ko: string
+      internal_name?: string
       product_choices: {
         choice_group_ko: string
       }
@@ -650,6 +652,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   <button
                     type="button"
                     disabled={!effectiveTourId}
+                    onMouseEnter={() => {
+                      if (effectiveTourId) void import('@/components/tour/TourDetailModalContent')
+                    }}
+                    onFocus={() => {
+                      if (effectiveTourId) void import('@/components/tour/TourDetailModalContent')
+                    }}
                     onClick={(e) => {
                       e.stopPropagation()
                       if (!effectiveTourId) return

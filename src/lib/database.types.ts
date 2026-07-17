@@ -955,6 +955,8 @@ export type Database = {
           image_alt: string | null
           image_url: string | null
           infant_price: number | null
+          internal_name: string | null
+          badge_icon_url: string | null
           is_active: boolean | null
           is_default: boolean | null
           option_key: string
@@ -975,6 +977,8 @@ export type Database = {
           image_alt?: string | null
           image_url?: string | null
           infant_price?: number | null
+          internal_name?: string | null
+          badge_icon_url?: string | null
           is_active?: boolean | null
           is_default?: boolean | null
           option_key: string
@@ -995,6 +999,8 @@ export type Database = {
           image_alt?: string | null
           image_url?: string | null
           infant_price?: number | null
+          internal_name?: string | null
+          badge_icon_url?: string | null
           is_active?: boolean | null
           is_default?: boolean | null
           option_key?: string
@@ -4041,6 +4047,7 @@ export type Database = {
           group_number: number | null
           hotel: string
           id: string
+          internal_name: string | null
           is_active: boolean | null
           landmark: string | null
           link: string | null
@@ -4071,6 +4078,7 @@ export type Database = {
           group_number?: number | null
           hotel: string
           id?: string
+          internal_name?: string | null
           is_active?: boolean | null
           landmark?: string | null
           link?: string | null
@@ -4100,6 +4108,7 @@ export type Database = {
           group_number?: number | null
           hotel?: string
           id?: string
+          internal_name?: string | null
           is_active?: boolean | null
           landmark?: string | null
           link?: string | null
