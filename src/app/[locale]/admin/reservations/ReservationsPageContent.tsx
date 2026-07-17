@@ -1395,18 +1395,20 @@ export default function AdminReservations() {
               const chunk = vehicleIdsArray.slice(i, i + chunkSize)
               const { data: vehicles } = await supabase
                 .from('vehicles')
-                .select('id, memo, vehicle_number, vehicle_type')
+                .select('id, nick, vehicle_number, vehicle_type')
                 .in('id', chunk)
               
               if (vehicles) {
-                const rows = vehicles as Pick<
-                  Database['public']['Tables']['vehicles']['Row'],
-                  'id' | 'memo' | 'vehicle_number' | 'vehicle_type'
-                >[]
+                const rows = vehicles as {
+                  id: string
+                  nick?: string | null
+                  vehicle_number?: string | null
+                  vehicle_type?: string | null
+                }[]
                 rows.forEach((vehicle) => {
                   if (vehicle.id) {
                     const label =
-                      vehicle.memo?.trim() ||
+                      (vehicle.nick && vehicle.nick.trim()) ||
                       vehicle.vehicle_number ||
                       vehicle.vehicle_type ||
                       '-'
