@@ -5,13 +5,18 @@ import Image from 'next/image'
 import { Check, ImageOff, Info } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
+import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
+import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
 
 type ProductDetailAirbnbOptionsSectionProps = {
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
+  selectedChoiceQuantities?: Record<string, Record<string, number>>
+  partySize?: number
   /** 상품 초이스 표시 방식: list(리스트) | card(사진 카드뷰) */
   displayMode?: 'list' | 'card'
   onOptionChange: (choiceId: string, optionId: string) => void
+  onQuantityChange?: (choiceId: string, optionId: string, quantity: number) => void
   onCompareOptions: () => void
   onBookNow: () => void
   totalPrice: number
@@ -20,6 +25,7 @@ type ProductDetailAirbnbOptionsSectionProps = {
   appliedPromoCode?: string | null
   selectedDate: string
   isEnglish: boolean
+  bookDisabled?: boolean
 }
 
 type ChoiceGroupOption = ProductDetailChoiceGroup['options'][number]
@@ -203,8 +209,11 @@ function ChoiceOptionCard({
 export default function ProductDetailAirbnbOptionsSection({
   groupedChoices,
   selectedOptions,
+  selectedChoiceQuantities = {},
+  partySize = 0,
   displayMode = 'list',
   onOptionChange,
+  onQuantityChange,
   onCompareOptions,
   onBookNow,
   totalPrice,
@@ -213,6 +222,7 @@ export default function ProductDetailAirbnbOptionsSection({
   appliedPromoCode,
   selectedDate,
   isEnglish,
+  bookDisabled = false,
 }: ProductDetailAirbnbOptionsSectionProps) {
   const t = useTranslations('productDetail')
   const groups = Object.values(groupedChoices)
@@ -236,67 +246,87 @@ export default function ProductDetailAirbnbOptionsSection({
         </button>
       </div>
 
-      {groups.map((group) => (
-        <div key={group.choice_id} className="mb-6 last:mb-0">
-          <h3 className="mb-3 text-base font-semibold text-[#1a2b49]">
-            {isEnglish
-              ? group.choice_name || group.choice_name_ko
-              : group.choice_name_ko || group.choice_name}
-          </h3>
-          {displayMode === 'card' ? (
-            <div className="space-y-3" role="radiogroup">
-              {group.options.map((option) => {
-                const selected = selectedOptions[group.choice_id] === option.option_id
-                const optionLabel =
-                  (isEnglish
+      {groups.map((group) => {
+        const isQuantityCapacity = usesCapacityQuantitySelection(group.choice_type, group.options)
+
+        return (
+          <div key={group.choice_id} className="mb-6 last:mb-0">
+            <h3 className="mb-3 text-base font-semibold text-[#1a2b49]">
+              {isEnglish
+                ? group.choice_name || group.choice_name_ko
+                : group.choice_name_ko || group.choice_name}
+            </h3>
+            {isQuantityCapacity && onQuantityChange ? (
+              group.options.length === 0 ? (
+                <p className="text-sm text-[#6b7280]">{t('noRoomsForPartySize')}</p>
+              ) : (
+                <ProductDetailQuantityChoiceGroup
+                  group={group}
+                  quantities={selectedChoiceQuantities[group.choice_id] ?? {}}
+                  partySize={partySize}
+                  isEnglish={isEnglish}
+                  onQuantityChange={(optionId, quantity) =>
+                    onQuantityChange(group.choice_id, optionId, quantity)
+                  }
+                />
+              )
+            ) : displayMode === 'card' ? (
+              <div className="space-y-3" role="radiogroup">
+                {group.options.map((option) => {
+                  const selected = selectedOptions[group.choice_id] === option.option_id
+                  const optionLabel =
+                    (isEnglish
+                      ? option.option_name || option.option_name_ko
+                      : option.option_name_ko || option.option_name) || ''
+                  return (
+                    <ChoiceOptionCard
+                      key={option.option_id}
+                      option={option}
+                      optionLabel={optionLabel}
+                      selected={selected}
+                      isEnglish={isEnglish}
+                      onSelect={() => onOptionChange(group.choice_id, option.option_id)}
+                    />
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="space-y-3" role="radiogroup">
+                {group.options.map((option) => {
+                  const selected = selectedOptions[group.choice_id] === option.option_id
+                  const optionLabel = isEnglish
                     ? option.option_name || option.option_name_ko
-                    : option.option_name_ko || option.option_name) || ''
-                return (
-                  <ChoiceOptionCard
-                    key={option.option_id}
-                    option={option}
-                    optionLabel={optionLabel}
-                    selected={selected}
-                    isEnglish={isEnglish}
-                    onSelect={() => onOptionChange(group.choice_id, option.option_id)}
-                  />
-                )
-              })}
-            </div>
-          ) : (
-            <div className="space-y-3" role="radiogroup">
-              {group.options.map((option) => {
-                const selected = selectedOptions[group.choice_id] === option.option_id
-                const optionLabel = isEnglish
-                  ? option.option_name || option.option_name_ko
-                  : option.option_name_ko || option.option_name
-                return (
-                  <button
-                    key={option.option_id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => onOptionChange(group.choice_id, option.option_id)}
-                    className={`airbnb-detail-option-card ${selected ? 'is-selected' : ''}`}
-                  >
-                    <span className="airbnb-detail-option-radio" aria-hidden>
-                      {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1 text-left">
-                      <span className="block text-sm font-semibold text-[#1a2b49] sm:text-base">
-                        {optionLabel}
+                    : option.option_name_ko || option.option_name
+                  return (
+                    <button
+                      key={option.option_id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onOptionChange(group.choice_id, option.option_id)}
+                      className={`airbnb-detail-option-card ${selected ? 'is-selected' : ''}`}
+                    >
+                      <span className="airbnb-detail-option-radio" aria-hidden>
+                        {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
                       </span>
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold text-[#1a2b49] sm:text-base">
-                      {option.option_price && option.option_price > 0 ? `+$${option.option_price}` : ''}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-semibold text-[#1a2b49] sm:text-base">
+                          {optionLabel}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-sm font-semibold text-[#1a2b49] sm:text-base">
+                        {option.option_price && option.option_price > 0
+                          ? `+$${option.option_price}`
+                          : ''}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       <div className="airbnb-detail-options-summary">
         <div>
@@ -315,8 +345,16 @@ export default function ProductDetailAirbnbOptionsSection({
           ) : (
             <p className="mt-0.5 text-xs text-[#6b7280]">{t('freeCancellationNote')}</p>
           )}
+          {bookDisabled ? (
+            <p className="mt-1 text-xs font-medium text-amber-700">{t('capacitySelectToMatch')}</p>
+          ) : null}
         </div>
-        <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn sm:max-w-[220px]">
+        <button
+          type="button"
+          onClick={onBookNow}
+          disabled={bookDisabled}
+          className="airbnb-detail-reserve-btn sm:max-w-[220px] disabled:cursor-not-allowed disabled:opacity-50"
+        >
           {t('bookNow')}
         </button>
       </div>

@@ -138,9 +138,14 @@ export interface SimplePricingRuleDto {
   inclusions_en?: string | null;
   exclusions_en?: string | null;
   choices_pricing?: Record<string, {
-    adult_price: number;
-    child_price: number;
-    infant_price: number;
+    adult_price?: number;
+    child_price?: number;
+    infant_price?: number;
+    ota_sale_price?: number;
+    not_included_price?: number;
+    not_included_price_adult?: number;
+    not_included_price_child?: number;
+    not_included_price_infant?: number;
     is_sale_available?: boolean;
   }>;
 }

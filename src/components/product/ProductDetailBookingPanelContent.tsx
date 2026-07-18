@@ -8,7 +8,9 @@ import CustomerPageZone from '@/components/product/CustomerPageZone'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
 import { useProductDetailTrustBadges } from '@/components/product/useProductDetailTrustBadges'
 import PriceDisplay from '@/components/customer/ui/PriceDisplay'
+import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
 import { cn } from '@/lib/utils'
+import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 
 type ProductDetailBookingPanelContentProps = {
@@ -19,16 +21,20 @@ type ProductDetailBookingPanelContentProps = {
   totalPrice: number
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
+  selectedChoiceQuantities?: Record<string, Record<string, number>>
+  partySize?: number
   includedHtml?: string | null
   notIncludedHtml?: string | null
   showIncluded: boolean
   showNotIncluded: boolean
   isEnglish: boolean
   onOptionChange: (choiceId: string, optionId: string) => void
+  onQuantityChange?: (choiceId: string, optionId: string, quantity: number) => void
   onCompareOptions: () => void
   onBookNow: () => void
   contactEmail?: string
   variant?: 'sidebar' | 'mobile' | 'airbnb'
+  bookDisabled?: boolean
 }
 
 export default function ProductDetailBookingPanelContent({
@@ -39,16 +45,20 @@ export default function ProductDetailBookingPanelContent({
   totalPrice,
   groupedChoices,
   selectedOptions,
+  selectedChoiceQuantities = {},
+  partySize = 0,
   includedHtml,
   notIncludedHtml,
   showIncluded,
   showNotIncluded,
   isEnglish,
   onOptionChange,
+  onQuantityChange,
   onCompareOptions,
   onBookNow,
   contactEmail = 'info@maniatour.com',
   variant = 'sidebar',
+  bookDisabled = false,
 }: ProductDetailBookingPanelContentProps) {
   const t = useTranslations('productDetail')
   const trustBadges = useProductDetailTrustBadges()
@@ -76,17 +86,36 @@ export default function ProductDetailBookingPanelContent({
             <span className="cp-ui-muted">{t('basePrice')}</span>
             <span className="font-medium">${basePrice || 0}</span>
           </div>
-          {Object.values(groupedChoices).map((group) => {
+          {Object.values(groupedChoices).flatMap((group) => {
+            if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+              const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
+              return group.options
+                .filter((opt) => (quantities[opt.option_id] ?? 0) > 0 && (opt.option_price ?? 0) > 0)
+                .map((opt) => {
+                  const qty = quantities[opt.option_id] ?? 0
+                  const label = isEnglish
+                    ? opt.option_name || opt.option_name_ko
+                    : opt.option_name_ko || opt.option_name
+                  return (
+                    <div key={`${group.choice_id}-${opt.option_id}`} className="flex justify-between text-sm">
+                      <span className="cp-ui-muted">
+                        {label} × {qty}
+                      </span>
+                      <span className="font-medium">+${(opt.option_price ?? 0) * qty}</span>
+                    </div>
+                  )
+                })
+            }
             const selectedOptionId = selectedOptions[group.choice_id]
-            if (!selectedOptionId) return null
+            if (!selectedOptionId) return []
             const option = group.options.find((opt) => opt.option_id === selectedOptionId)
-            if (!option?.option_price || option.option_price <= 0) return null
-            return (
+            if (!option?.option_price || option.option_price <= 0) return []
+            return [
               <div key={group.choice_id} className="flex justify-between text-sm">
                 <span className="cp-ui-muted">{group.choice_name}</span>
                 <span className="font-medium">+${option.option_price}</span>
-              </div>
-            )
+              </div>,
+            ]
           })}
         </div>
         )}
@@ -137,32 +166,57 @@ export default function ProductDetailBookingPanelContent({
             </button>
           </div>
           <div className="space-y-4">
-            {Object.values(groupedChoices).map((group) => (
-              <div key={group.choice_id}>
-                <label
-                  htmlFor={`choice-${group.choice_id}-${variant}`}
-                  className="mb-2 block text-sm font-medium text-slate-700"
-                >
-                  {group.choice_name}
-                </label>
-                <select
-                  id={`choice-${group.choice_id}-${variant}`}
-                  value={selectedOptions[group.choice_id] || ''}
-                  onChange={(e) => onOptionChange(group.choice_id, e.target.value)}
-                  className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                >
-                  {group.options.map((option) => (
-                    <option key={option.option_id} value={option.option_id}>
-                      {isEnglish
-                        ? option.option_name || option.option_name_ko
-                        : option.option_name_ko || option.option_name}
-                      {option.option_price ? ` (+$${option.option_price})` : ''}
-                      {option.is_default ? t('defaultOption') : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
+            {Object.values(groupedChoices).map((group) => {
+              const isQuantityCapacity = usesCapacityQuantitySelection(
+                group.choice_type,
+                group.options
+              )
+              return (
+                <div key={group.choice_id}>
+                  <label
+                    htmlFor={
+                      isQuantityCapacity ? undefined : `choice-${group.choice_id}-${variant}`
+                    }
+                    className="mb-2 block text-sm font-medium text-slate-700"
+                  >
+                    {group.choice_name}
+                  </label>
+                  {isQuantityCapacity && onQuantityChange ? (
+                    group.options.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">{t('noRoomsForPartySize')}</p>
+                    ) : (
+                      <ProductDetailQuantityChoiceGroup
+                        group={group}
+                        quantities={selectedChoiceQuantities[group.choice_id] ?? {}}
+                        partySize={partySize}
+                        isEnglish={isEnglish}
+                        compact
+                        onQuantityChange={(optionId, quantity) =>
+                          onQuantityChange(group.choice_id, optionId, quantity)
+                        }
+                      />
+                    )
+                  ) : (
+                    <select
+                      id={`choice-${group.choice_id}-${variant}`}
+                      value={selectedOptions[group.choice_id] || ''}
+                      onChange={(e) => onOptionChange(group.choice_id, e.target.value)}
+                      className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+                    >
+                      {group.options.map((option) => (
+                        <option key={option.option_id} value={option.option_id}>
+                          {isEnglish
+                            ? option.option_name || option.option_name_ko
+                            : option.option_name_ko || option.option_name}
+                          {option.option_price ? ` (+$${option.option_price})` : ''}
+                          {option.is_default ? t('defaultOption') : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </CustomerPageZone>
       )}
@@ -170,11 +224,13 @@ export default function ProductDetailBookingPanelContent({
       <button
         type="button"
         onClick={onBookNow}
+        disabled={bookDisabled}
         className={cn(
           isAirbnb
             ? 'airbnb-detail-reserve-btn'
             : 'cp-ui-btn-primary w-full rounded-xl font-semibold shadow-lg transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-          isMobile ? 'py-3.5 text-sm' : 'py-4 text-base hover:-translate-y-0.5 hover:shadow-xl'
+          isMobile ? 'py-3.5 text-sm' : 'py-4 text-base hover:-translate-y-0.5 hover:shadow-xl',
+          bookDisabled && 'cursor-not-allowed opacity-50'
         )}
       >
         {isAirbnb ? t('checkAvailability') : t('bookNow')}

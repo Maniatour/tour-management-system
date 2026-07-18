@@ -1,5 +1,9 @@
 import type { ProductChoice } from '@/components/product/productDetailTypes'
 import type { ProductChoiceGroup } from '@/components/product/ProductDetailChoiceDescriptionModal'
+import {
+  filterOptionsByPartySize,
+  usesCapacityQuantitySelection,
+} from '@/lib/choiceOptionCapacity'
 
 /** 고객 상세 페이지 상품 초이스 표시 방식 */
 export type ChoicesDisplayMode = 'list' | 'card'
@@ -8,18 +12,26 @@ export function normalizeChoicesDisplayMode(value: unknown): ChoicesDisplayMode 
   return value === 'card' ? 'card' : 'list'
 }
 
+function compareChoiceSortOrder(a: ProductChoice, b: ProductChoice): number {
+  const groupDiff = (a.choice_sort_order ?? 0) - (b.choice_sort_order ?? 0)
+  if (groupDiff !== 0) return groupDiff
+  return (a.option_sort_order ?? 0) - (b.option_sort_order ?? 0)
+}
+
 export function groupProductChoices(
   productChoices: ProductChoice[],
   isEnglish: boolean
 ): Record<string, ProductChoiceGroup> {
-  return productChoices.reduce((groups, choice) => {
+  const sortedChoices = [...productChoices].sort(compareChoiceSortOrder)
+
+  const groups = sortedChoices.reduce((acc, choice) => {
     const groupKey = choice.choice_id
-    if (!groups[groupKey]) {
+    if (!acc[groupKey]) {
       const displayName = isEnglish
         ? (choice.choice_name_en || choice.choice_name_ko || choice.choice_name)
         : (choice.choice_name_ko || choice.choice_name_en || choice.choice_name)
 
-      groups[groupKey] = {
+      acc[groupKey] = {
         choice_id: choice.choice_id,
         choice_name: displayName,
         choice_name_ko: choice.choice_name_ko,
@@ -32,11 +44,12 @@ export function groupProductChoices(
       }
     }
 
-    groups[groupKey].options.push({
+    acc[groupKey].options.push({
       option_id: choice.option_id,
       option_name: choice.option_name,
       option_name_ko: choice.option_name_ko,
       option_price: choice.option_price,
+      capacity: choice.capacity ?? null,
       is_default: choice.is_default,
       option_image_url: choice.option_image_url ?? null,
       option_thumbnail_url: choice.option_thumbnail_url ?? null,
@@ -44,31 +57,81 @@ export function groupProductChoices(
       option_description_ko: choice.option_description_ko ?? null,
     })
 
-    return groups
+    return acc
   }, {} as Record<string, ProductChoiceGroup>)
+
+  // Object.values 삽입 순서가 그룹 순서가 되도록, 정렬된 순서로 재구성
+  const ordered: Record<string, ProductChoiceGroup> = {}
+  for (const choice of sortedChoices) {
+    const group = groups[choice.choice_id]
+    if (group && !ordered[choice.choice_id]) {
+      ordered[choice.choice_id] = group
+    }
+  }
+  return ordered
+}
+
+/** 예약 인원에 맞게 옵션을 필터한 그룹 (capacity > 인원인 객실 숨김) */
+export function filterGroupedChoicesByPartySize(
+  groupedChoices: Record<string, ProductChoiceGroup>,
+  partySize: number
+): Record<string, ProductChoiceGroup> {
+  const filtered: Record<string, ProductChoiceGroup> = {}
+  for (const [choiceId, group] of Object.entries(groupedChoices)) {
+    filtered[choiceId] = {
+      ...group,
+      options: filterOptionsByPartySize(group.options, partySize),
+    }
+  }
+  return filtered
 }
 
 export function getDefaultProductChoiceOptions(
   productChoices: ProductChoice[]
 ): Record<string, string> {
   const defaultOptions: Record<string, string> = {}
+  const sortedChoices = [...productChoices].sort(compareChoiceSortOrder)
 
-  const tempGroups = productChoices.reduce(
+  const tempGroups = sortedChoices.reduce(
     (groups, choice) => {
       const groupKey = choice.choice_id
       if (!groups[groupKey]) {
-        groups[groupKey] = { choice_id: choice.choice_id, options: [] }
+        groups[groupKey] = {
+          choice_id: choice.choice_id,
+          choice_type: choice.choice_type,
+          options: [] as Array<{
+            option_id: string
+            is_default: boolean | null
+            capacity?: number | null
+          }>,
+        }
       }
       groups[groupKey].options.push({
         option_id: choice.option_id,
         is_default: choice.is_default,
+        capacity: choice.capacity ?? null,
       })
       return groups
     },
-    {} as Record<string, { choice_id: string; options: Array<{ option_id: string; is_default: boolean | null }> }>
+    {} as Record<
+      string,
+      {
+        choice_id: string
+        choice_type: string
+        options: Array<{
+          option_id: string
+          is_default: boolean | null
+          capacity?: number | null
+        }>
+      }
+    >
   )
 
   Object.values(tempGroups).forEach((group) => {
+    // 객실 capacity quantity는 사용자가 조합을 고를 때까지 기본 선택 없음
+    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+      return
+    }
     const defaultOption = group.options.find((option) => option.is_default)
     if (defaultOption) {
       defaultOptions[group.choice_id] = defaultOption.option_id
@@ -83,11 +146,37 @@ export function getDefaultProductChoiceOptions(
 export function calculateSelectedChoicePrice(
   groupedChoices: Record<string, ProductChoiceGroup>,
   selectedOptions: Record<string, string>,
-  basePrice: number
+  basePrice: number,
+  selectedChoiceQuantities: Record<string, Record<string, number>> = {}
 ): number {
   let totalPrice = basePrice
 
   Object.values(groupedChoices).forEach((group) => {
+    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+      const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
+      group.options.forEach((option) => {
+        const qty = quantities[option.option_id] ?? 0
+        if (qty > 0 && option.option_price) {
+          totalPrice += option.option_price * qty
+        }
+      })
+      return
+    }
+
+    if (group.choice_type === 'quantity') {
+      const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
+      const hasAnyQty = Object.values(quantities).some((qty) => qty > 0)
+      if (hasAnyQty) {
+        group.options.forEach((option) => {
+          const qty = quantities[option.option_id] ?? 0
+          if (qty > 0 && option.option_price) {
+            totalPrice += option.option_price * qty
+          }
+        })
+        return
+      }
+    }
+
     const selectedOptionId = selectedOptions[group.choice_id]
     if (selectedOptionId) {
       const option = group.options.find((opt) => opt.option_id === selectedOptionId)

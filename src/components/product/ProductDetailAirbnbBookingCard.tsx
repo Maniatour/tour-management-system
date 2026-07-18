@@ -26,6 +26,7 @@ type ProductDetailAirbnbBookingCardProps = {
   totalPrice: number
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
+  selectedChoiceQuantities?: Record<string, Record<string, number>>
   isEnglish: boolean
   selectedDate: string
   travelerCounts: TravelerCounts
@@ -37,6 +38,7 @@ type ProductDetailAirbnbBookingCardProps = {
   contactEmail?: string
   /** 관리자 편집 미리보기 — 날짜 없이도 프로모 영역 표시 */
   forceShowPromo?: boolean
+  bookDisabled?: boolean
 }
 
 export default function ProductDetailAirbnbBookingCard({
@@ -48,6 +50,7 @@ export default function ProductDetailAirbnbBookingCard({
   totalPrice,
   groupedChoices,
   selectedOptions,
+  selectedChoiceQuantities,
   isEnglish,
   selectedDate,
   travelerCounts,
@@ -58,6 +61,7 @@ export default function ProductDetailAirbnbBookingCard({
   promo,
   contactEmail = 'info@maniatour.com',
   forceShowPromo = false,
+  bookDisabled = false,
 }: ProductDetailAirbnbBookingCardProps) {
   const t = useTranslations('productDetail')
   const hasSelectedDate = Boolean(selectedDate)
@@ -95,12 +99,21 @@ export default function ProductDetailAirbnbBookingCard({
             appliedPromoCode={promo.appliedCoupon?.code ?? null}
             groupedChoices={groupedChoices}
             selectedOptions={selectedOptions}
+            {...(selectedChoiceQuantities
+              ? { selectedChoiceQuantities }
+              : {})}
             isEnglish={isEnglish}
             onBookNow={onBookNow}
+            bookDisabled={bookDisabled}
           />
         </>
       ) : (
-        <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn mt-4">
+        <button
+          type="button"
+          onClick={onBookNow}
+          disabled={bookDisabled}
+          className="airbnb-detail-reserve-btn mt-4 disabled:cursor-not-allowed disabled:opacity-50"
+        >
           {t('checkAvailability')}
         </button>
       )}

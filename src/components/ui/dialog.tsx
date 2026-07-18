@@ -37,13 +37,15 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
   overlayClassName?: string
   /** elevated 읽기 모달 위에 열리는 편집/확인 모달 */
   stackLevel?: Extract<DialogStackLevel, 'default' | 'nested'>
+  /** stackLevel 대신 절대 오버레이 z-index (포털 모달 z-12000 위 등). content = forceZIndex + 1 */
+  forceZIndex?: number
 }
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, hideCloseButton, overlayClassName, stackLevel = 'default', style, ...props }, ref) => {
-  const zIndex = DIALOG_Z_INDEX[stackLevel]
+>(({ className, children, hideCloseButton, overlayClassName, stackLevel = 'default', forceZIndex, style, ...props }, ref) => {
+  const zIndex = forceZIndex ?? DIALOG_Z_INDEX[stackLevel]
 
   return (
   <DialogPortal>

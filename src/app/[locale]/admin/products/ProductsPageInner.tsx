@@ -28,6 +28,7 @@ const PRODUCTS_LIST_UI_DEFAULT = {
   selectedCategory: 'all',
   selectedSubCategory: 'all',
   selectedStatus: 'active',
+  selectedPublish: 'all' as 'all' | 'published' | 'unpublished',
   viewMode: 'card' as 'card' | 'table',
   cardPreviewLocale: 'ko' as AdminProductCardPreviewLocale,
 }
@@ -49,8 +50,15 @@ export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [listUi, setListUi] = useRoutePersistedState('products-list', initialListUi)
-  const { searchTerm, selectedCategory, selectedSubCategory, selectedStatus, viewMode, cardPreviewLocale } =
-    listUi
+  const {
+    searchTerm,
+    selectedCategory,
+    selectedSubCategory,
+    selectedStatus,
+    selectedPublish,
+    viewMode,
+    cardPreviewLocale,
+  } = listUi
   const setSearchTerm = (v: SetStateAction<string>) =>
     setListUi((u) => ({
       ...u,
@@ -59,6 +67,8 @@ export default function AdminProducts() {
   const setSelectedCategory = (c: string) => setListUi((u) => ({ ...u, selectedCategory: c }))
   const setSelectedSubCategory = (c: string) => setListUi((u) => ({ ...u, selectedSubCategory: c }))
   const setSelectedStatus = (s: string) => setListUi((u) => ({ ...u, selectedStatus: s }))
+  const setSelectedPublish = (p: 'all' | 'published' | 'unpublished') =>
+    setListUi((u) => ({ ...u, selectedPublish: p }))
   const setViewMode = (m: 'card' | 'table') => setListUi((u) => ({ ...u, viewMode: m }))
   const setCardPreviewLocale = (previewLocale: AdminProductCardPreviewLocale) =>
     setListUi((u) => ({ ...u, cardPreviewLocale: previewLocale }))
@@ -461,6 +471,16 @@ export default function AdminProducts() {
     }
   }
 
+  const publishCounts = useMemo(() => {
+    const publishedCount = products.filter((p) => p.is_published !== false).length
+    const unpublishedCount = products.filter((p) => p.is_published === false).length
+    return [
+      { value: 'all' as const, labelKey: 'all', count: products.length },
+      { value: 'published' as const, labelKey: 'published', count: publishedCount },
+      { value: 'unpublished' as const, labelKey: 'unpublished', count: unpublishedCount },
+    ]
+  }, [products])
+
   // 필터링된 상품 목록
   const filteredProducts = products.filter(product => {
     const matchesSearch = 
@@ -473,8 +493,13 @@ export default function AdminProducts() {
     const matchesCategory = selectedCategory === 'all' || (product as any).category === selectedCategory
     const matchesSubCategory = selectedSubCategory === 'all' || (product as any).sub_category === selectedSubCategory
     const matchesStatus = selectedStatus === 'all' || (product as any).status === selectedStatus
+    const isPublished = product.is_published !== false
+    const matchesPublish =
+      selectedPublish === 'all' ||
+      (selectedPublish === 'published' && isPublished) ||
+      (selectedPublish === 'unpublished' && !isPublished)
     
-    return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus
+    return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus && matchesPublish
   }).sort((a, b) => {
     // name 컬럼으로 정렬
     const nameA = a.name || ''
@@ -487,6 +512,7 @@ export default function AdminProducts() {
     setSelectedCategory('all')
     setSelectedSubCategory('all')
     setSelectedStatus('active')
+    setSelectedPublish('all')
     setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
   }
 
@@ -1057,6 +1083,40 @@ export default function AdminProducts() {
               </nav>
             </div>
           )}
+
+          {/* 배포 여부 탭 */}
+          {products.length > 0 && (
+            <div className="border-b border-gray-200">
+              <nav className="flex space-x-4 overflow-x-auto px-3">
+                {publishCounts.map((publish) => (
+                  <button
+                    key={publish.value}
+                    onClick={() => setSelectedPublish(publish.value)}
+                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                      selectedPublish === publish.value
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <span>
+                      {publish.labelKey === 'all'
+                        ? t('all')
+                        : publish.labelKey === 'published'
+                          ? t('published')
+                          : t('unpublished')}
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                      selectedPublish === publish.value
+                        ? 'bg-blue-100 text-blue-600'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {publish.count}
+                    </span>
+                  </button>
+                ))}
+              </nav>
+            </div>
+          )}
                       </div>
                     </div>
 
@@ -1072,12 +1132,18 @@ export default function AdminProducts() {
               const s = statusCounts.find(s => s.value === selectedStatus)
               return s ? ` (${s.labelKey === 'all' ? t('all') : t(`status.${s.labelKey}`)})` : ''
             })()}
+            {selectedPublish !== 'all' &&
+              ` (${selectedPublish === 'published' ? t('published') : t('unpublished')})`}
           </span>
           <div className="flex items-center gap-2 flex-shrink-0">
             {searchTerm && (
               <span className="hidden sm:inline">&ldquo;<strong>{searchTerm}</strong>&rdquo; {t('searchResults')}</span>
             )}
-            {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
+            {(searchTerm ||
+              selectedCategory !== 'all' ||
+              selectedSubCategory !== 'all' ||
+              selectedStatus !== 'all' ||
+              selectedPublish !== 'all') && (
               <button
                 onClick={clearFilters}
                 className="text-primary hover:text-primary/80 underline whitespace-nowrap"

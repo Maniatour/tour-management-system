@@ -95,13 +95,27 @@ function ProductDetailPageContentInner({
     closeChoiceDescriptionModal,
   } = useProductDetailCheckoutActions()
 
-  const { selectedOptions, groupedChoices, totalPrice, handleOptionChange } =
-    useProductDetailChoices(productChoices, product?.base_price, isEnglish)
-
   // 상세 페이지에서 선택한 날짜/인원 — 예약 모달로 그대로 전달하기 위해 상위에서 관리
   const [selectedDate, setSelectedDate] = useState('')
   const [travelerCounts, setTravelerCounts] = useState<TravelerCounts>(
     DEFAULT_TRAVELER_COUNTS
+  )
+  const partySize =
+    travelerCounts.adults + travelerCounts.children + travelerCounts.infants
+
+  const {
+    selectedOptions,
+    selectedChoiceQuantities,
+    groupedChoices,
+    totalPrice,
+    capacitySelectionComplete,
+    handleOptionChange,
+    handleQuantityChange,
+  } = useProductDetailChoices(
+    productChoices,
+    product?.base_price,
+    isEnglish,
+    partySize
   )
 
   const showDetailOnCustomerPage = useCallback(
@@ -261,14 +275,19 @@ function ProductDetailPageContentInner({
     totalPrice,
     groupedChoices,
     selectedOptions,
+    selectedChoiceQuantities,
+    partySize,
     includedHtml,
     notIncludedHtml,
     showIncluded: Boolean(includedHtml && showDetailOnCustomerPage('included')),
     showNotIncluded: Boolean(notIncludedHtml && showDetailOnCustomerPage('not_included')),
     isEnglish,
     onOptionChange: handleOptionChange,
+    onQuantityChange: handleQuantityChange,
     onCompareOptions: openChoiceDescriptionModal,
     onBookNow: enableCheckout ? openBookingFlow : () => {},
+    // 날짜 선택 후 객실 capacity 합이 인원과 맞을 때만 예약 진행
+    bookDisabled: Boolean(selectedDate) && !capacitySelectionComplete,
   }
 
   return (
@@ -315,6 +334,7 @@ function ProductDetailPageContentInner({
             initialDate={selectedDate}
             initialParticipants={travelerCounts}
             initialSelectedOptions={selectedOptions}
+            initialSelectedChoiceQuantities={selectedChoiceQuantities}
             showBookingFlow={showBookingFlow}
             onCloseBookingFlow={() => setShowBookingFlow(false)}
             showChoiceDescriptionModal={showChoiceDescriptionModal}

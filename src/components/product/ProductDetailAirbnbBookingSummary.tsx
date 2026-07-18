@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
+import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
 
 type ProductDetailAirbnbBookingSummaryProps = {
   basePrice: number | null
@@ -11,8 +12,10 @@ type ProductDetailAirbnbBookingSummaryProps = {
   appliedPromoCode?: string | null
   groupedChoices: Record<string, ProductDetailChoiceGroup>
   selectedOptions: Record<string, string>
+  selectedChoiceQuantities?: Record<string, Record<string, number>>
   isEnglish: boolean
   onBookNow: () => void
+  bookDisabled?: boolean
 }
 
 export default function ProductDetailAirbnbBookingSummary({
@@ -23,32 +26,51 @@ export default function ProductDetailAirbnbBookingSummary({
   appliedPromoCode,
   groupedChoices,
   selectedOptions,
+  selectedChoiceQuantities = {},
   isEnglish,
   onBookNow,
+  bookDisabled = false,
 }: ProductDetailAirbnbBookingSummaryProps) {
   const t = useTranslations('productDetail')
   const groups = Object.values(groupedChoices)
   const hasPromo = promoDiscountAmount > 0
 
-  const selectedLines = groups
-    .map((group) => {
-      const selectedOptionId = selectedOptions[group.choice_id]
-      if (!selectedOptionId) return null
+  const selectedLines = groups.flatMap((group) => {
+    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+      const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
+      return group.options
+        .filter((option) => (quantities[option.option_id] ?? 0) > 0)
+        .map((option) => {
+          const qty = quantities[option.option_id] ?? 0
+          const optionLabel = isEnglish
+            ? option.option_name || option.option_name_ko
+            : option.option_name_ko || option.option_name
+          return {
+            id: `${group.choice_id}-${option.option_id}`,
+            label: `${optionLabel} × ${qty}`,
+            price: option.option_price != null ? option.option_price * qty : null,
+          }
+        })
+    }
 
-      const option = group.options.find((item) => item.option_id === selectedOptionId)
-      if (!option) return null
+    const selectedOptionId = selectedOptions[group.choice_id]
+    if (!selectedOptionId) return []
 
-      const optionLabel = isEnglish
-        ? option.option_name || option.option_name_ko
-        : option.option_name_ko || option.option_name
+    const option = group.options.find((item) => item.option_id === selectedOptionId)
+    if (!option) return []
 
-      return {
+    const optionLabel = isEnglish
+      ? option.option_name || option.option_name_ko
+      : option.option_name_ko || option.option_name
+
+    return [
+      {
         id: group.choice_id,
         label: optionLabel,
         price: option.option_price,
-      }
-    })
-    .filter(Boolean) as Array<{ id: string; label: string; price: number | null }>
+      },
+    ]
+  })
 
   return (
     <div className="airbnb-detail-booking-summary">
@@ -92,7 +114,18 @@ export default function ProductDetailAirbnbBookingSummary({
         </p>
       </div>
 
-      <button type="button" onClick={onBookNow} className="airbnb-detail-reserve-btn">
+      {bookDisabled ? (
+        <p className="mb-2 text-center text-xs font-medium text-amber-700">
+          {t('capacitySelectToMatch')}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onBookNow}
+        disabled={bookDisabled}
+        className="airbnb-detail-reserve-btn disabled:cursor-not-allowed disabled:opacity-50"
+      >
         {t('bookNow')}
       </button>
     </div>

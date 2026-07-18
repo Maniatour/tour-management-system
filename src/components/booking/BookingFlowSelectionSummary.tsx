@@ -98,6 +98,21 @@ function getChoiceSummaryLabel(
   isEnglish: boolean,
   translate: (ko: string, en: string) => string
 ): string {
+  const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
+  const quantityParts = group.options
+    .filter((option) => (quantities[option.option_id] ?? 0) > 0)
+    .map((option) => {
+      const qty = quantities[option.option_id] ?? 0
+      const label = isEnglish
+        ? option.option_name_en || option.option_name || option.option_name_ko || ''
+        : option.option_name_ko || option.option_name || option.option_name_en || ''
+      return `${label} × ${qty}`
+    })
+  if (quantityParts.length > 0) return quantityParts.join(', ')
+  if (group.choice_type === 'quantity') {
+    return translate('선택 안 됨', 'Not selected')
+  }
+
   const selectedId = selectedOptions[group.choice_id]
   if (!selectedId) return translate('선택 안 됨', 'Not selected')
 
@@ -107,13 +122,6 @@ function getChoiceSummaryLabel(
   const label = isEnglish
     ? option.option_name_en || option.option_name || option.option_name_ko || ''
     : option.option_name_ko || option.option_name || option.option_name_en || ''
-
-  if (group.choice_type === 'quantity') {
-    const quantity = selectedChoiceQuantities[group.choice_id]?.[selectedId] || 0
-    if (quantity > 0) {
-      return `${label} × ${quantity}`
-    }
-  }
 
   return label || translate('선택 안 됨', 'Not selected')
 }

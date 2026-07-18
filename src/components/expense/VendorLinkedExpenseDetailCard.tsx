@@ -21,6 +21,8 @@ import {
 
 type Props = {
   row: VendorLinkedExpenseRow
+  /** 상위 모달이 forceZIndex를 쓸 때 영수증 다이얼로그도 그 위에 열리도록 */
+  receiptDialogForceZIndex?: number
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -38,7 +40,7 @@ function boolLabel(value: boolean | null): string | null {
   return value ? '예' : '아니오'
 }
 
-export default function VendorLinkedExpenseDetailCard({ row }: Props) {
+export default function VendorLinkedExpenseDetailCard({ row, receiptDialogForceZIndex }: Props) {
   const { paymentMethodMap } = usePaymentMethodOptions()
   const [receiptOpen, setReceiptOpen] = useState(false)
   const receiptUrl = vendorLinkedExpenseReceiptUrl(row)
@@ -148,7 +150,12 @@ export default function VendorLinkedExpenseDetailCard({ row }: Props) {
       </div>
 
       <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+          {...(receiptDialogForceZIndex != null
+            ? { forceZIndex: receiptDialogForceZIndex }
+            : { stackLevel: 'nested' as const })}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Receipt className="h-4 w-4" />

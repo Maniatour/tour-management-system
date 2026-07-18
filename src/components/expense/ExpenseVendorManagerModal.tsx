@@ -51,6 +51,8 @@ type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdated?: () => void
+  /** 투어 지출 포털(z-12000) 등 위에 열 때 오버레이 z-index */
+  forceZIndex?: number
 }
 
 function expenseStatusLabel(status: string | null): string {
@@ -67,7 +69,7 @@ function expenseStatusClass(status: string | null): string {
   return 'bg-muted text-muted-foreground'
 }
 
-export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdated }: Props) {
+export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdated, forceZIndex }: Props) {
   const [vendors, setVendors] = useState<ExpenseVendorRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [newName, setNewName] = useState('')
@@ -576,6 +578,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           className={`max-h-[85vh] overflow-hidden flex flex-col ${selectedVendor ? 'max-w-5xl' : 'max-w-2xl'}`}
+          {...(forceZIndex != null ? { forceZIndex } : {})}
         >
           <DialogHeader>
             <DialogTitle>결제처 목록 정리</DialogTitle>
@@ -920,7 +923,14 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
                                 )}
                               </div>
                             </div>
-                            {!isEditing && <VendorLinkedExpenseDetailCard row={row} />}
+                            {!isEditing && (
+                              <VendorLinkedExpenseDetailCard
+                                row={row}
+                                {...(forceZIndex != null
+                                  ? { receiptDialogForceZIndex: forceZIndex + 300 }
+                                  : {})}
+                              />
+                            )}
                             {isEditing && expenseEditDraft ? (
                               <UnifiedExpenseInlineEditForm
                                 row={vendorLinkedExpenseToUnifiedRow(row)}
@@ -953,7 +963,12 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
           }
         }}
       >
-        <DialogContent className="max-w-md" stackLevel="nested">
+        <DialogContent
+          className="max-w-md"
+          {...(forceZIndex != null
+            ? { forceZIndex: forceZIndex + 200 }
+            : { stackLevel: 'nested' as const })}
+        >
           <DialogHeader>
             <DialogTitle>결제처 병합</DialogTitle>
             <DialogDescription>
@@ -1062,7 +1077,12 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
           }
         }}
       >
-        <DialogContent className="max-w-md" stackLevel="nested">
+        <DialogContent
+          className="max-w-md"
+          {...(forceZIndex != null
+            ? { forceZIndex: forceZIndex + 200 }
+            : { stackLevel: 'nested' as const })}
+        >
           <DialogHeader>
             <DialogTitle>결제처 이름 일괄 변경</DialogTitle>
             <DialogDescription>

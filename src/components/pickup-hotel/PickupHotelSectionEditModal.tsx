@@ -277,7 +277,7 @@ export default function PickupHotelSectionEditModal({
                 <label className="mb-1 block text-xs font-semibold">{isEn ? 'Group number' : '그룹 번호'}</label>
                 <input
                   type="number"
-                  step="0.1"
+                  step="0.01"
                   className={inputClass}
                   value={groupNumber ?? ''}
                   onChange={(e) => setGroupNumber(e.target.value ? Number(e.target.value) : null)}

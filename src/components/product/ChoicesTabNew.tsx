@@ -252,7 +252,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           capacity: 1,
           is_default: option.id === firstItem.id, // 첫 번째 초이스를 기본값으로
           is_active: option.status === 'active',
-          sort_order: option.sort_order || 0,
+          sort_order: option.sort_order ?? 0,
           image_url: option.image_url,
           image_alt: option.image_alt,
           thumbnail_url: option.thumbnail_url
@@ -356,7 +356,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           )
         `)
         .eq('product_id', productId)
-        .order('sort_order', { ascending: true }) as { data: ProductChoiceData[] | null, error: SupabaseError | null }
+        .order('sort_order', { ascending: true })
+        .order('sort_order', { foreignTable: 'choice_options', ascending: true }) as {
+          data: ProductChoiceData[] | null
+          error: SupabaseError | null
+        }
 
       if (error) {
         console.error('Choices 로드 오류:', error)
@@ -365,18 +369,24 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       }
 
       console.log('ChoicesTab에서 로드된 product choices:', data)
-      const convertedChoices: ProductChoice[] = (data || []).map(choice => ({
-        ...choice,
-        choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
-        options: (choice.options || []).map(option => ({
-          ...option,
-          image_url: option.image_url || undefined,
-          image_alt: option.image_alt || undefined,
-          thumbnail_url: option.thumbnail_url || undefined,
-          internal_name: option.internal_name || undefined,
-          badge_icon_url: option.badge_icon_url || undefined
+      const convertedChoices: ProductChoice[] = [...(data || [])]
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((choice, choiceIndex) => ({
+          ...choice,
+          sort_order: choice.sort_order ?? choiceIndex,
+          choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          options: [...(choice.options || [])]
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((option, optionIndex) => ({
+              ...option,
+              sort_order: option.sort_order ?? optionIndex,
+              image_url: option.image_url || undefined,
+              image_alt: option.image_alt || undefined,
+              thumbnail_url: option.thumbnail_url || undefined,
+              internal_name: option.internal_name || undefined,
+              badge_icon_url: option.badge_icon_url || undefined
+            }))
         }))
-      }))
       setProductChoices(convertedChoices)
     } catch (error) {
       console.error('Choices 로드 오류:', error)
@@ -525,9 +535,21 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         ((existingChoices || []) as Array<{ id: string; choice_group: string }>).map(ec => [ec.choice_group, ec.id])
       )
 
-      // 새로운 choices 저장 (processedChoices 사용)
-      for (let index = 0; index < processedChoices.length; index++) {
-        const choice = processedChoices[index]
+      // UI 배열 순서 → sort_order 강제 동기화 (저장 시 순서 누락/null 방지)
+      const syncedChoices = processedChoices.map((choice, index) => ({
+        ...choice,
+        sort_order: index,
+        options: [...(choice.options || [])]
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map((option, optionIndex) => ({
+            ...option,
+            sort_order: optionIndex,
+          })),
+      }))
+
+      // 새로운 choices 저장 (syncedChoices 사용)
+      for (let index = 0; index < syncedChoices.length; index++) {
+        const choice = syncedChoices[index]
         // choice_group와 choice_group_ko 확인
         const trimmedChoiceGroup = choice.choice_group.trim()
         const trimmedChoiceGroupKo = choice.choice_group_ko.trim()
@@ -560,7 +582,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               is_required: choice.is_required,
               min_selections: choice.min_selections,
               max_selections: choice.max_selections,
-              sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+              sort_order: choice.sort_order ?? index
             } as never)
             .eq('id', updateId)
             .select() as { data: ProductChoiceData[] | null, error: SupabaseError | null }
@@ -585,7 +607,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                 is_required: choice.is_required,
                 min_selections: choice.min_selections,
                 max_selections: choice.max_selections,
-                sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+                sort_order: choice.sort_order ?? index
               } as never)
               .select()
               .single() as { data: ProductChoiceData, error: SupabaseError | null }
@@ -608,7 +630,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               is_required: choice.is_required,
               min_selections: choice.min_selections,
               max_selections: choice.max_selections,
-              sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+              sort_order: choice.sort_order ?? index
             } as never)
             .select()
             .single() as { data: ProductChoiceData, error: SupabaseError | null }
@@ -637,7 +659,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               capacity: option.capacity,
               is_default: option.is_default,
               is_active: option.is_active,
-              sort_order: option.sort_order,
+              sort_order: option.sort_order ?? 0,
               image_url: option.image_url,
               image_alt: option.image_alt,
               thumbnail_url: option.thumbnail_url,
@@ -694,7 +716,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       }
 
       // 삭제된 choices 제거 (더 이상 존재하지 않는 choice_group)
-      const currentChoiceGroups = processedChoices.map(c => c.choice_group.trim())
+      const currentChoiceGroups = syncedChoices.map(c => c.choice_group.trim())
       const choicesToDelete = ((existingChoices || []) as Array<{ id: string; choice_group: string }>).filter(
         ec => !currentChoiceGroups.includes(ec.choice_group)
       )
@@ -822,11 +844,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     setEditingOption({ groupIndex, optionId: newOption.id })
   }, [productChoices])
 
-  // 초이스 삭제
-  const removeChoiceOption = useCallback((groupIndex: number, optionIndex: number) => {
+  // 초이스 삭제 (정렬 인덱스와 무관하게 option.id로 삭제)
+  const removeChoiceOption = useCallback((groupIndex: number, optionId: string) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === groupIndex 
-        ? { ...group, options: group.options.filter((_, j) => j !== optionIndex) }
+        ? { ...group, options: group.options.filter((opt) => opt.id !== optionId) }
         : group
     ))
   }, [])
@@ -836,7 +858,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     setProductChoices(prev => prev.map((group, i) => {
       if (i !== groupIndex) return group
       
-      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       const optionToCopy = sortedOptions[optionIndex]
       
       if (!optionToCopy) return group
@@ -858,7 +880,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     setProductChoices(prev => prev.map((group, i) => {
       if (i !== groupIndex) return group
       
-      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       
       if (direction === 'up' && optionIndex === 0) return group
       if (direction === 'down' && optionIndex === sortedOptions.length - 1) return group
@@ -1011,8 +1033,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
-          sort_order: choice.sort_order || index,
-          options: (choice.options || []).map((option: ChoiceOptionData) => ({
+          sort_order: choice.sort_order ?? index,
+          options: [...(choice.options || [])]
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((option: ChoiceOptionData, optionIndex: number) => ({
           id: `temp_option_${Date.now()}_${Math.random()}`,
           option_key: option.option_key,
           option_name: option.option_name,
@@ -1025,7 +1049,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           capacity: option.capacity,
           is_default: option.is_default,
           is_active: option.is_active,
-          sort_order: option.sort_order,
+          sort_order: option.sort_order ?? optionIndex,
           image_url: option.image_url,
           image_alt: option.image_alt,
           thumbnail_url: option.thumbnail_url
@@ -1202,7 +1226,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             template_group: choice.choice_group,
             template_group_ko: templateGroupKo,
             is_required: choice.is_required,
-            sort_order: option.sort_order || 0,
+            sort_order: option.sort_order ?? 0,
             image_url: isValidUrl(option.image_url),
             image_alt: option.image_alt || null,
             thumbnail_url: isValidUrl(option.thumbnail_url)
@@ -1532,8 +1556,8 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
 
                 {/* 고객 미리보기 카드 — 고정 340px, 너비에 따라 열 수 자동 */}
                 <div className="flex flex-wrap gap-4">
-                 {[...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((option) => {
-                   const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                 {[...choice.options].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((option) => {
+                   const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                    const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
                    const isFirst = actualIndex === 0
                    const isLast = actualIndex === sortedOptions.length - 1
@@ -1686,7 +1710,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                              type="button"
                              onClick={(e) => {
                                e.stopPropagation()
-                               removeChoiceOption(groupIndex, actualIndex)
+                               removeChoiceOption(groupIndex, option.id)
                              }}
                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-md"
                              title="초이스 삭제"

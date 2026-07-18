@@ -803,7 +803,7 @@ export default function PickupHotelForm({
                       <FieldLabel>그룹 번호</FieldLabel>
                       <input
                         type="number"
-                        step="0.1"
+                        step="0.01"
                         min="0"
                         value={formData.group_number ?? ''}
                         onChange={(event) =>
@@ -815,7 +815,7 @@ export default function PickupHotelForm({
                           }))
                         }
                         className={inputClass}
-                        placeholder="1.0"
+                        placeholder="1.12"
                       />
                     </div>
                   </div>

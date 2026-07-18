@@ -1,7 +1,18 @@
-import { memo, useState, useCallback, useEffect } from 'react';
+import { memo, useState, useCallback, useEffect, useMemo, type MouseEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import { Calendar, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { DateRangeSelection, DAY_NAMES } from '@/lib/types/dynamic-pricing';
+
+type CalendarCellVisual =
+  | 'other-month'
+  | 'status-sale'
+  | 'status-closed'
+  | 'disabled'
+  | 'applied-endpoint'
+  | 'applied-range'
+  | 'excluded-range'
+  | 'today'
+  | 'default';
 
 interface DateRangeSelectorProps {
   onDateRangeSelect: (selection: DateRangeSelection) => void;
@@ -11,6 +22,17 @@ interface DateRangeSelectorProps {
   onDateStatusToggle?: (date: string, status: 'sale' | 'closed') => void;
   dateStatusMap?: Record<string, 'sale' | 'closed'>;
   disableDateSelection?: boolean;
+  /** 실제 선택된 날짜(YYYY-MM-DD). 있으면 시 이 목록 기준으로 하이라이트 */
+  selectedDates?: string[];
+  /** Ctrl/Cmd+클릭으로 개별 날짜 추가·해제 */
+  onDateToggle?: (date: string) => void;
+}
+
+function toDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export const DateRangeSelector = memo(function DateRangeSelector({
@@ -20,23 +42,41 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   showStatusOnCalendar = false,
   onDateStatusToggle,
   dateStatusMap = {},
-  disableDateSelection = false
+  disableDateSelection = false,
+  selectedDates,
+  onDateToggle,
 }: DateRangeSelectorProps) {
   const t = useTranslations('products.dynamicPricingPage');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
   const [endDate, setEndDate] = useState<string>(initialSelection?.endDate || '');
-  const [selectedDays, setSelectedDays] = useState<number[]>(initialSelection?.selectedDays || [0, 1, 2, 3, 4, 5, 6]);
+  const [selectedDays, setSelectedDays] = useState<number[]>(
+    (initialSelection?.selectedDays || [0, 1, 2, 3, 4, 5, 6]).map(Number)
+  );
   const [isSelectingRange, setIsSelectingRange] = useState(false);
   const [selectionMode, setSelectionMode] = useState<'calendar' | 'input'>('calendar');
 
+  // 숫자/문자 혼입과 무관하게 요일 포함 여부 판별
+  const selectedDaySet = useMemo(
+    () => new Set(selectedDays.map((d) => Number(d))),
+    [selectedDays]
+  );
+
+  const selectedDateSet = useMemo(
+    () => new Set((selectedDates || []).map(String)),
+    [selectedDates]
+  );
+  const useExplicitDates = Array.isArray(selectedDates);
+
   // 요일 선택 토글
   const toggleDay = useCallback((dayOfWeek: number) => {
-    setSelectedDays(prev => 
-      prev.includes(dayOfWeek) 
-        ? prev.filter(day => day !== dayOfWeek).sort()
-        : [...prev, dayOfWeek].sort()
-    );
+    const day = Number(dayOfWeek);
+    setSelectedDays((prev) => {
+      const normalized = prev.map(Number);
+      return normalized.includes(day)
+        ? normalized.filter((d) => d !== day).sort((a, b) => a - b)
+        : [...normalized, day].sort((a, b) => a - b);
+    });
   }, []);
   
   // 요일이 변경되면 날짜 범위가 있으면 콜백 호출 (렌더링 후 실행)
@@ -53,26 +93,24 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   // 날짜 더블클릭 핸들러 (판매 상태 토글)
   const handleDateDoubleClick = useCallback((date: Date) => {
     if (onDateStatusToggle) {
-      // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const dateString = `${year}-${month}-${day}`;
-      // 해당 날짜의 현재 상태를 확인 (dateStatusMap에서 우선, 없으면 기본값 사용)
+      const dateString = toDateString(date);
       const currentStatus = dateStatusMap[dateString] || saleStatus;
       onDateStatusToggle(dateString, currentStatus);
     }
   }, [onDateStatusToggle, saleStatus, dateStatusMap]);
 
-  // 날짜 클릭 핸들러 (달력 모드)
-  const handleDateClick = useCallback((date: Date) => {
-    if (disableDateSelection) return; // 날짜 선택 비활성화 시 클릭 무시
-    
-    // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const dateString = `${year}-${month}-${day}`;
+  // 날짜 클릭 핸들러 (달력 모드) — Ctrl/Cmd+클릭은 개별 토글
+  const handleDateClick = useCallback((date: Date, event?: MouseEvent<HTMLButtonElement>) => {
+    if (disableDateSelection) return;
+
+    const dateString = toDateString(date);
+
+    if (event && (event.ctrlKey || event.metaKey) && onDateToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      onDateToggle(dateString);
+      return;
+    }
     
     if (!isSelectingRange) {
       // 시작일 설정
@@ -97,7 +135,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
         setEndDate('');
       }
     }
-  }, [isSelectingRange, startDate, selectedDays, onDateRangeSelect, disableDateSelection]);
+  }, [isSelectingRange, startDate, selectedDays, onDateRangeSelect, disableDateSelection, onDateToggle]);
 
   // 날짜 포맷팅 함수 (시간대 변환 없이)
   const formatDate = useCallback((dateString: string) => {
@@ -160,10 +198,10 @@ export const DateRangeSelector = memo(function DateRangeSelector({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setSelectionMode('calendar')}
-            className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+            className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md border transition-colors ${
               selectionMode === 'calendar'
-                ? 'bg-primary/10 text-primary border border-border'
-                : 'bg-gray-100 text-gray-700 border border-gray-200'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-300'
             }`}
           >
             <Calendar className="h-4 w-4" />
@@ -171,10 +209,10 @@ export const DateRangeSelector = memo(function DateRangeSelector({
           </button>
           <button
             onClick={() => setSelectionMode('input')}
-            className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+            className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md border transition-colors ${
               selectionMode === 'input'
-                ? 'bg-primary/10 text-primary border border-border'
-                : 'bg-gray-100 text-gray-700 border border-gray-200'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-300'
             }`}
           >
             <Edit3 className="h-4 w-4" />
@@ -187,17 +225,19 @@ export const DateRangeSelector = memo(function DateRangeSelector({
         <h4 className="text-sm font-medium text-gray-700">{t('applyDaySelect')}</h4>
         <div className="flex space-x-2">
           {Object.entries(DAY_NAMES).map(([dayNum, dayName]) => {
-            const dayOfWeek = parseInt(dayNum);
-            const isSelected = selectedDays.includes(dayOfWeek);
+            const dayOfWeek = parseInt(dayNum, 10);
+            const isSelected = selectedDaySet.has(dayOfWeek);
             
             return (
               <button
                 key={dayOfWeek}
+                type="button"
                 onClick={() => toggleDay(dayOfWeek)}
-                className={`px-3 py-2 text-sm rounded-md border transition-colors ${
+                aria-pressed={isSelected}
+                className={`px-3 py-2 text-sm rounded-md border font-medium transition-colors ${
                   isSelected
-                    ? 'bg-primary/10 text-primary border-border'
-                    : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
                 {dayName}
@@ -231,75 +271,153 @@ export const DateRangeSelector = memo(function DateRangeSelector({
 
           {/* 요일 헤더 */}
           <div className="grid grid-cols-7 gap-1 mb-2">
-            {Object.values(DAY_NAMES).map((dayName, index) => (
-              <div
-                key={index}
-                className={`text-center text-sm font-medium py-2 ${
-                  index === 0 ? 'text-red-600' : index === 6 ? 'text-primary' : 'text-gray-600'
-                }`}
-              >
-                {dayName}
-              </div>
-            ))}
+            {Object.values(DAY_NAMES).map((dayName, index) => {
+              const isDaySelected = selectedDaySet.has(index);
+              return (
+                <div
+                  key={index}
+                  className={`text-center text-sm font-medium py-2 ${
+                    !isDaySelected
+                      ? 'text-gray-300 line-through decoration-gray-400'
+                      : index === 0
+                        ? 'text-red-600'
+                        : index === 6
+                          ? 'text-blue-600'
+                          : 'text-gray-600'
+                  }`}
+                >
+                  {dayName}
+                </div>
+              );
+            })}
           </div>
 
-          {/* 날짜 그리드 */}
-          <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map(({ date, isCurrentMonth }, index) => {
-              // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
-              const year = date.getFullYear();
-              const month = String(date.getMonth() + 1).padStart(2, '0');
-              const day = String(date.getDate()).padStart(2, '0');
-              const dateString = `${year}-${month}-${day}`;
+          {onDateToggle && !disableDateSelection && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              {t('ctrlClickDateHint')}
+            </p>
+          )}
+
+          {/* 날짜 그리드 — selectedDays / selectedDates 변경 시 강제 갱신 */}
+          <div
+            key={`calendar-grid-${[...selectedDaySet].sort((a, b) => a - b).join('-')}-${selectedDateSet.size}`}
+            className="grid grid-cols-7 gap-1"
+          >
+            {calendarDays.map(({ date, isCurrentMonth }) => {
+              const dateString = toDateString(date);
+              const dayOfWeek = date.getDay();
+              const isDayApplied = selectedDaySet.has(dayOfWeek);
               
               const isStartDate = dateString === startDate;
               const isEndDate = dateString === endDate;
-              const isInRange = startDate && endDate && dateString >= startDate && dateString <= endDate;
+              const isInRange = Boolean(
+                startDate && endDate && dateString >= startDate && dateString <= endDate
+              );
+
+              // 범위 선택이 완료된 뒤에는 selectedDates(Ctrl 토글 반영) 기준.
+              // 범위 선택 중에는 범위+요일 미리보기.
+              const preferExplicitDates =
+                useExplicitDates && Boolean(endDate) && !isSelectingRange;
+              const isPicked = preferExplicitDates
+                ? selectedDateSet.has(dateString)
+                : (isInRange && isDayApplied) ||
+                  ((isStartDate || isEndDate) && isDayApplied && !disableDateSelection);
+
+              const isAppliedEndpoint =
+                isPicked && (isStartDate || isEndDate) && !disableDateSelection;
+              const isAppliedInRange = isPicked && !isAppliedEndpoint;
+              const isExcludedInRange = isInRange && !isPicked;
               
-              // 오늘 날짜 비교도 로컬 시간대 기준으로
               const today = new Date();
-              const todayYear = today.getFullYear();
-              const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
-              const todayDay = String(today.getDate()).padStart(2, '0');
-              const todayString = `${todayYear}-${todayMonth}-${todayDay}`;
-              const isToday = dateString === todayString;
+              const isToday = dateString === toDateString(today);
               
-              // 날짜별 상태 확인 (우선순위: 개별 설정 > 전역 설정)
-              // dateStatusMap에 없으면 기본값은 마감(closed) - 데이터가 없다는 의미
               const dateStatus = dateStatusMap[dateString] !== undefined 
                 ? dateStatusMap[dateString] 
                 : 'closed';
+
+              let visual: CalendarCellVisual = 'default';
+              if (!isCurrentMonth) visual = 'other-month';
+              else if (showStatusOnCalendar) visual = dateStatus === 'sale' ? 'status-sale' : 'status-closed';
+              else if (disableDateSelection) visual = 'disabled';
+              else if (isAppliedEndpoint) visual = 'applied-endpoint';
+              else if (isAppliedInRange) visual = 'applied-range';
+              else if (isExcludedInRange) visual = 'excluded-range';
+              else if (isToday) visual = 'today';
+
+              const visualClassName: Record<CalendarCellVisual, string> = {
+                'other-month': 'text-gray-300 cursor-not-allowed bg-gray-50 border-gray-200',
+                'status-sale': 'bg-green-50 text-green-800 hover:bg-green-100 border-gray-200',
+                'status-closed': 'bg-red-50 text-red-800 hover:bg-red-100 border-gray-200',
+                disabled: 'text-gray-700 hover:bg-gray-50 border-gray-200',
+                'applied-endpoint': 'bg-blue-600 text-white font-semibold border-blue-600',
+                'applied-range': 'bg-blue-100 text-blue-800 font-medium border-blue-200',
+                'excluded-range':
+                  'bg-white text-gray-400 border-dashed border-gray-300 line-through opacity-60',
+                today: 'bg-gray-100 text-gray-900 font-semibold border-gray-200',
+                default: 'text-gray-700 hover:bg-gray-100 border-gray-200',
+              };
+
+              const cellTitle = !isCurrentMonth
+                ? undefined
+                : onDateToggle && !disableDateSelection
+                  ? (isPicked ? t('ctrlClickToDeselect') : t('ctrlClickToSelect'))
+                  : isExcludedInRange
+                    ? t('excludedByWeekday')
+                    : undefined;
               
               return (
                 <button
-                  key={index}
-                  onClick={() => handleDateClick(date)}
+                  key={`${dateString}-${dayOfWeek}-${isPicked ? 'on' : 'off'}`}
+                  type="button"
+                  onClick={(e) => handleDateClick(date, e)}
                   onDoubleClick={() => handleDateDoubleClick(date)}
-                  className={`h-12 text-sm transition-colors relative border border-gray-200 ${
-                    !isCurrentMonth
-                      ? 'text-gray-300 cursor-not-allowed bg-gray-50'
-                      : showStatusOnCalendar
-                      ? dateStatus === 'sale'
-                        ? 'bg-green-50 text-green-800 hover:bg-green-100'
-                        : 'bg-red-50 text-red-800 hover:bg-red-100'
-                      : disableDateSelection
-                      ? 'text-gray-700 hover:bg-gray-50'
-                      : isStartDate || isEndDate
-                      ? 'bg-primary text-primary-foreground font-semibold'
-                      : isInRange
-                      ? 'bg-primary/10 text-primary'
-                      : isToday
-                      ? 'bg-gray-100 text-gray-900 font-semibold'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
+                  title={cellTitle}
+                  data-day-applied={isDayApplied ? 'true' : 'false'}
+                  data-date-picked={isPicked ? 'true' : 'false'}
+                  data-excluded-in-range={isExcludedInRange ? 'true' : 'false'}
+                  className={`h-12 text-sm transition-colors relative border ${visualClassName[visual]}`}
+                  style={
+                    isExcludedInRange
+                      ? {
+                          backgroundColor: '#ffffff',
+                          color: '#9ca3af',
+                          borderStyle: 'dashed',
+                          borderColor: '#d1d5db',
+                          textDecoration: 'line-through',
+                          opacity: 0.55,
+                        }
+                      : isAppliedInRange
+                        ? {
+                            backgroundColor: '#dbeafe',
+                            color: '#1e40af',
+                            borderColor: '#bfdbfe',
+                          }
+                      : isAppliedEndpoint
+                        ? {
+                            backgroundColor: '#2563eb',
+                            color: '#ffffff',
+                            borderColor: '#2563eb',
+                          }
+                        : undefined
+                  }
                   disabled={!isCurrentMonth}
                 >
-                  {/* 날짜를 우상단에 배치 */}
-                  <div className="absolute top-1 right-1 text-xs font-medium">
+                  <div
+                    className={`absolute top-1 right-1 text-xs font-medium ${
+                      isExcludedInRange ? 'text-gray-400 line-through' : ''
+                    }`}
+                  >
                     {date.getDate()}
                   </div>
+
+                  {isExcludedInRange && isCurrentMonth && !showStatusOnCalendar && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="text-[9px] font-medium text-gray-400 no-underline">
+                        제외
+                      </span>
+                    </div>
+                  )}
                   
-                  {/* 판매 상태 표시 (바탕색으로) */}
                   {showStatusOnCalendar && isCurrentMonth && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className={`text-xs font-medium ${
@@ -366,7 +484,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
       )}
 
       {/* 선택된 날짜 정보 */}
-      {(startDate || endDate) && (
+      {(startDate || endDate || (useExplicitDates && selectedDateSet.size > 0)) && (
         <div className="bg-muted/50 border border-border rounded-lg p-3">
           <div className="text-sm font-medium text-primary mb-1">
             선택된 날짜 범위:
@@ -382,6 +500,11 @@ export const DateRangeSelector = memo(function DateRangeSelector({
           {selectedDays.length > 0 && (
             <div className="text-sm text-primary mt-1">
               적용 요일: {selectedDays.map(day => DAY_NAMES[day]).join(', ')}
+            </div>
+          )}
+          {useExplicitDates && (
+            <div className="text-sm text-primary mt-1">
+              {t('selectedDateCount', { count: selectedDateSet.size })}
             </div>
           )}
         </div>

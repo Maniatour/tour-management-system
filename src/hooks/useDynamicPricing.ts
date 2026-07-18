@@ -2,12 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 
-type ChoicesPricingRecord = Record<string, {
-  adult_price: number;
-  child_price: number;
-  infant_price: number;
-  is_sale_available?: boolean;
-}>;
+type ChoicesPricingRecord = NonNullable<SimplePricingRuleDto['choices_pricing']>
 
 function parseChoicesPricingRecord(raw: unknown): ChoicesPricingRecord {
   if (raw == null) return {}
@@ -21,6 +16,26 @@ function parseChoicesPricingRecord(raw: unknown): ChoicesPricingRecord {
   }
   if (typeof parsed !== 'object' || Array.isArray(parsed)) return {}
   return parsed as ChoicesPricingRecord
+}
+
+/** 초이스별 객체를 깊은 병합 (adult/child/infant, ota_sale_price 등 모든 필드 유지) */
+function mergeChoicesPricingRecords(
+  existingRaw: unknown,
+  incomingRaw: unknown
+): ChoicesPricingRecord {
+  const existing = parseChoicesPricingRecord(existingRaw)
+  const incoming = parseChoicesPricingRecord(incomingRaw)
+  const merged: ChoicesPricingRecord = { ...existing }
+
+  Object.entries(incoming).forEach(([choiceId, choiceData]) => {
+    if (!choiceData || typeof choiceData !== 'object' || Array.isArray(choiceData)) return
+    merged[choiceId] = {
+      ...(merged[choiceId] || {}),
+      ...choiceData,
+    }
+  })
+
+  return merged
 }
 
 function mapDbPricingRowToSimpleRule(row: Record<string, unknown>, fallbackProductId: string): SimplePricingRule {
@@ -299,13 +314,12 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           price_adjustment_infant: ruleData.price_adjustment_infant !== undefined ? ruleData.price_adjustment_infant : (fullExistingData.price_adjustment_infant ?? 0),
         };
         
-        // choices_pricing이 있으면 기존 데이터와 병합
+        // choices_pricing이 있으면 기존 데이터와 초이스 단위로 깊은 병합
         if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
-          const existingChoicesPricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
-          updateData.choices_pricing = {
-            ...existingChoicesPricing,
-            ...ruleData.choices_pricing,
-          }
+          updateData.choices_pricing = mergeChoicesPricingRecords(
+            fullExistingData.choices_pricing,
+            ruleData.choices_pricing
+          )
         } else if (fullExistingData.choices_pricing) {
           updateData.choices_pricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
         }
@@ -453,75 +467,13 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 price_adjustment_infant: ruleData.price_adjustment_infant !== undefined ? ruleData.price_adjustment_infant : (fullExistingData.price_adjustment_infant ?? 0),
               };
               
-              // choices_pricing이 있으면 기존 데이터와 병합 (깊은 병합)
+              // choices_pricing이 있으면 기존 데이터와 초이스 단위로 깊은 병합
+              // (adult/child/infant, ota_sale_price, not_included_* 등 모든 필드 유지)
               if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
-                const existingChoicesPricing = fullExistingData.choices_pricing || {};
-                let existingParsed: Record<string, any> = {};
-                
-                // 기존 choices_pricing 파싱
-                if (existingChoicesPricing) {
-                  try {
-                    existingParsed = typeof existingChoicesPricing === 'string'
-                      ? JSON.parse(existingChoicesPricing)
-                      : existingChoicesPricing;
-                  } catch (e) {
-                    console.warn('기존 choices_pricing 파싱 오류:', e);
-                    existingParsed = {};
-                  }
-                }
-                
-                // 새로운 choices_pricing 파싱
-                let newParsed: Record<string, any> = {};
-                try {
-                  newParsed = typeof ruleData.choices_pricing === 'string'
-                    ? JSON.parse(ruleData.choices_pricing)
-                    : ruleData.choices_pricing;
-                } catch (e) {
-                  console.warn('새로운 choices_pricing 파싱 오류:', e);
-                  newParsed = ruleData.choices_pricing as Record<string, any>;
-                }
-                
-                // 각 초이스별로 깊은 병합 (ota_sale_price, not_included_price만 보존, adult_price, child_price, infant_price는 제거)
-                const mergedChoicesPricing: Record<string, any> = {};
-                
-                // 기존 데이터에서 ota_sale_price와 not_included_price만 추출
-                Object.entries(existingParsed).forEach(([choiceId, existingChoiceData]) => {
-                  const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
-                  if (existingChoiceData.ota_sale_price !== undefined && existingChoiceData.ota_sale_price !== null) {
-                    cleanedData.ota_sale_price = existingChoiceData.ota_sale_price;
-                  }
-                  if (existingChoiceData.not_included_price !== undefined && existingChoiceData.not_included_price !== null) {
-                    cleanedData.not_included_price = existingChoiceData.not_included_price;
-                  }
-                  if (Object.keys(cleanedData).length > 0) {
-                    mergedChoicesPricing[choiceId] = cleanedData;
-                  }
-                });
-                
-                // 새로운 데이터로 덮어쓰기 (ota_sale_price와 not_included_price만)
-                Object.entries(newParsed).forEach(([choiceId, newChoiceData]) => {
-                  const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
-                  if (newChoiceData.ota_sale_price !== undefined && newChoiceData.ota_sale_price !== null) {
-                    cleanedData.ota_sale_price = newChoiceData.ota_sale_price;
-                  }
-                  if (newChoiceData.not_included_price !== undefined && newChoiceData.not_included_price !== null) {
-                    cleanedData.not_included_price = newChoiceData.not_included_price;
-                  }
-                  
-                  // 기존 데이터와 병합
-                  if (mergedChoicesPricing[choiceId]) {
-                    if (cleanedData.ota_sale_price !== undefined) {
-                      mergedChoicesPricing[choiceId].ota_sale_price = cleanedData.ota_sale_price;
-                    }
-                    if (cleanedData.not_included_price !== undefined) {
-                      mergedChoicesPricing[choiceId].not_included_price = cleanedData.not_included_price;
-                    }
-                  } else if (Object.keys(cleanedData).length > 0) {
-                    mergedChoicesPricing[choiceId] = cleanedData;
-                  }
-                });
-                
-                updateData.choices_pricing = mergedChoicesPricing;
+                updateData.choices_pricing = mergeChoicesPricingRecords(
+                  fullExistingData.choices_pricing,
+                  ruleData.choices_pricing
+                )
               } else if (fullExistingData.choices_pricing) {
                 updateData.choices_pricing = parseChoicesPricingRecord(fullExistingData.choices_pricing)
               }

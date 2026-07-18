@@ -243,6 +243,12 @@ export default function DynamicPricingManager({
     variant_name_ko?: string | null;
     variant_name_en?: string | null;
   }>>([]);
+  /** product_id 기준 채널별 variant (채널 전환 시 재조회 race로 default만 보이는 문제 방지) */
+  const [variantsByChannel, setVariantsByChannel] = useState<Record<string, Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>>({});
 
   // 채널별 포함/불포함 내역 상태
   const [channelIncludedNotIncluded, setChannelIncludedNotIncluded] = useState<{
@@ -266,13 +272,15 @@ export default function DynamicPricingManager({
     discount_type?: string | null;
   }>>([]);
 
-  // Variant 목록 불러오기 (선택한 채널의 channel_products만 조회, 채널 전환 시 이전 요청 무시)
+  // Variant 목록: 상품 단위로 한 번에 로드 후 채널별 필터
+  // (채널만 개별 조회하면 비동기 타이밍에 [{ default }] 폴백만 보이는 문제가 있었음 — ProductDetailsTab과 동일)
   useEffect(() => {
     let cancelled = false;
 
-    const loadProductVariants = async () => {
-      if (!productId || !selectedChannel) {
+    const loadAllChannelVariants = async () => {
+      if (!productId) {
         if (!cancelled) {
+          setVariantsByChannel({});
           setProductVariants([]);
           setSelectedVariant('default');
         }
@@ -282,51 +290,122 @@ export default function DynamicPricingManager({
       try {
         const { data, error } = await supabase
           .from('channel_products')
-          .select('variant_key, variant_name_ko, variant_name_en')
+          .select('channel_id, variant_key, variant_name_ko, variant_name_en')
           .eq('product_id', productId)
-          .eq('channel_id', selectedChannel)
           .eq('is_active', true)
-          .order('variant_key');
+          .order('channel_id', { ascending: true })
+          .order('variant_key', { ascending: true });
 
-        // 채널 전환으로 이 effect가 정리됐으면 이 응답 무시 (다른 채널 variant가 선택지에 섞이지 않도록)
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         if (error) {
           console.error('Variant 목록 로드 실패:', error);
-          setProductVariants([]);
+          setVariantsByChannel({});
           return;
         }
 
-        const variants = ((data || []) as any[]).map((item: any) => ({
-          variant_key: item.variant_key || 'default',
-          variant_name_ko: item.variant_name_ko,
-          variant_name_en: item.variant_name_en
-        }));
+        const byChannel: Record<string, Array<{
+          variant_key: string;
+          variant_name_ko?: string | null;
+          variant_name_en?: string | null;
+        }>> = {};
 
-        setProductVariants(variants.length > 0 ? variants : [{ variant_key: 'default' }]);
-        
-        // 기본 variant가 없으면 'default'로 설정
-        if (variants.length > 0 && !variants.find(v => v.variant_key === 'default')) {
-          setSelectedVariant(variants[0].variant_key);
-        } else {
-          setSelectedVariant('default');
+        for (const row of data || []) {
+          const item = row as {
+            channel_id?: string | null;
+            variant_key?: string | null;
+            variant_name_ko?: string | null;
+            variant_name_en?: string | null;
+          };
+          const channelId = item.channel_id;
+          if (!channelId) continue;
+          if (!byChannel[channelId]) byChannel[channelId] = [];
+          const key = item.variant_key || 'default';
+          if (byChannel[channelId].some((v) => v.variant_key === key)) continue;
+          byChannel[channelId].push({
+            variant_key: key,
+            variant_name_ko: item.variant_name_ko ?? null,
+            variant_name_en: item.variant_name_en ?? null,
+          });
         }
+
+        setVariantsByChannel(byChannel);
       } catch (error) {
         if (!cancelled) {
           console.error('Variant 목록 로드 중 오류:', error);
-          setProductVariants([{ variant_key: 'default' }]);
-          setSelectedVariant('default');
+          setVariantsByChannel({});
         }
       }
     };
 
-    loadProductVariants();
+    loadAllChannelVariants();
     return () => {
       cancelled = true;
     };
-  }, [productId, selectedChannel]);
+  }, [productId]);
+
+  // 선택된 채널의 variant + dynamic_pricing에만 있는 variant_key 병합
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyChannelVariants = async () => {
+      if (!productId || !selectedChannel) {
+        setProductVariants([]);
+        setSelectedVariant('default');
+        return;
+      }
+
+      const fromChannelProducts = variantsByChannel[selectedChannel] || [];
+      const merged = new Map<string, {
+        variant_key: string;
+        variant_name_ko?: string | null;
+        variant_name_en?: string | null;
+      }>();
+
+      for (const v of fromChannelProducts) {
+        merged.set(v.variant_key, v);
+      }
+
+      // channel_products에 없어도 동적 가격에 저장된 variant는 선택 가능하게
+      try {
+        const { data: pricingRows, error } = await supabase
+          .from('dynamic_pricing')
+          .select('variant_key')
+          .eq('product_id', productId)
+          .eq('channel_id', selectedChannel);
+
+        if (!cancelled && !error && pricingRows) {
+          for (const row of pricingRows) {
+            const key = String((row as { variant_key?: string | null }).variant_key || 'default').trim() || 'default';
+            if (!merged.has(key)) {
+              merged.set(key, { variant_key: key });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('dynamic_pricing variant 보강 로드 실패:', e);
+      }
+
+      if (cancelled) return;
+
+      const variants = Array.from(merged.values()).sort((a, b) =>
+        a.variant_key.localeCompare(b.variant_key)
+      );
+      const nextVariants = variants.length > 0 ? variants : [{ variant_key: 'default' }];
+      setProductVariants(nextVariants);
+
+      setSelectedVariant((prev) => {
+        if (nextVariants.some((v) => v.variant_key === prev)) return prev;
+        if (nextVariants.some((v) => v.variant_key === 'default')) return 'default';
+        return nextVariants[0].variant_key;
+      });
+    };
+
+    applyChannelVariants();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId, selectedChannel, variantsByChannel]);
 
   // 해당 채널 쿠폰 목록 로드 (캘린더 상단 쿠폰 선택기)
   useEffect(() => {
@@ -740,6 +819,16 @@ export default function DynamicPricingManager({
   // 단일 날짜 선택 핸들러
   const handleDateSelect = useCallback((date: string) => {
     setSelectedDates([date]);
+  }, []);
+
+  // Ctrl/Cmd+클릭: 개별 날짜 추가·해제
+  const handleDateToggle = useCallback((date: string) => {
+    setSelectedDates((prev) => {
+      if (prev.includes(date)) {
+        return prev.filter((d) => d !== date);
+      }
+      return [...prev, date].sort();
+    });
   }, []);
 
   // 날짜 범위 선택 핸들러 (기존 캘린더용)
@@ -2207,6 +2296,8 @@ export default function DynamicPricingManager({
             <DateRangeSelector
               onDateRangeSelect={handleDateRangeSelection}
               initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
+              selectedDates={selectedDates}
+              onDateToggle={handleDateToggle}
             />
           </div>
 

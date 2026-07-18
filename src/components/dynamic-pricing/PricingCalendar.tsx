@@ -2,6 +2,7 @@ import React, { memo, useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { ChevronLeft, ChevronRight, Calendar, DollarSign, ChevronDown } from 'lucide-react';
 import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
+import { findChoicePricingData } from '@/utils/choicePricingMatcher';
 
 const DATE_CAPTURE_REGEX = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/;
 const YYYYMMDD_REGEX = /^\d{8}$/;
@@ -81,11 +82,17 @@ interface PricingCalendarProps {
   onDateRangeSelect: (startIndex: number, endIndex: number) => void;
   choiceCombinations?: Array<{
     id: string;
+    combination_key?: string;
     combination_name: string;
     combination_name_ko?: string;
     adult_price: number;
     child_price: number;
     infant_price: number;
+    combination_details?: Array<{
+      groupId: string;
+      optionId: string;
+      optionKey?: string;
+    }>;
   }>;
   selectedChannelId?: string;
   selectedChannelType?: 'OTA' | 'SELF' | '';
@@ -348,70 +355,87 @@ export const PricingCalendar = memo(function PricingCalendar({
           ? JSON.parse(rule.choices_pricing) 
           : rule.choices_pricing;
         
-        // 초이스가 없는 경우 (no_choice) — 기본 가격/불포함 사용
-        if (choicesData['no_choice']) {
+        const realChoiceKeys = Object.keys(choicesData).filter((k) => k !== 'no_choice');
+        const hasRealChoices = realChoiceKeys.length > 0;
+
+        // no_choice만 있을 때만 기본(초이스 없음) 경로 사용.
+        // no_choice와 combination_*가 같이 있으면 초이스 경로로 진행해야 함.
+        if (choicesData['no_choice'] && !hasRealChoices) {
           if (selectedChoice && selectedChoice !== '' && selectedChoice !== 'no_choice') {
             return null;
           }
           const noChoiceData = choicesData['no_choice'];
-          otaSalePrice = noChoiceData?.ota_sale_price ?? 0;
+          otaSalePrice = Number(noChoiceData?.ota_sale_price ?? 0);
           choicePrice = 0;
-          // no_choice = 초이스 없는 상품 → 기본 가격 쪽 불포함 금액 사용
-          notIncludedPrice = noChoiceData?.not_included_price ?? rule.not_included_price ?? 0;
-        } else {
-          // 초이스가 있는 상품 — 반드시 초이스별 가격 설정에서 OTA 판매가·불포함 금액 로드
-          let choiceId = selectedChoice;
-          if (choiceId && choiceId !== '' && choicesData[choiceId]) {
-            // 매칭된 초이스 사용
-          } else if (choiceId && choiceId !== '') {
-            const firstChoiceId = Object.keys(choicesData).find(k => k !== 'no_choice');
-            if (firstChoiceId) choiceId = firstChoiceId;
-          } else {
-            const firstChoiceId = Object.keys(choicesData).find(k => k !== 'no_choice');
-            if (firstChoiceId) choiceId = firstChoiceId;
+          notIncludedPrice = Number(
+            noChoiceData?.not_included_price ?? rule.not_included_price ?? 0
+          );
+        } else if (hasRealChoices) {
+          let choiceData: Record<string, unknown> | null = null;
+
+          if (selectedChoice && selectedChoice !== '') {
+            const combo = choiceCombinations.find((c) => c.id === selectedChoice);
+            const matched = findChoicePricingData(
+              combo ?? { id: selectedChoice },
+              choicesData
+            );
+            if (matched.data && Object.keys(matched.data).length > 0) {
+              choiceData = matched.data as Record<string, unknown>;
+            } else if (choicesData[selectedChoice]) {
+              choiceData = choicesData[selectedChoice] as Record<string, unknown>;
+            }
           }
-          
-          if (choiceId && choicesData[choiceId]) {
-            const choiceData = choicesData[choiceId];
-            otaSalePrice = choiceData?.ota_sale_price ?? 0;
-            choicePrice = choiceData?.adult_price ?? choiceData?.adult ?? 0;
-            // 초이스별 가격 설정에 있는 불포함 금액 사용 (기본 가격 불포함은 초이스 없는 상품 전용)
-            notIncludedPrice = choiceData?.not_included_price ?? 0;
-          } else if (selectedChoice && selectedChoice !== '' && Object.keys(choicesData).filter(k => k !== 'no_choice').length === 0) {
+
+          // 선택 초이스 키가 맞지 않으면 첫 실제 초이스로 폴백 (표시용)
+          if (!choiceData && realChoiceKeys[0]) {
+            choiceData = choicesData[realChoiceKeys[0]] as Record<string, unknown>;
+          }
+
+          if (choiceData) {
+            otaSalePrice = Number(choiceData.ota_sale_price ?? 0);
+            choicePrice = Number(
+              choiceData.adult_price ?? choiceData.adult ?? 0
+            );
+            notIncludedPrice = Number(
+              choiceData.not_included_price ??
+                choiceData.not_included_price_adult ??
+                0
+            );
+          } else if (selectedChoice && selectedChoice !== '') {
             return null;
           }
         }
       } catch (e) {
         console.warn('choices_pricing 파싱 오류:', e);
       }
-    } else if (selectedChoice && selectedChoice !== '') {
+    } else if (selectedChoice && selectedChoice !== '' && choiceCombinations.length > 0) {
+      // 초이스 조합은 있는데 해당 날짜 규칙에 choices_pricing이 없으면 가격 없음
       return null;
     }
     
     // 6. 최대 판매가 계산
-    // choices_pricing이 있으면 basePrice + choicePrice를 사용, 없으면 basePrice만 사용
-    // 홈페이지 채널(M00001)의 경우: 기본가격이 0이고 초이스 가격만 있는 경우도 처리
     const totalBasePrice = basePrice + choicePrice;
     let maxSalePrice = 0;
     
-    // 홈페이지 채널 확인
     const isHomepageChannel = selectedChannelId === 'M00001' || 
                               selectedChannelId?.toLowerCase() === 'm00001' ||
-                              (channelInfo && (channelInfo as any).id === 'M00001');
+                              (channelInfo && (channelInfo as { id?: string }).id === 'M00001');
+    const isSinglePriceChannel =
+      (channelInfo as { pricing_type?: string } | null)?.pricing_type === 'single';
     
-    if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
-      // OTA 채널 또는 홈페이지 채널이고 판매가가 있으면 판매가 사용
+    // 단일가 채널·OTA·홈페이지는 ota_sale_price를 우선 사용.
+    // 그 외에도 ota_sale_price만 저장된 경우(성인/아동 필드 없음) 표시되도록 폴백.
+    if (otaSalePrice > 0 && (isOTA || isHomepageChannel || isSinglePriceChannel || choicePrice === 0)) {
       maxSalePrice = otaSalePrice;
     } else {
-      // 기본 가격 + 초이스 가격 + 마크업
-      // 기본가격이 0이고 초이스 가격만 있는 경우도 처리 (홈페이지 채널 등)
       const markupAmount = rule.markup_amount || 0;
       const markupPercent = rule.markup_percent || 0;
       if (totalBasePrice > 0) {
         maxSalePrice = totalBasePrice + markupAmount + (totalBasePrice * markupPercent / 100);
       } else if (choicePrice > 0) {
-        // 기본가격이 0이고 초이스 가격만 있는 경우 (홈페이지 채널 등)
         maxSalePrice = choicePrice + markupAmount + (choicePrice * markupPercent / 100);
+      } else if (otaSalePrice > 0) {
+        maxSalePrice = otaSalePrice;
       }
     }
     
@@ -423,9 +447,11 @@ export const PricingCalendar = memo(function PricingCalendar({
     // 8. Net Price 계산
     let netPrice = 0;
     const commissionPercent = rule.commission_percent || 0;
+    const useOtaNet =
+      otaSalePrice > 0 &&
+      (isOTA || isHomepageChannel || isSinglePriceChannel || choicePrice === 0);
 
-    if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
-      // OTA/홈페이지: OTA판매가 × (1 - 쿠폰%) × (1 - 수수료%) + 불포함
+    if (useOtaNet) {
       const baseNetPrice = otaSalePrice * (1 - couponPercentUsed / 100) * (1 - commissionPercent / 100);
       netPrice = baseNetPrice + notIncludedPrice;
     } else {
@@ -451,7 +477,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         netPrice: Math.round(netPrice * 100) / 100
       }
     };
-  }, [selectedChoice, selectedVariant, pickRuleForChannel, getPricingForDate, channelInfo, productBasePrice, selectedChannelId, selectedChannelType, effectiveCouponPercent]);
+  }, [selectedChoice, selectedVariant, pickRuleForChannel, getPricingForDate, channelInfo, productBasePrice, selectedChannelId, selectedChannelType, effectiveCouponPercent, choiceCombinations]);
 
   /** 날짜 셀 호버 시 가격 계산식 툴팁 텍스트 */
   const getBreakdownTooltipText = useCallback((b: { otaSalePrice: number; notIncludedPrice: number; commissionPercent: number; couponPercentUsed: number; customerPay: number; netPrice: number } | undefined) => {

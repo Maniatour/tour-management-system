@@ -20,6 +20,7 @@ type ProductDetailCheckoutLayerProps = {
   initialDate?: string
   initialParticipants?: TravelerCounts
   initialSelectedOptions?: Record<string, string>
+  initialSelectedChoiceQuantities?: Record<string, Record<string, number>>
 }
 
 export function useProductDetailCheckoutActions() {
@@ -47,6 +48,7 @@ export default function ProductDetailCheckoutLayer({
   initialDate,
   initialParticipants,
   initialSelectedOptions,
+  initialSelectedChoiceQuantities,
   showBookingFlow,
   onCloseBookingFlow,
   showChoiceDescriptionModal,
@@ -134,6 +136,9 @@ export default function ProductDetailCheckoutLayer({
           {...(initialDate ? { initialDate } : {})}
           {...(initialParticipants ? { initialParticipants } : {})}
           {...(initialSelectedOptions ? { initialSelectedOptions } : {})}
+          {...(initialSelectedChoiceQuantities
+            ? { initialSelectedChoiceQuantities }
+            : {})}
           onClose={onCloseBookingFlow}
           onComplete={handleBookingComplete}
         />

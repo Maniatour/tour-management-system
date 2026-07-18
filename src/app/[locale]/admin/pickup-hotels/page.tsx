@@ -2420,7 +2420,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                               type="number"
 
-                              step="0.1"
+                              step="0.01"
 
                               value={bulkEditData[hotel.id]?.group_number ?? hotel.group_number ?? ''}
 
@@ -2456,7 +2456,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                               type="number"
 
-                              step="0.1"
+                              step="0.01"
 
                               value={editFormData.group_number || ''}
 
@@ -3141,7 +3141,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                               <span className="text-xs text-gray-600">{locale === 'en' ? 'Group:' : '그룹:'}</span>
                               <input
                                 type="number"
-                                step="0.1"
+                                step="0.01"
                                 value={quickEditGroupNumber || ''}
                                 onChange={(e) => setQuickEditGroupNumber(e.target.value ? parseFloat(e.target.value) : null)}
                                 className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -3611,7 +3611,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
             </label>
             <input
               type="number"
-              step="0.1"
+              step="0.01"
               min="0.1"
               max="999"
               value={groupNumberEditValue}
@@ -3623,14 +3623,14 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
                 }
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              placeholder={locale === 'en' ? 'e.g. 1 or 1.1' : '예: 1 또는 1.1'}
+              placeholder={locale === 'en' ? 'e.g. 1, 1.1, or 1.12' : '예: 1, 1.1, 1.12'}
               autoFocus
               disabled={groupNumberEditSaving}
             />
             <p className="text-xs text-gray-500 mt-2">
               {locale === 'en'
-                ? 'Integer (e.g. 1) = representative pickup hotel for the group. Decimal (e.g. 1.1) = pickup request hotel.'
-                : '정수(예: 1) = 그룹 대표 픽업 호텔, 소수(예: 1.1) = 픽업 요청 호텔'}
+                ? 'Integer (e.g. 1) = representative pickup hotel for the group. Decimal up to 2 places (e.g. 1.1, 1.12) = pickup request hotel.'
+                : '정수(예: 1) = 그룹 대표 픽업 호텔, 소수 최대 2자리(예: 1.1, 1.12) = 픽업 요청 호텔'}
             </p>
 
             <div className="flex justify-end gap-2 mt-6">

@@ -89,14 +89,18 @@ type ProductDetailAirbnbViewProps = {
     totalPrice: number
     groupedChoices: Record<string, ProductDetailChoiceGroup>
     selectedOptions: Record<string, string>
+    selectedChoiceQuantities?: Record<string, Record<string, number>>
+    partySize?: number
     includedHtml?: string | null
     notIncludedHtml?: string | null
     showIncluded: boolean
     showNotIncluded: boolean
     isEnglish: boolean
     onOptionChange: (choiceId: string, optionId: string) => void
+    onQuantityChange?: (choiceId: string, optionId: string, quantity: number) => void
     onCompareOptions: () => void
     onBookNow: () => void
+    bookDisabled?: boolean
   }
 }
 
@@ -234,8 +238,20 @@ export default function ProductDetailAirbnbView({
                     <ProductDetailAirbnbOptionsSection
                       groupedChoices={bookingPanelProps.groupedChoices}
                       selectedOptions={bookingPanelProps.selectedOptions}
+                      {...(bookingPanelProps.selectedChoiceQuantities
+                        ? {
+                            selectedChoiceQuantities:
+                              bookingPanelProps.selectedChoiceQuantities,
+                          }
+                        : {})}
+                      {...(bookingPanelProps.partySize != null
+                        ? { partySize: bookingPanelProps.partySize }
+                        : {})}
                       displayMode={bookingPanelProps.choicesDisplayMode}
                       onOptionChange={bookingPanelProps.onOptionChange}
+                      {...(bookingPanelProps.onQuantityChange
+                        ? { onQuantityChange: bookingPanelProps.onQuantityChange }
+                        : {})}
                       onCompareOptions={bookingPanelProps.onCompareOptions}
                       onBookNow={bookingPanelProps.onBookNow}
                       totalPrice={totalPrice}
@@ -244,6 +260,9 @@ export default function ProductDetailAirbnbView({
                       appliedPromoCode={promo.appliedCoupon?.code ?? null}
                       selectedDate={selectedDate || 'admin-preview'}
                       isEnglish={isEnglish}
+                      {...(bookingPanelProps.bookDisabled != null
+                        ? { bookDisabled: bookingPanelProps.bookDisabled }
+                        : {})}
                     />
                   ) : (
                     <section className="airbnb-detail-section airbnb-detail-options airbnb-detail-options-panel">
@@ -301,6 +320,12 @@ export default function ProductDetailAirbnbView({
                   totalPrice={totalPrice}
                   groupedChoices={bookingPanelProps.groupedChoices}
                   selectedOptions={bookingPanelProps.selectedOptions}
+                  {...(bookingPanelProps.selectedChoiceQuantities
+                    ? {
+                        selectedChoiceQuantities:
+                          bookingPanelProps.selectedChoiceQuantities,
+                      }
+                    : {})}
                   isEnglish={isEnglish}
                   selectedDate={selectedDate}
                   travelerCounts={travelerCounts}
@@ -310,6 +335,9 @@ export default function ProductDetailAirbnbView({
                   onBookNow={bookingPanelProps.onBookNow}
                   promo={promo}
                   forceShowPromo={forceShowPromo}
+                  {...(bookingPanelProps.bookDisabled != null
+                    ? { bookDisabled: bookingPanelProps.bookDisabled }
+                    : {})}
                 />
               </CustomerPageZone>
               <TrustBadgeRow items={trustBadges} className="mt-4 justify-center" compact />

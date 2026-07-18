@@ -15,6 +15,7 @@ export type ProductDetailChoiceGroup = {
     option_name: string
     option_name_ko: string | null
     option_price: number | null
+    capacity?: number | null
     is_default: boolean | null
     option_image_url?: string | null
     option_thumbnail_url?: string | null

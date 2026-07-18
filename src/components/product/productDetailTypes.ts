@@ -85,6 +85,8 @@ export type ProductChoice = {
   option_price: number | null
   option_child_price?: number | null
   option_infant_price?: number | null
+  /** 객실 등 옵션당 수용 인원 (choice_options.capacity) */
+  capacity?: number | null
   is_default: boolean | null
   option_image_url?: string | null
   option_thumbnail_url?: string | null
@@ -94,6 +96,10 @@ export type ProductChoice = {
   choice_thumbnail_url?: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
+  /** product_choices.sort_order — 초이스 그룹 표시 순서 */
+  choice_sort_order?: number | null
+  /** choice_options.sort_order — 그룹 내 옵션 표시 순서 */
+  option_sort_order?: number | null
 }
 
 export type ProductMedia = {

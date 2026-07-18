@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, type LucideIcon } from 'lucide-react'
+import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
@@ -206,6 +207,8 @@ export default function TourExpenseManager({
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [receiptViewerZoom, setReceiptViewerZoom] = useState(1)
+  const [formReceiptZoom, setFormReceiptZoom] = useState(1)
+  const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
   const [ocrReview, setOcrReview] = useState<{
     /** 신규·수정 입력폼에서 업로드 직후 OCR이면 반영 시 편집 중 지출로 바꾸지 않음 */
     applyTarget?: 'edit_expense' | 'add_form'
@@ -1492,6 +1495,7 @@ export default function TourExpenseManager({
         Boolean(String(expense.reimbursed_on ?? '').trim()) ||
         Boolean(String(expense.reimbursement_note ?? '').trim())
     )
+    setFormReceiptZoom(1)
     setShowAddForm(true)
   }
 
@@ -1626,6 +1630,7 @@ export default function TourExpenseManager({
         Boolean(String(expense.reimbursed_on ?? '').trim()) ||
         Boolean(String(expense.reimbursement_note ?? '').trim())
     )
+    setFormReceiptZoom(1)
     setShowAddForm(true)
     setOcrReview(null)
     setViewingReceipt(null)
@@ -2235,6 +2240,7 @@ export default function TourExpenseManager({
                 reimbursed_on: '',
                 reimbursement_note: '',
               })
+              setFormReceiptZoom(1)
               setShowAddForm(true)
             }}
             className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
@@ -3431,12 +3437,12 @@ export default function TourExpenseManager({
           document.body
         )}
 
-      {/* 지출 추가 폼 모달 */}
+      {/* 지출 추가/수정 폼 모달 — 왼쪽 영수증 · 오른쪽 입력 */}
       {expenseModalPortalReady &&
         showAddForm &&
         createPortal(
         <div 
-          className={`fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-4 overflow-y-auto ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
+          className={`fixed inset-0 bg-black/75 flex items-center justify-center p-2 sm:p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
           onClick={(e) => {
             // 모달 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
             if (Date.now() < expenseModalBackdropSuppressedUntilRef.current) return
@@ -3452,20 +3458,242 @@ export default function TourExpenseManager({
           }}
         >
           <div 
-            className="bg-white rounded-lg p-6 w-full max-w-md mt-8 mb-8"
+            className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {editingExpense ? '지출 수정' : t('addExpense')}
-            </h3>
-            
-            <form onSubmit={handleAddExpense} className="space-y-4">
+            <div className="flex items-start justify-between gap-3 p-3 sm:p-4 border-b shrink-0">
+              <div className="flex items-start gap-2 min-w-0">
+                <Receipt className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {editingExpense ? '지출 수정' : t('addExpense')}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-0.5">{t('expenseFormLayoutHint')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (uploading) return
+                  if (editingExpense) {
+                    handleCancelEdit()
+                  } else {
+                    setShowAddForm(false)
+                    setShowMoreCategories(false)
+                    setPaymentMethodTab('own')
+                  }
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                aria-label={t('cancel')}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExpense} className="flex flex-1 min-h-0 flex-col">
+              <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+                {/* 왼쪽: 영수증 크게 보기 + 업로드 */}
+                <div className="flex flex-col flex-1 min-w-0 min-h-[30vh] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-gray-200">
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-100 bg-slate-50 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormReceiptZoom((z) => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))
+                      }
+                      disabled={!formData.image_url}
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                      title={t('receiptViewerZoomOut')}
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs text-gray-600 tabular-nums min-w-[3rem] text-center">
+                      {Math.round(formReceiptZoom * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormReceiptZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))
+                      }
+                      disabled={!formData.image_url}
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                      title={t('receiptViewerZoomIn')}
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormReceiptZoom(1)}
+                      disabled={!formData.image_url}
+                      className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40"
+                    >
+                      {t('receiptViewerZoomReset')}
+                    </button>
+                    {formData.image_url ? (
+                      <a
+                        href={formData.image_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        {t('openInNewWindow')}
+                      </a>
+                    ) : (
+                      <span className="ml-auto text-xs text-gray-500">{t('receiptPhoto')}</span>
+                    )}
+                  </div>
+                  <div
+                    className={`flex-1 min-h-0 overflow-auto p-3 bg-slate-100/90 ${
+                      dragOver ? 'ring-2 ring-inset ring-primary' : ''
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleDragOver(e)
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleDragLeave(e)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleDrop(e)
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {formData.image_url ? (
+                      <div className="relative">
+                        <img
+                          src={formData.image_url}
+                          alt={t('receipt')}
+                          style={{
+                            width: `${100 * formReceiptZoom}%`,
+                            maxWidth: 'none',
+                            height: 'auto',
+                          }}
+                          className="rounded-lg shadow-md block"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement
+                            target.src = '/placeholder-receipt.png'
+                            target.alt = t('receiptImageLoadErrorAlt')
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleImageRemove}
+                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-colors shadow"
+                          title={t('removeImage') || '이미지 삭제'}
+                        >
+                          <X size={16} />
+                        </button>
+                        {ocrLoadingExpenseId === '__draft__' && (
+                          <p className="mt-2 text-xs text-purple-600">{t('receiptOcrAnalyzingAfterUpload')}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="h-full min-h-[220px] flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg bg-white/70 px-4 text-center">
+                        <Upload size={36} className="text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-600">{t('dragOrClickReceipt')}</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('mobileCameraInfo')}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 justify-center px-3 py-2 border-t border-gray-100 bg-white shrink-0">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        if (e.target.files && e.target.files.length > 0) {
+                          expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                          handleFileUpload(e.target.files)
+                          setTimeout(() => {
+                            if (e.target) {
+                              (e.target as HTMLInputElement).value = ''
+                            }
+                          }, 100)
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hidden"
+                    />
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        if (e.target.files && e.target.files.length > 0) {
+                          expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                          handleFileUpload(e.target.files)
+                          setTimeout(() => {
+                            if (e.target) {
+                              (e.target as HTMLInputElement).value = ''
+                            }
+                          }, 100)
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                        if (typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                          cameraInputRef.current?.click()
+                        } else {
+                          setWebcamTarget('addForm')
+                        }
+                      }}
+                      disabled={uploading}
+                      className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ImageIcon size={16} />
+                      {t('camera')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                        fileInputRef.current?.click()
+                      }}
+                      disabled={uploading}
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Upload size={16} />
+                      {t('file')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 오른쪽: 지출 입력 폼 */}
+                <div className="flex flex-col flex-1 min-w-0 min-h-[36vh] lg:max-h-[calc(92vh-5.5rem)] bg-white">
+                  <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
               {/* 결제처와 결제내용을 같은 줄에 배치 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('paidTo')}
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t('paidTo')}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setVendorManagerOpen(true)}
+                      className="inline-flex items-center gap-1 shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      title="결제처 목록 정리"
+                    >
+                      <ListOrdered className="w-3.5 h-3.5" />
+                      <span>결제처 정리</span>
+                    </button>
+                  </div>
                   <div className="space-y-2">
                     {/* Payment recipient selection */}
                     <select
@@ -3851,165 +4079,32 @@ export default function TourExpenseManager({
                   )}
                 </div>
               )}
+                  </div>
 
-              {/* 영수증 이미지 업로드 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('receiptPhoto')}
-                </label>
-                <div
-                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-                    dragOver 
-                      ? 'border-primary bg-primary/5' 
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleDragOver(e)
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleDragLeave(e)
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleDrop(e)
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {formData.image_url ? (
-                    <div className="space-y-2 relative">
-                      <div className="relative inline-block mx-auto">
-                        <img
-                          src={formData.image_url}
-                          alt={t('receipt')}
-                          className="mx-auto max-h-32 rounded"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleImageRemove}
-                          className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                          title={t('removeImage') || '이미지 삭제'}
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <p className="text-sm text-green-600">{t('receiptUploaded')}</p>
-                      {ocrLoadingExpenseId === '__draft__' && (
-                        <p className="text-xs text-purple-600">{t('receiptOcrAnalyzingAfterUpload')}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload size={32} className="mx-auto text-gray-400 mb-2" />
-                      <p className="text-sm text-gray-600">
-                        {t('dragOrClickReceipt')}
-                      </p>
-                      <p className="text-xs text-gray-500">{t('mobileCameraInfo')}</p>
-                    </div>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      if (e.target.files && e.target.files.length > 0) {
-                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                        handleFileUpload(e.target.files)
-                        // input 값 초기화
-                        setTimeout(() => {
-                          if (e.target) {
-                            (e.target as HTMLInputElement).value = ''
-                          }
-                        }, 100)
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="hidden"
-                  />
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      if (e.target.files && e.target.files.length > 0) {
-                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                        handleFileUpload(e.target.files)
-                        // input 값 초기화
-                        setTimeout(() => {
-                          if (e.target) {
-                            (e.target as HTMLInputElement).value = ''
-                          }
-                        }, 100)
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="hidden"
-                  />
-                  <div className="mt-2 flex gap-2 justify-center">
+                  <div className="flex space-x-3 p-4 border-t border-gray-100 bg-white shrink-0">
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                        if (typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-                          cameraInputRef.current?.click()
-                        } else {
-                          setWebcamTarget('addForm')
-                        }
+                      onClick={editingExpense ? handleCancelEdit : () => {
+                        setShowAddForm(false)
+                        setShowMoreCategories(false)
+                        setPaymentMethodTab('own')
                       }}
-                      disabled={uploading}
-                      className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                     >
-                      <ImageIcon size={16} />
-                      {t('camera')}
+                      {t('cancel')}
                     </button>
                     <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                        fileInputRef.current?.click()
-                      }}
+                      type="submit"
                       disabled={uploading}
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
                     >
-                      <Upload size={16} />
-                      {t('file')}
+                      {uploading 
+                        ? (editingExpense ? '수정 중...' : t('buttons.registering'))
+                        : (editingExpense ? '수정' : t('buttons.register'))
+                      }
                     </button>
                   </div>
                 </div>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={editingExpense ? handleCancelEdit : () => {
-                    setShowAddForm(false)
-                    setShowMoreCategories(false)
-                    setPaymentMethodTab('own')
-                  }}
-                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                >
-                  {t('cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {uploading 
-                    ? (editingExpense ? '수정 중...' : t('buttons.registering'))
-                    : (editingExpense ? '수정' : t('buttons.register'))
-                  }
-                </button>
               </div>
             </form>
           </div>
@@ -4065,6 +4160,13 @@ export default function TourExpenseManager({
         onOptionsUpdated={() => {
           loadVendors() // 옵션 업데이트 후 데이터 새로고침
         }}
+      />
+
+      <ExpenseVendorManagerModal
+        open={vendorManagerOpen}
+        onOpenChange={setVendorManagerOpen}
+        onUpdated={() => void loadVendors()}
+        forceZIndex={13000}
       />
     </div>
   )

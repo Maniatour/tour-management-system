@@ -74,7 +74,7 @@ export function isPickupHotelSelectable(hotel: PickupHotel): boolean {
 
 /**
  * 특정 그룹 번호의 호텔을 찾아서 반올림된 그룹 번호의 호텔로 안내하는 함수
- * @param requestedGroupNumber 요청된 그룹 번호 (예: 1.1)
+ * @param requestedGroupNumber 요청된 그룹 번호 (예: 1.1, 1.12)
  * @param hotels 전체 호텔 목록
  * @returns 반올림된 그룹 번호의 호텔 정보
  */
@@ -222,10 +222,19 @@ export function validateGroupNumber(groupNumber: number | null): {
     }
   }
   
-  if (groupNumber > 999) {
+  if (groupNumber > 999.99) {
     return {
       isValid: false,
-      message: '그룹 번호는 999를 초과할 수 없습니다.'
+      message: '그룹 번호는 999.99를 초과할 수 없습니다.'
+    }
+  }
+
+  // 소수 둘째 자리까지만 허용 (예: 4.12)
+  const roundedTo2 = Math.round(groupNumber * 100) / 100
+  if (Math.abs(groupNumber - roundedTo2) > 1e-9) {
+    return {
+      isValid: false,
+      message: '그룹 번호는 소수 둘째 자리까지만 입력할 수 있습니다.'
     }
   }
   

@@ -31,7 +31,7 @@ export function hotelHasLocation(hotel: PickupHotel): boolean {
   return resolveHotelCoords(hotel) !== null
 }
 
-/** 그룹 내 비대표 호텔 순번 → group_number (DECIMAL 3,1: N.1 ~ N.9) */
+/** 그룹 내 비대표 호텔 순번 → group_number (자동배정: N.1 ~ N.9, DB는 NUMERIC 5,2로 수동 2자리 허용) */
 export function memberGroupNumber(mainGroup: number, rankZeroBased: number): number {
   const slot = Math.min(rankZeroBased + 1, 9)
   return Math.round((mainGroup + slot * 0.1) * 10) / 10

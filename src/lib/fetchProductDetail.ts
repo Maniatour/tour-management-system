@@ -293,6 +293,7 @@ export async function fetchProductPageData(
           description_ko,
           description_en,
           choice_type,
+          sort_order,
           options:choice_options (
             id,
             option_key,
@@ -303,6 +304,7 @@ export async function fetchProductPageData(
             adult_price,
             child_price,
             infant_price,
+            capacity,
             is_default,
             is_active,
             sort_order,
@@ -313,6 +315,7 @@ export async function fetchProductPageData(
         `)
         .eq('product_id', productId)
         .order('sort_order', { ascending: true })
+        .order('sort_order', { foreignTable: 'choice_options', ascending: true })
 
       if (fallbackError) {
         console.error('product_choices 로드 오류:', fallbackError)
@@ -321,14 +324,21 @@ export async function fetchProductPageData(
         productChoices = []
       } else if (fallbackChoices) {
         const productName = product!.name || product!.customer_name_ko || ''
-        const flattenedChoices: ProductChoice[] = fallbackChoices.flatMap((choice: any) => {
+        const sortedChoices = [...fallbackChoices].sort(
+          (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+        )
+        const flattenedChoices: ProductChoice[] = sortedChoices.flatMap((choice: any) => {
           const choiceNameKo = choice.choice_group_ko || null
           const choiceNameEn = choice.choice_group_en || null
           // choice_name은 나중에 groupedChoices에서 로케일에 맞게 설정되므로, 여기서는 기본값만 설정
           // choice_group이 아이디인지 확인 (한글/영어 이름이 없으면 choice_group 사용)
           const choiceName = choiceNameKo || choiceNameEn || choice.choice_group || ''
           const choiceType = choice.choice_type || 'single'
-          const options = Array.isArray(choice.options) ? choice.options.filter((opt: any) => opt.is_active !== false) : []
+          const choiceSortOrder = choice.sort_order ?? 0
+          const options = (Array.isArray(choice.options) ? choice.options : [])
+            .filter((opt: any) => opt.is_active !== false)
+            .slice()
+            .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 
           return options.map((option: any) => ({
             product_id: choice.product_id,
@@ -343,17 +353,20 @@ export async function fetchProductPageData(
             choice_description_en: choice.description_en || null,
             choice_image_url: null, // product_choices 테이블에 image_url 필드가 없을 수 있음
             choice_thumbnail_url: null,
+            choice_sort_order: choiceSortOrder,
             option_id: option.id,
             option_name: option.option_name || option.option_key || '',
             option_name_ko: option.option_name_ko || null,
             option_price: option.adult_price ?? null,
             option_child_price: option.child_price ?? null,
             option_infant_price: option.infant_price ?? null,
+            capacity: option.capacity ?? null,
             is_default: option.is_default ?? null,
             option_image_url: option.image_url || null,
             option_thumbnail_url: option.thumbnail_url || null,
             option_description: option.description || null,
-            option_description_ko: option.description_ko || null
+            option_description_ko: option.description_ko || null,
+            option_sort_order: option.sort_order ?? 0,
           }))
         })
 
