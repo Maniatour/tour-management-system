@@ -10,7 +10,7 @@ import { useProductDetailTrustBadges } from '@/components/product/useProductDeta
 import PriceDisplay from '@/components/customer/ui/PriceDisplay'
 import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
 import { cn } from '@/lib/utils'
-import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
+import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 
 type ProductDetailBookingPanelContentProps = {
@@ -87,7 +87,8 @@ export default function ProductDetailBookingPanelContent({
             <span className="font-medium">${basePrice || 0}</span>
           </div>
           {Object.values(groupedChoices).flatMap((group) => {
-            if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+            const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+            if (usesQuantitySelection(group.choice_type, group.options, choiceLabel)) {
               const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
               return group.options
                 .filter((opt) => (quantities[opt.option_id] ?? 0) > 0 && (opt.option_price ?? 0) > 0)
@@ -167,21 +168,23 @@ export default function ProductDetailBookingPanelContent({
           </div>
           <div className="space-y-4">
             {Object.values(groupedChoices).map((group) => {
-              const isQuantityCapacity = usesCapacityQuantitySelection(
+              const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+              const isQuantityGroup = usesQuantitySelection(
                 group.choice_type,
-                group.options
+                group.options,
+                choiceLabel
               )
               return (
                 <div key={group.choice_id}>
                   <label
                     htmlFor={
-                      isQuantityCapacity ? undefined : `choice-${group.choice_id}-${variant}`
+                      isQuantityGroup ? undefined : `choice-${group.choice_id}-${variant}`
                     }
                     className="mb-2 block text-sm font-medium text-slate-700"
                   >
                     {group.choice_name}
                   </label>
-                  {isQuantityCapacity && onQuantityChange ? (
+                  {isQuantityGroup && onQuantityChange ? (
                     group.options.length === 0 ? (
                       <p className="text-sm text-muted-foreground">{t('noRoomsForPartySize')}</p>
                     ) : (

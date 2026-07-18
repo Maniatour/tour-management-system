@@ -247,7 +247,6 @@ export default function ProductDetailAirbnbBody({
               teamType={null}
               locale={locale}
               variant="customer-itinerary"
-              pickupDropInfo={productDetails?.pickup_drop_info}
               selectedDate={selectedDate}
               product={product}
             />

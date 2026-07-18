@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, X } from 'lucide-react'
+import { GripVertical, Loader2, Plus, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ProductMediaTab from '@/components/product/ProductMediaTab'
@@ -17,8 +17,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+
+const PRICING_EDIT_MODAL_STORAGE_KEY = 'admin-product-card-pricing-edit-modal-rect'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import {
@@ -253,33 +256,182 @@ export default function AdminProductCardEditModals({
   }
 
   const dialogSize =
-    section === 'pricing'
-      ? 'w-[min(98vw,96rem)] !max-w-[min(98vw,96rem)] max-h-[92vh] overflow-y-auto'
-      : section === 'media'
-        ? 'max-w-[min(96vw,72rem)] max-h-[90vh] overflow-y-auto'
-        : 'max-w-2xl max-h-[90vh] overflow-y-auto'
+    section === 'media'
+      ? 'max-w-[min(96vw,72rem)] max-h-[90vh] overflow-y-auto'
+      : 'max-w-2xl max-h-[90vh] overflow-y-auto'
+
+  const dialogHeader =
+    section === 'pricing' ? (
+      <DialogHeader
+        data-dialog-drag-handle
+        className="shrink-0 border-b px-4 py-3 pr-16 text-left sm:cursor-grab sm:px-5 sm:py-4 sm:pr-[4.5rem] sm:active:cursor-grabbing"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <GripVertical
+              className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block"
+              aria-hidden
+            />
+            <DialogTitle className="pr-2">{title}</DialogTitle>
+          </div>
+          {showLocaleToggle ? (
+            <AdminEditLocaleToggle
+              value={editLocale}
+              onChange={setEditLocale}
+              groupLabel={t('editLocaleGroup')}
+              koLabel={t('editLocaleKo')}
+              enLabel={t('editLocaleEn')}
+            />
+          ) : null}
+        </div>
+      </DialogHeader>
+    ) : (
+      <DialogHeader>
+        <div className="flex items-start justify-between gap-3">
+          <DialogTitle className="pr-2">{title}</DialogTitle>
+          {showLocaleToggle ? (
+            <AdminEditLocaleToggle
+              value={editLocale}
+              onChange={setEditLocale}
+              groupLabel={t('editLocaleGroup')}
+              koLabel={t('editLocaleKo')}
+              enLabel={t('editLocaleEn')}
+            />
+          ) : null}
+        </div>
+      </DialogHeader>
+    )
+
+  const pricingBody = (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+        <div className="mb-4 flex flex-wrap items-center gap-4">
+          <span className="text-sm font-medium text-gray-700">{tBasic('homepagePricingType')}</span>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="homepagePricingType"
+              checked={pricingForm.homepagePricingType === 'separate'}
+              onChange={() => setPricingForm((prev) => ({ ...prev, homepagePricingType: 'separate' }))}
+            />
+            {tBasic('separatePricing')}
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="homepagePricingType"
+              checked={pricingForm.homepagePricingType === 'single'}
+              onChange={() =>
+                setPricingForm((prev) => ({
+                  ...prev,
+                  homepagePricingType: 'single',
+                  childBasePrice: prev.adultBasePrice,
+                  infantBasePrice: prev.adultBasePrice,
+                }))
+              }
+            />
+            {tBasic('singlePricing')}
+          </label>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label={tBasic('adult')}>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={pricingForm.adultBasePrice}
+              onChange={(e) => {
+                const adult = parseFloat(e.target.value) || 0
+                setPricingForm((prev) => ({
+                  ...prev,
+                  adultBasePrice: adult,
+                  basePrice: adult,
+                  ...(prev.homepagePricingType === 'single'
+                    ? { childBasePrice: adult, infantBasePrice: adult }
+                    : {}),
+                }))
+              }}
+            />
+          </Field>
+          {pricingForm.homepagePricingType === 'separate' ? (
+            <>
+              <Field label={tBasic('child')}>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={pricingForm.childBasePrice}
+                  onChange={(e) =>
+                    setPricingForm((prev) => ({
+                      ...prev,
+                      childBasePrice: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label={tBasic('infant')}>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={pricingForm.infantBasePrice}
+                  onChange={(e) =>
+                    setPricingForm((prev) => ({
+                      ...prev,
+                      infantBasePrice: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </Field>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border/60 p-2 sm:p-4">
+        <h3 className="mb-3 px-2 text-sm font-semibold text-gray-900">{t('dynamicPricingSection')}</h3>
+        <DynamicPricingManager productId={product.id} />
+      </div>
+    </div>
+  )
+
+  const pricingFooter = (
+    <DialogFooter className="shrink-0 gap-2 border-t px-4 py-3 sm:gap-0 sm:px-5">
+      <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+        {t('close')}
+      </Button>
+      <Button type="button" onClick={handleSave} disabled={saving}>
+        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {t('saveBasePrice')}
+      </Button>
+    </DialogFooter>
+  )
 
   return (
     <Dialog open={section != null} onOpenChange={handleDialogOpenChange}>
+      {section === 'pricing' ? (
+        <ResizableDialogContent
+          storageKey={PRICING_EDIT_MODAL_STORAGE_KEY}
+          defaultWidth={1400}
+          defaultHeight={860}
+          respectHeaderInset={false}
+          className="flex flex-col gap-0 bg-white shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {dialogHeader}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
+            {pricingBody}
+            {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+          </div>
+          {pricingFooter}
+        </ResizableDialogContent>
+      ) : (
       <DialogContent
         className={dialogSize}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <DialogHeader>
-          <div className="flex items-start justify-between gap-3">
-            <DialogTitle className="pr-2">{title}</DialogTitle>
-            {showLocaleToggle ? (
-              <AdminEditLocaleToggle
-                value={editLocale}
-                onChange={setEditLocale}
-                groupLabel={t('editLocaleGroup')}
-                koLabel={t('editLocaleKo')}
-                enLabel={t('editLocaleEn')}
-              />
-            ) : null}
-          </div>
-        </DialogHeader>
+        {dialogHeader}
 
         {section === 'location' ? (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -503,99 +655,6 @@ export default function AdminProductCardEditModals({
           </div>
         ) : null}
 
-        {section === 'pricing' ? (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-              <div className="mb-4 flex flex-wrap items-center gap-4">
-                <span className="text-sm font-medium text-gray-700">{tBasic('homepagePricingType')}</span>
-                <label className="inline-flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="homepagePricingType"
-                    checked={pricingForm.homepagePricingType === 'separate'}
-                    onChange={() => setPricingForm((prev) => ({ ...prev, homepagePricingType: 'separate' }))}
-                  />
-                  {tBasic('separatePricing')}
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="homepagePricingType"
-                    checked={pricingForm.homepagePricingType === 'single'}
-                    onChange={() =>
-                      setPricingForm((prev) => ({
-                        ...prev,
-                        homepagePricingType: 'single',
-                        childBasePrice: prev.adultBasePrice,
-                        infantBasePrice: prev.adultBasePrice,
-                      }))
-                    }
-                  />
-                  {tBasic('singlePricing')}
-                </label>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label={tBasic('adult')}>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={pricingForm.adultBasePrice}
-                    onChange={(e) => {
-                      const adult = parseFloat(e.target.value) || 0
-                      setPricingForm((prev) => ({
-                        ...prev,
-                        adultBasePrice: adult,
-                        basePrice: adult,
-                        ...(prev.homepagePricingType === 'single'
-                          ? { childBasePrice: adult, infantBasePrice: adult }
-                          : {}),
-                      }))
-                    }}
-                  />
-                </Field>
-                {pricingForm.homepagePricingType === 'separate' ? (
-                  <>
-                    <Field label={tBasic('child')}>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={pricingForm.childBasePrice}
-                        onChange={(e) =>
-                          setPricingForm((prev) => ({
-                            ...prev,
-                            childBasePrice: parseFloat(e.target.value) || 0,
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label={tBasic('infant')}>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={pricingForm.infantBasePrice}
-                        onChange={(e) =>
-                          setPricingForm((prev) => ({
-                            ...prev,
-                            infantBasePrice: parseFloat(e.target.value) || 0,
-                          }))
-                        }
-                      />
-                    </Field>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border/60 p-2 sm:p-4">
-              <h3 className="mb-3 px-2 text-sm font-semibold text-gray-900">{t('dynamicPricingSection')}</h3>
-              <DynamicPricingManager productId={product.id} />
-            </div>
-          </div>
-        ) : null}
-
         {section === 'media' ? (
           <div className="rounded-xl border border-border/60 p-2 sm:p-4">
             <p className="mb-4 px-2 text-sm text-muted-foreground">{t('mediaHint')}</p>
@@ -627,7 +686,7 @@ export default function AdminProductCardEditModals({
               {t('close')}
             </Button>
           </DialogFooter>
-        ) : section !== 'pricing' ? (
+        ) : (
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               {t('cancel')}
@@ -637,18 +696,9 @@ export default function AdminProductCardEditModals({
               {t('save')}
             </Button>
           </DialogFooter>
-        ) : (
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              {t('close')}
-            </Button>
-            <Button type="button" onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {t('saveBasePrice')}
-            </Button>
-          </DialogFooter>
         )}
       </DialogContent>
+      )}
     </Dialog>
   )
 }

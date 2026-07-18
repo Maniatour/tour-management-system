@@ -1208,7 +1208,7 @@ export default function AdminProducts() {
                 product={product}
                 locale={locale}
                 displayLocale={cardPreviewLocale}
-                priority={index < 4}
+                priority={index === 0}
                 onStatusChange={(productId, newStatus) => {
                   setProducts((prevProducts) =>
                     prevProducts.map((p) => (p.id === productId ? { ...p, status: newStatus } : p))

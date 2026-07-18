@@ -6,7 +6,7 @@ import { Check, ImageOff, Info } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
-import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
+import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
 
 type ProductDetailAirbnbOptionsSectionProps = {
   groupedChoices: Record<string, ProductDetailChoiceGroup>
@@ -247,7 +247,12 @@ export default function ProductDetailAirbnbOptionsSection({
       </div>
 
       {groups.map((group) => {
-        const isQuantityCapacity = usesCapacityQuantitySelection(group.choice_type, group.options)
+        const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+        const isQuantityGroup = usesQuantitySelection(
+          group.choice_type,
+          group.options,
+          choiceLabel
+        )
 
         return (
           <div key={group.choice_id} className="mb-6 last:mb-0">
@@ -256,7 +261,7 @@ export default function ProductDetailAirbnbOptionsSection({
                 ? group.choice_name || group.choice_name_ko
                 : group.choice_name_ko || group.choice_name}
             </h3>
-            {isQuantityCapacity && onQuantityChange ? (
+            {isQuantityGroup && onQuantityChange ? (
               group.options.length === 0 ? (
                 <p className="text-sm text-[#6b7280]">{t('noRoomsForPartySize')}</p>
               ) : (

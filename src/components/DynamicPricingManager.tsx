@@ -34,7 +34,7 @@ import { ChannelSelector } from './dynamic-pricing/ChannelSelector';
 import { PricingCalendar } from './dynamic-pricing/PricingCalendar';
 import { PricingListView } from './dynamic-pricing/PricingListView';
 import { PricingControls } from './dynamic-pricing/PricingControls';
-import { DateRangeSelector } from './dynamic-pricing/DateRangeSelector';
+import { DateRangeSelectorModal } from './dynamic-pricing/DateRangeSelectorModal';
 import { PriceCalculator } from './dynamic-pricing/PriceCalculator';
 import { SaleStatusModal } from './dynamic-pricing/SaleStatusModal';
 import BulkPricingTableModal from './dynamic-pricing/BulkPricingTableModal';
@@ -198,9 +198,35 @@ export default function DynamicPricingManager({
   });
 
   const {
+    choiceGroups,
     choiceCombinations,
     updateChoiceCombinationPrice
   } = useChoiceManagement(productId, selectedChannel, selectedChannelType);
+
+  /** 테이블 뷰용 초이스 그룹 컬럼 (옵션 없는 그룹은 숨김) */
+  const choiceGroupColumns = useMemo(() => {
+    const fromGroups = (choiceGroups || [])
+      .filter((group) => Array.isArray(group.options) && group.options.length > 0)
+      .map((group, index) => ({
+        id: group.id || `group-${index}`,
+        name: group.name_ko || group.name || t('choiceGroupN', { n: index + 1 }),
+      }));
+
+    if (fromGroups.length > 0) return fromGroups;
+
+    const firstDetails = choiceCombinations[0]?.combination_details;
+    if (firstDetails && firstDetails.length > 0) {
+      return firstDetails.map((detail, index) => ({
+        id: detail.groupId || `group-${index}`,
+        name:
+          detail.groupNameKo ||
+          detail.groupName ||
+          t('choiceGroupN', { n: index + 1 }),
+      }));
+    }
+
+    return [];
+  }, [choiceGroups, choiceCombinations, t]);
 
   const {
     pricingConfig,
@@ -2041,10 +2067,10 @@ export default function DynamicPricingManager({
 
   return (
     <div className="space-y-6">
-      {/* 4열 그리드 레이아웃 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 1열: 채널 선택 (1.5/12 → 2/12) */}
-        <div className="lg:col-span-2 space-y-4">
+      {/* 3열 그리드 레이아웃 (20% / 40% / 40%) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,2fr)]">
+        {/* 1열: 채널/Variant + 날짜·요일 선택 + 현재 설정 */}
+        <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-900">{t('channelSelect')}</h3>
           <ChannelSelector
             channelGroups={channelGroups}
@@ -2060,36 +2086,38 @@ export default function DynamicPricingManager({
             channelPricingStats={channelPricingStats}
             onSelectAllChannelsInType={handleSelectAllChannelsInType}
             onChannelEdit={handleChannelEdit}
+            productVariants={productVariants}
+            selectedVariant={selectedVariant}
+            onVariantSelect={setSelectedVariant}
           />
-          
-          {/* Variant 선택 */}
-          {selectedChannel && productVariants.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Variant 선택
-              </label>
-              <select
-                value={selectedVariant}
-                onChange={(e) => setSelectedVariant(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-ring"
-              >
-                {productVariants.map((variant) => (
-                  <option key={variant.variant_key} value={variant.variant_key}>
-                    {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
-                  </option>
-                ))}
-              </select>
-              {productVariants.find(v => v.variant_key === selectedVariant)?.variant_name_ko && (
-                <p className="mt-1 text-xs text-gray-500">
-                  {productVariants.find(v => v.variant_key === selectedVariant)?.variant_name_ko}
-                </p>
-              )}
-            </div>
-          )}
+
+          <DateRangeSelectorModal
+            onDateRangeSelect={handleDateRangeSelection}
+            initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
+            selectedDates={selectedDates}
+            onDateToggle={handleDateToggle}
+            isSaleAvailable={!!pricingConfig.is_sale_available}
+            onSaleAvailableToggle={() =>
+              handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })
+            }
+          />
+
+          <PriceCalculator
+            calculation={currentCalculation}
+            pricingConfig={calculationConfig}
+            choiceCalculations={{}}
+            choiceCombinations={[]}
+            selectedChannel={selectedChannel ? channelGroups
+              .flatMap(group => group.channels)
+              .find(ch => ch.id === selectedChannel) || null : null}
+            channels={channelGroups.flatMap(group => group.channels)}
+            productBasePrice={productBasePrice}
+            homepagePricingConfig={homepagePricingConfig}
+          />
         </div>
 
-        {/* 2열: 캘린더 (10/12 ÷ 3 = 3.33/12 → 3/12) */}
-        <div className="lg:col-span-3 space-y-4">
+        {/* 2열: 캘린더 + 포함/불포함 */}
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">{t('priceHistory')}</h3>
             {/* 뷰 모드 토글 및 판매 상태 설정 버튼 */}
@@ -2264,60 +2292,8 @@ export default function DynamicPricingManager({
           </div>
              </div>
 
-        {/* 3열: 날짜 및 요일 선택 + 현재 설정 (10/12 ÷ 3 = 3.33/12 → 3/12) */}
-        <div className="lg:col-span-3 space-y-4">
-          {/* 날짜 및 요일 선택기 */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-semibold text-gray-900">{t('dateAndDaySelect')}</h4>
-              <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium text-gray-700">
-                  {pricingConfig.is_sale_available ? t('onSale') : t('saleStopped')}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-                    pricingConfig.is_sale_available
-                      ? 'bg-blue-600'
-                      : 'bg-gray-300'
-                  }`}
-                  role="switch"
-                  aria-checked={pricingConfig.is_sale_available}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      pricingConfig.is_sale_available ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-            <DateRangeSelector
-              onDateRangeSelect={handleDateRangeSelection}
-              initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
-              selectedDates={selectedDates}
-              onDateToggle={handleDateToggle}
-            />
-          </div>
-
-          {/* 현재 설정 (실시간 가격 계산 - 기본 가격만) */}
-          <PriceCalculator
-            calculation={currentCalculation}
-            pricingConfig={calculationConfig}
-            choiceCalculations={{}}
-            choiceCombinations={[]}
-            selectedChannel={selectedChannel ? channelGroups
-              .flatMap(group => group.channels)
-              .find(ch => ch.id === selectedChannel) || null : null}
-            channels={channelGroups.flatMap(group => group.channels)}
-            productBasePrice={productBasePrice}
-            homepagePricingConfig={homepagePricingConfig}
-          />
-        </div>
-
-        {/* 4열: 기본 가격 + 초이스별 가격 설정 (10/12 ÷ 3 = 3.33/12 → 4/12) */}
-        <div className="lg:col-span-4 space-y-4">
+        {/* 3열: 기본 가격 + 초이스별 가격 설정 */}
+        <div className="space-y-4">
           {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -2802,7 +2778,18 @@ export default function DynamicPricingManager({
                   <table className="w-full min-w-[800px] text-xs">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-200">
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('choice')}</th>
+                        {choiceGroupColumns.length > 0 ? (
+                          choiceGroupColumns.map((group) => (
+                            <th
+                              key={group.id}
+                              className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]"
+                            >
+                              {group.name}
+                            </th>
+                          ))
+                        ) : (
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('choice')}</th>
+                        )}
                         {isTableChannelSinglePrice ? (
                           <>
                             <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePrice')}</th>
@@ -2916,12 +2903,52 @@ export default function DynamicPricingManager({
 
                         const inputCls = 'w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-ring focus:border-ring';
 
+                        const details = combination.combination_details || [];
+                        const namePartsKo = (combination.combination_name_ko || '').split(/\s*\+\s*/).filter(Boolean);
+                        const namePartsEn = (combination.combination_name || '').split(/\s*\+\s*/).filter(Boolean);
+                        const getGroupOptionLabel = (groupIndex: number, groupId: string) => {
+                          const byId = details.find((d) => d.groupId && d.groupId === groupId);
+                          const detail = byId || details[groupIndex];
+                          if (detail) {
+                            return {
+                              primary: detail.optionNameKo || detail.optionName || '-',
+                              secondary:
+                                detail.optionName && detail.optionNameKo && detail.optionName !== detail.optionNameKo
+                                  ? detail.optionName
+                                  : undefined,
+                            };
+                          }
+                          return {
+                            primary: namePartsKo[groupIndex] || namePartsEn[groupIndex] || '-',
+                            secondary:
+                              namePartsKo[groupIndex] &&
+                              namePartsEn[groupIndex] &&
+                              namePartsKo[groupIndex] !== namePartsEn[groupIndex]
+                                ? namePartsEn[groupIndex]
+                                : undefined,
+                          };
+                        };
+
                         return (
                           <tr key={combination.id} className="hover:bg-gray-50">
-                            <td className="py-1.5 px-2 align-top">
-                              <div className="font-medium text-gray-900 text-xs">{combination.combination_name_ko || combination.combination_name}</div>
-                              <div className="text-[10px] text-gray-500 mt-0.5">{combination.combination_name}</div>
-                            </td>
+                            {choiceGroupColumns.length > 0 ? (
+                              choiceGroupColumns.map((group, groupIndex) => {
+                                const label = getGroupOptionLabel(groupIndex, group.id);
+                                return (
+                                  <td key={`${combination.id}-${group.id}`} className="py-1.5 px-2 align-top">
+                                    <div className="font-medium text-gray-900 text-xs">{label.primary}</div>
+                                    {label.secondary ? (
+                                      <div className="text-[10px] text-gray-500 mt-0.5">{label.secondary}</div>
+                                    ) : null}
+                                  </td>
+                                );
+                              })
+                            ) : (
+                              <td className="py-1.5 px-2 align-top">
+                                <div className="font-medium text-gray-900 text-xs">{combination.combination_name_ko || combination.combination_name}</div>
+                                <div className="text-[10px] text-gray-500 mt-0.5">{combination.combination_name}</div>
+                              </td>
+                            )}
                             {isTableChannelSinglePrice ? (
                               <>
                                 <td className="py-1.5 px-1.5 align-top text-center">

@@ -50,7 +50,6 @@ interface TourScheduleSectionProps {
   tourGuideId?: string | null // 투어 가이드 ID
   assistantId?: string | null // 어시스턴트/드라이버 ID
   variant?: 'default' | 'customer-itinerary'
-  pickupDropInfo?: string | null | undefined
   selectedDate?: string
   product?: {
     name?: string | null
@@ -70,7 +69,6 @@ export default function TourScheduleSection({
   tourGuideId,
   assistantId,
   variant = 'default',
-  pickupDropInfo,
   selectedDate = '',
   product = {},
 }: TourScheduleSectionProps) {
@@ -475,7 +473,6 @@ export default function TourScheduleSection({
         locale={locale}
         selectedDate={selectedDate}
         product={product}
-        pickupDropInfo={pickupDropInfo}
         allSchedulesExpanded={allSchedulesExpanded}
         expandedSchedules={expandedSchedules}
         onToggleAll={toggleAllSchedules}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import {
   Car,
@@ -50,7 +50,6 @@ type TourScheduleCustomerItineraryViewProps = {
     customer_name_ko?: string | null
     customer_name_en?: string | null
   }
-  pickupDropInfo?: string | null | undefined
   allSchedulesExpanded: boolean
   expandedSchedules: Set<string>
   onToggleAll: () => void
@@ -106,7 +105,6 @@ export default function TourScheduleCustomerItineraryView({
   locale,
   selectedDate = '',
   product = {},
-  pickupDropInfo,
   allSchedulesExpanded,
   expandedSchedules,
   onToggleAll,
@@ -117,20 +115,17 @@ export default function TourScheduleCustomerItineraryView({
   const t = useTranslations('productDetail')
   const isEnglish = locale.trim().toLowerCase() === 'en'
   const [departureModalOpen, setDepartureModalOpen] = useState(false)
-  const [pickupExpanded, setPickupExpanded] = useState(false)
-  const hasPickupInfo = Boolean(pickupDropInfo?.trim())
 
   const getLocalizedTitle = (schedule: CustomerScheduleItem) =>
     getLocalizedText(schedule.title_ko, schedule.title_en, '')
 
-  const { displayItems, sunriseSummary, hotelPickupWindow, loadingSunrise } =
-    useProductDetailTourScheduleTiming(
-      schedules,
-      selectedDate,
-      product,
-      isEnglish,
-      getLocalizedTitle
-    )
+  const { displayItems, sunriseSummary, loadingSunrise } = useProductDetailTourScheduleTiming(
+    schedules,
+    selectedDate,
+    product,
+    isEnglish,
+    getLocalizedTitle
+  )
   const schedulesByDay = schedules.reduce<Record<number, CustomerScheduleItem[]>>((acc, schedule) => {
     if (!acc[schedule.day_number]) acc[schedule.day_number] = []
     acc[schedule.day_number].push(schedule)
@@ -138,21 +133,6 @@ export default function TourScheduleCustomerItineraryView({
   }, {})
 
   const dayEntries = Object.entries(schedulesByDay).sort(([a], [b]) => Number(a) - Number(b))
-  const showPreviousDayPickupNotice =
-    Boolean(selectedDate) &&
-    (hotelPickupWindow
-      ? hotelPickupWindow.pickupStartYmd < selectedDate
-      : Boolean(sunriseSummary?.showDifferentDatesWarning))
-
-  useEffect(() => {
-    if (allSchedulesExpanded && hasPickupInfo) {
-      setPickupExpanded(true)
-    } else if (!allSchedulesExpanded) {
-      setPickupExpanded(false)
-    }
-  }, [allSchedulesExpanded, hasPickupInfo])
-
-  const isPickupExpanded = allSchedulesExpanded || pickupExpanded
 
   return (
     <div className="airbnb-itinerary">
@@ -220,62 +200,6 @@ export default function TourScheduleCustomerItineraryView({
       </div>
 
       <div className="airbnb-itinerary-timeline">
-        <div className="airbnb-itinerary-step">
-          <div className="airbnb-itinerary-marker" aria-hidden>
-            <Car className="h-4 w-4" />
-          </div>
-
-          <article className="airbnb-itinerary-card">
-            <button
-              type="button"
-              className={`airbnb-itinerary-card-header ${hasPickupInfo ? 'is-clickable' : ''}`}
-              onClick={() => hasPickupInfo && setPickupExpanded((open) => !open)}
-              disabled={!hasPickupInfo}
-              aria-expanded={isPickupExpanded}
-            >
-              <div className="min-w-0 flex-1 text-left">
-                <h4 className="airbnb-itinerary-card-title">
-                  {hotelPickupWindow ? (
-                    <>
-                      <span className="airbnb-itinerary-card-time">
-                        {hotelPickupWindow.timeRangeLabel}
-                      </span>
-                      <span className="airbnb-itinerary-card-separator" aria-hidden>
-                        |
-                      </span>
-                    </>
-                  ) : null}
-                  <span>{getText('픽업', 'Pick-up')}</span>
-                  {showPreviousDayPickupNotice ? (
-                    <span className="airbnb-itinerary-inline-badge">{t('previousDayPickupBadge')}</span>
-                  ) : null}
-                </h4>
-              </div>
-
-              {hasPickupInfo && !allSchedulesExpanded ? (
-                <span className="airbnb-itinerary-card-chevron" aria-hidden>
-                  {isPickupExpanded ? (
-                    <ChevronUp className="h-4 w-4" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4" />
-                  )}
-                </span>
-              ) : null}
-            </button>
-
-            {isPickupExpanded && hasPickupInfo ? (
-              <div className="airbnb-itinerary-card-body">
-                <div
-                  className="airbnb-itinerary-description"
-                  dangerouslySetInnerHTML={{
-                    __html: markdownToHtml(pickupDropInfo ?? ''),
-                  }}
-                />
-              </div>
-            ) : null}
-          </article>
-        </div>
-
         {dayEntries.map(([dayNumber, daySchedules]) => {
           const dayNum = Number(dayNumber)
           const showDayLabel = dayEntries.length > 1

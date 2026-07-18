@@ -3,6 +3,7 @@ import type { ProductChoiceGroup } from '@/components/product/ProductDetailChoic
 import {
   filterOptionsByPartySize,
   usesCapacityQuantitySelection,
+  usesQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
 
 /** 고객 상세 페이지 상품 초이스 표시 방식 */
@@ -71,16 +72,27 @@ export function groupProductChoices(
   return ordered
 }
 
-/** 예약 인원에 맞게 옵션을 필터한 그룹 (capacity > 인원인 객실 숨김) */
+/**
+ * 예약 인원에 맞게 옵션을 필터한 그룹.
+ * quantity + 객실 capacity 그룹만 capacity > 인원 옵션을 숨기고,
+ * 단일 선택(single) 초이스는 capacity 유무와 관계없이 전부 표시한다.
+ */
 export function filterGroupedChoicesByPartySize(
   groupedChoices: Record<string, ProductChoiceGroup>,
   partySize: number
 ): Record<string, ProductChoiceGroup> {
   const filtered: Record<string, ProductChoiceGroup> = {}
   for (const [choiceId, group] of Object.entries(groupedChoices)) {
+    const shouldFilterByCapacity = usesCapacityQuantitySelection(
+      group.choice_type,
+      group.options,
+      group.choice_name_ko || group.choice_name || group.choice_name_en
+    )
     filtered[choiceId] = {
       ...group,
-      options: filterOptionsByPartySize(group.options, partySize),
+      options: shouldFilterByCapacity
+        ? filterOptionsByPartySize(group.options, partySize)
+        : group.options,
     }
   }
   return filtered
@@ -128,8 +140,8 @@ export function getDefaultProductChoiceOptions(
   )
 
   Object.values(tempGroups).forEach((group) => {
-    // 객실 capacity quantity는 사용자가 조합을 고를 때까지 기본 선택 없음
-    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+    // quantity(객실·인원)는 사용자가 수량을 고를 때까지 기본 단일 선택 없음
+    if (usesQuantitySelection(group.choice_type, group.options)) {
       return
     }
     const defaultOption = group.options.find((option) => option.is_default)
@@ -152,7 +164,8 @@ export function calculateSelectedChoicePrice(
   let totalPrice = basePrice
 
   Object.values(groupedChoices).forEach((group) => {
-    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+    const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+    if (usesQuantitySelection(group.choice_type, group.options, choiceLabel)) {
       const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
       group.options.forEach((option) => {
         const qty = quantities[option.option_id] ?? 0
@@ -161,20 +174,6 @@ export function calculateSelectedChoicePrice(
         }
       })
       return
-    }
-
-    if (group.choice_type === 'quantity') {
-      const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
-      const hasAnyQty = Object.values(quantities).some((qty) => qty > 0)
-      if (hasAnyQty) {
-        group.options.forEach((option) => {
-          const qty = quantities[option.option_id] ?? 0
-          if (qty > 0 && option.option_price) {
-            totalPrice += option.option_price * qty
-          }
-        })
-        return
-      }
     }
 
     const selectedOptionId = selectedOptions[group.choice_id]

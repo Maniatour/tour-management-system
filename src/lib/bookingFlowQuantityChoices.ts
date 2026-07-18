@@ -1,12 +1,15 @@
-type QuantityChoiceOption = {
-  option_id: string
+type QuantityOptionNameFields = {
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
+}
+
+type QuantityChoiceOption = QuantityOptionNameFields & {
+  option_id: string
   is_default?: boolean | null
 }
 
-export function getQuantityOptionNameLower(option: QuantityChoiceOption): string {
+export function getQuantityOptionNameLower(option: QuantityOptionNameFields): string {
   return (
     option.option_name_en ||
     option.option_name ||
@@ -15,18 +18,24 @@ export function getQuantityOptionNameLower(option: QuantityChoiceOption): string
   ).toLowerCase()
 }
 
-export function isPassQuantityOption(option: QuantityChoiceOption): boolean {
+export function isPassQuantityOption(option: QuantityOptionNameFields): boolean {
+  return isPassCoverQuantityOption(option)
+}
+
+/**
+ * 패스 보유·구매 등 1장당 최대 4명 커버 옵션.
+ * 동행자(companion)는 제외.
+ */
+export function isPassCoverQuantityOption(option: QuantityOptionNameFields): boolean {
   const name = getQuantityOptionNameLower(option)
   const hasPass = name.includes('pass') || name.includes('패스')
-  const hasNonResident =
-    name.includes('non-resident') ||
-    name.includes('nonresident') ||
-    name.includes('비 거주자')
-  return hasPass && hasNonResident
+  if (!hasPass) return false
+  if (name.includes('companion') || name.includes('동행')) return false
+  return true
 }
 
 /** U.S. Residents 등 거주자 전용 옵션 (비거주자 제외) */
-export function isResidentsOnlyOption(option: QuantityChoiceOption): boolean {
+export function isResidentsOnlyOption(option: QuantityOptionNameFields): boolean {
   const name = getQuantityOptionNameLower(option)
   const hasResident = name.includes('resident') || name.includes('거주자')
   const hasNonResident =
@@ -47,7 +56,9 @@ export function getAutoQuantityForOption(
   totalParticipants: number
 ): number {
   if (totalParticipants <= 0) return 0
-  if (isPassQuantityOption(option)) return 1
+  if (isPassQuantityOption(option)) {
+    return Math.max(1, Math.ceil(totalParticipants / 4))
+  }
   if (isResidentsOnlyOption(option) || option.is_default) {
     return totalParticipants
   }

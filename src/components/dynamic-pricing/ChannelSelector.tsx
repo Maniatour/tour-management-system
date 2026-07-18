@@ -1,6 +1,8 @@
-import React, { memo } from 'react';
+'use client';
+
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Globe, Users, Edit2 } from 'lucide-react';
+import { ChevronDown, Edit2, Globe, Users } from 'lucide-react';
 
 interface Channel {
   id: string;
@@ -17,7 +19,13 @@ interface ChannelGroup {
 }
 
 interface ChannelPricingStats {
-  [year: string]: number; // 연도별 설정된 날짜 수
+  [year: string]: number;
+}
+
+interface ProductVariant {
+  variant_key: string;
+  variant_name_ko?: string | null;
+  variant_name_en?: string | null;
 }
 
 interface ChannelSelectorProps {
@@ -32,356 +40,259 @@ interface ChannelSelectorProps {
   onMultiChannelToggle: () => void;
   onChannelToggle: (channelId: string) => void;
   onSelectAllChannelsInType: () => void;
-  onChannelEdit?: (channelId: string) => void; // 채널 편집 핸들러
-  channelPricingStats?: Record<string, ChannelPricingStats>; // 채널 ID별 연도별 날짜 수
+  onChannelEdit?: (channelId: string) => void;
+  channelPricingStats?: Record<string, ChannelPricingStats>;
+  productVariants?: ProductVariant[];
+  selectedVariant?: string;
+  onVariantSelect?: (variantKey: string) => void;
+}
+
+function resolvePricingStats(
+  channel: Channel,
+  channelPricingStats: Record<string, ChannelPricingStats>
+): ChannelPricingStats | undefined {
+  let stats = channelPricingStats[channel.id];
+  if (stats) return stats;
+
+  stats = channelPricingStats[channel.id.toLowerCase()];
+  if (stats) return stats;
+
+  const normalizedName = channel.name
+    .toLowerCase()
+    .trim()
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, ' ');
+  stats = channelPricingStats[normalizedName];
+  if (stats) return stats;
+
+  return channelPricingStats[channel.name.toLowerCase().trim()];
 }
 
 export const ChannelSelector = memo(function ChannelSelector({
   channelGroups,
   isLoadingChannels,
-  selectedChannelType,
   selectedChannel,
-  isMultiChannelMode: _isMultiChannelMode,
-  selectedChannels: _selectedChannels,
-  onChannelTypeSelect: _onChannelTypeSelect,
   onChannelSelect,
-  onMultiChannelToggle: _onMultiChannelToggle,
-  onChannelToggle: _onChannelToggle,
-  onSelectAllChannelsInType: _onSelectAllChannelsInType,
   onChannelEdit,
-  channelPricingStats = {}
+  channelPricingStats = {},
+  productVariants = [],
+  selectedVariant = 'default',
+  onVariantSelect,
 }: ChannelSelectorProps) {
   const t = useTranslations('products.dynamicPricingPage');
-  // 연도별 날짜 수를 표시 형식으로 변환
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const formatPricingStats = (stats: ChannelPricingStats | undefined) => {
     if (!stats || Object.keys(stats).length === 0) return null;
-    
+
     const sortedYears = Object.keys(stats).sort();
-    return sortedYears.map(year => {
-      const daysCount = stats[year];
-      const isLeapYear = (parseInt(year) % 4 === 0 && parseInt(year) % 100 !== 0) || (parseInt(year) % 400 === 0);
-      const totalDays = isLeapYear ? 366 : 365;
-      return `${year} (${daysCount}/${totalDays})`;
-    }).join(', ');
+    return sortedYears
+      .map((year) => {
+        const daysCount = stats[year];
+        const yearNum = parseInt(year, 10);
+        const isLeapYear =
+          (yearNum % 4 === 0 && yearNum % 100 !== 0) || yearNum % 400 === 0;
+        const totalDays = isLeapYear ? 366 : 365;
+        return `${year} (${daysCount}/${totalDays})`;
+      })
+      .join(', ');
   };
 
-  // 디버깅: channelPricingStats와 채널 목록 매칭 확인
-  React.useEffect(() => {
-    if (Object.keys(channelPricingStats).length > 0) {
-      const allChannelIds = new Set<string>();
-      const channelIdToName = new Map<string, string>();
-      const channelNameToId = new Map<string, string>();
-      
-      channelGroups.forEach(group => {
-        group.channels.forEach(channel => {
-          allChannelIds.add(channel.id);
-          channelIdToName.set(channel.id, channel.name);
-          // 채널 이름도 정규화해서 저장
-          const normalizedName = channel.name.toLowerCase().trim();
-          channelNameToId.set(normalizedName, channel.id);
-        });
-      });
-      
-      const statsChannelIds = new Set(Object.keys(channelPricingStats));
-      
-      // 각 채널의 매칭 상태 확인
-      const channelMatchingStatus = Array.from(allChannelIds).map(id => {
-        const name = channelIdToName.get(id) || t('unknown');
-        const matchedById = statsChannelIds.has(id);
-        const normalizedName = name.toLowerCase().trim();
-        const normalizedNameNoParens = normalizedName.replace(/[()]/g, '').replace(/\s+/g, ' ');
-        const matchedByName = statsChannelIds.has(normalizedName) || statsChannelIds.has(normalizedNameNoParens);
-        const matched = matchedById || matchedByName;
-        
-        return {
-          id,
-          name,
-          matchedById,
-          matchedByName,
-          matched,
-          normalizedName,
-          normalizedNameNoParens
-        };
-      });
+  useEffect(() => {
+    if (!isOpen) return;
 
-      // 매칭되지 않은 채널들 상세 정보
-      const unmatchedChannels = channelMatchingStatus.filter(ch => !ch.matched);
-      
-      console.log('ChannelSelector - 통계 매칭 확인:', {
-        totalChannels: allChannelIds.size,
-        totalStats: statsChannelIds.size,
-        matchedChannels: channelMatchingStatus.filter(ch => ch.matched).map(ch => ({ id: ch.id, name: ch.name })),
-        unmatchedChannels: unmatchedChannels.map(ch => ({
-          id: ch.id,
-          name: ch.name,
-          normalizedName: ch.normalizedName,
-          normalizedNameNoParens: ch.normalizedNameNoParens,
-          matchedById: ch.matchedById,
-          matchedByName: ch.matchedByName
-        })),
-        allStatsKeys: Object.keys(channelPricingStats),
-        statsByNameKeys: Object.keys(channelPricingStats).filter(key => !allChannelIds.has(key) && !Array.from(allChannelIds).some(id => id.toLowerCase() === key.toLowerCase()))
-      });
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const selfGroup = channelGroups.find((group) => group.type === 'SELF');
+  const otaGroup = channelGroups.find((group) => group.type === 'OTA');
+
+  const finalDisplayChannels = useMemo(() => {
+    if (!selfGroup || selfGroup.channels.length === 0) return [];
+
+    const filtered = selfGroup.channels.filter((channel) => channel.id !== 'SELF');
+    if (filtered.length === 0 && selfGroup.channels.length === 1) {
+      return selfGroup.channels;
     }
-  }, [channelPricingStats, channelGroups]);
+    return filtered;
+  }, [selfGroup]);
+
+  const allChannels = useMemo(
+    () => [...finalDisplayChannels, ...(otaGroup?.channels ?? [])],
+    [finalDisplayChannels, otaGroup]
+  );
+
+  const selectedChannelData = allChannels.find((ch) => ch.id === selectedChannel);
+  const selectedChannelName =
+    selectedChannelData?.name || (selectedChannel ? selectedChannel : t('notSelected'));
+
+  const showVariantSelector =
+    productVariants.length > 1 ||
+    productVariants.some((variant) => variant.variant_key !== 'default');
+
+  const selectedVariantData = productVariants.find(
+    (variant) => variant.variant_key === selectedVariant
+  );
+  const selectedVariantLabel =
+    selectedVariantData?.variant_name_ko ||
+    selectedVariantData?.variant_name_en ||
+    selectedVariantData?.variant_key ||
+    selectedVariant;
+
   if (isLoadingChannels) {
     return (
       <div className="flex items-center justify-center p-4">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-        <span className="ml-2 text-gray-600">채널 로딩 중...</span>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+        <span className="ml-2 text-gray-600">{t('channelLoading')}</span>
       </div>
     );
   }
 
-  const selfGroup = channelGroups.find(group => group.type === 'SELF');
-  const otaGroup = channelGroups.find(group => group.type === 'OTA');
+  const renderChannelOption = (channel: Channel) => {
+    const isSelected = selectedChannel === channel.id;
+    const statsText = formatPricingStats(
+      resolvePricingStats(channel, channelPricingStats)
+    );
 
-  // 자체 채널 중 홈페이지 채널만 필터링
-  // id가 'SELF'인 통합 채널만 제외하고, 나머지 모든 자체 채널 표시
-  // 만약 자체 채널이 1개만 있고 그것이 'SELF'인 경우, 모든 자체 채널 표시 (임시)
-  const finalDisplayChannels = (() => {
-    if (!selfGroup || selfGroup.channels.length === 0) return [];
-    
-    // id가 'SELF'가 아닌 채널만 필터링
-    const filtered = selfGroup.channels.filter(channel => {
-      const channelAny = channel as any;
-      const isSelfIntegrated = channel.id === 'SELF';
-      
-      console.log('ChannelSelector - 자체 채널 필터링:', {
-        channelId: channel.id,
-        channelName: channel.name,
-        channelType: channel.type,
-        channelCategory: channel.category,
-        sub_channels: channelAny.sub_channels,
-        isSelfIntegrated,
-        shouldDisplay: !isSelfIntegrated
-      });
-      
-      return !isSelfIntegrated;
-    });
-    
-    // 필터링 결과가 없고 자체 채널이 1개만 있는 경우, 모든 자체 채널 표시
-    if (filtered.length === 0 && selfGroup.channels.length === 1) {
-      console.log('ChannelSelector - 자체 채널이 1개만 있어서 모두 표시:', selfGroup.channels[0]);
-      return selfGroup.channels;
-    }
-    
-    return filtered;
-  })();
-
-  // 디버깅: 자체 채널 그룹 정보 출력
-  console.log('ChannelSelector - 자체 채널 그룹:', {
-    selfGroupExists: !!selfGroup,
-    selfGroupChannelsCount: selfGroup?.channels.length || 0,
-    finalDisplayChannelsCount: finalDisplayChannels.length,
-    selfGroupChannels: selfGroup?.channels.map(c => {
-      const cAny = c as any;
-      return {
-        id: c.id, 
-        name: c.name, 
-        type: c.type, 
-        category: c.category,
-        sub_channels: cAny.sub_channels,
-        website: cAny.website,
-        customer_website: cAny.customer_website,
-        admin_website: cAny.admin_website,
-        isHomepage: c.id === 'SELF' ? 'SELF는 통합 채널 (카카오톡, 블로그 등)' : 
-                    (c.name?.toLowerCase().includes('homepage') || 
-                     c.name?.toLowerCase().includes('홈페이지') ||
-                     c.name?.toLowerCase().includes('website') ||
-                     c.name?.toLowerCase().includes('웹사이트') ||
-                     cAny.website || cAny.customer_website || cAny.admin_website ? '홈페이지일 가능성' : '일반 자체 채널')
-      };
-    }),
-    finalDisplayChannels: finalDisplayChannels.map(c => ({ 
-      id: c.id, 
-      name: c.name, 
-      type: c.type, 
-      category: c.category 
-    })),
-    note: 'SELF 채널은 홈페이지가 아닌 통합 채널입니다. 홈페이지 채널이 별도로 있어야 합니다.'
-  });
+    return (
+      <div
+        key={channel.id}
+        className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors ${
+          isSelected
+            ? 'border-primary bg-primary/5'
+            : 'border-transparent hover:bg-muted/60'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            onChannelSelect(channel.id);
+            setIsOpen(false);
+          }}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+            {channel.name}
+          </div>
+          {statsText ? (
+            <div className="mt-0.5 text-xs text-muted-foreground">{statsText}</div>
+          ) : null}
+        </button>
+        {onChannelEdit ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChannelEdit(channel.id);
+            }}
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+            title="채널 편집"
+          >
+            <Edit2 className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
-    <div className="space-y-4">
-      {/* 자체 채널 - 홈페이지만 표시 */}
-      {finalDisplayChannels.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2 mb-2">
-            <Users className="h-4 w-4 text-gray-600" />
-            <span className="text-sm font-medium text-gray-700">자체 채널 (홈페이지)</span>
+    <div className="space-y-3" ref={containerRef}>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="flex w-full items-start gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+        >
+          <div className="mt-0.5 shrink-0 text-primary">
+            {selectedChannelData && otaGroup?.channels.some((ch) => ch.id === selectedChannel) ? (
+              <Globe className="h-5 w-5" />
+            ) : (
+              <Users className="h-5 w-5" />
+            )}
           </div>
-          
-          <div className="space-y-1">
-            {finalDisplayChannels.map((channel) => {
-              const channelAny = channel as any;
-              const isSelected = selectedChannel === channel.id;
-              // 채널 ID로 먼저 찾고, 없으면 소문자 버전으로, 그 다음 채널 이름으로 찾기
-              let stats = channelPricingStats[channel.id];
-              if (!stats) {
-                // 소문자 버전으로 시도
-                stats = channelPricingStats[channel.id.toLowerCase()];
-              }
-              if (!stats) {
-                // 채널 이름 정규화 (소문자, 공백 제거, 특수문자 제거)
-                const normalizedName = channel.name
-                  .toLowerCase()
-                  .trim()
-                  .replace(/[()]/g, '') // 괄호 제거
-                  .replace(/\s+/g, ' '); // 여러 공백을 하나로
-                stats = channelPricingStats[normalizedName];
-                
-                // 여전히 없으면 원본 이름으로도 시도
-                if (!stats) {
-                  stats = channelPricingStats[channel.name.toLowerCase().trim()];
-                }
-              }
-              const statsText = formatPricingStats(stats);
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="text-xs font-medium tracking-wide text-muted-foreground">
+              {t('channelSelect')}
+            </div>
+            <div className="truncate text-sm font-semibold text-foreground">
+              {selectedChannelName}
+            </div>
+            {showVariantSelector ? (
+              <div className="truncate text-xs text-muted-foreground">
+                {t('variantSelect')}: {selectedVariantLabel}
+              </div>
+            ) : null}
+          </div>
+          <ChevronDown
+            className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+              isOpen ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
 
-              return (
-                <div
-                  key={channel.id}
-                  className={`w-full p-2 rounded-md border transition-all ${
-                    isSelected
-                      ? 'border-primary bg-primary/5'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => onChannelSelect(channel.id)}
-                      className="flex-1 text-left"
-                    >
-                      <div className="flex flex-col">
-                        <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
-                            {channel.name}
-                          </span>
-                        </div>
-                        {statsText && (
-                          <div className="text-xs text-gray-500 mt-1">{statsText}</div>
-                        )}
-                        {(channelAny.customer_website || channelAny.admin_website) && (
-                          <div className="text-xs text-gray-400 mt-1">
-                            {channelAny.customer_website || channelAny.admin_website}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                    {onChannelEdit && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onChannelEdit(channel.id);
-                        }}
-                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
-                        title="채널 편집"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
+        {isOpen ? (
+          <div className="absolute left-0 right-0 z-30 mt-2 max-h-72 overflow-y-auto rounded-xl border border-border bg-white p-2 shadow-lg">
+            {finalDisplayChannels.length > 0 ? (
+              <div className="mb-2 space-y-1">
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  <Users className="h-3.5 w-3.5" />
+                  <span>자체 채널</span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                {finalDisplayChannels.map(renderChannelOption)}
+              </div>
+            ) : null}
 
-      {/* OTA 채널 목록 */}
-      {otaGroup && otaGroup.channels.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2 mb-2">
-            <Globe className="h-4 w-4 text-gray-600" />
-            <span className="text-sm font-medium text-gray-700">OTA 채널</span>
-          </div>
-          
-          <div className="space-y-1">
-            {otaGroup.channels.map((channel) => {
-              const isSelected = selectedChannel === channel.id;
-              // 채널 ID로 먼저 찾고, 없으면 소문자 버전으로, 그 다음 채널 이름으로 찾기
-              let stats = channelPricingStats[channel.id];
-              if (!stats) {
-                // 소문자 버전으로 시도
-                stats = channelPricingStats[channel.id.toLowerCase()];
-              }
-              if (!stats) {
-                // 채널 이름 정규화 (소문자, 공백 제거, 특수문자 제거)
-                const normalizedName = channel.name
-                  .toLowerCase()
-                  .trim()
-                  .replace(/[()]/g, '') // 괄호 제거
-                  .replace(/\s+/g, ' '); // 여러 공백을 하나로
-                stats = channelPricingStats[normalizedName];
-                
-                // 여전히 없으면 원본 이름으로도 시도
-                if (!stats) {
-                  stats = channelPricingStats[channel.name.toLowerCase().trim()];
-                }
-              }
-              const statsText = formatPricingStats(stats);
-
-              return (
-                <div
-                  key={channel.id}
-                  className={`w-full p-2 rounded-md border transition-all ${
-                    isSelected
-                      ? 'border-primary bg-primary/5'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => onChannelSelect(channel.id)}
-                      className="flex-1 text-left"
-                    >
-                      <div className="flex flex-col">
-                        <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
-                            {channel.name}
-                          </span>
-                        </div>
-                        {statsText && (
-                          <div className="text-xs text-gray-500 mt-1">{statsText}</div>
-                        )}
-                      </div>
-                    </button>
-                    {onChannelEdit && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onChannelEdit(channel.id);
-                        }}
-                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors"
-                        title="채널 편집"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
+            {otaGroup && otaGroup.channels.length > 0 ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5" />
+                  <span>OTA 채널</span>
                 </div>
-              );
-            })}
+                {otaGroup.channels.map(renderChannelOption)}
+              </div>
+            ) : null}
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
 
-      {/* 선택 상태 표시 */}
-      {(selectedChannelType || selectedChannel) && (
-        <div className="mt-4 p-3 bg-muted/50 border border-border rounded-lg">
-          <div className="text-sm font-medium text-primary">
-            현재 선택된 채널:
-          </div>
-          <div className="text-sm text-primary mt-1">
-            {selectedChannelType === 'SELF' 
-              ? `자체 채널 (${selfGroup?.channels.length || 0}개)`
-              : selectedChannel 
-                ? otaGroup?.channels.find(c => c.id === selectedChannel)?.name || t('unknown')
-                : t('notSelected')
-            }
-          </div>
+      {showVariantSelector && onVariantSelect ? (
+        <div className="rounded-xl border border-border/60 bg-white px-3 py-2.5">
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            {t('variantSelect')}
+          </label>
+          <select
+            value={selectedVariant}
+            onChange={(e) => onVariantSelect(e.target.value)}
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {productVariants.map((variant) => (
+              <option key={variant.variant_key} value={variant.variant_key}>
+                {variant.variant_name_ko ||
+                  variant.variant_name_en ||
+                  variant.variant_key}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+      ) : null}
     </div>
   );
 });

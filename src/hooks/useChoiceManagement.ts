@@ -40,6 +40,7 @@ interface ChoiceCombination {
     optionId: string;
     optionName: string;
     optionNameKo?: string;
+    optionKey?: string;
     adult_price: number;
     child_price: number;
     infant_price: number;
@@ -179,8 +180,10 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
                 combination_details: currentCombination.map(item => ({
                   groupId: item.group_id || '',
                   groupName: item.group_name || item.group_id || '',
+                  groupNameKo: item.group_name_ko || item.group_name || item.group_id || '',
                   optionId: item.id || '',
                   optionName: item.option_name || item.option_key || '',
+                  optionNameKo: item.option_name_ko || item.option_name || item.option_key || '',
                   optionKey: item.option_key || '',
                   adult_price: item.adult_price || 0,
                   child_price: item.child_price || 0,
@@ -195,7 +198,12 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           if (currentGroup.choice_options && currentGroup.choice_options.length > 0) {
             // 현재 그룹의 각 옵션에 대해 재귀 호출
             currentGroup.choice_options.forEach((option: any) => {
-              generateCombinations(groups, [...currentCombination, { ...option, group_id: currentGroup.id }], groupIndex + 1);
+              generateCombinations(groups, [...currentCombination, {
+                ...option,
+                group_id: currentGroup.id,
+                group_name: currentGroup.choice_group || currentGroup.id,
+                group_name_ko: currentGroup.choice_group_ko || currentGroup.choice_group || currentGroup.id,
+              }], groupIndex + 1);
             });
           } else {
             // 옵션이 없는 그룹은 건너뛰기
@@ -567,7 +575,61 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         return;
       }
 
-      // products 테이블에서 choices 컬럼 데이터 가져오기
+      // 1) product_choices 테이블 우선 (실제 옵션 구조)
+      const { data: choicesData, error: choicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            is_default,
+            is_active,
+            sort_order
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order');
+
+      if (!choicesError && choicesData && choicesData.length > 0) {
+        const groupsFromTable: ChoiceGroup[] = (choicesData as any[])
+          .map((group) => {
+            const options = (group.choice_options || [])
+              .filter((opt: any) => opt.is_active !== false)
+              .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map((opt: any) => ({
+                id: opt.id,
+                name: opt.option_name || opt.option_key || '',
+                name_ko: opt.option_name_ko || opt.option_name || opt.option_key || '',
+                is_default: !!opt.is_default,
+                adult_price: opt.adult_price || 0,
+                child_price: opt.child_price || 0,
+                infant_price: opt.infant_price || 0,
+              }));
+
+            return {
+              id: group.id,
+              name: group.choice_group || group.id,
+              name_ko: group.choice_group_ko || group.choice_group || group.id,
+              options,
+            };
+          })
+          .filter((group) => group.options.length > 0);
+
+        if (groupsFromTable.length > 0) {
+          setChoiceGroups(groupsFromTable);
+          return;
+        }
+      }
+
+      // 2) fallback: products.choices JSON
       const { data, error } = await supabase
         .from('products')
         .select('choices')
@@ -585,13 +647,11 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         return;
       }
 
-      const productChoices = data.choices as unknown as ProductChoices
-      
-      // required 초이스 그룹들을 변환
-      const choiceGroups: ChoiceGroup[] = productChoices.required || [];
-      
-      console.log('로드된 초이스 그룹:', choiceGroups);
-      setChoiceGroups(choiceGroups);
+      const productChoices = data.choices as unknown as ProductChoices;
+      const choiceGroupsFromJson: ChoiceGroup[] = productChoices.required || [];
+
+      console.log('로드된 초이스 그룹:', choiceGroupsFromJson);
+      setChoiceGroups(choiceGroupsFromJson);
     } catch (error) {
       console.error('초이스 그룹 로드 실패:', error);
       setChoiceGroups([]);

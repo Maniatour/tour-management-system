@@ -22,17 +22,28 @@ import {
   findResidentsOptionId,
   getAutoQuantityForOption,
   getTotalQuantityForGroup,
+  isPassCoverQuantityOption,
   isPassQuantityOption,
   isResidentsOnlyOption,
 } from '@/lib/bookingFlowQuantityChoices'
 import {
   filterOptionsByPartySize,
   getCapacityCoverage,
+  getDefaultRoomQuantities,
   getMaxQuantityForOption,
+  getPeopleCoverage,
   isCapacityCoverageExact,
-  pruneQuantitiesForPartySize,
+  isPeopleCoverageSufficient,
   usesCapacityQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
+
+function bookingChoiceLabel(group: {
+  choice_name?: string | null
+  choice_name_ko?: string | null
+  choice_name_en?: string | null
+}): string {
+  return group.choice_name_ko || group.choice_name || group.choice_name_en || ''
+}
 
 interface Product {
   id: string
@@ -1219,11 +1230,7 @@ export default function BookingFlow({
         groups[groupKey].options.push(choice)
         return groups
       }, {} as Record<string, { choice_id: string; choice_type: string; options: ProductChoice[] }>)
-    ).filter(
-      (group) =>
-        group.choice_type === 'quantity' ||
-        usesCapacityQuantitySelection(group.choice_type, group.options)
-    )
+    ).filter((group) => group.choice_type === 'quantity')
 
     if (quantityGroups.length === 0) return
 
@@ -1240,20 +1247,31 @@ export default function BookingFlow({
 
     for (const group of quantityGroups) {
       const groupId = group.choice_id
-      // 객실 capacity 조합은 자동 채우지 않음 — 사용자가 인원에 맞게 선택
-      if (usesCapacityQuantitySelection('quantity', group.options)) {
-        const pruned = pruneQuantitiesForPartySize(
-          group.options,
-          nextQuantities[groupId] ?? {},
-          totalParticipants
-        )
+      // 객실: 인원에 맞는 인실 1개 자동 선택 (비어 있거나 인원 변경 시)
+      const roomLabel =
+        group.options[0]?.choice_name_ko ||
+        group.options[0]?.choice_name ||
+        ''
+      if (usesCapacityQuantitySelection('quantity', group.options, roomLabel)) {
         const prevMap = nextQuantities[groupId] ?? {}
-        const changed =
-          Object.keys(pruned).some((k) => pruned[k] !== prevMap[k]) ||
-          Object.keys(prevMap).some((k) => (prevMap[k] ?? 0) > 0 && !(k in pruned))
-        if (changed) {
-          nextQuantities[groupId] = pruned
-          quantitiesChanged = true
+        const hasAnyQty = Object.values(prevMap).some((qty) => qty > 0)
+        const roomDefaults = getDefaultRoomQuantities(group.options, totalParticipants)
+        // 비어 있을 때만 자동 채움. 인원 변경 시에는 아래에서 participants 변경으로 재실행되며
+        // 기존 선택이 인원과 안 맞으면 prune 대신 매칭 인실로 교체.
+        const coverageMismatch =
+          hasAnyQty &&
+          !isCapacityCoverageExact(group.options, prevMap, totalParticipants)
+        if (!hasAnyQty || coverageMismatch) {
+          const same =
+            Object.keys(roomDefaults).length ===
+              Object.keys(prevMap).filter((k) => (prevMap[k] ?? 0) > 0).length &&
+            Object.entries(roomDefaults).every(([id, qty]) => prevMap[id] === qty)
+          if (!same) {
+            nextQuantities[groupId] = roomDefaults
+            quantitiesChanged = true
+            const roomId = Object.keys(roomDefaults)[0]
+            if (roomId) selectedPatch[groupId] = roomId
+          }
         }
         continue
       }
@@ -1560,10 +1578,7 @@ export default function BookingFlow({
     } else {
       // 일반 모드: 각 초이스 그룹별로 개별 계산
       allChoices.forEach((group: ChoiceGroup) => {
-        if (
-          group.choice_type === 'quantity' ||
-          usesCapacityQuantitySelection(group.choice_type, group.options)
-        ) {
+        if (group.choice_type === 'quantity') {
           const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
           group.options.forEach((option) => {
             const quantity = groupQuantities[option.option_id] ?? 0
@@ -1951,93 +1966,56 @@ export default function BookingFlow({
   
   // 수량 선택 초이스 검증 함수
   const validateQuantityChoices = (): { valid: boolean; error?: string } => {
-    const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-    let totalCoveredPeople = 0
-    
+    const totalParticipants =
+      bookingData.participants.adults +
+      bookingData.participants.children +
+      bookingData.participants.infants
+
     for (const group of requiredChoices) {
-      const isCapacityGroup = usesCapacityQuantitySelection(group.choice_type, group.options)
-      if (group.choice_type === 'quantity' || isCapacityGroup) {
-        const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+      const label = bookingChoiceLabel(group)
+      const isCapacityGroup = usesCapacityQuantitySelection(
+        group.choice_type,
+        group.options,
+        label
+      )
+      if (group.choice_type !== 'quantity' && !isCapacityGroup) continue
+
+      const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+
+      if (isCapacityGroup) {
         const visibleOptions = filterOptionsByPartySize(group.options, totalParticipants)
-
-        if (isCapacityGroup) {
-          if (visibleOptions.length === 0) {
-            return {
-              valid: false,
-              error: isEnglish
-                ? 'No room options fit this party size. Please adjust the number of travelers.'
-                : '현재 인원에 맞는 객실 옵션이 없습니다. 인원을 조정해 주세요.',
-            }
-          }
-          if (!isCapacityCoverageExact(visibleOptions, groupQuantities, totalParticipants)) {
-            const covered = getCapacityCoverage(visibleOptions, groupQuantities)
-            return {
-              valid: false,
-              error: isEnglish
-                ? `Selected rooms cover ${covered} of ${totalParticipants} travelers. Please select rooms that exactly match your party size.`
-                : `선택한 객실 수용 인원(${covered}명)이 예약 인원(${totalParticipants}명)과 맞지 않습니다. 인원에 맞게 객실을 선택해 주세요.`,
-            }
-          }
-          continue
-        }
-
-        const activeOptions = group.options.filter(
-          (option) => (groupQuantities[option.option_id] ?? 0) > 0
-        )
-
-        if (activeOptions.length === 0) {
-          const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-          if (!selectedOptionId) {
-            return {
-              valid: false,
-              error: isEnglish
-                ? `Please select a quantity for ${group.choice_name || group.choice_name_ko}`
-                : `${group.choice_name_ko || group.choice_name}에 대한 수량을 선택해주세요.`,
-            }
-          }
-
+        if (visibleOptions.length === 0) {
           return {
             valid: false,
             error: isEnglish
-              ? `Please select a quantity greater than 0 for ${group.choice_name || group.choice_name_ko}`
-              : `${group.choice_name_ko || group.choice_name}의 수량을 1개 이상 선택해주세요.`,
+              ? 'No room options fit this party size. Please adjust the number of travelers.'
+              : '현재 인원에 맞는 객실 옵션이 없습니다. 인원을 조정해 주세요.',
           }
         }
-
-        for (const option of activeOptions) {
-          const quantity = groupQuantities[option.option_id] ?? 0
-          const optionName = (
-            option.option_name ||
-            option.option_name_ko ||
-            option.option_name_en ||
-            ''
-          ).toLowerCase()
-          const hasPass = optionName.includes('pass') || optionName.includes('패스')
-          const hasNonResident =
-            optionName.includes('non-resident') ||
-            optionName.includes('비 거주자') ||
-            optionName.includes('nonresident')
-          const isPassOption = hasPass && hasNonResident
-
-          if (isPassOption) {
-            totalCoveredPeople += quantity * 4
-          } else {
-            totalCoveredPeople += quantity
+        if (!isCapacityCoverageExact(visibleOptions, groupQuantities, totalParticipants)) {
+          const covered = getCapacityCoverage(visibleOptions, groupQuantities)
+          return {
+            valid: false,
+            error: isEnglish
+              ? `Selected rooms cover ${covered} of ${totalParticipants} travelers. Please select rooms that exactly match your party size.`
+              : `선택한 객실 수용 인원(${covered}명)이 예약 인원(${totalParticipants}명)과 맞지 않습니다. 인원에 맞게 객실을 선택해 주세요.`,
           }
+        }
+        continue
+      }
+
+      if (!isPeopleCoverageSufficient(group.options, groupQuantities, totalParticipants)) {
+        const covered = getPeopleCoverage(group.options, groupQuantities)
+        const groupName = group.choice_name_ko || group.choice_name || ''
+        return {
+          valid: false,
+          error: isEnglish
+            ? `${groupName}: covered travelers (${covered}) are less than participants (${totalParticipants}). Increase quantities or add pass options.`
+            : `${groupName}: 커버 인원(${covered}명)이 예약 인원(${totalParticipants}명)보다 적습니다. 수량을 늘리거나 패스 옵션을 추가해 주세요.`,
         }
       }
     }
-    
-    // 총 커버 인원이 예약 인원보다 작으면 경고
-    if (totalCoveredPeople > 0 && totalCoveredPeople < totalParticipants) {
-      return {
-        valid: false,
-        error: isEnglish 
-          ? `The total number of people covered (${totalCoveredPeople}) is less than the number of participants (${totalParticipants}). Please increase the quantity or add more options.`
-          : `거주자 구분 인원 총합(${totalCoveredPeople}명)이 예약 인원(${totalParticipants}명)보다 적습니다. 수량을 늘리거나 추가 옵션을 선택해주세요.`
-      }
-    }
-    
+
     return { valid: true }
   }
 
@@ -2127,10 +2105,7 @@ export default function BookingFlow({
 
       // 필수 선택에서 선택된 항목 찾기
       requiredChoices.forEach((group) => {
-        if (
-          group.choice_type === 'quantity' ||
-          usesCapacityQuantitySelection(group.choice_type, group.options)
-        ) {
+        if (group.choice_type === 'quantity') {
           const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
           group.options.forEach((option) => {
             const quantity = groupQuantities[option.option_id] ?? 0
@@ -2149,10 +2124,7 @@ export default function BookingFlow({
 
       // 추가 선택에서 선택된 항목 찾기
       optionalChoices.forEach((group) => {
-        if (
-          group.choice_type === 'quantity' ||
-          usesCapacityQuantitySelection(group.choice_type, group.options)
-        ) {
+        if (group.choice_type === 'quantity') {
           const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
           group.options.forEach((option) => {
             const quantity = groupQuantities[option.option_id] ?? 0
@@ -2578,7 +2550,14 @@ export default function BookingFlow({
         bookingData.participants.infants
       let safeQuantity = Math.max(0, newQuantity)
 
-      if (group && usesCapacityQuantitySelection(group.choice_type, group.options)) {
+      if (
+        group &&
+        usesCapacityQuantitySelection(
+          group.choice_type,
+          group.options,
+          bookingChoiceLabel(group)
+        )
+      ) {
         const currentMap = selectedChoiceQuantities[groupId] ?? {}
         const option = group.options.find((item) => item.option_id === optionId)
         const maxQty = getMaxQuantityForOption(
@@ -2688,9 +2667,7 @@ export default function BookingFlow({
                     }
                     
                     const hasDescription = groupDescription && groupDescription.trim().length > 0
-                    const isQuantityChoice =
-                      group.choice_type === 'quantity' ||
-                      usesCapacityQuantitySelection(group.choice_type, group.options)
+                    const isQuantityChoice = group.choice_type === 'quantity'
                     
                     return (
                     <div key={group.choice_id} className="mb-6">
@@ -2750,7 +2727,8 @@ export default function BookingFlow({
                             bookingData.participants.infants
                           const isCapacityGroup = usesCapacityQuantitySelection(
                             group.choice_type,
-                            group.options
+                            group.options,
+                            bookingChoiceLabel(group)
                           )
                           const visibleOptions = isCapacityGroup
                             ? filterOptionsByPartySize(group.options, partySize)
@@ -2759,29 +2737,44 @@ export default function BookingFlow({
                             selectedChoiceQuantities[group.choice_id] ?? {}
                           const coverage = isCapacityGroup
                             ? getCapacityCoverage(visibleOptions, groupQuantities)
-                            : 0
+                            : getPeopleCoverage(visibleOptions, groupQuantities)
+                          const coverageMatched = isCapacityGroup
+                            ? coverage === partySize
+                            : coverage >= partySize && coverage > 0
 
                           return (
                         <div className="space-y-3">
-                          {isCapacityGroup && partySize > 0 ? (
+                          {partySize > 0 ? (
                             <p
                               className={`text-sm ${
-                                coverage === partySize
+                                coverageMatched
                                   ? 'font-medium text-emerald-700'
                                   : 'text-muted-foreground'
                               }`}
                             >
-                              {translate(
-                                `수용 인원 ${coverage}/${partySize}명`,
-                                `Capacity ${coverage}/${partySize}`
-                              )}
+                              {isCapacityGroup
+                                ? translate(
+                                    `수용 인원 ${coverage}/${partySize}명`,
+                                    `Capacity ${coverage}/${partySize}`
+                                  )
+                                : translate(
+                                    `커버 인원 ${coverage}/${partySize}명`,
+                                    `Covered ${coverage}/${partySize}`
+                                  )}
                               {coverage < partySize
                                 ? translate(
                                     ` · ${partySize - coverage}명 더 선택하세요`,
                                     ` · Select ${partySize - coverage} more`
                                   )
-                                : coverage === partySize
-                                  ? translate(' · 인원에 맞게 선택됨', ' · Matches party size')
+                                : coverageMatched
+                                  ? translate(
+                                      isCapacityGroup
+                                        ? ' · 인원에 맞게 선택됨'
+                                        : ' · 예약 인원을 커버합니다',
+                                      isCapacityGroup
+                                        ? ' · Matches party size'
+                                        : ' · Covers party size'
+                                    )
                                   : ''}
                             </p>
                           ) : null}
@@ -2818,12 +2811,13 @@ export default function BookingFlow({
                             const optionDescription = isEnglish
                               ? option.option_description || option.option_description_ko
                               : option.option_description_ko || option.option_description
-                            const isPassOption = isPassQuantityOption(option)
+                            const isPassOption =
+                              isPassQuantityOption(option) || isPassCoverQuantityOption(option)
                             const isResidentsOption = isResidentsOnlyOption(option)
                             const quantityUnit = isCapacityGroup
                               ? translate('개', 'rooms')
                               : isPassOption
-                                ? translate('장수', 'passes')
+                                ? translate('장', 'passes')
                                 : translate('명', 'people')
                             const isActive =
                               currentQuantity > 0 ||
@@ -2850,6 +2844,11 @@ export default function BookingFlow({
                                           `${option.capacity}인 1실`,
                                           `${option.capacity} per room`
                                         )}
+                                      </span>
+                                    ) : null}
+                                    {!isCapacityGroup && isPassOption ? (
+                                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                        {translate('최대 4명 커버', 'Covers up to 4')}
                                       </span>
                                     ) : null}
                                   </div>

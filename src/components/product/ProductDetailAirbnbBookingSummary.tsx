@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
-import { usesCapacityQuantitySelection } from '@/lib/choiceOptionCapacity'
+import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
 
 type ProductDetailAirbnbBookingSummaryProps = {
   basePrice: number | null
@@ -36,7 +36,8 @@ export default function ProductDetailAirbnbBookingSummary({
   const hasPromo = promoDiscountAmount > 0
 
   const selectedLines = groups.flatMap((group) => {
-    if (usesCapacityQuantitySelection(group.choice_type, group.options)) {
+    const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+    if (usesQuantitySelection(group.choice_type, group.options, choiceLabel)) {
       const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
       return group.options
         .filter((option) => (quantities[option.option_id] ?? 0) > 0)
