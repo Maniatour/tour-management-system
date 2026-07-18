@@ -156,6 +156,7 @@ export async function fetchProductRecommendations(
     .select('*')
     .in('id', productIds)
     .eq('status', 'active')
+    .eq('is_published', true)
 
   if (productError) throw productError
 

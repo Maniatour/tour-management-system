@@ -1070,6 +1070,11 @@ const KLOOK_LABEL_PATTERNS = [
   'Email',
   'Email address',
   'WhatsApp',
+  'Kakao Talk',
+  'KakaoTalk',
+  'Kakao',
+  '카카오톡',
+  '카카오',
   'Activity URL',
   'Total amount',
   'Total price',
@@ -1094,6 +1099,8 @@ const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
   '113386': '밤도깨비 그랜드캐년 일출 투어',
   /** https://www.klook.com/.../activity/78870 — With Exclusions·로어 앤텔롭 고정 매칭 */
   '78870': '밤도깨비 그랜드캐년 일출 투어',
+  /** https://www.klook.com/ko/activity/206813 — 한국어 가이드·입장료 불포함 */
+  '206813': '밤도깨비 그랜드캐년 일출 투어',
   /** Las Vegas 2-Day National Parks Small Group Adventure 등 — Activity URL activity/78962 */
   '78962': '그랜드서클 1박 2일 투어',
 }
@@ -1103,6 +1110,7 @@ const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
   '113386': 'MDGCSUNRISE',
   '78944': 'MDGCSUNRISE',
   '78870': 'MDGCSUNRISE',
+  '206813': 'MDGCSUNRISE',
   '78962': 'MNGC1N',
 }
 
@@ -1112,6 +1120,8 @@ const KLOOK_ACTIVITY_ID_FORCE_VARIANT: Record<string, { key: string; label: stri
   /** 78944·78870은 채널의 실 variant_key(default)로 저장, 표시 라벨은 With Exclusions */
   '78944': { key: 'default', label: 'With Exclusions' },
   '78870': { key: 'default', label: 'With Exclusions' },
+  /** 표시: Klook - 입장료 불포함 (한국인 가이드) — DB variant_name_ko와 일치 */
+  '206813': { key: 'with_exclusions', label: '입장료 불포함 (한국인 가이드)' },
 }
 
 /** Klook: 불포함 금액이 있으면 With Exclusions 채널 variant, 없으면 All Inclusive */
@@ -1273,10 +1283,12 @@ function getKlookParticipantQtyCell(map: Map<string, string>): string | undefine
  * - `getKlook(..., 'participant')` 가 `participant name` 값을 먼저 잡는 문제 → 맵에서는 getKlookParticipantQtyCell 사용.
  */
 function parseKlookParticipantXCount(plain: string, map: Map<string, string>): number | undefined {
-  const typeSuffix = /(?:adults?|persons?|people|travellers?|travelers?|guests?)\b/i
+  // 한국어 Klook: "2 x 인원수" / "2 × 인원" 등도 성인 수로 처리
+  // JS \b는 한글에 동작하지 않으므로 영문만 \b, 한글 suffix는 별도 분기
+  const typeUnit = String.raw`(?:(?:adults?|persons?|people|travellers?|travelers?|guests?)\b|인원수|인원)`
   const mul = String.raw`[x×✕]`
   const lineRe = new RegExp(
-    `\\bParticipants?\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeSuffix.source}`,
+    `\\bParticipants?\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeUnit}`,
     'i'
   )
   const plainClean = plain.replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -1289,7 +1301,7 @@ function parseKlookParticipantXCount(plain: string, map: Map<string, string>): n
     }
   }
   const koRe = new RegExp(
-    `참가(?:자|인원)\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeSuffix.source}`,
+    `참가(?:자|인원)\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeUnit}`,
     'i'
   )
   for (const hay of [plainClean, oneLine]) {
@@ -1300,7 +1312,7 @@ function parseKlookParticipantXCount(plain: string, map: Map<string, string>): n
     }
   }
   const pv = getKlookParticipantQtyCell(map)
-  const cellM = pv?.match(new RegExp(`^(\\d+)\\s*${mul}\\s*${typeSuffix.source}`, 'i'))
+  const cellM = pv?.match(new RegExp(`^(\\d+)\\s*${mul}\\s*${typeUnit}`, 'i'))
   if (cellM) {
     const n = parseInt(cellM[1], 10)
     if (!Number.isNaN(n) && n > 0) return n
@@ -1352,7 +1364,7 @@ function extractKlook(
     const r = directRef[1]
     if (r.toLowerCase() !== 'id' && r.length >= 5) out.channel_rn = r
   }
-  const directName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,50}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|\n|$)/im)
+  const directName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,50}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp|Kakao)|\n|$)/im)
   if (directName) {
     const name = directName[1].trim()
     if (name.length >= 2 && name.length <= 80) out.customer_name = name
@@ -1520,9 +1532,9 @@ function extractKlook(
 
   // Lead participant: ()rica rockwell — 한 줄/다음 줄 모두. 레이블만 한 줄이고 다음 줄에 "()이름" 있는 경우도 처리
   if (!out.customer_name) {
-    const leadMatch = normalizedText.match(/(?:Lead\s*participant|Participant\s*name|Guest\s*name)\s*:\s*(?:\(\)|\([^)]*\))?\s*([^\n]+?)(?=\s*\n|Country\s|Participant\s|No\.\s|Preferred\s|Special\s|Departure|Phone\s|Email\s|WhatsApp\s|$)/im) ||
+    const leadMatch = normalizedText.match(/(?:Lead\s*participant|Participant\s*name|Guest\s*name)\s*:\s*(?:\(\)|\([^)]*\))?\s*([^\n]+?)(?=\s*\n|Country\s|Participant\s|No\.\s|Preferred\s|Special\s|Departure|Phone\s|Email\s|WhatsApp\s|Kakao\s|$)/im) ||
       normalizedText.match(/Lead\s*participant\s*:\s*\(\)\s*([^\n]+?)(?:\n|Country|Participant|$)/im) ||
-      normalizedText.match(/Lead\s*participant\s*[:\s]+\(\)\s*([A-Za-z\s.-]+?)(?=\s*(?:Booking reference|Date Request|Country|Participant\s|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|$)/im) ||
+      normalizedText.match(/Lead\s*participant\s*[:\s]+\(\)\s*([A-Za-z\s.-]+?)(?=\s*(?:Booking reference|Date Request|Country|Participant\s|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp|Kakao)|$)/im) ||
       normalizedText.match(/Lead\s*participant\s*[:\s]*\n\s*\(\)\s*([^\n]+?)(?=\n|$)/im)
     if (leadMatch) {
       const name = leadMatch[1].replace(/^\(\)\s*/, '').replace(/^\([^)]*\)\s*/, '').trim()
@@ -1531,7 +1543,7 @@ function extractKlook(
   }
   // Klook 본문에 "()이름"만 나오는 경우(레이블이 다른 줄/형식일 때) — 괄호 뒤 이름만 추출
   if (!out.customer_name) {
-    const parenName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,80}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|\n\n|$)/im)
+    const parenName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,80}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp|Kakao)|\n\n|$)/im)
     if (parenName) {
       const name = parenName[1].trim()
       if (name.length >= 2 && name.length < 100) out.customer_name = name
@@ -1646,19 +1658,31 @@ function extractKlook(
     out.import_choice_option_names = ['Lower Antelope Canyon']
   }
 
-  // WhatsApp → emergency_contact (비상연락처). 값만 정규화 (예: "+818050339362")
+  // WhatsApp / Kakao Talk → emergency_contact (비상연락처)
   const whatsappFromLabel = v('whatsapp')?.trim()
   const whatsappMatch = normalizedText.match(/WhatsApp\s*:\s*([+\d\s\-()]+|\S+)/im)
   const whatsappRaw = whatsappFromLabel ?? whatsappMatch?.[1]?.trim()
+  const kakaoFromLabel =
+    v('kakao talk')?.trim() ??
+    v('kakaotalk')?.trim() ??
+    v('kakao')?.trim() ??
+    v('카카오톡')?.trim() ??
+    v('카카오')?.trim()
+  const kakaoMatch = normalizedText.match(/(?:Kakao\s*Talk|KakaoTalk|Kakao|카카오톡|카카오)\s*:\s*(\S+)/im)
+  const kakaoRaw = kakaoFromLabel ?? kakaoMatch?.[1]?.trim()
   if (whatsappRaw) {
-    // 전화번호 형태만 남기기 (+, 숫자, 공백, 하이픈, 괄호)
     out.emergency_contact = whatsappRaw.replace(/\s+/g, ' ').trim()
+  } else if (kakaoRaw) {
+    out.emergency_contact = kakaoRaw.replace(/\s+/g, ' ').trim()
   }
 
   const noteParts: string[] = []
   if (out.special_requests) noteParts.push(`요청: ${out.special_requests}`)
   if (activityUrlRaw) noteParts.push(`Klook Activity: ${activityUrlRaw}`)
-  if (out.emergency_contact) noteParts.push(`비상연락처(WhatsApp): ${out.emergency_contact}`)
+  if (out.emergency_contact) {
+    const emergencyLabel = whatsappRaw ? '비상연락처(WhatsApp)' : kakaoRaw ? '비상연락처(Kakao)' : '비상연락처'
+    noteParts.push(`${emergencyLabel}: ${out.emergency_contact}`)
+  }
   if (out.amount_excluded) noteParts.push(`불포함: ${out.amount_excluded}`)
   if (noteParts.length) out.note = noteParts.join(' · ')
 

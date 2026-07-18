@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { X, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { fetchImageUploadApi, fetchWithAuthSession } from '@/lib/uploadClient'
 
 interface ImageUploadProps {
   imageUrl?: string
@@ -50,11 +51,7 @@ export default function ImageUpload({
       formData.append('file', file)
       formData.append('folder', folder)
 
-      const response = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData
-      })
-
+      const response = await fetchImageUploadApi(formData)
       const result = await response.json()
 
       if (result.success) {
@@ -65,7 +62,7 @@ export default function ImageUpload({
       }
     } catch (error) {
       console.error('Upload error:', error)
-      alert('이미지 업로드 중 오류가 발생했습니다.')
+      alert(error instanceof Error ? error.message : '이미지 업로드 중 오류가 발생했습니다.')
     } finally {
       setUploading(false)
     }
@@ -145,7 +142,7 @@ export default function ImageUpload({
         
         // 파일 경로를 찾았으면 삭제 API 호출 (에러는 로그만 남기고 사용자에게는 알리지 않음)
         if (filePath) {
-          fetch(`/api/upload/image?path=${encodeURIComponent(filePath)}`, {
+          fetchWithAuthSession(`/api/upload/image?path=${encodeURIComponent(filePath)}`, {
             method: 'DELETE'
           }).catch(error => {
             console.error('Failed to delete image from storage:', error)

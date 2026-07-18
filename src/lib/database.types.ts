@@ -5144,6 +5144,8 @@ export type Database = {
           infant_age: number | null
           infant_base_price: number | null
           is_favorite: boolean | null
+          /** 고객 사이트 배포 여부 (status와 별도) */
+          is_published: boolean
           languages: string[] | null
           max_participants: number | null
           name: string
@@ -5185,6 +5187,7 @@ export type Database = {
           infant_age?: number | null
           infant_base_price?: number | null
           is_favorite?: boolean | null
+          is_published?: boolean
           languages?: string[] | null
           max_participants?: number | null
           name: string
@@ -5226,6 +5229,7 @@ export type Database = {
           infant_age?: number | null
           infant_base_price?: number | null
           is_favorite?: boolean | null
+          is_published?: boolean
           languages?: string[] | null
           max_participants?: number | null
           name?: string
@@ -9912,6 +9916,7 @@ export type Database = {
           memo: string | null
           mileage_at_purchase: number | null
           monthly_payment: number | null
+          nick: string | null
           payment_due_date: string | null
           purchase_amount: number | null
           purchase_date: string | null
@@ -9957,6 +9962,7 @@ export type Database = {
           memo?: string | null
           mileage_at_purchase?: number | null
           monthly_payment?: number | null
+          nick?: string | null
           payment_due_date?: string | null
           purchase_amount?: number | null
           purchase_date?: string | null
@@ -10002,6 +10008,7 @@ export type Database = {
           memo?: string | null
           mileage_at_purchase?: number | null
           monthly_payment?: number | null
+          nick?: string | null
           payment_due_date?: string | null
           purchase_amount?: number | null
           purchase_date?: string | null

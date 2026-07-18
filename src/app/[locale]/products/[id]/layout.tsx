@@ -36,6 +36,7 @@ export async function generateMetadata({
       .select('name, name_ko, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en')
       .eq('id', id)
       .eq('status', 'active')
+      .eq('is_published', true)
       .maybeSingle()
 
     const row = data as ProductSeoRow | null

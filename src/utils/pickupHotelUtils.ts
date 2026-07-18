@@ -48,6 +48,25 @@ export interface PickupHotel {
 export type PickupHotelAssignmentOption = Pick<PickupHotel, 'id' | 'hotel'> &
   Partial<Pick<PickupHotel, 'internal_name' | 'pick_up_location'>>
 
+/** 예약 폼 등: 내부용 이름 우선(없으면 호텔명) + 픽업장소 */
+export function getPickupHotelPrimaryName(hotel: {
+  hotel: string
+  internal_name?: string | null
+}): string {
+  return hotel.internal_name?.trim() || (hotel.hotel || '').trim()
+}
+
+export function formatPickupHotelFormLabel(hotel: {
+  hotel: string
+  internal_name?: string | null
+  pick_up_location?: string | null
+}): string {
+  const namePart = getPickupHotelPrimaryName(hotel)
+  const location = hotel.pick_up_location?.trim() || ''
+  if (location) return namePart ? `${namePart} - ${location}` : location
+  return namePart
+}
+
 /** 예약·스케줄 등 픽업 호텔 선택 목록에 쓸 수 있는지 */
 export function isPickupHotelSelectable(hotel: PickupHotel): boolean {
   return hotel.use_for_pickup !== false && hotel.is_active !== false

@@ -95,6 +95,7 @@ export default function ProductsPage() {
             .from('products')
             .select('*')
             .eq('status', 'active')
+            .eq('is_published', true)
             .order('created_at', { ascending: false })
 
           if (fetchError) {

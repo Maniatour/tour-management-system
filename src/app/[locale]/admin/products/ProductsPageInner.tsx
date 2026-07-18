@@ -657,6 +657,48 @@ export default function AdminProducts() {
     }
   }
 
+  // 고객 사이트 배포 토글 (판매 상태와 별개)
+  const handlePublishToggle = async (productId: string, currentPublished: boolean) => {
+    if (updatingProducts.has(productId)) return
+
+    const newPublished = !currentPublished
+
+    try {
+      setUpdatingProducts((prev) => new Set(prev).add(productId))
+
+      setProducts((prevProducts) =>
+        prevProducts.map((p) => (p.id === productId ? { ...p, is_published: newPublished } : p))
+      )
+
+      const { error } = await supabase
+        .from('products')
+        .update({ is_published: newPublished })
+        .eq('id', productId)
+
+      if (error) {
+        console.error('상품 배포 상태 업데이트 오류:', error)
+        setProducts((prevProducts) =>
+          prevProducts.map((p) =>
+            p.id === productId ? { ...p, is_published: currentPublished } : p
+          )
+        )
+      }
+    } catch (error) {
+      console.error('상품 배포 상태 업데이트 중 예상치 못한 오류:', error)
+      setProducts((prevProducts) =>
+        prevProducts.map((p) =>
+          p.id === productId ? { ...p, is_published: currentPublished } : p
+        )
+      )
+    } finally {
+      setUpdatingProducts((prev) => {
+        const next = new Set(prev)
+        next.delete(productId)
+        return next
+      })
+    }
+  }
+
   // 인라인 편집 시작
   const startEdit = (productId: string, fieldName: string, currentValue: string | number | null) => {
     setEditingField({ productId, fieldName })
@@ -1106,6 +1148,13 @@ export default function AdminProducts() {
                     prevProducts.map((p) => (p.id === productId ? { ...p, status: newStatus } : p))
                   )
                 }}
+                onPublishChange={(productId, isPublished) => {
+                  setProducts((prevProducts) =>
+                    prevProducts.map((p) =>
+                      p.id === productId ? { ...p, is_published: isPublished } : p
+                    )
+                  )
+                }}
                 onProductCopied={() => {
                   fetchProducts()
                 }}
@@ -1167,6 +1216,7 @@ export default function AdminProducts() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredProducts.map((product) => {
                   const productStatus = (product as any).status || 'inactive'
+                  const isPublished = product.is_published !== false
                   const isUpdating = updatingProducts.has(product.id)
                   const isCopying = copyingProducts.has(product.id)
                   
@@ -1699,7 +1749,7 @@ export default function AdminProducts() {
                             <Copy className="h-4 w-4" />
                           </button>
                           
-                          {/* 상태 토글 스위치 */}
+                          {/* 활성화 토글 */}
                           <button
                             onClick={(e) => {
                               e.preventDefault()
@@ -1715,6 +1765,27 @@ export default function AdminProducts() {
                             <span
                               className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                                 productStatus === 'active' ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+
+                          {/* 고객 사이트 배포 토글 */}
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              handlePublishToggle(product.id, isPublished)
+                            }}
+                            disabled={isUpdating}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                              isPublished ? 'bg-emerald-600' : 'bg-gray-200'
+                            } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            title={isPublished ? t('unpublish') : t('publish')}
+                            aria-label={t('publishToggle')}
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                isPublished ? 'translate-x-5' : 'translate-x-1'
                               }`}
                             />
                           </button>

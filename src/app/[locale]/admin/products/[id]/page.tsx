@@ -189,6 +189,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     coupons: Coupon[]
     maxParticipants: number
     status: 'active' | 'inactive' | 'draft'
+    isPublished: boolean
     productOptions: ProductOption[]
     // 새로운 필드들
     departureCity: string
@@ -303,6 +304,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     ],
     maxParticipants: 10,
     status: 'active' as const,
+    isPublished: true,
     productOptions: [],
     // 새로운 필드들의 초기값
     departureCity: '',
@@ -667,6 +669,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             basePriceNumber: ((productData as any).adult_base_price ?? productData.base_price) || 0,
             maxParticipants: productData.max_participants || 10,
             status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
+            isPublished: productData.is_published !== false,
             departureCity: productData.departure_city_ko || productData.departure_city || '',
             arrivalCity: productData.arrival_city_ko || productData.arrival_city || '',
             departureCountry: productData.departure_country_ko || productData.departure_country || '',

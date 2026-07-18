@@ -34,7 +34,8 @@ export function resolveImportChannelVariantKey(
     lab.includes('with exclusion') ||
     lab.includes('with-exclusion') ||
     lab.includes('withexclusions') ||
-    (/불포함/.test(labRaw) && /exclusion|제외|위드/i.test(labRaw))
+    /불포함/.test(labRaw) ||
+    (/exclusion|제외|위드/i.test(labRaw) && !/all\s*inclusive|올\s*인클루/i.test(labRaw))
 
   if (labelSaysAll && !labelSaysWith && kCanon === 'with_exclusions') return 'all_inclusive'
   if (labelSaysWith && kCanon === 'all_inclusive') return 'with_exclusions'
@@ -133,6 +134,16 @@ export function mapSemanticVariantToChannelProductKey(
       if (hit) return hit.variant_key
     }
     if (/with\s*exclusion|withexclusions|불포함|제외/i.test(hint)) {
+      // 한국인 가이드 등 세부 라벨이 있으면 해당 행을 우선 매칭
+      if (/한국인|korean/i.test(hint)) {
+        const koGuide = rows.find(
+          (r) =>
+            /한국인|korean/i.test(nameBlob(r)) &&
+            /불포함|exclusion|제외/i.test(nameBlob(r)) &&
+            !/all\s*inclusive|올\s*인클루/i.test(nameBlob(r))
+        )
+        if (koGuide) return koGuide.variant_key
+      }
       const hit = rows.find(
         (r) =>
           /with\s*exclusion|withexclusions|불포함/i.test(nameBlob(r)) &&

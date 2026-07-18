@@ -71,6 +71,8 @@ interface SubCategoryItem {
       childAgeMax: number
       infantAge: number
       status: 'active' | 'inactive' | 'draft'
+      /** 고객 사이트 배포 여부 (판매 상태와 별개) */
+      isPublished?: boolean
       tourDepartureTime?: string
       tourDepartureTimes?: string[]
       customerNameKo?: string
@@ -346,6 +348,7 @@ export default function BasicInfoTab({
             homepage_pricing_type: formData.homepagePricingType || 'separate',
             max_participants: formData.maxParticipants,
             status: formData.status,
+            is_published: formData.isPublished !== false,
             ...buildDepartureFields(),
             tags: formData.tags || [],
             languages: formData.languages,
@@ -419,6 +422,7 @@ export default function BasicInfoTab({
             homepage_pricing_type: formData.homepagePricingType || 'separate',
             max_participants: formData.maxParticipants,
             status: formData.status,
+            is_published: formData.isPublished !== false,
             ...buildDepartureFields(),
             tags: formData.tags || [],
             languages: formData.languages,
@@ -844,7 +848,7 @@ export default function BasicInfoTab({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {tBasic('salesStatus')}
               <CustomerPageLocationHint
-                paths={[['상품 목록', '노출 여부']]}
+                paths={[['상품 목록', '활성화']]}
                 variant="inline"
               />
             </label>
@@ -858,6 +862,37 @@ export default function BasicInfoTab({
               <option value="active">{tProducts('status.active')}</option>
               <option value="inactive">{tProducts('status.inactive')}</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('customerPublish')}
+              <CustomerPageLocationHint
+                paths={[['상품 목록', '고객 노출']]}
+                variant="inline"
+              />
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={formData.isPublished !== false}
+              onClick={() =>
+                setFormData({
+                  ...formData,
+                  isPublished: formData.isPublished === false,
+                })
+              }
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                formData.isPublished !== false ? 'bg-emerald-600' : 'bg-gray-200'
+              }`}
+              title={formData.isPublished !== false ? tProducts('unpublish') : tProducts('publish')}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                  formData.isPublished !== false ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <p className="mt-1 text-xs text-muted-foreground">{tBasic('customerPublishHint')}</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

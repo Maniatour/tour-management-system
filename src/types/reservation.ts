@@ -17,6 +17,8 @@ export type Option = Database['public']['Tables']['options']['Row']
 export interface PickupHotel {
   id: string
   hotel: string
+  /** 관리자 화면용 짧은 내부 이름 */
+  internal_name?: string | null
   pick_up_location: string
   description_ko: string | null
   description_en: string | null

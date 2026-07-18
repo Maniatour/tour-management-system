@@ -200,6 +200,7 @@ export default function CustomerPageHomeSettingsPanel({
         .from('products')
         .select('id, name, customer_name_ko, customer_name_en, is_favorite, favorite_order')
         .eq('status', 'active')
+        .eq('is_published', true)
         .order('is_favorite', { ascending: false })
         .order('favorite_order', { ascending: true })
         .order('created_at', { ascending: false })

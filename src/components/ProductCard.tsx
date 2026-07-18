@@ -29,6 +29,7 @@ interface ProductCardProps {
   displayLocale?: AdminProductCardPreviewLocale
   priority?: boolean
   onStatusChange?: (productId: string, newStatus: string) => void
+  onPublishChange?: (productId: string, isPublished: boolean) => void
   onProductCopied?: (newProductId: string) => void
   onFavoriteToggle?: (productId: string, isFavorite: boolean) => void
   onRibbonToggle?: (productId: string, tags: string[]) => void
@@ -50,6 +51,7 @@ export default function ProductCard({
   displayLocale,
   priority = false,
   onStatusChange,
+  onPublishChange,
   onProductCopied,
   onFavoriteToggle,
   onRibbonToggle,
@@ -63,6 +65,8 @@ export default function ProductCard({
   const previewLabels = getProductCardPreviewLabels(cardLocale)
   const [isUpdating, setIsUpdating] = useState(false)
   const [localStatus, setLocalStatus] = useState(product.status || 'inactive')
+  const [localPublished, setLocalPublished] = useState(product.is_published !== false)
+  const [isUpdatingPublish, setIsUpdatingPublish] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false)
   const [isTogglingRibbon, setIsTogglingRibbon] = useState(false)
@@ -74,6 +78,7 @@ export default function ProductCard({
 
   useEffect(() => {
     setLocalProduct(product)
+    setLocalPublished(product.is_published !== false)
   }, [product])
 
   useEffect(() => {
@@ -126,6 +131,40 @@ export default function ProductCard({
       setLocalStatus(product.status || 'inactive')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handlePublishToggle = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (isUpdatingPublish) return
+
+    const newPublished = !localPublished
+
+    try {
+      setIsUpdatingPublish(true)
+      setLocalPublished(newPublished)
+
+      const { error } = await supabase
+        .from('products')
+        .update({ is_published: newPublished })
+        .eq('id', localProduct.id)
+
+      if (error) {
+        console.error('상품 배포 상태 업데이트 오류:', error)
+        setLocalPublished(localProduct.is_published !== false)
+        return
+      }
+
+      setLocalProduct((prev) => ({ ...prev, is_published: newPublished }))
+      onPublishChange?.(localProduct.id, newPublished)
+      onProductUpdated?.(localProduct.id, { is_published: newPublished })
+    } catch (error) {
+      console.error('상품 배포 상태 업데이트 중 예상치 못한 오류:', error)
+      setLocalPublished(product.is_published !== false)
+    } finally {
+      setIsUpdatingPublish(false)
     }
   }
 
@@ -341,6 +380,23 @@ export default function ProductCard({
         <span
           className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
             localStatus === 'active' ? 'translate-x-5' : 'translate-x-1'
+          }`}
+        />
+      </button>
+
+      <button
+        type="button"
+        onClick={handlePublishToggle}
+        disabled={isUpdatingPublish}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+          localPublished ? 'bg-emerald-600' : 'bg-gray-200'
+        } ${isUpdatingPublish ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+        title={localPublished ? t('unpublish') : t('publish')}
+        aria-label={t('publishToggle')}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+            localPublished ? 'translate-x-5' : 'translate-x-1'
           }`}
         />
       </button>

@@ -41,6 +41,7 @@ export async function fetchHomeSectionProducts(
     .from('products')
     .select(HOME_SECTION_PRODUCT_SELECT)
     .eq('status', 'active')
+    .eq('is_published', true)
 
   if (query === 'favorites') {
     builder = builder.eq('is_favorite', true).order('favorite_order', { ascending: true })
@@ -64,6 +65,7 @@ export async function fetchHomeSectionProducts(
       .from('products')
       .select(HOME_SECTION_PRODUCT_SELECT)
       .eq('status', 'active')
+      .eq('is_published', true)
       .order('created_at', { ascending: false })
       .limit(limit)
     if (recentError) throw recentError
@@ -83,6 +85,7 @@ export async function fetchHomeSectionProductsByIds(
     .from('products')
     .select(HOME_SECTION_PRODUCT_SELECT)
     .eq('status', 'active')
+    .eq('is_published', true)
     .in('id', ids)
 
   if (error) throw error

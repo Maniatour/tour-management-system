@@ -171,6 +171,7 @@ import type {
   PickupHotel, 
   Reservation 
 } from '@/types/reservation'
+import { formatPickupHotelFormLabel } from '@/utils/pickupHotelUtils'
 
 // 언어 선택 옵션 (국기용 country code + 라벨)
 const LANGUAGE_OPTIONS: { value: string; countryCode: string; label: string }[] = [
@@ -833,7 +834,7 @@ export default function ReservationForm({
       const pickUpHotelId = reservation?.pickUpHotel || rez.pickup_hotel || ''
       const matched = pickupHotels.find(h => h.id === pickUpHotelId)
       if (matched) {
-        return `${matched.hotel} - ${matched.pick_up_location}`
+        return formatPickupHotelFormLabel(matched)
       }
       // fallback: if stored value is already a label or unknown id, show it as-is
       return pickUpHotelId || ''
@@ -1448,7 +1449,7 @@ export default function ReservationForm({
       next.pickUpHotel = hid
       const matched = pickupHotels.find(h => h.id === hid)
       if (matched) {
-        next.pickUpHotelSearch = `${matched.hotel} - ${matched.pick_up_location}`
+        next.pickUpHotelSearch = formatPickupHotelFormLabel(matched)
       } else if (hid) {
         next.pickUpHotelSearch = hid
       }
@@ -5966,9 +5967,17 @@ export default function ReservationForm({
       // 가격 정보는 formDataRef에서 읽어 최신 입력값(불포함·채널 수수료$ 등)이 반영되도록 함
       const fd = formDataRef.current
       const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+      // 시스템 카탈로그 ID가 아니면 검색란 자유 텍스트(미등록 호텔)를 저장
+      const resolvedPickUpHotel = (() => {
+        const id = String(fd.pickUpHotel || formData.pickUpHotel || '').trim()
+        if (id && pickupHotels.some((h) => h.id === id)) return id
+        const freeText = String(fd.pickUpHotelSearch || formData.pickUpHotelSearch || id || '').trim()
+        return freeText
+      })()
       // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트)
       const reservationPayload = {
         ...formData,
+        pickUpHotel: resolvedPickUpHotel,
         id: reservation?.id, // 예약 ID 포함 (새 예약 모드에서 미리 생성된 ID)
         customerId: finalCustomerId || formData.customerId,
         totalPeople,

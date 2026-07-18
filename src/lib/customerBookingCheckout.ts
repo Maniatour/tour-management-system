@@ -139,7 +139,7 @@ export function parseCustomerBookingCustomer(raw: unknown): CustomerBookingCusto
 async function assertProductBookable(admin: AdminClient, productId: string): Promise<void> {
   const { data, error } = await admin
     .from('products')
-    .select('id, status')
+    .select('id, status, is_published')
     .eq('id', productId)
     .maybeSingle()
 
@@ -147,6 +147,9 @@ async function assertProductBookable(admin: AdminClient, productId: string): Pro
     throw new Error('상품을 찾을 수 없습니다.')
   }
   if (data.status && data.status !== 'active') {
+    throw new Error('현재 예약할 수 없는 상품입니다.')
+  }
+  if (data.is_published === false) {
     throw new Error('현재 예약할 수 없는 상품입니다.')
   }
 }

@@ -621,7 +621,7 @@ export default function ReservationImportDetailPage() {
                   {ext.emergency_contact && (
                     <div className="flex items-start gap-3 pl-7">
                       <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
-                      <dd className="text-sm text-gray-700">WhatsApp (비상): {ext.emergency_contact}</dd>
+                      <dd className="text-sm text-gray-700">비상연락처: {ext.emergency_contact}</dd>
                     </div>
                   )}
                   {ext.language && (

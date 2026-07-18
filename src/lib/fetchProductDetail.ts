@@ -53,7 +53,7 @@ export async function fetchProductPageData(
     // 공개 페이지는 active만, 미리보기는 상태 무관. maybeSingle로 0건 시 406(PGRST116) 방지.
     let productQuery = supabase.from('products').select('*').eq('id', productId)
     if (!options?.includeNonActive) {
-      productQuery = productQuery.eq('status', 'active')
+      productQuery = productQuery.eq('status', 'active').eq('is_published', true)
     }
     const { data: productData, error: productError } = await productQuery.maybeSingle()
 
