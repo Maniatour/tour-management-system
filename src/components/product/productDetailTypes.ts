@@ -96,6 +96,10 @@ export type ProductChoice = {
   choice_thumbnail_url?: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
+  /** product_choices.content_i18n */
+  choice_content_i18n?: import('@/lib/productChoiceLocales').ChoiceContentI18n | null
+  /** choice_options.content_i18n */
+  option_content_i18n?: import('@/lib/productChoiceLocales').ChoiceContentI18n | null
   /** product_choices.sort_order — 초이스 그룹 표시 순서 */
   choice_sort_order?: number | null
   /** choice_options.sort_order — 그룹 내 옵션 표시 순서 */
@@ -117,6 +121,13 @@ export type ProductMedia = {
   is_active: boolean
 }
 
+export type ProductFieldTranslationRowLite = {
+  product_id: string
+  field_key: string
+  locale: string
+  value: string | null
+}
+
 export type ProductPageData = {
   product: Product | null
   productDetails: ProductDetails | null
@@ -125,6 +136,8 @@ export type ProductPageData = {
   productChoices: ProductChoice[]
   productMedia: ProductMedia[]
   tourCoursePhotos: TourCoursePhoto[]
+  /** product_field_translations rows for this product (optional until migration applied) */
+  fieldTranslations?: ProductFieldTranslationRowLite[]
   error: string | null
 }
 
@@ -150,6 +163,8 @@ export type TourCourse = {
   customer_name_en: string | null
   customer_description_ko: string | null
   customer_description_en: string | null
+  /** tour_courses.content_i18n — customer-facing name/description per locale */
+  content_i18n?: import('@/lib/productTourCourseLocales').TourCourseContentI18n | null
   description: string | null
   duration: string | null
   duration_hours: number | null

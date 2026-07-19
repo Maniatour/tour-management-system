@@ -16,8 +16,15 @@ import {
   Search
 } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
 import LocationPickerModal from './LocationPickerModal'
+import {
+  getTourCourseLocalizedText,
+  mergeTourCourseI18n,
+  type TourCourseContentI18n,
+} from '@/lib/productTourCourseLocales'
+import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 
 interface TourCourse {
   id: string
@@ -31,6 +38,7 @@ interface TourCourse {
   team_description_en?: string | null
   customer_description_ko?: string | null
   customer_description_en?: string | null
+  content_i18n?: TourCourseContentI18n | null
   internal_note?: string | null
   location?: string | null
   category?: string | null
@@ -269,6 +277,9 @@ const ParentSelectionTreeItem = ({
 export default function TourCourseEditModal({ isOpen, onClose, course, onSave }: TourCourseEditModalProps) {
   const t = useTranslations('tourCourses.editModal')
   const locale = useLocale()
+  const [customerEditLocale, setCustomerEditLocale] = useState<SiteLocale>('ko')
+  const [customerNameDraft, setCustomerNameDraft] = useState('')
+  const [customerDescriptionDraft, setCustomerDescriptionDraft] = useState('')
 
   const [formData, setFormData] = useState({
     parent_id: '',
@@ -276,6 +287,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
     customer_name_en: '',
     customer_description_ko: '',
     customer_description_en: '',
+    content_i18n: {} as TourCourseContentI18n,
     team_name_ko: '',
     team_name_en: '',
     team_description_ko: '',
@@ -382,12 +394,26 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   // 코스 데이터로 폼 초기화
   useEffect(() => {
     if (course) {
+      const content_i18n = (course.content_i18n || {}) as TourCourseContentI18n
+      const customerSource = {
+        customer_name_ko: course.customer_name_ko || '',
+        customer_name_en: course.customer_name_en || '',
+        customer_description_ko: course.customer_description_ko || '',
+        customer_description_en: course.customer_description_en || '',
+        content_i18n,
+      }
+      setCustomerEditLocale('ko')
+      setCustomerNameDraft(getTourCourseLocalizedText(customerSource, 'name', 'ko'))
+      setCustomerDescriptionDraft(
+        getTourCourseLocalizedText(customerSource, 'description', 'ko')
+      )
       setFormData({
         parent_id: course.parent_id || '',
         customer_name_ko: course.customer_name_ko || '',
         customer_name_en: course.customer_name_en || '',
         customer_description_ko: course.customer_description_ko || '',
         customer_description_en: course.customer_description_en || '',
+        content_i18n,
         team_name_ko: course.team_name_ko || course.name_ko || '',
         team_name_en: course.team_name_en || course.name_en || '',
         team_description_ko: course.team_description_ko || '',
@@ -454,6 +480,30 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   const updateFormData = useCallback((updates: Partial<typeof formData>) => {
     setFormData(prev => ({ ...prev, ...updates }))
   }, [])
+
+  const switchCustomerLocale = useCallback(
+    (next: SiteLocale) => {
+      const merged = mergeTourCourseI18n(
+        formData,
+        customerEditLocale,
+        customerNameDraft,
+        customerDescriptionDraft
+      )
+      const source = { ...formData, ...merged }
+      setFormData((prev) => ({
+        ...prev,
+        content_i18n: merged.content_i18n,
+        customer_name_ko: merged.customer_name_ko ?? '',
+        customer_name_en: merged.customer_name_en ?? '',
+        customer_description_ko: merged.customer_description_ko ?? '',
+        customer_description_en: merged.customer_description_en ?? '',
+      }))
+      setCustomerNameDraft(getTourCourseLocalizedText(source, 'name', next))
+      setCustomerDescriptionDraft(getTourCourseLocalizedText(source, 'description', next))
+      setCustomerEditLocale(next)
+    },
+    [customerDescriptionDraft, customerEditLocale, customerNameDraft, formData]
+  )
 
   // 사진 업로드 처리
   const handleFileUpload = async (files: FileList) => {
@@ -638,12 +688,19 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
     setLoading(true)
     try {
+      const customerMerged = mergeTourCourseI18n(
+        formData,
+        customerEditLocale,
+        customerNameDraft,
+        customerDescriptionDraft
+      )
       const courseData = {
         parent_id: formData.parent_id || null,
-        customer_name_ko: formData.customer_name_ko || null,
-        customer_name_en: formData.customer_name_en || null,
-        customer_description_ko: formData.customer_description_ko || null,
-        customer_description_en: formData.customer_description_en || null,
+        customer_name_ko: customerMerged.customer_name_ko,
+        customer_name_en: customerMerged.customer_name_en,
+        customer_description_ko: customerMerged.customer_description_ko,
+        customer_description_en: customerMerged.customer_description_en,
+        content_i18n: customerMerged.content_i18n,
         team_name_ko: formData.team_name_ko,
         team_name_en: formData.team_name_en,
         team_description_ko: formData.team_description_ko || null,
@@ -873,68 +930,41 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
             {/* 고객용 박스 */}
             <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-              <h4 className="text-md font-medium text-gray-800 mb-4">{t('forCustomer')}</h4>
-              
-              {/* 고객용 이름 */}
-              <div className="mb-4">
-                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('name')}</h5>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t('nameKo')}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.customer_name_ko}
-                      onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                      placeholder={t('placeholderCustomerNameKo')}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t('nameEn')}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.customer_name_en}
-                      onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                      placeholder={t('placeholderCustomerNameEn')}
-                    />
-                  </div>
-                </div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-md font-medium text-gray-800">{t('forCustomer')}</h4>
+                <LocaleDropdown
+                  value={customerEditLocale}
+                  onChange={switchCustomerLocale}
+                  size="sm"
+                  showLabel
+                  ariaLabel="Customer content language"
+                />
               </div>
 
-              {/* 고객용 설명 */}
-              <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('description')}</h5>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t('descKo')}
-                    </label>
-                    <textarea
-                      value={formData.customer_description_ko}
-                      onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                      rows={3}
-                      placeholder={t('placeholderCustomerDescKo')}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t('descEn')}
-                    </label>
-                    <textarea
-                      value={formData.customer_description_en}
-                      onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                      rows={3}
-                      placeholder={t('placeholderCustomerDescEn')}
-                    />
-                  </div>
-                </div>
+              <div className="mb-4 space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  {t('name')} ({getSiteLocaleMeta(customerEditLocale).label})
+                </label>
+                <input
+                  type="text"
+                  value={customerNameDraft}
+                  onChange={(e) => setCustomerNameDraft(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+                  placeholder={t('placeholderCustomerNameKo')}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  {t('description')} ({getSiteLocaleMeta(customerEditLocale).label})
+                </label>
+                <textarea
+                  value={customerDescriptionDraft}
+                  onChange={(e) => setCustomerDescriptionDraft(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+                  rows={3}
+                  placeholder={t('placeholderCustomerDescKo')}
+                />
               </div>
             </div>
 

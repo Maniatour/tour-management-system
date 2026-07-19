@@ -1,4 +1,10 @@
 import type { Product } from '@/components/product/productDetailTypes'
+import {
+  getProductLocalizedField,
+  type ProductFieldTranslationRow,
+  type ProductLegacyI18nSource,
+} from '@/lib/productFieldTranslations'
+import { normalizeSiteLocale, resolveFileMessageLocale } from '@/lib/siteLocales'
 
 const CATEGORY_LABELS_EN: Record<string, string> = {
   city: 'City',
@@ -27,11 +33,23 @@ export function getProductCategoryLabel(category: string, isEnglish: boolean): s
   return labels[category] || category
 }
 
-export function getProductCustomerDisplayName(product: Product, locale: string): string {
-  if (locale === 'en' && product.customer_name_en) {
-    return product.customer_name_en
-  }
-  return product.customer_name_ko || product.name_ko || product.name
+/** Prefer UI chrome language for category labels (ko vs en file messages). */
+export function getProductCategoryLabelForLocale(category: string, locale: string): string {
+  return getProductCategoryLabel(category, resolveFileMessageLocale(locale) === 'en')
+}
+
+export function getProductCustomerDisplayName(
+  product: Product | ProductLegacyI18nSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string {
+  const siteLocale = normalizeSiteLocale(locale)
+  return (
+    getProductLocalizedField(product, 'customer_name', siteLocale, translationRows) ||
+    getProductLocalizedField(product, 'name', siteLocale, translationRows) ||
+    product.name?.trim() ||
+    ''
+  )
 }
 
 export function parseProductPriceValue(value: unknown): number | null {
@@ -83,21 +101,23 @@ export function resolveDisplayBasePrice(
   return parseProductPriceValue(basePrice) ?? 0
 }
 
-export type ProductSummarySource = {
+export type ProductSummarySource = ProductLegacyI18nSource & {
   description?: string | null
-  summary_ko?: string | null
-  summary_en?: string | null
 }
 
 /** 목록·홈 카드 등 짧은 설명 — locale별 요약 우선, 없으면 products.description */
 export function getProductSummaryByLocale(
   product: ProductSummarySource,
-  locale: string
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
 ): string {
-  const isEnglish = locale === 'en'
-  const localized = isEnglish ? product.summary_en : product.summary_ko
-  const trimmedSummary = localized?.trim()
-  if (trimmedSummary) return trimmedSummary
+  const summary = getProductLocalizedField(
+    product,
+    'summary',
+    normalizeSiteLocale(locale),
+    translationRows
+  )
+  if (summary) return summary
   return product.description?.trim() ?? ''
 }
 
@@ -106,16 +126,18 @@ export function getProductOverviewDescription(
   product: ProductSummarySource,
   productDetailsDescription: string | null | undefined,
   locale: string,
-  fallback = ''
+  fallback = '',
+  translationRows: ProductFieldTranslationRow[] = []
 ): string {
   const details = productDetailsDescription?.trim()
   if (details) return details
-  const summary = getProductSummaryByLocale(product, locale)
+  const summary = getProductSummaryByLocale(product, locale, translationRows)
   if (summary) return summary
   return fallback
 }
 
-export function formatProductDuration(duration: string | null, isEnglish: boolean): string {  if (!duration) return isEnglish ? 'Not specified' : '미정'
+export function formatProductDuration(duration: string | null, isEnglish: boolean): string {
+  if (!duration) return isEnglish ? 'Not specified' : '미정'
 
   const timeMatch = duration.match(/^(\d+):(\d+):(\d+)$/)
   if (timeMatch) {
@@ -134,7 +156,9 @@ export function formatProductDuration(duration: string | null, isEnglish: boolea
       }
       if (hours > 0 && minutes > 0) {
         const hourLabel = isEnglish ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : `${hours}시간`
-        const minuteLabel = isEnglish ? `${minutes} minute${minutes === 1 ? '' : 's'}` : `${minutes}분`
+        const minuteLabel = isEnglish
+          ? `${minutes} minute${minutes === 1 ? '' : 's'}`
+          : `${minutes}분`
         return `${hourLabel} ${minuteLabel}`
       }
       const formattedHours = Math.round(totalHours * 10) / 10
@@ -195,74 +219,68 @@ export function formatProductDurationShort(
   return isEnglish ? `${rounded}hr` : `${rounded}시간`
 }
 
-export type ProductLocationSource = {
-  departure_city?: string | null
-  departure_city_ko?: string | null
-  departure_city_en?: string | null
-  arrival_city?: string | null
-  arrival_city_ko?: string | null
-  arrival_city_en?: string | null
-  departure_country?: string | null
-  departure_country_ko?: string | null
-  departure_country_en?: string | null
-  arrival_country?: string | null
-  arrival_country_ko?: string | null
-  arrival_country_en?: string | null
-}
+export type ProductLocationSource = ProductLegacyI18nSource
 
-function pickLocalizedField(
+export function getProductDepartureCity(
+  product: ProductLocationSource,
   locale: string,
-  ko: string | null | undefined,
-  en: string | null | undefined,
-  legacy: string | null | undefined
+  translationRows: ProductFieldTranslationRow[] = []
 ): string {
-  const koVal = ko?.trim()
-  const enVal = en?.trim()
-  const legacyVal = legacy?.trim()
-  if (locale === 'en') return enVal || legacyVal || koVal || ''
-  return koVal || legacyVal || enVal || ''
-}
-
-export function getProductDepartureCity(product: ProductLocationSource, locale: string): string {
-  return pickLocalizedField(
-    locale,
-    product.departure_city_ko,
-    product.departure_city_en,
-    product.departure_city
+  return getProductLocalizedField(
+    product,
+    'departure_city',
+    normalizeSiteLocale(locale),
+    translationRows
   )
 }
 
-export function getProductArrivalCity(product: ProductLocationSource, locale: string): string {
-  return pickLocalizedField(
-    locale,
-    product.arrival_city_ko,
-    product.arrival_city_en,
-    product.arrival_city
+export function getProductArrivalCity(
+  product: ProductLocationSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string {
+  return getProductLocalizedField(
+    product,
+    'arrival_city',
+    normalizeSiteLocale(locale),
+    translationRows
   )
 }
 
-export function getProductDepartureCountry(product: ProductLocationSource, locale: string): string {
-  return pickLocalizedField(
-    locale,
-    product.departure_country_ko,
-    product.departure_country_en,
-    product.departure_country
+export function getProductDepartureCountry(
+  product: ProductLocationSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string {
+  return getProductLocalizedField(
+    product,
+    'departure_country',
+    normalizeSiteLocale(locale),
+    translationRows
   )
 }
 
-export function getProductArrivalCountry(product: ProductLocationSource, locale: string): string {
-  return pickLocalizedField(
-    locale,
-    product.arrival_country_ko,
-    product.arrival_country_en,
-    product.arrival_country
+export function getProductArrivalCountry(
+  product: ProductLocationSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string {
+  return getProductLocalizedField(
+    product,
+    'arrival_country',
+    normalizeSiteLocale(locale),
+    translationRows
   )
 }
 
 /** 목록 카드 등 — 출발지 한 줄 표기 */
-export function formatProductDepartureLine(product: ProductLocationSource, locale: string): string {
-  const city = getProductDepartureCity(product, locale)
-  const country = getProductDepartureCountry(product, locale)
+export function formatProductDepartureLine(
+  product: ProductLocationSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string {
+  const city = getProductDepartureCity(product, locale, translationRows)
+  const country = getProductDepartureCountry(product, locale, translationRows)
   if (!city) return ''
   return country ? `${city}, ${country}` : city
 }

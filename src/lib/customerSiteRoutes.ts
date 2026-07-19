@@ -1,3 +1,5 @@
+import { siteLocalePathTest } from '@/lib/siteLocales'
+
 export const LEGAL_PAGE_SLUGS = [
   'terms',
   'privacy-policy',
@@ -27,7 +29,7 @@ export function isCustomerFacingPath(pathname: string | null | undefined): boole
     return false
   }
 
-  if (/^\/(ko|en)\/?$/.test(pathname)) return true
+  if (siteLocalePathTest(pathname, '/?$')) return true
   if (/\/products(\/|$)/.test(pathname)) return true
   if (/\/travel-guide(\/|$)/.test(pathname)) return true
   if (/\/reservation-check(\/|$)/.test(pathname)) return true

@@ -10,6 +10,8 @@ import type {
 } from '@/components/product/productDetailTypes'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
+import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
+import { contentFallbackOrder, normalizeSiteLocale } from '@/lib/siteLocales'
 
 export type {
   Product,
@@ -27,8 +29,39 @@ const emptyProductPageData = (): ProductPageData => ({
   productChoices: [],
   productMedia: [],
   tourCoursePhotos: [],
+  fieldTranslations: [],
   error: null,
 })
+
+async function loadDetailsRowForLanguage(
+  productId: string,
+  languageCode: string
+): Promise<ProductDetails | null> {
+  const { data: commonDetails, error: commonError } = await supabase
+    .from('product_details_multilingual')
+    .select('*')
+    .eq('product_id', productId)
+    .eq('language_code', languageCode)
+    .is('channel_id', null)
+    .limit(1)
+
+  if (!commonError && commonDetails && commonDetails.length > 0) {
+    return commonDetails[0] as unknown as ProductDetails
+  }
+
+  const { data: channelDetails, error: channelError } = await supabase
+    .from('product_details_multilingual')
+    .select('*')
+    .eq('product_id', productId)
+    .eq('language_code', languageCode)
+    .limit(1)
+
+  if (!channelError && channelDetails && channelDetails.length > 0) {
+    return channelDetails[0] as unknown as ProductDetails
+  }
+
+  return null
+}
 
 export type FetchProductPageDataOptions = {
   /** preview=1 등 관리자 미리보기 — inactive/draft도 로드 */
@@ -80,65 +113,19 @@ export async function fetchProductPageData(
     }
 
     product = productData as unknown as Product
-    
-    // 2. 다국어 상세 정보 가져오기
-    // channel_id가 NULL인 공통 정보를 우선적으로 가져오기
-    let detailsData: ProductDetails | null = null
-    
-    // 먼저 channel_id가 NULL인 공통 정보 조회
-    const { data: commonDetails, error: commonError } = await supabase
-      .from('product_details_multilingual')
-      .select('*')
-      .eq('product_id', productId)
-      .eq('language_code', locale)
-      .is('channel_id', null)
-      .limit(1)
-    
-    if (!commonError && commonDetails && commonDetails.length > 0) {
-      detailsData = commonDetails[0] as unknown as ProductDetails
-    } else {
-      // 공통 정보가 없으면 channel_id가 있는 것 중 첫 번째 가져오기
-      const { data: channelDetails, error: channelError } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('language_code', locale)
-        .limit(1)
-      
-      if (!channelError && channelDetails && channelDetails.length > 0) {
-        detailsData = channelDetails[0] as unknown as ProductDetails
+
+    // 2. 다국어 상세 정보 — 요청 locale → en → ko 순 폴백
+    const siteLocale = normalizeSiteLocale(locale)
+    for (const languageCode of contentFallbackOrder(siteLocale)) {
+      const row = await loadDetailsRowForLanguage(productId, languageCode)
+      if (row) {
+        productDetails = row
+        break
       }
     }
-    
-    if (detailsData) {
-      productDetails = detailsData
-    } else if (locale !== 'ko') {
-      // 폴백: 한국어로 시도
-      const { data: fallbackDetails } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('language_code', 'ko')
-        .is('channel_id', null)
-        .limit(1)
-      
-      if (fallbackDetails && fallbackDetails.length > 0) {
-        productDetails = fallbackDetails[0] as unknown as ProductDetails
-      } else {
-        // 한국어 channel_id가 있는 것 중 첫 번째 가져오기
-        const { data: koChannelDetails } = await supabase
-          .from('product_details_multilingual')
-          .select('*')
-          .eq('product_id', productId)
-          .eq('language_code', 'ko')
-          .limit(1)
-        
-        if (koChannelDetails && koChannelDetails.length > 0) {
-          productDetails = koChannelDetails[0] as unknown as ProductDetails
-        }
-      }
-    }
-    
+
+    const fieldTranslations = await fetchProductFieldTranslations(productId)
+
     // 3. 투어 코스 정보 가져오기
     // product_tour_courses에서 tour_course_id를 사용하여 tour_courses 조인
     let tourCoursesData: any[] = []
@@ -305,6 +292,7 @@ export async function fetchProductPageData(
           choice_group_en,
           description_ko,
           description_en,
+          content_i18n,
           choice_type,
           sort_order,
           options:choice_options (
@@ -314,6 +302,7 @@ export async function fetchProductPageData(
             option_name_ko,
             description,
             description_ko,
+            content_i18n,
             adult_price,
             child_price,
             infant_price,
@@ -364,6 +353,7 @@ export async function fetchProductPageData(
             choice_description: choice.description_en || null,
             choice_description_ko: choice.description_ko || null,
             choice_description_en: choice.description_en || null,
+            choice_content_i18n: choice.content_i18n || null,
             choice_image_url: null, // product_choices 테이블에 image_url 필드가 없을 수 있음
             choice_thumbnail_url: null,
             choice_sort_order: choiceSortOrder,
@@ -379,6 +369,7 @@ export async function fetchProductPageData(
             option_thumbnail_url: option.thumbnail_url || null,
             option_description: option.description || null,
             option_description_ko: option.description_ko || null,
+            option_content_i18n: option.content_i18n || null,
             option_sort_order: option.sort_order ?? 0,
           }))
         })
@@ -463,6 +454,7 @@ export async function fetchProductPageData(
       productChoices,
       productMedia,
       tourCoursePhotos,
+      fieldTranslations,
       error: null,
     }
   } catch (error) {
@@ -479,54 +471,11 @@ export async function fetchProductDetailsRowForLocale(
   productId: string,
   locale: string
 ): Promise<Record<string, unknown> | null> {
-  const { data: commonDetails, error: commonError } = await supabase
-    .from('product_details_multilingual')
-    .select('*')
-    .eq('product_id', productId)
-    .eq('language_code', locale)
-    .is('channel_id', null)
-    .limit(1)
-
-  if (!commonError && commonDetails && commonDetails.length > 0) {
-    return commonDetails[0] as Record<string, unknown>
+  const siteLocale = normalizeSiteLocale(locale)
+  for (const languageCode of contentFallbackOrder(siteLocale)) {
+    const row = await loadDetailsRowForLanguage(productId, languageCode)
+    if (row) return row as unknown as Record<string, unknown>
   }
-
-  const { data: channelDetails, error: channelError } = await supabase
-    .from('product_details_multilingual')
-    .select('*')
-    .eq('product_id', productId)
-    .eq('language_code', locale)
-    .limit(1)
-
-  if (!channelError && channelDetails && channelDetails.length > 0) {
-    return channelDetails[0] as Record<string, unknown>
-  }
-
-  if (locale !== 'ko') {
-    const { data: fallbackDetails } = await supabase
-      .from('product_details_multilingual')
-      .select('*')
-      .eq('product_id', productId)
-      .eq('language_code', 'ko')
-      .is('channel_id', null)
-      .limit(1)
-
-    if (fallbackDetails && fallbackDetails.length > 0) {
-      return fallbackDetails[0] as Record<string, unknown>
-    }
-
-    const { data: koChannelDetails } = await supabase
-      .from('product_details_multilingual')
-      .select('*')
-      .eq('product_id', productId)
-      .eq('language_code', 'ko')
-      .limit(1)
-
-    if (koChannelDetails && koChannelDetails.length > 0) {
-      return koChannelDetails[0] as Record<string, unknown>
-    }
-  }
-
   return null
 }
 

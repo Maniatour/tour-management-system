@@ -16,6 +16,13 @@ import {
 } from '@/lib/operators/applyPublicOperatorToMiddleware'
 import { stampActiveOperatorRequestHeader } from '@/lib/operators/activeOperatorCookie'
 import type { ResolvedPublicOperator } from '@/lib/operators/resolveOperatorFromHost'
+import {
+  DEFAULT_ROUTING_LOCALE,
+  ROUTING_LOCALES,
+  SITE_LOCALE_PATH_ALT,
+  isSiteLocale,
+  siteLocalePathTest,
+} from '@/lib/siteLocales'
 
 function stampTenantRequestHeaders(
   requestHeaders: Headers,
@@ -27,9 +34,9 @@ function stampTenantRequestHeaders(
 }
 
 const intlMiddleware = createIntlMiddleware({
-  locales: ['ko', 'en'],
-  defaultLocale: 'ko',
-  localeDetection: false // 자동 감지 비활성화
+  locales: [...ROUTING_LOCALES],
+  defaultLocale: DEFAULT_ROUTING_LOCALE,
+  localeDetection: false, // 자동 감지 비활성화
 })
 
 function withPublicOperator(
@@ -68,7 +75,7 @@ export async function middleware(req: NextRequest) {
   // OAuth 콜백: URL hash(#access_token) 유지, next-intl 리다이렉트로 404·이중 locale 방지
   if (
     pathname === '/auth/callback' ||
-    /^\/(ko|en)\/auth\/callback\/?$/.test(pathname)
+    new RegExp(`^/(${SITE_LOCALE_PATH_ALT})/auth/callback/?$`).test(pathname)
   ) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-pathname', pathname)
@@ -161,22 +168,22 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set('x-pathname', pathname)
   // /ko/guide, /en/guide … 가이드 구간 (pathname 누락 시에도 레이아웃 분기용)
-  const isGuideRoute = /^\/(ko|en)\/guide(\/|$)/.test(pathname)
+  const isGuideRoute = siteLocalePathTest(pathname, '/guide(/|$)')
   const isResidentCheckRoute =
-    /^\/(ko|en)\/resident-check(\/|$)/.test(pathname) ||
-    /^\/(ko|en)\/dashboard\/resident-check(\/|$)/.test(pathname)
+    siteLocalePathTest(pathname, '/resident-check(/|$)') ||
+    siteLocalePathTest(pathname, '/dashboard/resident-check(/|$)')
   const isFullWidthCustomerPage =
-    /^\/(ko|en)\/?$/.test(pathname) ||
-    /^\/(ko|en)\/products\/?$/.test(pathname) ||
-    /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname) ||
-    /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname)
+    siteLocalePathTest(pathname, '/?$') ||
+    siteLocalePathTest(pathname, '/products/?$') ||
+    siteLocalePathTest(pathname, '/products/[^/]+/?$') ||
+    siteLocalePathTest(pathname, '/travel-guide(/|$)')
   requestHeaders.set('x-is-guide-route', isGuideRoute ? '1' : '0')
   requestHeaders.set('x-is-resident-check-route', isResidentCheckRoute ? '1' : '0')
   requestHeaders.set('x-is-full-width-customer-page', isFullWidthCustomerPage ? '1' : '0')
   stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
 
   const res = NextResponse.next({
-    request: { headers: requestHeaders }
+    request: { headers: requestHeaders },
   })
   // pathname 쿠키도 설정 (일부 환경에서 요청 헤더가 전달되지 않을 수 있어 레이아웃 fallback용)
   res.cookies.set('x-pathname', pathname, { path: '/', maxAge: 60, sameSite: 'lax' })
@@ -197,18 +204,20 @@ export async function middleware(req: NextRequest) {
   })
   setPublicOperatorResponseCookie(res, resolvedPublicOperator)
   // intlMiddleware가 설정한 쿠키/헤더 복사
-  response.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value, c))
-  response.headers.forEach((v, k) => { if (k !== 'x-middleware-skip') res.headers.set(k, v) })
+  response.cookies.getAll().forEach((c) => res.cookies.set(c.name, c.value, c))
+  response.headers.forEach((v, k) => {
+    if (k !== 'x-middleware-skip') res.headers.set(k, v)
+  })
 
   // 언어 변경 시 쿠키 설정 (강제 리다이렉트 제거)
   const locale = pathname.split('/')[1]
   const cookieLocale = req.cookies.get('NEXT_LOCALE')?.value
 
-  if (locale === 'ko' || locale === 'en') {
+  if (isSiteLocale(locale)) {
     res.cookies.set('NEXT_LOCALE', locale, {
       path: '/',
       maxAge: 31536000,
-      sameSite: 'lax'
+      sameSite: 'lax',
     })
     if (process.env.NODE_ENV === 'development') {
       console.log('Middleware: Setting locale cookie:', locale)
@@ -220,7 +229,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.).*)'],
 }

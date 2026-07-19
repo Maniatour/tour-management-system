@@ -2,19 +2,25 @@ import { getRequestConfig } from 'next-intl/server'
 import { headers } from 'next/headers'
 import { loadLocaleMessages, loadLocaleMessagesForRoute } from './loadLocaleMessages'
 import { shouldLoadFullLocaleMessages } from './messageNamespaces'
+import {
+  DEFAULT_ROUTING_LOCALE,
+  ROUTING_LOCALES,
+  isSiteLocale,
+  type SiteLocale,
+} from '@/lib/siteLocales'
 
-const SUPPORTED_LOCALES = ['ko', 'en'] as const
+const SUPPORTED_LOCALES = ROUTING_LOCALES
 
-function resolveLocale(locale: string | undefined): string {
-  if (locale && SUPPORTED_LOCALES.includes(locale as (typeof SUPPORTED_LOCALES)[number])) {
+function resolveLocale(locale: string | undefined): SiteLocale {
+  if (locale && isSiteLocale(locale)) {
     return locale
   }
 
-  return 'ko'
+  return DEFAULT_ROUTING_LOCALE
 }
 
-async function resolveLocaleWithCookie(locale: string | undefined): Promise<string> {
-  if (locale && SUPPORTED_LOCALES.includes(locale as (typeof SUPPORTED_LOCALES)[number])) {
+async function resolveLocaleWithCookie(locale: string | undefined): Promise<SiteLocale> {
+  if (locale && isSiteLocale(locale)) {
     return locale
   }
 
@@ -22,11 +28,11 @@ async function resolveLocaleWithCookie(locale: string | undefined): Promise<stri
   const cookieHeader = headersList.get('cookie')
   const cookieLocale = cookieHeader?.match(/NEXT_LOCALE=([^;]+)/)?.[1]
 
-  if (cookieLocale && SUPPORTED_LOCALES.includes(cookieLocale as (typeof SUPPORTED_LOCALES)[number])) {
+  if (cookieLocale && isSiteLocale(cookieLocale)) {
     return cookieLocale
   }
 
-  return 'ko'
+  return DEFAULT_ROUTING_LOCALE
 }
 
 async function resolveRequestPathname(): Promise<string> {
@@ -46,7 +52,7 @@ export default getRequestConfig(async ({ locale }) => {
     return { locale: resolvedLocale, messages }
   } catch (error) {
     console.error(`Failed to load messages for locale: ${resolvedLocale}`, error)
-    const fallbackLocale = resolveLocale('ko')
+    const fallbackLocale = resolveLocale(DEFAULT_ROUTING_LOCALE)
     const fallbackMessages = await loadMessages(fallbackLocale)
     return {
       locale: fallbackLocale,
@@ -54,3 +60,5 @@ export default getRequestConfig(async ({ locale }) => {
     }
   }
 })
+
+export { SUPPORTED_LOCALES }

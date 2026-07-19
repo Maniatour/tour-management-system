@@ -195,8 +195,60 @@ function writeCachedMessages(locale: string, messages: MessagesRecord, ttlMs: nu
   })
 }
 
+function deepMergeMessages(base: MessagesRecord, overlay: MessagesRecord): MessagesRecord {
+  const out: MessagesRecord = { ...base }
+  for (const key of Object.keys(overlay)) {
+    const baseVal = out[key]
+    const overVal = overlay[key]
+    if (isPlainMessageObject(baseVal) && isPlainMessageObject(overVal)) {
+      out[key] = deepMergeMessages(
+        baseVal as MessagesRecord,
+        overVal as MessagesRecord
+      )
+    } else if (overVal !== undefined) {
+      out[key] = overVal
+    }
+  }
+  return out
+}
+
+async function loadLocaleOverlay(locale: string): Promise<MessagesRecord | null> {
+  switch (locale) {
+    case 'ja':
+      return (await import('./locales/ja.json')).default as MessagesRecord
+    case 'zh-CN':
+      return (await import('./locales/zh-CN.json')).default as MessagesRecord
+    case 'zh-TW':
+      return (await import('./locales/zh-TW.json')).default as MessagesRecord
+    case 'es':
+      return (await import('./locales/es.json')).default as MessagesRecord
+    case 'fr':
+      return (await import('./locales/fr.json')).default as MessagesRecord
+    case 'de':
+      return (await import('./locales/de.json')).default as MessagesRecord
+    default:
+      return null
+  }
+}
+
 async function loadFileMessages(locale: string): Promise<MessagesRecord> {
-  return (await import(`./locales/${locale}.json`)).default as MessagesRecord
+  if (locale === 'ko') {
+    return (await import('./locales/ko.json')).default as MessagesRecord
+  }
+
+  const en = (await import('./locales/en.json')).default as MessagesRecord
+  if (locale === 'en') return en
+
+  // Customer UI overlays for ja / zh-CN / zh-TW / es / fr / de.
+  // Missing keys fall back to English via deep merge.
+  try {
+    const overlay = await loadLocaleOverlay(locale)
+    if (!overlay) return en
+    return deepMergeMessages(en, overlay)
+  } catch (error) {
+    console.error(`[i18n] Failed to load locale overlay for ${locale}, using en`, error)
+    return en
+  }
 }
 
 export function pickMessageNamespaces(

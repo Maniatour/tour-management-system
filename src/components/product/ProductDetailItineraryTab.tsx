@@ -13,22 +13,27 @@ import {
 type ProductDetailItineraryTabProps = {
   tourCourses: ProductTourCourse[]
   tourCoursePhotos: TourCoursePhoto[]
-  isEnglish: boolean
+  /** Site locale code, or legacy boolean (true = en) */
+  locale?: string
+  /** @deprecated Prefer locale */
+  isEnglish?: boolean
 }
 
 export default function ProductDetailItineraryTab({
   tourCourses,
   tourCoursePhotos,
-  isEnglish,
+  locale,
+  isEnglish = false,
 }: ProductDetailItineraryTabProps) {
   const t = useTranslations('productDetail')
+  const displayLocale = locale ?? (isEnglish ? 'en' : 'ko')
 
-  const validCourses = getValidTourCourses(tourCourses, isEnglish)
+  const validCourses = getValidTourCourses(tourCourses, displayLocale)
 
   const courseElements: JSX.Element[] = []
   validCourses.forEach((course) => {
-    const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
-      const courseDescription = getCourseDescription(course, isEnglish)
+    const fullCourseName = getFullCoursePath(course, tourCourses, displayLocale)
+      const courseDescription = getCourseDescription(course, displayLocale)
 
       const coursePhotos = (course.photos || tourCoursePhotos.filter((p) => p.course_id === course.id))
         .sort((a, b) => {

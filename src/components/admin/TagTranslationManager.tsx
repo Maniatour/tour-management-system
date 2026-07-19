@@ -580,7 +580,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
     return <div className="text-center py-8">{t('loading')}</div>
   }
 
-  const locales = ['ko', 'en', 'ja', 'zh', 'es'] // 지원 언어
+  const locales = ['en', 'ko', 'ja', 'zh-CN', 'zh-TW', 'es', 'fr', 'de'] // SITE_LOCALES
 
   return (
     <div className="space-y-6">

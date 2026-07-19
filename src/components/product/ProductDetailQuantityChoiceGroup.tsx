@@ -27,11 +27,10 @@ export default function ProductDetailQuantityChoiceGroup({
   group,
   quantities,
   partySize,
-  isEnglish,
   onQuantityChange,
 }: ProductDetailQuantityChoiceGroupProps) {
   const t = useTranslations('productDetail')
-  const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+  const choiceLabel = group.choice_name || group.choice_name_ko || group.choice_name_en
   const isCapacityGroup = usesCapacityQuantitySelection(
     group.choice_type,
     group.options,
@@ -79,9 +78,7 @@ export default function ProductDetailQuantityChoiceGroup({
             : isPeopleGroup
               ? getMaxPeopleQuantityForOption(option, partySize)
               : 99
-          const optionLabel = isEnglish
-            ? option.option_name || option.option_name_ko
-            : option.option_name_ko || option.option_name
+          const optionLabel = option.option_name || option.option_name_ko || ''
           const capacity = getOptionCapacity(option)
           const isPass = isPassCoverQuantityOption(option)
           const isActive = currentQuantity > 0

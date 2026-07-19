@@ -16,13 +16,21 @@ import { supabase } from '@/lib/supabase'
 import { buildAdminProductCustomerEditPath } from '@/lib/adminProductCustomerEdit'
 import type { AdminEditLocale } from '@/lib/adminEditLocales'
 import {
+  averageLocalePercent,
+  buildRelatedBundlesByProduct,
   computeProductsLocaleReadiness,
+  localeReadinessLabel,
   LOCALE_READINESS_LOCALES,
+  type LocaleReadinessChoiceRow,
+  type LocaleReadinessFaqRow,
+  type LocaleReadinessScheduleRow,
+  type LocaleReadinessTourCourseRow,
   type ProductDetailsMultilingualRow,
   type ProductLocaleReadiness,
   type ProductLocaleReadinessSource,
   type LocaleReadinessFieldKey,
 } from '@/lib/adminProductLocaleReadiness'
+import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
 
 type ProductLocaleReadinessModalProps = {
   isOpen: boolean
@@ -30,9 +38,11 @@ type ProductLocaleReadinessModalProps = {
   products: ProductLocaleReadinessSource[]
   homepageChannelId?: string | null
   locale: string
+  /** Render as in-page panel (no overlay). */
+  embedded?: boolean
 }
 
-type SortKey = 'overall' | 'ko' | 'en' | 'name'
+type SortKey = 'overall' | 'name' | AdminEditLocale
 
 function percentTone(percent: number): string {
   if (percent >= 80) return 'bg-emerald-500'
@@ -73,6 +83,7 @@ export default function ProductLocaleReadinessModal({
   products,
   homepageChannelId,
   locale,
+  embedded = false,
 }: ProductLocaleReadinessModalProps) {
   const t = useTranslations('products.localeReadiness')
   const [loading, setLoading] = useState(false)
@@ -91,8 +102,7 @@ export default function ProductLocaleReadinessModal({
     }
   }
 
-  const localeLabel = (code: AdminEditLocale): string =>
-    code === 'en' ? t('localeEn') : t('localeKo')
+  const localeLabel = (code: AdminEditLocale): string => localeReadinessLabel(code)
 
   const productIdsKey = useMemo(
     () =>
@@ -176,17 +186,117 @@ export default function ProductLocaleReadinessModal({
               .in('product_id', chunk)
 
             if (fallbackErr) throw fallbackErr
-            detailRows.push(...((fallback || []) as ProductDetailsMultilingualRow[]))
+            detailRows.push(...((fallback || []) as unknown as ProductDetailsMultilingualRow[]))
           } else {
-            detailRows.push(...((data || []) as ProductDetailsMultilingualRow[]))
+            detailRows.push(...((data || []) as unknown as ProductDetailsMultilingualRow[]))
           }
         }
 
         if (cancelled) return
 
+        const translationRows = await fetchProductFieldTranslations(ids)
+        if (cancelled) return
+
+        const faqs: LocaleReadinessFaqRow[] = []
+        const choices: LocaleReadinessChoiceRow[] = []
+        const schedules: LocaleReadinessScheduleRow[] = []
+        const tourCourses: LocaleReadinessTourCourseRow[] = []
+
+        for (let i = 0; i < ids.length; i += chunkSize) {
+          const chunk = ids.slice(i, i + chunkSize)
+          const [faqRes, choiceRes, scheduleRes, courseRes] = await Promise.all([
+            supabase
+              .from('product_faqs')
+              .select(
+                'product_id, is_active, question, answer, question_en, answer_en, content_i18n'
+              )
+              .in('product_id', chunk),
+            (supabase.from('product_choices') as any)
+              .select(
+                `
+                product_id,
+                choice_group_ko,
+                choice_group_en,
+                content_i18n,
+                options:choice_options (
+                  option_name,
+                  option_name_ko,
+                  content_i18n,
+                  is_active
+                )
+              `
+              )
+              .in('product_id', chunk),
+            (supabase.from('product_schedules') as any)
+              .select(
+                'product_id, show_to_customers, title_ko, title_en, content_i18n'
+              )
+              .in('product_id', chunk),
+            supabase
+              .from('product_tour_courses')
+              .select(
+                `
+                product_id,
+                tour_courses (
+                  customer_name_ko,
+                  customer_name_en,
+                  customer_description_ko,
+                  customer_description_en,
+                  content_i18n
+                )
+              `
+              )
+              .in('product_id', chunk),
+          ])
+
+          if (!faqRes.error && faqRes.data) {
+            faqs.push(...(faqRes.data as unknown as LocaleReadinessFaqRow[]))
+          }
+          if (!choiceRes.error && choiceRes.data) {
+            choices.push(...(choiceRes.data as unknown as LocaleReadinessChoiceRow[]))
+          }
+          if (!scheduleRes.error && scheduleRes.data) {
+            schedules.push(
+              ...(scheduleRes.data as unknown as LocaleReadinessScheduleRow[])
+            )
+          }
+          if (!courseRes.error && courseRes.data) {
+            for (const row of courseRes.data as unknown as Array<{
+              product_id: string
+              tour_courses:
+                | LocaleReadinessTourCourseRow
+                | LocaleReadinessTourCourseRow[]
+                | null
+            }>) {
+              const joined = row.tour_courses
+              const course = Array.isArray(joined) ? joined[0] : joined
+              if (!course) continue
+              tourCourses.push({
+                product_id: row.product_id,
+                customer_name_ko: course.customer_name_ko,
+                customer_name_en: course.customer_name_en,
+                customer_description_ko: course.customer_description_ko,
+                customer_description_en: course.customer_description_en,
+                content_i18n: course.content_i18n,
+              })
+            }
+          }
+        }
+
+        if (cancelled) return
+
+        const relatedByProduct = buildRelatedBundlesByProduct({
+          faqs,
+          choices,
+          schedules,
+          tourCourses,
+        })
+
         const computed = computeProductsLocaleReadiness(products, detailRows, {
-          homepageChannelId,
+          homepageChannelId: homepageChannelId ?? null,
           uiLocale: locale,
+          translationRows,
+          relatedByProduct,
         })
         setRows(computed)
       } catch (e) {
@@ -231,44 +341,38 @@ export default function ProductLocaleReadinessModal({
       if (sortKey === 'name') {
         return a.productName.localeCompare(b.productName, locale === 'en' ? 'en' : 'ko')
       }
-      if (sortKey === 'ko') return a.byLocale.ko.percent - b.byLocale.ko.percent
-      if (sortKey === 'en') return a.byLocale.en.percent - b.byLocale.en.percent
-      return a.overallPercent - b.overallPercent
+      if (sortKey === 'overall') return a.overallPercent - b.overallPercent
+      return (a.byLocale[sortKey]?.percent ?? 0) - (b.byLocale[sortKey]?.percent ?? 0)
     })
     return sorted
   }, [rows, search, incompleteOnly, sortKey, locale])
 
   const summary = useMemo(() => {
-    if (rows.length === 0) {
-      return { avgKo: 0, avgEn: 0, incomplete: 0 }
-    }
-    const avgKo = Math.round(
-      rows.reduce((s, r) => s + r.byLocale.ko.percent, 0) / rows.length
-    )
-    const avgEn = Math.round(
-      rows.reduce((s, r) => s + r.byLocale.en.percent, 0) / rows.length
-    )
     const incomplete = rows.filter((r) =>
       LOCALE_READINESS_LOCALES.some((code) => r.byLocale[code].percent < 100)
     ).length
-    return { avgKo, avgEn, incomplete }
+    const avgByLocale = Object.fromEntries(
+      LOCALE_READINESS_LOCALES.map((code) => [code, averageLocalePercent(rows, code)])
+    ) as Record<AdminEditLocale, number>
+    const overallAvg =
+      rows.length === 0
+        ? 0
+        : Math.round(rows.reduce((s, r) => s + r.overallPercent, 0) / rows.length)
+    return { incomplete, avgByLocale, overallAvg }
   }, [rows])
 
   if (!isOpen) return null
 
-  return (
-    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-3 sm:p-6">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50"
-        aria-label={t('close')}
-        onClick={onClose}
-      />
+  const panel = (
       <div
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? 'region' : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         aria-labelledby="locale-readiness-title"
-        className="relative z-10 flex flex-col w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden"
+        className={
+          embedded
+            ? 'relative z-10 flex flex-col w-full min-h-[70vh] bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'
+            : 'relative z-10 flex flex-col w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden'
+        }
       >
         <div className="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-200">
           <div className="min-w-0">
@@ -284,23 +388,24 @@ export default function ProductLocaleReadinessModal({
             <p className="mt-1 text-sm text-gray-600">{t('subtitle')}</p>
             {!loading && !error ? (
               <p className="mt-2 text-xs text-gray-500">
-                {t('summary', {
+                {t('summaryMulti', {
                   count: rows.length,
-                  avgKo: summary.avgKo,
-                  avgEn: summary.avgEn,
+                  avgOverall: summary.overallAvg,
                   incomplete: summary.incomplete,
                 })}
               </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-            aria-label={t('close')}
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {!embedded ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+              aria-label={t('close')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          ) : null}
         </div>
 
         <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between bg-gray-50/80">
@@ -331,8 +436,11 @@ export default function ProductLocaleReadinessModal({
               aria-label={t('sortLabel')}
             >
               <option value="overall">{t('sortOverall')}</option>
-              <option value="ko">{t('sortKo')}</option>
-              <option value="en">{t('sortEn')}</option>
+              {LOCALE_READINESS_LOCALES.map((code) => (
+                <option key={code} value={code}>
+                  {localeLabel(code)}
+                </option>
+              ))}
               <option value="name">{t('sortName')}</option>
             </select>
           </div>
@@ -395,7 +503,7 @@ export default function ProductLocaleReadinessModal({
                         </div>
                       </button>
 
-                      <div className="flex flex-wrap items-center gap-4 lg:gap-6 pl-6 lg:pl-0">
+                      <div className="flex flex-wrap items-center gap-3 lg:gap-4 pl-6 lg:pl-0 max-w-full overflow-x-auto">
                         {LOCALE_READINESS_LOCALES.map((code) => (
                           <ProgressCell
                             key={code}
@@ -460,16 +568,31 @@ export default function ProductLocaleReadinessModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-gray-200 bg-white">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-          >
-            {t('close')}
-          </button>
-        </div>
+        {!embedded ? (
+          <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-gray-200 bg-white">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              {t('close')}
+            </button>
+          </div>
+        ) : null}
       </div>
+  )
+
+  if (embedded) return panel
+
+  return (
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-3 sm:p-6">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50"
+        aria-label={t('close')}
+        onClick={onClose}
+      />
+      {panel}
     </div>
   )
 }

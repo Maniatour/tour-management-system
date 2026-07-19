@@ -976,6 +976,7 @@ export type Database = {
           capacity: number | null
           child_price: number | null
           choice_id: string | null
+          content_i18n: Json
           created_at: string | null
           description: string | null
           description_ko: string | null
@@ -998,6 +999,7 @@ export type Database = {
           capacity?: number | null
           child_price?: number | null
           choice_id?: string | null
+          content_i18n?: Json
           created_at?: string | null
           description?: string | null
           description_ko?: string | null
@@ -1020,6 +1022,7 @@ export type Database = {
           capacity?: number | null
           child_price?: number | null
           choice_id?: string | null
+          content_i18n?: Json
           created_at?: string | null
           description?: string | null
           description_ko?: string | null
@@ -4340,6 +4343,7 @@ export type Database = {
           category: string
           child_price: number
           choice_type: string | null
+          content_i18n: Json
           created_at: string | null
           description: string | null
           description_en: string | null
@@ -4371,6 +4375,7 @@ export type Database = {
           category: string
           child_price: number
           choice_type?: string | null
+          content_i18n?: Json
           created_at?: string | null
           description?: string | null
           description_en?: string | null
@@ -4402,6 +4407,7 @@ export type Database = {
           category?: string
           child_price?: number
           choice_type?: string | null
+          content_i18n?: Json
           created_at?: string | null
           description?: string | null
           description_en?: string | null
@@ -5048,6 +5054,7 @@ export type Database = {
           choice_group_key: string | null
           choice_group_ko: string
           choice_type: string
+          content_i18n: Json
           created_at: string | null
           description_en: string | null
           description_ko: string | null
@@ -5066,6 +5073,7 @@ export type Database = {
           choice_group_key?: string | null
           choice_group_ko: string
           choice_type?: string
+          content_i18n?: Json
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
@@ -5084,6 +5092,7 @@ export type Database = {
           choice_group_key?: string | null
           choice_group_ko?: string
           choice_type?: string
+          content_i18n?: Json
           created_at?: string | null
           description_en?: string | null
           description_ko?: string | null
@@ -5428,32 +5437,41 @@ export type Database = {
       product_faqs: {
         Row: {
           answer: string
+          answer_en: string | null
+          content_i18n: Json
           created_at: string | null
           id: string
           is_active: boolean | null
           order_index: number | null
           product_id: string
           question: string
+          question_en: string | null
           updated_at: string | null
         }
         Insert: {
           answer: string
+          answer_en?: string | null
+          content_i18n?: Json
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           order_index?: number | null
           product_id: string
           question: string
+          question_en?: string | null
           updated_at?: string | null
         }
         Update: {
           answer?: string
+          answer_en?: string | null
+          content_i18n?: Json
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           order_index?: number | null
           product_id?: string
           question?: string
+          question_en?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -5739,6 +5757,7 @@ export type Database = {
       }
       product_schedules: {
         Row: {
+          content_i18n: Json
           created_at: string | null
           day_number: number
           description_en: string | null
@@ -5770,6 +5789,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          content_i18n?: Json
           created_at?: string | null
           day_number: number
           description_en?: string | null
@@ -5801,6 +5821,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          content_i18n?: Json
           created_at?: string | null
           day_number?: number
           description_en?: string | null
@@ -7584,6 +7605,44 @@ export type Database = {
         }
         Relationships: []
       }
+      product_field_translations: {
+        Row: {
+          created_at: string
+          field_key: string
+          id: string
+          locale: string
+          product_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          field_key: string
+          id?: string
+          locale: string
+          product_id: string
+          updated_at?: string
+          value?: string
+        }
+        Update: {
+          created_at?: string
+          field_key?: string
+          id?: string
+          locale?: string
+          product_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_field_translations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tag_translations: {
         Row: {
           created_at: string | null
@@ -9169,6 +9228,7 @@ export type Database = {
         Row: {
           category: string
           category_id: string | null
+          content_i18n: Json
           created_at: string | null
           customer_description_en: string | null
           customer_description_ko: string | null
@@ -9213,6 +9273,7 @@ export type Database = {
         Insert: {
           category: string
           category_id?: string | null
+          content_i18n?: Json
           created_at?: string | null
           customer_description_en?: string | null
           customer_description_ko?: string | null
@@ -9257,6 +9318,7 @@ export type Database = {
         Update: {
           category?: string
           category_id?: string | null
+          content_i18n?: Json
           created_at?: string | null
           customer_description_en?: string | null
           customer_description_ko?: string | null

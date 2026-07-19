@@ -5,12 +5,29 @@ import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, 
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert, withOperatorId } from '@/lib/operators/scopeQuery'
 import ChoiceTemplatePickerModal, {
   type ChoiceTemplatePickResult,
 } from '@/components/product/ChoiceTemplatePickerModal'
+import {
+  getChoiceGroupLocalizedText,
+  getChoiceOptionLocalizedText,
+  mergeChoiceGroupI18n,
+  mergeChoiceOptionI18n,
+  type ChoiceContentI18n,
+} from '@/lib/productChoiceLocales'
+import {
+  choiceGroupI18nFromTemplate,
+  choiceOptionI18nFromTemplate,
+  getOptionTemplateLocalizedText,
+  legacyGroupColumnsFromI18n,
+  legacyOptionColumnsFromI18n,
+  type OptionTemplateContentI18n,
+} from '@/lib/optionTemplateLocales'
+import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 
 // 임시 타입 정의 (데이터베이스 타입이 없을 때 사용)
 interface DatabaseOptions {
@@ -33,6 +50,7 @@ interface DatabaseOptions {
   template_group_en?: string
   template_group_description_ko?: string
   template_group_description_en?: string
+  content_i18n?: OptionTemplateContentI18n | null
   choice_type?: string
   is_required?: boolean
   min_selections?: number
@@ -47,6 +65,7 @@ interface ProductChoiceData {
   choice_group_en?: string
   description_ko?: string
   description_en?: string
+  content_i18n?: ChoiceContentI18n | null
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -62,6 +81,7 @@ interface ChoiceOptionData {
   option_name_ko: string
   description?: string | undefined
   description_ko?: string | undefined
+  content_i18n?: ChoiceContentI18n | null
   adult_price: number
   child_price: number
   infant_price: number
@@ -92,8 +112,9 @@ interface ChoiceOption {
   option_key: string
   option_name: string
   option_name_ko: string
-  description?: string | undefined
-  description_ko?: string | undefined
+  description?: string | null | undefined
+  description_ko?: string | null | undefined
+  content_i18n?: ChoiceContentI18n | null | undefined
   adult_price: number
   child_price: number
   infant_price: number
@@ -114,9 +135,10 @@ interface ProductChoice {
   id: string
   choice_group: string
   choice_group_ko: string
-  choice_group_en?: string
-  description_ko?: string
-  description_en?: string
+  choice_group_en?: string | null | undefined
+  description_ko?: string | null | undefined
+  description_en?: string | null | undefined
+  content_i18n?: ChoiceContentI18n | null | undefined
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -136,6 +158,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
   const { operatorId } = useOperatorOptional()
   const params = useParams()
   const locale = (params.locale as string) || 'ko'
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -195,14 +218,36 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       }
 
       const firstItem = validData[0] as DatabaseOptions
-      const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
-      const templateGroupNameEn = firstItem.template_group_en || firstItem.template_group || ''
+      const groupContentI18n = choiceGroupI18nFromTemplate(firstItem)
+      const groupLegacy = legacyGroupColumnsFromI18n(
+        {
+          group_name: groupContentI18n.name || {},
+          group_description: groupContentI18n.description || {},
+        },
+        firstItem.template_group || templateGroup
+      )
+      const templateGroupName =
+        groupLegacy.template_group_ko ||
+        getOptionTemplateLocalizedText(firstItem, 'group_name', 'ko') ||
+        firstItem.template_group ||
+        '템플릿'
+      const templateGroupNameEn =
+        getOptionTemplateLocalizedText(firstItem, 'group_name', 'en') ||
+        firstItem.template_group_en ||
+        firstItem.template_group ||
+        ''
       const choiceType = firstItem.choice_type || 'single'
       const isRequired = firstItem.is_required || false
       const minSelections = firstItem.min_selections || 1
       const maxSelections = firstItem.max_selections || 1
-      const descriptionKo = firstItem.template_group_description_ko || ''
-      const descriptionEn = firstItem.template_group_description_en || ''
+      const descriptionKo =
+        groupLegacy.template_group_description_ko ||
+        firstItem.template_group_description_ko ||
+        ''
+      const descriptionEn =
+        groupLegacy.template_group_description_en ||
+        firstItem.template_group_description_en ||
+        ''
 
       const newChoice: ProductChoice = {
         id: crypto.randomUUID(),
@@ -211,29 +256,43 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         choice_group_en: templateGroupNameEn,
         description_ko: descriptionKo,
         description_en: descriptionEn,
+        content_i18n: groupContentI18n,
         choice_type: choiceType as 'single' | 'multiple' | 'quantity',
         is_required: isRequired,
         min_selections: minSelections,
         max_selections: maxSelections,
         sort_order: productChoices.length,
-        options: validData.map((option: DatabaseOptions, idx: number) => ({
-          id: crypto.randomUUID(),
-          option_key: option.id,
-          option_name: option.name,
-          option_name_ko: option.name_ko || option.name,
-          description: option.description_en || option.description || undefined,
-          description_ko: option.description_ko || undefined,
-          adult_price: option.adult_price || 0,
-          child_price: option.child_price || 0,
-          infant_price: option.infant_price || 0,
-          capacity: 1,
-          is_default: idx === 0,
-          is_active: option.status === 'active',
-          sort_order: option.sort_order ?? idx,
-          image_url: option.image_url,
-          image_alt: option.image_alt,
-          thumbnail_url: option.thumbnail_url
-        }))
+        options: validData.map((option: DatabaseOptions, idx: number) => {
+          const optionI18n = choiceOptionI18nFromTemplate(option)
+          const optionLegacy = legacyOptionColumnsFromI18n({
+            name: optionI18n.name || {},
+            description: optionI18n.description || {},
+          })
+          return {
+            id: crypto.randomUUID(),
+            option_key: option.id,
+            option_name: optionLegacy.name || option.name,
+            option_name_ko: optionLegacy.name_ko || option.name_ko || option.name,
+            description:
+              optionLegacy.description ||
+              option.description_en ||
+              option.description ||
+              undefined,
+            description_ko:
+              optionLegacy.description_ko || option.description_ko || undefined,
+            content_i18n: optionI18n,
+            adult_price: option.adult_price || 0,
+            child_price: option.child_price || 0,
+            infant_price: option.infant_price || 0,
+            capacity: 1,
+            is_default: idx === 0,
+            is_active: option.status === 'active',
+            sort_order: option.sort_order ?? idx,
+            image_url: option.image_url,
+            image_alt: option.image_alt,
+            thumbnail_url: option.thumbnail_url,
+          }
+        }),
       }
 
       setProductChoices(prev => [...prev, newChoice])
@@ -309,6 +368,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choice_group_en,
           description_ko,
           description_en,
+          content_i18n,
           choice_type,
           is_required,
           min_selections,
@@ -321,6 +381,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             option_name_ko,
             description,
             description_ko,
+            content_i18n,
             adult_price,
             child_price,
             infant_price,
@@ -395,6 +456,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choice_group_en,
           description_ko,
           description_en,
+          content_i18n,
           choice_type,
           is_required,
           min_selections,
@@ -407,6 +469,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             option_name_ko,
             description,
             description_ko,
+            content_i18n,
             adult_price,
             child_price,
             infant_price,
@@ -444,10 +507,13 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     }
 
     try {
-      // choice_group_ko를 기반으로 choice_group 자동 생성
+      // 그룹 표시명을 기반으로 choice_group 자동 생성
       // 단, 기존 choice_group이 유효하면 유지 (템플릿에서 불러온 경우 등)
       const processedChoices = productChoices.map(choice => {
-        const trimmedKo = choice.choice_group_ko?.trim() || ''
+        const displayName =
+          getChoiceGroupLocalizedText(choice, 'name', 'ko') ||
+          getChoiceGroupLocalizedText(choice, 'name', 'en') ||
+          getChoiceGroupLocalizedText(choice, 'name', editLocale)
         let generatedGroup = choice.choice_group?.trim() || ''
         
         // choice_group이 이미 유효한 값이면 유지 (임시값이 아니고 비어있지 않으면)
@@ -456,11 +522,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                             !generatedGroup.startsWith('choice_group_') && 
                             generatedGroup.length >= 2
         
-        // choice_group_ko가 있고 choice_group가 임시값이거나 비어있으면 자동 생성
-        if (trimmedKo && !isValidGroup) {
-          // 한국어 이름을 URL-friendly ID로 변환
+        // 표시명이 있고 choice_group가 임시값이거나 비어있으면 자동 생성
+        if (displayName && !isValidGroup) {
+          // 표시 이름을 URL-friendly ID로 변환
           // 영문, 숫자만 추출하고 나머지는 언더스코어로 변환
-          generatedGroup = trimmedKo
+          generatedGroup = displayName
             .toLowerCase()
             .replace(/[^a-z0-9]/g, '_') // 영문, 숫자만 허용, 나머지는 언더스코어
             .replace(/_+/g, '_') // 연속된 언더스코어를 하나로
@@ -479,18 +545,21 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         }
       })
 
-      // 유효성 검사: choice_group_ko가 비어있지 않은지 확인 (choice_group는 자동 생성됨)
+      // 유효성 검사: 그룹명이 최소 한 언어라도 있는지 확인
       const invalidChoices = processedChoices.filter(
-        choice => !choice.choice_group_ko || !choice.choice_group_ko.trim()
+        (choice) =>
+          !getChoiceGroupLocalizedText(choice, 'name', 'ko') &&
+          !getChoiceGroupLocalizedText(choice, 'name', 'en')
       )
-      
+
       if (invalidChoices.length > 0) {
-        // 어떤 그룹이 문제인지 확인
-        const invalidIndices = invalidChoices.map(invalid => {
+        const invalidIndices = invalidChoices.map((invalid) => {
           const index = processedChoices.indexOf(invalid)
           return index + 1
         })
-        setSaveMessage(`초이스 그룹 ${invalidIndices.join(', ')}번의 이름(한국어)을 입력해주세요.`)
+        setSaveMessage(
+          `초이스 그룹 ${invalidIndices.join(', ')}번의 이름을 최소 한 언어로 입력해주세요.`
+        )
         setSaving(false)
         return
       }
@@ -530,12 +599,28 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       // 새로운 choices 저장 (syncedChoices 사용)
       for (let index = 0; index < syncedChoices.length; index++) {
         const choice = syncedChoices[index]
-        // choice_group와 choice_group_ko 확인
         const trimmedChoiceGroup = choice.choice_group.trim()
-        const trimmedChoiceGroupKo = choice.choice_group_ko.trim()
-        
+        const trimmedChoiceGroupKo =
+          choice.choice_group_ko?.trim() ||
+          getChoiceGroupLocalizedText(choice, 'name', 'ko') ||
+          getChoiceGroupLocalizedText(choice, 'name', 'en')
+
         if (!trimmedChoiceGroup || !trimmedChoiceGroupKo) {
           throw new Error('초이스 그룹명은 필수입니다.')
+        }
+
+        const groupI18nPayload = {
+          choice_group: trimmedChoiceGroup,
+          choice_group_ko: trimmedChoiceGroupKo,
+          choice_group_en: choice.choice_group_en?.trim() || null,
+          description_ko: choice.description_ko?.trim() || null,
+          description_en: choice.description_en?.trim() || null,
+          content_i18n: choice.content_i18n || {},
+          choice_type: choice.choice_type,
+          is_required: choice.is_required,
+          min_selections: choice.min_selections,
+          max_selections: choice.max_selections,
+          sort_order: choice.sort_order ?? index,
         }
 
         // 기존 choice_id 확인 (choice_group으로 매칭)
@@ -552,18 +637,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           
           const { data: updatedChoices, error: updateError } = await supabase
             .from('product_choices')
-            .update({
-              choice_group: trimmedChoiceGroup,
-              choice_group_ko: trimmedChoiceGroupKo,
-              choice_group_en: choice.choice_group_en?.trim() || null,
-              description_ko: choice.description_ko?.trim() || null,
-              description_en: choice.description_en?.trim() || null,
-              choice_type: choice.choice_type,
-              is_required: choice.is_required,
-              min_selections: choice.min_selections,
-              max_selections: choice.max_selections,
-              sort_order: choice.sort_order ?? index
-            } as never)
+            .update(groupI18nPayload as never)
             .eq('id', updateId)
             .select() as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
@@ -578,16 +652,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               .from('product_choices')
               .insert({
                 product_id: productId,
-                choice_group: trimmedChoiceGroup,
-                choice_group_ko: trimmedChoiceGroupKo,
-                choice_group_en: choice.choice_group_en?.trim() || null,
-                description_ko: choice.description_ko?.trim() || null,
-                description_en: choice.description_en?.trim() || null,
-                choice_type: choice.choice_type,
-                is_required: choice.is_required,
-                min_selections: choice.min_selections,
-                max_selections: choice.max_selections,
-                sort_order: choice.sort_order ?? index,
+                ...groupI18nPayload,
                 ...operatorIdInsert(operatorId),
               } as never)
               .select()
@@ -602,16 +667,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             .from('product_choices')
             .insert({
               product_id: productId,
-              choice_group: trimmedChoiceGroup,
-              choice_group_ko: trimmedChoiceGroupKo,
-              choice_group_en: choice.choice_group_en?.trim() || null,
-              description_ko: choice.description_ko?.trim() || null,
-              description_en: choice.description_en?.trim() || null,
-              choice_type: choice.choice_type,
-              is_required: choice.is_required,
-              min_selections: choice.min_selections,
-              max_selections: choice.max_selections,
-              sort_order: choice.sort_order ?? index,
+              ...groupI18nPayload,
               ...operatorIdInsert(operatorId),
             } as never)
             .select()
@@ -635,6 +691,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               option_name_ko: option.option_name_ko,
               description: option.description,
               description_ko: option.description_ko,
+              content_i18n: option.content_i18n || {},
               adult_price: option.adult_price,
               child_price: option.child_price,
               infant_price: option.infant_price,
@@ -746,7 +803,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     } finally {
       setSaving(false)
     }
-  }, [productId, productChoices, loadProductChoices, operatorId])
+  }, [productId, productChoices, loadProductChoices, operatorId, editLocale])
 
   // 초이스 그룹 추가
   const addChoiceGroup = useCallback(() => {
@@ -757,6 +814,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       choice_group_en: '',
       description_ko: '',
       description_en: '',
+      content_i18n: {},
       choice_type: 'single',
       is_required: true,
       min_selections: 1,
@@ -778,6 +836,27 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       i === index ? { ...group, [field]: value } : group
     ))
   }, [])
+
+  const updateChoiceGroupLocaleText = useCallback(
+    (index: number, name: string, description: string) => {
+      setProductChoices((prev) =>
+        prev.map((group, i) => {
+          if (i !== index) return group
+          const merged = mergeChoiceGroupI18n(group, editLocale, name, description)
+          return {
+            ...group,
+            content_i18n: merged.content_i18n,
+            choice_group_ko: merged.choice_group_ko,
+            choice_group_en: merged.choice_group_en,
+            description_ko: merged.description_ko,
+            description_en: merged.description_en,
+            choice_group: group.choice_group || merged.choice_group,
+          }
+        })
+      )
+    },
+    [editLocale]
+  )
 
   // 초이스 그룹 순서 변경
   const moveChoiceGroup = useCallback((fromIndex: number, toIndex: number) => {
@@ -804,6 +883,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       option_name_ko: '',
       description: undefined,
       description_ko: undefined,
+      content_i18n: {},
       adult_price: 0,
       child_price: 0,
       infant_price: 0,
@@ -895,6 +975,31 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     ))
   }, [])
 
+  const updateChoiceOptionLocaleText = useCallback(
+    (groupIndex: number, optionId: string, name: string, description: string) => {
+      setProductChoices((prev) =>
+        prev.map((group, i) => {
+          if (i !== groupIndex) return group
+          return {
+            ...group,
+            options: group.options.map((option) => {
+              if (option.id !== optionId) return option
+              const merged = mergeChoiceOptionI18n(option, editLocale, name, description)
+              return {
+                ...option,
+                content_i18n: merged.content_i18n,
+                option_name_ko: merged.option_name_ko,
+                option_name: merged.option_name,
+                description_ko: merged.description_ko,
+                description: merged.description,
+              }
+            }),
+          }
+        })
+      )
+    },
+    [editLocale]
+  )
 
   // 이미지 업로드 처리 함수 - optionId로 찾아서 업데이트
   const handleImageUpload = useCallback(async (
@@ -1299,7 +1404,14 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             </p>
           </div>
         )}
-        <div className={`flex flex-wrap gap-2 ${embedded ? 'w-full' : 'w-full md:w-auto'}`}>
+        <div className={`flex flex-wrap gap-2 items-center ${embedded ? 'w-full' : 'w-full md:w-auto'}`}>
+          <LocaleDropdown
+            value={editLocale}
+            onChange={setEditLocale}
+            size="sm"
+            showLabel
+            ariaLabel="Choices edit language"
+          />
           <button
             onClick={addChoiceGroup}
             className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 shadow-sm"
@@ -1428,32 +1540,26 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                        그룹명 (한국어)
+                        그룹명 ({getSiteLocaleMeta(editLocale).label})
                         <span className="ml-2 text-[10px] text-gray-400 font-normal hidden sm:inline">
                           (ID: {choice.id.substring(0, 8)}...)
                         </span>
                       </label>
                       <input
                         type="text"
-                        value={choice.choice_group_ko}
-                        onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
+                        value={getChoiceGroupLocalizedText(choice, 'name', editLocale)}
+                        onChange={(e) =>
+                          updateChoiceGroupLocaleText(
+                            groupIndex,
+                            e.target.value,
+                            getChoiceGroupLocalizedText(choice, 'description', editLocale)
+                          )
+                        }
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                        placeholder="예: 숙박 선택"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                        그룹명 (영어)
-                      </label>
-                      <input
-                        type="text"
-                        value={choice.choice_group_en || ''}
-                        onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                        placeholder="예: Accommodation"
+                        placeholder="예: 숙박 선택 / Accommodation"
                       />
                     </div>
                     <div>
@@ -1478,52 +1584,24 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       </select>
                     </div>
                   </div>
-                  
-                  {/* 초이스 그룹 설명 표시 */}
-                  {(choice.description_ko || choice.description_en) && (
-                    <div className="bg-primary/5 border border-border/60 rounded-lg p-2.5 sm:p-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {choice.description_ko && (
-                          <div>
-                            <p className="text-[10px] font-semibold text-foreground mb-0.5 uppercase tracking-wider">설명 (KO)</p>
-                            <p className="text-xs sm:text-sm text-primary whitespace-pre-wrap">{choice.description_ko}</p>
-                          </div>
-                        )}
-                        {choice.description_en && (
-                          <div>
-                            <p className="text-[10px] font-semibold text-foreground mb-0.5 uppercase tracking-wider">설명 (EN)</p>
-                            <p className="text-xs sm:text-sm text-primary whitespace-pre-wrap">{choice.description_en}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                        설명 (한국어)
-                      </label>
-                      <textarea
-                        value={choice.description_ko || ''}
-                        onChange={(e) => updateChoiceGroup(groupIndex, 'description_ko', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                        placeholder="설명을 입력하세요 (한국어)"
-                        rows={2}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                        설명 (영어)
-                      </label>
-                      <textarea
-                        value={choice.description_en || ''}
-                        onChange={(e) => updateChoiceGroup(groupIndex, 'description_en', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                        placeholder="Description (English)"
-                        rows={2}
-                      />
-                    </div>
+
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                      설명 ({getSiteLocaleMeta(editLocale).label})
+                    </label>
+                    <textarea
+                      value={getChoiceGroupLocalizedText(choice, 'description', editLocale)}
+                      onChange={(e) =>
+                        updateChoiceGroupLocaleText(
+                          groupIndex,
+                          getChoiceGroupLocalizedText(choice, 'name', editLocale),
+                          e.target.value
+                        )
+                      }
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                      placeholder="그룹 설명을 입력하세요"
+                      rows={2}
+                    />
                   </div>
                 </div>
               </div>
@@ -1929,48 +2007,42 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                   </div>
                 </div>
 
-                {/* 초이스명 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 초이스명 / 설명 (선택 언어) */}
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">한국어</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      초이스명 ({getSiteLocaleMeta(editLocale).label})
+                    </label>
                     <input
                       type="text"
-                      value={option.option_name_ko}
-                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'option_name_ko', e.target.value)}
-                      placeholder="초이스명 (한국어)"
+                      value={getChoiceOptionLocalizedText(option, 'name', editLocale)}
+                      onChange={(e) =>
+                        updateChoiceOptionLocaleText(
+                          groupIndex,
+                          option.id,
+                          e.target.value,
+                          getChoiceOptionLocalizedText(option, 'description', editLocale)
+                        )
+                      }
+                      placeholder="초이스명"
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">영어</label>
-                    <input
-                      type="text"
-                      value={option.option_name}
-                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'option_name', e.target.value)}
-                      placeholder="초이스명 (영어)"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-                </div>
-
-                {/* 설명 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">설명 (한국어)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      설명 ({getSiteLocaleMeta(editLocale).label})
+                    </label>
                     <textarea
-                      value={option.description_ko || ''}
-                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'description_ko', e.target.value)}
+                      value={getChoiceOptionLocalizedText(option, 'description', editLocale)}
+                      onChange={(e) =>
+                        updateChoiceOptionLocaleText(
+                          groupIndex,
+                          option.id,
+                          getChoiceOptionLocalizedText(option, 'name', editLocale),
+                          e.target.value
+                        )
+                      }
                       placeholder="한 줄에 하나씩 입력하면 고객 화면에 체크 목록으로 표시됩니다"
-                      rows={4}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring resize-none bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">설명 (영어)</label>
-                    <textarea
-                      value={option.description || ''}
-                      onChange={(e) => updateChoiceOption(groupIndex, option.id, 'description', e.target.value)}
-                      placeholder="Description (English)"
                       rows={4}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring resize-none bg-gray-50 focus:bg-white"
                     />

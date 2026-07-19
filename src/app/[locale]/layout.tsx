@@ -16,6 +16,7 @@ import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGloba
 import CustomerPageEditModeQuickBar from '@/components/product/CustomerPageEditModeQuickBar';
 import { getLocaleLayoutMetadata, getCachedCustomerSiteBranding } from '@/lib/channelFaviconMetadata';
 import { CustomerSiteBrandingProvider } from '@/contexts/CustomerSiteBrandingContext';
+import { siteLocalePathTest } from '@/lib/siteLocales';
 
 export async function generateMetadata(): Promise<Metadata> {
   return getLocaleLayoutMetadata();
@@ -49,12 +50,12 @@ export default async function LocaleLayout({
   const isAuthPage = /\/auth(\/|$)/.test(pathname);
   const isResidentCheckGuestPage =
     headersList.get('x-is-resident-check-route') === '1' ||
-    /\/(ko|en)\/resident-check(\/|$)/.test(pathname) ||
-    /\/(ko|en)\/dashboard\/resident-check(\/|$)/.test(pathname);
-  const isCustomerHome = /^\/(ko|en)\/?$/.test(pathname);
-  const isCustomerProductsListing = /^\/(ko|en)\/products\/?$/.test(pathname);
-  const isCustomerProductDetail = /^\/(ko|en)\/products\/[^/]+\/?$/.test(pathname);
-  const isCustomerTravelGuide = /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname);
+    siteLocalePathTest(pathname, '/resident-check(/|$)') ||
+    siteLocalePathTest(pathname, '/dashboard/resident-check(/|$)');
+  const isCustomerHome = siteLocalePathTest(pathname, '/?$');
+  const isCustomerProductsListing = siteLocalePathTest(pathname, '/products/?$');
+  const isCustomerProductDetail = siteLocalePathTest(pathname, '/products/[^/]+/?$');
+  const isCustomerTravelGuide = siteLocalePathTest(pathname, '/travel-guide(/|$)');
   const isFullWidthCustomerPage =
     headersList.get('x-is-full-width-customer-page') === '1' ||
     isCustomerHome ||

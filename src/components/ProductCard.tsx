@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
-import { Copy, Star, Tags } from 'lucide-react'
+import { Copy, Star, Tags, Trash2, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import ProductsGygCard from '@/components/products/ProductsGygCard'
@@ -23,6 +23,13 @@ import { buildAdminProductCustomerEditPath } from '@/lib/adminProductCustomerEdi
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import { cloneAdminProduct } from '@/lib/adminProductClone'
+import {
+  isAdminProductSoftDeleted,
+  restoreAdminProduct,
+  softDeleteAdminProduct,
+} from '@/lib/adminProductDelete'
+import { getProductLocalizedField } from '@/lib/productFieldTranslations'
+import { normalizeSiteLocale } from '@/lib/siteLocales'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -31,6 +38,9 @@ interface ProductCardProps {
   locale: string
   displayLocale?: AdminProductCardPreviewLocale
   priority?: boolean
+  canSoftDelete?: boolean
+  onSoftDeleted?: (productId: string) => void
+  onRestored?: (productId: string) => void
   onStatusChange?: (productId: string, newStatus: string) => void
   onPublishChange?: (productId: string, isPublished: boolean) => void
   onProductCopied?: (newProductId: string) => void
@@ -40,7 +50,12 @@ interface ProductCardProps {
 }
 
 function getCustomerDisplayName(product: Product, locale: string) {
-  if (locale === 'en' && product.customer_name_en) return product.customer_name_en
+  const localized = getProductLocalizedField(
+    product,
+    'customer_name',
+    normalizeSiteLocale(locale)
+  )
+  if (localized) return localized
   return product.customer_name_ko || product.name_ko || product.name
 }
 
@@ -53,6 +68,9 @@ export default function ProductCard({
   locale,
   displayLocale,
   priority = false,
+  canSoftDelete = false,
+  onSoftDeleted,
+  onRestored,
   onStatusChange,
   onPublishChange,
   onProductCopied,
@@ -62,6 +80,7 @@ export default function ProductCard({
 }: ProductCardProps) {
   const t = useTranslations('products')
   const tCardEdit = useTranslations('products.cardEditModal')
+  const tEdit = useTranslations('products.edit')
   const router = useRouter()
   const { operatorId } = useOperatorOptional()
   const cardLocale: AdminProductCardPreviewLocale =
@@ -72,6 +91,7 @@ export default function ProductCard({
   const [localPublished, setLocalPublished] = useState(product.is_published !== false)
   const [isUpdatingPublish, setIsUpdatingPublish] = useState(false)
   const [isCopying, setIsCopying] = useState(false)
+  const [isSoftDeleting, setIsSoftDeleting] = useState(false)
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false)
   const [isTogglingRibbon, setIsTogglingRibbon] = useState(false)
   const [isFavorite, setIsFavorite] = useState(Boolean(product.is_favorite))
@@ -83,6 +103,8 @@ export default function ProductCard({
   useEffect(() => {
     setLocalProduct(product)
     setLocalPublished(product.is_published !== false)
+    setLocalStatus(product.status || 'inactive')
+    setIsFavorite(Boolean(product.is_favorite))
   }, [product])
 
   useEffect(() => {
@@ -113,7 +135,7 @@ export default function ProductCard({
     e.preventDefault()
     e.stopPropagation()
 
-    if (isUpdating) return
+    if (isUpdating || isAdminProductSoftDeleted(localStatus)) return
 
     const newStatus = localStatus === 'active' ? 'inactive' : 'active'
 
@@ -262,6 +284,63 @@ export default function ProductCard({
     }
   }
 
+  const handleSoftDelete = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!canSoftDelete || isSoftDeleting || isAdminProductSoftDeleted(localStatus)) return
+
+    const name = getCustomerDisplayName(localProduct, locale)
+    if (!window.confirm(t('softDeleteConfirm', { name }))) return
+
+    try {
+      setIsSoftDeleting(true)
+      await softDeleteAdminProduct(supabase, product.id, operatorId)
+      setLocalStatus('deleted')
+      setLocalPublished(false)
+      setIsFavorite(false)
+      setLocalProduct((prev) => ({
+        ...prev,
+        status: 'deleted',
+        is_published: false,
+        is_favorite: false,
+      }))
+      onSoftDeleted?.(product.id)
+      alert(tEdit('softDeleteSuccess'))
+    } catch (error) {
+      console.error('상품 soft delete 오류:', error)
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(`${tEdit('softDeleteError')}\n\n${msg}`)
+    } finally {
+      setIsSoftDeleting(false)
+    }
+  }
+
+  const handleRestore = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!canSoftDelete || isSoftDeleting || !isAdminProductSoftDeleted(localStatus)) return
+
+    try {
+      setIsSoftDeleting(true)
+      await restoreAdminProduct(supabase, product.id, operatorId)
+      setLocalStatus('inactive')
+      setLocalPublished(false)
+      setLocalProduct((prev) => ({
+        ...prev,
+        status: 'inactive',
+        is_published: false,
+      }))
+      onRestored?.(product.id)
+      alert(tEdit('restoreSuccess'))
+    } catch (error) {
+      console.error('상품 복구 오류:', error)
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(`${tEdit('restoreError')}\n\n${msg}`)
+    } finally {
+      setIsSoftDeleting(false)
+    }
+  }
+
   const handleRibbonSelect = async (selection: ProductListingRibbonSelection) => {
     if (isTogglingRibbon) return
 
@@ -297,7 +376,9 @@ export default function ProductCard({
       ? t('status.active')
       : localStatus === 'draft'
         ? t('status.draft')
-        : t('status.inactive')
+        : localStatus === 'deleted'
+          ? t('status.deleted')
+          : t('status.inactive')
 
   const adminSelloutBadge = (
     <ProductListingRibbonPicker
@@ -333,7 +414,7 @@ export default function ProductCard({
       <button
         type="button"
         onClick={handleFavoriteToggle}
-        disabled={isTogglingFavorite}
+        disabled={isTogglingFavorite || isAdminProductSoftDeleted(localStatus)}
         className={`rounded p-1 transition-colors ${
           isTogglingFavorite
             ? 'cursor-not-allowed text-gray-400'
@@ -360,13 +441,47 @@ export default function ProductCard({
         <Copy className="h-4 w-4" />
       </button>
 
+      {canSoftDelete ? (
+        isAdminProductSoftDeleted(localStatus) ? (
+          <button
+            type="button"
+            onClick={handleRestore}
+            disabled={isSoftDeleting}
+            className={`rounded p-1 transition-colors ${
+              isSoftDeleting
+                ? 'cursor-not-allowed text-gray-400'
+                : 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800'
+            }`}
+            title={tEdit('restore')}
+            aria-label={tEdit('restore')}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSoftDelete}
+            disabled={isSoftDeleting}
+            className={`rounded p-1 transition-colors ${
+              isSoftDeleting
+                ? 'cursor-not-allowed text-gray-400'
+                : 'text-red-600 hover:bg-red-50 hover:text-red-800'
+            }`}
+            title={tEdit('delete')}
+            aria-label={tEdit('delete')}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )
+      ) : null}
+
       <button
         type="button"
         onClick={handleStatusToggle}
-        disabled={isUpdating}
+        disabled={isUpdating || isAdminProductSoftDeleted(localStatus)}
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
           localStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
-        } ${isUpdating ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+        } ${isUpdating || isAdminProductSoftDeleted(localStatus) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
         title={statusLabel}
       >
         <span
@@ -379,10 +494,10 @@ export default function ProductCard({
       <button
         type="button"
         onClick={handlePublishToggle}
-        disabled={isUpdatingPublish}
+        disabled={isUpdatingPublish || isAdminProductSoftDeleted(localStatus)}
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
           localPublished ? 'bg-emerald-600' : 'bg-gray-200'
-        } ${isUpdatingPublish ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+        } ${isUpdatingPublish || isAdminProductSoftDeleted(localStatus) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
         title={localPublished ? t('unpublish') : t('publish')}
         aria-label={t('publishToggle')}
       >

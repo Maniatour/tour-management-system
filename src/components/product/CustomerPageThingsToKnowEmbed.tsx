@@ -9,7 +9,17 @@ import {
   DETAIL_FIELD_LABELS,
   type DetailFieldKey,
 } from '@/lib/customerPageZoneEditMap'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
+import {
+  buildProductTranslationMap,
+  fetchProductFieldTranslations,
+  upsertProductFieldTranslations,
+} from '@/lib/productFieldTranslations'
+import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
@@ -52,14 +62,10 @@ type BasicForm = {
   max_participants: string
   group_size: string[]
   languages: string
-  departure_city_ko: string
-  departure_city_en: string
-  arrival_city_ko: string
-  arrival_city_en: string
-  departure_country_ko: string
-  departure_country_en: string
-  arrival_country_ko: string
-  arrival_country_en: string
+  departure_city: string
+  arrival_city: string
+  departure_country: string
+  arrival_country: string
   adult_age: string
   child_age_min: string
   child_age_max: string
@@ -109,14 +115,10 @@ export default function CustomerPageThingsToKnowEmbed({
     max_participants: '',
     group_size: [],
     languages: '',
-    departure_city_ko: '',
-    departure_city_en: '',
-    arrival_city_ko: '',
-    arrival_city_en: '',
-    departure_country_ko: '',
-    departure_country_en: '',
-    arrival_country_ko: '',
-    arrival_country_en: '',
+    departure_city: '',
+    arrival_city: '',
+    departure_country: '',
+    arrival_country: '',
     adult_age: '',
     child_age_min: '',
     child_age_max: '',
@@ -142,14 +144,16 @@ export default function CustomerPageThingsToKnowEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [row, productResult] = await Promise.all([
+      const [row, productResult, translationRows] = await Promise.all([
         fetchProductDetailsRowForLocale(productId, editLocale),
         supabase.from('products').select('*').eq('id', productId).maybeSingle(),
+        fetchProductFieldTranslations(productId),
       ])
 
       if (productResult.error) throw productResult.error
 
       const productRow = (productResult.data ?? {}) as Record<string, unknown>
+      const locationMap = buildProductTranslationMap(productRow, translationRows)
       const allDetailKeys = [
         ...DETAIL_FIELDS_BY_SECTION.included,
         ...DETAIL_FIELDS_BY_SECTION.logistics,
@@ -178,16 +182,10 @@ export default function CustomerPageThingsToKnowEmbed({
         languages: Array.isArray(productRow.languages)
           ? (productRow.languages as string[]).join(', ')
           : '',
-        departure_city_ko: String(productRow.departure_city_ko ?? productRow.departure_city ?? ''),
-        departure_city_en: String(productRow.departure_city_en ?? ''),
-        arrival_city_ko: String(productRow.arrival_city_ko ?? productRow.arrival_city ?? ''),
-        arrival_city_en: String(productRow.arrival_city_en ?? ''),
-        departure_country_ko: String(
-          productRow.departure_country_ko ?? productRow.departure_country ?? ''
-        ),
-        departure_country_en: String(productRow.departure_country_en ?? ''),
-        arrival_country_ko: String(productRow.arrival_country_ko ?? productRow.arrival_country ?? ''),
-        arrival_country_en: String(productRow.arrival_country_en ?? ''),
+        departure_city: locationMap.departure_city?.[editLocale] ?? '',
+        arrival_city: locationMap.arrival_city?.[editLocale] ?? '',
+        departure_country: locationMap.departure_country?.[editLocale] ?? '',
+        arrival_country: locationMap.arrival_country?.[editLocale] ?? '',
         adult_age: String(productRow.adult_age ?? ''),
         child_age_min: String(productRow.child_age_min ?? ''),
         child_age_max: String(productRow.child_age_max ?? ''),
@@ -292,34 +290,53 @@ export default function CustomerPageThingsToKnowEmbed({
         setRowId(String((data as { id: string }).id))
       }
 
+      const locationLegacyPatch = await upsertProductFieldTranslations({
+        productId,
+        locale: editLocale,
+        values: {
+          departure_city: basicForm.departure_city,
+          arrival_city: basicForm.arrival_city,
+          departure_country: basicForm.departure_country,
+          arrival_country: basicForm.arrival_country,
+        },
+      })
+
+      const productUpdate: Record<string, unknown> = {
+        sub_category: basicForm.sub_category.trim() || null,
+        max_participants: basicForm.max_participants
+          ? Number(basicForm.max_participants)
+          : null,
+        group_size:
+          basicForm.group_size.length > 0 ? basicForm.group_size.join(',') : null,
+        languages: basicForm.languages
+          .split(',')
+          .map((lang) => lang.trim())
+          .filter(Boolean),
+        ...locationLegacyPatch,
+        adult_age: basicForm.adult_age ? Number(basicForm.adult_age) : null,
+        child_age_min: basicForm.child_age_min ? Number(basicForm.child_age_min) : null,
+        child_age_max: basicForm.child_age_max ? Number(basicForm.child_age_max) : null,
+        infant_age: basicForm.infant_age ? Number(basicForm.infant_age) : null,
+        tags: tagList,
+        updated_at: new Date().toISOString(),
+      }
+      if (isLegacyColumnLocale(editLocale)) {
+        if (editLocale === 'ko') {
+          productUpdate.departure_city_ko = basicForm.departure_city.trim() || null
+          productUpdate.arrival_city_ko = basicForm.arrival_city.trim() || null
+          productUpdate.departure_country_ko = basicForm.departure_country.trim() || null
+          productUpdate.arrival_country_ko = basicForm.arrival_country.trim() || null
+        } else {
+          productUpdate.departure_city_en = basicForm.departure_city.trim() || null
+          productUpdate.arrival_city_en = basicForm.arrival_city.trim() || null
+          productUpdate.departure_country_en = basicForm.departure_country.trim() || null
+          productUpdate.arrival_country_en = basicForm.arrival_country.trim() || null
+        }
+      }
+
       const { error: productError } = await supabase
         .from('products')
-        .update({
-          sub_category: basicForm.sub_category.trim() || null,
-          max_participants: basicForm.max_participants
-            ? Number(basicForm.max_participants)
-            : null,
-          group_size:
-            basicForm.group_size.length > 0 ? basicForm.group_size.join(',') : null,
-          languages: basicForm.languages
-            .split(',')
-            .map((lang) => lang.trim())
-            .filter(Boolean),
-          departure_city_ko: basicForm.departure_city_ko.trim() || null,
-          departure_city_en: basicForm.departure_city_en.trim() || null,
-          arrival_city_ko: basicForm.arrival_city_ko.trim() || null,
-          arrival_city_en: basicForm.arrival_city_en.trim() || null,
-          departure_country_ko: basicForm.departure_country_ko.trim() || null,
-          departure_country_en: basicForm.departure_country_en.trim() || null,
-          arrival_country_ko: basicForm.arrival_country_ko.trim() || null,
-          arrival_country_en: basicForm.arrival_country_en.trim() || null,
-          adult_age: basicForm.adult_age ? Number(basicForm.adult_age) : null,
-          child_age_min: basicForm.child_age_min ? Number(basicForm.child_age_min) : null,
-          child_age_max: basicForm.child_age_max ? Number(basicForm.child_age_max) : null,
-          infant_age: basicForm.infant_age ? Number(basicForm.infant_age) : null,
-          tags: tagList,
-          updated_at: new Date().toISOString(),
-        } as never)
+        .update(productUpdate as never)
         .eq('id', productId)
       if (productError) throw productError
 
@@ -445,81 +462,49 @@ export default function CustomerPageThingsToKnowEmbed({
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">출발 도시 KO</span>
+              <span className="text-xs font-medium">
+                출발 도시 ({getAdminEditLocaleLabel(editLocale)})
+              </span>
               <input
-                value={basicForm.departure_city_ko}
+                value={basicForm.departure_city}
                 onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, departure_city_ko: e.target.value }))
+                  setBasicForm((prev) => ({ ...prev, departure_city: e.target.value }))
                 }
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">출발 도시 EN</span>
+              <span className="text-xs font-medium">
+                도착 도시 ({getAdminEditLocaleLabel(editLocale)})
+              </span>
               <input
-                value={basicForm.departure_city_en}
+                value={basicForm.arrival_city}
                 onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, departure_city_en: e.target.value }))
+                  setBasicForm((prev) => ({ ...prev, arrival_city: e.target.value }))
                 }
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">도착 도시 KO</span>
+              <span className="text-xs font-medium">
+                출발 국가 ({getAdminEditLocaleLabel(editLocale)})
+              </span>
               <input
-                value={basicForm.arrival_city_ko}
+                value={basicForm.departure_country}
                 onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, arrival_city_ko: e.target.value }))
+                  setBasicForm((prev) => ({ ...prev, departure_country: e.target.value }))
                 }
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">도착 도시 EN</span>
+              <span className="text-xs font-medium">
+                도착 국가 ({getAdminEditLocaleLabel(editLocale)})
+              </span>
               <input
-                value={basicForm.arrival_city_en}
+                value={basicForm.arrival_country}
                 onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, arrival_city_en: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium">출발 국가 KO</span>
-              <input
-                value={basicForm.departure_country_ko}
-                onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, departure_country_ko: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium">출발 국가 EN</span>
-              <input
-                value={basicForm.departure_country_en}
-                onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, departure_country_en: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium">도착 국가 KO</span>
-              <input
-                value={basicForm.arrival_country_ko}
-                onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, arrival_country_ko: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium">도착 국가 EN</span>
-              <input
-                value={basicForm.arrival_country_en}
-                onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, arrival_country_en: e.target.value }))
+                  setBasicForm((prev) => ({ ...prev, arrival_country: e.target.value }))
                 }
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />

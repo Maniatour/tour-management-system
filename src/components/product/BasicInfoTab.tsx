@@ -10,6 +10,7 @@ import {
 } from 'react-icons/md'
 import { FaHelicopter } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
 import CategoryManagementModal from './CategoryManagementModal'
 import ProductTagsBilingualEditor, {
@@ -21,6 +22,23 @@ import { PRODUCT_NAME_EMAILS, PRODUCT_NAME_EMAIL_NOTE } from '@/lib/productEmail
 import { BASIC_INFO_SECTION_LOCATIONS } from '@/lib/productCustomerPageLocations'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert, resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
+import {
+  buildProductTranslationMap,
+  fetchProductFieldTranslations,
+  upsertProductFieldTranslations,
+  type ProductTranslationField,
+  type ProductTranslationMap,
+} from '@/lib/productFieldTranslations'
+import { getSiteLocaleMeta, SITE_LOCALES, type SiteLocale } from '@/lib/siteLocales'
+
+const BASIC_I18N_FIELDS: ProductTranslationField[] = [
+  'customer_name',
+  'summary',
+  'departure_city',
+  'arrival_city',
+  'departure_country',
+  'arrival_country',
+]
 
 interface CategoryItem {
   value: string
@@ -111,6 +129,8 @@ export default function BasicInfoTab({
   const [_defaultChoicesPrice, setDefaultChoicesPrice] = useState(0)
   const [loadingChoices, setLoadingChoices] = useState(false)
   const [tagTranslations, setTagTranslations] = useState<TagTranslationState>({})
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
+  const [translationMap, setTranslationMap] = useState<ProductTranslationMap>({})
   const [choicesGroups, setChoicesGroups] = useState<Array<{
     id: string
     choice_group: string
@@ -130,6 +150,102 @@ export default function BasicInfoTab({
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
   console.log('BasicInfoTab - tourDepartureTimes 타입:', typeof formData.tourDepartureTimes);
   console.log('BasicInfoTab - tourDepartureTimes 배열 여부:', Array.isArray(formData.tourDepartureTimes));
+
+  const legacySourceFromForm = useCallback(
+    () => ({
+      customer_name_ko: formData.customerNameKo ?? null,
+      customer_name_en: formData.customerNameEn ?? null,
+      summary_ko: formData.summaryKo ?? null,
+      summary_en: formData.summaryEn ?? null,
+      departure_city: formData.departureCity,
+      departure_city_ko: formData.departureCityKo ?? formData.departureCity,
+      departure_city_en: formData.departureCityEn ?? null,
+      arrival_city: formData.arrivalCity,
+      arrival_city_ko: formData.arrivalCityKo ?? formData.arrivalCity,
+      arrival_city_en: formData.arrivalCityEn ?? null,
+      departure_country: formData.departureCountry,
+      departure_country_ko: formData.departureCountryKo ?? formData.departureCountry,
+      departure_country_en: formData.departureCountryEn ?? null,
+      arrival_country: formData.arrivalCountry,
+      arrival_country_ko: formData.arrivalCountryKo ?? formData.arrivalCountry,
+      arrival_country_en: formData.arrivalCountryEn ?? null,
+    }),
+    [formData]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const legacy = legacySourceFromForm()
+      if (!productId || isNewProduct) {
+        if (!cancelled) setTranslationMap(buildProductTranslationMap(legacy, []))
+        return
+      }
+      const rows = await fetchProductFieldTranslations(productId)
+      if (!cancelled) setTranslationMap(buildProductTranslationMap(legacy, rows))
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+    // Only reload when product changes — form edits update translationMap locally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, isNewProduct])
+
+  const getI18nField = (field: ProductTranslationField): string =>
+    translationMap[field]?.[editLocale] ?? ''
+
+  const setI18nField = (field: ProductTranslationField, value: string) => {
+    setTranslationMap((prev) => ({
+      ...prev,
+      [field]: { ...(prev[field] || {}), [editLocale]: value },
+    }))
+    if (editLocale === 'ko' || editLocale === 'en') {
+      const next = { ...formData }
+      if (field === 'customer_name') {
+        if (editLocale === 'ko') next.customerNameKo = value
+        else next.customerNameEn = value
+      } else if (field === 'summary') {
+        if (editLocale === 'ko') next.summaryKo = value
+        else next.summaryEn = value
+      } else if (field === 'departure_city') {
+        if (editLocale === 'ko') {
+          next.departureCityKo = value
+          next.departureCity = value
+        } else next.departureCityEn = value
+      } else if (field === 'arrival_city') {
+        if (editLocale === 'ko') {
+          next.arrivalCityKo = value
+          next.arrivalCity = value
+        } else next.arrivalCityEn = value
+      } else if (field === 'departure_country') {
+        if (editLocale === 'ko') {
+          next.departureCountryKo = value
+          next.departureCountry = value
+        } else next.departureCountryEn = value
+      } else if (field === 'arrival_country') {
+        if (editLocale === 'ko') {
+          next.arrivalCountryKo = value
+          next.arrivalCountry = value
+        } else next.arrivalCountryEn = value
+      }
+      setFormData(next)
+    }
+  }
+
+  const persistFieldTranslations = async (targetProductId: string) => {
+    for (const site of SITE_LOCALES) {
+      const values: Partial<Record<ProductTranslationField, string>> = {}
+      for (const field of BASIC_I18N_FIELDS) {
+        values[field] = translationMap[field]?.[site.code] ?? ''
+      }
+      await upsertProductFieldTranslations({
+        productId: targetProductId,
+        locale: site.code,
+        values,
+      })
+    }
+  }
 
   // 출발 시간 관리 함수들
   const addDepartureTime = () => {
@@ -270,14 +386,34 @@ export default function BasicInfoTab({
   }, [])
 
   const buildDepartureFields = () => {
-    const departureCityKo = (formData.departureCityKo ?? formData.departureCity).trim()
-    const departureCityEn = formData.departureCityEn?.trim() || null
-    const arrivalCityKo = (formData.arrivalCityKo ?? formData.arrivalCity).trim()
-    const arrivalCityEn = formData.arrivalCityEn?.trim() || null
-    const departureCountryKo = (formData.departureCountryKo ?? formData.departureCountry).trim()
-    const departureCountryEn = formData.departureCountryEn?.trim() || null
-    const arrivalCountryKo = (formData.arrivalCountryKo ?? formData.arrivalCountry).trim()
-    const arrivalCountryEn = formData.arrivalCountryEn?.trim() || null
+    const departureCityKo = (
+      translationMap.departure_city?.ko ??
+      formData.departureCityKo ??
+      formData.departureCity
+    ).trim()
+    const departureCityEn =
+      (translationMap.departure_city?.en ?? formData.departureCityEn)?.trim() || null
+    const arrivalCityKo = (
+      translationMap.arrival_city?.ko ??
+      formData.arrivalCityKo ??
+      formData.arrivalCity
+    ).trim()
+    const arrivalCityEn =
+      (translationMap.arrival_city?.en ?? formData.arrivalCityEn)?.trim() || null
+    const departureCountryKo = (
+      translationMap.departure_country?.ko ??
+      formData.departureCountryKo ??
+      formData.departureCountry
+    ).trim()
+    const departureCountryEn =
+      (translationMap.departure_country?.en ?? formData.departureCountryEn)?.trim() || null
+    const arrivalCountryKo = (
+      translationMap.arrival_country?.ko ??
+      formData.arrivalCountryKo ??
+      formData.arrivalCountry
+    ).trim()
+    const arrivalCountryEn =
+      (translationMap.arrival_country?.en ?? formData.arrivalCountryEn)?.trim() || null
 
     return {
       departure_city: departureCityKo,
@@ -333,8 +469,10 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            summary_ko: formData.summaryKo?.trim() || null,
-            summary_en: formData.summaryEn?.trim() || null,
+            summary_ko:
+              (translationMap.summary?.ko ?? formData.summaryKo)?.trim() || null,
+            summary_en:
+              (translationMap.summary?.en ?? formData.summaryEn)?.trim() || null,
             duration: formData.duration.toString(),
             base_price: typeof formData.basePrice === 'object' && formData.basePrice 
               ? formData.basePrice.adult 
@@ -361,8 +499,14 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || tBasic('defaultProductName'),
-            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
+            customer_name_ko:
+              (translationMap.customer_name?.ko ?? formData.customerNameKo)?.trim() ||
+              formData.name.trim() ||
+              tBasic('defaultProductName'),
+            customer_name_en:
+              (translationMap.customer_name?.en ?? formData.customerNameEn)?.trim() ||
+              formData.nameEn?.trim() ||
+              'Product',
             transportation_methods: formData.transportationMethods || [],
             ...operatorIdInsert(operatorId),
           }] as never[])
@@ -387,6 +531,7 @@ export default function BasicInfoTab({
         }
 
         const newProductId = (data as { id: string }).id
+        await persistFieldTranslations(newProductId)
         if (formData.tags?.length) {
           await saveProductTagsWithTranslations(newProductId, formData.tags, tagTranslations)
         }
@@ -408,8 +553,10 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            summary_ko: formData.summaryKo?.trim() || null,
-            summary_en: formData.summaryEn?.trim() || null,
+            summary_ko:
+              (translationMap.summary?.ko ?? formData.summaryKo)?.trim() || null,
+            summary_en:
+              (translationMap.summary?.en ?? formData.summaryEn)?.trim() || null,
             duration: formData.duration.toString(),
             base_price: typeof formData.basePrice === 'object' && formData.basePrice 
               ? formData.basePrice.adult 
@@ -436,14 +583,22 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || tBasic('defaultProductName'),
-            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
+            customer_name_ko:
+              (translationMap.customer_name?.ko ?? formData.customerNameKo)?.trim() ||
+              formData.name.trim() ||
+              tBasic('defaultProductName'),
+            customer_name_en:
+              (translationMap.customer_name?.en ?? formData.customerNameEn)?.trim() ||
+              formData.nameEn?.trim() ||
+              'Product',
             transportation_methods: formData.transportationMethods || []
           } as never)
           .eq('id', productId)
           .eq('operator_id', resolveOperatorId(operatorId))
 
         if (error) throw error
+
+        await persistFieldTranslations(productId)
 
         if (formData.tags) {
           await saveProductTagsWithTranslations(productId, formData.tags, tagTranslations)
@@ -793,45 +948,32 @@ export default function BasicInfoTab({
             </div>
           </div>
           
-          {/* 고객용 한국어, 고객용 영어 - 한 줄에 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('nameCustomerKo')}
-                <CustomerPageLocationHint
-                  paths={[['상품 상세', '상단 헤더', '상품명']]}
-                  emails={PRODUCT_NAME_EMAILS}
-                  emailNote={PRODUCT_NAME_EMAIL_NOTE}
-                  variant="inline"
-                />
-              </label>
-              <input
-                type="text"
-                value={formData.customerNameKo || ''}
-                onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('placeholderCustomerKo')}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="block text-sm font-medium text-gray-700">
+              {tBasic('nameCustomerKo').replace(/\(한국어\)|한국어/g, '').trim() || '고객용 상품명'}{' '}
+              ({getSiteLocaleMeta(editLocale).label})
+              <CustomerPageLocationHint
+                paths={[['상품 상세', '상단 헤더', '상품명']]}
+                emails={PRODUCT_NAME_EMAILS}
+                emailNote={PRODUCT_NAME_EMAIL_NOTE}
+                variant="inline"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('nameCustomerEn')}
-                <CustomerPageLocationHint
-                  paths={[['상품 상세', '상단 헤더', '상품명 (EN)']]}
-                  emails={PRODUCT_NAME_EMAILS}
-                  emailNote={PRODUCT_NAME_EMAIL_NOTE}
-                  variant="inline"
-                />
-              </label>
-              <input
-                type="text"
-                value={formData.customerNameEn || ''}
-                onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('placeholderCustomerEn')}
-              />
-            </div>
+            </label>
+            <LocaleDropdown
+              value={editLocale}
+              onChange={setEditLocale}
+              size="sm"
+              showLabel
+              ariaLabel="Customer content language"
+            />
           </div>
+          <input
+            type="text"
+            value={getI18nField('customer_name')}
+            onChange={(e) => setI18nField('customer_name', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+            placeholder={tBasic('placeholderCustomerKo')}
+          />
         </div>
 
         {/* 상품 코드, 판매 상태, 카테고리, 서브카테고리 - 한 줄에 배치 */}
@@ -990,180 +1132,96 @@ export default function BasicInfoTab({
         </div>
 
         {/* 상품 요약 */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('productSummaryKo')}
-                <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.productSummaryKo} variant="inline" />
-              </label>
-              <textarea
-                value={formData.summaryKo || ''}
-                onChange={(e) => setFormData({ ...formData, summaryKo: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={t('productSummaryPlaceholderKo')}
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('productSummaryEn')}
-                <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.productSummaryEn} variant="inline" />
-              </label>
-              <textarea
-                value={formData.summaryEn || ''}
-                onChange={(e) => setFormData({ ...formData, summaryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={t('productSummaryPlaceholderEn')}
-                rows={3}
-              />
-            </div>
-          </div>
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            {t('productSummaryKo').replace(/\(한국어\)|한국어/g, '').trim() || '상품 요약'}{' '}
+            ({getSiteLocaleMeta(editLocale).label})
+            <CustomerPageLocationHint
+              location={BASIC_INFO_SECTION_LOCATIONS.productSummaryKo}
+              variant="inline"
+            />
+          </label>
+          <textarea
+            value={getI18nField('summary')}
+            onChange={(e) => setI18nField('summary', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+            placeholder={t('productSummaryPlaceholderKo')}
+            rows={3}
+          />
         </div>
         </div>
       </div>
 
       {/* 출발/도착 정보 섹션 */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            <Info className="h-5 w-5 mr-2 text-primary" />
-            {tBasic('departureArrival')}
-          </h3>
-          <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.departureArrival} />
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <Info className="h-5 w-5 mr-2 text-primary" />
+              {tBasic('departureArrival')}
+            </h3>
+            <CustomerPageLocationHint location={BASIC_INFO_SECTION_LOCATIONS.departureArrival} />
+          </div>
+          <LocaleDropdown
+            value={editLocale}
+            onChange={setEditLocale}
+            size="sm"
+            showLabel
+            ariaLabel="Location content language"
+          />
         </div>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('departureCity')} (한국어)
-              </label>
-              <input
-                type="text"
-                value={formData.departureCityKo ?? formData.departureCity ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    departureCityKo: e.target.value,
-                    departureCity: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('placeholderDepartureCity')}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('departureCity')} (English)
-              </label>
-              <input
-                type="text"
-                value={formData.departureCityEn || ''}
-                onChange={(e) => setFormData({ ...formData, departureCityEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Departure city"
-              />
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('departureCity')} ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <input
+              type="text"
+              value={getI18nField('departure_city')}
+              onChange={(e) => setI18nField('departure_city', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder={tBasic('placeholderDepartureCity')}
+              required={editLocale === 'ko'}
+            />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('arrivalCity')} (한국어)
-              </label>
-              <input
-                type="text"
-                value={formData.arrivalCityKo ?? formData.arrivalCity ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    arrivalCityKo: e.target.value,
-                    arrivalCity: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('placeholderArrivalCity')}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('arrivalCity')} (English)
-              </label>
-              <input
-                type="text"
-                value={formData.arrivalCityEn || ''}
-                onChange={(e) => setFormData({ ...formData, arrivalCityEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Arrival city"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('arrivalCity')} ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <input
+              type="text"
+              value={getI18nField('arrival_city')}
+              onChange={(e) => setI18nField('arrival_city', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder={tBasic('placeholderArrivalCity')}
+              required={editLocale === 'ko'}
+            />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('departureCountry')} (한국어)
-              </label>
-              <input
-                type="text"
-                value={formData.departureCountryKo ?? formData.departureCountry ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    departureCountryKo: e.target.value,
-                    departureCountry: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('countrySelect')}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('departureCountry')} (English)
-              </label>
-              <input
-                type="text"
-                value={formData.departureCountryEn || ''}
-                onChange={(e) => setFormData({ ...formData, departureCountryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Departure country"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('departureCountry')} ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <input
+              type="text"
+              value={getI18nField('departure_country')}
+              onChange={(e) => setI18nField('departure_country', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder={tBasic('countrySelect')}
+              required={editLocale === 'ko'}
+            />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('arrivalCountry')} (한국어)
-              </label>
-              <input
-                type="text"
-                value={formData.arrivalCountryKo ?? formData.arrivalCountry ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    arrivalCountryKo: e.target.value,
-                    arrivalCountry: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder={tBasic('countrySelect')}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {tBasic('arrivalCountry')} (English)
-              </label>
-              <input
-                type="text"
-                value={formData.arrivalCountryEn || ''}
-                onChange={(e) => setFormData({ ...formData, arrivalCountryEn: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="Arrival country"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {tBasic('arrivalCountry')} ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <input
+              type="text"
+              value={getI18nField('arrival_country')}
+              onChange={(e) => setI18nField('arrival_country', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder={tBasic('countrySelect')}
+              required={editLocale === 'ko'}
+            />
           </div>
         </div>
       </div>

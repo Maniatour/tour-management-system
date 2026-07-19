@@ -929,7 +929,7 @@
     "localeReadiness": {
       "button": "Locale readiness",
       "title": "Locale readiness",
-      "subtitle": "See how much customer-facing content (name, summary, details) is filled per language. Fields hidden on the customer page are excluded.",
+      "subtitle": "See how much customer-facing content (name, summary, details, FAQ, choices, schedules, tour courses) is filled per language. Hidden or unused items are excluded.",
       "summary": "{count} products · KO avg {avgKo}% · EN avg {avgEn}% · Incomplete {incomplete}",
       "searchPlaceholder": "Search products…",
       "incompleteOnly": "Incomplete only",
@@ -964,8 +964,15 @@
         "preparation_info": "What to bring",
         "small_group_info": "Small group",
         "notice_info": "Notices",
-        "cancellation_policy": "Cancellation policy"
-      }
+        "cancellation_policy": "Cancellation policy",
+        "faq": "FAQ",
+        "choices": "Choices / options",
+        "schedules": "Itinerary schedule",
+        "tourCourses": "Tour courses"
+      },
+      "pageTitle": "Locale readiness",
+      "backToProducts": "Back to products",
+      "summaryMulti": "{count} products · Overall avg {avgOverall}% · Incomplete {incomplete}"
     },
     "totalProducts": "Total {count} products",
     "searchResults": "search results",
@@ -1081,8 +1088,10 @@
     "status": {
       "active": "Active",
       "inactive": "Inactive",
-      "draft": "Draft"
+      "draft": "Draft",
+      "deleted": "Deleted"
     },
+    "softDeleteConfirm": "Delete “{name}”?\n\nThis is a soft delete — the row stays in the database and is only hidden from the list and customer site.\nYou can restore it from the Deleted status filter.",
     "edit": {
       "newProduct": "Add New Product",
       "editProduct": "Edit Product",
@@ -1093,13 +1102,19 @@
       "productChangeHistory": "Product Change History",
       "productChangeHistoryDesc": "Track and view all changes to this product.",
       "deleteConfirmTitle": "Confirm Product Deletion",
-      "deleteWarning": "⚠️ Important notes before deleting",
-      "deleteWarningDesc": "Deleting this product may make existing reservations and tour data unusable.",
-      "deactivateInstead": "If you no longer need this product or have existing reservations, please <strong>deactivate</strong> it instead of deleting.",
+      "deleteWarning": "⚠️ Soft delete (recoverable)",
+      "deleteWarningDesc": "Hides this product from the admin list and customer site. Reservations, tours, and product details remain. You can restore it from the Deleted status filter.",
+      "deactivateInstead": "To pause sales temporarily, prefer <strong>deactivate</strong> instead of deleting.",
       "deactivate": "Deactivate",
       "cancel": "Cancel",
-      "deleteAnyway": "Delete Anyway",
-      "deleting": "Deleting..."
+      "deleteAnyway": "Soft delete",
+      "deleting": "Deleting...",
+      "softDeleteSuccess": "Product soft-deleted (recoverable).",
+      "softDeleteError": "Failed to delete product.",
+      "restore": "Restore",
+      "restoring": "Restoring...",
+      "restoreSuccess": "Product restored as inactive. Reactivate and publish if needed.",
+      "restoreError": "Failed to restore product."
     },
     "basicInfoTab": {
       "sectionTitle": "Basic Product Information",
@@ -4389,8 +4404,8 @@
       "noAssignedReservations": "No reservations assigned.",
       "assignToShowSchedule": "Assign reservations to see the pickup schedule.",
       "emailStatusHelpTitle": "Email status icon guide",
-        "sendEmailTitle": "Send email",
-        "emailDisabledNoPickupTime": "No reservations have pickup times set. Please set pickup times first.",
+      "sendEmailTitle": "Send email",
+      "emailDisabledNoPickupTime": "No reservations have pickup times set. Please set pickup times first.",
       "emailStatusModalTitle": "Email delivery status icon guide",
       "sendFailed": "Send failed",
       "sendFailedDesc": "An error occurred while sending the email. The email was not delivered.",
@@ -4644,8 +4659,8 @@
       "receiptOcrAnalyzingAfterUpload": "Reading text from the receipt… this may take a little while.",
       "receiptOcrDateLabel": "Receipt date",
       "receiptOcrRawText": "OCR text",
-        "receiptOcrApplyToForm": "Apply to expense form",
-        "receiptOcrManageParseRules": "Manage parse rules",
+      "receiptOcrApplyToForm": "Apply to expense form",
+      "receiptOcrManageParseRules": "Manage parse rules",
       "receiptOcrQuickRuleSummary": "Quick-add rule for future receipts",
       "receiptOcrQuickRuleHint": "When OCR text includes the phrase below, paid-to and paid-for are filled automatically. Prefer a short, distinctive phrase (e.g. merchant name).",
       "receiptOcrQuickRulePhraseLabel": "Phrase to match in receipt text",

@@ -1,16 +1,103 @@
 /**
- * Admin product cascade delete (catalog children only).
- * Does not delete reservations / payments. Fails clearly if FKs block.
+ * Admin product delete helpers.
+ * - softDeleteAdminProduct: status=deleted (recoverable; preferred for UI)
+ * - deleteAdminProductCascade: hard cascade (clone rollback only)
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { isSuperAdminActor } from '@/lib/superAdmin'
+import { isManagerTeamPosition } from '@/lib/roles'
 
 type Db = SupabaseClient<Database>
+
+export const ADMIN_PRODUCT_DELETED_STATUS = 'deleted' as const
 
 export type AdminProductDeleteResult = {
   productId: string
   deleted: Record<string, number>
+}
+
+export type AdminProductSoftDeleteResult = {
+  productId: string
+  status: typeof ADMIN_PRODUCT_DELETED_STATUS
+}
+
+export type AdminProductRestoreResult = {
+  productId: string
+  status: 'inactive'
+}
+
+/** Super 또는 Office Manager(매니저)만 상품 soft delete / 복구 */
+export function canSoftDeleteAdminProduct(
+  email: string | null | undefined,
+  teamPosition?: string | null
+): boolean {
+  if (isSuperAdminActor(email, teamPosition)) return true
+  return isManagerTeamPosition(teamPosition)
+}
+
+export function isAdminProductSoftDeleted(status: string | null | undefined): boolean {
+  return String(status ?? '')
+    .trim()
+    .toLowerCase() === ADMIN_PRODUCT_DELETED_STATUS
+}
+
+/**
+ * Soft delete: hide from catalogs; keep row + children for reservations / restore.
+ * Also unpublishes and clears favorite so it leaves customer/home surfaces.
+ */
+export async function softDeleteAdminProduct(
+  db: Db,
+  productId: string,
+  operatorId?: string | null
+): Promise<AdminProductSoftDeleteResult> {
+  const opId = resolveOperatorId(operatorId)
+
+  const { data, error } = await db
+    .from('products')
+    .update({
+      status: ADMIN_PRODUCT_DELETED_STATUS,
+      is_published: false,
+      is_favorite: false,
+      favorite_order: null,
+    })
+    .eq('id', productId)
+    .eq('operator_id', opId)
+    .neq('status', ADMIN_PRODUCT_DELETED_STATUS)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw new Error(`Product soft delete failed: ${error.message}`)
+  if (!data) throw new Error('Product not found for active operator (or already deleted)')
+
+  return { productId: data.id, status: ADMIN_PRODUCT_DELETED_STATUS }
+}
+
+/** Restore soft-deleted product as inactive (admin reactivates / republishes intentionally). */
+export async function restoreAdminProduct(
+  db: Db,
+  productId: string,
+  operatorId?: string | null
+): Promise<AdminProductRestoreResult> {
+  const opId = resolveOperatorId(operatorId)
+
+  const { data, error } = await db
+    .from('products')
+    .update({
+      status: 'inactive',
+      is_published: false,
+    })
+    .eq('id', productId)
+    .eq('operator_id', opId)
+    .eq('status', ADMIN_PRODUCT_DELETED_STATUS)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw new Error(`Product restore failed: ${error.message}`)
+  if (!data) throw new Error('Deleted product not found for active operator')
+
+  return { productId: data.id, status: 'inactive' }
 }
 
 async function deleteByProductId(
@@ -33,6 +120,10 @@ async function deleteByProductId(
   return Array.isArray(data) ? data.length : 0
 }
 
+/**
+ * Hard cascade delete (catalog children only).
+ * Used for clone rollback — not for admin UI delete.
+ */
 export async function deleteAdminProductCascade(
   db: Db,
   productId: string,

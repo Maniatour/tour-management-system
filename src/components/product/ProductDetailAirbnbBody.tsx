@@ -70,7 +70,7 @@ function AirbnbSectionDivider() {
 export default function ProductDetailAirbnbBody({
   productId,
   locale,
-  isEnglish,
+  isEnglish: _isEnglish,
   product,
   productDetails,
   tourCourses,
@@ -208,7 +208,7 @@ export default function ProductDetailAirbnbBody({
                 <ProductDetailItineraryTab
                   tourCourses={tourCourses}
                   tourCoursePhotos={tourCoursePhotos}
-                  isEnglish={isEnglish}
+                  locale={locale}
                 />
               </div>
             </section>

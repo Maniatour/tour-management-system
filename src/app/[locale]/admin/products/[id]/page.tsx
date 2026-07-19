@@ -22,7 +22,13 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { createClientSupabase } from '@/lib/supabase'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
-import { deleteAdminProductCascade } from '@/lib/adminProductDelete'
+import {
+  canSoftDeleteAdminProduct,
+  isAdminProductSoftDeleted,
+  restoreAdminProduct,
+  softDeleteAdminProduct,
+} from '@/lib/adminProductDelete'
+import { useAuth } from '@/contexts/AuthContext'
 // import type { Database } from '@/lib/supabase'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
@@ -155,6 +161,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   const isNewProduct = id === 'new'
   const supabase = createClientSupabase()
   const { operatorId } = useOperatorOptional()
+  const { user, userPosition } = useAuth()
+  const canSoftDelete = canSoftDeleteAdminProduct(user?.email, userPosition)
+
 
   /** 경로별 sessionStorage — 새로고침 후에도 편집 탭 유지 */
   const [activeTab, setActiveTab] = useRoutePersistedState<string>('edit-tab', 'basic')
@@ -187,7 +196,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     seasonalPricing: SeasonalPricing[]
     coupons: Coupon[]
     maxParticipants: number
-    status: 'active' | 'inactive' | 'draft'
+    status: 'active' | 'inactive' | 'draft' | 'deleted'
     isPublished: boolean
     productOptions: ProductOption[]
     // 새로운 필드들
@@ -640,7 +649,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             // BasicInfoTab용 basePrice (단순 숫자)
             basePriceNumber: ((productData as any).adult_base_price ?? productData.base_price) || 0,
             maxParticipants: productData.max_participants || 10,
-            status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
+            status: (productData.status as 'active' | 'inactive' | 'draft' | 'deleted') || 'active',
             isPublished: productData.is_published !== false,
             departureCity: productData.departure_city_ko || productData.departure_city || '',
             arrivalCity: productData.arrival_city_ko || productData.arrival_city || '',
@@ -830,7 +839,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             useCommonForField: (() => {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const useCommonForField: Record<string, any> = {}
-              const availableLanguages = ['ko', 'en', 'ja', 'zh']
+              const availableLanguages = ['en', 'ko', 'ja', 'zh-CN', 'zh-TW', 'es', 'fr', 'de']
               
               // 모든 언어에 대해 초기값 설정
               availableLanguages.forEach(lang => {
@@ -932,25 +941,42 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   }, [id, isNewProduct, supabase, operatorId, router, locale])
 
 
-  // 상품 삭제 함수 (자식 테이블 cascade)
+  // 상품 soft delete (status=deleted) — Super / Office Manager
   const handleDeleteProduct = async () => {
-    if (isNewProduct) return
+    if (isNewProduct || !canSoftDelete) return
     
     try {
       setDeleting(true)
 
-      await deleteAdminProductCascade(supabase, id, operatorId)
+      await softDeleteAdminProduct(supabase, id, operatorId)
 
-      alert('상품이 성공적으로 삭제되었습니다!')
+      alert(tEdit('softDeleteSuccess'))
       router.push(`/${locale}/admin/products`)
       
     } catch (error) {
       console.error('상품 삭제 중 오류 발생:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      alert(`상품 삭제 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}`)
+      alert(`${tEdit('softDeleteError')}\n\n${errorMessage}`)
     } finally {
       setDeleting(false)
       setShowDeleteModal(false)
+    }
+  }
+
+  const handleRestoreProduct = async () => {
+    if (isNewProduct || !canSoftDelete) return
+
+    try {
+      setDeleting(true)
+      await restoreAdminProduct(supabase, id, operatorId)
+      setFormData((prev) => ({ ...prev, status: 'inactive' }))
+      alert(tEdit('restoreSuccess'))
+    } catch (error) {
+      console.error('상품 복구 중 오류 발생:', error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      alert(`${tEdit('restoreError')}\n\n${errorMessage}`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -973,6 +999,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
       }
 
       alert('상품이 비활성화되었습니다.')
+      setShowDeleteModal(false)
       // 페이지 새로고침하여 상태 반영
       window.location.reload()
       
@@ -1105,6 +1132,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   //   }))
   // }
 
+  const productIsDeleted = isAdminProductSoftDeleted(formData.status)
+
   const tabs = [
     { id: 'basic', label: t('basicInfo'), icon: Info },
     { id: 'dynamic-pricing', label: t('dynamicPricing'), icon: TrendingUp },
@@ -1156,16 +1185,27 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         </div>
         
         {/* 액션 버튼들 */}
-        {!isNewProduct && (
+        {!isNewProduct && canSoftDelete && (
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* 삭제 버튼 */}
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-[11px] sm:text-sm font-medium"
-            >
-              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>{tEdit('delete')}</span>
-            </button>
+            {productIsDeleted ? (
+              <button
+                type="button"
+                onClick={() => void handleRestoreProduct()}
+                disabled={deleting}
+                className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors text-[11px] sm:text-sm font-medium disabled:opacity-50"
+              >
+                <span>{deleting ? tEdit('restoring') : tEdit('restore')}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-[11px] sm:text-sm font-medium"
+              >
+                <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>{tEdit('delete')}</span>
+              </button>
+            )}
           </div>
         )
       }
@@ -1404,7 +1444,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         onSelectOption={addProductOptionFromGlobal}
       />
 
-      {/* 삭제 확인 모달 */}
+      {/* 삭제 확인 모달 (soft delete) */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
@@ -1430,12 +1470,14 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             <div className="space-y-3">
               <div className="flex space-x-3">
                 <button
-                  onClick={handleDeactivateProduct}
+                  type="button"
+                  onClick={() => void handleDeactivateProduct()}
                   className="flex-1 bg-yellow-600 text-white py-2 px-4 rounded-lg hover:bg-yellow-700 transition-colors"
                 >
                   {tEdit('deactivate')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowDeleteModal(false)}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
                   disabled={deleting}
@@ -1444,7 +1486,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                 </button>
               </div>
               <button
-                onClick={handleDeleteProduct}
+                type="button"
+                onClick={() => void handleDeleteProduct()}
                 className="w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                 disabled={deleting}
               >

@@ -14,7 +14,7 @@ declare const self: ServiceWorkerGlobalScope
 function isStaffAppDocumentNavigation(url: URL, request: Request): boolean {
   if (request.mode !== 'navigate' && request.destination !== 'document') return false
   const p = url.pathname
-  return /^\/(ko|en)\/(admin|dashboard|guide)(\/|$)/.test(p)
+  return /^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/(admin|dashboard|guide)(\/|$)/.test(p)
 }
 
 // Push 알림 (기존 public/sw.js 동작 유지)

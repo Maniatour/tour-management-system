@@ -13,7 +13,16 @@ import {
 } from 'lucide-react'
 import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
 import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
+import {
+  getFaqLocalizedText,
+  mergeFaqI18n,
+  type FaqContentI18n,
+} from '@/lib/productFaqLocales'
 import { supabase } from '@/lib/supabase'
 
 type FaqItem = {
@@ -23,16 +32,20 @@ type FaqItem = {
   answer: string
   question_en: string
   answer_en: string
+  content_i18n?: FaqContentI18n | null
   order_index: number
   is_active: boolean
 }
 
 type FaqForm = {
+  questionDraft: string
+  answerDraft: string
+  is_active: boolean
+  content_i18n: FaqContentI18n
   question: string
   answer: string
   question_en: string
   answer_en: string
-  is_active: boolean
 }
 
 type CustomerPageFaqEmbedProps = {
@@ -43,16 +56,6 @@ type CustomerPageFaqEmbedProps = {
   onOpenFullAdmin?: (tabId: string) => void
 }
 
-function faqToForm(item: FaqItem): FaqForm {
-  return {
-    question: item.question ?? '',
-    answer: item.answer ?? '',
-    question_en: item.question_en ?? '',
-    answer_en: item.answer_en ?? '',
-    is_active: item.is_active !== false,
-  }
-}
-
 function emptyFaq(productId: string, orderIndex: number): FaqItem {
   return {
     product_id: productId,
@@ -60,15 +63,58 @@ function emptyFaq(productId: string, orderIndex: number): FaqItem {
     answer: '',
     question_en: '',
     answer_en: '',
+    content_i18n: {},
     order_index: orderIndex,
     is_active: true,
   }
 }
 
+function faqToForm(item: FaqItem, locale: AdminEditLocale): FaqForm {
+  return {
+    questionDraft: getFaqLocalizedText(item, 'question', locale),
+    answerDraft: getFaqLocalizedText(item, 'answer', locale),
+    is_active: item.is_active !== false,
+    content_i18n: item.content_i18n || {},
+    question: item.question ?? '',
+    answer: item.answer ?? '',
+    question_en: item.question_en ?? '',
+    answer_en: item.answer_en ?? '',
+  }
+}
+
 function getFaqLabel(item: FaqItem, locale: AdminEditLocale): string {
-  const question =
-    locale === 'en' ? item.question_en || item.question : item.question || item.question_en
-  return question.trim() || '(질문 없음)'
+  return getFaqLocalizedText(item, 'question', locale).trim() || '(질문 없음)'
+}
+
+function mergeFormLocale(
+  form: FaqForm,
+  locale: AdminEditLocale
+): Omit<FaqForm, 'questionDraft' | 'answerDraft'> & {
+  questionDraft: string
+  answerDraft: string
+} {
+  const merged = mergeFaqI18n(
+    {
+      question: form.question,
+      answer: form.answer,
+      question_en: form.question_en,
+      answer_en: form.answer_en,
+      content_i18n: form.content_i18n,
+    },
+    locale,
+    form.questionDraft,
+    form.answerDraft
+  )
+  return {
+    ...form,
+    ...merged,
+    question: merged.question,
+    answer: merged.answer,
+    question_en: merged.question_en || '',
+    answer_en: merged.answer_en || '',
+    questionDraft: form.questionDraft,
+    answerDraft: form.answerDraft,
+  }
 }
 
 export default function CustomerPageFaqEmbed({
@@ -86,7 +132,7 @@ export default function CustomerPageFaqEmbed({
   const [message, setMessage] = useState<string | null>(null)
   const [faqs, setFaqs] = useState<FaqItem[]>([])
   const [activeFaqId, setActiveFaqId] = useState<string | null>(null)
-  const [form, setForm] = useState<FaqForm>(faqToForm(emptyFaq(productId, 0)))
+  const [form, setForm] = useState<FaqForm>(() => faqToForm(emptyFaq(productId, 0), 'ko'))
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
   const [isNewDraft, setIsNewDraft] = useState(false)
 
@@ -111,6 +157,7 @@ export default function CustomerPageFaqEmbed({
         answer: String(row.answer ?? ''),
         question_en: String(row.question_en ?? ''),
         answer_en: String(row.answer_en ?? ''),
+        content_i18n: (row.content_i18n as FaqContentI18n) || {},
         order_index: Number(row.order_index ?? 0),
         is_active: row.is_active !== false,
       }))
@@ -123,13 +170,13 @@ export default function CustomerPageFaqEmbed({
       setIsNewDraft(false)
 
       if (first) {
-        const nextForm = faqToForm(first)
+        const nextForm = faqToForm(first, editLocale)
         setForm(nextForm)
         setInitialSnapshot(
           JSON.stringify({ faqId: first.id, form: nextForm, locale: editLocale })
         )
       } else {
-        setForm(faqToForm(emptyFaq(productId, 0)))
+        setForm(faqToForm(emptyFaq(productId, 0), editLocale))
         setInitialSnapshot(JSON.stringify({ faqId: null, form: {}, locale: editLocale }))
       }
     } catch (error) {
@@ -146,7 +193,7 @@ export default function CustomerPageFaqEmbed({
 
   useEffect(() => {
     if (isNewDraft || !activeFaq) return
-    const nextForm = faqToForm(activeFaq)
+    const nextForm = faqToForm(activeFaq, editLocale)
     setForm(nextForm)
     setInitialSnapshot(
       JSON.stringify({ faqId: activeFaq.id, form: nextForm, locale: editLocale })
@@ -161,11 +208,33 @@ export default function CustomerPageFaqEmbed({
     onDirtyChange(dirty)
   }, [activeFaqId, editLocale, form, initialSnapshot, isNewDraft, onDirtyChange])
 
+  const switchLocale = (next: AdminEditLocale) => {
+    const merged = mergeFormLocale(form, editLocale)
+    const source = {
+      question: merged.question,
+      answer: merged.answer,
+      question_en: merged.question_en,
+      answer_en: merged.answer_en,
+      content_i18n: merged.content_i18n,
+    }
+    setForm({
+      ...merged,
+      questionDraft: getFaqLocalizedText(source, 'question', next),
+      answerDraft: getFaqLocalizedText(source, 'answer', next),
+    })
+    setEditLocale(next)
+  }
+
   const handleSave = async () => {
-    const questionKo = form.question.trim()
-    const answerKo = form.answer.trim()
-    if (!questionKo || !answerKo) {
-      setMessage('한국어 질문과 답변은 필수입니다.')
+    const merged = mergeFormLocale(form, editLocale)
+    const hasQ =
+      !!getFaqLocalizedText(merged, 'question', 'ko') ||
+      !!getFaqLocalizedText(merged, 'question', 'en')
+    const hasA =
+      !!getFaqLocalizedText(merged, 'answer', 'ko') ||
+      !!getFaqLocalizedText(merged, 'answer', 'en')
+    if (!hasQ || !hasA) {
+      setMessage('질문과 답변을 최소 한 언어로 입력해주세요.')
       return
     }
 
@@ -174,11 +243,12 @@ export default function CustomerPageFaqEmbed({
     try {
       const payload = {
         product_id: productId,
-        question: questionKo,
-        answer: answerKo,
-        question_en: form.question_en.trim() || null,
-        answer_en: form.answer_en.trim() || null,
-        is_active: form.is_active,
+        question: merged.question,
+        answer: merged.answer,
+        question_en: merged.question_en.trim() || null,
+        answer_en: merged.answer_en.trim() || null,
+        content_i18n: merged.content_i18n || {},
+        is_active: merged.is_active,
         updated_at: new Date().toISOString(),
       }
 
@@ -189,22 +259,29 @@ export default function CustomerPageFaqEmbed({
           .eq('id', activeFaqId)
         if (error) throw error
 
+        const updatedItem: FaqItem = {
+          id: activeFaqId,
+          product_id: productId,
+          question: merged.question,
+          answer: merged.answer,
+          question_en: merged.question_en,
+          answer_en: merged.answer_en,
+          content_i18n: merged.content_i18n,
+          order_index: activeFaq?.order_index ?? 0,
+          is_active: merged.is_active,
+        }
         setFaqs((prev) =>
-          prev.map((item) =>
-            item.id === activeFaqId
-              ? {
-                  ...item,
-                  question: questionKo,
-                  answer: answerKo,
-                  question_en: form.question_en.trim(),
-                  answer_en: form.answer_en.trim(),
-                  is_active: form.is_active,
-                }
-              : item
-          )
+          prev.map((item) => (item.id === activeFaqId ? updatedItem : item))
         )
+        const nextForm = faqToForm(updatedItem, editLocale)
+        setForm(nextForm)
         setInitialSnapshot(
-          JSON.stringify({ faqId: activeFaqId, form, locale: editLocale, isNewDraft: false })
+          JSON.stringify({
+            faqId: activeFaqId,
+            form: nextForm,
+            locale: editLocale,
+            isNewDraft: false,
+          })
         )
       } else {
         const orderIndex = faqs.length
@@ -219,18 +296,26 @@ export default function CustomerPageFaqEmbed({
         const newItem: FaqItem = {
           id: String(created.id),
           product_id: productId,
-          question: questionKo,
-          answer: answerKo,
-          question_en: form.question_en.trim(),
-          answer_en: form.answer_en.trim(),
+          question: merged.question,
+          answer: merged.answer,
+          question_en: merged.question_en,
+          answer_en: merged.answer_en,
+          content_i18n: (created.content_i18n as FaqContentI18n) || merged.content_i18n,
           order_index: orderIndex,
-          is_active: form.is_active,
+          is_active: merged.is_active,
         }
         setFaqs((prev) => [...prev, newItem])
         setActiveFaqId(newItem.id!)
         setIsNewDraft(false)
+        const nextForm = faqToForm(newItem, editLocale)
+        setForm(nextForm)
         setInitialSnapshot(
-          JSON.stringify({ faqId: newItem.id, form, locale: editLocale, isNewDraft: false })
+          JSON.stringify({
+            faqId: newItem.id,
+            form: nextForm,
+            locale: editLocale,
+            isNewDraft: false,
+          })
         )
       }
 
@@ -248,14 +333,14 @@ export default function CustomerPageFaqEmbed({
     const draft = emptyFaq(productId, faqs.length)
     setActiveFaqId(null)
     setIsNewDraft(true)
-    setForm(faqToForm(draft))
+    setForm(faqToForm(draft, editLocale))
   }
 
   const handleDelete = async () => {
     if (!activeFaqId || isNewDraft) {
       setIsNewDraft(false)
       setActiveFaqId(faqs[0]?.id ?? null)
-      if (faqs[0]) setForm(faqToForm(faqs[0]))
+      if (faqs[0]) setForm(faqToForm(faqs[0], editLocale))
       return
     }
     if (!confirm('이 FAQ를 삭제하시겠습니까?')) return
@@ -268,7 +353,7 @@ export default function CustomerPageFaqEmbed({
       setFaqs(remaining)
       const next = remaining[0] ?? null
       setActiveFaqId(next?.id ?? null)
-      if (next) setForm(faqToForm(next))
+      if (next) setForm(faqToForm(next, editLocale))
       setMessage('삭제되었습니다.')
       onSaved?.()
     } catch (error) {
@@ -311,9 +396,6 @@ export default function CustomerPageFaqEmbed({
     }
   }
 
-  const questionField = editLocale === 'en' ? 'question_en' : 'question'
-  const answerField = editLocale === 'en' ? 'answer_en' : 'answer'
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -332,10 +414,8 @@ export default function CustomerPageFaqEmbed({
         <div className="flex items-center gap-2">
           <AdminEditLocaleToggle
             value={editLocale}
-            onChange={setEditLocale}
+            onChange={switchLocale}
             groupLabel="FAQ 편집 언어"
-            koLabel="한국어"
-            enLabel="English"
           />
           <button
             type="button"
@@ -349,52 +429,43 @@ export default function CustomerPageFaqEmbed({
       </div>
 
       {faqs.length === 0 && !isNewDraft ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-          <p className="flex items-center gap-2">
-            <HelpCircle className="h-4 w-4 shrink-0" />
-            등록된 FAQ가 없습니다. 「추가」로 첫 FAQ를 만드세요.
-          </p>
+        <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
+          <HelpCircle className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
+          <p className="text-sm text-muted-foreground">등록된 FAQ가 없습니다.</p>
         </div>
       ) : (
-        <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-2">
-          {faqs.map((item, index) => {
-            const isActive = item.id === activeFaqId && !isNewDraft
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setActiveFaqId(item.id!)
-                  setIsNewDraft(false)
-                }}
-                className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                  isActive
-                    ? 'border-primary bg-primary/5'
-                    : 'border-transparent bg-white hover:border-border'
-                }`}
-              >
-                <p className="truncate text-sm font-medium text-foreground">
-                  Q{index + 1}. {getFaqLabel(item, editLocale)}
-                  {!item.is_active ? (
-                    <span className="ml-1.5 text-[10px] text-amber-700">(비활성)</span>
-                  ) : null}
-                </p>
-              </button>
-            )
-          })}
+        <div className="flex flex-wrap gap-1.5">
+          {faqs.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setIsNewDraft(false)
+                setActiveFaqId(item.id ?? null)
+                setForm(faqToForm(item, editLocale))
+              }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                !isNewDraft && activeFaqId === item.id
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-card text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Q{index + 1}. {getFaqLabel(item, editLocale)}
+            </button>
+          ))}
           {isNewDraft ? (
-            <div className="rounded-lg border border-dashed border-primary bg-primary/5 px-3 py-2 text-sm font-medium text-primary">
-              새 FAQ 작성 중…
-            </div>
+            <span className="rounded-md bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+              새 FAQ
+            </span>
           ) : null}
         </div>
       )}
 
       {(activeFaqId || isNewDraft) && (
         <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <h4 className="text-sm font-semibold text-foreground">
-              {isNewDraft ? '새 FAQ' : 'FAQ 편집'}
+              FAQ 편집 ({getAdminEditLocaleLabel(editLocale)})
             </h4>
             <div className="flex items-center gap-1">
               {!isNewDraft && activeFaqId ? (
@@ -440,12 +511,12 @@ export default function CustomerPageFaqEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              {editLocale === 'en' ? 'question_en' : 'question'}
+              질문 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <input
-              value={form[questionField]}
+              value={form.questionDraft}
               onChange={(e) =>
-                setForm((prev) => ({ ...prev, [questionField]: e.target.value }))
+                setForm((prev) => ({ ...prev, questionDraft: e.target.value }))
               }
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               placeholder="자주 묻는 질문"
@@ -454,12 +525,12 @@ export default function CustomerPageFaqEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              {editLocale === 'en' ? 'answer_en' : 'answer'}
+              답변 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <LightRichEditor
-              value={form[answerField]}
+              value={form.answerDraft}
               onChange={(value) =>
-                setForm((prev) => ({ ...prev, [answerField]: value ?? '' }))
+                setForm((prev) => ({ ...prev, answerDraft: value ?? '' }))
               }
               height={180}
               placeholder="답변 내용"
@@ -467,14 +538,14 @@ export default function CustomerPageFaqEmbed({
             />
           </label>
 
-          {form[answerField] ? (
+          {form.answerDraft ? (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 미리보기
               </p>
               <div
                 className="prose prose-sm mt-1 max-w-none text-foreground"
-                dangerouslySetInnerHTML={{ __html: markdownToHtml(form[answerField]) }}
+                dangerouslySetInnerHTML={{ __html: markdownToHtml(form.answerDraft) }}
               />
             </div>
           ) : null}
@@ -482,7 +553,13 @@ export default function CustomerPageFaqEmbed({
       )}
 
       {message ? (
-        <p className={`text-sm ${message.includes('오류') || message.includes('필수') ? 'text-red-600' : 'text-green-600'}`}>
+        <p
+          className={`text-sm ${
+            message.includes('오류') || message.includes('필수') || message.includes('최소')
+              ? 'text-red-600'
+              : 'text-green-600'
+          }`}
+        >
           {message}
         </p>
       ) : null}

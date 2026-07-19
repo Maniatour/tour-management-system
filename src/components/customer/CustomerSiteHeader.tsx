@@ -1,13 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Heart, Menu, ShoppingCart, User, X } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
 import { useLocale, useTranslations } from 'next-intl'
 import { useContext, useEffect, useState, type ReactNode } from 'react'
 import { CartSidebar, useCart } from '@/components/cart/CartProvider'
 import CartCheckout from '@/components/cart/CartCheckout'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { AuthContext } from '@/contexts/AuthContext'
 import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
 import type { AuthUser } from '@/lib/auth'
@@ -89,26 +89,6 @@ function getAuthUserInitial(user: AuthUser): string {
   return name.charAt(0).toUpperCase()
 }
 
-function HeaderLocaleButton({
-  locale,
-  onSwitch,
-  className = 'kv-header-icon-btn',
-  label,
-}: {
-  locale: string
-  onSwitch: () => void
-  className?: string
-  label: string
-}) {
-  const countryCode = locale === 'ko' ? 'KR' : 'US'
-
-  return (
-    <button type="button" onClick={onSwitch} className={className} aria-label={label}>
-      <ReactCountryFlag countryCode={countryCode} svg aria-hidden className="kv-header-flag-icon" />
-    </button>
-  )
-}
-
 function HeaderAccountButton({
   href,
   user,
@@ -137,7 +117,6 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
   const t = useTranslations('common')
   const locale = useLocale()
   const pathname = usePathname()
-  const router = useRouter()
   const context = useContext(AuthContext)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [showCart, setShowCart] = useState(false)
@@ -150,13 +129,6 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
   const profileHref = !loading && currentUser ? `/${locale}/dashboard` : `/${locale}/auth`
   const cartLabel = locale === 'en' ? 'Cart' : '장바구니'
   const accountLabel = !loading && currentUser ? t('profile') : t('login')
-
-  const switchLocale = () => {
-    const newLocale = locale === 'ko' ? 'en' : 'ko'
-    const pathWithoutLocale = pathname.replace(new RegExp(`^/${locale}(?=/|$)`), '') || '/'
-    document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`
-    router.push(`/${newLocale}${pathWithoutLocale}`)
-  }
 
   const navLinks = isHome
     ? [
@@ -213,7 +185,7 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
           </nav>
 
           <div className="kv-header-actions">
-            <HeaderLocaleButton locale={locale} onSwitch={switchLocale} label={t('language')} />
+            <LanguageSwitcher variant="header" />
             <UtilityIconButton
               href={`/${locale}/products`}
               icon={<Heart className="h-5 w-5" strokeWidth={1.75} />}
@@ -229,7 +201,7 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
           </div>
 
           <div className="kv-header-mobile-bar">
-            <HeaderLocaleButton locale={locale} onSwitch={switchLocale} label={t('language')} />
+            <LanguageSwitcher variant="header" />
             <HeaderAccountButton
               href={profileHref}
               user={currentUser}

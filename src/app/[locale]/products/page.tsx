@@ -6,7 +6,14 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
-import { getProductSummaryByLocale, formatProductDepartureLine, resolveProductListingPrice } from '@/lib/productDetailDisplay'
+import {
+  getProductCustomerDisplayName,
+  getProductSummaryByLocale,
+  formatProductDepartureLine,
+  resolveProductListingPrice,
+} from '@/lib/productDetailDisplay'
+import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
+import type { ProductFieldTranslationRow } from '@/lib/productFieldTranslations'
 import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 import {
   getPreviewDepartureLine,
@@ -50,6 +57,7 @@ export default function ProductsPage() {
   const contentEditMode = isPreview && isEditMode
 
   const [products, setProducts] = useState<Product[]>([])
+  const [fieldTranslations, setFieldTranslations] = useState<ProductFieldTranslationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set())
@@ -123,6 +131,9 @@ export default function ProductsPage() {
             )
 
         const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
+        const ids = productsWithChoicePrices.map((p) => p.id)
+        const translations = await fetchProductFieldTranslations(ids)
+        setFieldTranslations(translations)
         setProducts(productsWithChoicePrices)
       } catch {
         setError(t('errorLoadingProducts'))
@@ -158,18 +169,18 @@ export default function ProductsPage() {
 
   const getCustomerDisplayName = useCallback(
     (product: Product) => {
-    void bindingRevision
-    if (bindingsActive) {
+      void bindingRevision
+      if (bindingsActive) {
         return getPreviewProductDisplayName(
           'listing-card-name',
           product as unknown as Record<string, unknown>,
           locale
         )
       }
-      if (locale === 'en' && product.customer_name_en) return product.customer_name_en
-    return product.customer_name_ko || product.name_ko || product.name
+      const rows = fieldTranslations.filter((r) => r.product_id === product.id)
+      return getProductCustomerDisplayName(product, locale, rows)
     },
-    [bindingsActive, bindingRevision, locale]
+    [bindingsActive, bindingRevision, locale, fieldTranslations]
   )
 
   const getListDepartureLine = useCallback(
@@ -182,9 +193,10 @@ export default function ProductsPage() {
           locale
         )
     }
-    return formatProductDepartureLine(product, locale)
+      const rows = fieldTranslations.filter((r) => r.product_id === product.id)
+      return formatProductDepartureLine(product, locale, rows)
     },
-    [bindingsActive, bindingRevision, locale]
+    [bindingsActive, bindingRevision, locale, fieldTranslations]
   )
 
   const getListPrice = useCallback(
@@ -210,7 +222,8 @@ export default function ProductsPage() {
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const productName = getCustomerDisplayName(product)
-      const productDescription = getProductSummaryByLocale(product, locale)
+      const rows = fieldTranslations.filter((r) => r.product_id === product.id)
+      const productDescription = getProductSummaryByLocale(product, locale, rows)
       const productTags = product.tags || []
 
       const matchesSearch =
@@ -240,6 +253,7 @@ export default function ProductsPage() {
     priceRange,
     locale,
     getCustomerDisplayName,
+    fieldTranslations,
   ])
 
   const hasActiveFilters =

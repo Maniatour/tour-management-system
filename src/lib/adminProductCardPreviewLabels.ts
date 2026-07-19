@@ -1,6 +1,7 @@
 import koMessages from '@/i18n/locales/ko.json'
 import enMessages from '@/i18n/locales/en.json'
 import type { AdminEditLocale } from '@/lib/adminEditLocales'
+import { resolveFileMessageLocale } from '@/lib/siteLocales'
 
 export type AdminProductCardPreviewLocale = AdminEditLocale
 
@@ -10,7 +11,8 @@ const MESSAGE_MAP = {
 } as const
 
 function getCommonMessages(locale: AdminProductCardPreviewLocale) {
-  return (MESSAGE_MAP[locale].common as unknown) as Record<string, unknown>
+  const fileLocale = resolveFileMessageLocale(locale)
+  return (MESSAGE_MAP[fileLocale].common as unknown) as Record<string, unknown>
 }
 
 function getCommonString(locale: AdminProductCardPreviewLocale, key: string, fallback: string) {
@@ -19,17 +21,18 @@ function getCommonString(locale: AdminProductCardPreviewLocale, key: string, fal
 }
 
 export function getProductCardPreviewLabels(locale: AdminProductCardPreviewLocale) {
+  const fileLocale = resolveFileMessageLocale(locale)
   return {
     listingFromPrice: getCommonString(locale, 'listingFromPrice', ''),
     likelyToSellOut: getCommonString(
       locale,
       'likelyToSellOut',
-      locale === 'en' ? 'Likely to sell out' : '매진 임박'
+      fileLocale === 'en' ? 'Likely to sell out' : '매진 임박'
     ),
     imagePreparing: getCommonString(
       locale,
       'imagePreparing',
-      locale === 'en' ? 'Image Preparing' : '이미지 준비 중'
+      fileLocale === 'en' ? 'Image Preparing' : '이미지 준비 중'
     ),
   }
 }

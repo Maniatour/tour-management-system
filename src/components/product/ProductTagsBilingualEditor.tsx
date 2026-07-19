@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import TagSelector from '@/components/admin/TagSelector'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
+import { SITE_LOCALES, type SiteLocale } from '@/lib/siteLocales'
 
-export type TagTranslationState = Record<string, { ko: string; en: string; tagId?: string }>
+export type TagLocaleLabels = Partial<Record<SiteLocale, string>> & { tagId?: string }
+
+export type TagTranslationState = Record<string, TagLocaleLabels>
 
 type ProductTagsBilingualEditorProps = {
   selectedTags: string[]
@@ -32,9 +36,14 @@ export async function loadTagTranslations(
       key: string
       tag_translations?: { locale: string; label: string }[]
     }
-    const ko = r.tag_translations?.find((t) => t.locale === 'ko')?.label ?? ''
-    const en = r.tag_translations?.find((t) => t.locale === 'en')?.label ?? ''
-    out[r.key] = { ko, en, tagId: r.id }
+    const entry: TagLocaleLabels = { tagId: r.id }
+    for (const tr of r.tag_translations ?? []) {
+      const locale = tr.locale === 'zh' ? 'zh-CN' : tr.locale
+      if (SITE_LOCALES.some((item) => item.code === locale) && tr.label?.trim()) {
+        entry[locale as SiteLocale] = tr.label
+      }
+    }
+    out[r.key] = entry
   }
   return out
 }
@@ -55,7 +64,8 @@ export async function saveProductTagsWithTranslations(
     const state = translations[key]
     if (!state?.tagId) continue
 
-    for (const locale of ['ko', 'en'] as const) {
+    for (const localeItem of SITE_LOCALES) {
+      const locale = localeItem.code
       const label = state[locale]?.trim()
       if (!label) continue
 
@@ -91,6 +101,7 @@ export default function ProductTagsBilingualEditor({
   onTranslationsChange,
 }: ProductTagsBilingualEditorProps) {
   const [translations, setTranslations] = useState<TagTranslationState>({})
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
   const [loading, setLoading] = useState(false)
   const onTranslationsChangeRef = useRef(onTranslationsChange)
 
@@ -119,17 +130,11 @@ export default function ProductTagsBilingualEditor({
     }
   }, [selectedTags])
 
-  const setLabel = (tagKey: string, locale: 'ko' | 'en', value: string) => {
+  const setLabel = (tagKey: string, value: string) => {
     setTranslations((prev) => {
-      const current = prev[tagKey]
-      const entry: { ko: string; en: string; tagId?: string } = {
-        ko: current?.ko ?? '',
-        en: current?.en ?? '',
-      }
-      if (current?.tagId) entry.tagId = current.tagId
-      entry[locale] = value
-
-      const next: TagTranslationState = { ...prev, [tagKey]: entry }
+      const current = prev[tagKey] || {}
+      const nextEntry: TagLocaleLabels = { ...current, [editLocale]: value }
+      const next: TagTranslationState = { ...prev, [tagKey]: nextEntry }
       onTranslationsChange(next)
       return next
     })
@@ -138,51 +143,46 @@ export default function ProductTagsBilingualEditor({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">상품 태그 선택</label>
+        <label className="mb-1 block text-xs font-medium text-gray-700">상품 태그 선택</label>
         <TagSelector selectedTags={selectedTags} onTagsChange={onTagsChange} />
-        <p className="text-[11px] text-gray-500 mt-1">
-          태그 키는 공통이며, 아래에서 한국어·영어 표시명을 각각 입력합니다.
+        <p className="mt-1 text-[11px] text-gray-500">
+          태그 키는 공통이며, 아래에서 언어별 표시명을 입력합니다.
         </p>
       </div>
 
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-gray-700">태그 표시명</p>
+        <LocaleDropdown
+          value={editLocale}
+          onChange={setEditLocale}
+          size="sm"
+          showLabel
+          ariaLabel="Tag label language"
+        />
+      </div>
+
       {loading && (
-        <div className="flex items-center text-sm text-gray-500 py-2">
-          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        <div className="flex items-center py-2 text-sm text-gray-500">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           태그 번역 불러오는 중…
         </div>
       )}
 
       {!loading && selectedTags.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs font-medium text-gray-700">태그 표시명 (한국어 / English)</p>
           {selectedTags.map((tagKey) => (
             <div
               key={tagKey}
-              className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2"
+              className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3"
             >
-              <p className="text-[11px] font-mono text-gray-500">{tagKey}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] text-gray-600 mb-0.5">한국어</label>
-                  <input
-                    type="text"
-                    value={translations[tagKey]?.ko ?? ''}
-                    onChange={(e) => setLabel(tagKey, 'ko', e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm"
-                    placeholder="한국어 태그명"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-gray-600 mb-0.5">English</label>
-                  <input
-                    type="text"
-                    value={translations[tagKey]?.en ?? ''}
-                    onChange={(e) => setLabel(tagKey, 'en', e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm"
-                    placeholder="English tag label"
-                  />
-                </div>
-              </div>
+              <p className="font-mono text-[11px] text-gray-500">{tagKey}</p>
+              <input
+                type="text"
+                value={translations[tagKey]?.[editLocale] ?? ''}
+                onChange={(e) => setLabel(tagKey, e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
+                placeholder={`${editLocale} label`}
+              />
             </div>
           ))}
         </div>

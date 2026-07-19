@@ -5,6 +5,10 @@ import {
   usesCapacityQuantitySelection,
   usesQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
+import {
+  getChoiceGroupLocalizedText,
+  getChoiceOptionLocalizedText,
+} from '@/lib/productChoiceLocales'
 
 /** 고객 상세 페이지 상품 초이스 표시 방식 */
 export type ChoicesDisplayMode = 'list' | 'card'
@@ -21,16 +25,29 @@ function compareChoiceSortOrder(a: ProductChoice, b: ProductChoice): number {
 
 export function groupProductChoices(
   productChoices: ProductChoice[],
-  isEnglish: boolean
+  localeOrIsEnglish: string | boolean
 ): Record<string, ProductChoiceGroup> {
+  const locale =
+    typeof localeOrIsEnglish === 'boolean'
+      ? localeOrIsEnglish
+        ? 'en'
+        : 'ko'
+      : localeOrIsEnglish
   const sortedChoices = [...productChoices].sort(compareChoiceSortOrder)
 
   const groups = sortedChoices.reduce((acc, choice) => {
     const groupKey = choice.choice_id
     if (!acc[groupKey]) {
-      const displayName = isEnglish
-        ? (choice.choice_name_en || choice.choice_name_ko || choice.choice_name)
-        : (choice.choice_name_ko || choice.choice_name_en || choice.choice_name)
+      const groupSource = {
+        choice_name: choice.choice_name,
+        choice_name_ko: choice.choice_name_ko,
+        choice_name_en: choice.choice_name_en,
+        choice_description: choice.choice_description,
+        choice_description_ko: choice.choice_description_ko,
+        choice_description_en: choice.choice_description_en,
+        content_i18n: choice.choice_content_i18n ?? null,
+      }
+      const displayName = getChoiceGroupLocalizedText(groupSource, 'name', locale)
 
       acc[groupKey] = {
         choice_id: choice.choice_id,
@@ -38,23 +55,34 @@ export function groupProductChoices(
         choice_name_ko: choice.choice_name_ko,
         choice_name_en: choice.choice_name_en || null,
         choice_type: choice.choice_type,
-        choice_description: choice.choice_description,
+        choice_description: getChoiceGroupLocalizedText(groupSource, 'description', locale),
         choice_description_ko: choice.choice_description_ko || null,
         choice_description_en: choice.choice_description_en || null,
         options: [],
       }
     }
 
+    const optionSource = {
+      option_name: choice.option_name,
+      option_name_ko: choice.option_name_ko,
+      option_description: choice.option_description,
+      option_description_ko: choice.option_description_ko,
+      content_i18n: choice.option_content_i18n ?? null,
+    }
+    const optionLabel = getChoiceOptionLocalizedText(optionSource, 'name', locale)
     acc[groupKey].options.push({
       option_id: choice.option_id,
-      option_name: choice.option_name,
+      option_name: optionLabel || choice.option_name,
       option_name_ko: choice.option_name_ko,
       option_price: choice.option_price,
       capacity: choice.capacity ?? null,
       is_default: choice.is_default,
       option_image_url: choice.option_image_url ?? null,
       option_thumbnail_url: choice.option_thumbnail_url ?? null,
-      option_description: choice.option_description ?? null,
+      option_description:
+        getChoiceOptionLocalizedText(optionSource, 'description', locale) ||
+        choice.option_description ||
+        null,
       option_description_ko: choice.option_description_ko ?? null,
     })
 

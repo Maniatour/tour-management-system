@@ -5,14 +5,22 @@ import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, Chevron
 import { supabase } from '@/lib/supabase'
 import { translateFaqFields, type FaqTranslationFields } from '@/lib/translationService'
 import { suggestFAQQuestion, suggestFAQAnswer } from '@/lib/chatgptService'
+import LocaleDropdown from '@/components/LocaleDropdown'
+import {
+  getFaqLocalizedText,
+  mergeFaqI18n,
+  type FaqContentI18n,
+} from '@/lib/productFaqLocales'
+import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 
 interface FaqItem {
   id?: string
   product_id: string
   question: string
   answer: string
-  question_en?: string
-  answer_en?: string
+  question_en?: string | null
+  answer_en?: string | null
+  content_i18n?: FaqContentI18n | null
   order_index: number
   is_active: boolean
 }
@@ -41,7 +49,7 @@ export default function ProductFaqTab({
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
-  const [showEnglishFields, setShowEnglishFields] = useState(false)
+  const [viewLocale, setViewLocale] = useState<SiteLocale>('ko')
 
   // 기존 FAQ 데이터 로드
   const fetchFaqs = useCallback(async () => {
@@ -368,17 +376,13 @@ export default function ProductFaqTab({
               {saveMessage}
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => setShowEnglishFields(!showEnglishFields)}
-            className={`px-3 py-2 text-sm rounded-lg border ${
-              showEnglishFields 
-                ? 'bg-primary text-primary-foreground border-primary' 
-                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-            }`}
-          >
-            {showEnglishFields ? 'EN' : 'KO'}
-          </button>
+          <LocaleDropdown
+            value={viewLocale}
+            onChange={setViewLocale}
+            size="sm"
+            showLabel
+            ariaLabel="FAQ view language"
+          />
           <button
             type="button"
             onClick={translateAllFaqs}
@@ -500,7 +504,7 @@ export default function ProductFaqTab({
                 >
                   <span className="text-sm font-medium text-gray-500 flex-shrink-0">Q{index + 1}</span>
                   <h4 className="text-left font-medium text-gray-900 text-sm sm:text-base break-words">
-                    {showEnglishFields ? (faq.question_en || faq.question) : faq.question}
+                    {getFaqLocalizedText(faq, 'question', viewLocale)}
                   </h4>
                 </div>
                 <div className="flex items-center space-x-2 flex-shrink-0">
@@ -581,7 +585,7 @@ export default function ProductFaqTab({
                     <span className="text-sm font-medium text-gray-500 mt-1 flex-shrink-0">A</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap break-words">
-                        {showEnglishFields ? (faq.answer_en || faq.answer) : faq.answer}
+                        {getFaqLocalizedText(faq, 'answer', viewLocale)}
                       </p>
                     </div>
                   </div>
@@ -618,21 +622,41 @@ interface FaqModalProps {
 
 function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   const [formData, setFormData] = useState<FaqItem>(faq)
-  const [showEnglishFields, setShowEnglishFields] = useState(false)
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
+  const [questionDraft, setQuestionDraft] = useState(() =>
+    getFaqLocalizedText(faq, 'question', 'ko')
+  )
+  const [answerDraft, setAnswerDraft] = useState(() =>
+    getFaqLocalizedText(faq, 'answer', 'ko')
+  )
+
+  const switchLocale = (next: SiteLocale) => {
+    const merged = mergeFaqI18n(formData, editLocale, questionDraft, answerDraft)
+    const nextFaq = { ...formData, ...merged }
+    setFormData(nextFaq)
+    setEditLocale(next)
+    setQuestionDraft(getFaqLocalizedText(nextFaq, 'question', next))
+    setAnswerDraft(getFaqLocalizedText(nextFaq, 'answer', next))
+  }
 
   const handleSave = () => {
-    if (!formData.question.trim() || !formData.answer.trim()) {
-      alert('질문과 답변을 모두 입력해주세요.')
+    const merged = mergeFaqI18n(formData, editLocale, questionDraft, answerDraft)
+    const nextFaq = { ...formData, ...merged }
+    const hasQ =
+      !!getFaqLocalizedText(nextFaq, 'question', 'ko') ||
+      !!getFaqLocalizedText(nextFaq, 'question', 'en')
+    const hasA =
+      !!getFaqLocalizedText(nextFaq, 'answer', 'ko') ||
+      !!getFaqLocalizedText(nextFaq, 'answer', 'en')
+    if (!hasQ || !hasA) {
+      alert('질문과 답변을 최소 한 언어로 입력해주세요.')
       return
     }
-    onSave(formData)
+    onSave(nextFaq)
   }
 
   const handleInputChange = (field: keyof FaqItem, value: unknown) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }))
+    setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -643,93 +667,84 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div 
-        className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6"
         onKeyDown={handleKeyDown}
       >
-        <div className="flex justify-between items-center mb-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-lg font-medium text-gray-900">
             {faq.id ? 'FAQ 편집' : 'FAQ 추가'}
           </h3>
-          <button
-            type="button"
-            onClick={() => setShowEnglishFields(!showEnglishFields)}
-            className={`px-3 py-1 text-sm rounded border ${
-              showEnglishFields 
-                ? 'bg-primary text-primary-foreground border-primary' 
-                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-            }`}
-          >
-            {showEnglishFields ? 'EN' : 'KO'}
-          </button>
+          <LocaleDropdown
+            value={editLocale}
+            onChange={switchLocale}
+            size="sm"
+            showLabel
+            ariaLabel="FAQ edit language"
+          />
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {showEnglishFields ? '질문 (영어)' : '질문 (한국어)'} *
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              질문 ({getSiteLocaleMeta(editLocale).label}) *
             </label>
             <div className="flex space-x-2">
               <input
                 type="text"
-                value={showEnglishFields ? (formData.question_en || '') : formData.question}
-                onChange={(e) => handleInputChange(showEnglishFields ? 'question_en' : 'question', e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder={showEnglishFields ? "Enter frequently asked question in English" : "자주 묻는 질문을 입력해주세요"}
-                required={!showEnglishFields}
+                value={questionDraft}
+                onChange={(e) => setQuestionDraft(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="FAQ question"
               />
-              {!showEnglishFields && (
+              {editLocale === 'ko' ? (
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      const productTitle = '투어 상품'
-                      const suggestedQuestion = await suggestFAQQuestion(productTitle)
-                      handleInputChange('question', suggestedQuestion)
+                      setQuestionDraft(await suggestFAQQuestion('투어 상품'))
                     } catch (error) {
                       console.error('ChatGPT 질문 추천 오류:', error)
                     }
                   }}
-                  className="px-3 py-2 text-sm bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200"
+                  className="rounded-lg bg-indigo-100 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-200"
                   title="ChatGPT로 질문 추천받기"
                 >
                   <Sparkles className="h-4 w-4" />
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {showEnglishFields ? '답변 (영어)' : '답변 (한국어)'} *
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              답변 ({getSiteLocaleMeta(editLocale).label}) *
             </label>
             <div className="flex space-x-2">
               <textarea
-                value={showEnglishFields ? (formData.answer_en || '') : formData.answer}
-                onChange={(e) => handleInputChange(showEnglishFields ? 'answer_en' : 'answer', e.target.value)}
+                value={answerDraft}
+                onChange={(e) => setAnswerDraft(e.target.value)}
                 rows={6}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder={showEnglishFields ? "Enter answer in English" : "질문에 대한 답변을 입력해주세요"}
-                required={!showEnglishFields}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="FAQ answer"
               />
-              {!showEnglishFields && (
+              {editLocale === 'ko' ? (
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      const suggestedAnswer = await suggestFAQAnswer(formData.question)
-                      handleInputChange('answer', suggestedAnswer)
+                      setAnswerDraft(await suggestFAQAnswer(questionDraft))
                     } catch (error) {
                       console.error('ChatGPT 답변 추천 오류:', error)
                     }
                   }}
-                  className="px-3 py-2 text-sm bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200"
+                  className="rounded-lg bg-indigo-100 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-200"
                   title="ChatGPT로 답변 추천받기"
                 >
                   <Sparkles className="h-4 w-4" />
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -739,7 +754,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
               id="is_active"
               checked={formData.is_active}
               onChange={(e) => handleInputChange('is_active', e.target.checked)}
-              className="h-4 w-4 text-primary focus:ring-ring border-gray-300 rounded"
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
             />
             <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
               활성화
@@ -750,7 +765,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200"
             >
               취소
             </button>
@@ -758,9 +773,9 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              className="flex items-center rounded-lg bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="mr-2 h-4 w-4" />
               {saving ? '저장 중...' : '저장'}
             </button>
           </div>

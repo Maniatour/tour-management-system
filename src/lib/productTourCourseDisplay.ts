@@ -1,4 +1,8 @@
 import type { ProductTourCourse, TourCourse } from '@/components/product/productDetailTypes'
+import {
+  getTourCourseLocalizedText,
+  resolveTourCourseLocale,
+} from '@/lib/productTourCourseLocales'
 
 const EXCLUDED_CUSTOMER_TOUR_COURSE_NAMES = new Set([
   'rest stop',
@@ -24,7 +28,9 @@ function normalizeCourseNameForMatch(name: string): string {
 }
 
 function getCourseNameCandidates(course: TourCourse): string[] {
+  const fromI18n = Object.values(course.content_i18n?.name || {})
   return [
+    ...fromI18n,
     course.customer_name_en,
     course.customer_name_ko,
     course.name_en,
@@ -113,22 +119,28 @@ export function sortTourCoursesForCustomerDisplay(
   return sorted
 }
 
-export function getCourseDisplayName(course: TourCourse, isEnglish: boolean): string {
-  return isEnglish
-    ? (course.customer_name_en || course.customer_name_ko || course.name_en || course.name_ko || '')
-    : (course.customer_name_ko || course.customer_name_en || course.name_ko || course.name_en || '')
+export function getCourseDisplayName(
+  course: TourCourse,
+  localeOrIsEnglish: string | boolean
+): string {
+  return getTourCourseLocalizedText(course, 'name', resolveTourCourseLocale(localeOrIsEnglish))
 }
 
-export function getCourseDescription(course: TourCourse, isEnglish: boolean): string {
-  return isEnglish
-    ? (course.customer_description_en || course.customer_description_ko || '')
-    : (course.customer_description_ko || course.customer_description_en || '')
+export function getCourseDescription(
+  course: TourCourse,
+  localeOrIsEnglish: string | boolean
+): string {
+  return getTourCourseLocalizedText(
+    course,
+    'description',
+    resolveTourCourseLocale(localeOrIsEnglish)
+  )
 }
 
 export function getFullCoursePath(
   course: TourCourse,
   tourCourses: ProductTourCourse[],
-  isEnglish: boolean
+  localeOrIsEnglish: string | boolean
 ): string {
   const path: string[] = []
   let current: TourCourse | undefined = course
@@ -136,7 +148,7 @@ export function getFullCoursePath(
 
   while (current && !visited.has(current.id)) {
     visited.add(current.id)
-    const courseName = getCourseDisplayName(current, isEnglish)
+    const courseName = getCourseDisplayName(current, localeOrIsEnglish)
 
     if (courseName.trim() && !isExcludedCustomerTourCourse(current)) {
       path.unshift(courseName)
@@ -158,13 +170,16 @@ export function getFullCoursePath(
   return path.join(' > ')
 }
 
-export function getValidTourCourses(tourCourses: ProductTourCourse[], isEnglish: boolean): TourCourse[] {
+export function getValidTourCourses(
+  tourCourses: ProductTourCourse[],
+  localeOrIsEnglish: string | boolean
+): TourCourse[] {
   const validCourses = tourCourses
     .map((ptc) => ptc.tour_course)
     .filter((course): course is TourCourse => {
       if (!course || isExcludedCustomerTourCourse(course)) return false
-      const courseName = getCourseDisplayName(course, isEnglish)
-      const courseDescription = getCourseDescription(course, isEnglish)
+      const courseName = getCourseDisplayName(course, localeOrIsEnglish)
+      const courseDescription = getCourseDescription(course, localeOrIsEnglish)
       return courseName.trim() !== '' || courseDescription.trim() !== ''
     })
 
@@ -190,19 +205,19 @@ export function groupCoursesByParent(
 export function getCourseGroupHeader(
   parentId: string,
   tourCourses: ProductTourCourse[],
-  isEnglish: boolean
+  localeOrIsEnglish: string | boolean
 ): string {
   if (parentId === 'root') return ''
 
   const parentCourse = tourCourses.find((ptc) => ptc.tour_course?.id === parentId)?.tour_course
   if (!parentCourse || isExcludedCustomerTourCourse(parentCourse)) return ''
 
-  const parentName = getCourseDisplayName(parentCourse, isEnglish)
+  const parentName = getCourseDisplayName(parentCourse, localeOrIsEnglish)
 
   if (parentCourse.parent_id) {
     const grandParent = tourCourses.find((ptc) => ptc.tour_course?.id === parentCourse.parent_id)?.tour_course
     if (grandParent) {
-      const grandParentName = getCourseDisplayName(grandParent, isEnglish)
+      const grandParentName = getCourseDisplayName(grandParent, localeOrIsEnglish)
       if (grandParentName.trim() && !isExcludedCustomerTourCourse(grandParent)) {
         return `${grandParentName} > ${parentName}`
       }

@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp, Map } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import TourScheduleCustomerItineraryView from '@/components/product/TourScheduleCustomerItineraryView'
+import {
+  getScheduleLocalizedText,
+  type ScheduleContentI18n,
+  type ScheduleI18nField,
+} from '@/lib/productScheduleLocales'
 
 interface ScheduleItem {
   id: string
@@ -25,6 +30,7 @@ interface ScheduleItem {
   description_en: string | null
   location_ko: string | null
   location_en: string | null
+  content_i18n?: ScheduleContentI18n | null
   guide_notes_ko: string | null
   guide_notes_en: string | null
   thumbnail_url: string | null
@@ -137,6 +143,7 @@ export default function TourScheduleSection({
           description_en,
           location_ko,
           location_en,
+          content_i18n,
           guide_notes_ko,
           guide_notes_en,
           thumbnail_url,
@@ -160,34 +167,9 @@ export default function TourScheduleSection({
         .order('start_time', { ascending: true })
       
       if (error) throw error
-      
-      // 디버깅: 개발 환경에서만 로그 출력
-      if (process.env.NODE_ENV === 'development' && data && data.length > 0) {
-        // title이 있는 첫 번째 일정 찾기
-        const scheduleWithTitle = data.find(s => s.title_ko || s.title_en) || data[0]
-        console.log('TourScheduleSection - Fetched schedules:', {
-          count: data.length,
-          locale: locale,
-          sampleSchedule: {
-            id: scheduleWithTitle.id,
-            title_ko: scheduleWithTitle.title_ko,
-            title_en: scheduleWithTitle.title_en,
-            title_ko_length: scheduleWithTitle.title_ko?.length || 0,
-            title_en_length: scheduleWithTitle.title_en?.length || 0,
-            title_ko_exists: !!scheduleWithTitle.title_ko,
-            title_en_exists: !!scheduleWithTitle.title_en,
-            description_ko: scheduleWithTitle.description_ko?.substring(0, 30),
-            description_en: scheduleWithTitle.description_en?.substring(0, 30),
-          },
-          allTitles: data.slice(0, 5).map(s => ({
-            id: s.id,
-            title_ko: s.title_ko,
-            title_en: s.title_en
-          }))
-        })
-      }
-      
-      setSchedules(data || [])
+
+      const rows = (data || []) as unknown as ScheduleItem[]
+      setSchedules(rows)
     } catch (error) {
       console.error('스케줄 로드 오류:', error)
     } finally {
@@ -203,6 +185,15 @@ export default function TourScheduleSection({
   const formatTime = (time: string | null) => {
     if (!time) return ''
     return time.substring(0, 5) // HH:MM 형식으로 변환
+  }
+
+  const getLocalizedScheduleField = (
+    schedule: ScheduleItem,
+    field: ScheduleI18nField,
+    fallback: string | null = ''
+  ) => {
+    const value = getScheduleLocalizedText(schedule, field, locale || 'ko')
+    return value || fallback || ''
   }
 
   const getLocalizedText = (ko: string | null, en: string | null, fallback: string | null, fieldName?: string) => {
@@ -246,9 +237,9 @@ export default function TourScheduleSection({
       // 구글맵 네비게이션 URL 생성
       const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${schedule.latitude},${schedule.longitude}`
       window.open(googleMapsUrl, '_blank')
-    } else if (getLocalizedText(schedule.location_ko, schedule.location_en, '')) {
+    } else if (getLocalizedScheduleField(schedule, 'location')) {
       // 좌표가 없으면 주소로 검색
-      const address = encodeURIComponent(getLocalizedText(schedule.location_ko, schedule.location_en, ''))
+      const address = encodeURIComponent(getLocalizedScheduleField(schedule, 'location'))
       const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${address}`
       window.open(googleMapsUrl, '_blank')
     }
@@ -324,7 +315,7 @@ export default function TourScheduleSection({
       .filter(schedule => {
         // 좌표가 있거나 위치 텍스트가 있는 일정만 포함
         return (schedule.latitude && schedule.longitude) || 
-               getLocalizedText(schedule.location_ko, schedule.location_en, '')
+               getLocalizedScheduleField(schedule, 'location')
       })
       .map(schedule => {
         // 좌표가 있으면 좌표를 우선 사용
@@ -437,7 +428,7 @@ export default function TourScheduleSection({
   }, {} as Record<number, ScheduleItem[]>)
 
   const filteredSchedulesWithDescription = filteredSchedules.filter((s) =>
-    getLocalizedText(s.description_ko, s.description_en, '')
+    getLocalizedScheduleField(s, 'description')
   )
   const allSchedulesExpanded =
     filteredSchedulesWithDescription.length > 0 &&
@@ -613,7 +604,7 @@ export default function TourScheduleSection({
                 <div className="space-y-3">
                   {daySchedules.map((schedule, _scheduleIndex) => {
                     const isExpanded = expandedSchedules.has(schedule.id)
-                    const hasDescription = getLocalizedText(schedule.description_ko, schedule.description_en, '')
+                    const hasDescription = getLocalizedScheduleField(schedule, 'description')
                     // 다음 목적지 찾기 (전체 일정에서 찾기)
                     const nextDestination = showOnlyMySchedules ? getNextDestination(schedule) : null
                     
@@ -681,7 +672,7 @@ export default function TourScheduleSection({
                           
                           {/* 제목 - 별도 줄 */}
                           <h5 className="font-semibold text-gray-900 text-base sm:text-lg mb-3 break-words">
-                            {getLocalizedText(schedule.title_ko, schedule.title_en, '', 'title')}
+                            {getLocalizedScheduleField(schedule, 'title')}
                           </h5>
                           
                           {/* 다음 목적지 표시 (자신의 일정 보기 모드일 때만) */}
@@ -717,7 +708,7 @@ export default function TourScheduleSection({
                               {/* 제목 - 별도 줄 */}
                               <div className="mb-2">
                                 <span className="text-primary font-bold text-sm sm:text-base break-words">
-                                  {getLocalizedText(nextDestination.title_ko, nextDestination.title_en, '')}
+                                  {getLocalizedScheduleField(nextDestination, 'title')}
                                 </span>
                               </div>
                               {/* 주소 - 별도 줄 */}
@@ -725,7 +716,7 @@ export default function TourScheduleSection({
                                 <div className="flex items-start gap-2">
                                   <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                                   <span className="text-primary text-xs sm:text-sm break-words font-medium">
-                                    {getLocalizedText(nextDestination.location_ko, nextDestination.location_en, '')}
+                                    {getLocalizedScheduleField(nextDestination, 'location')}
                                   </span>
                                 </div>
                               ) : null}
@@ -738,7 +729,7 @@ export default function TourScheduleSection({
                           <div className="mt-4 pt-4 border-t-2 border-gray-200">
                             <div className="bg-white/60 rounded-lg p-3 sm:p-4">
                               <p className="text-sm sm:text-base text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                {getLocalizedText(schedule.description_ko, schedule.description_en, '')}
+                                {getLocalizedScheduleField(schedule, 'description')}
                               </p>
                             </div>
                           </div>

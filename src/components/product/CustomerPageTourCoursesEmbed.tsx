@@ -6,19 +6,31 @@ import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
 import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
 import type { ProductTourCourse } from '@/components/product/productDetailTypes'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
 import {
   getCourseDescription,
   getFullCoursePath,
   getValidTourCourses,
 } from '@/lib/productTourCourseDisplay'
+import {
+  getTourCourseLocalizedText,
+  mergeTourCourseI18n,
+  type TourCourseContentI18n,
+} from '@/lib/productTourCourseLocales'
 import { supabase } from '@/lib/supabase'
 
 type CourseForm = {
+  nameDraft: string
+  descriptionDraft: string
   customer_name_ko: string
   customer_name_en: string
   customer_description_ko: string
   customer_description_en: string
+  content_i18n: TourCourseContentI18n
 }
 
 type CustomerPageTourCoursesEmbedProps = {
@@ -27,6 +39,46 @@ type CustomerPageTourCoursesEmbedProps = {
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
   onOpenFullAdmin?: (tabId: string) => void
+}
+
+function emptyForm(): CourseForm {
+  return {
+    nameDraft: '',
+    descriptionDraft: '',
+    customer_name_ko: '',
+    customer_name_en: '',
+    customer_description_ko: '',
+    customer_description_en: '',
+    content_i18n: {},
+  }
+}
+
+function courseToForm(
+  course: {
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+    customer_description_ko?: string | null
+    customer_description_en?: string | null
+    content_i18n?: TourCourseContentI18n | null
+  },
+  locale: AdminEditLocale
+): CourseForm {
+  const source = {
+    customer_name_ko: course.customer_name_ko ?? '',
+    customer_name_en: course.customer_name_en ?? '',
+    customer_description_ko: course.customer_description_ko ?? '',
+    customer_description_en: course.customer_description_en ?? '',
+    content_i18n: course.content_i18n || {},
+  }
+  return {
+    nameDraft: getTourCourseLocalizedText(source, 'name', locale),
+    descriptionDraft: getTourCourseLocalizedText(source, 'description', locale),
+    customer_name_ko: source.customer_name_ko,
+    customer_name_en: source.customer_name_en,
+    customer_description_ko: source.customer_description_ko,
+    customer_description_en: source.customer_description_en,
+    content_i18n: source.content_i18n,
+  }
 }
 
 function mapTourCourseRow(item: Record<string, unknown>): ProductTourCourse | null {
@@ -61,21 +113,14 @@ export default function CustomerPageTourCoursesEmbed({
   const [message, setMessage] = useState<string | null>(null)
   const [tourCourses, setTourCourses] = useState<ProductTourCourse[]>([])
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null)
-  const [form, setForm] = useState<CourseForm>({
-    customer_name_ko: '',
-    customer_name_en: '',
-    customer_description_ko: '',
-    customer_description_en: '',
-  })
+  const [form, setForm] = useState<CourseForm>(emptyForm)
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
   const [modalCourse, setModalCourse] = useState<Record<string, unknown> | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
 
-  const isEnglish = editLocale === 'en'
-
   const displayCourses = useMemo(
-    () => getValidTourCourses(tourCourses, isEnglish),
-    [isEnglish, tourCourses]
+    () => getValidTourCourses(tourCourses, editLocale),
+    [editLocale, tourCourses]
   )
 
   const activeCourse = useMemo(
@@ -109,27 +154,21 @@ export default function CustomerPageTourCoursesEmbed({
 
       setTourCourses(mapped)
 
-      const firstValid = getValidTourCourses(mapped, isEnglish)[0]
+      const firstValid = getValidTourCourses(mapped, editLocale)[0]
       const nextCourseId = firstValid?.id ?? null
       setActiveCourseId(nextCourseId)
 
       if (firstValid) {
-        const nextForm: CourseForm = {
-          customer_name_ko: String(firstValid.customer_name_ko ?? ''),
-          customer_name_en: String(firstValid.customer_name_en ?? ''),
-          customer_description_ko: String(firstValid.customer_description_ko ?? ''),
-          customer_description_en: String(firstValid.customer_description_en ?? ''),
-        }
+        const nextForm = courseToForm(firstValid, editLocale)
         setForm(nextForm)
-        setInitialSnapshot(JSON.stringify({ courseId: nextCourseId, form: nextForm }))
+        setInitialSnapshot(
+          JSON.stringify({ courseId: nextCourseId, form: nextForm, locale: editLocale })
+        )
       } else {
-        setForm({
-          customer_name_ko: '',
-          customer_name_en: '',
-          customer_description_ko: '',
-          customer_description_en: '',
-        })
-        setInitialSnapshot(JSON.stringify({ courseId: null, form: {} }))
+        setForm(emptyForm())
+        setInitialSnapshot(
+          JSON.stringify({ courseId: null, form: {}, locale: editLocale })
+        )
       }
     } catch (error) {
       console.error('투어 코스 로드 오류:', error)
@@ -137,7 +176,7 @@ export default function CustomerPageTourCoursesEmbed({
     } finally {
       setLoading(false)
     }
-  }, [isEnglish, productId])
+  }, [editLocale, productId])
 
   useEffect(() => {
     void loadData()
@@ -145,37 +184,62 @@ export default function CustomerPageTourCoursesEmbed({
 
   useEffect(() => {
     if (!activeCourse) return
-    const nextForm: CourseForm = {
-      customer_name_ko: String(activeCourse.customer_name_ko ?? ''),
-      customer_name_en: String(activeCourse.customer_name_en ?? ''),
-      customer_description_ko: String(activeCourse.customer_description_ko ?? ''),
-      customer_description_en: String(activeCourse.customer_description_en ?? ''),
-    }
+    const nextForm = courseToForm(activeCourse, editLocale)
     setForm(nextForm)
-    setInitialSnapshot(JSON.stringify({ courseId: activeCourse.id, form: nextForm }))
+    setInitialSnapshot(
+      JSON.stringify({ courseId: activeCourse.id, form: nextForm, locale: editLocale })
+    )
   }, [activeCourse?.id])
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot || !activeCourseId) return
     const dirty =
-      JSON.stringify({ courseId: activeCourseId, form }) !== initialSnapshot
+      JSON.stringify({ courseId: activeCourseId, form, locale: editLocale }) !==
+      initialSnapshot
     onDirtyChange(dirty)
-  }, [activeCourseId, form, initialSnapshot, onDirtyChange])
+  }, [activeCourseId, editLocale, form, initialSnapshot, onDirtyChange])
+
+  const switchLocale = (next: AdminEditLocale) => {
+    const merged = mergeTourCourseI18n(
+      form,
+      editLocale,
+      form.nameDraft,
+      form.descriptionDraft
+    )
+    const source = { ...form, ...merged }
+    setForm({
+      nameDraft: getTourCourseLocalizedText(source, 'name', next),
+      descriptionDraft: getTourCourseLocalizedText(source, 'description', next),
+      customer_name_ko: merged.customer_name_ko ?? '',
+      customer_name_en: merged.customer_name_en ?? '',
+      customer_description_ko: merged.customer_description_ko ?? '',
+      customer_description_en: merged.customer_description_en ?? '',
+      content_i18n: merged.content_i18n,
+    })
+    setEditLocale(next)
+  }
 
   const handleSave = async () => {
     if (!activeCourseId) return
     setSaving(true)
     setMessage(null)
     try {
+      const merged = mergeTourCourseI18n(
+        form,
+        editLocale,
+        form.nameDraft,
+        form.descriptionDraft
+      )
       const { error } = await supabase
         .from('tour_courses')
         .update({
-          customer_name_ko: form.customer_name_ko.trim() || null,
-          customer_name_en: form.customer_name_en.trim() || null,
-          customer_description_ko: form.customer_description_ko.trim() || null,
-          customer_description_en: form.customer_description_en.trim() || null,
+          customer_name_ko: merged.customer_name_ko,
+          customer_name_en: merged.customer_name_en,
+          customer_description_ko: merged.customer_description_ko,
+          customer_description_en: merged.customer_description_en,
+          content_i18n: merged.content_i18n,
           updated_at: new Date().toISOString(),
-        })
+        } as never)
         .eq('id', activeCourseId)
 
       if (error) throw error
@@ -187,16 +251,30 @@ export default function CustomerPageTourCoursesEmbed({
             ...item,
             tour_course: {
               ...item.tour_course,
-              customer_name_ko: form.customer_name_ko.trim() || null,
-              customer_name_en: form.customer_name_en.trim() || null,
-              customer_description_ko: form.customer_description_ko.trim() || null,
-              customer_description_en: form.customer_description_en.trim() || null,
+              customer_name_ko: merged.customer_name_ko,
+              customer_name_en: merged.customer_name_en,
+              customer_description_ko: merged.customer_description_ko,
+              customer_description_en: merged.customer_description_en,
+              content_i18n: merged.content_i18n,
             },
           }
         })
       )
 
-      setInitialSnapshot(JSON.stringify({ courseId: activeCourseId, form }))
+      const nextForm = courseToForm(
+        {
+          customer_name_ko: merged.customer_name_ko,
+          customer_name_en: merged.customer_name_en,
+          customer_description_ko: merged.customer_description_ko,
+          customer_description_en: merged.customer_description_en,
+          content_i18n: merged.content_i18n,
+        },
+        editLocale
+      )
+      setForm(nextForm)
+      setInitialSnapshot(
+        JSON.stringify({ courseId: activeCourseId, form: nextForm, locale: editLocale })
+      )
       setMessage('저장되었습니다.')
       onSaved?.()
     } catch (error) {
@@ -225,9 +303,6 @@ export default function CustomerPageTourCoursesEmbed({
       setMessage('코스 상세 정보를 불러오지 못했습니다.')
     }
   }
-
-  const nameField = isEnglish ? 'customer_name_en' : 'customer_name_ko'
-  const descriptionField = isEnglish ? 'customer_description_en' : 'customer_description_ko'
 
   if (loading) {
     return (
@@ -265,10 +340,8 @@ export default function CustomerPageTourCoursesEmbed({
         </p>
         <AdminEditLocaleToggle
           value={editLocale}
-          onChange={setEditLocale}
+          onChange={switchLocale}
           groupLabel="코스 편집 언어"
-          koLabel="한국어"
-          enLabel="English"
         />
       </div>
 
@@ -278,8 +351,8 @@ export default function CustomerPageTourCoursesEmbed({
         </p>
         <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-2">
           {displayCourses.map((course) => {
-            const label = getFullCoursePath(course, tourCourses, isEnglish)
-            const description = getCourseDescription(course, isEnglish)
+            const label = getFullCoursePath(course, tourCourses, editLocale)
+            const description = getCourseDescription(course, editLocale)
             const isActive = course.id === activeCourseId
             return (
               <button
@@ -315,7 +388,9 @@ export default function CustomerPageTourCoursesEmbed({
         <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <h4 className="text-sm font-semibold text-foreground">코스 내용 편집</h4>
+              <h4 className="text-sm font-semibold text-foreground">
+                코스 내용 편집 ({getAdminEditLocaleLabel(editLocale)})
+              </h4>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 코스 ID: <code className="rounded bg-muted px-1">{activeCourse.id}</code>
               </p>
@@ -332,24 +407,24 @@ export default function CustomerPageTourCoursesEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium text-foreground">
-              {isEnglish ? 'customer_name_en' : 'customer_name_ko'}
+              고객용 이름 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <input
               type="text"
-              value={form[nameField]}
-              onChange={(e) => setForm((prev) => ({ ...prev, [nameField]: e.target.value }))}
+              value={form.nameDraft}
+              onChange={(e) => setForm((prev) => ({ ...prev, nameDraft: e.target.value }))}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </label>
 
           <label className="block space-y-1">
             <span className="text-xs font-medium text-foreground">
-              {isEnglish ? 'customer_description_en' : 'customer_description_ko'}
+              고객용 설명 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <LightRichEditor
-              value={form[descriptionField]}
+              value={form.descriptionDraft}
               onChange={(value) =>
-                setForm((prev) => ({ ...prev, [descriptionField]: value }))
+                setForm((prev) => ({ ...prev, descriptionDraft: value ?? '' }))
               }
               height={180}
               placeholder="코스 설명을 입력하세요"
@@ -357,7 +432,7 @@ export default function CustomerPageTourCoursesEmbed({
             />
           </label>
 
-          {form[descriptionField] ? (
+          {form.descriptionDraft ? (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 고객 페이지 미리보기
@@ -365,7 +440,7 @@ export default function CustomerPageTourCoursesEmbed({
               <div
                 className="prose prose-sm mt-1 max-w-none text-foreground"
                 dangerouslySetInnerHTML={{
-                  __html: markdownToHtml(form[descriptionField]),
+                  __html: markdownToHtml(form.descriptionDraft),
                 }}
               />
             </div>

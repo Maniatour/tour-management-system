@@ -37,8 +37,17 @@ import {
 import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
 import {
   cardEditSectionSupportsLocaleSwitch,
+  getAdminEditLocaleLabel,
   type AdminEditLocale,
 } from '@/lib/adminEditLocales'
+import {
+  buildProductTranslationMap,
+  fetchProductFieldTranslations,
+  upsertProductFieldTranslations,
+  type ProductTranslationField,
+  type ProductTranslationMap,
+} from '@/lib/productFieldTranslations'
+import { isLegacyColumnLocale } from '@/lib/siteLocales'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -89,6 +98,7 @@ export default function AdminProductCardEditModals({
   const [tagTranslations, setTagTranslations] = useState<TagTranslationState>({})
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [editLocale, setEditLocale] = useState<AdminEditLocale>('ko')
+  const [translationMap, setTranslationMap] = useState<ProductTranslationMap>({})
 
   const showLocaleToggle = cardEditSectionSupportsLocaleSwitch(section)
 
@@ -104,7 +114,112 @@ export default function AdminProductCardEditModals({
     setTagKeys(product.tags ?? [])
     setTagTranslations({})
     setNewDepartureTime('')
+    setTranslationMap(buildProductTranslationMap(current, []))
+
+    let cancelled = false
+    void (async () => {
+      const rows = await fetchProductFieldTranslations(product.id)
+      if (cancelled) return
+      setTranslationMap(buildProductTranslationMap(current, rows))
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [section, product])
+
+  const readTranslated = (field: ProductTranslationField): string => {
+    if (isLegacyColumnLocale(editLocale)) {
+      if (field === 'name') return editLocale === 'ko' ? basicForm.name : basicForm.nameEn
+      if (field === 'customer_name') {
+        return editLocale === 'ko' ? basicForm.customerNameKo : basicForm.customerNameEn
+      }
+      if (field === 'summary') {
+        return editLocale === 'ko' ? basicForm.summaryKo : basicForm.summaryEn
+      }
+      if (field === 'departure_city') {
+        return editLocale === 'ko' ? locationForm.departureCityKo : locationForm.departureCityEn
+      }
+      if (field === 'arrival_city') {
+        return editLocale === 'ko' ? locationForm.arrivalCityKo : locationForm.arrivalCityEn
+      }
+      if (field === 'departure_country') {
+        return editLocale === 'ko'
+          ? locationForm.departureCountryKo
+          : locationForm.departureCountryEn
+      }
+      if (field === 'arrival_country') {
+        return editLocale === 'ko' ? locationForm.arrivalCountryKo : locationForm.arrivalCountryEn
+      }
+    }
+    // Edit UI must not fall back to another language — show empty when unset.
+    return translationMap[field]?.[editLocale] ?? ''
+  }
+
+  const writeTranslated = (field: ProductTranslationField, value: string) => {
+    if (isLegacyColumnLocale(editLocale)) {
+      if (field === 'name') {
+        setBasicForm((prev) =>
+          editLocale === 'ko' ? { ...prev, name: value } : { ...prev, nameEn: value }
+        )
+        return
+      }
+      if (field === 'customer_name') {
+        setBasicForm((prev) =>
+          editLocale === 'ko'
+            ? { ...prev, customerNameKo: value }
+            : { ...prev, customerNameEn: value }
+        )
+        return
+      }
+      if (field === 'summary') {
+        setBasicForm((prev) =>
+          editLocale === 'ko' ? { ...prev, summaryKo: value } : { ...prev, summaryEn: value }
+        )
+        return
+      }
+      if (field === 'departure_city') {
+        setLocationForm((prev) =>
+          editLocale === 'ko'
+            ? { ...prev, departureCityKo: value }
+            : { ...prev, departureCityEn: value }
+        )
+        return
+      }
+      if (field === 'arrival_city') {
+        setLocationForm((prev) =>
+          editLocale === 'ko'
+            ? { ...prev, arrivalCityKo: value }
+            : { ...prev, arrivalCityEn: value }
+        )
+        return
+      }
+      if (field === 'departure_country') {
+        setLocationForm((prev) =>
+          editLocale === 'ko'
+            ? { ...prev, departureCountryKo: value }
+            : { ...prev, departureCountryEn: value }
+        )
+        return
+      }
+      if (field === 'arrival_country') {
+        setLocationForm((prev) =>
+          editLocale === 'ko'
+            ? { ...prev, arrivalCountryKo: value }
+            : { ...prev, arrivalCountryEn: value }
+        )
+        return
+      }
+    }
+
+    setTranslationMap((prev) => ({
+      ...prev,
+      [field]: {
+        ...(prev[field] || {}),
+        [editLocale]: value,
+      },
+    }))
+  }
 
   useEffect(() => {
     if (section !== 'basic') return
@@ -153,6 +268,41 @@ export default function AdminProductCardEditModals({
 
       if (section === 'location') {
         updates = buildDepartureUpdateFields(locationForm)
+        const locationValues: Partial<Record<ProductTranslationField, string>> = {
+          departure_city: readTranslated('departure_city'),
+          arrival_city: readTranslated('arrival_city'),
+          departure_country: readTranslated('departure_country'),
+          arrival_country: readTranslated('arrival_country'),
+        }
+        // Always persist ko/en columns, then upsert the active locale (covers ja/zh/…).
+        const legacyFromKo = await upsertProductFieldTranslations({
+          productId: product.id,
+          locale: 'ko',
+          values: {
+            departure_city: locationForm.departureCityKo,
+            arrival_city: locationForm.arrivalCityKo,
+            departure_country: locationForm.departureCountryKo,
+            arrival_country: locationForm.arrivalCountryKo,
+          },
+        })
+        const legacyFromEn = await upsertProductFieldTranslations({
+          productId: product.id,
+          locale: 'en',
+          values: {
+            departure_city: locationForm.departureCityEn,
+            arrival_city: locationForm.arrivalCityEn,
+            departure_country: locationForm.departureCountryEn,
+            arrival_country: locationForm.arrivalCountryEn,
+          },
+        })
+        if (!isLegacyColumnLocale(editLocale)) {
+          await upsertProductFieldTranslations({
+            productId: product.id,
+            locale: editLocale,
+            values: locationValues,
+          })
+        }
+        updates = { ...updates, ...legacyFromKo, ...legacyFromEn }
       }
 
       if (section === 'basic') {
@@ -163,6 +313,7 @@ export default function AdminProductCardEditModals({
         }
         updates = {
           name: basicForm.name.trim(),
+          name_ko: basicForm.name.trim() || null,
           name_en: basicForm.nameEn.trim() || null,
           customer_name_ko: basicForm.customerNameKo.trim() || basicForm.name.trim(),
           customer_name_en: basicForm.customerNameEn.trim() || basicForm.nameEn.trim() || 'Product',
@@ -172,6 +323,35 @@ export default function AdminProductCardEditModals({
           sub_category: basicForm.subCategory,
           summary_ko: basicForm.summaryKo.trim() || null,
           summary_en: basicForm.summaryEn.trim() || null,
+        }
+        await upsertProductFieldTranslations({
+          productId: product.id,
+          locale: 'ko',
+          values: {
+            name: basicForm.name,
+            customer_name: basicForm.customerNameKo.trim() || basicForm.name,
+            summary: basicForm.summaryKo,
+          },
+        })
+        await upsertProductFieldTranslations({
+          productId: product.id,
+          locale: 'en',
+          values: {
+            name: basicForm.nameEn,
+            customer_name: basicForm.customerNameEn.trim() || basicForm.nameEn || 'Product',
+            summary: basicForm.summaryEn,
+          },
+        })
+        if (!isLegacyColumnLocale(editLocale)) {
+          await upsertProductFieldTranslations({
+            productId: product.id,
+            locale: editLocale,
+            values: {
+              name: readTranslated('name'),
+              customer_name: readTranslated('customer_name'),
+              summary: readTranslated('summary'),
+            },
+          })
         }
       }
 
@@ -435,97 +615,65 @@ export default function AdminProductCardEditModals({
 
         {section === 'location' ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            {editLocale === 'ko' ? (
-              <>
-                <Field label={tBasic('departureCity')}>
-                  <Input
-                    value={locationForm.departureCityKo}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, departureCityKo: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('arrivalCity')}>
-                  <Input
-                    value={locationForm.arrivalCityKo}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, arrivalCityKo: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('departureCountry')}>
-                  <Input
-                    value={locationForm.departureCountryKo}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, departureCountryKo: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('arrivalCountry')}>
-                  <Input
-                    value={locationForm.arrivalCountryKo}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, arrivalCountryKo: e.target.value }))}
-                  />
-                </Field>
-              </>
-            ) : (
-              <>
-                <Field label={tBasic('departureCity')}>
-                  <Input
-                    value={locationForm.departureCityEn}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, departureCityEn: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('arrivalCity')}>
-                  <Input
-                    value={locationForm.arrivalCityEn}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, arrivalCityEn: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('departureCountry')}>
-                  <Input
-                    value={locationForm.departureCountryEn}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, departureCountryEn: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('arrivalCountry')}>
-                  <Input
-                    value={locationForm.arrivalCountryEn}
-                    onChange={(e) => setLocationForm((prev) => ({ ...prev, arrivalCountryEn: e.target.value }))}
-                  />
-                </Field>
-              </>
-            )}
+            <Field label={`${tBasic('departureCity')} (${getAdminEditLocaleLabel(editLocale)})`}>
+              <Input
+                value={readTranslated('departure_city')}
+                onChange={(e) => writeTranslated('departure_city', e.target.value)}
+              />
+            </Field>
+            <Field label={`${tBasic('arrivalCity')} (${getAdminEditLocaleLabel(editLocale)})`}>
+              <Input
+                value={readTranslated('arrival_city')}
+                onChange={(e) => writeTranslated('arrival_city', e.target.value)}
+              />
+            </Field>
+            <Field label={`${tBasic('departureCountry')} (${getAdminEditLocaleLabel(editLocale)})`}>
+              <Input
+                value={readTranslated('departure_country')}
+                onChange={(e) => writeTranslated('departure_country', e.target.value)}
+              />
+            </Field>
+            <Field label={`${tBasic('arrivalCountry')} (${getAdminEditLocaleLabel(editLocale)})`}>
+              <Input
+                value={readTranslated('arrival_country')}
+                onChange={(e) => writeTranslated('arrival_country', e.target.value)}
+              />
+            </Field>
           </div>
         ) : null}
 
         {section === 'basic' ? (
           <div className="grid gap-4">
-            {editLocale === 'ko' ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={tBasic('nameInternalKo')}>
-                  <Input
-                    value={basicForm.name}
-                    onChange={(e) => setBasicForm((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('nameCustomerKo')}>
-                  <Input
-                    value={basicForm.customerNameKo}
-                    onChange={(e) => setBasicForm((prev) => ({ ...prev, customerNameKo: e.target.value }))}
-                  />
-                </Field>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={tBasic('nameInternalEn')}>
-                  <Input
-                    value={basicForm.nameEn}
-                    onChange={(e) => setBasicForm((prev) => ({ ...prev, nameEn: e.target.value }))}
-                  />
-                </Field>
-                <Field label={tBasic('nameCustomerEn')}>
-                  <Input
-                    value={basicForm.customerNameEn}
-                    onChange={(e) => setBasicForm((prev) => ({ ...prev, customerNameEn: e.target.value }))}
-                  />
-                </Field>
-              </div>
-            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label={
+                  editLocale === 'ko'
+                    ? tBasic('nameInternalKo')
+                    : editLocale === 'en'
+                      ? tBasic('nameInternalEn')
+                      : `${tBasic('nameInternalEn')} (${getAdminEditLocaleLabel(editLocale)})`
+                }
+              >
+                <Input
+                  value={readTranslated('name')}
+                  onChange={(e) => writeTranslated('name', e.target.value)}
+                />
+              </Field>
+              <Field
+                label={
+                  editLocale === 'ko'
+                    ? tBasic('nameCustomerKo')
+                    : editLocale === 'en'
+                      ? tBasic('nameCustomerEn')
+                      : `${tBasic('nameCustomerEn')} (${getAdminEditLocaleLabel(editLocale)})`
+                }
+              >
+                <Input
+                  value={readTranslated('customer_name')}
+                  onChange={(e) => writeTranslated('customer_name', e.target.value)}
+                />
+              </Field>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={tBasic('productCode')}>
                 <Input
@@ -578,16 +726,18 @@ export default function AdminProductCardEditModals({
                 </select>
               </Field>
             </div>
-            <Field label={editLocale === 'ko' ? tCommon('productSummaryKo') : tCommon('productSummaryEn')}>
+            <Field
+              label={
+                editLocale === 'ko'
+                  ? tCommon('productSummaryKo')
+                  : editLocale === 'en'
+                    ? tCommon('productSummaryEn')
+                    : `${tCommon('productSummaryEn')} (${getAdminEditLocaleLabel(editLocale)})`
+              }
+            >
               <textarea
-                value={editLocale === 'ko' ? basicForm.summaryKo : basicForm.summaryEn}
-                onChange={(e) =>
-                  setBasicForm((prev) =>
-                    editLocale === 'ko'
-                      ? { ...prev, summaryKo: e.target.value }
-                      : { ...prev, summaryEn: e.target.value }
-                  )
-                }
+                value={readTranslated('summary')}
+                onChange={(e) => writeTranslated('summary', e.target.value)}
                 className="app-input min-h-[88px] w-full resize-y"
               />
             </Field>

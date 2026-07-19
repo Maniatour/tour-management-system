@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
+import { contentFallbackOrder, isSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
-export type TagLabelMap = Record<string, { ko?: string; en?: string }>
+export type TagLabelMap = Record<string, Partial<Record<SiteLocale, string>>>
 
 export async function fetchTagLabelMap(tagKeys: string[]): Promise<TagLabelMap> {
   const unique = [...new Set(tagKeys.map((k) => k.trim()).filter(Boolean))]
@@ -18,10 +19,12 @@ export async function fetchTagLabelMap(tagKeys: string[]): Promise<TagLabelMap> 
     const key = String((row as { key: string }).key)
     const translations = (row as { tag_translations?: { locale: string; label: string }[] })
       .tag_translations
-    const entry: { ko?: string; en?: string } = {}
+    const entry: Partial<Record<SiteLocale, string>> = {}
     for (const tr of translations ?? []) {
-      if (tr.locale === 'ko') entry.ko = tr.label
-      if (tr.locale === 'en') entry.en = tr.label
+      const locale = tr.locale === 'zh' ? 'zh-CN' : tr.locale
+      if (isSiteLocale(locale) && tr.label?.trim()) {
+        entry[locale] = tr.label.trim()
+      }
     }
     map[key] = entry
   }
@@ -35,10 +38,12 @@ export function resolveTagLabel(
 ): string {
   const entry = map[tagKey]
   if (!entry) return tagKey
-  if (locale === 'en') {
-    return entry.en?.trim() || entry.ko?.trim() || tagKey
+  const preferred = isSiteLocale(locale) ? locale : 'en'
+  for (const code of contentFallbackOrder(preferred)) {
+    const label = entry[code]?.trim()
+    if (label) return label
   }
-  return entry.ko?.trim() || entry.en?.trim() || tagKey
+  return tagKey
 }
 
 export function resolveTagLabels(

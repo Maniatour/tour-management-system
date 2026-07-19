@@ -69,7 +69,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   useEffect(() => {
     if (typeof window === 'undefined') return
     const path = window.location.pathname
-    if (!/^\/(ko|en)\/guide(\/|$)/.test(path)) return
+    if (!/^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/guide(\/|$)/.test(path)) return
     persistPwaStartPath(path)
     const onPageShow = () => {
       persistPwaStartPath(window.location.pathname)

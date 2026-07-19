@@ -33,6 +33,7 @@ import {
 } from '@/lib/customerPageDisplayFromBindings'
 import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
 import { fetchTagLabelMap, resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
+import type { ProductFieldTranslationRow } from '@/lib/productFieldTranslations'
 import { useProductDetailChoices } from '@/hooks/useProductDetailChoices'
 import {
   DEFAULT_TRAVELER_COUNTS,
@@ -77,6 +78,7 @@ function ProductDetailPageContentInner({
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
   const [tourCoursePhotos, setTourCoursePhotos] = useState<TourCoursePhoto[]>([])
   const [productMedia, setProductMedia] = useState<ProductMedia[]>([])
+  const [fieldTranslations, setFieldTranslations] = useState<ProductFieldTranslationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
@@ -114,7 +116,7 @@ function ProductDetailPageContentInner({
   } = useProductDetailChoices(
     productChoices,
     product?.base_price,
-    isEnglish,
+    locale,
     partySize
   )
 
@@ -146,6 +148,7 @@ function ProductDetailPageContentInner({
       setProductChoices(data.productChoices)
       setProductMedia(data.productMedia)
       setTourCoursePhotos(data.tourCoursePhotos)
+      setFieldTranslations(data.fieldTranslations ?? [])
       setError(data.error)
 
       const reviewsData = await fetchProductReviews({
@@ -218,7 +221,7 @@ function ProductDetailPageContentInner({
     if (bindingsActive && product) {
       return getPreviewProductDisplayName('detail-header', product, locale)
     }
-    return getProductCustomerDisplayName(product, locale)
+    return getProductCustomerDisplayName(product, locale, fieldTranslations)
   })()
   const categoryLabel = getProductCategoryLabel(product.category || '', isEnglish)
   const durationLabel = formatProductDuration(product.duration, isEnglish)

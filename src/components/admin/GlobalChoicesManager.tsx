@@ -3,8 +3,17 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { Plus, Search, Edit, Trash2, Copy, Upload, ChevronUp, ChevronDown, BookOpen, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
 import ImageUpload from '@/components/common/ImageUpload'
+import {
+  applyGroupI18nToOptionContent,
+  getOptionTemplateLocalizedText,
+  mergeOptionTemplateGroupI18n,
+  mergeOptionTemplateOptionI18n,
+  type OptionTemplateContentI18n,
+} from '@/lib/optionTemplateLocales'
+import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 
 interface ChoiceTemplate {
   id: string
@@ -28,6 +37,7 @@ interface ChoiceTemplate {
   template_group_ko?: string
   template_group_description_ko?: string
   template_group_description_en?: string
+  content_i18n?: OptionTemplateContentI18n | null
   is_required: boolean
   sort_order: number
   image_url?: string
@@ -64,6 +74,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
     template_group_ko: string, 
     template_group_description_ko?: string, 
     template_group_description_en?: string,
+    content_i18n?: OptionTemplateContentI18n | null,
     choice_type?: 'single' | 'multiple' | 'quantity',
     is_required?: boolean,
     min_selections?: number,
@@ -134,6 +145,9 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         max_selections: template.max_selections,
         template_group: template.template_group,
         template_group_ko: template.template_group_ko,
+        template_group_description_ko: template.template_group_description_ko,
+        template_group_description_en: template.template_group_description_en,
+        content_i18n: template.content_i18n || {},
         is_required: template.is_required,
         sort_order: template.sort_order,
         image_url: isValidUrl(template.image_url),
@@ -193,6 +207,9 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
           max_selections: template.max_selections,
           template_group: template.template_group,
           template_group_ko: template.template_group_ko,
+          template_group_description_ko: template.template_group_description_ko,
+          template_group_description_en: template.template_group_description_en,
+          content_i18n: template.content_i18n || {},
           is_required: template.is_required,
           sort_order: template.sort_order,
           image_url: isValidUrl(template.image_url),
@@ -270,6 +287,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         template_group_ko: template.template_group_ko,
         template_group_description_ko: template.template_group_description_ko,
         template_group_description_en: template.template_group_description_en,
+        content_i18n: template.content_i18n || {},
         is_required: template.is_required,
         sort_order: maxSortOrder + 1,
         image_url: template.image_url,
@@ -360,6 +378,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
     template_group_ko: string,
     template_group_description_ko?: string,
     template_group_description_en?: string,
+    content_i18n?: OptionTemplateContentI18n,
     choice_type: 'single' | 'multiple' | 'quantity',
     is_required: boolean,
     min_selections: number,
@@ -387,6 +406,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         template_group_ko: groupData.template_group_ko,
         template_group_description_ko: groupData.template_group_description_ko || null,
         template_group_description_en: groupData.template_group_description_en || null,
+        content_i18n: groupData.content_i18n || {},
         is_required: groupData.is_required,
         sort_order: 0
       }
@@ -461,6 +481,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
       template_group_ko: string, 
       template_group_description_ko?: string, 
       template_group_description_en?: string,
+      content_i18n?: OptionTemplateContentI18n,
       choice_type?: 'single' | 'multiple' | 'quantity',
       is_required?: boolean,
       min_selections?: number,
@@ -478,62 +499,47 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         return
       }
 
-      // 모든 템플릿의 그룹 정보 업데이트
-      const updateData: any = {
-        template_group: newGroup.template_group,
-        template_group_ko: newGroup.template_group_ko
-      }
-      
-      // 설명 필드가 있으면 추가
-      if (newGroup.template_group_description_ko !== undefined) {
-        updateData.template_group_description_ko = newGroup.template_group_description_ko || null
-      }
-      if (newGroup.template_group_description_en !== undefined) {
-        updateData.template_group_description_en = newGroup.template_group_description_en || null
-      }
+      const results = await Promise.all(
+        groupTemplates.map((row) => {
+          const mergedContent = applyGroupI18nToOptionContent(
+            row.content_i18n,
+            newGroup.content_i18n || {}
+          )
+          const updateData: Record<string, unknown> = {
+            template_group: newGroup.template_group,
+            template_group_ko: newGroup.template_group_ko,
+            content_i18n: mergedContent,
+          }
+          if (newGroup.template_group_description_ko !== undefined) {
+            updateData.template_group_description_ko =
+              newGroup.template_group_description_ko || null
+          }
+          if (newGroup.template_group_description_en !== undefined) {
+            updateData.template_group_description_en =
+              newGroup.template_group_description_en || null
+          }
+          if (newGroup.choice_type !== undefined) {
+            updateData.choice_type = newGroup.choice_type
+          }
+          if (newGroup.is_required !== undefined) {
+            updateData.is_required = newGroup.is_required
+          }
+          if (newGroup.min_selections !== undefined) {
+            updateData.min_selections = newGroup.min_selections
+          }
+          if (newGroup.max_selections !== undefined) {
+            updateData.max_selections = newGroup.max_selections
+          }
+          return supabase.from('options').update(updateData as never).eq('id', row.id)
+        })
+      )
 
-      // 그룹 메타데이터 업데이트 (choice_type, is_required, min_selections, max_selections)
-      if (newGroup.choice_type !== undefined) {
-        updateData.choice_type = newGroup.choice_type
-      }
-      if (newGroup.is_required !== undefined) {
-        updateData.is_required = newGroup.is_required
-      }
-      if (newGroup.min_selections !== undefined) {
-        updateData.min_selections = newGroup.min_selections
-      }
-      if (newGroup.max_selections !== undefined) {
-        updateData.max_selections = newGroup.max_selections
-      }
-
-      const { error } = await supabase
-        .from('options')
-        .update(updateData)
-        .eq('is_choice_template', true)
-        .eq('template_group', oldGroup.template_group)
-
+      const error = results.find((r) => r.error)?.error
       if (error) {
         console.error('Error updating template group:', error)
         alert('템플릿 그룹 수정 중 오류가 발생했습니다.')
         return
       }
-
-      // 로컬 상태 업데이트
-      setTemplates(templates.map(t => 
-        t.template_group === oldGroup.template_group
-          ? { 
-              ...t, 
-              template_group: newGroup.template_group, 
-              template_group_ko: newGroup.template_group_ko,
-              ...(newGroup.template_group_description_ko !== undefined && { template_group_description_ko: newGroup.template_group_description_ko }),
-              ...(newGroup.template_group_description_en !== undefined && { template_group_description_en: newGroup.template_group_description_en }),
-              ...(newGroup.choice_type !== undefined && { choice_type: newGroup.choice_type }),
-              ...(newGroup.is_required !== undefined && { is_required: newGroup.is_required }),
-              ...(newGroup.min_selections !== undefined && { min_selections: newGroup.min_selections }),
-              ...(newGroup.max_selections !== undefined && { max_selections: newGroup.max_selections })
-            } as ChoiceTemplate
-          : t
-      ))
 
       setEditingGroup(null)
       await fetchTemplates() // 최신 데이터 다시 불러오기
@@ -807,7 +813,8 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
           template_group: firstTemplate.template_group || '',
           template_group_ko: firstTemplate.template_group_ko || firstTemplate.template_group || '',
           template_group_description_ko: firstTemplate.template_group_description_ko || '',
-          template_group_description_en: firstTemplate.template_group_description_en || ''
+          template_group_description_en: firstTemplate.template_group_description_en || '',
+          content_i18n: firstTemplate.content_i18n || {},
         }
         
         return (
@@ -1398,6 +1405,16 @@ interface TemplateFormProps {
 }
 
 function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
+  const [contentI18n, setContentI18n] = useState<OptionTemplateContentI18n>(
+    () => (template?.content_i18n || {}) as OptionTemplateContentI18n
+  )
+  const [nameDraft, setNameDraft] = useState(() =>
+    getOptionTemplateLocalizedText(template || {}, 'name', 'ko')
+  )
+  const [descriptionDraft, setDescriptionDraft] = useState(() =>
+    getOptionTemplateLocalizedText(template || {}, 'description', 'ko')
+  )
   const [formData, setFormData] = useState({
     name: template?.name || '',
     name_ko: template?.name_ko || '',
@@ -1416,6 +1433,8 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     max_selections: template?.max_selections || 1,
     template_group: template?.template_group || '',
     template_group_ko: template?.template_group_ko || '',
+    template_group_description_ko: template?.template_group_description_ko || '',
+    template_group_description_en: template?.template_group_description_en || '',
     is_required: template?.is_required ?? true,
     sort_order: template?.sort_order || 0,
     image_url: template?.image_url || '',
@@ -1424,9 +1443,56 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     image_order: template?.image_order || 0
   })
 
+  const switchLocale = (next: SiteLocale) => {
+    const merged = mergeOptionTemplateOptionI18n(
+      { ...template, ...formData, content_i18n: contentI18n },
+      editLocale,
+      nameDraft,
+      descriptionDraft
+    )
+    setContentI18n(merged.content_i18n)
+    setFormData((prev) => ({
+      ...prev,
+      name: merged.name,
+      name_ko: merged.name_ko || '',
+      description: merged.description || '',
+      description_ko: merged.description_ko || '',
+      description_en: merged.description_en || '',
+    }))
+    setEditLocale(next)
+    setNameDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'name',
+        next
+      )
+    )
+    setDescriptionDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'description',
+        next
+      )
+    )
+  }
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    onSubmit(formData as Omit<ChoiceTemplate, 'id' | 'created_at'>)
+    const merged = mergeOptionTemplateOptionI18n(
+      { ...template, ...formData, content_i18n: contentI18n },
+      editLocale,
+      nameDraft,
+      descriptionDraft
+    )
+    onSubmit({
+      ...formData,
+      name: merged.name,
+      name_ko: merged.name_ko || undefined,
+      description: merged.description || undefined,
+      description_ko: merged.description_ko || undefined,
+      description_en: merged.description_en || undefined,
+      content_i18n: merged.content_i18n,
+    } as Omit<ChoiceTemplate, 'id' | 'created_at'>)
   }
 
   const addTag = () => {
@@ -1450,47 +1516,41 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (한글)</label>
-              <input
-                type="text"
-                value={formData.name_ko}
-                onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (영문)</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                required
-              />
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-gray-700">고객용 텍스트</p>
+            <LocaleDropdown
+              value={editLocale}
+              onChange={switchLocale}
+              size="sm"
+              showLabel
+              ariaLabel="Template content language"
+            />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">설명 (한글)</label>
-              <textarea
-                value={formData.description_ko}
-                onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">설명 (영문)</label>
-              <textarea
-                value={formData.description_en}
-                onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                rows={3}
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              초이스 이름 ({getSiteLocaleMeta(editLocale).label})
+              {editLocale === 'en' || editLocale === 'ko' ? (
+                <span className="text-red-500"> *</span>
+              ) : null}
+            </label>
+            <input
+              type="text"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              required={editLocale === 'en' || editLocale === 'ko'}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              설명 ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <textarea
+              value={descriptionDraft}
+              onChange={(e) => setDescriptionDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              rows={3}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1808,6 +1868,7 @@ interface GroupAddModalProps {
     template_group_ko: string,
     template_group_description_ko?: string,
     template_group_description_en?: string,
+    content_i18n?: OptionTemplateContentI18n,
     choice_type: 'single' | 'multiple' | 'quantity',
     is_required: boolean,
     min_selections: number,
@@ -1817,6 +1878,10 @@ interface GroupAddModalProps {
 }
 
 function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
+  const [contentI18n, setContentI18n] = useState<OptionTemplateContentI18n>({})
+  const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState('')
   const [formData, setFormData] = useState({
     template_group: '',
     template_group_ko: '',
@@ -1828,17 +1893,68 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
     max_selections: 1
   })
 
+  const switchLocale = (next: SiteLocale) => {
+    const merged = mergeOptionTemplateGroupI18n(
+      { content_i18n: contentI18n },
+      editLocale,
+      groupNameDraft,
+      groupDescriptionDraft,
+      formData.template_group
+    )
+    setContentI18n(merged.content_i18n)
+    setFormData((prev) => ({
+      ...prev,
+      template_group: merged.template_group || prev.template_group,
+      template_group_ko: merged.template_group_ko || '',
+      template_group_description_ko: merged.template_group_description_ko || '',
+      template_group_description_en: merged.template_group_description_en || '',
+    }))
+    setEditLocale(next)
+    setGroupNameDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'group_name',
+        next
+      )
+    )
+    setGroupDescriptionDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'group_description',
+        next
+      )
+    )
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.template_group.trim()) {
-      alert('초이스 그룹 이름(영문)을 입력해주세요.')
+      alert('초이스 그룹 키(영문 식별자)를 입력해주세요.')
       return
     }
-    if (!formData.template_group_ko.trim()) {
-      alert('초이스 그룹 이름(한글)을 입력해주세요.')
+    const merged = mergeOptionTemplateGroupI18n(
+      { content_i18n: contentI18n },
+      editLocale,
+      groupNameDraft,
+      groupDescriptionDraft,
+      formData.template_group
+    )
+    if (!merged.template_group_ko?.trim() && !groupNameDraft.trim()) {
+      alert('고객용 그룹 표시 이름을 입력해주세요.')
       return
     }
-    onSubmit(formData)
+    onSubmit({
+      ...formData,
+      template_group: formData.template_group.trim(),
+      template_group_ko: merged.template_group_ko || groupNameDraft.trim(),
+      ...(merged.template_group_description_ko
+        ? { template_group_description_ko: merged.template_group_description_ko }
+        : {}),
+      ...(merged.template_group_description_en
+        ? { template_group_description_en: merged.template_group_description_en }
+        : {}),
+      content_i18n: merged.content_i18n,
+    })
   }
 
   return (
@@ -1846,60 +1962,55 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 그룹 추가</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                초이스 그룹 이름 (영문) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.template_group}
-                onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="예: national_park_fee"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                초이스 그룹 이름 (한글) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.template_group_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="예: 국립공원 입장료"
-                required
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              그룹 키 (영문 식별자) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.template_group}
+              onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder="예: national_park_fee"
+              required
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (영어)
-              </label>
-              <textarea
-                value={formData.template_group_description_en}
-                onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
-                placeholder="Enter description for this choice group (English)"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (한국어)
-              </label>
-              <textarea
-                value={formData.template_group_description_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
-                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
-                rows={3}
-              />
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-gray-700">고객용 그룹 텍스트</p>
+            <LocaleDropdown
+              value={editLocale}
+              onChange={switchLocale}
+              size="sm"
+              showLabel
+              ariaLabel="Group content language"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              그룹 표시 이름 ({getSiteLocaleMeta(editLocale).label})
+              {editLocale === 'ko' ? <span className="text-red-500"> *</span> : null}
+            </label>
+            <input
+              type="text"
+              value={groupNameDraft}
+              onChange={(e) => setGroupNameDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder="예: 국립공원 입장료"
+              required={editLocale === 'ko'}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              설명 ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <textarea
+              value={groupDescriptionDraft}
+              onChange={(e) => setGroupDescriptionDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
+              placeholder="초이스 그룹에 대한 설명"
+              rows={3}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1990,6 +2101,7 @@ interface GroupEditModalProps {
     template_group_ko: string, 
     template_group_description_ko?: string, 
     template_group_description_en?: string,
+    content_i18n?: OptionTemplateContentI18n | null,
     choice_type?: 'single' | 'multiple' | 'quantity',
     is_required?: boolean,
     min_selections?: number,
@@ -2000,6 +2112,7 @@ interface GroupEditModalProps {
     template_group_ko: string, 
     template_group_description_ko?: string, 
     template_group_description_en?: string,
+    content_i18n?: OptionTemplateContentI18n,
     choice_type?: 'single' | 'multiple' | 'quantity',
     is_required?: boolean,
     min_selections?: number,
@@ -2009,6 +2122,16 @@ interface GroupEditModalProps {
 }
 
 function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
+  const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
+  const [contentI18n, setContentI18n] = useState<OptionTemplateContentI18n>(
+    () => (group.content_i18n || {}) as OptionTemplateContentI18n
+  )
+  const [groupNameDraft, setGroupNameDraft] = useState(() =>
+    getOptionTemplateLocalizedText(group, 'group_name', 'ko')
+  )
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState(() =>
+    getOptionTemplateLocalizedText(group, 'group_description', 'ko')
+  )
   const [formData, setFormData] = useState({
     template_group: group.template_group || '',
     template_group_ko: group.template_group_ko || '',
@@ -2020,13 +2143,63 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
     max_selections: group.max_selections || 1
   })
 
+  const switchLocale = (next: SiteLocale) => {
+    const merged = mergeOptionTemplateGroupI18n(
+      { ...group, content_i18n: contentI18n },
+      editLocale,
+      groupNameDraft,
+      groupDescriptionDraft,
+      formData.template_group
+    )
+    setContentI18n(merged.content_i18n)
+    setFormData((prev) => ({
+      ...prev,
+      template_group_ko: merged.template_group_ko || '',
+      template_group_description_ko: merged.template_group_description_ko || '',
+      template_group_description_en: merged.template_group_description_en || '',
+    }))
+    setEditLocale(next)
+    setGroupNameDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'group_name',
+        next
+      )
+    )
+    setGroupDescriptionDraft(
+      getOptionTemplateLocalizedText(
+        { content_i18n: merged.content_i18n },
+        'group_description',
+        next
+      )
+    )
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.template_group.trim()) {
-      alert('초이스 그룹 이름(영문)을 입력해주세요.')
+      alert('초이스 그룹 키(영문 식별자)를 입력해주세요.')
       return
     }
-    onSubmit(formData)
+    const merged = mergeOptionTemplateGroupI18n(
+      { ...group, content_i18n: contentI18n },
+      editLocale,
+      groupNameDraft,
+      groupDescriptionDraft,
+      formData.template_group
+    )
+    onSubmit({
+      ...formData,
+      template_group: formData.template_group.trim(),
+      template_group_ko: merged.template_group_ko || groupNameDraft.trim(),
+      ...(merged.template_group_description_ko
+        ? { template_group_description_ko: merged.template_group_description_ko }
+        : {}),
+      ...(merged.template_group_description_en
+        ? { template_group_description_en: merged.template_group_description_en }
+        : {}),
+      content_i18n: merged.content_i18n,
+    })
   }
 
   return (
@@ -2034,58 +2207,52 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
         <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 그룹 수정</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                초이스 그룹 이름 (영문)
-              </label>
-              <input
-                type="text"
-                value={formData.template_group}
-                onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="예: Accommodation"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                초이스 그룹 이름 (한글)
-              </label>
-              <input
-                type="text"
-                value={formData.template_group_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="예: 숙박 선택"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              그룹 키 (영문 식별자)
+            </label>
+            <input
+              type="text"
+              value={formData.template_group}
+              onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder="예: Accommodation"
+              required
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (영어)
-              </label>
-              <textarea
-                value={formData.template_group_description_en}
-                onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
-                placeholder="Enter description for this choice group (English)"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (한국어)
-              </label>
-              <textarea
-                value={formData.template_group_description_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
-                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
-                rows={3}
-              />
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-gray-700">고객용 그룹 텍스트</p>
+            <LocaleDropdown
+              value={editLocale}
+              onChange={switchLocale}
+              size="sm"
+              showLabel
+              ariaLabel="Group content language"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              그룹 표시 이름 ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <input
+              type="text"
+              value={groupNameDraft}
+              onChange={(e) => setGroupNameDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder="예: 숙박 선택"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              설명 ({getSiteLocaleMeta(editLocale).label})
+            </label>
+            <textarea
+              value={groupDescriptionDraft}
+              onChange={(e) => setGroupDescriptionDraft(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
+              placeholder="초이스 그룹에 대한 설명"
+              rows={3}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

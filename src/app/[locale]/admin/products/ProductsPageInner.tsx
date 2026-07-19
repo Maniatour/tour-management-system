@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -27,6 +27,13 @@ import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 import { cloneAdminProduct } from '@/lib/adminProductClone'
+import {
+  canSoftDeleteAdminProduct,
+  isAdminProductSoftDeleted,
+  restoreAdminProduct,
+  softDeleteAdminProduct,
+} from '@/lib/adminProductDelete'
+import { useAuth } from '@/contexts/AuthContext'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -46,6 +53,8 @@ export default function AdminProducts() {
   const t = useTranslations('products')
   const tCommon = useTranslations('common')
   const { operatorId } = useOperatorOptional()
+  const { user, userPosition } = useAuth()
+  const canSoftDelete = canSoftDeleteAdminProduct(user?.email, userPosition)
 
   const initialListUi = useMemo(
     () => ({
@@ -200,11 +209,12 @@ export default function AdminProducts() {
         await fetchChoicePrices(productIds)
       }
       
-      // 카테고리별 상품 수 계산
+      // 카테고리별 상품 수 계산 (삭제됨은 '전체'에서 제외, 별도 탭)
       if (data && data.length > 0) {
         const categoryCounts: { [key: string]: number } = {}
         const subCategoryCounts: { [key: string]: number } = {}
-        const statusCounts: { [key: string]: number } = {}
+        const statusCountsMap: { [key: string]: number } = {}
+        const nonDeleted = data.filter((p) => !isAdminProductSoftDeleted((p as { status?: string | null }).status))
         
         data.forEach(product => {
           if ((product as any).category) {
@@ -214,13 +224,13 @@ export default function AdminProducts() {
             subCategoryCounts[(product as any).sub_category] = (subCategoryCounts[(product as any).sub_category] || 0) + 1
           }
           if ((product as any).status) {
-            statusCounts[(product as any).status] = (statusCounts[(product as any).status] || 0) + 1
+            statusCountsMap[(product as any).status] = (statusCountsMap[(product as any).status] || 0) + 1
           }
         })
         
         // 카테고리 목록 생성 (전체 + 실제 존재하는 카테고리들)
         const categoryList = [
-          { value: 'all', label: tCommon('all'), count: data.length }
+          { value: 'all', label: tCommon('all'), count: nonDeleted.length }
         ]
         
         // 실제 존재하는 카테고리들을 상품 수 순으로 정렬하여 추가
@@ -232,7 +242,7 @@ export default function AdminProducts() {
         
         // 서브카테고리 목록 생성 (전체 + 실제 존재하는 서브카테고리들)
         const subCategoryList = [
-          { value: 'all', label: tCommon('all'), count: data.length }
+          { value: 'all', label: tCommon('all'), count: nonDeleted.length }
         ]
         
         // 실제 존재하는 서브카테고리들을 상품 수 순으로 정렬하여 추가
@@ -244,11 +254,11 @@ export default function AdminProducts() {
         
         // 상태 목록 생성 (전체 + 실제 존재하는 상태들)
         const statusList: { value: string; labelKey: string; count: number }[] = [
-          { value: 'all', labelKey: 'all', count: data.length }
+          { value: 'all', labelKey: 'all', count: nonDeleted.length }
         ]
         
         // 실제 존재하는 상태들을 상품 수 순으로 정렬하여 추가
-        Object.entries(statusCounts)
+        Object.entries(statusCountsMap)
           .sort(([,a], [,b]) => b - a) // 상품 수 내림차순 정렬
           .forEach(([status, count]) => {
             statusList.push({ value: status, labelKey: status, count })
@@ -324,7 +334,10 @@ export default function AdminProducts() {
     
     const matchesCategory = selectedCategory === 'all' || (product as any).category === selectedCategory
     const matchesSubCategory = selectedSubCategory === 'all' || (product as any).sub_category === selectedSubCategory
-    const matchesStatus = selectedStatus === 'all' || (product as any).status === selectedStatus
+    const matchesStatus =
+      selectedStatus === 'all'
+        ? !isAdminProductSoftDeleted((product as { status?: string | null }).status)
+        : (product as { status?: string | null }).status === selectedStatus
     const isPublished = product.is_published !== false
     const matchesPublish =
       selectedPublish === 'all' ||
@@ -470,6 +483,7 @@ export default function AdminProducts() {
   // 상태 토글 핸들러
   const handleStatusToggle = async (productId: string, currentStatus: string) => {
     if (updatingProducts.has(productId)) return
+    if (isAdminProductSoftDeleted(currentStatus)) return
     
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active'
     
@@ -511,6 +525,55 @@ export default function AdminProducts() {
       setUpdatingProducts(prev => {
         const next = new Set(prev)
         next.delete(productId)
+        return next
+      })
+    }
+  }
+
+  const handleSoftDeleteProduct = async (product: Product) => {
+    if (!canSoftDelete || updatingProducts.has(product.id)) return
+    if (isAdminProductSoftDeleted(product.status)) return
+
+    const name =
+      product.customer_name_ko || product.name_ko || product.name || product.id
+    const ok = window.confirm(t('softDeleteConfirm', { name }))
+    if (!ok) return
+
+    try {
+      setUpdatingProducts((prev) => new Set(prev).add(product.id))
+      await softDeleteAdminProduct(supabase, product.id, operatorId)
+      await fetchProducts()
+      alert(t('edit.softDeleteSuccess'))
+    } catch (error) {
+      console.error('상품 soft delete 오류:', error)
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(`${t('edit.softDeleteError')}\n\n${msg}`)
+    } finally {
+      setUpdatingProducts((prev) => {
+        const next = new Set(prev)
+        next.delete(product.id)
+        return next
+      })
+    }
+  }
+
+  const handleRestoreProduct = async (product: Product) => {
+    if (!canSoftDelete || updatingProducts.has(product.id)) return
+    if (!isAdminProductSoftDeleted(product.status)) return
+
+    try {
+      setUpdatingProducts((prev) => new Set(prev).add(product.id))
+      await restoreAdminProduct(supabase, product.id, operatorId)
+      await fetchProducts()
+      alert(t('edit.restoreSuccess'))
+    } catch (error) {
+      console.error('상품 복구 오류:', error)
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(`${t('edit.restoreError')}\n\n${msg}`)
+    } finally {
+      setUpdatingProducts((prev) => {
+        const next = new Set(prev)
+        next.delete(product.id)
         return next
       })
     }
@@ -782,14 +845,13 @@ export default function AdminProducts() {
           ) : null}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={() => setIsLocaleReadinessModalOpen(true)}
+          <Link
+            href={`/${locale}/admin/products/locale-readiness`}
             className="bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 flex items-center gap-1.5 text-sm font-medium"
           >
             <Languages size={16} />
             <span>{t('localeReadiness.button')}</span>
-          </button>
+          </Link>
           <button
             onClick={() => setIsFavoriteOrderModalOpen(true)}
             className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
@@ -1034,6 +1096,13 @@ export default function AdminProducts() {
                 locale={locale}
                 displayLocale={cardPreviewLocale}
                 priority={index === 0}
+                canSoftDelete={canSoftDelete}
+                onSoftDeleted={() => {
+                  void fetchProducts()
+                }}
+                onRestored={() => {
+                  void fetchProducts()
+                }}
                 onStatusChange={(productId, newStatus) => {
                   setProducts((prevProducts) =>
                     prevProducts.map((p) => (p.id === productId ? { ...p, status: newStatus } : p))
@@ -1639,6 +1708,46 @@ export default function AdminProducts() {
                           >
                             <Copy className="h-4 w-4" />
                           </button>
+
+                          {canSoftDelete ? (
+                            isAdminProductSoftDeleted(productStatus) ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  void handleRestoreProduct(product)
+                                }}
+                                disabled={isUpdating}
+                                className={`p-1.5 rounded transition-colors ${
+                                  isUpdating
+                                    ? 'text-gray-400 cursor-not-allowed'
+                                    : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                                }`}
+                                title={t('edit.restore')}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  void handleSoftDeleteProduct(product)
+                                }}
+                                disabled={isUpdating}
+                                className={`p-1.5 rounded transition-colors ${
+                                  isUpdating
+                                    ? 'text-gray-400 cursor-not-allowed'
+                                    : 'text-red-600 hover:text-red-800 hover:bg-red-50'
+                                }`}
+                                title={t('edit.delete')}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )
+                          ) : null}
                           
                           {/* 활성화 토글 */}
                           <button
@@ -1647,10 +1756,10 @@ export default function AdminProducts() {
                               e.stopPropagation()
                               handleStatusToggle(product.id, productStatus)
                             }}
-                            disabled={isUpdating}
+                            disabled={isUpdating || isAdminProductSoftDeleted(productStatus)}
                             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                               productStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
-                            } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            } ${isUpdating || isAdminProductSoftDeleted(productStatus) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                             title={productStatus === 'active' ? t('deactivate') : t('activate')}
                           >
                             <span

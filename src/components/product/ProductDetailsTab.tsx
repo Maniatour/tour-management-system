@@ -12,6 +12,11 @@ import LightRichEditor from '@/components/LightRichEditor'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
 import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
 import { DETAIL_FIELD_LOCATIONS } from '@/lib/productCustomerPageLocations'
+import {
+  ROUTING_LOCALES,
+  getSiteLocaleMeta,
+  isSiteLocale,
+} from '@/lib/siteLocales'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -423,7 +428,7 @@ export default function ProductDetailsTab({
   const [saveMessageType, setSaveMessageType] = useState<'success' | 'error' | null>(null)
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
-  const [availableLanguages] = useState(['ko', 'en', 'ja', 'zh'])
+  const [availableLanguages] = useState([...ROUTING_LOCALES])
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
@@ -680,10 +685,7 @@ export default function ProductDetailsTab({
   }
 
   const langLabel = (code: string) => {
-    if (code === 'ko') return 'KO · 한국어'
-    if (code === 'en') return 'EN · English'
-    if (code === 'ja') return 'JA · 日本語'
-    if (code === 'zh') return 'ZH · 中文'
+    if (isSiteLocale(code)) return getSiteLocaleMeta(code).label
     return code.toUpperCase()
   }
 

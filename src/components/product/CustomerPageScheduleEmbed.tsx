@@ -6,7 +6,16 @@ import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
 import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
 import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
 import { DETAIL_FIELD_LABELS } from '@/lib/customerPageZoneEditMap'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
+import {
+  getScheduleLocalizedText,
+  mergeScheduleI18n,
+  type ScheduleContentI18n,
+} from '@/lib/productScheduleLocales'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
@@ -23,16 +32,21 @@ type ScheduleItem = {
   description_en: string | null
   location_ko: string | null
   location_en: string | null
+  content_i18n?: ScheduleContentI18n | null
   order_index: number | null
 }
 
 type ScheduleForm = {
+  titleDraft: string
+  descriptionDraft: string
+  locationDraft: string
   title_ko: string
   title_en: string
   description_ko: string
   description_en: string
   location_ko: string
   location_en: string
+  content_i18n: ScheduleContentI18n
   start_time: string
   end_time: string
   duration_minutes: string
@@ -53,14 +67,18 @@ function readPickupVisibility(row: Record<string, unknown> | null): boolean {
   return (raw as Record<string, unknown>).pickup_drop_info !== false
 }
 
-function scheduleToForm(item: ScheduleItem): ScheduleForm {
+function scheduleToForm(item: ScheduleItem, locale: AdminEditLocale): ScheduleForm {
   return {
+    titleDraft: getScheduleLocalizedText(item, 'title', locale),
+    descriptionDraft: getScheduleLocalizedText(item, 'description', locale),
+    locationDraft: getScheduleLocalizedText(item, 'location', locale),
     title_ko: item.title_ko ?? '',
     title_en: item.title_en ?? '',
     description_ko: item.description_ko ?? '',
     description_en: item.description_en ?? '',
     location_ko: item.location_ko ?? '',
     location_en: item.location_en ?? '',
+    content_i18n: item.content_i18n || {},
     start_time: item.start_time ?? '',
     end_time: item.end_time ?? '',
     duration_minutes: item.duration_minutes != null ? String(item.duration_minutes) : '',
@@ -69,10 +87,7 @@ function scheduleToForm(item: ScheduleItem): ScheduleForm {
 }
 
 function getScheduleLabel(item: ScheduleItem, locale: AdminEditLocale): string {
-  const title =
-    locale === 'en'
-      ? item.title_en || item.title_ko
-      : item.title_ko || item.title_en
+  const title = getScheduleLocalizedText(item, 'title', locale)
   const time = item.start_time ? item.start_time.slice(0, 5) : ''
   return [time, title || `일정 #${item.order_index ?? ''}`].filter(Boolean).join(' · ')
 }
@@ -95,21 +110,27 @@ export default function CustomerPageScheduleEmbed({
   const [pickupVisible, setPickupVisible] = useState(true)
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [activeScheduleId, setActiveScheduleId] = useState<string | null>(null)
-  const [scheduleForm, setScheduleForm] = useState<ScheduleForm>(scheduleToForm({
-    id: '',
-    day_number: 1,
-    start_time: null,
-    end_time: null,
-    duration_minutes: null,
-    show_to_customers: true,
-    title_ko: null,
-    title_en: null,
-    description_ko: null,
-    description_en: null,
-    location_ko: null,
-    location_en: null,
-    order_index: null,
-  }))
+  const [scheduleForm, setScheduleForm] = useState<ScheduleForm>(() =>
+    scheduleToForm(
+      {
+        id: '',
+        day_number: 1,
+        start_time: null,
+        end_time: null,
+        duration_minutes: null,
+        show_to_customers: true,
+        title_ko: null,
+        title_en: null,
+        description_ko: null,
+        description_en: null,
+        location_ko: null,
+        location_en: null,
+        content_i18n: {},
+        order_index: null,
+      },
+      'ko'
+    )
+  )
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
@@ -121,7 +142,7 @@ export default function CustomerPageScheduleEmbed({
         supabase
           .from('product_schedules')
           .select(
-            'id, day_number, start_time, end_time, duration_minutes, show_to_customers, title_ko, title_en, description_ko, description_en, location_ko, location_en, order_index'
+            'id, day_number, start_time, end_time, duration_minutes, show_to_customers, title_ko, title_en, description_ko, description_en, location_ko, location_en, content_i18n, order_index'
           )
           .eq('product_id', productId)
           .order('day_number', { ascending: true })
@@ -131,7 +152,7 @@ export default function CustomerPageScheduleEmbed({
 
       if (scheduleResult.error) throw scheduleResult.error
 
-      const nextSchedules = (scheduleResult.data ?? []) as ScheduleItem[]
+      const nextSchedules = (scheduleResult.data ?? []) as unknown as ScheduleItem[]
       const first = nextSchedules[0] ?? null
       const nextPickup = String(row?.pickup_drop_info ?? '')
 
@@ -141,7 +162,7 @@ export default function CustomerPageScheduleEmbed({
       setSchedules(nextSchedules)
       setActiveScheduleId(first?.id ?? null)
       if (first) {
-        const nextForm = scheduleToForm(first)
+        const nextForm = scheduleToForm(first, editLocale)
         setScheduleForm(nextForm)
         setInitialSnapshot(
           JSON.stringify({
@@ -178,7 +199,7 @@ export default function CustomerPageScheduleEmbed({
   useEffect(() => {
     const active = schedules.find((item) => item.id === activeScheduleId)
     if (!active) return
-    const nextForm = scheduleToForm(active)
+    const nextForm = scheduleToForm(active, editLocale)
     setScheduleForm(nextForm)
     setInitialSnapshot(
       JSON.stringify({
@@ -190,6 +211,31 @@ export default function CustomerPageScheduleEmbed({
       })
     )
   }, [activeScheduleId])
+
+  const switchLocale = (next: AdminEditLocale) => {
+    const merged = mergeScheduleI18n(
+      scheduleForm,
+      editLocale,
+      scheduleForm.titleDraft,
+      scheduleForm.descriptionDraft,
+      scheduleForm.locationDraft
+    )
+    const source = { ...scheduleForm, ...merged }
+    setScheduleForm({
+      ...scheduleForm,
+      content_i18n: merged.content_i18n,
+      title_ko: merged.title_ko ?? '',
+      title_en: merged.title_en ?? '',
+      description_ko: merged.description_ko ?? '',
+      description_en: merged.description_en ?? '',
+      location_ko: merged.location_ko ?? '',
+      location_en: merged.location_en ?? '',
+      titleDraft: getScheduleLocalizedText(source, 'title', next),
+      descriptionDraft: getScheduleLocalizedText(source, 'description', next),
+      locationDraft: getScheduleLocalizedText(source, 'location', next),
+    })
+    setEditLocale(next)
+  }
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot) return
@@ -260,15 +306,23 @@ export default function CustomerPageScheduleEmbed({
       }
 
       if (activeScheduleId) {
+        const merged = mergeScheduleI18n(
+          scheduleForm,
+          editLocale,
+          scheduleForm.titleDraft,
+          scheduleForm.descriptionDraft,
+          scheduleForm.locationDraft
+        )
         const { error: scheduleError } = await supabase
           .from('product_schedules')
           .update({
-            title_ko: scheduleForm.title_ko.trim() || null,
-            title_en: scheduleForm.title_en.trim() || null,
-            description_ko: scheduleForm.description_ko.trim() || null,
-            description_en: scheduleForm.description_en.trim() || null,
-            location_ko: scheduleForm.location_ko.trim() || null,
-            location_en: scheduleForm.location_en.trim() || null,
+            content_i18n: merged.content_i18n,
+            title_ko: merged.title_ko,
+            title_en: merged.title_en,
+            description_ko: merged.description_ko,
+            description_en: merged.description_en,
+            location_ko: merged.location_ko,
+            location_en: merged.location_en,
             start_time: scheduleForm.start_time.trim() || null,
             end_time: scheduleForm.end_time.trim() || null,
             duration_minutes: scheduleForm.duration_minutes
@@ -280,27 +334,26 @@ export default function CustomerPageScheduleEmbed({
           .eq('id', activeScheduleId)
         if (scheduleError) throw scheduleError
 
+        const nextItem: ScheduleItem = {
+          ...(schedules.find((s) => s.id === activeScheduleId) as ScheduleItem),
+          content_i18n: merged.content_i18n,
+          title_ko: merged.title_ko,
+          title_en: merged.title_en,
+          description_ko: merged.description_ko,
+          description_en: merged.description_en,
+          location_ko: merged.location_ko,
+          location_en: merged.location_en,
+          start_time: scheduleForm.start_time.trim() || null,
+          end_time: scheduleForm.end_time.trim() || null,
+          duration_minutes: scheduleForm.duration_minutes
+            ? Number(scheduleForm.duration_minutes)
+            : null,
+          show_to_customers: scheduleForm.show_to_customers,
+        }
         setSchedules((prev) =>
-          prev.map((item) =>
-            item.id === activeScheduleId
-              ? {
-                  ...item,
-                  title_ko: scheduleForm.title_ko.trim() || null,
-                  title_en: scheduleForm.title_en.trim() || null,
-                  description_ko: scheduleForm.description_ko.trim() || null,
-                  description_en: scheduleForm.description_en.trim() || null,
-                  location_ko: scheduleForm.location_ko.trim() || null,
-                  location_en: scheduleForm.location_en.trim() || null,
-                  start_time: scheduleForm.start_time.trim() || null,
-                  end_time: scheduleForm.end_time.trim() || null,
-                  duration_minutes: scheduleForm.duration_minutes
-                    ? Number(scheduleForm.duration_minutes)
-                    : null,
-                  show_to_customers: scheduleForm.show_to_customers,
-                }
-              : item
-          )
+          prev.map((item) => (item.id === activeScheduleId ? nextItem : item))
         )
+        setScheduleForm(scheduleToForm(nextItem, editLocale))
       }
 
       setInitialSnapshot(
@@ -322,10 +375,6 @@ export default function CustomerPageScheduleEmbed({
     }
   }
 
-  const titleField = editLocale === 'en' ? 'title_en' : 'title_ko'
-  const descriptionField = editLocale === 'en' ? 'description_en' : 'description_ko'
-  const locationField = editLocale === 'en' ? 'location_en' : 'location_ko'
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -344,10 +393,8 @@ export default function CustomerPageScheduleEmbed({
         </p>
         <AdminEditLocaleToggle
           value={editLocale}
-          onChange={setEditLocale}
+          onChange={switchLocale}
           groupLabel="일정 편집 언어"
-          koLabel="한국어"
-          enLabel="English"
         />
       </div>
 
@@ -488,12 +535,12 @@ export default function CustomerPageScheduleEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              {editLocale === 'en' ? 'title_en' : 'title_ko'}
+              제목 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <input
-              value={scheduleForm[titleField]}
+              value={scheduleForm.titleDraft}
               onChange={(e) =>
-                setScheduleForm((prev) => ({ ...prev, [titleField]: e.target.value }))
+                setScheduleForm((prev) => ({ ...prev, titleDraft: e.target.value }))
               }
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
             />
@@ -501,12 +548,12 @@ export default function CustomerPageScheduleEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              {editLocale === 'en' ? 'location_en' : 'location_ko'}
+              장소 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <input
-              value={scheduleForm[locationField]}
+              value={scheduleForm.locationDraft}
               onChange={(e) =>
-                setScheduleForm((prev) => ({ ...prev, [locationField]: e.target.value }))
+                setScheduleForm((prev) => ({ ...prev, locationDraft: e.target.value }))
               }
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
             />
@@ -514,12 +561,15 @@ export default function CustomerPageScheduleEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              {editLocale === 'en' ? 'description_en' : 'description_ko'}
+              설명 ({getAdminEditLocaleLabel(editLocale)})
             </span>
             <LightRichEditor
-              value={scheduleForm[descriptionField]}
+              value={scheduleForm.descriptionDraft}
               onChange={(value) =>
-                setScheduleForm((prev) => ({ ...prev, [descriptionField]: value }))
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  descriptionDraft: value ?? '',
+                }))
               }
               height={160}
               placeholder="일정 설명"
@@ -527,7 +577,7 @@ export default function CustomerPageScheduleEmbed({
             />
           </label>
 
-          {scheduleForm[descriptionField] ? (
+          {scheduleForm.descriptionDraft ? (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
               <p className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 <MapPin className="h-3 w-3" />
@@ -536,7 +586,7 @@ export default function CustomerPageScheduleEmbed({
               <div
                 className="prose prose-sm max-w-none text-foreground"
                 dangerouslySetInnerHTML={{
-                  __html: markdownToHtml(scheduleForm[descriptionField]),
+                  __html: markdownToHtml(scheduleForm.descriptionDraft),
                 }}
               />
             </div>

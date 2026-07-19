@@ -1,20 +1,19 @@
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import {
+  DEFAULT_CONTENT_LOCALE,
+  SITE_LOCALES,
+  contentFallbackOrder,
+  getSiteLocaleMeta,
+  isSiteLocale,
+  type SiteLocale,
+} from '@/lib/siteLocales'
 
 /** Content locales for pickup hotel card text (English is default). */
-export const PICKUP_CONTENT_LOCALES = [
-  { code: 'en', countryCode: 'US', label: 'English (Default)' },
-  { code: 'ko', countryCode: 'KR', label: '한국어' },
-  { code: 'ja', countryCode: 'JP', label: '日本語' },
-  { code: 'zh-CN', countryCode: 'CN', label: '简体中文' },
-  { code: 'zh-TW', countryCode: 'TW', label: '繁體中文' },
-  { code: 'es', countryCode: 'ES', label: 'Español' },
-  { code: 'fr', countryCode: 'FR', label: 'Français' },
-  { code: 'de', countryCode: 'DE', label: 'Deutsch' },
-] as const
+export const PICKUP_CONTENT_LOCALES = SITE_LOCALES
 
-export type PickupContentLocale = (typeof PICKUP_CONTENT_LOCALES)[number]['code']
+export type PickupContentLocale = SiteLocale
 
-export const DEFAULT_PICKUP_CONTENT_LOCALE: PickupContentLocale = 'en'
+export const DEFAULT_PICKUP_CONTENT_LOCALE: PickupContentLocale = DEFAULT_CONTENT_LOCALE
 
 export type PickupI18nField =
   | 'description'
@@ -26,23 +25,12 @@ export type PickupLocaleTextMap = Partial<Record<PickupContentLocale, string>>
 
 export type PickupHotelContentI18n = Partial<Record<PickupI18nField, PickupLocaleTextMap>>
 
-const FALLBACK_ORDER: PickupContentLocale[] = [
-  'en',
-  'ko',
-  'ja',
-  'zh-CN',
-  'zh-TW',
-  'es',
-  'fr',
-  'de',
-]
-
 export function isPickupContentLocale(value: string): value is PickupContentLocale {
-  return PICKUP_CONTENT_LOCALES.some((item) => item.code === value)
+  return isSiteLocale(value)
 }
 
 export function getPickupContentLocaleMeta(code: PickupContentLocale) {
-  return PICKUP_CONTENT_LOCALES.find((item) => item.code === code) ?? PICKUP_CONTENT_LOCALES[0]
+  return getSiteLocaleMeta(code)
 }
 
 function legacyField(
@@ -87,7 +75,7 @@ export function getPickupLocalizedText(
 ): string {
   const map = getPickupI18nMap(hotel, field)
   if (map[locale]?.trim()) return map[locale]!.trim()
-  for (const code of FALLBACK_ORDER) {
+  for (const code of contentFallbackOrder(locale)) {
     if (map[code]?.trim()) return map[code]!.trim()
   }
   return ''

@@ -31,7 +31,7 @@ function groupChoiceLabel(group: {
 export function useProductDetailChoices(
   productChoices: ProductChoice[],
   basePrice: number | null | undefined,
-  isEnglish: boolean,
+  localeOrIsEnglish: string | boolean,
   partySize = 0
 ) {
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})
@@ -40,9 +40,16 @@ export function useProductDetailChoices(
   >({})
   const prevPartySizeRef = useRef<number | null>(null)
 
+  const locale =
+    typeof localeOrIsEnglish === 'boolean'
+      ? localeOrIsEnglish
+        ? 'en'
+        : 'ko'
+      : localeOrIsEnglish
+
   const groupedChoicesAll = useMemo(
-    () => groupProductChoices(productChoices, isEnglish),
-    [productChoices, isEnglish]
+    () => groupProductChoices(productChoices, locale),
+    [productChoices, locale]
   )
 
   const groupedChoices = useMemo(

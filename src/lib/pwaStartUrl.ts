@@ -1,9 +1,12 @@
 /** PWA 홈 화면 바로가기 복원용 (localStorage + 쿠키 — 미들웨어가 `/` 에서 읽을 수 있어야 함) */
 
+import { SITE_LOCALE_PATH_ALT } from '@/lib/siteLocales'
+
 export const PWA_START_PATH_COOKIE = 'pwa_start_path'
 
-const PWA_SAVED_PATH_RE =
-  /^\/(chat\/|(ko|en)\/(guide|admin)(\/|$))/
+const PWA_SAVED_PATH_RE = new RegExp(
+  `^/(chat/|(${SITE_LOCALE_PATH_ALT})/(guide|admin)(/|$))`
+)
 
 export function isSafePwaStartPath(path: string): boolean {
   if (!path.startsWith('/') || path.includes('//') || path.includes('..')) return false

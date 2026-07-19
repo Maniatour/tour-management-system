@@ -1,7 +1,7 @@
 'use client'
 
 import { X } from 'lucide-react'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 
 export type ProductChoiceGroup = {
   choice_id: string
@@ -36,16 +36,11 @@ export default function ProductDetailChoiceDescriptionModal({
   onClose,
 }: ProductDetailChoiceDescriptionModalProps) {
   const t = useTranslations('productDetail')
-  const locale = useLocale()
-  const isEnglish = locale === 'en'
 
   const groups = Object.values(groupedChoices)
-  const hasAnyDescription = groups.some((group) => {
-    const description = isEnglish
-      ? (group.choice_description_en || group.choice_description)
-      : (group.choice_description_ko || group.choice_description)
-    return Boolean(description?.trim())
-  })
+  const hasAnyDescription = groups.some((group) =>
+    Boolean(group.choice_description?.trim())
+  )
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -66,10 +61,7 @@ export default function ProductDetailChoiceDescriptionModal({
         <div className="p-6 overflow-y-auto max-h-[80vh]">
           <div className="space-y-6">
             {groups.map((group) => {
-              const groupDescription = isEnglish
-                ? (group.choice_description_en || group.choice_description)
-                : (group.choice_description_ko || group.choice_description)
-
+              const groupDescription = group.choice_description
               if (!groupDescription?.trim()) return null
 
               return (

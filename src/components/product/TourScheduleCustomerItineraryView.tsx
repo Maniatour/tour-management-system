@@ -18,6 +18,10 @@ import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
 import ProductDetailDeparturePointModal from '@/components/product/ProductDetailDeparturePointModal'
 import { useProductDetailTourScheduleTiming } from '@/hooks/useProductDetailTourScheduleTiming'
+import {
+  getScheduleLocalizedText,
+  type ScheduleContentI18n,
+} from '@/lib/productScheduleLocales'
 
 export type CustomerScheduleItem = {
   id: string
@@ -35,6 +39,7 @@ export type CustomerScheduleItem = {
   description_en: string | null
   location_ko: string | null
   location_en: string | null
+  content_i18n?: ScheduleContentI18n | null
   thumbnail_url: string | null
   google_maps_link: string | null
 }
@@ -117,6 +122,7 @@ export default function TourScheduleCustomerItineraryView({
   const [departureModalOpen, setDepartureModalOpen] = useState(false)
 
   const getLocalizedTitle = (schedule: CustomerScheduleItem) =>
+    getScheduleLocalizedText(schedule, 'title', locale) ||
     getLocalizedText(schedule.title_ko, schedule.title_en, '')
 
   const { displayItems, sunriseSummary, loadingSunrise } = useProductDetailTourScheduleTiming(
@@ -218,11 +224,13 @@ export default function TourScheduleCustomerItineraryView({
                 if (!displayItem) return null
 
                 const { title, timeRangeLabel } = displayItem
-                const description = getLocalizedText(
-                  schedule.description_ko,
-                  schedule.description_en,
-                  ''
-                )
+                const description =
+                  getScheduleLocalizedText(schedule, 'description', locale) ||
+                  getLocalizedText(
+                    schedule.description_ko,
+                    schedule.description_en,
+                    ''
+                  )
                 const hasDescription = description.trim() !== ''
                 const isExpanded =
                   allSchedulesExpanded || (hasDescription && expandedSchedules.has(schedule.id))

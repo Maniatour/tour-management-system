@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import { CalendarCheck, Home, Monitor, Route, ShoppingBag, Tags } from 'lucide-react'
+import { siteLocalePathTest } from '@/lib/siteLocales'
 
 export type CustomerPageId =
   | 'home'
@@ -46,7 +47,7 @@ export function extractProductIdFromCustomerPageUrl(href: string): string | null
 /** pathname만으로 pageId 추론 (iframe 미리보기 퀵바 등) */
 export function inferCustomerPageIdFromPathname(pathname: string | null): CustomerPageId | null {
   if (!pathname) return null
-  if (/^\/(ko|en)\/?$/.test(pathname)) return 'home'
+  if (siteLocalePathTest(pathname, '/?$')) return 'home'
   if (pathname.includes('/products/tags')) return 'products-tags'
   if (pathname.includes('/products/custom-tour')) return 'custom-tour'
   if (pathname.includes('/reservation-check')) return 'reservation-check'

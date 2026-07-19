@@ -1,4 +1,9 @@
-import { getProductSummaryByLocale, formatProductDepartureLine, resolveProductListingPrice } from '@/lib/productDetailDisplay'
+import {
+  getProductCustomerDisplayName,
+  getProductSummaryByLocale,
+  formatProductDepartureLine,
+  resolveProductListingPrice,
+} from '@/lib/productDetailDisplay'
 import {
   getPreviewDepartureLine,
   getPreviewListingPrice,
@@ -48,12 +53,9 @@ export function getSectionProductName(
     const name = getPreviewProductDisplayName('listing-card-name', product, locale)
     if (name) return name
   }
-  if (locale === 'en') {
-    return (
-      String(product.customer_name_en ?? product.name_en ?? '').trim() || 'Untitled Tour'
-    )
-  }
-  return String(product.customer_name_ko ?? product.name ?? '').trim() || '이름 없는 투어'
+  const name = getProductCustomerDisplayName(product, locale)
+  if (name) return name
+  return locale === 'ko' ? '이름 없는 투어' : 'Untitled Tour'
 }
 
 export function getSectionProductDescription(

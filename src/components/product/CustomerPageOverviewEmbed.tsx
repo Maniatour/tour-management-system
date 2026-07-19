@@ -6,7 +6,17 @@ import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
 import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
 import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
 import { getProductOverviewDescription } from '@/lib/productDetailDisplay'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
+import {
+  buildProductTranslationMap,
+  fetchProductFieldTranslations,
+  upsertProductFieldTranslations,
+} from '@/lib/productFieldTranslations'
+import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
@@ -32,8 +42,7 @@ type OverviewForm = Record<OverviewKey, string>
 type VisibilityForm = Record<OverviewKey, boolean>
 
 type SummaryForm = {
-  summary_ko: string
-  summary_en: string
+  summary: string
 }
 
 type CustomerPageOverviewEmbedProps = {
@@ -69,8 +78,7 @@ export default function CustomerPageOverviewEmbed({
     description: true,
   })
   const [summaryForm, setSummaryForm] = useState<SummaryForm>({
-    summary_ko: '',
-    summary_en: '',
+    summary: '',
   })
   const [productDescription, setProductDescription] = useState('')
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
@@ -79,13 +87,14 @@ export default function CustomerPageOverviewEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [row, productResult] = await Promise.all([
+      const [row, productResult, translationRows] = await Promise.all([
         fetchProductDetailsRowForLocale(productId, editLocale),
         supabase
           .from('products')
           .select('summary_ko, summary_en, description')
           .eq('id', productId)
           .maybeSingle(),
+        fetchProductFieldTranslations(productId),
       ])
 
       if (productResult.error) throw productResult.error
@@ -99,9 +108,9 @@ export default function CustomerPageOverviewEmbed({
         greeting: readVisibility(row, 'greeting'),
         description: readVisibility(row, 'description'),
       }
+      const summaryMap = buildProductTranslationMap(productRow, translationRows).summary || {}
       const nextSummary: SummaryForm = {
-        summary_ko: String(productRow.summary_ko ?? ''),
-        summary_en: String(productRow.summary_en ?? ''),
+        summary: summaryMap[editLocale] ?? '',
       }
 
       setRowId(row?.id ? String(row.id) : null)
@@ -190,13 +199,22 @@ export default function CustomerPageOverviewEmbed({
         setRowId(String((data as { id: string }).id))
       }
 
+      const legacyPatch = await upsertProductFieldTranslations({
+        productId,
+        locale: editLocale,
+        values: { summary: summaryForm.summary },
+      })
+      const productUpdate: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+        ...legacyPatch,
+      }
+      if (isLegacyColumnLocale(editLocale)) {
+        if (editLocale === 'ko') productUpdate.summary_ko = summaryForm.summary.trim() || null
+        else productUpdate.summary_en = summaryForm.summary.trim() || null
+      }
       const { error: productError } = await supabase
         .from('products')
-        .update({
-          summary_ko: summaryForm.summary_ko.trim() || null,
-          summary_en: summaryForm.summary_en.trim() || null,
-          updated_at: new Date().toISOString(),
-        } as never)
+        .update(productUpdate as never)
         .eq('id', productId)
       if (productError) throw productError
 
@@ -224,13 +242,21 @@ export default function CustomerPageOverviewEmbed({
     if (activeSlot === 'greeting') return form.greeting
     return getProductOverviewDescription(
       {
-        summary_ko: summaryForm.summary_ko,
-        summary_en: summaryForm.summary_en,
+        summary_ko: editLocale === 'ko' ? summaryForm.summary : '',
+        summary_en: editLocale === 'en' ? summaryForm.summary : '',
         description: productDescription,
       },
       form.description,
       editLocale,
-      ''
+      '',
+      [
+        {
+          product_id: productId,
+          field_key: 'summary',
+          locale: editLocale,
+          value: summaryForm.summary,
+        },
+      ]
     )
   })()
 
@@ -320,30 +346,17 @@ export default function CustomerPageOverviewEmbed({
               고객 페이지에 <code className="rounded bg-white/80 px-1">products.summary</code> 요약이
               표시됩니다.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-foreground">summary_ko</span>
-                <textarea
-                  value={summaryForm.summary_ko}
-                  onChange={(e) =>
-                    setSummaryForm((prev) => ({ ...prev, summary_ko: e.target.value }))
-                  }
-                  rows={3}
-                  className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-foreground">summary_en</span>
-                <textarea
-                  value={summaryForm.summary_en}
-                  onChange={(e) =>
-                    setSummaryForm((prev) => ({ ...prev, summary_en: e.target.value }))
-                  }
-                  rows={3}
-                  className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </label>
-            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-foreground">
+                summary ({getAdminEditLocaleLabel(editLocale)})
+              </span>
+              <textarea
+                value={summaryForm.summary}
+                onChange={(e) => setSummaryForm({ summary: e.target.value })}
+                rows={3}
+                className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </label>
           </div>
         ) : null}
 

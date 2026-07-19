@@ -185,7 +185,7 @@ export default function ProductDetailTabPanel({
   productDetails,
   tourCourses,
   tourCoursePhotos,
-  isEnglish,
+  isEnglish: _isEnglish,
   displayName,
   categoryLabel,
   durationLabel,
@@ -262,7 +262,7 @@ export default function ProductDetailTabPanel({
             <ProductDetailItineraryTab
               tourCourses={tourCourses}
               tourCoursePhotos={tourCoursePhotos}
-              isEnglish={isEnglish}
+              locale={locale}
             />
           </CustomerPageZone>
         )

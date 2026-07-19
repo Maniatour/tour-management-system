@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import CustomerSiteManiaTourFooter from '@/components/customer/CustomerSiteManiaTourFooter'
 import { postCustomerPagePreviewHeight } from '@/lib/customerPageEditMessaging'
+import { siteLocalePathTest } from '@/lib/siteLocales'
 
 type CustomerPageShellProps = {
   locale: string
@@ -19,9 +20,9 @@ function measurePreviewHeight() {
 
 function isFullWidthCustomerFooterPath(pathname: string): boolean {
   return (
-    /^\/(ko|en)\/?$/.test(pathname) ||
-    /^\/(ko|en)\/products(\/|$)/.test(pathname) ||
-    /^\/(ko|en)\/travel-guide(\/|$)/.test(pathname)
+    siteLocalePathTest(pathname, '/?$') ||
+    siteLocalePathTest(pathname, '/products(/|$)') ||
+    siteLocalePathTest(pathname, '/travel-guide(/|$)')
   )
 }
 

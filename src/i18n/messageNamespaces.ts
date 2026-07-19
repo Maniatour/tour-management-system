@@ -1,3 +1,5 @@
+import { siteLocalePathTest } from '@/lib/siteLocales'
+
 /** 모든 페이지에 필요한 최소 네임스페이스 */
 export const I18N_CORE_NAMESPACES = ['common', 'auth', 'awayChanges'] as const
 
@@ -73,7 +75,7 @@ type RouteNamespaceRule = {
 const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
   {
     test: (p) =>
-      /^\/(ko|en)\/?$/.test(p) ||
+      siteLocalePathTest(p, '/?$') ||
       /\/products/.test(p) ||
       /\/reservation-check/.test(p) ||
       /\/booking\/confirmation/.test(p) ||

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { useCustomerPageGlobalTheme } from '@/hooks/useCustomerPageGlobalTheme'
 import { useCustomerPageFieldBindings } from '@/components/product/CustomerPageFieldBindingsProvider'
+import { siteLocalePathTest } from '@/lib/siteLocales'
 
 type CustomerPageGlobalThemeShellProps = {
   children: ReactNode
@@ -18,7 +19,7 @@ export default function CustomerPageGlobalThemeShell({
   const theme = useCustomerPageGlobalTheme()
   const pathname = usePathname()
   const { ready } = useCustomerPageFieldBindings()
-  const isCustomerHome = /^\/(ko|en)\/?$/.test(pathname)
+  const isCustomerHome = siteLocalePathTest(pathname, '/?$')
   const pageBackground = isCustomerHome ? '#ffffff' : theme.pageBackground
 
   return (
