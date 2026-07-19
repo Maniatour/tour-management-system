@@ -7,6 +7,7 @@ import {
 } from '@/lib/expense-reconciliation-similar-lines'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /** 현금 출금과 대조 가능한 지출 원장 */
 export const EXPENSE_CASH_LINK_SOURCE_TABLES = new Set<ExpenseReconSourceTable>([
@@ -260,10 +261,12 @@ export async function fetchSimilarCashTransactionsForExpense(
     limit?: number
     /** 이미 이 지출에 연결된 cash id — 목록에 포함(표시용) */
     linkedCashIds?: Set<string>
+    operatorId?: string | null
   }
 ): Promise<SimilarCashTransactionRow[]> {
   const { dateYmd, amount, limit = 50, linkedCashIds = new Set<string>() } = params
   if (!dateYmd || dateYmd.length < 10) return []
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const absLedger = Math.abs(amount)
   const tol = expenseReconciliationAmountTolerance(absLedger)
@@ -274,6 +277,7 @@ export async function fetchSimilarCashTransactionsForExpense(
   const { data, error } = await supabase
     .from('cash_transactions')
     .select('id,transaction_date,transaction_type,amount,description,category')
+    .eq('operator_id', activeOperatorId)
     .eq('transaction_type', 'withdrawal')
     .gte('transaction_date', startIso)
     .lte('transaction_date', endIso)
@@ -426,8 +430,10 @@ function mapRawCashToCandidate(
 async function fetchCashWithdrawalsByAmountSearch(
   supabase: SupabaseClient,
   targetAmount: number,
-  limit: number
+  limit: number,
+  operatorId?: string | null
 ): Promise<RawCashSearchRow[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const tol = cashSearchAmountTolerance(targetAmount)
   const lo = Math.max(0, targetAmount - tol)
   const hi = targetAmount + tol
@@ -457,6 +463,7 @@ async function fetchCashWithdrawalsByAmountSearch(
     supabase
       .from('cash_transactions')
       .select(select)
+      .eq('operator_id', activeOperatorId)
       .eq('transaction_type', 'withdrawal')
       .order('transaction_date', { ascending: false })
       .limit(Math.min(limit * 3, 400))
@@ -496,11 +503,13 @@ export async function searchCashTransactions(
     linkedCashIds?: Set<string>
     dateYmd?: string
     ledgerAmount?: number
+    operatorId?: string | null
   }
 ): Promise<SimilarCashTransactionRow[]> {
   const rawQuery = String(params.query ?? '').trim()
   const q = sanitizeCashSearchQuery(rawQuery)
   if (!q && !rawQuery) return []
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const limit = params.limit ?? 120
   const linkedCashIds = params.linkedCashIds ?? new Set<string>()
@@ -518,7 +527,12 @@ export async function searchCashTransactions(
   }
 
   if (parsedAmount != null) {
-    const byAmount = await fetchCashWithdrawalsByAmountSearch(supabase, parsedAmount, limit)
+    const byAmount = await fetchCashWithdrawalsByAmountSearch(
+      supabase,
+      parsedAmount,
+      limit,
+      activeOperatorId
+    )
     for (const row of byAmount) {
       pushCandidate(mapRawCashToCandidate(row, mapParams))
     }
@@ -541,6 +555,7 @@ export async function searchCashTransactions(
     const { data, error } = await supabase
       .from('cash_transactions')
       .select('id,transaction_date,transaction_type,amount,description,category')
+      .eq('operator_id', activeOperatorId)
       .eq('transaction_type', 'withdrawal')
       .or(orParts.join(','))
       .order('transaction_date', { ascending: false })
@@ -577,10 +592,15 @@ export async function searchCashTransactions(
   return candidates.slice(0, limit)
 }
 
-export async function fetchCashWithdrawalCategories(supabase: SupabaseClient): Promise<string[]> {
+export async function fetchCashWithdrawalCategories(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<string[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { data, error } = await supabase
     .from('cash_transactions')
     .select('category')
+    .eq('operator_id', activeOperatorId)
     .eq('transaction_type', 'withdrawal')
     .not('category', 'is', null)
     .limit(500)
@@ -607,9 +627,11 @@ export async function fetchCashWithdrawalsForPicker(
     linkedCashIds?: Set<string>
     ledgerDateYmd?: string
     ledgerAmount?: number
+    operatorId?: string | null
   }
 ): Promise<SimilarCashTransactionRow[]> {
   const limit = params.limit ?? 300
+  const activeOperatorId = resolveOperatorId(params.operatorId)
   const linkedCashIds = params.linkedCashIds ?? new Set<string>()
   const dateYmd = params.ledgerDateYmd?.slice(0, 10) ?? ''
   const absLedger = Math.abs(Number(params.ledgerAmount ?? 0))
@@ -650,7 +672,12 @@ export async function fetchCashWithdrawalsForPicker(
     const skipDateRange =
       amountFromFilter != null ||
       (amountFromSearch != null && isCashSearchAmountOnly(search, amountFromSearch))
-    const raw = await fetchCashWithdrawalsByAmountSearch(supabase, effectiveAmount, limit * 4)
+    const raw = await fetchCashWithdrawalsByAmountSearch(
+      supabase,
+      effectiveAmount,
+      limit * 4,
+      activeOperatorId
+    )
     let filtered = filterRawCashPickerRows(raw, {
       category: params.category ?? null,
       ...(skipDateRange
@@ -679,6 +706,7 @@ export async function fetchCashWithdrawalsForPicker(
   let q = supabase
     .from('cash_transactions')
     .select('id,transaction_date,transaction_type,amount,description,category,notes')
+    .eq('operator_id', activeOperatorId)
     .eq('transaction_type', 'withdrawal')
     .order('transaction_date', { ascending: false })
     .limit(limit)
@@ -722,6 +750,7 @@ export async function linkExpensesToCashTransaction(
     actorEmail: string
     cashTransactionId: string
     cashAmount: number
+    operatorId?: string | null
     items: {
       expenseSourceTable: ExpenseReconSourceTable
       expenseSourceId: string
@@ -730,6 +759,7 @@ export async function linkExpensesToCashTransaction(
   }
 ): Promise<{ linked: number; skippedAlreadyLinked: number }> {
   const { actorEmail, cashTransactionId, cashAmount, items } = params
+  const activeOperatorId = resolveOperatorId(params.operatorId)
   if (!cashTransactionId || items.length === 0) {
     return { linked: 0, skippedAlreadyLinked: 0 }
   }
@@ -768,6 +798,7 @@ export async function linkExpensesToCashTransaction(
       expenseSourceId: item.expenseSourceId,
       cashTransactionId,
       matchedAmount,
+      operatorId: activeOperatorId,
     })
     linkedKeys.add(key)
     allocated += matchedAmount
@@ -785,15 +816,18 @@ export async function replaceExpenseCashLedgerMatch(
     expenseSourceId: string
     cashTransactionId: string
     matchedAmount?: number | null
+    operatorId?: string | null
   }
 ): Promise<void> {
   const { actorEmail, expenseSourceTable, expenseSourceId, cashTransactionId } = params
   if (!expenseSourceSupportsCashLedgerLink(expenseSourceTable)) {
     throw new Error('이 원장 유형은 현금 지출 대조를 지원하지 않습니다.')
   }
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const { error: delErr } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE)
     .delete()
+    .eq('operator_id', activeOperatorId)
     .eq('expense_source_table', expenseSourceTable)
     .eq('expense_source_id', expenseSourceId)
   if (delErr) {
@@ -807,6 +841,7 @@ export async function replaceExpenseCashLedgerMatch(
       : null
 
   const { error: insErr } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE).insert({
+    operator_id: activeOperatorId,
     expense_source_table: expenseSourceTable,
     expense_source_id: expenseSourceId,
     cash_transaction_id: cashTransactionId,
@@ -1076,6 +1111,7 @@ async function queryExpenseCandidatesFromTable(
     tol: number
     matchMode: 'dateProximity' | 'amountOnly'
     limit: number
+    operatorId?: string | null
   }
 ): Promise<RawExpenseCandidate[]> {
   const dayWindow = RECON_EXPENSE_LEDGER_DAY_WINDOW
@@ -1087,6 +1123,7 @@ async function queryExpenseCandidatesFromTable(
     params.matchMode === 'dateProximity' && params.dateYmd
       ? `${addCalendarDaysYmd(params.dateYmd, dayWindow)}T23:59:59.999Z`
       : null
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const out: RawExpenseCandidate[] = []
 
@@ -1101,6 +1138,7 @@ async function queryExpenseCandidatesFromTable(
       let q = supabase
         .from('company_expenses')
         .select('id,submit_on,amount,paid_to,paid_for,description,notes,submit_by')
+        .eq('operator_id', activeOperatorId)
         .order('submit_on', { ascending: false })
         .limit(params.limit)
       if (startIso && endIso) q = q.gte('submit_on', startIso).lte('submit_on', endIso)
@@ -1127,6 +1165,7 @@ async function queryExpenseCandidatesFromTable(
       let q = supabase
         .from('tour_expenses')
         .select('id,submit_on,amount,paid_to,paid_for,note,tour_date,submitted_by')
+        .eq('operator_id', activeOperatorId)
         .order('submit_on', { ascending: false })
         .limit(params.limit)
       if (startIso && endIso) q = q.gte('submit_on', startIso).lte('submit_on', endIso)
@@ -1153,6 +1192,7 @@ async function queryExpenseCandidatesFromTable(
       let q = supabase
         .from('reservation_expenses')
         .select('id,submit_on,amount,paid_to,paid_for,note,submitted_by')
+        .eq('operator_id', activeOperatorId)
         .order('submit_on', { ascending: false })
         .limit(params.limit)
       if (startIso && endIso) q = q.gte('submit_on', startIso).lte('submit_on', endIso)
@@ -1247,6 +1287,7 @@ export async function fetchSimilarExpensesForCashTransaction(
     limit?: number
     matchMode?: 'dateProximity' | 'amountOnly'
     linkedExpenseKeys?: Set<string>
+    operatorId?: string | null
   }
 ): Promise<SimilarExpenseForCashRow[]> {
   const {
@@ -1256,6 +1297,7 @@ export async function fetchSimilarExpensesForCashTransaction(
     limit = 80,
     matchMode = 'dateProximity',
     linkedExpenseKeys = new Set<string>(),
+    operatorId,
   } = params
   if (!cashTransactionId) return []
 
@@ -1273,6 +1315,7 @@ export async function fetchSimilarExpensesForCashTransaction(
         tol,
         matchMode,
         limit: perTableLimit,
+        operatorId: operatorId ?? null,
       })
     )
   )
@@ -1332,6 +1375,7 @@ export async function searchExpensesForCashTransaction(
     cashAmount?: number
     limit?: number
     linkedExpenseKeys?: Set<string>
+    operatorId?: string | null
   }
 ): Promise<SimilarExpenseForCashRow[]> {
   const rawQuery = String(params.query ?? '').trim()
@@ -1343,6 +1387,7 @@ export async function searchExpensesForCashTransaction(
   const dateYmd = params.dateYmd?.slice(0, 10) ?? ''
   const absCash = Math.abs(Number(params.cashAmount ?? 0))
   const parsedAmount = parseCashSearchAmount(rawQuery)
+  const activeOperatorId = resolveOperatorId(params.operatorId)
   const mapParams = {
     dateYmd,
     absCash,
@@ -1370,6 +1415,7 @@ export async function searchExpensesForCashTransaction(
         tol,
         matchMode: 'amountOnly',
         limit: limit,
+        operatorId: activeOperatorId,
       })
       for (const row of rows) {
         if (Math.abs(row.amount - parsedAmount) <= tol) pushRow(row)
@@ -1440,10 +1486,15 @@ export async function searchExpensesForCashTransaction(
       }
       if (!select || orParts.length === 0) continue
 
-      const { data, error } = await supabase
-        .from(table)
-        .select(select)
-        .or(orParts.join(','))
+      let textQuery = supabase.from(table).select(select).or(orParts.join(','))
+      if (
+        table === 'company_expenses' ||
+        table === 'tour_expenses' ||
+        table === 'reservation_expenses'
+      ) {
+        textQuery = textQuery.eq('operator_id', activeOperatorId)
+      }
+      const { data, error } = await textQuery
         .order(table === 'tour_hotel_bookings' ? 'check_in_date' : 'submit_on', { ascending: false })
         .limit(Math.min(limit, 80))
       if (error) throw error

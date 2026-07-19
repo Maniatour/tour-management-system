@@ -7,6 +7,8 @@ import { X } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { generateTourId } from '@/lib/entityIds'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert } from '@/lib/operators/scopeQuery'
 
 export type AdminNewTourModalProduct = {
   id: string
@@ -33,6 +35,7 @@ export function AdminNewTourModal({ isOpen, onClose, products, productsLoading }
   const locale = useLocale()
   const t = useTranslations('tours.newTourPage')
   const supabase = useMemo(() => createClientSupabase(), [])
+  const { operatorId } = useOperatorOptional()
 
   const [productId, setProductId] = useState('')
   const [tourDate, setTourDate] = useState(todayYmd)
@@ -67,6 +70,7 @@ export function AdminNewTourModal({ isOpen, onClose, products, productsLoading }
           reservation_ids: [],
           tour_status: 'scheduled',
           is_private_tour: isPrivateTour,
+          ...operatorIdInsert(operatorId),
         })
         .select('id')
         .single()

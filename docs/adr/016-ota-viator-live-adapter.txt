@@ -1,0 +1,65 @@
+================================================================================
+ADR 016 — Viator Live Rate-Push Adapter (Phase 4c)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 4a/4b shipped outbox + dry-run adapter + mapping UI. Live OTA HTTP was
+explicitly deferred. Phase 4 needs one real outbound path (rate push) without
+forcing production Viator credentials on every environment.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Double gate for live HTTP:
+   - channel_connections.status = active
+   - COMMERCE_V2_OTA_LIVE=1
+   Otherwise process-outbox keeps dry-run behavior.
+
+2. Viator live adapter (push_rates):
+   - Resolve credentials via credentials_ref = env:VAR_NAME only
+   - POST JSON to config.ratesPushUrl OR env OTA_VIATOR_RATES_URL
+   - Auth header default: exp-api-key (overridable via config.authHeaderName)
+   - If URL missing and config.simulate=true → local accept (E2E without OTA)
+
+3. Staff APIs:
+   - GET/PATCH /api/admin/commerce/ota/connections
+   - PATCH cannot set status=active while LIVE flag is off
+
+4. Admin UI (OtaDistributionAdmin):
+   - Connection card: status / credentials_ref / ratesPushUrl
+   - Mapping + outbox unchanged
+
+5. Unmapped SKUs still skip (never invent external identity).
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Full official Viator Partner API schema parity
+- Inbound booking webhooks / pull_bookings
+- Klook/GYG live adapters (same pattern later)
+- Storing raw API secrets in config jsonb
+
+
+Pilot
+--------------------------------------------------------------------------------
+1. COMMERCE_V2_OTA_SYNC=1
+2. OTA_VIATOR_API_KEY=…  and credentials_ref=env:OTA_VIATOR_API_KEY
+3. Set ratesPushUrl (webhook.site) OR leave empty for simulate=true
+4. COMMERCE_V2_OTA_LIVE=1
+5. Connection status → active
+6. Save pricing / process-outbox → succeeded (live or simulate)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/commerce/ota/adapters/viatorLiveAdapter.ts
+src/lib/commerce/ota/resolveOtaCredentials.ts
+src/lib/commerce/ota/adapters/registry.ts
+src/lib/commerce/ota/processSyncOutbox.ts
+src/lib/commerce/commerceV2Flags.ts (isCommerceV2OtaLiveEnabled)
+src/app/api/admin/commerce/ota/connections/route.ts
+src/components/admin/OtaDistributionAdmin.tsx
+================================================================================

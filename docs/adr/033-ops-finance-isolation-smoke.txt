@@ -1,0 +1,45 @@
+================================================================================
+ADR 033 — Ops finance isolation smoke + Operator B E2E (Phase 6c.0)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.0–6b.11 stamped operator_id across Ops fleet/HR/finance tables.
+Operator B E2E was still a manual walkthrough without live DB proof that
+migrations applied and payment/cash/statement stamps have no NULL operator_id.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Read-only evaluator: src/lib/operators/opsFinanceIsolation.ts
+   - NULL operator_id counts on vehicles, company_expenses, cash/accounts,
+     statement imports/lines, match tables, payment_records
+   - Kovegas payment_records baseline > 0
+   - Tenant partition detail for active header operator
+
+2. GET /api/admin/operators/pilot-status returns opsFinance report (like regression)
+
+3. Operator B manual: new Ops finance smoke card + E2E steps for cash/statement/payments
+
+4. Non-goals:
+   - No RLS policies yet (deferred)
+   - No booking/payment/checkout logic changes
+   - No automatic UI browser E2E
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.1 payment_records SELECT RLS (ADR 034)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/opsFinanceIsolation.ts
+src/app/api/admin/operators/pilot-status/route.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

@@ -2315,7 +2315,6 @@ function stripForwardReplySubject(subject: string): string {
 
 /**
  * Klook 주문 메일 제목 패턴인지 (Received / Confimed / Confirmed, Fwd:/Re: 제거 후 판별).
- * Confimed·Confirmed 를 “예약 접수”로 확정하려면 isKlookBookingConfirmedReservationEmail 로 본문까지 본다.
  */
 export function isKlookOrderEmailSubjectForReservation(subject: string | null | undefined): boolean {
   const lower = stripForwardReplySubject(subject ?? '').toLowerCase()
@@ -2326,46 +2325,20 @@ export function isKlookOrderEmailSubjectForReservation(subject: string | null | 
   )
 }
 
-/** Gmail 등에 HTML만 있을 때 레이블·URL이 한 줄이 아니어도 매칭되도록 평문화 */
-function normalizeRawBodyForKlookBookingMatch(rawText: string, rawHtml: string | null | undefined): string {
-  const t = (rawText || '').trim()
-  const h = (rawHtml || '').trim()
-  const pick = t || h
-  if (pick.includes('<') && /<[a-z][\s\S]*>/i.test(pick)) {
-    return toPlainTextKlook(pick)
-  }
-  return pick.replace(/\r\n/g, '\n')
-}
-
 /**
  * Klook 예약 접수 이메일(is_booking_confirmed).
- * - 일반: 제목이 "Klook Order Received -" 로 시작 (Fwd:/Re: 접두 허용).
- * - 일부 All Inclusive(앤텔롭 X / activity 113386)는 "Klook Order Confimed|Confirmed -" 로만 오는 경우가 있음.
- *   이 제목은 다른 상품에도 쓰이므로, 본문에 Antelope Canyon X 와 klook activity/113386 가 함께 있을 때만 예약 접수로 본다.
- * - raw_body_text 가 HTML이면 내부에서 Klook용 평문화 후 검사. raw_body_html 은 text 가 비었을 때 사용.
+ * - "Klook Order Received -" (기존: 접수 후 우리측 Confirm 필요)
+ * - "Klook Order Confirmed|Confimed -" (즉시 확정 예약 — Received 없이 Confirmed만 오는 경우 포함)
+ * Fwd:/Re: 접두 허용. rawBody* 인자는 하위 호환용(제목만으로 판별).
  */
 export function isKlookBookingConfirmedReservationEmail(
   subject: string,
-  rawBodyText: string,
-  rawBodyHtml?: string | null
+  _rawBodyText?: string,
+  _rawBodyHtml?: string | null
 ): boolean {
-  const lower = stripForwardReplySubject(subject || '').toLowerCase()
-  if (lower.startsWith('klook order received -')) {
-    return true
-  }
-  if (lower.startsWith('klook order confimed -') || lower.startsWith('klook order confirmed -')) {
-    const body = normalizeRawBodyForKlookBookingMatch(rawBodyText ?? '', rawBodyHtml ?? null)
-    const searchIn = body.replace(/\r\n/g, '\n')
-    const oneLine = searchIn.replace(/\s+/g, ' ')
-    const hasAntelopeCanyonXPackage =
-      /package\s*:\s*antelope\s+canyon\s+x\b/i.test(searchIn) ||
-      /\bantelope\s+canyon\s+x\b/i.test(searchIn)
-    const hasActivity113386 =
-      /\/activity\/113386(?:\/|\?|&|#|\b)/i.test(searchIn + oneLine) &&
-      /klook\.com/i.test(searchIn + oneLine)
-    return hasAntelopeCanyonXPackage && hasActivity113386
-  }
-  return false
+  void _rawBodyText
+  void _rawBodyHtml
+  return isKlookOrderEmailSubjectForReservation(subject)
 }
 
 /**

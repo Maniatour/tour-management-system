@@ -1,0 +1,54 @@
+================================================================================
+ADR 039 — Attendance SELECT tenancy + strict member helpers (Phase 6c.6)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6c.5 deferred attendance because is_operator_member() returns true for
+all is_staff(), which would destroy own_or_admin privacy if OR'd onto SELECT.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Helpers (no staff bypass):
+   - is_operator_member_strict(operator_id)
+   - is_operator_hr_member(operator_id) — strict + role IN (owner, admin)
+
+2. SELECT rewrite on attendance_records + monthly_attendance_stats:
+     rls_admin_session_ok()
+     OR own employee_email match (current_email / session_email)
+     OR (NOT rls_is_staff_session_ok() AND is_operator_hr_member(operator_id))
+
+3. Effect:
+   - Kovegas staff privacy unchanged (managers still need admin session)
+   - Platform admin still sees all
+   - Non-staff Operator B owner/admin can read their tenant HR rows
+
+4. Writes unchanged
+
+5. Smoke: saas_attendance_select_rls_ready()
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Tightening admin to single-tenant only
+- Expanding Kovegas manager access via operator_members.admin
+- Booking/payment logic
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.7 tip/meal SELECT tenant HR (ADR 040)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719280000_saas_attendance_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

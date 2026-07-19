@@ -18,6 +18,7 @@ import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import ProductsListingPublicView from '@/components/products/ProductsListingPublicView'
+import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 
 interface Product {
   id: string
@@ -79,6 +80,7 @@ export default function ProductsPage() {
         let rows: Product[] = []
 
         if (isPreviewMode && previewProductId) {
+          // Admin preview: skip public-operator filter (apex host may differ from product tenant)
           const { data: previewRow, error: previewError } = await supabase
             .from('products')
             .select('*')
@@ -91,9 +93,11 @@ export default function ProductsPage() {
           }
           rows = previewRow ? [previewRow as Product] : []
         } else {
+          const operatorId = readPublicOperatorIdBrowser()
           const { data, error: fetchError } = await supabase
             .from('products')
             .select('*')
+            .eq('operator_id', operatorId)
             .eq('status', 'active')
             .eq('is_published', true)
             .order('created_at', { ascending: false })
@@ -326,6 +330,7 @@ export default function ProductsPage() {
           gridProducts={filteredProducts}
           showGrid={showListingGrid}
           resultCount={filteredProducts.length}
+          catalogTotalCount={products.length}
           getProductTitle={(product) => getCustomerDisplayName(product as Product)}
           getProductLocation={(product) => getListDepartureLine(product as Product)}
           getProductPrice={(product) => getListPrice(product as Product)}

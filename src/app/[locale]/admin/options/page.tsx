@@ -5,7 +5,7 @@ import { Plus, Search, Edit, Trash2, Settings, Copy, ChevronDown, ChevronUp } fr
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import GlobalChoicesManager from '@/components/admin/GlobalChoicesManager'
 import ImageUpload from '@/components/common/ImageUpload'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -25,6 +25,7 @@ interface AdminOptionsProps {
 
 export default function AdminOptions({}: AdminOptionsProps) {
   const paramsObj = useParams()
+  const searchParams = useSearchParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
@@ -45,6 +46,15 @@ export default function AdminOptions({}: AdminOptionsProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingOption, setEditingOption] = useState<Option | null>(null)
   const [copyingOption, setCopyingOption] = useState<Option | null>(null)
+
+  // Deep link: /admin/options?tab=choices
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'choices' || tab === 'options') {
+      setActiveTab(tab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply ?tab= once on mount / query change
+  }, [searchParams])
 
   useEffect(() => {
     fetchOptions()
@@ -308,7 +318,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">통합 옵션</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">옵션·초이스 템플릿</h1>
         {activeTab === 'options' && (
           <button
             onClick={() => setShowAddForm(true)}
@@ -331,7 +341,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            옵션 관리
+            부가 옵션
           </button>
           <button
             onClick={() => setActiveTab('choices')}
@@ -341,7 +351,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            초이스 관리
+            초이스 템플릿
           </button>
         </nav>
       </div>

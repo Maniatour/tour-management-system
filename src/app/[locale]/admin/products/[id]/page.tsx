@@ -20,7 +20,9 @@ import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { createClientSupabase } from '@/lib/supabase'
-import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { deleteAdminProductCascade } from '@/lib/adminProductDelete'
 // import type { Database } from '@/lib/supabase'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
@@ -130,7 +132,6 @@ interface AdminProductEditProps {
 }
 
 export default function AdminProductEdit({ }: AdminProductEditProps) {
-  console.log('AdminProductEdit: Component initializing...')
   
   // 안전한 JSON 파싱 유틸리티 함수
   const safeJsonParse = <T = unknown>(str: string | null | undefined, fallback: T | null = null): T | null => {
@@ -153,10 +154,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   const router = useRouter()
   const isNewProduct = id === 'new'
   const supabase = createClientSupabase()
-  const { user, loading: authLoading } = useAuth()
-  
-  console.log('AdminProductEdit: Auth state:', { user: !!user, authLoading })
-  
+  const { operatorId } = useOperatorOptional()
+
   /** 경로별 sessionStorage — 새로고침 후에도 편집 탭 유지 */
   const [activeTab, setActiveTab] = useRoutePersistedState<string>('edit-tab', 'basic')
   const [showManualModal, setShowManualModal] = useState(false)
@@ -401,6 +400,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         .from('options')
         .select('*')
         .eq('status', 'active')
+        .eq('is_choice_template', false)
         .order('name')
 
       if (error) {
@@ -459,8 +459,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     }
   }, [supabase])
 
-  // 인증 체크 완전 제거
-  console.log('Product page: Auth state:', { authLoading, user: !!user, userEmail: user?.email })
 
   // 새 상품 생성 시 기본값 설정
   useEffect(() => {
@@ -549,18 +547,15 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           .from('products')
           .select('*')
           .eq('id', id)
-          .single()
+          .eq('operator_id', resolveOperatorId(operatorId))
+          .maybeSingle()
 
           if (productError) throw productError
-
-          // 디버깅: 데이터베이스에서 가져온 모든 필드 확인
-          console.log('=== Product Data Debug ===')
-          console.log('Full productData:', productData)
-          console.log('Available fields:', Object.keys(productData))
-          console.log('departure_country:', productData.departure_country)
-          console.log('arrival_country:', productData.arrival_country)
-          console.log('departure_city:', productData.departure_city)
-          console.log('arrival_city:', productData.arrival_city)
+          if (!productData) {
+            console.error('Product not found for active operator', { id, operatorId })
+            router.push(`/${locale}/admin/products`)
+            return
+          }
 
           // 2. 상품 옵션 정보 로드
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -595,16 +590,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           }
 
           // optionsData 안전성 확인
-          console.log('=== Options Data Debug ===')
-          console.log('optionsData:', optionsData)
-          console.log('optionsData type:', Array.isArray(optionsData) ? 'array' : typeof optionsData)
           if (Array.isArray(optionsData) && optionsData.length > 0) {
-            console.log('optionsData length:', optionsData.length)
             // 첫 번째 옵션의 이미지 필드 확인
-            console.log('First option image fields:', {
-              image_url: optionsData[0]?.image_url,
-              image_alt: optionsData[0]?.image_alt
-            })
           }
 
           // 3. 상품 세부정보 로드 (채널별 product_details_multilingual만 사용)
@@ -621,21 +608,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
             throw detailsError
           }
-
-          // 디버깅: 세부정보 데이터 확인
-          console.log('=== Product Details Data Debug ===')
-          console.log('detailsData:', detailsData)
-          console.log('detailsData type:', Array.isArray(detailsData) ? 'array' : typeof detailsData)
-          if (Array.isArray(detailsData) && detailsData.length > 0) {
-            console.log('detailsData length:', detailsData.length)
-            detailsData.forEach((item, index) => {
-              console.log(`detailsData[${index}]:`, item)
-            })
-          } else if (detailsData && !Array.isArray(detailsData)) {
-            console.log('detailsData (object):', detailsData)
-          }
-
-
 
           // 4. 상품 정보 상태 설정
           setProductInfo({
@@ -690,23 +662,16 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             infantAge: productData.infant_age || 2,
             tourDepartureTime: productData.tour_departure_time || '',
             tourDepartureTimes: (() => {
-              console.log('tour_departure_times 원본 데이터:', productData.tour_departure_times);
-              console.log('데이터 타입:', typeof productData.tour_departure_times);
-              console.log('배열 여부:', Array.isArray(productData.tour_departure_times));
               
               // Supabase JSONB는 이미 파싱된 상태로 반환되므로 직접 사용
               if (Array.isArray(productData.tour_departure_times)) {
-                console.log('배열로 인식됨, 직접 반환:', productData.tour_departure_times);
                 return productData.tour_departure_times;
               }
               // 문자열인 경우에만 파싱 시도
               if (typeof productData.tour_departure_times === 'string') {
-                console.log('문자열로 인식됨, 파싱 시도:', productData.tour_departure_times);
                 const parsed = safeJsonParse(productData.tour_departure_times, []);
-                console.log('파싱 결과:', parsed);
                 return Array.isArray(parsed) ? parsed : [];
               }
-              console.log('기본값 반환: []');
               return [];
             })(),
             customerNameKo: productData.customer_name_ko || '',
@@ -915,16 +880,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                     const imageAlt = option.image_alt || (linkedOption?.image_alt) || undefined
                     
                     // 이미지 필드 디버깅
-                    console.log(`Option ${option.name} image fields:`, {
-                      product_image_url: option.image_url,
-                      product_image_alt: option.image_alt,
-                      linked_option_id: option.linked_option_id,
-                      linked_option_image_url: linkedOption?.image_url,
-                      linked_option_image_alt: linkedOption?.image_alt,
-                      final_imageUrl: imageUrl,
-                      final_imageAlt: imageAlt,
-                      hasImageUrl: !!imageUrl
-                    })
                     
                     groupedOptions[optionKey] = {
                       id: option.id,
@@ -942,7 +897,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                     }
                     
                     // 변환된 옵션의 이미지 필드 확인
-                    console.log(`Converted option ${option.name} imageUrl:`, groupedOptions[optionKey].imageUrl)
                   }
                   
                   // choice가 있는 경우에만 추가
@@ -975,41 +929,18 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     }
 
     fetchProductData()
-  }, [id, isNewProduct, supabase])
+  }, [id, isNewProduct, supabase, operatorId, router, locale])
 
 
-  // 상품 삭제 함수
+  // 상품 삭제 함수 (자식 테이블 cascade)
   const handleDeleteProduct = async () => {
     if (isNewProduct) return
     
     try {
       setDeleting(true)
-      
-      // 1. 상품 옵션 삭제
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: optionsError } = await (supabase as any)
-        .from('product_options')
-        .delete()
-        .eq('product_id', id)
-      
-      if (optionsError) {
-        console.error('상품 옵션 삭제 오류:', optionsError)
-        throw new Error(`상품 옵션 삭제 실패: ${optionsError.message}`)
-      }
 
-      // 2. 상품 삭제
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: productError } = await (supabase as any)
-        .from('products')
-        .delete()
-        .eq('id', id)
+      await deleteAdminProductCascade(supabase, id, operatorId)
 
-      if (productError) {
-        console.error('상품 삭제 오류:', productError)
-        throw new Error(`상품 삭제 실패: ${productError.message}`)
-      }
-
-      console.log('상품 삭제 완료!')
       alert('상품이 성공적으로 삭제되었습니다!')
       router.push(`/${locale}/admin/products`)
       
@@ -1033,6 +964,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         .from('products')
         .update({ status: 'inactive' })
         .eq('id', id)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('상품 비활성화 오류:', error)
@@ -1090,7 +1022,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           ...prevData,
           productOptions: [...prevData.productOptions, newOption]
         }
-        console.log('글로벌 옵션 추가됨 - 폼 데이터만 업데이트:', updatedData)
         return updatedData
       })
 
@@ -1098,7 +1029,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
       setShowAddOptionModal(false)
 
       // 성공 메시지 (상품 저장 없음)
-      console.log('글로벌 옵션이 성공적으로 추가되었습니다 (상품 저장 없음):', newOption)
     } catch (error) {
       console.error('글로벌 옵션 추가 중 오류 발생:', error)
       alert('글로벌 옵션 추가 중 오류가 발생했습니다. 다시 시도해주세요.')
@@ -1188,13 +1118,10 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     { id: 'history', label: t('changeHistory'), icon: Clock }
   ]
 
-  // 임시로 인증 체크를 비활성화하여 페이지가 로드되는지 확인
-  console.log('Page render:', { authLoading, user: !!user, userEmail: user?.email })
 
   return (
     <CustomerPagePreviewProvider productId={isNewProduct ? null : id} locale={locale}>
     <div className="space-y-6">
-      {/* 인증 체크 완전 제거 - 항상 페이지 표시 */}
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -1335,8 +1262,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                 <DynamicPricingManager 
                   productId={id} 
                   isNewProduct={isNewProduct}
-                  onSave={(rule) => {
-                    console.log('통합 가격 정보 저장됨:', rule);
+                  onSave={() => {
                     // 동적 가격 정보가 성공적으로 저장되었음을 알림
                     // 상품 자체의 저장은 하단의 "변경사항 저장" 버튼을 통해 처리
                   }}

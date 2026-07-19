@@ -5,6 +5,7 @@ import {
   mapReviewRowsToProductItems,
   type PublicProductReviewRow,
 } from '@/lib/productReviewDisplay'
+import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
 
 const PRODUCT_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/
 
@@ -111,12 +112,14 @@ export async function GET(request: NextRequest) {
   }
 
   const db = supabaseAdmin
+  const operatorId = await getPublicOperatorId()
 
   if (productId) {
     const { data: productRow, error: productError } = await db
       .from('products')
       .select('id')
       .eq('id', productId)
+      .eq('operator_id', operatorId)
       .eq('status', 'active')
       .maybeSingle()
 
@@ -203,6 +206,7 @@ export async function GET(request: NextRequest) {
         .from('products')
         .select('id')
         .in('id', productIds)
+        .eq('operator_id', operatorId)
         .eq('status', 'active')
 
       activeProductIds = new Set((activeProducts ?? []).map((row) => row.id))

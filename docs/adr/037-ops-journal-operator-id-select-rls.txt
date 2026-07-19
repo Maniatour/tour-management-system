@@ -1,0 +1,50 @@
+================================================================================
+ADR 037 — journal_entries / journal_lines operator_id + SELECT RLS (Phase 6c.4)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Ops finance soft SELECT RLS covered cash/statement/match/company_expenses/
+payment_records. journal_* still had no operator_id; the only write path is
+POST /api/financial/journal/card-payment (session client).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719260000_saas_operator_id_journal.sql
+   - operator_id NOT NULL on journal_entries + journal_lines
+   - Backfill: statement_imports → financial_accounts (via lines) → Kovegas
+   - SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+   - INSERT/UPDATE/DELETE unchanged (staff session)
+
+2. App stamp only (no booking/payment logic):
+   - card-payment route: require bank+card accounts same operator_id; stamp both
+
+3. Smoke: saas_journal_select_rls_ready() in opsFinanceIsolation
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Journal list UI / report filters (no SELECT UI today)
+- Write-policy tenant tightening
+- Staff cross-tenant lock-down
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.5 fleet SELECT RLS (ADR 038)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719260000_saas_operator_id_journal.sql
+src/app/api/financial/journal/card-payment/route.ts
+src/app/api/sync/schema/route.ts
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

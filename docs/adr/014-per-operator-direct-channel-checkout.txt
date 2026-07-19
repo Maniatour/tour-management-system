@@ -1,0 +1,60 @@
+================================================================================
+ADR 014 — Per-operator Direct Channel on Public Checkout (Phase 5e.2)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 5e.1 scoped the public catalog by host operator_id, but BookingFlow and
+checkout still hardcoded Homepage channel M00001. Operator B bookings would
+land on Kovegas' channel/customer scope and price against the wrong
+dynamic_pricing rows.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Resolve Direct Web / Homepage channel per public operator:
+   - Kovegas → always M00001
+   - Other operators → existing Website/Homepage/Direct channel, or auto-create
+     DW-{slug} (type Website, category Own, name Homepage)
+
+2. Server checkout / inquiry:
+   - getPublicOperatorId() + resolvePublicDirectChannel(ensure)
+   - createPendingCustomerBooking stamps reservation.channel_id + operator_id
+   - createOrReuseCustomer scoped by operator_id
+   - calculateServerBookingPrice uses tenant.channelId / operatorId
+   - Stripe PaymentIntent path unchanged (no Connect destination charge)
+
+3. Client UI:
+   - GET /api/public/direct-channel
+   - BookingFlow + useProductTourDateAvailability use
+     fetchPublicDirectChannelBrowser() instead of hardcoded M00001
+
+
+Risks / caveats
+--------------------------------------------------------------------------------
+- Operator B without dynamic_pricing for their Direct channel may fall back to
+  catalog_fallback pricing and show an open calendar (same legacy behavior as
+  missing M00001 rows).
+- Auto-created DW-* channels need admin pricing setup for production readiness.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Stripe Connect destination charges / platform fee
+- Commerce Core v2 write cutover
+- Changing Kovegas M00001 identity
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/resolvePublicDirectChannel.ts
+src/lib/operators/fetchPublicDirectChannelBrowser.ts
+src/app/api/public/direct-channel/route.ts
+src/app/api/booking/create-checkout/route.ts
+src/app/api/booking/create-inquiry/route.ts
+src/lib/customerBookingCheckout.ts
+src/components/booking/BookingFlow.tsx
+src/hooks/useProductTourDateAvailability.ts
+================================================================================

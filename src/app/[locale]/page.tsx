@@ -54,9 +54,13 @@ function HomePageInner() {
     try {
       setIsChangingOrder(true)
 
+      const { readPublicOperatorIdBrowser } = await import(
+        '@/lib/operators/readPublicOperatorIdBrowser'
+      )
       const { data: favoriteProducts, error: loadError } = await supabase
         .from('products')
         .select('id, favorite_order')
+        .eq('operator_id', readPublicOperatorIdBrowser())
         .eq('status', 'active')
         .eq('is_favorite', true)
         .order('favorite_order', { ascending: true })

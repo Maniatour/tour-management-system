@@ -1,0 +1,45 @@
+================================================================================
+ADR 017 — Ops Module Sidebar Gate + Operator B Manual (Phase 6a / Pilot docs)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Operator B is the commerce-only second-tenant pilot. Operations Suite menus
+(fleet, attendance, internal expenses, …) were still visible for all operators.
+Pilot staff also needed an in-app manual (structure, todos, page guide).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Phase 6a — sidebar gate:
+   AdminSidebarRegistryEntry.requiresOperationsModule = true for Ops Suite items.
+   buildAdminSidebarNavigation/Groups hide them when
+   AdminNavAccessContext.operationsEnabled === false
+   (from OperatorContext: modules.operations !== true).
+   Kovegas keeps operations=true → unchanged UI.
+
+2. Operator B manual:
+   Path: /{locale}/admin/operator-b/manual
+   Sidebar group "Operator B" child: operator-b-manual (admin_or_manager)
+   Content: architecture, pilot checklist, page descriptions, shipped baseline.
+   i18n: adminOperatorBManual (ko/en)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Splitting ops_* tables / DB schemas (later Phase 6)
+- Route-level hard blocks on Ops URLs → done in ADR 018 (Phase 6a.1)
+- Public self-serve signup docs
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/admin-site-registry.ts
+src/components/AdminSidebarAndHeader.tsx
+src/components/admin/OperatorBManual.tsx
+src/app/[locale]/admin/operator-b/manual/page.tsx
+src/i18n/locales/{ko,en}.json
+src/lib/admin-site-access-tree.ts
+================================================================================

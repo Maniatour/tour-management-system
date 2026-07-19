@@ -2,10 +2,16 @@
   "sidebar": {
     "customerPages": "고객 페이지 작업",
     "products": "상품 관리",
-    "options": "옵션 관리",
+    "options": "옵션·초이스 템플릿",
     "courses": "투어 코스",
     "tourCostCalculator": "투어 비용 계산기",
     "channels": "채널 관리",
+    "otaDistribution": "OTA 연동·매핑",
+    "operators": "오퍼레이터 (테넌트)",
+    "operatorB": "Operator B",
+    "operatorBManual": "매뉴얼",
+    "operatorBPanelTitle": "Operator B 메뉴",
+    "operatorBPanelHint": "매뉴얼 · 테넌트 · OTA 연동",
     "coupons": "쿠폰 관리",
     "tagTranslationManagement": "태그 번역 관리",
     "pickupHotels": "픽업 호텔",
@@ -275,7 +281,7 @@
     "tours": "투어 관리",
     "channels": "채널 관리",
     "products": "상품 관리",
-    "options": "옵션 관리",
+    "options": "옵션·초이스 템플릿",
     "employees": "직원 관리",
     "team": "팀 관리",
     "courses": "투어 코스",
@@ -302,6 +308,8 @@
     "items": "개",
     "noSearchResults": "검색 결과가 없습니다",
     "tryDifferentSearch": "다른 검색어나 필터를 시도해보세요",
+    "emptyCatalogTitle": "등록된 투어가 없습니다",
+    "emptyCatalogHint": "이 사이트에 아직 공개된 투어가 없습니다. 나중에 다시 확인해 주세요.",
     "loadingCustomerList": "고객 목록을 불러오는 중...",
     "noCustomers": "고객이 없습니다",
     "myInfo": "내 정보",
@@ -870,7 +878,7 @@
     "switchToEnglish": "영어로 전환",
     "basicInfo": "기본 정보",
     "dynamicPricing": "동적 가격",
-    "choicesManagement": "초이스 관리",
+    "choicesManagement": "이 상품의 초이스",
     "optionsManagement": "옵션 관리",
     "tourCourses": "투어 코스",
     "schedule": "스케줄",
@@ -927,6 +935,47 @@
     "pageDescription": "투어 상품을 추가, 편집, 삭제할 수 있습니다",
     "homeSectionsManualHint": "홈 Explore Top Destinations · Choose Your Adventure 노출 방법은 제목 옆 책 아이콘 메뉴얼을 참고하세요.",
     "favoriteOrder": "즐겨찾기 순서 조정",
+    "localeReadiness": {
+      "button": "다국어 준비",
+      "title": "다국어 준비 현황",
+      "subtitle": "고객에게 보이는 상품명·요약·상세 정보가 언어별로 얼마나 채워졌는지 확인합니다. (고객 페이지에서 숨긴 필드는 제외)",
+      "summary": "상품 {count}개 · 한국어 평균 {avgKo}% · 영어 평균 {avgEn}% · 미완료 {incomplete}개",
+      "searchPlaceholder": "상품명 검색…",
+      "incompleteOnly": "미완료만",
+      "sortLabel": "정렬",
+      "sortOverall": "전체 준비도 낮은순",
+      "sortKo": "한국어 낮은순",
+      "sortEn": "영어 낮은순",
+      "sortName": "상품명",
+      "loading": "준비 현황을 불러오는 중…",
+      "loadError": "준비 현황을 불러오지 못했습니다.",
+      "empty": "표시할 상품이 없습니다.",
+      "close": "닫기",
+      "localeKo": "한국어",
+      "localeEn": "English",
+      "published": "배포됨",
+      "unpublished": "미배포",
+      "overall": "평균 {percent}%",
+      "editCustomerPage": "고객 페이지 편집",
+      "allReady": "이 언어는 핵심 필드가 모두 준비되었습니다.",
+      "fields": {
+        "customerName": "고객용 상품명",
+        "summary": "짧은 설명(요약)",
+        "slogan1": "슬로건 (대제목)",
+        "slogan2": "슬로건 (부제)",
+        "slogan3": "슬로건 (설명)",
+        "description": "상품 설명",
+        "included": "포함 사항",
+        "not_included": "불포함 사항",
+        "pickup_drop_info": "픽업·드롭",
+        "luggage_info": "짐·수하물",
+        "tour_operation_info": "투어 운영 안내",
+        "preparation_info": "준비물·복장",
+        "small_group_info": "소그룹 안내",
+        "notice_info": "유의사항",
+        "cancellation_policy": "취소·환불 정책"
+      }
+    },
     "totalProducts": "총 {count}개의 상품",
     "searchResults": "검색 결과",
     "clearFilters": "필터 초기화",
@@ -1411,7 +1460,27 @@
       "allAgesSamePrice": "모든 연령대에 동일한 가격이 적용됩니다.",
       "eachAgeSeparate": "각 연령대별로 다른 가격을 설정할 수 있습니다.",
       "basePriceSection": "기본 가격",
+      "channelBasePriceEditable": "기본가",
+      "channelBasePriceEditableHint": "이 채널·날짜 구간에 적용할 기본가를 입력하세요. 초이스별 단가(추가금/할인)와 합산됩니다.",
+      "choiceUnitPriceSection": "초이스별 단가 (추가금/할인)",
+      "choiceUnitPriceHint": "초이스 그룹의 각 옵션(예: 미국 거주자, 로어 앤텔롭 캐년, 객실)별로 단가를 입력합니다. 저장 시 선택 조합의 합산 가격으로 적용됩니다.",
+      "noChoiceOptionsForUnitPrice": "입력할 초이스 옵션이 없습니다.",
       "choicePricingSection": "초이스별 가격 설정",
+      "choiceGroupResidencyShort": "거주자 구분",
+      "choicePricingCalcMode": "가격 계산 방식",
+      "choicePricingModeAbsolute": "초이스별 가격 설정",
+      "choicePricingModeAbsoluteHint": "초이스 조합마다 최종 판매가를 직접 입력합니다.",
+      "choicePricingModeBasePlus": "기본가 + choice별 추가금/할인",
+      "choicePricingModeBasePlusHint": "채널 기본가에 초이스별 추가금·할인을 더해 최종가를 계산합니다.",
+      "basePriceShort": "기본가",
+      "choiceAdjAmount": "추가금/할인",
+      "finalSalePrice": "최종 판매가",
+      "choiceAdjAdult": "성인 추가/할인",
+      "choiceAdjChild": "아동 추가/할인",
+      "choiceAdjInfant": "유아 추가/할인",
+      "finalSaleAdult": "성인 최종가",
+      "finalSaleChild": "아동 최종가",
+      "finalSaleInfant": "유아 최종가",
       "tableView": "테이블 뷰",
       "cardView": "카드 뷰",
       "singlePriceWithAmount": "단일 가격:",
@@ -5486,6 +5555,582 @@
     "templateAmountChip_total_ko": "합계",
     "templateAmountChip_payment_ko": "결제",
     "templateAmountChip_card_total": "card total"
+  },
+  "adminOperatorBManual": {
+    "eyebrow": "SaaS · Operator B",
+    "title": "Operator B 매뉴얼",
+    "description": "멀티테넌트 SaaS 구조, 이미 끝난 작업, 앞으로 할 일, 관련 관리 화면을 한곳에서 확인합니다.",
+    "activeOperator": "현재 테넌트: {name}",
+    "badgeKovegas": "Kovegas (Tenant #1)",
+    "badgeTenantB": "비-Kovegas 테넌트",
+    "opsOn": "Operations 모듈 ON",
+    "opsOff": "Operations 모듈 OFF (Commerce-only)",
+    "structureTitle": "구조 설명",
+    "structureHint": "Shared DB + operator_id 모델입니다. Kovegas가 Tenant #1이고, Operator B는 두 번째 공급자 파일럿입니다.",
+    "structure": {
+      "tenancy": {
+        "title": "테넌시",
+        "body": "operators / operator_members. 헤더 스위치로 active operator를 바꿉니다. 카탈로그·예약·고객은 operator_id로 격리됩니다."
+      },
+      "commerce": {
+        "title": "Commerce Core",
+        "body": "상품·채널·동적가격·예약. OTA는 outbox(푸시) + inbound 웹훅 수신함. v2 Offer/Inventory는 플래그로 점진 전환합니다."
+      },
+      "public": {
+        "title": "고객 사이트",
+        "body": "Host → public operator (서브도메인/커스텀 도메인). 카탈로그·Direct 채널·체크아웃이 해당 테넌트에 스탬프됩니다."
+      },
+      "payments": {
+        "title": "결제 (Stripe Connect)",
+        "body": "Express 온보딩 후 COMMERCE_STRIPE_CONNECT_CHECKOUT 플래그로 destination charge. 기본은 플랫폼 PI입니다."
+      },
+      "ops": {
+        "title": "Operations Suite",
+        "body": "차량·출근·내부 경비·현금·명세서는 modules.operations=true 일 때만 사이드바에 보입니다. OFF면 URL 직접 접근도 매뉴얼로 리다이렉트됩니다. Phase 6b에서 fleet/finance 테이블에 operator_id 스탬프, 6c.0에서 smoke 검증."
+      }
+    },
+    "todoTitle": "앞으로 할 일 (라이브 체크리스트)",
+    "todoHint": "현재 헤더 테넌트 기준으로 DB·env를 다시 평가합니다. 초록 체크 = 통과.",
+    "todoKovegasHint": "지금은 Kovegas입니다. Operator B로 전환하면 Connect·카탈로그·Ops OFF 항목이 의미 있게 채워집니다.",
+    "statusRefresh": "상태 새로고침",
+    "statusLoading": "확인 중…",
+    "statusLoadError": "파일럿 상태를 불러오지 못했습니다.",
+    "pilotScore": "파일럿 {passed}/{total}",
+    "regressionScore": "Kovegas 회귀 {passed}/{total}",
+    "opsFinanceScore": "Ops finance {passed}/{total}",
+    "commerceIsolationScore": "Commerce {passed}/{total}",
+    "hostBookScore": "Host book {passed}/{total}",
+    "activeOperatorSessionBadge": "Active operator: {state}",
+    "activeOperatorSessionOk": "cookie OK",
+    "activeOperatorSessionPending": "cookie 대기/오류",
+    "activeOperatorSessionTitle": "Active operator 세션 prep (Phase 6c.9)",
+    "activeOperatorSessionHint": "헤더 테넌트를 쿠키·미들웨어 헤더·API GUC로 전달합니다. Staff SELECT 잠금은 아직 적용하지 않습니다.",
+    "activeOperatorSessionCheckTitle": "tms_active_operator_id 쿠키/헤더",
+    "activeOperatorSessionCheckBody": "테넌트 전환 후 쿠키가 UUID로 동기화되면 통과. 없거나 대기 중이면 outline 배지.",
+    "staffTenantLockBadge": "Staff lock: {state}",
+    "staffTenantLockOff": "OFF (기본)",
+    "staffTenantLockOnReady": "ON + JWT",
+    "staffTenantLockOnMissingJwt": "ON · JWT 없음",
+    "staffTenantLockCheckTitle": "Staff tenant lock pilot (ops finance + journal)",
+    "staffTenantLockCheckBody": "SAAS_STAFF_TENANT_LOCK=1 일 때만 JWT claim을 쓰고 ops finance·journal staff SELECT가 스코프됩니다. 기본 OFF.",
+    "opsBlockedBanner": "Operations 모듈이 꺼져 있어 Ops 페이지 URL 접근이 차단되었습니다. 이 매뉴얼로 리다이렉트되었습니다.",
+    "regressionTitle": "기존 시스템 회귀 (Kovegas)",
+    "regressionHint": "Tenant #1이 깨지지 않았는지 읽기 전용으로 확인합니다. 예약·결제 로직은 변경하지 않습니다. 모두 초록이어야 합니다.",
+    "opsFinanceTitle": "Ops finance 스탬프 smoke (Phase 6b)",
+    "opsFinanceHint": "차량·경비·현금·명세서·매칭·결제 기록에 operator_id NULL이 없는지 읽기 전용으로 확인합니다. 마이그레이션 미적용이면 빨강입니다.",
+    "commerceIsolationTitle": "Commerce 격리 smoke (Phase 6e.0–6e.1)",
+    "commerceIsolationHint": "상품·채널·가격·예약·고객·v2 offer·inventory 스탬프와 Direct resolve·교차 테넌트 샘플을 읽기 전용으로 확인합니다. 체크아웃·결제 로직은 호출하지 않습니다.",
+    "hostBookTitle": "Host book readiness (Phase 6e.2)",
+    "hostBookHint": "수동 host book 전에 서브도메인·host resolve·카탈로그·Direct를 읽기 전용으로 확인합니다. 체크아웃 API는 호출하지 않습니다.",
+    "hostBookChecks": {
+      "subdomainConfigured": {
+        "title": "서브도메인 설정",
+        "body": "Operator B는 operators.subdomain 필수. Kovegas는 apex/localhost로 Tenant #1."
+      },
+      "routingEnvReady": {
+        "title": "라우팅 env",
+        "body": "SAAS_PLATFORM_ROOT_DOMAIN / SUBDOMAIN_MAP / APEX. 로컬은 sub.localhost 형태 가능."
+      },
+      "hostResolveMatches": {
+        "title": "Host → operator resolve",
+        "body": "B: sub.localhost가 해당 operator_id로 해석되는지 확인."
+      },
+      "catalogReadyForHost": {
+        "title": "호스트 카탈로그 준비",
+        "body": "활성 테넌트 products > 0."
+      },
+      "directChannelReady": {
+        "title": "Direct 채널 준비",
+        "body": "Kovegas=M00001, B=Homepage/Website (ensure 없이)."
+      },
+      "debugEndpointAvailable": {
+        "title": "디버그 엔드포인트 안내",
+        "body": "비프로덕션: /api/debug/public-operator 로 middleware stamp 확인."
+      }
+    },
+    "commerceIsolation": {
+      "stampProducts": {
+        "title": "products 스탬프",
+        "body": "operator_id NOT NULL (Phase 1b)."
+      },
+      "stampChannels": {
+        "title": "channels 스탬프",
+        "body": "operator_id NOT NULL."
+      },
+      "stampChannelProducts": {
+        "title": "channel_products 스탬프",
+        "body": "operator_id NOT NULL."
+      },
+      "stampDynamicPricing": {
+        "title": "dynamic_pricing 스탬프",
+        "body": "operator_id NOT NULL."
+      },
+      "stampReservations": {
+        "title": "reservations 스탬프",
+        "body": "operator_id NOT NULL."
+      },
+      "stampCustomers": {
+        "title": "customers 스탬프",
+        "body": "operator_id NOT NULL."
+      },
+      "stampRatePlans": {
+        "title": "rate_plans 스탬프",
+        "body": "commerce v2 rate_plans operator_id NOT NULL."
+      },
+      "stampOffers": {
+        "title": "offers 스탬프",
+        "body": "commerce v2 offers operator_id NOT NULL (행 0이어도 NULL만 없으면 통과)."
+      },
+      "kovegasCatalogBaseline": {
+        "title": "Kovegas 카탈로그 baseline",
+        "body": "Tenant #1 상품이 비어 있지 않은지 확인합니다."
+      },
+      "tenantPartitionProducts": {
+        "title": "테넌트 파티션 (products)",
+        "body": "헤더 테넌트 슬라이스 ≤ 전체. B UI에 Kovegas 상품이 보이면 안 됩니다."
+      },
+      "tenantPartitionChannels": {
+        "title": "테넌트 파티션 (channels)",
+        "body": "B 채널은 B 스코프만. Kovegas Direct는 M00001 유지."
+      },
+      "directChannelResolve": {
+        "title": "Direct 채널 resolve",
+        "body": "Kovegas=M00001, B=Homepage/Website 채널 (ensure 없이 lookup)."
+      },
+      "v2OfferProductSameTenant": {
+        "title": "v2 offer ↔ product 동일 테넌트",
+        "body": "offer.operator_id와 product.operator_id가 일치하는지 샘플 검증."
+      },
+      "connectCheckoutFlag": {
+        "title": "Connect checkout 플래그",
+        "body": "Kovegas는 플랫폼 PI 유지. B는 opt-in 상태만 표시 (격리 smoke는 플래그 OFF여도 통과)."
+      },
+      "stampInventoryCore": {
+        "title": "inventory core 스탬프",
+        "body": "inventory_resources / allotments / bindings operator_id NOT NULL (Phase 6e.1)."
+      },
+      "stampInventoryHoldsLedger": {
+        "title": "inventory holds/ledger 스탬프",
+        "body": "inventory_holds·inventory_ledger operator_id NOT NULL (행 0이어도 NULL만 없으면 통과)."
+      },
+      "channelProductSameTenant": {
+        "title": "channel_products ↔ product/channel 동일 테넌트",
+        "body": "channel_products.operator_id가 product·channel과 일치하는지 샘플 검증."
+      },
+      "inventoryBindingResourceSameTenant": {
+        "title": "inventory binding ↔ resource 동일 테넌트",
+        "body": "binding.operator_id와 resource.operator_id 일치 샘플 검증."
+      }
+    },
+    "opsFinance": {
+      "stampVehicles": {
+        "title": "vehicles 스탬프",
+        "body": "operator_id NOT NULL (Phase 6b.0)."
+      },
+      "stampCompanyExpenses": {
+        "title": "company_expenses 스탬프",
+        "body": "operator_id NOT NULL (Phase 6b.3)."
+      },
+      "stampCashFinancial": {
+        "title": "cash / financial_accounts 스탬프",
+        "body": "cash_transactions·financial_accounts NOT NULL (Phase 6b.8)."
+      },
+      "stampStatement": {
+        "title": "statement imports/lines 스탬프",
+        "body": "statement_imports·statement_lines NOT NULL (Phase 6b.9)."
+      },
+      "stampMatchTables": {
+        "title": "매칭 테이블 스탬프",
+        "body": "reconciliation_matches·expense_cash_ledger_matches NOT NULL (Phase 6b.10)."
+      },
+      "stampPaymentRecords": {
+        "title": "payment_records 스탬프",
+        "body": "operator_id NOT NULL (Phase 6b.11)."
+      },
+      "kovegasPaymentBaseline": {
+        "title": "Kovegas 결제 기록 baseline",
+        "body": "Tenant #1 payment_records가 비어 있지 않은지 확인합니다."
+      },
+      "tenantPartitionPayments": {
+        "title": "테넌트 파티션 (payments)",
+        "body": "헤더 테넌트 슬라이스 ≤ 전체. B로 전환 후 입금 목록에 Kovegas 행이 없어야 합니다."
+      },
+      "paymentRecordsSelectRls": {
+        "title": "payment_records SELECT RLS",
+        "body": "staff / operator_members / 가이드 assignee / 예약 고객 SELECT 정책(Phase 6c.1). 쓰기·결제 로직 변경 없음."
+      },
+      "opsFinanceSelectRls": {
+        "title": "Ops finance SELECT RLS",
+        "body": "cash / accounts / statement / match SELECT에 operator_members 경로(Phase 6c.2). 쓰기·업로더 권한 미변경."
+      },
+      "companyExpensesSelectRls": {
+        "title": "company_expenses SELECT RLS",
+        "body": "staff session OR operator_members SELECT (Phase 6c.3). 쓰기 정책 미변경."
+      },
+      "stampJournal": {
+        "title": "journal_* 스탬프",
+        "body": "journal_entries·journal_lines operator_id NOT NULL (Phase 6c.4)."
+      },
+      "journalSelectRls": {
+        "title": "journal_* SELECT RLS",
+        "body": "분개 헤더·라인 SELECT에 operator_members 경로(Phase 6c.4). 카드 납부 API 스탬프만."
+      },
+      "fleetSelectRls": {
+        "title": "Fleet SELECT RLS",
+        "body": "vehicles / maintenance / schedules SELECT에 operator_members (Phase 6c.5)."
+      },
+      "attendanceSelectRls": {
+        "title": "Attendance SELECT RLS",
+        "body": "본인 / 플랫폼 admin / 비스태프 테넌트 owner·admin (Phase 6c.6). is_operator_member_strict 사용 — Kovegas 스태프 프라이버시 유지."
+      },
+      "tipMealSelectRls": {
+        "title": "Tip/Meal SELECT RLS",
+        "body": "식사·오피스팁·팁쉐어에 비스태프 테넌트 HR SELECT (Phase 6c.7). 기존 스태프/본인 정책 유지."
+      },
+      "tourResExpensesSelectRls": {
+        "title": "Tour/Reservation expenses SELECT RLS",
+        "body": "staff / operator_members / assignee SELECT (Phase 6c.8). 쓰기 정책 미변경."
+      },
+      "staffTenantLockPilot": {
+        "title": "Staff tenant lock pilot",
+        "body": "Ops finance + journal SELECT가 staff_can_select_operator_row 사용 (Phase 6d.3). JWT claim 없으면 스태프 전 테넌트 유지."
+      }
+    },
+    "regression": {
+      "kovegasRow": {
+        "title": "Kovegas operator 행",
+        "body": "well-known operator_id 행이 있어야 합니다."
+      },
+      "kovegasOpsOn": {
+        "title": "Operations 모듈 ON",
+        "body": "Kovegas는 차량·경비 등 Ops 메뉴를 계속 씁니다."
+      },
+      "m00001Channel": {
+        "title": "M00001 Homepage 채널",
+        "body": "Direct Web 홈페이지 채널 행이 존재해야 합니다."
+      },
+      "directChannelM00001": {
+        "title": "Direct 채널 resolve = M00001",
+        "body": "공개 체크아웃이 Kovegas에서 계속 M00001을 쓰는지 확인합니다."
+      },
+      "kovegasCatalog": {
+        "title": "Kovegas 상품 카탈로그",
+        "body": "기존 상품이 operator_id=Kovegas로 남아 있어야 합니다."
+      },
+      "platformCheckoutDefault": {
+        "title": "체크아웃 기본 = 플랫폼 PI",
+        "body": "Connect 플래그가 Kovegas에 destination을 강제하지 않는지 확인합니다."
+      },
+      "otaLiveDefaultOff": {
+        "title": "OTA LIVE 기본 OFF",
+        "body": "COMMERCE_V2_OTA_LIVE가 꺼져 있으면 기존과 같이 dry-run만 합니다."
+      },
+      "otaInboundDefaultOff": {
+        "title": "OTA INBOUND 기본 OFF",
+        "body": "자동 inquiry 생성이 기본 비활성인지 확인합니다."
+      },
+      "commerceV2ReadNotGlobal": {
+        "title": "Commerce v2 읽기 전역 OFF",
+        "body": "COMMERCE_V2_READ_PRODUCTS=* 가 아니면 레거시 RPC 가격이 기본입니다."
+      }
+    },
+    "safetyTitle": "안전 원칙 (기존 시스템 유지)",
+    "safetyHint": "SaaS 기능은 전부 opt-in입니다. 플래그를 켜지 않으면 Kovegas 운영은 이전과 동일합니다.",
+    "safety": {
+      "flagsOff": {
+        "title": "새 플래그 기본 OFF",
+        "body": "Connect checkout / OTA LIVE / OTA INBOUND / Commerce v2 read·inventory는 환경 변수가 없으면 동작하지 않습니다."
+      },
+      "kovegasUnchanged": {
+        "title": "Kovegas = Tenant #1",
+        "body": "기존 상품·예약·채널·Ops UI는 Kovegas operator_id 아래에 그대로 둡니다. Big-bang 전환 없음."
+      },
+      "m00001": {
+        "title": "Homepage = M00001",
+        "body": "고객 사이트 Direct 채널은 Kovegas에서 항상 M00001입니다. Operator B만 DW-슬러그 형태를 씁니다."
+      },
+      "opsOptional": {
+        "title": "Operations는 선택 모듈",
+        "body": "B(commerce-only)에서만 Ops 메뉴·URL을 숨깁니다. Kovegas는 operations=true 유지."
+      },
+      "pilotOptIn": {
+        "title": "파일럿만 opt-in",
+        "body": "Operator B 생성·Connect·서브도메인·체크아웃 플래그는 수동으로 켠 뒤에만 적용됩니다."
+      }
+    },
+    "e2eTitle": "Operator B E2E 순서 (기존 영향 최소화)",
+    "e2eHint": "아래 순서로 검증한 뒤, 마지막에 Kovegas로 돌아가 회귀 배지가 초록인지 확인하세요.",
+    "e2e": {
+      "switchB": {
+        "title": "헤더에서 Operator B로 전환",
+        "body": "Ops 메뉴가 사라지고 상품 목록이 B 스코프인지 확인합니다."
+      },
+      "catalogPrice": {
+        "title": "B 상품·동적가격",
+        "body": "B 전용 상품/Direct 채널 가격을 넣습니다. Kovegas 데이터는 수정하지 않습니다."
+      },
+      "commerceIsolationSmoke": {
+        "title": "Commerce 격리 smoke 초록 확인",
+        "body": "이 페이지 «Commerce 격리» 카드가 모두 통과인지 확인합니다 (스탬프·파티션·Direct)."
+      },
+      "hostBookReadiness": {
+        "title": "Host book readiness 초록 확인",
+        "body": "이 페이지 «Host book readiness» 카드가 모두 통과인지 확인한 뒤 B 호스트로 이동합니다."
+      },
+      "hostBook": {
+        "title": "B 호스트에서 예약 테스트",
+        "body": "서브도메인/맵으로 public operator가 B인지 확인 후 테스트 예약(또는 inquiry)."
+      },
+      "connectOptIn": {
+        "title": "Connect는 필요할 때만",
+        "body": "COMMERCE_STRIPE_CONNECT_CHECKOUT에 B uuid만 넣고, * 로 전역 켜지 마세요."
+      },
+      "opsFinanceSmoke": {
+        "title": "Ops finance smoke 초록 확인",
+        "body": "이 페이지 «Ops finance» 카드가 모두 통과인지 확인합니다 (6b 마이그레이션 적용 후)."
+      },
+      "opsFinanceUi": {
+        "title": "B에서 입금·현금·명세서 UI",
+        "body": "B(또는 Ops ON 테넌트)로 Cash/Statement를 열면 Kovegas 전용 행이 보이면 안 됩니다. Ops OFF면 메뉴 숨김만 확인."
+      },
+      "switchBack": {
+        "title": "Kovegas로 복귀",
+        "body": "헤더를 Kovegas로 돌리면 Ops·기존 카탈로그가 그대로여야 합니다."
+      },
+      "regressionGreen": {
+        "title": "회귀 배지 확인",
+        "body": "이 페이지 상단 «Kovegas 회귀»가 모두 통과인지 새로고침합니다."
+      }
+    },
+    "todos": {
+      "createOperator": {
+        "title": "Operator B 생성·멤버 초대",
+        "body": "오퍼레이터 메뉴에서 테넌트 생성 → owner/admin 초대 → 헤더에서 전환."
+      },
+      "connect": {
+        "title": "Stripe Connect 완료",
+        "body": "Connect 시작 → Dashboard 온보딩 → status=enabled 확인."
+      },
+      "subdomain": {
+        "title": "서브도메인 / host 매핑",
+        "body": "operators.subdomain 설정 + SAAS_PLATFORM_ROOT_DOMAIN / 맵 env. /api/debug/public-operator 로 확인."
+      },
+      "catalog": {
+        "title": "상품·채널·Direct 채널",
+        "body": "B 테넌트로 상품 생성. Homepage/Website 채널이 없으면 체크아웃 시 DW-슬러그 채널이 자동 생성됩니다."
+      },
+      "pricing": {
+        "title": "동적 가격 입력",
+        "body": "B의 Direct 채널에 dynamic_pricing 없으면 캘린더가 열리고 catalog_fallback 가격이 나갈 수 있음."
+      },
+      "checkoutFlag": {
+        "title": "Connect checkout 플래그",
+        "body": "COMMERCE_STRIPE_CONNECT_CHECKOUT에 Operator B UUID를 넣은 뒤 B 호스트에서 테스트 결제 → connect_mode=destination."
+      },
+      "isolation": {
+        "title": "격리 검증",
+        "body": "B로 전환 시 Kovegas 상품/예약이 보이지 않는지, B 호스트 카탈로그가 B만인지 확인."
+      },
+      "opsOff": {
+        "title": "Operations OFF 확인",
+        "body": "B의 modules.operations=false 이면 차량·경비 등 Ops 메뉴가 사이드바에서 사라져야 합니다."
+      },
+      "opsRouteGuard": {
+        "title": "Ops URL 직접 접근 차단",
+        "body": "Ops OFF 테넌트에서 /admin/vehicles 등 URL을 열면 매뉴얼로 리다이렉트되어야 합니다."
+      }
+    },
+    "pagesTitle": "관련 페이지 설명",
+    "pagesHint": "Operator B 그룹과 Commerce 핵심 화면입니다. 카드를 클릭하면 이동합니다.",
+    "pageManualTitle": "매뉴얼 (이 페이지)",
+    "pageManualBody": "구조·할 일·페이지 가이드. 파일럿 온보딩 시 시작점으로 사용하세요.",
+    "pageOperatorsTitle": "오퍼레이터 (테넌트)",
+    "pageOperatorsBody": "테넌트 생성, 멤버 초대, Stripe Connect. super 전용.",
+    "pageOtaTitle": "OTA 연동·매핑",
+    "pageOtaBody": "연결·SKU 매핑·outbox 푸시·inbound 웹훅 수신함. LIVE/INBOUND 플래그로 외부 호출·inquiry 생성.",
+    "pageProductsTitle": "상품 관리",
+    "pageProductsBody": "active operator 스코프. B에서 만든 상품만 B 카탈로그/예약에 사용.",
+    "pageChannelsTitle": "채널 관리",
+    "pageChannelsBody": "OTA/Website 채널. Direct Web은 공개 체크아웃 채널 resolve에 사용.",
+    "pageReservationsTitle": "예약",
+    "pageReservationsBody": "operator_id 스코프 목록. 공개 예약은 host 테넌트 + Direct 채널로 생성.",
+    "pageCustomersTitle": "고객",
+    "pageCustomersBody": "테넌트별 고객. 이메일 재사용 시에도 operator_id로 분리.",
+    "badgeHere": "현재",
+    "badgeSuper": "super",
+    "doneTitle": "이미 완료된 기반",
+    "doneHint": "아래는 코드/ADR에 반영된 항목입니다.",
+    "doneTenant": "operators / membership / OperatorSwitcher",
+    "doneCatalog": "관리자 상품·채널·예약·고객·투어 operator_id 스코프",
+    "donePublic": "host → public operator + 공개 카탈로그 필터 + Direct 채널",
+    "doneCheckout": "create-checkout / inquiry에 operator·channel 스탬프",
+    "doneConnect": "Connect 온보딩 + destination checkout 플래그",
+    "doneOta": "OTA outbox + Viator live 어댑터 (이중 게이트)",
+    "doneOpsGate": "Operations 모듈 OFF 시 Ops 사이드바 숨김 (Phase 6a)",
+    "doneOpsRouteGuard": "Ops URL 라우트 가드 — 직접 접근 시 매뉴얼로 리다이렉트 (Phase 6a.1)",
+    "donePilotStatus": "매뉴얼 라이브 체크리스트 API (pilot-status)",
+    "doneOtaInbound": "OTA inbound 웹훅 수신함 + 매핑 가드 (Phase 4d, COMMERCE_V2_OTA_INBOUND)",
+    "doneRegression": "Kovegas 회귀 검증 + 안전 원칙·E2E 가이드 (Phase 6a.2, 읽기 전용)",
+    "doneOpsVehicles": "Ops fleet: vehicles.operator_id + 목록/생성 스코프 (Phase 6b.0, 스키마 이동 없음)",
+    "doneOpsMaintenance": "Ops fleet: vehicle_maintenance·schedules operator_id (Phase 6b.1, catalog 공유 유지)",
+    "doneOpsAttendance": "Ops HR: attendance_records·monthly stats operator_id (Phase 6b.2)",
+    "doneOpsExpenses": "Ops finance: company_expenses.operator_id + 목록/생성 스코프 (Phase 6b.3)",
+    "doneOpsMealTips": "Ops HR: office_meal_log·tour_office_tips operator_id (Phase 6b.4, tip_shares 미룸)",
+    "doneOpsTipShares": "Ops HR: tour_tip_shares·tour_tip_share_ops operator_id (Phase 6b.5)",
+    "doneOpsTourResExpenses": "Ops finance: tour_expenses·reservation_expenses operator_id (Phase 6b.6, CashLedger 미룸)",
+    "doneOpsReconCashScope": "Ops finance: recon/cash 지출 조회 operator_id 필터 (Phase 6b.7, 원장 테이블 미룸)",
+    "doneOpsCashFinancial": "Ops finance: cash_transactions·financial_accounts operator_id (Phase 6b.8, statement_lines 미룸)",
+    "doneOpsStatementImports": "Ops finance: statement_imports·statement_lines operator_id (Phase 6b.9, match 테이블 미룸)",
+    "doneOpsReconMatches": "Ops finance: reconciliation_matches·expense_cash_ledger_matches operator_id (Phase 6b.10)",
+    "doneOpsPaymentRecords": "Ops finance: payment_records.operator_id (Phase 6b.11, 결제 로직 변경 없음)",
+    "doneOpsFinanceSmoke": "Ops finance 격리 smoke + E2E 단계 (Phase 6c.0, 읽기 전용 pilot-status)",
+    "doneOpsPaymentRecordsRls": "payment_records SELECT RLS + operator_members (Phase 6c.1, 쓰기·결제 로직 미변경)",
+    "doneOpsFinanceSelectRls": "Ops finance SELECT RLS (cash/statement/match + member, Phase 6c.2)",
+    "doneOpsCompanyExpensesRls": "company_expenses SELECT RLS + operator_members (Phase 6c.3)",
+    "doneOpsJournal": "journal_entries/lines operator_id + SELECT RLS (Phase 6c.4, 카드 납부 스탬프)",
+    "doneOpsFleetSelectRls": "Fleet SELECT RLS (vehicles/maintenance/schedules, Phase 6c.5)",
+    "doneOpsAttendanceSelectRls": "Attendance SELECT tenancy + is_operator_member_strict (Phase 6c.6)",
+    "doneOpsTipMealSelectRls": "Tip/Meal SELECT tenant HR path (Phase 6c.7)",
+    "doneOpsTourResExpensesSelectRls": "Tour/Reservation expenses SELECT staff|member|assignee (Phase 6c.8)",
+    "doneOpsActiveOperatorSession": "Active operator cookie/header + API GUC prep (Phase 6c.9, staff RLS 잠금 없음)",
+    "doneOpsStaffTenantLockPilot": "Staff tenant lock: JWT + ops finance/journal SELECT (Phase 6d.0–6d.3, opt-in)",
+    "doneCommerceIsolationSmoke": "Commerce isolation smoke: catalog/inventory/joins (Phase 6e.0–6e.1)",
+    "doneHostBookReadiness": "Host book readiness: subdomain/host resolve/Direct preflight (Phase 6e.2)"
+  },
+  "adminOperators": {
+    "eyebrow": "SaaS · Tenancy",
+    "title": "오퍼레이터(테넌트)",
+    "description": "두 번째 공급자(Operator B)를 만들고 멤버를 초대합니다. Stripe Connect Express 온보딩을 시작할 수 있습니다(체크아웃 destination charge는 아직 플래그 전).",
+    "refresh": "새로고침",
+    "loading": "불러오는 중…",
+    "loadError": "오퍼레이터 목록을 불러오지 못했습니다.",
+    "createTitle": "오퍼레이터 생성",
+    "createHint": "slug는 소문자·숫자·하이픈만 가능합니다. owner 이메일로 membership이 생성됩니다.",
+    "fieldName": "이름",
+    "fieldSlug": "Slug",
+    "fieldSubdomain": "서브도메인",
+    "fieldSubdomainHint": "예: demo → demo.localhost(로컬) 또는 demo.플랫폼루트. 비우면 slug와 동일하게 저장됩니다.",
+    "fieldOwnerEmail": "Owner 이메일",
+    "fieldEnableOperations": "Operations Suite 모듈 활성화 (차량/가이드 등 — 기본 OFF)",
+    "create": "생성",
+    "saving": "저장 중…",
+    "createSuccess": "오퍼레이터를 생성했습니다.",
+    "createError": "생성에 실패했습니다.",
+    "fieldsRequired": "이름, slug, owner 이메일은 필수입니다.",
+    "listTitle": "오퍼레이터 목록",
+    "listHint": "행을 선택해 멤버를 초대하세요. Connect status=enabled 후 COMMERCE_STRIPE_CONNECT_CHECKOUT 플래그로 destination 결제(ADR 015).",
+    "empty": "등록된 오퍼레이터가 없습니다.",
+    "colName": "이름",
+    "colSlug": "Slug",
+    "colStatus": "상태",
+    "colConnect": "Stripe Connect",
+    "colPlan": "플랜",
+    "colActions": "작업",
+    "manageMembers": "멤버",
+    "membersTitle": "멤버십",
+    "membersHint": "초대된 멤버는 로그인 시 active로 승격되며 OperatorContext에 나타납니다.",
+    "membersLoadError": "멤버 목록을 불러오지 못했습니다.",
+    "emptyMembers": "멤버가 없습니다.",
+    "fieldInviteEmail": "초대 이메일",
+    "fieldInviteRole": "역할",
+    "invite": "초대",
+    "inviteRequired": "오퍼레이터와 이메일을 확인하세요.",
+    "inviteSuccess": "초대했습니다.",
+    "inviteError": "초대에 실패했습니다.",
+    "colEmail": "이메일",
+    "colRole": "역할",
+    "switcherLabel": "활성 오퍼레이터",
+    "connectStart": "Connect 시작",
+    "connectContinue": "Connect 이어하기",
+    "connectRefresh": "상태 동기화",
+    "connectStartSuccess": "Stripe 온보딩으로 이동합니다.",
+    "connectStartError": "Stripe Connect 온보딩을 시작하지 못했습니다.",
+    "connectSyncSuccess": "Connect 상태: {status}",
+    "connectSyncError": "Connect 상태 동기화에 실패했습니다."
+  },
+  "adminOtaDistribution": {
+    "eyebrow": "Commerce · Distribution",
+    "title": "OTA 연동·매핑",
+    "description": "내부 상품/오퍼와 OTA SKU를 연결하고 outbox를 처리합니다. Live HTTP는 COMMERCE_V2_OTA_LIVE=1 + connection status=active 일 때만 호출됩니다.",
+    "refresh": "새로고침",
+    "loading": "불러오는 중…",
+    "loadError": "매핑 목록을 불러오지 못했습니다.",
+    "outboxLoadError": "아웃박스 목록을 불러오지 못했습니다.",
+    "connectionTitle": "Viator 연결",
+    "connectionHint": "credentials_ref는 env:VAR 형태만 허용합니다. active로 바꾸려면 COMMERCE_V2_OTA_LIVE=1 이 필요합니다.",
+    "connectionLoadError": "연결 정보를 불러오지 못했습니다.",
+    "connectionMissing": "channel_connections 시드가 없습니다. 마이그레이션 4a를 적용하세요.",
+    "connectionSaveSuccess": "연결 설정을 저장했습니다.",
+    "connectionSaveError": "연결 설정 저장에 실패했습니다.",
+    "fieldConnectionStatus": "연결 상태",
+    "fieldCredentialsRef": "Credentials ref",
+    "fieldRatesPushUrl": "Rates push URL (선택)",
+    "saveConnection": "연결 설정 저장",
+    "liveFlagOn": "LIVE flag ON",
+    "liveFlagOff": "LIVE flag OFF",
+    "lastSynced": "마지막 동기화: {at}",
+    "connectionStatus": {
+      "disabled": "disabled (동기화 안 함)",
+      "dry_run": "dry_run (로컬만)",
+      "active": "active (live HTTP)"
+    },
+    "mappingTitle": "외부 매핑",
+    "mappingHint": "Viator 연결에 Offer/Product ↔ external SKU를 등록합니다. 매핑이 없으면 sync는 skipped 됩니다.",
+    "fieldInternalType": "내부 유형",
+    "fieldInternalId": "내부 ID",
+    "fieldExternalSku": "외부 SKU",
+    "fieldExternalProductId": "외부 Product ID (선택)",
+    "fieldExternalPackageId": "외부 Package ID (선택)",
+    "placeholderInternalId": "product id 또는 offer uuid",
+    "placeholderExternalSku": "예: VIATOR-PKG-123",
+    "saveMapping": "매핑 저장",
+    "saving": "저장 중…",
+    "saveSuccess": "매핑을 저장했습니다.",
+    "saveError": "매핑 저장에 실패했습니다.",
+    "fieldsRequired": "내부 ID와 외부 SKU는 필수입니다.",
+    "deactivate": "비활성화",
+    "deactivateSuccess": "매핑을 비활성화했습니다.",
+    "emptyMappings": "등록된 매핑이 없습니다.",
+    "colInternalType": "유형",
+    "colInternalId": "내부 ID",
+    "colExternalSku": "외부 SKU",
+    "colStatus": "상태",
+    "colActions": "작업",
+    "active": "사용",
+    "inactive": "비활성",
+    "internalType": {
+      "product": "상품 (product)",
+      "offer": "오퍼 (offer)",
+      "rate_plan": "요금제 (rate_plan)",
+      "choice_option": "초이스 옵션"
+    },
+    "outboxTitle": "Sync Outbox",
+    "outboxHint": "COMMERCE_V2_OTA_SYNC=1 이면 push_rates가 쌓입니다. dry_run 연결은 로컬 검증만, active+LIVE flag면 Viator HTTP push입니다.",
+    "processOutbox": "아웃박스 처리",
+    "processing": "처리 중…",
+    "processSuccess": "처리 완료 — claimed {claimed}, succeeded {succeeded}, skipped {skipped}, failed {failed}",
+    "processError": "아웃박스 처리에 실패했습니다.",
+    "emptyOutbox": "아웃박스 이벤트가 없습니다.",
+    "colEvent": "이벤트",
+    "colEntity": "엔티티",
+    "colAttempts": "시도",
+    "colError": "오류",
+    "colCreated": "생성",
+    "inboundTitle": "Inbound 웹훅 (수신함)",
+    "inboundHint": "POST /api/webhooks/ota/viator + secret. 매핑 없으면 skipped. inquiry 자동 생성은 COMMERCE_V2_OTA_INBOUND=1 + config.autoCreateInquiry=true.",
+    "inboundFlagOn": "INBOUND flag ON",
+    "inboundFlagOff": "INBOUND flag OFF",
+    "inboundLoadError": "인바운드 목록을 불러오지 못했습니다.",
+    "inboundIngestTest": "테스트 수신",
+    "inboundProcessBatch": "인바운드 처리",
+    "inboundTestSku": "테스트용 외부 SKU (매핑된 SKU)",
+    "inboundSkuRequired": "테스트 SKU를 입력하세요.",
+    "inboundIngestSuccess": "인바운드 이벤트를 저장했습니다.",
+    "inboundIngestError": "테스트 수신에 실패했습니다.",
+    "inboundProcessSuccess": "인바운드 처리 — claimed {claimed}",
+    "inboundProcessError": "인바운드 처리에 실패했습니다.",
+    "emptyInbound": "인바운드 이벤트가 없습니다.",
+    "colReservation": "예약 ID"
   },
   "adminPaidForLabels": {
     "title": "결제 내용 표준 라벨",

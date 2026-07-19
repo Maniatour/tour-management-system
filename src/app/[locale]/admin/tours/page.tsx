@@ -9,6 +9,8 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
 import {
@@ -117,6 +119,8 @@ export default function AdminTours() {
   const locale = useLocale()
   const router = useRouter()
   const supabase = createClientSupabase()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { userRole, authUser, simulatedUser, isSimulating, user, hasPermission, userPosition: authUserPosition } = useAuth()
   const adminUserEmail = (isSimulating && simulatedUser?.email) || authUser?.email || user?.email || null
 
@@ -328,12 +332,15 @@ export default function AdminTours() {
       const rows: Database['public']['Tables']['tours']['Row'][] = []
       let cursor: { tour_date: string; id: string } | null = null
       for (;;) {
-        let q = supabase
-          .from('tours')
-          .select('*')
-          .order('tour_date', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(PAGE_SIZE)
+        let q = withOperatorId(
+          supabase
+            .from('tours')
+            .select('*')
+            .order('tour_date', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(PAGE_SIZE),
+          activeOperatorId
+        )
         if (cursor) {
           // (tour_date, id) DESC 키셋: tour_date < cursor.tour_date OR (tour_date = cursor.tour_date AND id < cursor.id)
           const td = cursor.tour_date.replace(/"/g, '""')
@@ -352,10 +359,10 @@ export default function AdminTours() {
       }
       return rows
     },
-    cacheKey: 'tours',
+    cacheKey: `tours:${activeOperatorId}`,
     cacheTime: 2 * 60 * 1000, // 2분 캐시 — SWR(stale-while-revalidate) 기본 활성
     enabled: toursQueryEnabled,
-    dependencies: [toursQueryEnabled],
+    dependencies: [toursQueryEnabled, activeOperatorId],
   })
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
@@ -387,16 +394,20 @@ export default function AdminTours() {
     status?: string | null
   }[]>({
     fetchFn: async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, name_ko, name_en, status')
-        .order('created_at', { ascending: false })
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('products')
+          .select('id, name, name_ko, name_en, status')
+          .order('created_at', { ascending: false }),
+        activeOperatorId
+      )
       
       if (error) throw error
       return data || []
     },
-    cacheKey: 'products',
-    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
+    cacheKey: `products:${activeOperatorId}`,
+    cacheTime: 30 * 60 * 1000, // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
+    dependencies: [activeOperatorId],
   })
 
   const activeProductsForNewTourModal = useMemo(
@@ -779,15 +790,18 @@ export default function AdminTours() {
       /** DB 저장값은 주로 `Deleted`(대문자). PostgreSQL eq는 대소문자 구분 */
       const deletedStatusOr =
         'tour_status.ilike.deleted,tour_status.ilike.%requested for delete%'
-      const { data, error } = await supabase
-        .from('tours')
-        .select(
-          'id, tour_date, tour_status, product_id, tour_guide_id, assistant_id, products(name_ko, name_en, name)',
-        )
-        .or(deletedStatusOr)
-        .order('tour_date', { ascending: false })
-        .order('id', { ascending: false })
-        .limit(1000)
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('tours')
+          .select(
+            'id, tour_date, tour_status, product_id, tour_guide_id, assistant_id, products(name_ko, name_en, name)',
+          )
+          .or(deletedStatusOr)
+          .order('tour_date', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1000),
+        activeOperatorId
+      )
       if (error) throw error
       const rows = ((data ?? []) as Array<
         ExtendedTour & {
@@ -813,7 +827,7 @@ export default function AdminTours() {
     } finally {
       setDeletedToursBinLoading(false)
     }
-  }, [supabase, locale])
+  }, [supabase, locale, activeOperatorId])
 
   useEffect(() => {
     if (!showDeletedToursModal) return

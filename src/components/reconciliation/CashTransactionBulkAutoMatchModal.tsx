@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { sourceTableLabelKey } from '@/lib/expense-ledger-match-display'
 import {
   applyCashTransactionAutoMatchProposals,
@@ -44,6 +46,8 @@ export default function CashTransactionBulkAutoMatchModal({
   const t = useTranslations('expenses.statementRecon.cashBulkAutoMatch')
   const tRecon = useTranslations('expenses.statementRecon')
   const { user } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [preparing, setPreparing] = useState(false)
   const [applying, setApplying] = useState(false)
   const [cashProposals, setCashProposals] = useState<CashAutoMatchProposal[]>([])
@@ -80,7 +84,7 @@ export default function CashTransactionBulkAutoMatchModal({
     try {
       const [cashPack, ledgerPack] = await Promise.all([
         hasCash
-          ? prepareCashTransactionAutoMatchProposals(supabase, cashTargets)
+          ? prepareCashTransactionAutoMatchProposals(supabase, cashTargets, activeOperatorId)
           : Promise.resolve({
               proposals: [] as CashAutoMatchProposal[],
               expensePoolSize: 0,
@@ -88,7 +92,9 @@ export default function CashTransactionBulkAutoMatchModal({
               skippedAlreadyMatched: 0,
             }),
         hasLedger
-          ? prepareExpenseStatementAutoMatchProposals(supabase, ledgerTargets)
+          ? prepareExpenseStatementAutoMatchProposals(supabase, ledgerTargets, {
+              operatorId: activeOperatorId,
+            })
           : Promise.resolve({
               proposals: [] as ExpenseStatementAutoMatchProposal[],
               poolSize: 0,
@@ -146,7 +152,7 @@ export default function CashTransactionBulkAutoMatchModal({
     } finally {
       setPreparing(false)
     }
-  }, [cashTargets, ledgerTargets, t])
+  }, [cashTargets, ledgerTargets, t, activeOperatorId])
 
   useEffect(() => {
     if (!open) return
@@ -259,12 +265,17 @@ export default function CashTransactionBulkAutoMatchModal({
 
       const [cashResult, ledgerResult] = await Promise.all([
         cashItems.length > 0
-          ? applyCashTransactionAutoMatchProposals(supabase, { actorEmail: email, items: cashItems })
+          ? applyCashTransactionAutoMatchProposals(supabase, {
+              actorEmail: email,
+              operatorId: activeOperatorId,
+              items: cashItems,
+            })
           : Promise.resolve({ applied: 0, skippedConflict: 0, skippedInvalid: 0 }),
         ledgerItems.length > 0
           ? applyExpenseStatementAutoMatchProposals(supabase, {
               actorEmail: email,
               sourceTable: 'reservation_expenses',
+              operatorId: activeOperatorId,
               items: ledgerItems,
             })
           : Promise.resolve({ applied: 0, skippedConflict: 0, skippedInvalid: 0 }),

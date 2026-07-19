@@ -1,0 +1,66 @@
+================================================================================
+ADR 027 — Ops Finance: tour_expenses + reservation_expenses operator_id (Phase 6b.6)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+company_expenses (6b.3) is tenant-scoped. Tour and reservation expense tables
+still listed the shared ledger, so Operator B with Ops ON could see Kovegas
+rows via admin expense managers and ExpenseReportTab.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719180000_saas_operator_id_tour_reservation_expenses.sql
+   - tour_expenses.operator_id NOT NULL (from tours / Kovegas)
+   - reservation_expenses.operator_id NOT NULL (from reservations, then tours,
+     then Kovegas)
+   - Views *_no_statement_match pick up the column via SELECT *
+
+2. App list/create stamp (MUST):
+   - TourExpenseManager / TourReceiptModal / AllTourExpensesManager
+   - GET/POST /api/reservation-expenses (+ suggestions) + ReservationExpenseManager
+   - ExpenseReportTab filters tour + reservation by operator_id
+   - Sync services stamp operator_id on insert/upsert
+   - Statement bulk/adjustment insert paths stamp operator_id
+
+3. Deferred:
+   - Full StatementReconciliationTab / CashLedger rewrite
+   - CategoryManagerModal normalize, expense-unified-duplicate-scan
+   - Parent-id-only readers (PricingSection, etc.)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout changes
+- ops_* schema move
+- Changing expense business logic
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.7 recon/cash expense query scope (DONE) → Operator B E2E OR cash_transactions tenancy
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719180000_saas_operator_id_tour_reservation_expenses.sql
+src/lib/operators/lookupTourOperatorId.ts
+src/lib/operators/lookupReservationOperatorId.ts
+src/lib/database.types.ts
+src/app/api/reservation-expenses/route.ts
+src/app/api/reservation-expenses/suggestions/route.ts
+src/components/TourExpenseManager.tsx
+src/components/TourReceiptModal.tsx
+src/components/AllTourExpensesManager.tsx
+src/components/ReservationExpenseManager.tsx
+src/components/reports/ExpenseReportTab.tsx
+src/lib/tourExpensesSyncService.ts
+src/lib/reservationExpensesSyncService.ts
+src/components/reconciliation/StatementBulkExpenseModal.tsx
+src/components/reconciliation/StatementSelectedBulkExpenseModal.tsx
+src/components/reconciliation/StatementAdjustmentExpenseModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

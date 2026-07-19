@@ -6,6 +6,7 @@ import {
   type StatementLinePairRow,
 } from '@/lib/statement-line-pairs'
 import { parseStatementSearchDateQuery } from '@/lib/statement-search-date'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
@@ -551,12 +552,14 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
     /** 정렬·표시용 — 후보에서 제외하지 않음 */
     ledgerAmount?: number | null
     limit?: number
+    operatorId?: string | null
   }
 ): Promise<SimilarStatementLineRow[]> {
   const pad = params.dayWindow ?? TICKET_BOOKING_STATEMENT_DAY_WINDOW
   const anchors = ticketBookingDateAnchors(params.submitYmd, params.checkInYmd)
   const range = mergedYmdWindowForAnchors(anchors, pad)
   if (!range) return []
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const { startYmd, endYmd } = range
   const ledgerAbs =
@@ -569,6 +572,7 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
   const { data: rawImports, error: impErr } = await supabase
     .from('statement_imports')
     .select('id,financial_account_id,period_start,period_end')
+    .eq('operator_id', activeOperatorId)
     .order('period_start', { ascending: false })
     .limit(400)
   if (impErr) throw impErr
@@ -689,10 +693,12 @@ export async function fetchSimilarStatementLinesForExpenseRow(
     direction: 'inflow' | 'outflow'
     limit?: number
     matchMode?: SimilarStatementLinesMatchMode
+    operatorId?: string | null
   }
 ): Promise<SimilarStatementLineRow[]> {
   const { dateYmd, amount, direction, limit = 100, matchMode = 'dateProximity' } = params
   if (!dateYmd || dateYmd.length < 10) return []
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const absRowAmt = Math.abs(amount)
   const tol = amountTolerance(absRowAmt)
@@ -701,6 +707,7 @@ export async function fetchSimilarStatementLinesForExpenseRow(
     const { data: rawImports, error: impErr } = await supabase
       .from('statement_imports')
       .select('id,financial_account_id,period_start,period_end')
+      .eq('operator_id', activeOperatorId)
       .order('period_start', { ascending: false })
       .limit(AMOUNT_ONLY_IMPORT_LIMIT)
     if (impErr) throw impErr
@@ -814,6 +821,7 @@ export async function fetchSimilarStatementLinesForExpenseRow(
   const { data: rawImports, error: impErr } = await supabase
     .from('statement_imports')
     .select('id,financial_account_id,period_start,period_end')
+    .eq('operator_id', activeOperatorId)
     .order('period_start', { ascending: false })
     .limit(400)
   if (impErr) throw impErr
@@ -921,15 +929,18 @@ export async function searchStatementLinesAcrossImports(
     /** 생략 시 출금·입금 모두 검색 */
     direction?: 'inflow' | 'outflow' | null
     limit?: number
+    operatorId?: string | null
   }
 ): Promise<SimilarStatementLineRow[]> {
   const limit = params.limit ?? 200
   const q = sanitizeStatementSearchQuery(params.query)
   if (!q) return []
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   const { data: rawImports, error: impErr } = await supabase
     .from('statement_imports')
     .select('id,financial_account_id,period_start,period_end')
+    .eq('operator_id', activeOperatorId)
     .order('period_start', { ascending: false })
     .limit(STATEMENT_SEARCH_IMPORT_LIMIT)
   if (impErr) throw impErr
@@ -1375,6 +1386,7 @@ export async function replaceExpenseReconciliationMatch(
     linkMode?: 'replace' | 'append'
     /** append 시 원장 총액(절대값) — 이미 명세에 배정된 합을 빼고 남은 금액만 추가 허용 */
     ledgerCapAmount?: number | null
+    operatorId?: string | null
   }
 ): Promise<void> {
   const {
@@ -1388,6 +1400,7 @@ export async function replaceExpenseReconciliationMatch(
     linkMode = 'replace',
     ledgerCapAmount = null
   } = params
+  const activeOperatorId = resolveOperatorId(params.operatorId)
 
   if (linkMode === 'replace') {
     const { data: oldForSource } = await supabase
@@ -1455,6 +1468,7 @@ export async function replaceExpenseReconciliationMatch(
   }
 
   const { error: insErr } = await supabase.from('reconciliation_matches').insert({
+    operator_id: activeOperatorId,
     statement_line_id: statementLineId,
     source_table: sourceTable,
     source_id: sourceId,

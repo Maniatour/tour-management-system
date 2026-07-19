@@ -14,6 +14,7 @@ import {
   sanitizeProductDetailHtmlForStorage,
   type ProductDetailEmailEditableField,
 } from '@/lib/fetchProductDetailsForEmail'
+import { requireStaffApiAuth } from '@/lib/api-security'
 
 /**
  * service role → Bearer JWT → cookie session. Anon-only clients cannot UPDATE (RLS).
@@ -52,6 +53,9 @@ async function supabaseForProductDetailsWrite(
  * product_details_multilingual 단일 행 수정 (본문 필드 + 선택적으로 section_titles 병합).
  */
 export async function PATCH(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     const { db, canWrite } = await supabaseForProductDetailsWrite(request)
     if (!canWrite) {

@@ -6,6 +6,8 @@ import {
   findOpenAttendanceSession,
   formatOpenSessionBlockMessage,
 } from '@/lib/attendanceOpenSession'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Calendar, Clock, User, X, Plus } from 'lucide-react'
 
 interface AddAttendanceFormProps {
@@ -28,6 +30,8 @@ export default function AddAttendanceForm({
   selectedEmployee,
   selectedMonth: _selectedMonth,
 }: AddAttendanceFormProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [formData, setFormData] = useState({
     employee_email: selectedEmployee,
     date: '',
@@ -109,7 +113,11 @@ export default function AddAttendanceForm({
       }
 
       if (!checkOutTime) {
-        const openSession = await findOpenAttendanceSession(supabase, formData.employee_email)
+        const openSession = await findOpenAttendanceSession(
+          supabase,
+          formData.employee_email,
+          activeOperatorId
+        )
         if (openSession) {
           throw new Error(formatOpenSessionBlockMessage(openSession))
         }
@@ -126,7 +134,8 @@ export default function AddAttendanceForm({
           date: formData.date,
           check_in_time: checkInTime.toISOString(),
           check_out_time: checkOutTime?.toISOString() || null,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          operatorId: activeOperatorId,
         })
       })
 

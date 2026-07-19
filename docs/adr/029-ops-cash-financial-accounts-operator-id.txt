@@ -1,0 +1,59 @@
+================================================================================
+ADR 029 — Ops Finance: cash_transactions + financial_accounts operator_id (Phase 6b.8)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.7 scoped expense queries in recon/cash UIs. cash_transactions and
+financial_accounts still lived unscoped, so Operator B with Ops ON could see
+Kovegas cash rows and bank/card accounts used for statement reconciliation.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719190000_saas_operator_id_cash_financial.sql
+   - cash_transactions.operator_id NOT NULL (Kovegas backfill)
+   - financial_accounts.operator_id NOT NULL (Kovegas backfill)
+   - statement_imports / statement_lines: NO column — inherit via account FK
+
+2. App/API:
+   - GET/POST /api/financial/accounts?operatorId= + stamp on create
+   - PATCH /api/financial/accounts/[id] + flip-statement-lines guard
+   - CashManagement / CashReportTab / CashLedgerReportEditModals stamp+filter
+   - StatementReconciliationTab ops-ledger cash + accounts fetch pass operatorId
+   - expense-cash-ledger-match / cash auto-match cash pools filter when listing
+
+3. Deferred:
+   - statement_imports / statement_lines denormalized operator_id
+   - reconciliation_matches / expense_cash_ledger_matches
+   - payment_records tenancy
+   - Operator B E2E checklist run
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout changes
+- Changing cash/recon match scoring
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6b.9 (statement_imports + statement_lines). See ADR 030.
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719190000_saas_operator_id_cash_financial.sql
+src/lib/database.types.ts
+src/app/api/financial/accounts/route.ts
+src/app/api/financial/accounts/[id]/route.ts
+src/app/api/financial/accounts/[id]/flip-statement-lines/route.ts
+src/components/CashManagement.tsx
+src/components/reports/CashReportTab.tsx
+src/components/reports/CashLedgerReportEditModals.tsx
+src/components/reports/StatementReconciliationTab.tsx
+src/lib/expense-cash-ledger-match.ts
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

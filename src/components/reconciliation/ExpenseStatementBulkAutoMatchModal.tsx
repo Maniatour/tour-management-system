@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import {
   applyExpenseStatementAutoMatchProposals,
@@ -48,6 +50,8 @@ export default function ExpenseStatementBulkAutoMatchModal({
 }: Props) {
   const t = useTranslations('expenses.statementRecon.bulkAutoMatch')
   const tRecon = useTranslations('expenses.statementRecon')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { user } = useAuth()
   const { paymentMethodMap } = usePaymentMethodOptions()
   const [preparing, setPreparing] = useState(false)
@@ -99,7 +103,9 @@ export default function ExpenseStatementBulkAutoMatchModal({
     setHint(null)
     try {
       const { proposals: next, poolSize, statementPoolSize, cashPoolSize, skippedNoDate } =
-        await prepareExpenseStatementAutoMatchProposals(supabase, unmatchedTargets)
+        await prepareExpenseStatementAutoMatchProposals(supabase, unmatchedTargets, {
+          operatorId: activeOperatorId,
+        })
       if (next.length === 0) {
         setProposals([])
         setSelectedIds(new Set())
@@ -136,7 +142,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
     } finally {
       setPreparing(false)
     }
-  }, [unmatchedTargets, t])
+  }, [unmatchedTargets, t, activeOperatorId])
 
   useEffect(() => {
     if (!open) return
@@ -196,6 +202,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
       const result = await applyExpenseStatementAutoMatchProposals(supabase, {
         actorEmail: email,
         sourceTable,
+        operatorId: activeOperatorId,
         items: items.filter((x) => x.candidate),
       })
       setHint(

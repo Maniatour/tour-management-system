@@ -11,6 +11,8 @@ import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { matchesPaymentRecordAmountSearch } from '@/lib/amountSearch'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
@@ -162,6 +164,8 @@ export default function PaymentRecordsHistoryTab() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
   const uiLocale = useLocale()
   const { paymentMethodMap } = usePaymentMethodOptions()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const [allRows, setAllRows] = useState<PaymentRecordRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -296,6 +300,7 @@ export default function PaymentRecordsHistoryTab() {
           .select(
             'id, reservation_id, amount, amount_krw, payment_method, payment_status, note, submit_on, submit_by, created_at'
           )
+          .eq('operator_id', activeOperatorId)
           .order('created_at', { ascending: false })
           .range(offset, offset + FETCH_BATCH - 1)
 
@@ -320,7 +325,7 @@ export default function PaymentRecordsHistoryTab() {
     } finally {
       setLoading(false)
     }
-  }, [enrichMaps, t])
+  }, [enrichMaps, t, activeOperatorId])
 
   useEffect(() => {
     void loadAllBatches()

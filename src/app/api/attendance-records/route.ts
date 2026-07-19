@@ -4,6 +4,7 @@ import {
   findOpenAttendanceSession,
   formatOpenSessionBlockMessage,
 } from '@/lib/attendanceOpenSession'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 // 출퇴근 기록 조회
 export async function GET(request: NextRequest) {
@@ -11,6 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const employeeEmail = searchParams.get('employee_email')
     const month = searchParams.get('month')
+    const operatorId = resolveOperatorId(searchParams.get('operatorId'))
 
     if (!employeeEmail || !month) {
       return NextResponse.json({ error: '필수 파라미터가 누락되었습니다' }, { status: 400 })
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
       .from('attendance_records')
       .select('*')
       .eq('employee_email', employeeEmail)
+      .eq('operator_id', operatorId)
       .gte('date', monthStart)
       .lte('date', monthEnd)
       .order('date', { ascending: false })
@@ -65,6 +68,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { employee_email, date, check_in_time, check_out_time, notes } = body
+    const operatorId = resolveOperatorId(
+      typeof body.operatorId === 'string' ? body.operatorId : null
+    )
 
     if (!employee_email || !date || !check_in_time) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
@@ -100,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     // 퇴근 없이 새 세션 추가 시, 진행 중인 세션이 있으면 거부
     if (!check_out_time) {
-      const openSession = await findOpenAttendanceSession(userDb, employee_email)
+      const openSession = await findOpenAttendanceSession(userDb, employee_email, operatorId)
       if (openSession) {
         return NextResponse.json(
           { error: formatOpenSessionBlockMessage(openSession) },
@@ -114,6 +120,7 @@ export async function POST(request: NextRequest) {
       .from('attendance_records')
       .select('session_number')
       .eq('employee_email', employee_email)
+      .eq('operator_id', operatorId)
       .eq('date', date)
       .order('session_number', { ascending: false })
       .limit(1)
@@ -142,7 +149,8 @@ export async function POST(request: NextRequest) {
         work_hours: workHours,
         status: 'present',
         session_number: nextSessionNumber,
-        notes: notes || null
+        notes: notes || null,
+        operator_id: operatorId,
       })
       .select()
       .single()

@@ -5,6 +5,10 @@ import { useLocale } from 'next-intl'
 import { AlertTriangle, ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
@@ -314,6 +318,8 @@ export default function StatementBulkExpenseModal({
   onCompleted
 }: Props) {
   const locale = useLocale()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [expenseKind, setExpenseKind] = useState<BulkExpenseKind>('company_expenses')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -754,6 +760,7 @@ export default function StatementBulkExpenseModal({
     amount: number
   ) => {
     const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
+      operator_id: activeOperatorId,
       statement_line_id: lineId,
       source_table: sourceTable,
       source_id: sourceId,
@@ -901,6 +908,11 @@ export default function StatementBulkExpenseModal({
           setApplying(false)
           return
         }
+        const expenseOperatorId = await lookupTourOperatorId(
+          supabase,
+          pickedTour.id,
+          activeOperatorId
+        )
         for (const p of valid) {
           const { data: ins, error: insErr } = await supabase
             .from('tour_expenses')
@@ -917,7 +929,8 @@ export default function StatementBulkExpenseModal({
               status: 'pending',
               statement_line_id: p.statement_line_id,
               exclude_from_pnl: p.exclude_from_pnl,
-              is_personal: false
+              is_personal: false,
+              operator_id: expenseOperatorId,
             } as never)
             .select('id')
             .single()
@@ -932,6 +945,11 @@ export default function StatementBulkExpenseModal({
           setApplying(false)
           return
         }
+        const expenseOperatorId = await lookupReservationOperatorId(
+          supabase,
+          defaultReservationId.trim() || null,
+          activeOperatorId
+        )
         for (const p of valid) {
           const newId = crypto.randomUUID()
           const { error: insErr } = await supabase.from('reservation_expenses').insert({
@@ -947,7 +965,8 @@ export default function StatementBulkExpenseModal({
             status: 'approved',
             statement_line_id: p.statement_line_id,
             exclude_from_pnl: p.exclude_from_pnl,
-            is_personal: false
+            is_personal: false,
+            operator_id: expenseOperatorId,
           } as never)
           if (insErr) throw insErr
           await linkStatement(p.statement_line_id, 'reservation_expenses', newId, p.amount)

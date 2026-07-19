@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase, supabaseAdmin, createSupabaseClientWithToken } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { operatorIdInsert } from '@/lib/operators/scopeQuery'
 
 const STAFF_EMAIL_WHITELIST = new Set(['info@maniatour.com', 'wooyong.shim09@gmail.com'])
 
@@ -107,8 +108,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'name 또는 email이 필요합니다' }, { status: 400 })
   }
 
+  const payload = {
+    ...customer,
+    ...operatorIdInsert(
+      typeof customer.operator_id === 'string' ? customer.operator_id : null
+    ),
+  }
+
   if (supabaseAdmin) {
-    const { data, error } = await supabaseAdmin.from('customers').insert(customer as never).select('*').single()
+    const { data, error } = await supabaseAdmin.from('customers').insert(payload as never).select('*').single()
     if (error) {
       console.error('[api/admin/customers] insert:', error.message, error.code, error.details)
       return NextResponse.json({ error: error.message }, { status: 400 })
@@ -117,7 +125,7 @@ export async function POST(request: NextRequest) {
   }
 
   const userSb = createSupabaseClientWithToken(token)
-  const { data, error } = await userSb.from('customers').insert(customer as never).select('*').single()
+  const { data, error } = await userSb.from('customers').insert(payload as never).select('*').single()
   if (error) {
     console.error('[api/admin/customers] insert (user jwt):', error.message, error.code, error.details)
     return NextResponse.json({ error: error.message }, { status: 400 })

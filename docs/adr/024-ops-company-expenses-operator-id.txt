@@ -1,0 +1,54 @@
+================================================================================
+ADR 024 — Ops Finance: company_expenses.operator_id (Phase 6b.3)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Fleet (6b.0–6b.1) and attendance (6b.2) are tenant-scoped. Company expenses
+(internal Ops finance) still listed the shared table, so a second Ops-enabled
+tenant could see Kovegas ledger rows via /admin/expenses.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719150000_saas_operator_id_company_expenses.sql
+   - ADD company_expenses.operator_id NOT NULL (default Kovegas)
+   - Backfill all rows → Kovegas
+   - FK + index
+   - View company_expenses_no_statement_match (SELECT ce.*) picks up column
+
+2. App list/create stamp:
+   - GET/POST /api/company-expenses?operatorId=
+   - CompanyExpenseManager passes active operatorId
+   - Auto-create from vehicle maintenance stamps vehicle/maintenance operator_id
+   - Expense sync from company_expenses filters by operator_id
+
+3. Non-goals this slice:
+   - reservation_expenses / tour_expenses operator_id
+   - Full reconciliation / cash-ledger rewrite (still Kovegas-first; rows
+     remain Kovegas after backfill so behavior unchanged for Tenant #1)
+   - ops_* schema move
+   - Booking / payment / checkout changes
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.4 office_meal_log / tour_office_tips (DONE) → Operator B E2E OR 6b.5 tip shares
+OR deepen reconciliation query scoping
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719150000_saas_operator_id_company_expenses.sql
+src/lib/database.types.ts
+src/app/api/company-expenses/route.ts
+src/components/CompanyExpenseManager.tsx
+src/lib/vehicleMaintenanceCompanyExpense.ts
+src/app/api/vehicle-maintenance/route.ts
+src/app/api/vehicle-maintenance/integration/route.ts
+src/lib/vehicleMaintenanceFromCompanyExpense.ts
+src/components/reports/ExpenseReportTab.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

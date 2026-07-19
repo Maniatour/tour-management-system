@@ -4,6 +4,7 @@ import {
   getStripeClient,
   STRIPE_PI_NOTE_PREFIX,
 } from '@/lib/customerBookingCheckout'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
 type AdminClient = SupabaseClient<Database>
 
@@ -92,18 +93,32 @@ export async function createStripeRefundAndRecord(
     }
   }
 
+  // Destination charges (Connect): reverse transfer (+ app fee) so connected balance is clawed back
+  const isDestinationCharge = Boolean(
+    pi.transfer_data?.destination || pi.metadata?.connect_mode === 'destination'
+  )
+
   const refund = await stripe.refunds.create({
     payment_intent: args.paymentIntentId,
     amount: refundCents,
     reason: 'requested_by_customer',
+    ...(isDestinationCharge
+      ? {
+          reverse_transfer: true,
+          refund_application_fee: true,
+        }
+      : {}),
     metadata: {
       reservation_id: args.reservationId,
       source: args.confirmedBy,
+      ...(isDestinationCharge ? { connect_refund: '1' } : {}),
     },
   })
 
   const amountUsd = Math.round(refundCents) / 100
+  const operatorId = await lookupReservationOperatorId(admin, args.reservationId)
   const { error } = await admin.from('payment_records').insert({
+    operator_id: operatorId,
     reservation_id: args.reservationId,
     amount: amountUsd,
     payment_method: 'card',

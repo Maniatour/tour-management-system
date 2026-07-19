@@ -30,6 +30,8 @@ type ProductsListingPublicViewProps = {
   gridProducts: ProductsGygCardProduct[]
   showGrid: boolean
   resultCount: number
+  /** Unfiltered catalog size for this public operator (0 → empty catalog copy) */
+  catalogTotalCount?: number
   getProductTitle: (product: ProductsGygCardProduct) => string
   getProductLocation: (product: ProductsGygCardProduct) => string | null
   getProductPrice: (product: ProductsGygCardProduct) => number
@@ -55,6 +57,7 @@ export default function ProductsListingPublicView({
   gridProducts,
   showGrid,
   resultCount,
+  catalogTotalCount,
   getProductTitle,
   getProductLocation,
   getProductPrice,
@@ -66,6 +69,16 @@ export default function ProductsListingPublicView({
     locale === 'en'
       ? ['1 participant', '2 participants', '3 participants', '4 participants', '5+ participants']
       : ['1명', '2명', '3명', '4명', '5명 이상']
+
+  const hasActiveFilters =
+    selectedTag !== 'all' ||
+    selectedCategory !== 'all' ||
+    Boolean(searchTerm.trim()) ||
+    priceRange !== 'all'
+  const isEmptyCatalog =
+    typeof catalogTotalCount === 'number' && catalogTotalCount === 0 && !hasActiveFilters
+  const emptyTitle = isEmptyCatalog ? t('emptyCatalogTitle') : t('noSearchResults')
+  const emptyHint = isEmptyCatalog ? t('emptyCatalogHint') : t('tryDifferentSearch')
 
   const renderCard = (product: ProductsGygCardProduct, index: number) => (
     <ProductsGygCard
@@ -171,8 +184,8 @@ export default function ProductsListingPublicView({
               ) : (
                 <div className="gyg-listing-empty">
                   <Search className="mx-auto mb-3 h-10 w-10 text-[#d1d5db]" aria-hidden />
-                  <p className="text-lg font-semibold text-[#1a2b49]">{t('noSearchResults')}</p>
-                  <p className="text-sm text-[#6b7280]">{t('tryDifferentSearch')}</p>
+                  <p className="text-lg font-semibold text-[#1a2b49]">{emptyTitle}</p>
+                  <p className="text-sm text-[#6b7280]">{emptyHint}</p>
                 </div>
               )}
             </div>
@@ -184,8 +197,8 @@ export default function ProductsListingPublicView({
                 ) : (
                   <div className="gyg-listing-empty col-span-full">
                     <Search className="mx-auto mb-3 h-10 w-10 text-[#d1d5db]" aria-hidden />
-                    <p className="text-lg font-semibold text-[#1a2b49]">{t('noSearchResults')}</p>
-                    <p className="text-sm text-[#6b7280]">{t('tryDifferentSearch')}</p>
+                    <p className="text-lg font-semibold text-[#1a2b49]">{emptyTitle}</p>
+                    <p className="text-sm text-[#6b7280]">{emptyHint}</p>
                   </div>
                 )}
               </div>
@@ -217,8 +230,8 @@ export default function ProductsListingPublicView({
                 ) : (
                   <div className="gyg-listing-empty">
                     <Search className="mx-auto mb-3 h-10 w-10 text-[#d1d5db]" aria-hidden />
-                    <p className="text-lg font-semibold text-[#1a2b49]">{t('noSearchResults')}</p>
-                    <p className="text-sm text-[#6b7280]">{t('tryDifferentSearch')}</p>
+                    <p className="text-lg font-semibold text-[#1a2b49]">{emptyTitle}</p>
+                    <p className="text-sm text-[#6b7280]">{emptyHint}</p>
                   </div>
                 )}
               </div>

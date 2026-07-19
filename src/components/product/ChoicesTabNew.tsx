@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings, Pencil, Check, ImageOff, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { Plus, Trash2, Save, Copy, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings, Pencil, Check, ImageOff, X, Library } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, withOperatorId } from '@/lib/operators/scopeQuery'
+import ChoiceTemplatePickerModal, {
+  type ChoiceTemplatePickResult,
+} from '@/components/product/ChoiceTemplatePickerModal'
 
 // 임시 타입 정의 (데이터베이스 타입이 없을 때 사용)
 interface DatabaseOptions {
@@ -127,6 +133,9 @@ interface ChoicesTabProps {
 }
 
 export default function ChoicesTab({ productId, isNewProduct, embedded = false }: ChoicesTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const params = useParams()
+  const locale = (params.locale as string) || 'ko'
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -146,16 +155,15 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
   const [importData, setImportData] = useState('')
   const [homepagePricingType, setHomepagePricingType] = useState<'single' | 'separate'>('separate')
 
-  // 템플릿에서 초이스 불러오기
-  // 초이스 관리 탭에 있는 아이템만 사용 (is_choice_template = true이고 template_group이 있는 것만)
-  const loadFromTemplate = useCallback(async (templateGroup: string) => {
+  /** 초이스 템플릿 라이브러리 → 이 상품의 초이스로 복사 */
+  const loadFromTemplate = useCallback(async (pick: ChoiceTemplatePickResult) => {
     try {
-      // 초이스 관리 탭의 아이템만 가져오기 (옵션 관리 탭의 아이템 제외)
+      const { templateGroup, optionIds } = pick
       const { data, error } = await supabase
         .from('options')
         .select('*')
-        .eq('is_choice_template', true) // 반드시 초이스 관리 탭의 아이템만
-        .not('template_group', 'is', null) // template_group이 있는 것만
+        .eq('is_choice_template', true)
+        .not('template_group', 'is', null)
         .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroup}`)
         .order('sort_order', { ascending: true }) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
 
@@ -164,66 +172,35 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         return
       }
 
-      // 추가 검증: is_choice_template이 true이고 template_group이 있는 것만 사용
-      // 옵션 관리 탭의 아이템(is_choice_template = false)은 제외
-      const validData = data?.filter(item => {
-        // is_choice_template이 명시적으로 true인지 확인
-        if (item.is_choice_template !== true) {
-          return false
-        }
-        // template_group이 존재하고 비어있지 않은지 확인
+      let validData = data?.filter(item => {
+        if (item.is_choice_template !== true) return false
         if (!item.template_group || (typeof item.template_group === 'string' && item.template_group.trim() === '')) {
           return false
         }
         return true
       }) || []
 
-      // 디버깅: 로드된 데이터 확인
-      if (data && data.length > 0) {
-        console.log('템플릿 불러오기 - 로드된 데이터:', {
-          totalCount: data.length,
-          validCount: validData.length,
-          firstItem: data[0] ? {
-            id: data[0].id,
-            name: data[0].name,
-            name_ko: data[0].name_ko,
-            is_choice_template: data[0].is_choice_template,
-            template_group: data[0].template_group,
-            template_group_ko: data[0].template_group_ko
-          } : null,
-          allItems: data.map(item => ({
-            id: item.id,
-            name: item.name,
-            is_choice_template: item.is_choice_template,
-            template_group: item.template_group
-          }))
-        })
+      if (optionIds && optionIds.length > 0) {
+        const allow = new Set(optionIds)
+        validData = validData.filter((item) => allow.has(item.id))
       }
 
       if (validData.length === 0) {
-        console.error('템플릿 불러오기 실패: 초이스 관리 탭의 유효한 템플릿이 없습니다.', {
-          templateGroup,
-          dataCount: data?.length || 0,
-          data: data?.map(item => ({
-            id: item.id,
-            name: item.name,
-            is_choice_template: item.is_choice_template,
-            template_group: item.template_group
-          }))
-        })
-        alert('템플릿을 불러올 수 없습니다. 초이스 관리 탭에 등록된 템플릿인지 확인해주세요.')
+        alert(
+          locale === 'en'
+            ? 'Could not load template. Check the choice template library.'
+            : '템플릿을 불러올 수 없습니다. 초이스 템플릿 라이브러리를 확인해주세요.'
+        )
         return
       }
 
       const firstItem = validData[0] as DatabaseOptions
-      // 템플릿을 초이스 그룹으로 변환
       const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
       const templateGroupNameEn = firstItem.template_group_en || firstItem.template_group || ''
       const choiceType = firstItem.choice_type || 'single'
       const isRequired = firstItem.is_required || false
       const minSelections = firstItem.min_selections || 1
       const maxSelections = firstItem.max_selections || 1
-      // 템플릿 그룹 설명 가져오기
       const descriptionKo = firstItem.template_group_description_ko || ''
       const descriptionEn = firstItem.template_group_description_en || ''
 
@@ -239,20 +216,20 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         min_selections: minSelections,
         max_selections: maxSelections,
         sort_order: productChoices.length,
-        options: validData.map((option: DatabaseOptions) => ({
+        options: validData.map((option: DatabaseOptions, idx: number) => ({
           id: crypto.randomUUID(),
           option_key: option.id,
           option_name: option.name,
           option_name_ko: option.name_ko || option.name,
-          description: option.description_en || option.description || undefined, // 영어 설명 우선, 없으면 내부용 설명
-          description_ko: option.description_ko || undefined, // 한글 설명
+          description: option.description_en || option.description || undefined,
+          description_ko: option.description_ko || undefined,
           adult_price: option.adult_price || 0,
           child_price: option.child_price || 0,
           infant_price: option.infant_price || 0,
           capacity: 1,
-          is_default: option.id === firstItem.id, // 첫 번째 초이스를 기본값으로
+          is_default: idx === 0,
           is_active: option.status === 'active',
-          sort_order: option.sort_order ?? 0,
+          sort_order: option.sort_order ?? idx,
           image_url: option.image_url,
           image_alt: option.image_alt,
           thumbnail_url: option.thumbnail_url
@@ -264,16 +241,19 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     } catch (error) {
       console.error('Error loading template:', error)
     }
-  }, [productChoices.length])
+  }, [productChoices.length, locale])
 
-  // 상품 목록 로드
+  // 상품 목록 로드 (같은 운영사만 — 다른 상품에서 가져오기용)
   const loadProducts = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, name_ko')
-        .neq('id', productId) // 현재 상품 제외
-        .order('name', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('products')
+          .select('id, name, name_ko')
+          .neq('id', productId)
+          .order('name', { ascending: true }),
+        operatorId
+      )
 
       if (error) throw error
       setProducts((data || []).map((p) => ({
@@ -284,7 +264,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     } catch (error) {
       console.error('상품 목록 로드 오류:', error)
     }
-  }, [productId])
+  }, [productId, operatorId])
 
   // 홈페이지 가격 타입 불러오기
   useEffect(() => {
@@ -607,7 +587,8 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                 is_required: choice.is_required,
                 min_selections: choice.min_selections,
                 max_selections: choice.max_selections,
-                sort_order: choice.sort_order ?? index
+                sort_order: choice.sort_order ?? index,
+                ...operatorIdInsert(operatorId),
               } as never)
               .select()
               .single() as { data: ProductChoiceData, error: SupabaseError | null }
@@ -630,7 +611,8 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
               is_required: choice.is_required,
               min_selections: choice.min_selections,
               max_selections: choice.max_selections,
-              sort_order: choice.sort_order ?? index
+              sort_order: choice.sort_order ?? index,
+              ...operatorIdInsert(operatorId),
             } as never)
             .select()
             .single() as { data: ProductChoiceData, error: SupabaseError | null }
@@ -764,7 +746,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     } finally {
       setSaving(false)
     }
-  }, [productId, productChoices, loadProductChoices])
+  }, [productId, productChoices, loadProductChoices, operatorId])
 
   // 초이스 그룹 추가
   const addChoiceGroup = useCallback(() => {
@@ -1247,7 +1229,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         }
       }
 
-      setSaveMessage(`${exportedCount}개의 초이스가 템플릿으로 성공적으로 내보내졌습니다. 옵션 관리 > 초이스 관리에서 확인할 수 있습니다.`)
+      setSaveMessage(`${exportedCount}개의 초이스가 템플릿으로 저장되었습니다. 옵션·초이스 템플릿 > 초이스 템플릿에서 확인할 수 있습니다.`)
       setShowExportTemplateModal(false)
       setSelectedChoiceIds(new Set())
     } catch (error) {
@@ -1299,7 +1281,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
   if (isNewProduct) {
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">초이스 관리</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">이 상품의 초이스</h3>
         <p className="text-gray-600">상품을 먼저 저장한 후 초이스를 설정할 수 있습니다.</p>
       </div>
     )
@@ -1311,17 +1293,27 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       <div className={`flex flex-col sm:flex-row justify-between items-start md:items-center gap-4 ${embedded ? 'gap-2' : ''}`}>
         {!embedded && (
           <div>
-            <h3 className="text-lg font-medium text-gray-900">초이스 관리</h3>
+            <h3 className="text-lg font-medium text-gray-900">이 상품의 초이스</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              이 상품에만 적용됩니다. 재사용하려면 템플릿 라이브러리를 사용하세요.
+            </p>
           </div>
         )}
         <div className={`flex flex-wrap gap-2 ${embedded ? 'w-full' : 'w-full md:w-auto'}`}>
+          <button
+            onClick={addChoiceGroup}
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+            그룹 추가
+          </button>
           <div className="flex items-center">
             <button
               onClick={() => setShowTemplateModal(true)}
               className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
             >
               <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-              템플릿 불러오기
+              템플릿에서 불러오기
             </button>
             <button
               type="button"
@@ -1333,26 +1325,26 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             </button>
           </div>
           <button
-            onClick={() => setShowExportTemplateModal(true)}
-            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
-          >
-            <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-            템플릿 내보내기
-          </button>
-          <button
             onClick={() => setShowCopyModal(true)}
             className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
             <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-            복사
+            다른 상품에서 가져오기
           </button>
           <button
-            onClick={addChoiceGroup}
-            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 shadow-sm"
+            onClick={() => setShowExportTemplateModal(true)}
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
           >
-            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-            그룹 추가
+            <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+            템플릿으로 저장
           </button>
+          <Link
+            href={`/${locale}/admin/options?tab=choices`}
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-muted-foreground bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:text-foreground"
+          >
+            <Library className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+            템플릿 관리
+          </Link>
         </div>
       </div>
 
@@ -2113,10 +2105,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         />
       )}
 
-      {/* 템플릿 모달 */}
+      {/* 템플릿 피커 */}
       {showTemplateModal && (
-        <TemplateModal
-          onSelectTemplate={loadFromTemplate}
+        <ChoiceTemplatePickerModal
+          onSelect={(pick) => void loadFromTemplate(pick)}
           onClose={() => setShowTemplateModal(false)}
         />
       )}
@@ -2151,116 +2143,6 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     </div>
   )
 }
-
-// 템플릿 선택 모달 컴포넌트
-interface TemplateModalProps {
-  onSelectTemplate: (templateGroup: string) => void
-  onClose: () => void
-}
-
-function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
-  const t = useTranslations('common')
-  const [templates, setTemplates] = useState<Array<{template_group: string, template_group_ko: string, count: number}>>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    loadTemplateGroups()
-  }, [])
-
-  const loadTemplateGroups = async () => {
-    try {
-      setLoading(true)
-      // 초이스 관리 탭에 있는 아이템만 가져오기 (is_choice_template = true이고 template_group이 있는 것만)
-      const { data, error } = await (supabase
-        .from('options')
-        .select('template_group, template_group_ko')
-        .eq('is_choice_template', true) // 초이스 관리 탭의 아이템만 사용
-        .not('template_group', 'is', null) as unknown as { data: DatabaseOptions[] | null, error: SupabaseError | null }) // template_group이 있는 것만
-
-      if (error) {
-        console.error('Error loading template groups:', error)
-        return
-      }
-
-      // 그룹별로 카운트
-      const groupCounts = data?.reduce((acc, item: DatabaseOptions) => {
-        const group = item.template_group
-        if (!group) return acc
-        if (!acc[group]) {
-          acc[group] = {
-            template_group: group,
-            template_group_ko: item.template_group_ko || group,
-            count: 0
-          }
-        }
-        acc[group].count++
-        return acc
-      }, {} as Record<string, {template_group: string, template_group_ko: string, count: number}>)
-
-      setTemplates(Object.values(groupCounts || {}))
-    } catch (error) {
-      console.error('Error loading template groups:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-96">
-          <div className="text-center">{t('loading')}</div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-96">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿 불러오기</h3>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {templates.length === 0 ? (
-            <div className="text-center py-4 text-gray-500">
-              사용 가능한 템플릿이 없습니다.
-            </div>
-          ) : (
-            templates.map((template) => (
-              <button
-                key={template.template_group}
-                onClick={() => onSelectTemplate(template.template_group)}
-                className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-border transition-colors"
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-medium text-gray-900">
-                      {template.template_group_ko}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {template.template_group}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {template.count}개 초이스
-                  </div>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-        <div className="flex justify-end mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
-          >
-            취소
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 
 // 가져오기 모달 컴포넌트
 interface ImportModalProps {
@@ -2303,7 +2185,7 @@ function ImportModal({ importData, setImportData, onImport, onClose }: ImportMod
   )
 }
 
-// 복사 대상 선택 모달 컴포넌트
+/** 다른 상품 → 현재 상품으로 초이스 가져오기 */
 interface CopyToModalProps {
   products: Array<{id: string, name: string, name_ko?: string}>
   selectedTargetProductId: string
@@ -2316,9 +2198,9 @@ function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProdu
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-96">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">복사 대상 선택</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">다른 상품에서 가져오기</h3>
         <p className="text-sm text-gray-600 mb-4">
-          초이스를 복사할 상품을 선택하세요.
+          초이스를 가져올 상품을 선택하세요. 선택한 상품의 초이스가 이 상품에 추가됩니다.
         </p>
         <select
           value={selectedTargetProductId}
@@ -2344,7 +2226,7 @@ function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProdu
             disabled={!selectedTargetProductId}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-primary/90 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            복사
+            가져오기
           </button>
         </div>
       </div>
@@ -2385,11 +2267,11 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿으로 내보내기</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿으로 저장</h3>
         <div className="space-y-4">
           <div className="text-sm text-gray-600">
-            <p>내보낼 초이스 그룹을 선택하세요.</p>
-            <p className="mt-2">내보낸 템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong>에서 확인할 수 있으며, 다른 상품에서도 사용할 수 있습니다.</p>
+            <p>라이브러리에 저장할 초이스 그룹을 선택하세요.</p>
+            <p className="mt-2">저장 후 <strong>옵션·초이스 템플릿 &gt; 초이스 템플릿</strong>에서 확인·재사용할 수 있습니다.</p>
           </div>
 
           {/* 전체 선택/해제 */}
@@ -2525,9 +2407,9 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
                 <strong>사용 방법:</strong>
               </p>
               <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1 ml-2">
-                <li>"템플릿 불러오기" 버튼을 클릭합니다.</li>
-                <li>사용할 템플릿을 선택합니다.</li>
-                <li>선택한 템플릿의 초이스 그룹이 현재 상품에 추가됩니다.</li>
+                <li>"템플릿에서 불러오기" 버튼을 클릭합니다.</li>
+                <li>검색·미리보기로 템플릿을 고르고, 필요하면 옵션만 선택합니다.</li>
+                <li>선택한 내용이 <strong>이 상품의 초이스</strong>에 복사되어 추가됩니다.</li>
               </ol>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>주의사항:</strong></p>
@@ -2546,7 +2428,7 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
               <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
                 <span className="text-purple-600 font-semibold text-sm">2</span>
               </div>
-              <h4 className="text-lg font-semibold text-gray-900">템플릿으로 내보내기</h4>
+              <h4 className="text-lg font-semibold text-gray-900">템플릿으로 저장</h4>
             </div>
             <div className="ml-11 space-y-2">
               <p className="text-gray-700">
@@ -2554,13 +2436,13 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
               </p>
               <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1 ml-2">
                 <li>만든 초이스 그룹을 선택합니다.</li>
-                <li>"템플릿으로 내보내기" 버튼을 클릭합니다.</li>
-                <li>초이스 그룹이 템플릿으로 저장되어 다른 상품에서도 사용할 수 있습니다.</li>
+                <li>"템플릿으로 저장" 버튼을 클릭합니다.</li>
+                <li>초이스 그룹이 라이브러리 템플릿으로 저장되어 다른 상품에서도 불러올 수 있습니다.</li>
               </ol>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>저장 위치:</strong></p>
                 <p className="text-sm text-gray-600">
-                  내보낸 템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong>에서 확인하고 관리할 수 있습니다.
+                  저장한 템플릿은 <strong>옵션·초이스 템플릿 &gt; 초이스 템플릿</strong>에서 확인하고 관리할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -2576,7 +2458,7 @@ function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
             </div>
             <div className="ml-11 space-y-2">
               <p className="text-gray-700">
-                템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong> 메뉴에서 관리할 수 있습니다.
+                템플릿은 <strong>옵션·초이스 템플릿 &gt; 초이스 템플릿</strong> 메뉴에서 관리할 수 있습니다.
               </p>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>관리 기능:</strong></p>

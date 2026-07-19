@@ -1,0 +1,48 @@
+================================================================================
+ADR 041 — tour/reservation expenses SELECT + operator_members (Phase 6c.8)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.6 stamped tour_expenses / reservation_expenses.operator_id.
+SELECT was staff OR assignee only. Tip/meal (6c.7) used non-staff HR only;
+expense ledgers need member read like payment_records (operational, not
+per-employee privacy).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719300000_saas_ops_tour_reservation_expenses_select_rls.sql
+   SELECT:
+     rls_is_staff_session_ok()
+     OR is_operator_member(operator_id)
+     OR assignee helper (tour / reservation)
+
+2. Writes unchanged
+
+3. Smoke: saas_ops_tour_reservation_expenses_select_rls_ready()
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Write-policy tenant tightening
+- JWT staff lock-down
+- Booking/payment logic
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.9 active operator session prep (ADR 042)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719300000_saas_ops_tour_reservation_expenses_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

@@ -1,0 +1,59 @@
+================================================================================
+ADR 050 — Staff tenant lock for admin catalog (Phase 6d.4)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Ops finance/journal SELECT lock (6d.0–6d.3) was done. Admin products still had
+staff-wide UPDATE/DELETE (id-only), product_choices/dynamic_pricing inserts
+defaulting to Kovegas, and dual-write always stamping KOVEgAS_OPERATOR_ID.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration 20260719350000:
+   - Backfill product_choices/dynamic_pricing.operator_id from products
+   - products / product_choices / dynamic_pricing:
+     SELECT: staff_can_select_operator_row OR is_operator_member_strict
+     WRITE: staff_can_select_operator_row (JWT absent → unscoped)
+   - Non-staff team keep unscoped SELECT for reservation forms
+   - Anon active/catalog policies unchanged
+   - products authenticated-active: non-staff all-tenant; staff JWT-aware
+   - saas_catalog_staff_tenant_lock_ready(); pilot_ready includes catalog
+
+2. App defense-in-depth:
+   - products UPDATE/DELETE .eq('operator_id', resolveOperatorId(...))
+   - product_choices / dynamic_pricing INSERT stamp operatorIdInsert
+   - useDynamicPricing dual-write uses active operatorId (not Kovegas hardcode)
+   - Dangerous APIs: requireStaffApiAuth (+ confirm/operator scope for name-en)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- choice_options operator_id column
+- Full product copy of children / cascade delete rewrite
+- Booking / checkout / payment logic changes
+
+
+Next
+--------------------------------------------------------------------------------
+Manual verify SAAS_STAFF_TENANT_LOCK=1 on Operator B products list + pricing save
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719350000_saas_staff_tenant_lock_catalog.sql
+src/app/[locale]/admin/products/ProductsPageInner.tsx
+src/app/[locale]/admin/products/[id]/page.tsx
+src/components/product/BasicInfoTab.tsx
+src/components/product/ChoicesTabNew.tsx
+src/components/ProductCard.tsx
+src/components/admin/FavoriteOrderModal.tsx
+src/hooks/useDynamicPricing.ts
+src/app/api/update-products-name-en/route.ts
+src/app/api/product-details/preparation-info/route.ts
+src/app/api/product-details/field/route.ts
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

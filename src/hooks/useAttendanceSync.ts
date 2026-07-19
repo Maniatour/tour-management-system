@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, isAbortLikeError, canUseAuthenticatedRest } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 import {
   findOpenAttendanceSession,
@@ -22,6 +24,8 @@ interface AttendanceRecord {
 
 export function useAttendanceSync() {
   const { authUser } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
@@ -100,6 +104,7 @@ export function useAttendanceSync() {
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
+        .eq('operator_id', activeOperatorId)
         .is('check_out_time', null)
         .gte('date', sevenDaysAgoStr)
         .order('date', { ascending: false })
@@ -152,7 +157,7 @@ export function useAttendanceSync() {
         setEmployeeNotFound(true)
       }
     }
-  }, [authUser?.email])
+  }, [authUser?.email, activeOperatorId])
 
   // 출근 체크인
   const handleCheckIn = useCallback(async () => {
@@ -187,7 +192,11 @@ export function useAttendanceSync() {
         return
       }
 
-      const openSession = await findOpenAttendanceSession(supabase, employeeData.email)
+      const openSession = await findOpenAttendanceSession(
+        supabase,
+        employeeData.email,
+        activeOperatorId
+      )
       if (openSession) {
         alert(formatOpenSessionBlockMessage(openSession))
         return
@@ -198,6 +207,7 @@ export function useAttendanceSync() {
         .from('attendance_records')
         .select('session_number')
         .eq('employee_email', employeeData.email)
+        .eq('operator_id', activeOperatorId)
         .eq('date', new Date().toISOString().split('T')[0] as string)
         .order('session_number', { ascending: false })
         .limit(1)
@@ -213,7 +223,8 @@ export function useAttendanceSync() {
           date: new Date().toISOString().split('T')[0],
           check_in_time: new Date().toISOString(),
           status: 'present',
-          session_number: nextSessionNumber
+          session_number: nextSessionNumber,
+          operator_id: activeOperatorId,
         } as never)
 
       if (error) {
@@ -230,7 +241,7 @@ export function useAttendanceSync() {
     } finally {
       setIsCheckingIn(false)
     }
-  }, [authUser?.email, fetchTodayRecords])
+  }, [authUser?.email, fetchTodayRecords, activeOperatorId])
 
   // 퇴근 체크아웃
   const handleCheckOut = useCallback(async () => {

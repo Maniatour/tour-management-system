@@ -8,6 +8,8 @@ import type {
   ProductTourCourse,
   TourCoursePhoto,
 } from '@/components/product/productDetailTypes'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 
 export type {
   Product,
@@ -31,6 +33,11 @@ const emptyProductPageData = (): ProductPageData => ({
 export type FetchProductPageDataOptions = {
   /** preview=1 등 관리자 미리보기 — inactive/draft도 로드 */
   includeNonActive?: boolean
+  /**
+   * Public tenant scope. When omitted on the client, cookie is used.
+   * Skipped for admin preview (`includeNonActive`) so staff can preview any tenant product on apex host.
+   */
+  operatorId?: string | null
 }
 
 export async function fetchProductPageData(
@@ -53,7 +60,13 @@ export async function fetchProductPageData(
     // 공개 페이지는 active만, 미리보기는 상태 무관. maybeSingle로 0건 시 406(PGRST116) 방지.
     let productQuery = supabase.from('products').select('*').eq('id', productId)
     if (!options?.includeNonActive) {
-      productQuery = productQuery.eq('status', 'active').eq('is_published', true)
+      const opId = resolveOperatorId(
+        options?.operatorId ?? readPublicOperatorIdBrowser()
+      )
+      productQuery = productQuery
+        .eq('operator_id', opId)
+        .eq('status', 'active')
+        .eq('is_published', true)
     }
     const { data: productData, error: productError } = await productQuery.maybeSingle()
 

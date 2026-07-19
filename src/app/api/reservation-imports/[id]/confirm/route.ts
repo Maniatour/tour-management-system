@@ -4,6 +4,7 @@ import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
@@ -380,10 +381,12 @@ export async function POST(
     const depositAmount = Number(pricingInfo.depositAmount)
     const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const paymentMethodId = depositPaymentMethodIdForEmailImport(body.channel_id, importRow)
+    const operatorId = await lookupReservationOperatorId(client, reservationId)
     const { error: paymentError } = await client
       .from('payment_records')
       .insert({
         id: paymentId,
+        operator_id: operatorId,
         reservation_id: reservationId,
         payment_status: 'Deposit Received',
         amount: depositAmount,

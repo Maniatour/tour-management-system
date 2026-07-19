@@ -12,6 +12,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { OperatorProvider } from "@/contexts/OperatorContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
 import AppToaster from "@/components/AppToaster";
 import LazySopComplianceGate from "@/components/layout/LazySopComplianceGate";
@@ -123,10 +124,12 @@ export default function RootLayout({
           </>
         ) : null}
         <AuthProvider>
-          <RouteTransitionProgress />
-          <AppToaster />
-          <LazySopComplianceGate />
-          {children}
+          <OperatorProvider>
+            <RouteTransitionProgress />
+            <AppToaster />
+            <LazySopComplianceGate />
+            {children}
+          </OperatorProvider>
         </AuthProvider>
       </body>
     </html>

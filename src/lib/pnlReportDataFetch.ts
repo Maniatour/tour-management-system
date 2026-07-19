@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
   hotelAmountForSettlement,
   isHotelBookingActiveForReports,
@@ -29,11 +30,17 @@ const PAYMENT_RECORD_SELECT =
   'id, amount, payment_status, payment_method, reservation_id, submit_on, note, submit_by'
 
 /** 통합 PNL 입금: 기간 내 payment_records 전부 (PostgREST 1000행 제한 순회) */
-export async function fetchPaymentRecordsForPnlReport(startISO: string, endISO: string) {
+export async function fetchPaymentRecordsForPnlReport(
+  startISO: string,
+  endISO: string,
+  operatorId?: string | null
+) {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { data, error } = await fetchAllSupabasePages<PnlPaymentRecordRow>((from, to) =>
     supabase
       .from('payment_records')
       .select(PAYMENT_RECORD_SELECT)
+      .eq('operator_id', activeOperatorId)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
@@ -372,12 +379,18 @@ function isPnlStatementInflowEligible(r: PnlStatementInflowRow): boolean {
 }
 
 /** 통합 PNL 참고 — 기간 내 명세 수입(입금) 줄 (posted_date 기준) */
-export async function fetchStatementInflowsForPnlReport(startYmd: string, endYmd: string) {
+export async function fetchStatementInflowsForPnlReport(
+  startYmd: string,
+  endYmd: string,
+  operatorId?: string | null
+) {
+  const activeOperatorId = resolveOperatorId(operatorId)
   return fetchAllSupabasePages<PnlStatementInflowRow>((from, to) =>
     fromUntypedTable(supabase, 'statement_lines')
       .select(
         'id, posted_date, amount, direction, description, merchant, matched_status, exclude_from_pnl, is_personal, statement_import_id'
       )
+      .eq('operator_id', activeOperatorId)
       .eq('direction', 'inflow')
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)

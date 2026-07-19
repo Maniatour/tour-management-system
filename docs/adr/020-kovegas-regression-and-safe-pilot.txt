@@ -1,0 +1,43 @@
+================================================================================
+ADR 020 — Kovegas Regression Checks + Safe Pilot Guide (Phase 6a.2)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+SaaS multi-tenant work must not break Kovegas (Tenant #1) production paths.
+Operator B pilot is opt-in. Staff need a live “legacy still OK” signal next to
+the Operator B checklist.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Read-only evaluateKovegasRegression():
+   - Kovegas row + operations=true
+   - M00001 exists + resolvePublicDirectChannel → M00001
+   - Kovegas product count > 0
+   - resolveConnectCheckoutDestination(Kovegas) → platform
+   - OTA LIVE / INBOUND default off
+   - COMMERCE_V2_READ_PRODUCTS not global *
+
+2. GET /api/admin/operators/pilot-status always includes `regression`.
+
+3. Operator B manual:
+   - Regression card (must stay green)
+   - Safety principles (flags OFF, M00001, opt-in pilot)
+   - E2E order that ends with “switch back to Kovegas”
+
+4. Non-goals / constraints:
+   - No booking or payment logic changes
+   - No ops_* table rename (still Phase 6b)
+   - No enabling SaaS flags by default
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/kovegasRegression.ts
+src/app/api/admin/operators/pilot-status/route.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/{ko,en}.json
+================================================================================

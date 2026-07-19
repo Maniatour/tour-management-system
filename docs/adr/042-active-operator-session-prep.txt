@@ -1,0 +1,49 @@
+================================================================================
+ADR 042 — Active operator cookie/header + API GUC prep (Phase 6c.9)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+set_current_operator_id() is transaction-local. OperatorContext RPC from the
+browser does not stick for later PostgREST calls. Staff SELECT still sees all
+tenants via is_staff() / rls_is_staff_session_ok(). Before locking staff RLS to
+current_operator_id(), the active tenant must reach every API request reliably.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Cookie tms_active_operator_id (mirrors localStorage on switch/refresh)
+2. Middleware stamps x-active-operator-id from cookie
+3. requireStaffApiAuth + resolveFinancialApiAuth call
+   applyActiveOperatorSession() → set_current_operator_id RPC on that client
+4. pilot-status returns activeOperatorSession cookie prep status
+5. NO staff RLS rewrite in this phase
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- JWT app_metadata.operator_id write
+- operator_id = current_operator_id() staff lock-down
+- Booking/payment logic changes
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6d.0 staff tenant lock pilot via JWT (ADR 043)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/activeOperatorCookie.ts
+src/lib/operators/applyActiveOperatorSession.ts
+src/lib/operators/activeOperatorStorage.ts
+src/contexts/OperatorContext.tsx
+src/lib/api-security.ts
+src/lib/financial-api-auth.ts
+middleware.ts
+src/app/api/admin/operators/pilot-status/route.ts
+src/components/admin/OperatorBManual.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

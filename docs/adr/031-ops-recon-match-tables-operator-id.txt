@@ -1,0 +1,57 @@
+================================================================================
+ADR 031 — Ops Finance: reconciliation_matches + expense_cash_ledger_matches
+         operator_id (Phase 6b.10)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.9 stamped statement_imports/lines. Match link tables still had no
+operator_id, so full-table scans (auto-match “already linked” key sets) could
+leak Kovegas match state into Operator B pools.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719210000_saas_operator_id_recon_match_tables.sql
+   - reconciliation_matches.operator_id ← statement_lines (+ expense fallback)
+   - expense_cash_ledger_matches.operator_id ← cash_transactions (+ expense fallback)
+   - Orphan → Kovegas
+
+2. App:
+   - Stamp on all insert/replace paths
+   - Filter P0 full-table scans by operator_id
+   - sync schema: reconciliation_matches.operator_id + expense_cash_ledger_matches block
+
+3. Deferred:
+   - payment_records tenancy
+   - Operator B E2E checklist run
+   - RLS policies on match tables
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout logic changes
+- Changing match scoring
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6b.11 (payment_records). See ADR 032.
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719210000_saas_operator_id_recon_match_tables.sql
+src/app/api/sync/schema/route.ts
+src/components/reports/StatementReconciliationTab.tsx
+src/lib/expense-reconciliation-similar-lines.ts
+src/lib/expense-cash-ledger-match.ts
+src/lib/cash-transaction-auto-match.ts
+src/lib/expense-statement-auto-match.ts
+src/components/reports/StatementBulkExpenseModal.tsx
+src/components/reports/StatementSelectedBulkExpenseModal.tsx
+src/components/reports/StatementAdjustmentExpenseModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

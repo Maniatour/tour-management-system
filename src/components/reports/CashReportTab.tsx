@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
@@ -122,6 +124,8 @@ async function fetchLatestHistoryModifiedByEmail(
 }
 
 export default function CashReportTab({ dateRange, period }: CashReportTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [editTarget, setEditTarget] = useState<CashLedgerEditTarget | null>(null)
@@ -185,6 +189,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('cash_transactions')
           .select('id, transaction_type, amount, transaction_date, category, description, created_by')
+          .eq('operator_id', activeOperatorId)
           .gte('transaction_date', startISO)
           .lte('transaction_date', endISO)
           .order('transaction_date', { ascending: false }),
@@ -192,12 +197,14 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('cash_transactions')
           .select('id, transaction_type, amount, transaction_date')
+          .eq('operator_id', activeOperatorId)
           .gte('transaction_date', baseDate + 'T00:00:00')
           .order('transaction_date', { ascending: true }),
         // payment_records에서 현금 입금 조회 (PAYM032/PAYM001 + payment_method cash)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', startISO)
@@ -206,6 +213,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', baseDate + 'T00:00:00')
@@ -214,6 +222,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('company_expenses')
           .select('id, amount, submit_on, description, notes, paid_for, paid_to, submit_by')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .is('deleted_at', null)
           .gte('submit_on', startISO)
@@ -223,6 +232,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('company_expenses')
           .select('id, amount, submit_on')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .is('deleted_at', null)
           .gte('submit_on', baseDate + 'T00:00:00')
@@ -231,6 +241,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('reservation_expenses')
           .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id, submitted_by')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .is('deleted_at', null)
           .gte('submit_on', startISO)
@@ -240,6 +251,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('reservation_expenses')
           .select('id, amount, submit_on')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
           .is('deleted_at', null)
           .gte('submit_on', baseDate + 'T00:00:00')
@@ -525,7 +537,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
     } finally {
       if (!options?.soft) setLoading(false)
     }
-  }, [dateRange, period, ledgerBaseDate])
+  }, [dateRange, period, ledgerBaseDate, activeOperatorId])
 
   useEffect(() => {
     loadCashStats()

@@ -5,6 +5,10 @@ import { useLocale, useTranslations } from 'next-intl'
 import { BookOpen, Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import {
@@ -101,6 +105,8 @@ export default function StatementAdjustmentExpenseModal({
 }: Props) {
   const locale = useLocale()
   const tCo = useTranslations('companyExpense')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [step, setStep] = useState<'kind' | 'form'>('kind')
   const [kind, setKind] = useState<AdjustmentExpenseKind | null>(null)
   const [saving, setSaving] = useState(false)
@@ -380,6 +386,7 @@ export default function StatementAdjustmentExpenseModal({
   const linkStatement = async (sourceTable: string, sourceId: string) => {
     if (!line) return
     const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
+      operator_id: activeOperatorId,
       statement_line_id: line.id,
       source_table: sourceTable,
       source_id: sourceId,
@@ -499,6 +506,11 @@ export default function StatementAdjustmentExpenseModal({
           return
         }
         const newId = crypto.randomUUID()
+        const expenseOperatorId = await lookupReservationOperatorId(
+          supabase,
+          reReservationId.trim() || null,
+          activeOperatorId
+        )
         const { error: insErr } = await supabase.from('reservation_expenses').insert({
           id: newId,
           submitted_by: email,
@@ -512,7 +524,8 @@ export default function StatementAdjustmentExpenseModal({
           status: 'approved',
           statement_line_id: line.id,
           exclude_from_pnl: line.exclude_from_pnl,
-          is_personal: false
+          is_personal: false,
+          operator_id: expenseOperatorId,
         } as never)
         if (insErr) throw insErr
         await linkStatement('reservation_expenses', newId)
@@ -548,7 +561,8 @@ export default function StatementAdjustmentExpenseModal({
             status: 'pending',
             statement_line_id: line.id,
             exclude_from_pnl: line.exclude_from_pnl,
-            is_personal: false
+            is_personal: false,
+            operator_id: await lookupTourOperatorId(supabase, picked.id, activeOperatorId),
           } as never)
           .select('id')
           .single()

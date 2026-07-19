@@ -5,6 +5,8 @@ import {
   parseCustomerBookingCustomer,
   parseCustomerBookingLine,
 } from '@/lib/customerBookingCheckout'
+import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
+import { resolvePublicDirectChannel } from '@/lib/operators/resolvePublicDirectChannel'
 
 /**
  * POST /api/booking/create-inquiry
@@ -37,11 +39,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const publicOperatorId = await getPublicOperatorId()
+    const direct = await resolvePublicDirectChannel(supabaseAdmin, publicOperatorId, {
+      ensure: true,
+    })
+
     const pending = await createPendingCustomerBooking(supabaseAdmin, {
       customer,
       line,
       couponCode,
       status: 'inquiry',
+      tenant: {
+        operatorId: direct.operatorId,
+        channelId: direct.channelId,
+      },
     })
 
     return NextResponse.json({

@@ -1,0 +1,55 @@
+================================================================================
+ADR 006 — Commerce v2 Booking Snapshot on reservations
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Inventory holds and optional v2 price read exist. Settlement still uses
+reservation_pricing totals. We need an immutable commercial trail for
+analytics and future cutover without rewriting historical money.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Additive nullable columns on public.reservations:
+   - commerce_offer_id (FK offers, ON DELETE SET NULL)
+   - commerce_rate_plan_id (FK rate_plans, ON DELETE SET NULL)
+   - commerce_pricing_source (text: calculation method label)
+   - money_breakdown_json (jsonb snapshot v1)
+   - inventory_hold_ids (uuid[])
+
+2. Every new Direct Web pending booking writes money_breakdown_json
+   (legacy RPC / catalog / commerce_v2). Offer/rate plan ids filled when
+   v2 priced the booking.
+
+3. inventory_hold_ids updated after successful hold when
+   COMMERCE_V2_INVENTORY_PRODUCTS is on.
+
+4. reservation_pricing remains SSOT for settlement amounts.
+   money_breakdown_json is audit/analytics — never recomputed for past rows.
+
+5. Do not backfill historical reservations.
+
+
+money_breakdown_json shape (v1)
+--------------------------------------------------------------------------------
+version, engine, calculationMethod, channelId, variantKey, tourDate,
+productId, pax, ratePlanId, offerId, offerCode, lines[], subtotal,
+couponDiscount, total, currency, createdAt
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- New bookings table replacing reservations
+- Changing payment / cancel / settlement logic
+- Forcing COMMERCE_V2_READ_PRODUCTS on
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718130000_commerce_booking_snapshot_columns.sql
+src/lib/commerce/bookingMoneyBreakdown.ts
+src/lib/customerBookingCheckout.ts
+================================================================================

@@ -1,0 +1,51 @@
+================================================================================
+ADR 026 — Ops HR: tour_tip_shares + tour_tip_share_ops operator_id (Phase 6b.5)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.4 scoped office_meal_log and tour_office_tips. Guide/assistant/OP tip
+splits (tour_tip_shares + tour_tip_share_ops) still lived unscoped, so a second
+tenant with Ops ON could read/write Kovegas tip-share rows via admin modals.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719170000_saas_operator_id_tour_tip_shares.sql
+   - tour_tip_shares.operator_id NOT NULL (from tours.operator_id / Kovegas)
+   - tour_tip_share_ops.operator_id NOT NULL (from parent share / Kovegas)
+   - UNIQUE(tour_id) unchanged (tour already belongs to one operator)
+
+2. App filter/stamp:
+   - TipsShareModal: tours + tip_shares list/delete/insert + ops insert
+   - BiweeklyCalculatorModal / TotalEmployeesModal tip_share read/write
+   - calculateEmployeePrepaidTips(optional operatorId)
+   - Guide tour page: tour_id lookup only (unique; no OperatorContext)
+
+3. Deferred: full tip-share RLS rewrite; team.operator_id
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout changes
+- ops_* schema move
+- Changing tip split business logic
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.6 tour/reservation expenses (DONE) → Operator B E2E OR cash-ledger/recon
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719170000_saas_operator_id_tour_tip_shares.sql
+src/lib/database.types.ts
+src/lib/prepaid-tips.ts
+src/components/TipsShareModal.tsx
+src/components/BiweeklyCalculatorModal.tsx
+src/components/TotalEmployeesModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

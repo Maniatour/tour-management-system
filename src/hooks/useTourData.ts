@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import { chunkStrings } from '@/lib/supabaseInChunks'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 // 부킹 데이터 페칭
 export const fetchBookings = async (tourId: string) => {
@@ -115,13 +116,14 @@ export const fetchTourData = async (tourId: string) => {
   }
 }
 
-// 차량 데이터 페칭
-export const fetchVehicles = async () => {
+// 차량 데이터 페칭 (Phase 6b.0: optional operator_id scope)
+export const fetchVehicles = async (operatorId?: string | null) => {
   try {
     const { data, error } = await supabase
       .from('vehicles')
       .select('*')
       .eq('status', 'available')
+      .eq('operator_id', resolveOperatorId(operatorId))
       .order('vehicle_type', { ascending: true })
       .order('vehicle_number', { ascending: true })
 

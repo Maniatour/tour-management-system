@@ -1,0 +1,53 @@
+================================================================================
+ADR 004 — Commerce v2 Checkout Read Cutover (Feature Flag)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Backfill + shadow compare exist. Next step is optional read cutover for
+Direct Web checkout without removing legacy RPC.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Env flag COMMERCE_V2_READ_PRODUCTS
+   - unset/empty → legacy only
+   - * → all products try v2 first
+   - id1,id2 → only those product ids
+
+2. calculateServerBookingPrice:
+   - if flag matches → calculateBookingPriceV2
+   - on miss/error/subtotal<=0 → legacy calculate_dynamic_price (+ catalog fallback)
+   - never fail checkout solely because v2 is incomplete
+
+3. Offer matching:
+   - selected choice_option ids → option_key combination candidates
+   - match offers.code or offer_components set
+
+4. Sale availability:
+   - v2 plan override is_sale_available when found
+   - else legacy dynamic_pricing.is_sale_available
+
+
+Rollout
+--------------------------------------------------------------------------------
+1. Backfill product + shadow-compare until matchRate high
+2. Set COMMERCE_V2_READ_PRODUCTS=<that product id>
+3. Place test booking; confirm calculationMethod starts with commerce_v2_
+4. Expand list / set *
+
+
+Rollback
+--------------------------------------------------------------------------------
+Unset COMMERCE_V2_READ_PRODUCTS (or remove product id) → immediate legacy.
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/commerce/commerceV2Flags.ts
+src/lib/commerce/resolveOfferFromSelection.ts
+src/lib/commerce/calculateBookingPriceV2.ts
+src/lib/customerBookingCheckout.ts
+================================================================================

@@ -1,0 +1,45 @@
+================================================================================
+ADR 053 — Admin product choices UX: product instance vs template library
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Product choices confuse operators because UI used the same labels for:
+  (A) reusable library rows in `options` where is_choice_template=true
+  (B) per-product copies in `product_choices` + `choice_options`
+
+The storage model is correct (copy-on-load, not live link). Booking /
+pricing / option_id upsert semantics must not change.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Naming
+   - Product edit tab: 「이 상품의 초이스」 / "This Product's Choices"
+   - Global admin page: 「옵션·초이스 템플릿」 with tabs
+     「부가 옵션」 | 「초이스 템플릿」
+   - Actions: 템플릿에서 불러오기 / 다른 상품에서 가져오기 / 템플릿으로 저장
+
+2. UX
+   - ChoiceTemplatePickerModal: search, expand preview, optional option IDs
+   - Deep link `/admin/options?tab=choices`
+   - Link from product choices toolbar → template library
+   - fetchGlobalOptions excludes is_choice_template=true (add-on options only)
+
+3. Non-goals
+   - No live sync between template and product choices
+   - No booking / pricing / checkout logic changes
+
+
+Files
+--------------------------------------------------------------------------------
+src/components/product/ChoiceTemplatePickerModal.tsx
+src/components/product/ChoicesTabNew.tsx
+src/app/[locale]/admin/options/page.tsx
+src/app/[locale]/admin/products/[id]/page.tsx (fetchGlobalOptions filter)
+src/i18n/locales/{ko,en}.json
+src/components/admin/AdminPageTitle.tsx
+src/components/admin/GlobalChoicesManager.tsx (help copy)
+================================================================================

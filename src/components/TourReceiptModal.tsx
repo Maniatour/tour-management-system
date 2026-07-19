@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
 import { useLocale } from 'next-intl'
 import { X, Receipt, Calendar, Users, User, Car, CheckCircle, Upload, Camera, Folder } from 'lucide-react'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
@@ -32,6 +35,8 @@ interface TourReceiptModalProps {
 export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: TourReceiptModalProps) {
   const supabase = createClientSupabase()
   const { user, userRole: _userRole, simulatedUser, isSimulating } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const currentLocale = useLocale()
   
   // 번역 함수
@@ -96,6 +101,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
       const { data: toursData, error } = await supabase
         .from('tours')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
         .gte('tour_date', thirtyDaysAgoStr)
         .order('tour_date', { ascending: false })
@@ -407,6 +413,11 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
 
     setSaving(true)
     try {
+      const expenseOperatorId = await lookupTourOperatorId(
+        supabase,
+        currentEditingTour.id,
+        activeOperatorId
+      )
       const { error } = await supabase
         .from('tour_expenses')
         .insert({
@@ -418,7 +429,8 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
           note: formData.note,
           image_url: formData.image_url,
           file_path: formData.file_path,
-          submitted_by: currentUserEmail ?? ''
+          submitted_by: currentUserEmail ?? '',
+          operator_id: expenseOperatorId,
         } as never)
 
       if (error) {

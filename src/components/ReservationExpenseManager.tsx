@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic'
 import { createPortal } from 'react-dom'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon, ListOrdered, Link2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { ReservationStatusIcon } from '@/components/reservation/ReservationStatusIcon'
 import { getStatusLabel } from '@/utils/reservationUtils'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -164,6 +166,8 @@ function PaidForAutocomplete({
   onChange: (v: string) => void
   disabled?: boolean
 }) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [open, setOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -174,7 +178,9 @@ function PaidForAutocomplete({
     timerRef.current = setTimeout(async () => {
       setLoading(true)
       try {
-        const r = await fetch(`/api/reservation-expenses/suggestions?q=${encodeURIComponent(query)}`)
+        const r = await fetch(
+          `/api/reservation-expenses/suggestions?q=${encodeURIComponent(query)}&operatorId=${encodeURIComponent(activeOperatorId)}`
+        )
         const d = await r.json()
         if (d.success && Array.isArray(d.values)) setSuggestions(d.values)
       } catch {
@@ -251,6 +257,8 @@ export default function ReservationExpenseManager({
   const tRes = useTranslations('reservations')
   const locale = useLocale()
   const { userPosition } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const isSuper = userPosition === 'super'
   const adminList = !reservationId
   const [expenses, setExpenses] = useState<ReservationExpense[]>([])
@@ -361,6 +369,7 @@ export default function ReservationExpenseManager({
       if (statementMatchFilter === 'unmatched' && !searchActive) {
         params.append('statement_match', 'unmatched')
       }
+      params.append('operatorId', activeOperatorId)
       const response = await fetch(`/api/reservation-expenses?${params}`, {
         signal: abortController.signal,
       })
@@ -389,6 +398,7 @@ export default function ReservationExpenseManager({
     statusFilter,
     searchActive,
     searchTerm,
+    activeOperatorId,
   ])
 
   // 데이터 로드
@@ -609,6 +619,7 @@ export default function ReservationExpenseManager({
           reimbursed_amount: 0,
           reimbursed_on: null,
           reimbursement_note: null,
+          operatorId: activeOperatorId,
         }),
       })
 

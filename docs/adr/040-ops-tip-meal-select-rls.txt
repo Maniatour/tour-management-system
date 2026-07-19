@@ -1,0 +1,45 @@
+================================================================================
+ADR 040 — Ops tip/meal SELECT tenant HR path (Phase 6c.7)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.4–6b.5 stamped office_meal_log, tour_office_tips, tour_tip_shares,
+tour_tip_share_ops. SELECT still staff/own only. Bare is_operator_member() would
+widen tip privacy for all staff (staff bypass).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719290000_saas_ops_tip_meal_select_rls.sql
+   - office_meal_log SELECT: own OR staff OR (NOT staff AND is_operator_hr_member)
+   - tips tables: ADD SELECT policy tenant HR only (existing policies kept)
+
+2. Writes unchanged
+
+3. Smoke: saas_ops_tip_meal_select_rls_ready()
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Expanding Kovegas tip visibility for non-admin staff
+- tour_expenses / reservation_expenses (Phase 6c.8)
+- JWT staff lock-down
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.8 tour/reservation expenses SELECT (ADR 041)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719290000_saas_ops_tip_meal_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

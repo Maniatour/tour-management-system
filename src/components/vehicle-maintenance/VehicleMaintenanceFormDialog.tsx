@@ -51,6 +51,8 @@ import {
   vehicleDisplayLabel,
   type VehicleMaintenanceFormData,
 } from '@/components/vehicle-maintenance/vehicleMaintenanceFormShared'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 type VehicleMaintenance = Database['public']['Tables']['vehicle_maintenance']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
@@ -107,6 +109,8 @@ export default function VehicleMaintenanceFormDialog({
   nestedModal = false,
 }: VehicleMaintenanceFormDialogProps) {
   const t = useTranslations('vehicleMaintenance')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const [formData, setFormData] = useState<VehicleMaintenanceFormData>(createEmptyMaintenanceFormData)
   const [formVehicleSchedules, setFormVehicleSchedules] = useState<VehicleMaintenanceScheduleRow[]>([])
@@ -213,10 +217,13 @@ export default function VehicleMaintenanceFormDialog({
     let cancelled = false
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/vehicle-maintenance/schedules?vehicle_id=${encodeURIComponent(formData.vehicle_id)}`,
-          { headers: apiBearerAuthHeaders() }
-        )
+        const params = new URLSearchParams({
+          vehicle_id: formData.vehicle_id,
+          operatorId: activeOperatorId,
+        })
+        const res = await fetch(`/api/vehicle-maintenance/schedules?${params.toString()}`, {
+          headers: apiBearerAuthHeaders(),
+        })
         const json = await res.json()
         if (!cancelled && res.ok) {
           setFormVehicleSchedules((json.data ?? []) as VehicleMaintenanceScheduleRow[])
@@ -228,7 +235,7 @@ export default function VehicleMaintenanceFormDialog({
     return () => {
       cancelled = true
     }
-  }, [open, formData.vehicle_id])
+  }, [open, formData.vehicle_id, activeOperatorId])
 
   useEffect(() => {
     if (!open || !formData.vehicle_id || maintenanceCatalog.length === 0) return
@@ -434,7 +441,7 @@ export default function VehicleMaintenanceFormDialog({
           ...apiBearerAuthHeaders(),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submitData),
+        body: JSON.stringify({ ...submitData, operatorId: activeOperatorId }),
       })
 
       const result = await response.json()

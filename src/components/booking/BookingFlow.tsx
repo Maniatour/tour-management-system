@@ -36,6 +36,7 @@ import {
   isPeopleCoverageSufficient,
   usesCapacityQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
+import { fetchPublicDirectChannelBrowser } from '@/lib/operators/fetchPublicDirectChannelBrowser'
 
 function bookingChoiceLabel(group: {
   choice_name?: string | null
@@ -762,14 +763,14 @@ export default function BookingFlow({
       try {
         setLoading(true)
         
-        // 1. 먼저 dynamic_pricing에서 해당 상품의 모든 날짜들을 조회 (가격 정보 및 초이스 판매 상태 포함)
-        // 홈페이지 예약의 경우 기본 채널 'M00001' 사용, 동적 가격 타입만 조회
+        // 1. dynamic_pricing: public operator의 Direct/Homepage 채널 (Kovegas=M00001)
+        const { channelId: directChannelId } = await fetchPublicDirectChannelBrowser()
         const { data: pricingData, error: pricingError } = await supabase
           .from('dynamic_pricing')
           .select('date, is_sale_available, adult_price, child_price, infant_price, choices_pricing, price_type')
           .eq('product_id', product.id)
-          .eq('channel_id', 'M00001') // 홈페이지 채널로 필터링
-          .eq('price_type', 'dynamic') // 동적 가격만 조회 (기본 가격 제외)
+          .eq('channel_id', directChannelId)
+          .eq('price_type', 'dynamic')
           .gte('date', new Date().toISOString().split('T')[0])
           .order('date', { ascending: true })
 

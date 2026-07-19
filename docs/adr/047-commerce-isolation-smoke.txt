@@ -1,0 +1,47 @@
+================================================================================
+ADR 047 — Commerce isolation smoke + Operator B E2E prep (Phase 6e.0)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Ops finance lock (6d.0–6d.3) is complete. Operator B commerce E2E still needed a
+read-only DB smoke (like opsFinanceIsolation) before manual host book / Connect.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Read-only evaluator: src/lib/operators/commerceIsolation.ts
+   - NULL operator_id: products, channels, channel_products, dynamic_pricing,
+     reservations, customers, rate_plans, offers
+   - Kovegas catalog baseline > 0
+   - Tenant partition products/channels
+   - Direct channel resolve (ensure:false) — Kovegas=M00001
+   - Sample v2 offer ↔ product same-tenant
+   - Connect checkout flag: Kovegas must stay platform; B informational
+
+2. GET /api/admin/operators/pilot-status → commerceIsolation report
+
+3. Operator B manual: Commerce isolation card + E2E step commerceIsolationSmoke
+
+4. Non-goals:
+   - No create-checkout / Stripe / inventory hold calls
+   - No booking/payment logic changes
+   - No automatic browser E2E
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6e.1 inventory + joins (ADR 048)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/commerceIsolation.ts
+src/app/api/admin/operators/pilot-status/route.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

@@ -1,0 +1,59 @@
+================================================================================
+ADR 035 — Ops finance SELECT RLS + operator_members (Phase 6c.2)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6c.1 added operator_members to payment_records SELECT. Cash / statement /
+match tables still used staff-only SELECT (later hardened with
+rls_is_staff_session_ok). Non-staff Operator B members could not read their
+own tenant finance rows; staff still rely on app operator_id filters.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719240000_saas_ops_finance_select_rls.sql
+   SELECT rewrite (staff session OR member) on:
+   - cash_transactions
+   - financial_accounts
+   - statement_imports
+   - statement_lines
+   - reconciliation_matches
+   - expense_cash_ledger_matches
+
+2. USING:
+     rls_is_staff_session_ok() OR is_operator_member(operator_id)
+   Preserve session-fallback staff check from 20260621260000.
+
+3. INSERT/UPDATE/DELETE unchanged (including statement_csv_upload_privileged).
+
+4. Smoke: saas_ops_finance_select_rls_ready() in opsFinanceIsolation
+
+5. Deferred:
+   - company_expenses / journal_* SELECT member path
+   - staff cross-tenant lock-down
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout logic
+- Write-policy tenant tightening
+- Changing statement uploader privilege model
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.3 company_expenses SELECT RLS (ADR 036)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719240000_saas_ops_finance_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

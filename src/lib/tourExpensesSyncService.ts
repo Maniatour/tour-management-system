@@ -3,6 +3,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { readSheetDataDynamic } from './googleSheets'
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -37,6 +39,7 @@ interface ValidationResult {
   warnings: string[]
   validTourIds: Set<string>
   validProductIds: Set<string>
+  tourOperatorById: Map<string, string>
 }
 
 // Validate foreign key references before inserting
@@ -50,16 +53,23 @@ async function validateForeignKeys(data: TourExpenseData[]): Promise<ValidationR
   
   // Check if tour_ids exist in tours table
   let validTourIds = new Set<string>()
+  const tourOperatorById = new Map<string, string>()
   if (tourIds.size > 0) {
     const { data: existingTours, error: tourError } = await supabase
       .from('tours')
-      .select('id')
+      .select('id, operator_id')
       .in('id', Array.from(tourIds))
     
     if (tourError) {
       errors.push(`투어 테이블 조회 오류: ${tourError.message}`)
     } else {
-      validTourIds = new Set(existingTours?.map(t => t.id) || [])
+      validTourIds = new Set(existingTours?.map((t: { id: string }) => t.id) || [])
+      for (const t of existingTours || []) {
+        const row = t as { id: string; operator_id?: string | null }
+        if (row.id) {
+          tourOperatorById.set(row.id, resolveOperatorId(row.operator_id))
+        }
+      }
       const invalidTourIds = Array.from(tourIds).filter(id => !validTourIds.has(id))
       if (invalidTourIds.length > 0) {
         warnings.push(`존재하지 않는 투어 ID들: ${invalidTourIds.join(', ')}`)
@@ -91,7 +101,8 @@ async function validateForeignKeys(data: TourExpenseData[]): Promise<ValidationR
     errors,
     warnings,
     validTourIds,
-    validProductIds
+    validProductIds,
+    tourOperatorById,
   }
 }
 
@@ -224,7 +235,12 @@ export async function syncTourExpenses(
     onProgress?.({ type: 'start', total: totalRows })
     
     for (let i = 0; i < validData.length; i += batchSize) {
-      const batch = validData.slice(i, i + batchSize)
+      const batch = validData.slice(i, i + batchSize).map((row) => ({
+        ...row,
+        operator_id: row.tour_id
+          ? validation.tourOperatorById.get(row.tour_id) || KOVEgAS_OPERATOR_ID
+          : KOVEgAS_OPERATOR_ID,
+      }))
       
       try {
         const { error } = await supabase

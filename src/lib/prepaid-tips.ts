@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 export type PrepaidTipsTourInput = {
   id: string
@@ -53,11 +54,13 @@ function computeAutoPrepaidShare(
 export async function calculateEmployeePrepaidTips(
   supabase: SupabaseClient,
   tour: PrepaidTipsTourInput,
-  employeeEmail: string
+  employeeEmail: string,
+  operatorId?: string | null
 ): Promise<{ share: number; prepayment_tip_total: number }> {
   const isGuide = tour.tour_guide_id === employeeEmail
   const isAssistant = tour.assistant_id === employeeEmail
   let prepayment_tip_total = 0
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const resIds = normalizeTourReservationIds(tour.reservation_ids)
   if (resIds.length > 0) {
@@ -76,6 +79,7 @@ export async function calculateEmployeePrepaidTips(
   const { data: tipShareData, error: tipShareError } = await supabase
     .from('tour_tip_shares')
     .select('guide_amount, assistant_amount')
+    .eq('operator_id', activeOperatorId)
     .eq('tour_id', tour.id)
     .maybeSingle()
 

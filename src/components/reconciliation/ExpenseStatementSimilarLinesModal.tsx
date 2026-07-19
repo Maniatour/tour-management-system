@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import type { ExpenseStatementReconContext, SimilarStatementLineRow, SimilarStatementLinesMatchMode } from '@/lib/expense-reconciliation-similar-lines'
 import {
@@ -516,6 +518,8 @@ export default function ExpenseStatementSimilarLinesModal({
 }) {
   const t = useTranslations('expenses.statementRecon')
   const locale = useLocale()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { user } = useAuth()
   const {
     paymentMethodMap,
@@ -600,9 +604,11 @@ export default function ExpenseStatementSimilarLinesModal({
   const contextRef = useRef(context)
   const matchModeRef = useRef(matchMode)
   const tRef = useRef(t)
+  const activeOperatorIdRef = useRef(activeOperatorId)
   contextRef.current = context
   matchModeRef.current = matchMode
   tRef.current = t
+  activeOperatorIdRef.current = activeOperatorId
 
   useEffect(() => {
     if (!open) return
@@ -685,6 +691,7 @@ export default function ExpenseStatementSimilarLinesModal({
             amount: ctx.amount,
             matchMode: mode,
             linkedExpenseKeys: linkedKeys,
+            operatorId: activeOperatorIdRef.current,
           })
           const mergedExpenses = [...linkedExpenses]
           for (const row of similarExpenses) {
@@ -730,6 +737,7 @@ export default function ExpenseStatementSimilarLinesModal({
             financialAccountId: probe.financialAccountId ?? null,
             ledgerAmount: ctx.amount,
             limit: 400,
+            operatorId: activeOperatorIdRef.current,
           })
         : fetchSimilarStatementLinesForExpenseRow(supabase, {
             dateYmd: ctx.dateYmd,
@@ -737,6 +745,7 @@ export default function ExpenseStatementSimilarLinesModal({
             direction: ctx.direction,
             matchMode: mode,
             limit: mode === 'amountOnly' ? 200 : 100,
+            operatorId: activeOperatorIdRef.current,
           })
 
       const [linkedPack, list] = await Promise.all([linkedPromise, candidatesPromise])
@@ -761,6 +770,7 @@ export default function ExpenseStatementSimilarLinesModal({
             dateYmd: ctx.dateYmd,
             amount: ctx.amount,
             linkedCashIds: linkedIds,
+            operatorId: activeOperatorIdRef.current,
           })
           const mergedCash = [...linkedCash]
           for (const row of similarCash) {
@@ -914,6 +924,7 @@ export default function ExpenseStatementSimilarLinesModal({
         linkedCashIds: linkedCashRowIds,
         dateYmd: context.dateYmd,
         ledgerAmount: context.amount,
+        operatorId: activeOperatorId,
       })
         .then((list) => {
           if (!cancelled) setCashSearchResultRows(list)
@@ -940,6 +951,7 @@ export default function ExpenseStatementSimilarLinesModal({
     isCashSearchActive,
     cashSearchTrimmed,
     linkedCashRowIds,
+    activeOperatorId,
     t,
   ])
 
@@ -968,6 +980,7 @@ export default function ExpenseStatementSimilarLinesModal({
       linkedExpenseKeys: new Set(linkedExpenseForCashRows.map((r) => r.key)),
       dateYmd: context.dateYmd,
       cashAmount: context.amount,
+      operatorId: activeOperatorId,
     })
       .then(async (list) => {
         if (gen !== expenseForCashSearchGenRef.current) return
@@ -1058,6 +1071,7 @@ export default function ExpenseStatementSimilarLinesModal({
           amount: cashRow.amount,
           matchMode,
           linkedExpenseKeys: linkedKeys,
+          operatorId: activeOperatorId,
         })
         const mergedExpenses = [...linkedExpenses]
         for (const row of similarExpenses) {
@@ -1237,6 +1251,7 @@ export default function ExpenseStatementSimilarLinesModal({
       query: searchQueryTrimmed,
       direction: ticketDateProbe ? null : context.direction,
       limit: 250,
+      operatorId: activeOperatorId,
     })
       .then((list) => {
         if (gen !== statementSearchGenRef.current) return
@@ -1251,7 +1266,16 @@ export default function ExpenseStatementSimilarLinesModal({
       .finally(() => {
         if (gen === statementSearchGenRef.current) setSearchLoading(false)
       })
-  }, [rowSearch, open, context, t, ticketDateProbe, isSearchActive, searchQueryTrimmed])
+  }, [
+    rowSearch,
+    open,
+    context,
+    t,
+    ticketDateProbe,
+    isSearchActive,
+    searchQueryTrimmed,
+    activeOperatorId,
+  ])
 
   useEffect(() => {
     setSelectedIdsOrdered((prev) => {
@@ -1568,6 +1592,7 @@ export default function ExpenseStatementSimilarLinesModal({
             linkMode: i === 0 ? 'replace' : 'append',
             ledgerCapAmount: multiCap,
             syncSourceAmountToStatement: false,
+            operatorId: activeOperatorId,
           })
         }
         onApplied?.()
@@ -1616,7 +1641,8 @@ export default function ExpenseStatementSimilarLinesModal({
           matchedAmount,
           linkMode: 'replace',
           ledgerCapAmount: ledgerCap,
-          syncSourceAmountToStatement: canSync && syncAmountToStatement
+          syncSourceAmountToStatement: canSync && syncAmountToStatement,
+          operatorId: activeOperatorId,
         })
         onApplied?.()
         onOpenChange(false)
@@ -1675,7 +1701,8 @@ export default function ExpenseStatementSimilarLinesModal({
           matchedAmount,
           linkMode: 'append',
           ledgerCapAmount: ledgerCap,
-          syncSourceAmountToStatement: false
+          syncSourceAmountToStatement: false,
+          operatorId: activeOperatorId,
         })
         onApplied?.()
         onOpenChange(false)
@@ -1736,7 +1763,8 @@ export default function ExpenseStatementSimilarLinesModal({
           matchedAmount: share,
           linkMode: 'append',
           ledgerCapAmount: ledgerCap,
-          syncSourceAmountToStatement: false
+          syncSourceAmountToStatement: false,
+          operatorId: activeOperatorId,
         })
       }
 
@@ -1818,6 +1846,7 @@ export default function ExpenseStatementSimilarLinesModal({
         actorEmail: user.email,
         cashTransactionId: cashRow.id,
         cashAmount: cashRow.amount,
+        operatorId: activeOperatorId,
         items,
       })
       if (linked === 0 && skippedAlreadyLinked > 0) {
@@ -1878,6 +1907,7 @@ export default function ExpenseStatementSimilarLinesModal({
         actorEmail: user.email,
         cashTransactionId: context.sourceId,
         cashAmount: Math.abs(context.amount),
+        operatorId: activeOperatorId,
         items,
       })
       if (linked === 0 && skippedAlreadyLinked > 0) {

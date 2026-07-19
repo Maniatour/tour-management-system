@@ -14,6 +14,8 @@ import {
 } from 'recharts'
 import RechartsContainer from '@/components/ui/RechartsContainer'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
@@ -94,6 +96,8 @@ const ATTENDANCE_UI_DEFAULT = {
 
 export default function AttendancePage() {
   const { authUser, userPosition, userRole } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const canViewHourlyRatesHistory = useMemo(
     () => canViewEmployeeHourlyRatesHistory(userRole, userPosition),
     [userRole, userPosition]
@@ -375,6 +379,7 @@ export default function AttendancePage() {
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
+        .eq('operator_id', activeOperatorId)
         .is('check_out_time', null)
         .gte('check_in_time', sevenDaysAgo.toISOString())
         .order('check_in_time', { ascending: false })
@@ -407,6 +412,7 @@ export default function AttendancePage() {
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
+        .eq('operator_id', activeOperatorId)
         .gte('date', todayQueryFrom)
         .lte('date', todayQueryTo)
         .order('session_number', { ascending: true })
@@ -439,6 +445,7 @@ export default function AttendancePage() {
     const { data, error } = await (supabase as any)
       .from('office_meal_log')
       .select('meal_date')
+      .eq('operator_id', activeOperatorId)
       .eq('employee_email', employeeEmail)
       .gte('meal_date', monthStart)
       .lte('meal_date', monthEnd)
@@ -518,6 +525,7 @@ export default function AttendancePage() {
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
+        .eq('operator_id', activeOperatorId)
         .gte('date', queryStart)
         .lte('date', queryEnd)
         .order('date', { ascending: false })

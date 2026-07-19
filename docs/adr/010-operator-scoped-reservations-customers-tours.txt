@@ -1,0 +1,63 @@
+================================================================================
+ADR 010 — Operator-scoped Reservations / Customers / Tours (Phase 5c)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 5b scoped admin Products/Channels. Reservations, customers, and tours
+still listed the entire shared DB, so Operator B could see Kovegas ops data.
+tours had no operator_id column.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260718160000_saas_operator_id_tours.sql
+   - ADD tours.operator_id NOT NULL (default Kovegas)
+   - Backfill from products.operator_id when present
+
+2. Admin reservation list (adminReservationListFetch):
+   - Filter reservations by active operator_id
+   - Search lookups (customers/products/channels) scoped to same operator
+
+3. Admin reservation create stamps operator_id (ReservationsPageContent).
+   Operational queue ID hydrate also filters by operator_id.
+
+4. useReservationData catalogs (customers/products/channels) scoped +
+   cache keys include operator id.
+
+5. Admin customers list/create + POST /api/admin/customers stamp/filter
+   by operator_id.
+
+6. Admin tours list/create + tourAutoCreation stamp operator_id from
+   product (or active operator / Kovegas fallback).
+   ScheduleView month grid / unassigned / oil-history also filter by
+   active operator_id.
+
+7. Customer checkout / public booking paths unchanged.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Full RLS rewrite
+- Changing RPC admin_operational_queue_candidate_ids signature
+  (hydrate path filters by operator_id instead)
+- Stripe Connect live wiring
+- Live OTA adapter
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718160000_saas_operator_id_tours.sql
+src/lib/adminReservationListFetch.ts
+src/lib/operationalQueueFetch.ts
+src/hooks/useReservationData.ts
+src/app/[locale]/admin/reservations/ReservationsPageContent.tsx
+src/app/[locale]/admin/customers/CustomersPageInner.tsx
+src/app/api/admin/customers/route.ts
+src/app/[locale]/admin/tours/page.tsx
+src/components/admin/AdminNewTourModal.tsx
+src/components/ScheduleView.tsx
+src/lib/tourAutoCreation.ts
+================================================================================

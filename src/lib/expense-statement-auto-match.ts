@@ -12,6 +12,7 @@ import {
   replaceExpenseCashLedgerMatch,
 } from '@/lib/expense-cash-ledger-match'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /** 자동 매칭 — 날짜는 후보 제외에 쓰지 않음(점수·정렬만). UI·번역 호환용 */
 export const EXPENSE_STATEMENT_AUTO_MATCH_DAY_WINDOW = 0
@@ -498,11 +499,15 @@ function ymdFromTimestamp(raw: string): string {
   return `${y}-${m}-${day}`
 }
 
-async function fetchLinkedCashTransactionIds(supabase: SupabaseClient): Promise<Set<string>> {
+async function fetchLinkedCashTransactionIds(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<Set<string>> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   try {
-    const { data, error } = await fromUntypedTable(supabase, 'expense_cash_ledger_matches').select(
-      'cash_transaction_id'
-    )
+    const { data, error } = await fromUntypedTable(supabase, 'expense_cash_ledger_matches')
+      .select('cash_transaction_id')
+      .eq('operator_id', activeOperatorId)
     if (error) return new Set()
     return new Set(
       ((data || []) as { cash_transaction_id?: string }[])
@@ -515,10 +520,15 @@ async function fetchLinkedCashTransactionIds(supabase: SupabaseClient): Promise<
 }
 
 /** 전체 은행 명세 출금 줄(미연결·부분연결, 날짜 무관) */
-async function fetchStatementPool(supabase: SupabaseClient): Promise<ExpenseStatementAutoMatchLine[]> {
+async function fetchStatementPool(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<ExpenseStatementAutoMatchLine[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { data: rawImports, error: impErr } = await supabase
     .from('statement_imports')
     .select('id, financial_account_id, period_start, period_end')
+    .eq('operator_id', activeOperatorId)
     .order('period_start', { ascending: false })
     .limit(500)
   if (impErr) throw impErr
@@ -613,11 +623,16 @@ async function fetchStatementPool(supabase: SupabaseClient): Promise<ExpenseStat
 }
 
 /** 전체 현금 관리 출금(이미 다른 지출에 연결된 건 제외, 날짜 무관) */
-async function fetchCashWithdrawalPool(supabase: SupabaseClient): Promise<ExpenseStatementAutoMatchLine[]> {
-  const linkedCashIds = await fetchLinkedCashTransactionIds(supabase)
+async function fetchCashWithdrawalPool(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<ExpenseStatementAutoMatchLine[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
+  const linkedCashIds = await fetchLinkedCashTransactionIds(supabase, activeOperatorId)
   const { data, error } = await supabase
     .from('cash_transactions')
     .select('id, transaction_date, transaction_type, amount, description, category')
+    .eq('operator_id', activeOperatorId)
     .eq('transaction_type', 'withdrawal')
     .order('transaction_date', { ascending: false })
     .limit(5000)
@@ -650,14 +665,17 @@ async function fetchCashWithdrawalPool(supabase: SupabaseClient): Promise<Expens
   return pool
 }
 
-async function fetchMatchPool(supabase: SupabaseClient): Promise<{
+async function fetchMatchPool(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<{
   pool: ExpenseStatementAutoMatchLine[]
   statementCount: number
   cashCount: number
 }> {
   const [statementPool, cashPool] = await Promise.all([
-    fetchStatementPool(supabase),
-    fetchCashWithdrawalPool(supabase),
+    fetchStatementPool(supabase, operatorId),
+    fetchCashWithdrawalPool(supabase, operatorId),
   ])
   return {
     pool: [...statementPool, ...cashPool],
@@ -835,7 +853,7 @@ function buildCandidatesForExpense(
 export async function prepareExpenseStatementAutoMatchProposals(
   supabase: SupabaseClient,
   expenses: ExpenseAutoMatchInputRow[],
-  opts?: { excludeExpenseIds?: Set<string> }
+  opts?: { excludeExpenseIds?: Set<string>; operatorId?: string | null }
 ): Promise<{
   proposals: ExpenseStatementAutoMatchProposal[]
   poolSize: number
@@ -853,7 +871,7 @@ export async function prepareExpenseStatementAutoMatchProposals(
     )
     .slice(0, EXPENSE_STATEMENT_AUTO_MATCH_MAX_EXPENSES)
 
-  const { pool, statementCount, cashCount } = await fetchMatchPool(supabase)
+  const { pool, statementCount, cashCount } = await fetchMatchPool(supabase, opts?.operatorId)
   const amountIndex = buildAmountIndexedPool(pool)
   const [pmProfiles, vendorNames] = await Promise.all([
     loadPaymentMethodMatchProfiles(supabase),
@@ -894,6 +912,7 @@ export async function applyExpenseStatementAutoMatchProposals(
   params: {
     actorEmail: string
     sourceTable: ExpenseReconSourceTable
+    operatorId?: string | null
     items: {
       expense_id: string
       candidate: ExpenseStatementAutoMatchCandidate
@@ -902,6 +921,7 @@ export async function applyExpenseStatementAutoMatchProposals(
     }[]
   }
 ): Promise<{ applied: number; skippedConflict: number; skippedInvalid: number }> {
+  const activeOperatorId = resolveOperatorId(params.operatorId)
   const usedLineIds = new Set<string>()
   let applied = 0
   let skippedConflict = 0
@@ -937,6 +957,7 @@ export async function applyExpenseStatementAutoMatchProposals(
           expenseSourceId: item.expense_id,
           cashTransactionId: line.id,
           matchedAmount: line.matchable_amount,
+          operatorId: activeOperatorId,
         })
         usedLineIds.add(line.id)
         applied += 1
@@ -954,6 +975,7 @@ export async function applyExpenseStatementAutoMatchProposals(
           matchedAmount: line.matchable_amount,
           linkMode: i === 0 ? 'replace' : 'append',
           ledgerCapAmount: ledgerCap,
+          operatorId: activeOperatorId,
         })
         usedLineIds.add(line.id)
       }

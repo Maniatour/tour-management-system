@@ -1,0 +1,65 @@
+================================================================================
+ADR 030 — Ops Finance: statement_imports + statement_lines operator_id (Phase 6b.9)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.8 stamped operator_id on financial_accounts. Statement imports/lines
+still inherited tenancy only via financial_account_id. loadImports and recon
+pool loaders listed all imports (limit N) without an operator filter, so
+Operator B with Ops ON could see Kovegas bank statement files and match pools.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719200000_saas_operator_id_statement_imports_lines.sql
+   - statement_imports.operator_id NOT NULL (backfill from financial_accounts)
+   - statement_lines.operator_id NOT NULL (backfill from parent import)
+   - Orphan → Kovegas
+
+2. App:
+   - StatementReconciliationTab loadImports / importCsv stamp+filter
+   - resetAllReconciliationMatches scoped via line operator_id
+     (reconciliation_matches still has no operator_id column)
+   - expense-statement-auto-match statement + cash pools filter
+   - expense-reconciliation-similar-lines pool/search/probe filter
+   - scripts/statement-csv-fill-missing.ts stamp from account
+   - sync schema columns
+
+3. Deferred:
+   - reconciliation_matches / expense_cash_ledger_matches operator_id
+   - payment_records tenancy
+   - Operator B E2E checklist run
+   - Full PNL report operator scoping (optional follow-up)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout changes
+- Changing match scoring
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6b.10 (match tables). See ADR 031.
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719200000_saas_operator_id_statement_imports_lines.sql
+src/app/api/sync/schema/route.ts
+src/components/reports/StatementReconciliationTab.tsx
+src/lib/expense-statement-auto-match.ts
+src/lib/expense-reconciliation-similar-lines.ts
+src/components/reconciliation/ExpenseStatementSimilarLinesModal.tsx
+src/components/reconciliation/ExpenseStatementBulkAutoMatchModal.tsx
+src/components/reconciliation/CashTransactionBulkAutoMatchModal.tsx
+src/lib/pnlReportDataFetch.ts
+src/components/reports/PnlUnifiedDepositSection.tsx
+src/lib/ticketBookingDateViewRecon.ts
+src/components/booking/TicketBookingList.tsx
+scripts/statement-csv-fill-missing.ts
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

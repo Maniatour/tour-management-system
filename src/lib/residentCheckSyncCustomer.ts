@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { STRIPE_PI_NOTE_PREFIX } from '@/lib/customerBookingCheckout'
 import { supabaseAdmin } from '@/lib/supabase'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
 const RESIDENT_CHECK_SUBMIT_BY = 'resident_check'
 const RESIDENT_CHECK_CONFIRMED_BY = 'resident_check_confirm'
@@ -88,7 +89,9 @@ export async function recordResidentCheckCardPayment(
   }
 
   const now = new Date().toISOString()
+  const operatorId = await lookupReservationOperatorId(admin, args.reservationId)
   const { error: insertError } = await admin.from('payment_records').insert({
+    operator_id: operatorId,
     reservation_id: args.reservationId,
     amount: amountUsd,
     payment_method: 'card',

@@ -1,0 +1,50 @@
+================================================================================
+ADR 013 — Public Catalog Operator Scope (Phase 5e.1)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 5e stamps host → public operator_id (headers/cookie) but customer
+catalog still listed all published products. Operator B subdomain would show
+Kovegas tours.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Public product loads filter by public operator_id:
+   - Home sections: customerPageHomeSectionProducts
+   - Listing: products/page.tsx, products/tags/page.tsx
+   - Detail: fetchProductPageData (cookie/default); admin preview skips scope
+   - Recommendations: fetchProductRecommendations
+   - Metadata: products/[id]/layout generateMetadata via getPublicOperatorId()
+   - Reviews API: /api/public/product-reviews
+
+2. Client readers use readPublicOperatorIdBrowser() (cookie).
+   Server readers use getPublicOperatorId().
+
+3. Empty catalog copy (not "no search results") when tenant has 0 products.
+
+4. BookingFlow / M00001 / createPendingCustomerBooking / Stripe PI: unchanged.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Per-operator Direct Web channel (5e.2)
+- Stamping reservation.operator_id from public host on checkout
+- Connect destination charges
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/readPublicOperatorIdBrowser.ts
+src/lib/customerPageHomeSectionProducts.ts
+src/lib/fetchProductDetail.ts
+src/lib/productRecommendations.ts
+src/app/[locale]/products/page.tsx
+src/app/[locale]/products/tags/page.tsx
+src/app/[locale]/products/[id]/layout.tsx
+src/components/products/ProductsListingPublicView.tsx
+src/app/api/public/product-reviews/route.ts
+================================================================================

@@ -17,6 +17,8 @@ import {
   resolveMaintenanceExpenseSubmitBy,
 } from '@/lib/vehicleMaintenanceCompanyExpense'
 import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupVehicleOperatorId } from '@/lib/operators/lookupVehicleOperatorId'
 
 type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenance']['Insert']
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
@@ -37,11 +39,12 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category')
     const status = searchParams.get('status')
     const skipSync = searchParams.get('skip_sync') === '1'
+    const operatorId = resolveOperatorId(searchParams.get('operatorId'))
 
     let syncResult = { imported: 0, skipped: 0, categoriesMigrated: 0 }
     if (!skipSync) {
       syncResult = {
-        ...(await syncVehicleMaintenanceFromCompanyExpenses(supabase)),
+        ...(await syncVehicleMaintenanceFromCompanyExpenses(supabase, { operatorId })),
         categoriesMigrated: await migrateLegacyVehicleMaintenanceCategories(supabase),
       }
     }
@@ -63,6 +66,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
+      .eq('operator_id', operatorId)
       .order('maintenance_date', { ascending: false })
       .limit(LIST_LIMIT)
 
@@ -120,6 +124,9 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Record<string, unknown>
     const { maintenance: parsed, payment_method } = parseVehicleMaintenanceBody(body)
+    const requestOperatorId = resolveOperatorId(
+      typeof body.operatorId === 'string' ? body.operatorId : null
+    )
 
     const vehicle_id = await normalizeVehicleMaintenanceVehicleId(
       supabase,
@@ -150,10 +157,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
 
+    const operator_id = await lookupVehicleOperatorId(supabase, vehicle_id, requestOperatorId)
+
     const maintenanceData: VehicleMaintenanceInsert = {
       id: generateVehicleMaintenanceId(),
       ...parsed,
       vehicle_id,
+      operator_id,
       maintenance_date,
       maintenance_type,
       category,
@@ -200,6 +210,7 @@ export async function POST(request: NextRequest) {
           payment_method,
           submit_by: submitBy,
           autoNotes: `차량 정비 자동 생성 - 정비 ID: ${maintenanceResult.id}`,
+          operator_id,
         }
       )
 

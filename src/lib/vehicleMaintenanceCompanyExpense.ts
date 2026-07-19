@@ -72,6 +72,7 @@ export function buildCompanyExpenseInsertFromMaintenance(
     payment_method?: string | null
     submit_by: string
     autoNotes: string
+    operator_id?: string
   }
 ): CompanyExpenseInsert {
   const applied = standardFieldsFromMaintenanceCategory(maintenance.category, cats)
@@ -96,6 +97,7 @@ export function buildCompanyExpenseInsertFromMaintenance(
     expense_type: applied?.expense_type ?? 'maintenance',
     tax_deductible: applied?.tax_deductible ?? true,
     status: 'pending',
+    ...(options.operator_id ? { operator_id: options.operator_id } : {}),
   }
 }
 

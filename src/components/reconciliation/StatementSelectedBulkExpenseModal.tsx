@@ -5,6 +5,9 @@ import { useLocale } from 'next-intl'
 import { AlertTriangle, ListChecks } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
 import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
@@ -84,6 +87,8 @@ export default function StatementSelectedBulkExpenseModal({
   onCompleted
 }: Props) {
   const locale = useLocale()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [expenseKind, setExpenseKind] = useState<SelectedBulkExpenseKind>('company_expenses')
   const [paidFor, setPaidFor] = useState('')
   const [paidTo, setPaidTo] = useState('')
@@ -205,6 +210,7 @@ export default function StatementSelectedBulkExpenseModal({
     amount: number
   ) => {
     const { error: mErr } = await fromUntypedTable(supabase, 'reconciliation_matches').insert({
+      operator_id: activeOperatorId,
       statement_line_id: lineId,
       source_table: sourceTable,
       source_id: sourceId,
@@ -348,6 +354,11 @@ export default function StatementSelectedBulkExpenseModal({
     }
     setApplying(true)
     try {
+      const expenseOperatorId = await lookupTourOperatorId(
+        supabase,
+        pickedTour.id,
+        activeOperatorId
+      )
       for (const { line, amount, paidToResolved } of linePreviews) {
         const { data: ins, error: insErr } = await supabase
           .from('tour_expenses')
@@ -364,7 +375,8 @@ export default function StatementSelectedBulkExpenseModal({
             status: 'pending',
             statement_line_id: line.id,
             exclude_from_pnl: Boolean(line.exclude_from_pnl),
-            is_personal: false
+            is_personal: false,
+            operator_id: expenseOperatorId,
           } as never)
           .select('id')
           .single()

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { getProductSummaryByLocale } from '@/lib/productDetailDisplay'
+import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
 
 type ProductSeoRow = {
   name: string | null
@@ -31,10 +32,12 @@ export async function generateMetadata({
   }
 
   try {
+    const operatorId = await getPublicOperatorId()
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
     const { data } = await fromUntypedTable(supabase, 'products')
       .select('name, name_ko, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en')
       .eq('id', id)
+      .eq('operator_id', operatorId)
       .eq('status', 'active')
       .eq('is_published', true)
       .maybeSingle()

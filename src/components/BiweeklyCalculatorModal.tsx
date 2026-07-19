@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
   Dialog,
   DialogContent,
@@ -178,6 +180,8 @@ function companyExpenseRowYmd(row: CompanyExpenseRow): string | null {
 }
 
 export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko' }: BiweeklyCalculatorModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [hourlyRate, setHourlyRate] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
@@ -410,6 +414,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         .from('attendance_records')
         .select('id, employee_email, date, check_in_time, check_out_time, work_hours, status, notes, session_number')
         .eq('employee_email', selectedEmployee)
+        .eq('operator_id', activeOperatorId)
         .gte('date', new Date(new Date(startDate).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // 하루 전부터
         .lte('date', new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // 하루 후까지
         .order('date', { ascending: true })
@@ -505,6 +510,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       const { data: mealRows, error: mealErr } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('meal_date')
+        .eq('operator_id', activeOperatorId)
         .eq('employee_email', selectedEmployee)
         .gte('meal_date', startDate)
         .lte('meal_date', endDate)
@@ -557,7 +563,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       setPeriodMealCounts({})
       return
     }
-    fetchOfficeMealCountsInRange(supabase, startDate, endDate).then(setPeriodMealCounts)
+    fetchOfficeMealCountsInRange(supabase, startDate, endDate, activeOperatorId).then(
+      setPeriodMealCounts
+    )
   }, [isOpen, startDate, endDate])
 
   useEffect(() => {
@@ -630,7 +638,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           let prepaidTips = 0
 
           try {
-            const breakdown = await calculateEmployeePrepaidTips(supabase, tour, selectedEmployee)
+            const breakdown = await calculateEmployeePrepaidTips(
+              supabase,
+              tour,
+              selectedEmployee,
+              activeOperatorId
+            )
             prepayment_tip_total = breakdown.prepayment_tip_total
             prepaidTips = breakdown.share
           } catch (err) {
@@ -867,6 +880,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         const { data: toursData, error: toursError } = await supabase
           .from('tours')
           .select('id')
+          .eq('operator_id', activeOperatorId)
           .gte('tour_date', startDate)
           .lte('tour_date', endDate)
 
@@ -882,6 +896,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         const { data: toursData, error: toursError } = await supabase
           .from('tours')
           .select('id')
+          .eq('operator_id', activeOperatorId)
           .gte('tour_date', startDate)
           .lte('tour_date', endDate)
           .or(`tour_guide_id.eq.${selectedEmployee},assistant_id.eq.${selectedEmployee}`)
@@ -904,6 +919,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       const { data: tipSharesData, error: tipSharesError } = await supabase
         .from('tour_tip_shares')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .in('tour_id', tourIds)
 
       if (tipSharesError) {
@@ -956,6 +972,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         const { data: opSharesData, error: opSharesError } = await supabase
           .from('tour_tip_share_ops')
           .select('op_email, op_amount')
+          .eq('operator_id', activeOperatorId)
           .in('tour_tip_share_id', shareIds)
 
         if (opSharesError) {
@@ -1124,6 +1141,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         const { data: existingTipShare, error: tipShareError } = await supabase
           .from('tour_tip_shares')
           .select('id, total_tip, guide_amount, assistant_amount')
+          .eq('operator_id', activeOperatorId)
           .eq('tour_id', tourId)
           .maybeSingle()
 
@@ -1148,6 +1166,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               guide_amount: newTotalTip * guidePercent,
               assistant_amount: newTotalTip * assistantPercent
             })
+            .eq('operator_id', activeOperatorId)
             .eq('tour_id', tourId)
 
           if (updateError) {
@@ -1182,7 +1201,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 guide_amount: guideAmount,
                 assistant_amount: assistantAmount,
                 guide_percent: newTotalTip > 0 ? (guideAmount / newTotalTip) * 100 : 0,
-                assistant_percent: newTotalTip > 0 ? (assistantAmount / newTotalTip) * 100 : 0
+                assistant_percent: newTotalTip > 0 ? (assistantAmount / newTotalTip) * 100 : 0,
+                operator_id: activeOperatorId,
               })
 
             if (insertError) {

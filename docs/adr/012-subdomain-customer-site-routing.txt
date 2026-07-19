@@ -1,0 +1,66 @@
+================================================================================
+ADR 012 — Subdomain Customer-Site Routing (Phase 5e)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+D5 (ADR 001): customer site via subdomain first. operators.subdomain exists
+since 5a but no host → tenant resolution. Public catalog/checkout still Kovegas.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Middleware resolves Host → public operator_id and stamps:
+   Request headers: x-operator-id, x-operator-subdomain, x-operator-source
+   Cookie: tms_public_operator_id (7d, SameSite=Lax)
+   Distinct from admin active tenant (OperatorContext / localStorage).
+
+2. Resolution order:
+   localhost / 127.0.0.1     → Kovegas (source=localhost)
+   SAAS_APEX_HOSTS + knowns  → Kovegas (source=apex)
+   {sub}.localhost
+   {sub}.{SAAS_PLATFORM_ROOT_DOMAIN}
+     → SAAS_SUBDOMAIN_OPERATOR_MAP or RPC lookup_operator_id_by_subdomain
+   unknown / miss            → Kovegas (source=fallback)  // never break booking
+
+3. DB: SECURITY DEFINER RPC (anon-safe)
+   lookup_operator_id_by_subdomain(p_sub)
+   lookup_operator_id_by_custom_domain(p_host)  -- stub for later
+   Migration: 20260718170000_saas_public_operator_host_lookup.sql
+
+4. Helpers:
+   src/lib/operators/resolveOperatorFromHost.ts
+   src/lib/operators/getPublicOperatorId.ts  (RSC read)
+   GET /api/debug/public-operator (development only)
+
+5. Catalog filter / M00001 / checkout PI: UNCHANGED in 5e.
+
+
+Env
+--------------------------------------------------------------------------------
+SAAS_PLATFORM_ROOT_DOMAIN=book.example.com
+SAAS_APEX_HOSTS=kovegas.com,www.kovegas.com,...
+SAAS_SUBDOMAIN_OPERATOR_MAP=demo:uuid   (optional pilot without RPC)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Filtering products by public operator_id
+- Per-operator Direct Web channel
+- custom_domain live DNS / Vercel automation
+- Branding theme
+- Stripe Connect destination charge
+
+
+Files
+--------------------------------------------------------------------------------
+middleware.ts
+src/lib/operators/resolveOperatorFromHost.ts
+src/lib/operators/applyPublicOperatorToMiddleware.ts
+src/lib/operators/publicOperatorHeaders.ts
+src/lib/operators/getPublicOperatorId.ts
+src/app/api/debug/public-operator/route.ts
+supabase/migrations/20260718170000_saas_public_operator_host_lookup.sql
+================================================================================

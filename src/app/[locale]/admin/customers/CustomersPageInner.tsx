@@ -33,6 +33,8 @@ import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { filterRowsByArchiveSearchTier } from '@/lib/customerArchiveSearchFilter'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import type { 
   Customer as ReservationCustomer, 
   Product, 
@@ -140,6 +142,8 @@ export default function AdminCustomers() {
   const router = useRouter()
   const locale = params?.locale || 'ko'
   const t = useTranslations('customers')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   
   // 최적화된 고객 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
@@ -150,16 +154,19 @@ export default function AdminCustomers() {
       const pageSize = 1000
 
       while (hasMore) {
-        const { data, error } = await supabase
-          .from('customers')
-          .select(`
+        const { data, error } = await withOperatorId(
+          supabase
+            .from('customers')
+            .select(`
             *,
             channels:channel_id (
               name
             )
           `)
-          .order('created_at', { ascending: false })
-          .range(page * pageSize, (page + 1) * pageSize - 1)
+            .order('created_at', { ascending: false })
+            .range(page * pageSize, (page + 1) * pageSize - 1),
+          activeOperatorId
+        )
 
         if (error) {
           console.error('Error fetching customers:', error)
@@ -176,17 +183,18 @@ export default function AdminCustomers() {
 
       return allCustomers
     },
-    cacheKey: 'customers',
-    cacheTime: 5 * 60 * 1000 // 5분 캐시
+    cacheKey: `customers:${activeOperatorId}`,
+    cacheTime: 5 * 60 * 1000, // 5분 캐시
+    dependencies: [activeOperatorId],
   })
 
   // 최적화된 채널 데이터 로딩
   const { data: channels = [], loading: channelsLoading } = useOptimizedData({
     fetchFn: async () => {
-      const { data, error } = await supabase
-        .from('channels')
-        .select('id, name, type, favicon_url')
-        .order('name', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase.from('channels').select('id, name, type, favicon_url').order('name', { ascending: true }),
+        activeOperatorId
+      )
 
       if (error) {
         console.error('Error fetching channels:', error)
@@ -195,17 +203,21 @@ export default function AdminCustomers() {
 
       return data || []
     },
-    cacheKey: 'channels',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시 (채널은 자주 변경되지 않음)
+    cacheKey: `channels:${activeOperatorId}`,
+    cacheTime: 10 * 60 * 1000, // 10분 캐시 (채널은 자주 변경되지 않음)
+    dependencies: [activeOperatorId],
   })
 
   // 최적화된 상품 데이터 로딩
   const { data: products = [], loading: productsLoading } = useOptimizedData({
     fetchFn: async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name_ko, name_en, base_price, adult_base_price, child_base_price, infant_base_price')
-        .order('name_ko', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('products')
+          .select('id, name_ko, name_en, base_price, adult_base_price, child_base_price, infant_base_price')
+          .order('name_ko', { ascending: true }),
+        activeOperatorId
+      )
 
       if (error) {
         console.error('Error fetching products:', error)
@@ -214,8 +226,9 @@ export default function AdminCustomers() {
 
       return data || []
     },
-    cacheKey: 'products',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheKey: `products:${activeOperatorId}`,
+    cacheTime: 10 * 60 * 1000, // 10분 캐시
+    dependencies: [activeOperatorId],
   })
 
   // 예약 폼에 필요한 추가 데이터들
@@ -1037,7 +1050,8 @@ export default function AdminCustomers() {
       // created_at을 라스베가스 시간대의 오늘 날짜로 설정
       const customerDataWithDate = {
         ...customerData,
-        created_at: getLasVegasToday()
+        created_at: getLasVegasToday(),
+        ...operatorIdInsert(operatorId),
       }
       
       const { customer, errorMessage } = await insertCustomerViaAdminApi(

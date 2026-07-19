@@ -15,6 +15,7 @@ import PriceDisplay from '@/components/customer/ui/PriceDisplay'
 import { getTagCategoryIcon } from '@/lib/tagCategoryIcons'
 import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 import { resolveProductListingPrice } from '@/lib/productDetailDisplay'
+import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 
 interface Product {
   id: string
@@ -105,6 +106,7 @@ function ProductTagsPageInner() {
         const { data, error } = await supabase
           .from('products')
           .select('*')
+          .eq('operator_id', readPublicOperatorIdBrowser())
           .eq('status', 'active')
           .eq('is_published', true)
           .order('created_at', { ascending: false })

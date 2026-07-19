@@ -9,6 +9,22 @@ import {
   isSafePwaStartPath,
   PWA_START_PATH_COOKIE,
 } from '@/lib/pwaStartUrl'
+import {
+  resolvePublicOperatorForRequest,
+  setPublicOperatorRequestHeaders,
+  setPublicOperatorResponseCookie,
+} from '@/lib/operators/applyPublicOperatorToMiddleware'
+import { stampActiveOperatorRequestHeader } from '@/lib/operators/activeOperatorCookie'
+import type { ResolvedPublicOperator } from '@/lib/operators/resolveOperatorFromHost'
+
+function stampTenantRequestHeaders(
+  requestHeaders: Headers,
+  req: NextRequest,
+  resolved: ResolvedPublicOperator
+): void {
+  setPublicOperatorRequestHeaders(requestHeaders, resolved)
+  stampActiveOperatorRequestHeader(requestHeaders, req.cookies)
+}
 
 const intlMiddleware = createIntlMiddleware({
   locales: ['ko', 'en'],
@@ -16,12 +32,37 @@ const intlMiddleware = createIntlMiddleware({
   localeDetection: false // 자동 감지 비활성화
 })
 
+function withPublicOperator(
+  res: NextResponse,
+  requestHeaders: Headers | null,
+  resolved: ResolvedPublicOperator
+): NextResponse {
+  if (requestHeaders) {
+    setPublicOperatorRequestHeaders(requestHeaders, resolved)
+  }
+  setPublicOperatorResponseCookie(res, resolved)
+  return res
+}
+
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
 
+  // 정적 자산 — host 해석 생략
+  if (
+    pathname.startsWith('/_next/') ||
+    pathname.includes('.') ||
+    pathname === '/favicon.ico'
+  ) {
+    return applySecurityHeaders(NextResponse.next())
+  }
+
+  const resolvedPublicOperator = await resolvePublicOperatorForRequest(req)
+
   const apiSecurityResponse = await handleApiSecurity(req)
   if (apiSecurityResponse) {
-    return applySecurityHeaders(apiSecurityResponse)
+    return applySecurityHeaders(
+      withPublicOperator(apiSecurityResponse, null, resolvedPublicOperator)
+    )
   }
 
   // OAuth 콜백: URL hash(#access_token) 유지, next-intl 리다이렉트로 404·이중 locale 방지
@@ -31,9 +72,10 @@ export async function middleware(req: NextRequest) {
   ) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-pathname', pathname)
-    return applySecurityHeaders(
-      NextResponse.next({ request: { headers: requestHeaders } })
-    )
+    stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
+    const res = NextResponse.next({ request: { headers: requestHeaders } })
+    setPublicOperatorResponseCookie(res, resolvedPublicOperator)
+    return applySecurityHeaders(res)
   }
 
   // PWA/홈 화면 바로가기: start_url이 예전에 `/` 이거나, 쿠키에 저장된 경로가 있으면
@@ -44,42 +86,53 @@ export async function middleware(req: NextRequest) {
     if (savedPath && isSafePwaStartPath(savedPath)) {
       const url = req.nextUrl.clone()
       url.pathname = savedPath
-      return applySecurityHeaders(NextResponse.redirect(url))
+      return applySecurityHeaders(
+        withPublicOperator(NextResponse.redirect(url), null, resolvedPublicOperator)
+      )
     }
     // 쿠키 없음: RootPage(클라이언트)에서 localStorage / 역할 기반 분기
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-pathname', '/')
-    return applySecurityHeaders(
-      NextResponse.next({ request: { headers: requestHeaders } })
-    )
+    stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
+    const res = NextResponse.next({ request: { headers: requestHeaders } })
+    setPublicOperatorResponseCookie(res, resolvedPublicOperator)
+    return applySecurityHeaders(res)
   }
 
-  // 정적 파일들은 미들웨어를 건너뛰도록 처리
-  if (
-    req.nextUrl.pathname.startsWith('/_next/') ||
-    req.nextUrl.pathname.startsWith('/api/') ||
-    req.nextUrl.pathname.includes('.') ||
-    req.nextUrl.pathname === '/favicon.ico'
-  ) {
-    return applySecurityHeaders(NextResponse.next())
+  // API: locale 없이 통과하되 public + active-operator 헤더·쿠키 스탬프
+  if (req.nextUrl.pathname.startsWith('/api/')) {
+    const requestHeaders = new Headers(req.headers)
+    stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
+    const res = NextResponse.next({ request: { headers: requestHeaders } })
+    setPublicOperatorResponseCookie(res, resolvedPublicOperator)
+    return applySecurityHeaders(res)
   }
 
   // Serwist 오프라인 폴백 (next-intl 접두 없음)
   if (req.nextUrl.pathname === '/~offline') {
-    return applySecurityHeaders(NextResponse.next())
+    return applySecurityHeaders(
+      withPublicOperator(NextResponse.next(), null, resolvedPublicOperator)
+    )
   }
 
   // /chat/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
   if (req.nextUrl.pathname.startsWith('/chat/')) {
-    const response = NextResponse.next()
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-pathname', req.nextUrl.pathname)
+    stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
     response.headers.set('x-pathname', req.nextUrl.pathname)
+    setPublicOperatorResponseCookie(response, resolvedPublicOperator)
     return applySecurityHeaders(response)
   }
 
   // /photos/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
   if (req.nextUrl.pathname.startsWith('/photos/')) {
-    const response = NextResponse.next()
+    const requestHeaders = new Headers(req.headers)
+    stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
     response.headers.set('x-pathname', req.nextUrl.pathname)
+    setPublicOperatorResponseCookie(response, resolvedPublicOperator)
     return applySecurityHeaders(response)
   }
 
@@ -87,6 +140,11 @@ export async function middleware(req: NextRequest) {
   if (process.env.NODE_ENV === 'development') {
     console.log('Middleware: Request to:', req.nextUrl.pathname)
     console.log('Middleware: Cookies:', req.cookies.get('NEXT_LOCALE')?.value)
+    console.log(
+      'Middleware: public operator',
+      resolvedPublicOperator.operatorId,
+      resolvedPublicOperator.source
+    )
   }
 
   // 언어 처리 미들웨어 실행
@@ -94,7 +152,9 @@ export async function middleware(req: NextRequest) {
 
   // 리다이렉트인 경우 그대로 반환 (pathname은 다음 요청에서 설정됨)
   if (response.status >= 300 && response.status < 400) {
-    return applySecurityHeaders(response)
+    return applySecurityHeaders(
+      withPublicOperator(response, null, resolvedPublicOperator)
+    )
   }
 
   // pathname을 서버(레이아웃)로 전달: 요청 헤더에 설정해야 layout의 headers()에서 읽을 수 있음
@@ -113,6 +173,7 @@ export async function middleware(req: NextRequest) {
   requestHeaders.set('x-is-guide-route', isGuideRoute ? '1' : '0')
   requestHeaders.set('x-is-resident-check-route', isResidentCheckRoute ? '1' : '0')
   requestHeaders.set('x-is-full-width-customer-page', isFullWidthCustomerPage ? '1' : '0')
+  stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
 
   const res = NextResponse.next({
     request: { headers: requestHeaders }
@@ -134,6 +195,7 @@ export async function middleware(req: NextRequest) {
     maxAge: 60,
     sameSite: 'lax',
   })
+  setPublicOperatorResponseCookie(res, resolvedPublicOperator)
   // intlMiddleware가 설정한 쿠키/헤더 복사
   response.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value, c))
   response.headers.forEach((v, k) => { if (k !== 'x-middleware-skip') res.headers.set(k, v) })

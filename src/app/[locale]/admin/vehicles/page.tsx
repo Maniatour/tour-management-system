@@ -12,6 +12,8 @@ const VehicleTypeManagementModal = dynamic(() => import('@/components/VehicleTyp
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import {
   getVehicleStatusBadgeClass,
   getVehicleStatusLabelKo,
@@ -181,6 +183,8 @@ function getEnterpriseRentalPrefill(): Partial<Vehicle> {
 }
 
 export default function VehiclesPage() {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
   const [vehListUi, setVehListUi] = useRoutePersistedState('vehicles-list', VEHICLES_UI_DEFAULT)
@@ -204,8 +208,8 @@ export default function VehiclesPage() {
     try {
       setLoading(true)
 
-      const { data: vehiclesData, error: vehiclesError } = await fromUntypedTable(supabase, 'vehicles')
-        .select(`
+      const { data: vehiclesData, error: vehiclesError } = await withOperatorId(
+        fromUntypedTable(supabase, 'vehicles').select(`
           id,
           vehicle_number,
           vin,
@@ -252,8 +256,9 @@ export default function VehiclesPage() {
           nick,
           created_at,
           updated_at
-        `)
-        .order('created_at', { ascending: false })
+        `),
+        activeOperatorId
+      ).order('created_at', { ascending: false })
 
       if (vehiclesError) {
         console.error('차량 목록 조회 오류:', vehiclesError)
@@ -434,12 +439,11 @@ export default function VehiclesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeOperatorId])
 
   useEffect(() => {
     fetchVehicles()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fetchVehicles])
 
   const handleEditVehicle = useCallback((vehicle: Vehicle) => {
     setSelectedVehicle(vehicle)
@@ -653,7 +657,7 @@ export default function VehiclesPage() {
       } else {
         // 추가
         const { data, error } = await fromUntypedTable(supabase, 'vehicles')
-          .insert([filteredData as never])
+          .insert([{ ...filteredData, ...operatorIdInsert(activeOperatorId) } as never])
           .select()
           .single()
 
@@ -675,7 +679,7 @@ export default function VehiclesPage() {
       })
       alert(`차량 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
     }
-  }, [selectedVehicle, vehicles])
+  }, [selectedVehicle, vehicles, activeOperatorId])
 
 
   const calculateRemainingInstallment = useCallback((vehicle: Vehicle) => {

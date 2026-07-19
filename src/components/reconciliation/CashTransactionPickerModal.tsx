@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { addCalendarDaysYmd } from '@/lib/expense-reconciliation-similar-lines'
 import {
   fetchCashWithdrawalCategories,
@@ -47,6 +49,8 @@ export default function CashTransactionPickerModal({
   nestedElevated = false,
 }: Props) {
   const t = useTranslations('expenses.statementRecon.cashPicker')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const defaultStart = useMemo(() => {
     const base = ledgerDateYmd?.slice(0, 10)
@@ -92,6 +96,7 @@ export default function CashTransactionPickerModal({
         ledgerDateYmd,
         ledgerAmount,
         limit: 400,
+        operatorId: activeOperatorId,
       })
       if (gen !== loadGenRef.current) return
       setRows(list)
@@ -102,7 +107,7 @@ export default function CashTransactionPickerModal({
     } finally {
       if (gen === loadGenRef.current) setLoading(false)
     }
-  }, [search, amountSearch, startDate, endDate, category, ledgerDateYmd, ledgerAmount, t])
+  }, [search, amountSearch, startDate, endDate, category, ledgerDateYmd, ledgerAmount, activeOperatorId, t])
 
   const applyTextSearch = useCallback(() => {
     setSearch(searchInput.trim())
@@ -119,10 +124,10 @@ export default function CashTransactionPickerModal({
     setStartDate(defaultStart)
     setEndDate(defaultEnd)
     setCategory(CATEGORY_ALL)
-    void fetchCashWithdrawalCategories(supabase)
+    void fetchCashWithdrawalCategories(supabase, activeOperatorId)
       .then(setCategories)
       .catch(() => setCategories([]))
-  }, [open, selectedId, defaultStart, defaultEnd])
+  }, [open, selectedId, defaultStart, defaultEnd, activeOperatorId])
 
   useEffect(() => {
     if (!open) return

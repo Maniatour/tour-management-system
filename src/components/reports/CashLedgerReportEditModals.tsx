@@ -4,6 +4,8 @@ import type { Json } from '@/lib/database.types'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -69,6 +71,8 @@ export default function CashLedgerReportEditModals({
   onAddCashDismiss
 }: CashLedgerReportEditModalsProps) {
   const { user } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [cashOpen, setCashOpen] = useState(false)
   const [cashRow, setCashRow] = useState<Record<string, unknown> | null>(null)
   const [cashForm, setCashForm] = useState<CashFormData>(defaultCashForm)
@@ -143,6 +147,7 @@ export default function CashLedgerReportEditModals({
           const { data, error } = await supabase
             .from('cash_transactions')
             .select('*')
+            .eq('operator_id', activeOperatorId)
             .eq('id', target.id)
             .single()
           if (cancelled) return
@@ -214,7 +219,7 @@ export default function CashLedgerReportEditModals({
     return () => {
       cancelled = true
     }
-  }, [target, onDismiss, addCashOpen])
+  }, [target, onDismiss, addCashOpen, activeOperatorId])
 
   const handleCashOpenChange = (open: boolean) => {
     setCashOpen(open)
@@ -252,6 +257,7 @@ export default function CashLedgerReportEditModals({
         const { data, error } = await supabase
           .from('cash_transactions')
           .insert({
+            operator_id: activeOperatorId,
             transaction_date: newValues.transaction_date,
             transaction_type: newValues.transaction_type,
             amount: newValues.amount,
@@ -289,6 +295,7 @@ export default function CashLedgerReportEditModals({
             notes: newValues.notes,
             updated_at: new Date().toISOString()
           })
+          .eq('operator_id', activeOperatorId)
           .eq('id', id)
         if (error) throw error
         await saveHistory(id, 'cash_transactions', 'updated', oldValues, newValues)

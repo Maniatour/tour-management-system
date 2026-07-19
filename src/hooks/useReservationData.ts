@@ -4,6 +4,8 @@ import { throttledSupabaseRequest } from '@/lib/requestThrottle'
 import { getCachedOrFetch, cacheKeys } from '@/lib/dataCache'
 import { useOptimizedData } from './useOptimizedData'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import type { 
   Customer, 
   Product, 
@@ -94,6 +96,8 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const disableReservationsAutoLoad = hookOptions?.disableReservationsAutoLoad === true
   const customersByReservationIds = hookOptions?.customersByReservationIds === true
   const deferFormCatalogs = hookOptions?.deferFormCatalogs === true
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const [formCatalogsEnabled, setFormCatalogsEnabled] = useState(!deferFormCatalogs)
 
@@ -109,13 +113,16 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     // 1) created_at 이 있는 행: OFFSET 없이 키셋 (깊은 페이지에서 500/타임아웃 방지)
     let cursor: { created_at: string; id: string } | null = null
     for (;;) {
-      let q = supabase
-        .from('customers')
-        .select('*')
-        .not('created_at', 'is', null)
-        .order('created_at', { ascending: false, nullsFirst: false })
-        .order('id', { ascending: false })
-        .limit(pageSize)
+      let q = withOperatorId(
+        supabase
+          .from('customers')
+          .select('*')
+          .not('created_at', 'is', null)
+          .order('created_at', { ascending: false, nullsFirst: false })
+          .order('id', { ascending: false })
+          .limit(pageSize),
+        activeOperatorId
+      )
 
       if (cursor) {
         q = q.or(customersCreatedAtDescKeysetOr(cursor.created_at, cursor.id))
@@ -143,12 +150,15 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     // 2) created_at IS NULL (있으면 id 내림차순으로 이어서 로드)
     let nullCursor: string | null = null
     for (;;) {
-      let q = supabase
-        .from('customers')
-        .select('*')
-        .is('created_at', null)
-        .order('id', { ascending: false })
-        .limit(pageSize)
+      let q = withOperatorId(
+        supabase
+          .from('customers')
+          .select('*')
+          .is('created_at', null)
+          .order('id', { ascending: false })
+          .limit(pageSize),
+        activeOperatorId
+      )
 
       if (nullCursor) {
         q = q.lt('id', nullCursor)
@@ -171,7 +181,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     }
 
     return allCustomers
-  }, [])
+  }, [activeOperatorId])
 
   // 최적화된 데이터 로딩
   const {
@@ -180,14 +190,19 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     refetch: refetchCustomers,
   } = useOptimizedData({
     fetchFn: fetchAllCustomers,
-    cacheKey: 'reservation-customers',
+    cacheKey: `reservation-customers:${activeOperatorId}`,
     cacheTime: 10 * 60 * 1000, // 10분 캐시 (SWR 로 stale 즉시 표시 + 백그라운드 갱신)
     enabled: !customersByReservationIds,
-    dependencies: [customersByReservationIds],
+    dependencies: [customersByReservationIds, activeOperatorId],
   })
 
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map())
   const loadedCustomerIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    setCustomersById(new Map())
+    loadedCustomerIdsRef.current = new Set()
+  }, [activeOperatorId])
 
   const loadCustomersByIds = useCallback(async (rawIds: string[], opts?: { reload?: boolean }) => {
     const unique = [...new Set(rawIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
@@ -256,11 +271,14 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       let hasMore = true
 
       while (hasMore) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('name', { ascending: true })
-          .range(from, from + pageSize - 1)
+        const { data, error } = await withOperatorId(
+          supabase
+            .from('products')
+            .select('*')
+            .order('name', { ascending: true })
+            .range(from, from + pageSize - 1),
+          activeOperatorId
+        )
 
         if (error) {
           if (!isAbortLikeError(error)) console.warn('Error fetching products:', error)
@@ -278,16 +296,22 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
 
       return allProducts
     },
-    cacheKey: 'reservation-products',
-    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품은 거의 변하지 않음, SWR 로 자동 갱신
+    cacheKey: `reservation-products:${activeOperatorId}`,
+    cacheTime: 30 * 60 * 1000, // 30분 캐시 — 상품은 거의 변하지 않음, SWR 로 자동 갱신
+    dependencies: [activeOperatorId],
   })
 
   const { data: channels = [], loading: channelsLoading, refetch: refetchChannels } = useOptimizedData({
     fetchFn: async () => {
-      const { data, error } = await supabase
-        .from('channels')
-        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission, sub_channels')
-        .order('name', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('channels')
+          .select(
+            'id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission, sub_channels'
+          )
+          .order('name', { ascending: true }),
+        activeOperatorId
+      )
 
       if (error) {
         if (!isAbortLikeError(error)) console.warn('Error fetching channels:', error)
@@ -296,9 +320,10 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
 
       return data || []
     },
-    cacheKey: 'reservation-channels',
+    cacheKey: `reservation-channels:${activeOperatorId}`,
     // 짧은 fresh TTL(60초) + SWR — 같은 페이지 내 짧은 시간엔 추가 호출 생략, 그 후엔 stale 즉시 표시 + 백그라운드 갱신
-    cacheTime: 60 * 1000
+    cacheTime: 60 * 1000,
+    dependencies: [activeOperatorId],
   })
 
   const { data: productOptions = [], loading: productOptionsLoading, refetch: refetchProductOptions } = useOptimizedData({

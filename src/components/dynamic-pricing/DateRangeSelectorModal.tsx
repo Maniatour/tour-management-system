@@ -20,8 +20,6 @@ interface DateRangeSelectorModalProps {
   initialSelection?: DateRangeSelection;
   selectedDates?: string[];
   onDateToggle?: (date: string) => void;
-  isSaleAvailable: boolean;
-  onSaleAvailableToggle: () => void;
 }
 
 function formatDateLabel(dateString: string) {
@@ -35,8 +33,6 @@ export const DateRangeSelectorModal = memo(function DateRangeSelectorModal({
   initialSelection,
   selectedDates,
   onDateToggle,
-  isSaleAvailable,
-  onSaleAvailableToggle,
 }: DateRangeSelectorModalProps) {
   const t = useTranslations('products.dynamicPricingPage');
   const [open, setOpen] = useState(false);
@@ -65,31 +61,7 @@ export const DateRangeSelectorModal = memo(function DateRangeSelectorModal({
   }, [selectedDays]);
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h4 className="text-md font-semibold text-gray-900">{t('dateAndDaySelect')}</h4>
-        <div className="flex items-center space-x-3">
-          <span className="text-sm font-medium text-gray-700">
-            {isSaleAvailable ? t('onSale') : t('saleStopped')}
-          </span>
-          <button
-            type="button"
-            onClick={onSaleAvailableToggle}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-              isSaleAvailable ? 'bg-blue-600' : 'bg-gray-300'
-            }`}
-            role="switch"
-            aria-checked={isSaleAvailable}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                isSaleAvailable ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -100,7 +72,7 @@ export const DateRangeSelectorModal = memo(function DateRangeSelectorModal({
           <div className="text-sm font-medium text-foreground">
             {t('openDateRangeSelector')}
           </div>
-          <div className="text-sm text-muted-foreground truncate">{summaryText}</div>
+          <div className="text-xs text-muted-foreground truncate">{summaryText}</div>
           {daysSummary ? (
             <div className="text-xs text-muted-foreground">
               {t('applyDaysLabel')}: {daysSummary}
@@ -133,6 +105,6 @@ export const DateRangeSelectorModal = memo(function DateRangeSelectorModal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 });

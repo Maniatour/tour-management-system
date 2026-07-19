@@ -1,0 +1,70 @@
+================================================================================
+ADR 021 — Ops Fleet: vehicles.operator_id (Phase 6b.0)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6a–6a.2 gated Operations Suite in the admin UI (sidebar + route guard)
+and documented a safe Operator B pilot. Physical ops_* schema split is still
+risky: fleet/HR/expense tables live in public without operator_id.
+
+Kovegas must keep working. Operator B (commerce-only) must not see Kovegas
+fleet rows if Ops paths are reached or ScheduleView lists vehicles.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Logical inventory (labels only — no CREATE SCHEMA):
+   - ops_fleet: vehicles, vehicle_maintenance*
+   - ops_hr: attendance_*, team board/chat (later)
+   - ops_finance: company_expenses, tip shares (later)
+
+2. Migration: 20260719120000_saas_operator_id_vehicles.sql
+   - ADD vehicles.operator_id NOT NULL (default Kovegas)
+   - Backfill all existing rows → Kovegas
+   - FK + index
+   - Single-table txn (no rename / no move)
+
+3. Minimal app wiring (list + create stamp):
+   - Admin vehicles page: filter + insert operator_id
+   - ScheduleView available-vehicle list + insert stamp
+   - VehicleMaintenanceManager / VehicleMaintenanceVehicleModal lists
+   - VehicleAssignmentModal list
+   - useTourData.fetchVehicles(optional operatorId)
+
+4. By-id lookups for already-assigned tour_car_id stay unscoped
+   (display of historical assignment labels).
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- CREATE SCHEMA ops_fleet / ALTER TABLE … SET SCHEMA
+- Renaming or moving tables
+- vehicle_maintenance* / attendance / expenses in this slice
+- Full RLS rewrite for Ops
+- Booking / payment / checkout changes
+- Enabling SaaS flags by default
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.1: vehicle_maintenance* operator_id (derive from vehicles or Kovegas)
+Phase 6b.2+: attendance / expenses (later; more cross-links)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719120000_saas_operator_id_vehicles.sql
+src/lib/database.types.ts
+src/app/[locale]/admin/vehicles/page.tsx
+src/components/ScheduleView.tsx
+src/components/VehicleMaintenanceManager.tsx
+src/components/vehicle-maintenance/VehicleMaintenanceVehicleModal.tsx
+src/components/VehicleAssignmentModal.tsx
+src/components/tour/modals/AutoAssignModal.tsx
+src/components/CompanyExpenseManager.tsx
+src/hooks/useTourData.ts
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

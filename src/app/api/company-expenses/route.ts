@@ -10,6 +10,8 @@ import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCatego
 import { Database } from '@/lib/database.types'
 import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
 import { parseMultiQueryValues } from '@/lib/multiQueryParam'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupVehicleOperatorId } from '@/lib/operators/lookupVehicleOperatorId'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 
@@ -145,6 +147,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
     const to = from + limit - 1
+    const operatorId = resolveOperatorId(searchParams.get('operatorId'))
 
     const searchTrimmed = (search ?? '').trim()
     const searchActive = searchTrimmed.length > 0
@@ -178,6 +181,7 @@ export async function GET(request: NextRequest) {
     let query = fromUntypedTable(supabase, expenseTable)
       .select('*', { count: searchActive ? 'planned' : 'exact' })
       .is('deleted_at', null)
+      .eq('operator_id', operatorId)
 
     try {
       const filtered = await applyCompanyExpenseListFilters(supabase, query, listFilterParams)
@@ -293,6 +297,13 @@ export async function POST(request: NextRequest) {
         ? reimbursementNoteBody.trim()
         : null
 
+    const requestOperatorId = resolveOperatorId(
+      typeof body.operatorId === 'string' ? body.operatorId : null
+    )
+    const operator_id = vehicle_id
+      ? await lookupVehicleOperatorId(supabase, String(vehicle_id), requestOperatorId)
+      : requestOperatorId
+
     const expenseData: CompanyExpenseInsert = {
       // ID는 자동 생성되므로 제공되지 않은 경우 undefined로 설정
       ...(id && { id }),
@@ -313,6 +324,7 @@ export async function POST(request: NextRequest) {
       expense_type: expense_type || null,
       tax_deductible: tax_deductible !== undefined ? tax_deductible : true,
       status: 'pending',
+      operator_id,
       ...(paid_for_label_id !== undefined &&
         paid_for_label_id !== null &&
         paid_for_label_id !== '' && { paid_for_label_id: String(paid_for_label_id) }),

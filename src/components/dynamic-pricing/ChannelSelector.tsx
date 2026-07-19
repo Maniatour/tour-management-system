@@ -217,11 +217,11 @@ export const ChannelSelector = memo(function ChannelSelector({
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className="flex w-full items-start gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+          className="flex w-full min-h-[4.25rem] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-4 text-left transition-colors hover:border-border hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
           aria-expanded={isOpen}
           aria-haspopup="listbox"
         >
-          <div className="mt-0.5 shrink-0 text-primary">
+          <div className="shrink-0 text-primary">
             {selectedChannelData && otaGroup?.channels.some((ch) => ch.id === selectedChannel) ? (
               <Globe className="h-5 w-5" />
             ) : (
@@ -242,7 +242,7 @@ export const ChannelSelector = memo(function ChannelSelector({
             ) : null}
           </div>
           <ChevronDown
-            className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
               isOpen ? 'rotate-180' : ''
             }`}
           />

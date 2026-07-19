@@ -72,6 +72,8 @@ function getStoredAccessToken(): string | null {
   return t?.trim() ? t.trim() : null
 }
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -826,15 +828,18 @@ async function fetchAllExpenseRowsForAutoMatch(
   table: AutoMatchExpenseDbTable,
   selectList: string,
   startIso: string,
-  endIso: string
+  endIso: string,
+  operatorId?: string | null
 ): Promise<Record<string, unknown>[]> {
   const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
+  const activeOperatorId = resolveOperatorId(operatorId)
   const out: Record<string, unknown>[] = []
   let from = 0
   for (;;) {
     const q = sb
       .from(table)
       .select(selectList)
+      .eq('operator_id', activeOperatorId)
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
       .is('deleted_at', null)
@@ -1017,7 +1022,8 @@ async function fetchTicketBookingsForExpensePickerMerged(
 /** 지출 연결 모달 — 명세 줄 주변 기간만 조회(미매칭 패널 전체 기간 대비 경량) */
 async function fetchExpenseOptionsForYmdWindow(
   startYmd: string,
-  endYmd: string
+  endYmd: string,
+  operatorId?: string | null
 ): Promise<ExpenseOption[]> {
   let s = startYmd.trim().slice(0, 10)
   let e = endYmd.trim().slice(0, 10)
@@ -1032,11 +1038,13 @@ async function fetchExpenseOptionsForYmdWindow(
   const startIso = start.toISOString()
   const endIso = end.toISOString()
   const sbRe = supabase as any
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [{ data: ce }, { data: te }, { data: re }, tb] = await Promise.all([
     withActiveExpenseRowsOnly(
       supabase
         .from('company_expenses')
         .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
+        .eq('operator_id', activeOperatorId)
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       'company_expenses'
@@ -1045,6 +1053,7 @@ async function fetchExpenseOptionsForYmdWindow(
       supabase
         .from('tour_expenses')
         .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+        .eq('operator_id', activeOperatorId)
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       'tour_expenses'
@@ -1053,6 +1062,7 @@ async function fetchExpenseOptionsForYmdWindow(
       sbRe
         .from('reservation_expenses')
         .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+        .eq('operator_id', activeOperatorId)
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       'reservation_expenses'
@@ -1153,12 +1163,14 @@ async function fetchAllTourHotelBookingsForAutoMatchMerged(
 }
 
 /** 이미 명세와 연결된 지출 id — max-rows 회피, 자동 매칭 출처 테이블만(다른 출처 매칭 제외) */
-async function fetchAllUsedExpenseKeysForAutoMatch(): Promise<Set<string>> {
+async function fetchAllUsedExpenseKeysForAutoMatch(operatorId?: string | null): Promise<Set<string>> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const used = new Set<string>()
   let from = 0
   for (;;) {
     const { data, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
       .select('source_table, source_id')
+      .eq('operator_id', activeOperatorId)
       .in('source_table', AUTO_MATCH_USED_SOURCE_TABLES)
       .order('id', { ascending: true })
       .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
@@ -1257,14 +1269,17 @@ async function fetchReconciliationMatchesForLineIds(lineIds: string[]): Promise<
 /** 기간 내 payment_records 전부 — PostgREST max-rows(1000) 순회 */
 async function fetchAllPaymentRecordsInDateRange(
   startIso: string,
-  endIso: string
+  endIso: string,
+  operatorId?: string | null
 ): Promise<PaymentRecordOption[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const byId = new Map<string, PaymentRecordOption>()
   let from = 0
   for (;;) {
     const { data, error } = await supabase
       .from('payment_records')
       .select('id, amount, submit_on, reservation_id, note')
+      .eq('operator_id', activeOperatorId)
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
       .order('id', { ascending: true })
@@ -1841,6 +1856,8 @@ async function fetchMatchedExpenseKeysForOptions(
 }
 
 export default function StatementReconciliationTab() {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const { authUser } = useAuth()
   const params = useParams()
   const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
@@ -2087,7 +2104,7 @@ export default function StatementReconciliationTab() {
 
       let token = getStoredAccessToken() || (await getSessionToken())
       const fetchAccounts = (accessToken: string | null) =>
-        fetch('/api/financial/accounts', {
+        fetch(`/api/financial/accounts?operatorId=${encodeURIComponent(activeOperatorId)}`, {
           ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
           credentials: 'same-origin',
         })
@@ -2117,7 +2134,7 @@ export default function StatementReconciliationTab() {
       setAccounts([])
       setAccountsListError(e instanceof Error ? e.message : '금융 계정 목록을 불러오지 못했습니다.')
     }
-  }, [])
+  }, [activeOperatorId])
 
   /** 결제 방법 관리 페이지와 동일 API — 클라이언트 직접 조회보다 스키마·한도 일치, 실패 시 메시지 표시 */
   const loadPaymentMethods = useCallback(async (force = false) => {
@@ -2205,11 +2222,12 @@ export default function StatementReconciliationTab() {
   const loadImports = useCallback(async () => {
     const { data, error } = await fromUntypedTable(supabase, 'statement_imports')
       .select('id,financial_account_id,period_label,period_start,period_end,status,original_filename,created_at')
+      .eq('operator_id', activeOperatorId)
       .order('period_start', { ascending: false })
       .limit(200)
     if (error && !isAbortLikeError(error)) console.error(error)
     else if (!error) setImports((data as StatementImport[]) || [])
-  }, [])
+  }, [activeOperatorId])
 
   const loadTeamDisplayNames = useCallback(async () => {
     const { data, error } = await supabase
@@ -3432,8 +3450,8 @@ export default function StatementReconciliationTab() {
     const end = new Date(endYmd + 'T23:59:59.999')
     const startIso = start.toISOString()
     const endIso = end.toISOString()
-    return fetchAllPaymentRecordsInDateRange(startIso, endIso)
-  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
+    return fetchAllPaymentRecordsInDateRange(startIso, endIso, activeOperatorId)
+  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd, activeOperatorId])
 
   /** 미매칭 패널 지출 후보 — 사용자 지정 기간 (입금 기록은 별도 로드) */
   const fetchExpenseOptionsForPeriod = useCallback(async (): Promise<ExpenseOption[] | null> => {
@@ -3441,8 +3459,8 @@ export default function StatementReconciliationTab() {
     let startYmd = unmatchedExpenseQueryStart.trim().slice(0, 10)
     let endYmd = unmatchedExpenseQueryEnd.trim().slice(0, 10)
     if (!startYmd || !endYmd || startYmd.length < 10 || endYmd.length < 10) return null
-    return fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
-  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
+    return fetchExpenseOptionsForYmdWindow(startYmd, endYmd, activeOperatorId)
+  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd, activeOperatorId])
 
   useEffect(() => {
     setReconciliationPage(1)
@@ -3565,7 +3583,7 @@ export default function StatementReconciliationTab() {
       try {
         const startYmd = addCalendarDaysYmd(lineYmd, -PICKER_QUICK_DATE_WINDOW_DAYS)
         const endYmd = addCalendarDaysYmd(lineYmd, PICKER_QUICK_DATE_WINDOW_DAYS)
-        const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
+        const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd, activeOperatorId)
         if (cancelled) return
         startTransition(() => {
           setExpensePickerPool(ex)
@@ -3584,7 +3602,7 @@ export default function StatementReconciliationTab() {
     return () => {
       cancelled = true
     }
-  }, [expensePickerLineId, filterAccountId, lines])
+  }, [expensePickerLineId, filterAccountId, lines, activeOperatorId])
 
   /** 검색 «일자 제한 없음» 선택 시에만 미매칭 패널과 동일한 넓은 기간 조회 */
   useEffect(() => {
@@ -3633,7 +3651,7 @@ export default function StatementReconciliationTab() {
       if (lineYmd.length < 10) return
       const startYmd = addCalendarDaysYmd(lineYmd, -PICKER_QUICK_DATE_WINDOW_DAYS)
       const endYmd = addCalendarDaysYmd(lineYmd, PICKER_QUICK_DATE_WINDOW_DAYS)
-      const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
+      const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd, activeOperatorId)
       startTransition(() => {
         setExpensePickerPool(ex)
       })
@@ -3645,7 +3663,8 @@ export default function StatementReconciliationTab() {
     lines,
     expensePickerSearchDateScope,
     expensePickerPoolWideLoaded,
-    fetchExpenseOptionsForPeriod
+    fetchExpenseOptionsForPeriod,
+    activeOperatorId,
   ])
 
   const fetchPaymentRecordsForUnmatchedQueryRangeRef = useRef(fetchPaymentRecordsForUnmatchedQueryRange)
@@ -3711,6 +3730,13 @@ export default function StatementReconciliationTab() {
 
         const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
         let query = withActiveExpenseRowsOnly(sb.from(table).select(sel), table)
+        if (
+          table === 'company_expenses' ||
+          table === 'tour_expenses' ||
+          table === 'reservation_expenses'
+        ) {
+          query = query.eq('operator_id', activeOperatorId)
+        }
         if (!skipDate) {
           const dayWindow =
             expensePickerBrowseDateScope === 'wide' ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW
@@ -3755,7 +3781,7 @@ export default function StatementReconciliationTab() {
         setExpensePickerBrowseLoading(false)
       }
     },
-    [expensePickerLinePostedYmd, expensePickerBrowseDateScope]
+    [expensePickerLinePostedYmd, expensePickerBrowseDateScope, activeOperatorId]
   )
 
   useEffect(() => {
@@ -3978,6 +4004,7 @@ export default function StatementReconciliationTab() {
           name: newAccountName.trim(),
           account_type: newAccountType,
           currency: 'USD',
+          operatorId: activeOperatorId,
         }),
         credentials: 'same-origin',
       })
@@ -4030,15 +4057,18 @@ export default function StatementReconciliationTab() {
         setAccountActionError('로그인 세션이 없습니다. 다시 로그인한 뒤 시도하세요.')
         return
       }
-      const res = await fetch(`/api/financial/accounts/${encodeURIComponent(accountId)}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ statement_csv_direction_mode: mode }),
-        credentials: 'same-origin',
-      })
+      const res = await fetch(
+        `/api/financial/accounts/${encodeURIComponent(accountId)}?operatorId=${encodeURIComponent(activeOperatorId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ statement_csv_direction_mode: mode }),
+          credentials: 'same-origin',
+        }
+      )
       const json = (await res.json()) as {
         error?: string
         success?: boolean
@@ -4103,7 +4133,7 @@ export default function StatementReconciliationTab() {
         return
       }
       const res = await fetch(
-        `/api/financial/accounts/${encodeURIComponent(accountId)}/flip-statement-lines`,
+        `/api/financial/accounts/${encodeURIComponent(accountId)}/flip-statement-lines?operatorId=${encodeURIComponent(activeOperatorId)}`,
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -4177,6 +4207,7 @@ export default function StatementReconciliationTab() {
       const contentHash = await hashStatementCsvContent(csvText)
       const { data: dup, error: dupErr } = await fromUntypedTable(supabase, 'statement_imports')
         .select('id, created_at, original_filename')
+        .eq('operator_id', activeOperatorId)
         .eq('financial_account_id', importAccountId)
         .eq('content_hash', contentHash)
         .maybeSingle()
@@ -4198,6 +4229,7 @@ export default function StatementReconciliationTab() {
 
       const { data: imp, error: eImp } = await fromUntypedTable(supabase, 'statement_imports')
         .insert({
+          operator_id: activeOperatorId,
           financial_account_id: importAccountId,
           period_label: periodLabel,
           period_start: periodStart,
@@ -4228,6 +4260,7 @@ export default function StatementReconciliationTab() {
 
       const importId = imp.id as string
       const rows = parsed.map((r, i) => ({
+        operator_id: activeOperatorId,
         statement_import_id: importId,
         posted_date: r.postedDate,
         amount: r.amount,
@@ -4360,7 +4393,8 @@ export default function StatementReconciliationTab() {
               'company_expenses',
               'id, amount, submit_on, paid_for, paid_to, standard_paid_for, payment_method',
               startIso,
-              endIso
+              endIso,
+              activeOperatorId
             )
           : Promise.resolve([]),
         includedSources.has('tour_expenses')
@@ -4368,7 +4402,8 @@ export default function StatementReconciliationTab() {
               'tour_expenses',
               'id, amount, submit_on, paid_for, paid_to, payment_method',
               startIso,
-              endIso
+              endIso,
+              activeOperatorId
             )
           : Promise.resolve([]),
         includedSources.has('reservation_expenses')
@@ -4376,7 +4411,8 @@ export default function StatementReconciliationTab() {
               'reservation_expenses',
               'id, amount, submit_on, paid_for, paid_to, payment_method',
               startIso,
-              endIso
+              endIso,
+              activeOperatorId
             )
           : Promise.resolve([]),
         includedSources.has('ticket_bookings')
@@ -4395,7 +4431,7 @@ export default function StatementReconciliationTab() {
               hotelCheckInEndYmd
             )
           : Promise.resolve([]),
-        fetchAllUsedExpenseKeysForAutoMatch()
+        fetchAllUsedExpenseKeysForAutoMatch(activeOperatorId)
       ])
 
     const resolveFinancialAccountId = (pm: unknown): string | null => {
@@ -4641,6 +4677,7 @@ export default function StatementReconciliationTab() {
         if (!selected) continue
         const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
           .insert({
+            operator_id: activeOperatorId,
             statement_line_id: p.statement_line_id,
             source_table: selected.source_table,
             source_id: selected.source_id,
@@ -4684,19 +4721,41 @@ export default function StatementReconciliationTab() {
     await refreshUnmatchedExpenseKeys()
   }
 
-  /** DB에 자동/수동 구분 없음 — reconciliation_matches 전부 삭제 후 명세 줄 대조 상태만 되돌림 */
+  /** DB에 자동/수동 구분 없음 — 현재 operator 명세 줄의 reconciliation_matches 삭제 후 대조 상태 되돌림 */
   const resetAllReconciliationMatches = async () => {
     setResettingAllMatches(true)
     setResetAllMatchesOpen(false)
     setMessage(null)
     try {
-      const { error: delErr } = await fromUntypedTable(supabase, 'reconciliation_matches')
-        .delete()
-        .gte('created_at', '1970-01-01T00:00:00.000Z')
-      if (delErr) throw delErr
+      const matchedLineIds: string[] = []
+      let from = 0
+      const page = 500
+      for (;;) {
+        const { data: pageRows, error: lineListErr } = await fromUntypedTable(supabase, 'statement_lines')
+          .select('id')
+          .eq('operator_id', activeOperatorId)
+          .in('matched_status', ['matched', 'partial'])
+          .range(from, from + page - 1)
+        if (lineListErr) throw lineListErr
+        const chunk = ((pageRows || []) as { id?: string }[])
+          .map((r) => String(r.id ?? '').trim())
+          .filter(Boolean)
+        matchedLineIds.push(...chunk)
+        if (chunk.length < page) break
+        from += page
+      }
+
+      for (let i = 0; i < matchedLineIds.length; i += 80) {
+        const idChunk = matchedLineIds.slice(i, i + 80)
+        const { error: delErr } = await fromUntypedTable(supabase, 'reconciliation_matches')
+          .delete()
+          .in('statement_line_id', idChunk)
+        if (delErr) throw delErr
+      }
 
       const { error: upErr } = await fromUntypedTable(supabase, 'statement_lines')
         .update({ matched_status: 'unmatched' })
+        .eq('operator_id', activeOperatorId)
         .in('matched_status', ['matched', 'partial'])
       if (upErr) throw upErr
 
@@ -4724,6 +4783,7 @@ export default function StatementReconciliationTab() {
     setLoading(true)
     await fromUntypedTable(supabase, 'statement_imports')
       .update({ status: 'locked' })
+      .eq('operator_id', activeOperatorId)
       .eq('id', lockTargetImport.id)
     setLoading(false)
     await loadImports()
@@ -4765,7 +4825,10 @@ export default function StatementReconciliationTab() {
     setLoading(true)
     setMessage(null)
     try {
-      const { error } = await fromUntypedTable(supabase, 'statement_imports').delete().eq('id', imp.id)
+      const { error } = await fromUntypedTable(supabase, 'statement_imports')
+        .delete()
+        .eq('operator_id', activeOperatorId)
+        .eq('id', imp.id)
       if (error) throw error
       setMessage(`명세 업로드 1건을 삭제했습니다. (${fileLabel})`)
       await loadImports()
@@ -4841,6 +4904,7 @@ export default function StatementReconciliationTab() {
     setMessage(null)
     try {
       await fromUntypedTable(supabase, 'reconciliation_matches').insert({
+        operator_id: activeOperatorId,
         statement_line_id: line.id,
         source_table: 'payment_records',
         source_id: prId,
@@ -5370,11 +5434,13 @@ export default function StatementReconciliationTab() {
               statementLineId: line.id,
               statementLineAmount: Number(line.amount),
               matchedAmount,
-              linkMode: 'replace'
+              linkMode: 'replace',
+              operatorId: activeOperatorId,
             })
           } else {
             const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
               .insert({
+                operator_id: activeOperatorId,
                 statement_line_id: line.id,
                 source_table: st,
                 source_id: sid,
@@ -5483,16 +5549,19 @@ export default function StatementReconciliationTab() {
         supabase
           .from('reservation_expenses')
           .select('id,amount,submit_on,paid_for,paid_to,note,payment_method,reservation_id,tour_id')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startIso)
           .lte('submit_on', endIso),
         (supabase as any)
           .from('company_expenses')
           .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startIso)
           .lte('submit_on', endIso),
         (supabase as any)
           .from('payment_records')
           .select('id,amount,submit_on,reservation_id,note,payment_method')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startIso)
           .lte('submit_on', endIso),
         (supabase as any)
@@ -5512,6 +5581,7 @@ export default function StatementReconciliationTab() {
         supabase
           .from('cash_transactions')
           .select('id,amount,transaction_date,transaction_type,description,category,notes')
+          .eq('operator_id', activeOperatorId)
           .gte('transaction_date', startIso)
           .lte('transaction_date', endIso)
       ])
@@ -5711,7 +5781,7 @@ export default function StatementReconciliationTab() {
     } finally {
       setOperationalLedgerLoading(false)
     }
-  }, [operationalLedgerStart, operationalLedgerEnd])
+  }, [operationalLedgerStart, operationalLedgerEnd, activeOperatorId])
 
   const persistOperationalLedgerAmount = useCallback(
     async (row: OperationalLedgerRow, rawInput: string) => {
@@ -5974,6 +6044,7 @@ export default function StatementReconciliationTab() {
       if (row.already_matched) throw new Error('이미 명세와 연결된 운영 원장 행입니다.')
       const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
         .insert({
+          operator_id: activeOperatorId,
           statement_line_id: candidate.id,
           source_table: row.source_table,
           source_id: row.source_id,
@@ -5997,7 +6068,7 @@ export default function StatementReconciliationTab() {
       })
       await syncStatementLineMatchedStatus(supabase, candidate.id)
     },
-    [email, logReconciliationMatchEvent]
+    [email, logReconciliationMatchEvent, activeOperatorId]
   )
 
   const saveOperationalLedgerMatch = useCallback(

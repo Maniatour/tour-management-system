@@ -25,11 +25,15 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperator } from '@/contexts/OperatorContext'
 import type { UserRole } from '@/lib/roles'
 import {
   ADMIN_HEADER_QUICK_BUTTON_CLASS,
+  buildAdminSidebarGroups,
   buildAdminSidebarNavigation,
   visibleAdminHeaderQuickEntries,
+  type BuiltAdminNavGroup,
+  type BuiltAdminNavItem,
 } from '@/lib/admin-site-registry'
 import {
   personaCrudForHeaderRegistryId,
@@ -53,6 +57,10 @@ import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 
 const AdminWeatherWidget = dynamic(() => import('./AdminWeatherWidget'), { ssr: false, loading: () => null })
+const OperatorSwitcher = dynamic(() => import('./admin/OperatorSwitcher'), {
+  ssr: false,
+  loading: () => null,
+})
 const AdminTourChatNotificationListener = dynamic(
   () => import('./admin/AdminTourChatNotificationListener'),
   { ssr: false, loading: () => null }
@@ -81,12 +89,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const pathname = usePathname()
   const router = useRouter()
   const { signOut, authUser, userRole, userPosition, isSimulating, stopSimulation, teamChatUnreadCount } = useAuth()
+  const { operationsEnabled } = useOperator()
   const currentLocale = locale
   const t = useTranslations('common')
   const tAdmin = useTranslations('admin')
   const tSidebar = useTranslations('sidebar')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  /** Operator B 등 하위 메뉴 패널 */
+  const [openNavGroupId, setOpenNavGroupId] = useState<string | null>(null)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
@@ -494,6 +505,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       isSimulating: Boolean(isSimulating),
       authUserEmail: authUser?.email,
       userPosition,
+      operationsEnabled,
       siteAccessSidebarReadAllowed,
       siteAccessHeaderReadAllowed,
     }),
@@ -504,6 +516,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       isSimulating,
       authUser?.email,
       userPosition,
+      operationsEnabled,
       siteAccessSidebarReadAllowed,
       siteAccessHeaderReadAllowed,
     ]
@@ -514,10 +527,131 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     [locale, tSidebar, navAccessCtx]
   )
 
+  const navGroups = useMemo(
+    () => buildAdminSidebarGroups(locale, tSidebar, navAccessCtx),
+    [locale, tSidebar, navAccessCtx]
+  )
+
+  const openNavGroup: BuiltAdminNavGroup | null = useMemo(() => {
+    if (!openNavGroupId) return null
+    return navGroups.find((g) => g.id === openNavGroupId) ?? null
+  }, [openNavGroupId, navGroups])
+
   const visibleHeaderQuickEntries = useMemo(
     () => visibleAdminHeaderQuickEntries(navAccessCtx),
     [navAccessCtx]
   )
+
+  const renderFlatNavItem = (
+    item: BuiltAdminNavItem,
+    opts: { collapsed: boolean; onNavigate?: () => void }
+  ) => {
+    const Icon = item.icon
+    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+    const isTeamChat = item.href.includes('/admin/team-chat')
+    const isDocuments = item.href.includes('/admin/documents')
+    return (
+      <Link
+        key={item.id}
+        href={item.href}
+        prefetch={true}
+        title={opts.collapsed ? item.name : undefined}
+        {...(opts.onNavigate ? { onClick: opts.onNavigate } : {})}
+        className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
+          opts.collapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
+        } ${
+          isActive
+            ? 'bg-primary/10 text-primary'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        }`}
+      >
+        <Icon size={opts.collapsed ? 20 : 16} className={`shrink-0 ${opts.collapsed ? '' : 'mr-3'}`} />
+        {!opts.collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            {isTeamChat && teamChatUnreadCount > 0 && (
+              <span className="ml-2 shrink-0 bg-red-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
+                {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
+              </span>
+            )}
+            {isDocuments && expiringDocumentsCount > 0 && (
+              <span className="ml-2 shrink-0 bg-orange-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
+                {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
+              </span>
+            )}
+          </>
+        )}
+        {opts.collapsed && isTeamChat && teamChatUnreadCount > 0 && (
+          <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+            {teamChatUnreadCount > 9 ? '9+' : teamChatUnreadCount}
+          </span>
+        )}
+        {opts.collapsed && isDocuments && expiringDocumentsCount > 0 && (
+          <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold leading-none text-white">
+            {expiringDocumentsCount > 9 ? '9+' : expiringDocumentsCount}
+          </span>
+        )}
+      </Link>
+    )
+  }
+
+  const renderNavGroupButton = (
+    group: BuiltAdminNavGroup,
+    opts: { collapsed: boolean }
+  ) => {
+    const Icon = group.icon
+    const isOpen = openNavGroupId === group.id
+    const childActive = group.children.some(
+      (c) => pathname === c.href || pathname.startsWith(`${c.href}/`)
+    )
+    return (
+      <button
+        key={group.id}
+        type="button"
+        title={opts.collapsed ? group.name : undefined}
+        aria-expanded={isOpen}
+        onClick={() => setOpenNavGroupId(isOpen ? null : group.id)}
+        className={`relative mb-1 flex w-full items-center rounded-lg text-sm font-medium transition-colors ${
+          opts.collapsed ? 'justify-center px-2 py-2' : 'px-2.5 py-1.5'
+        } ${
+          isOpen || childActive
+            ? 'bg-primary/10 text-primary'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        }`}
+      >
+        <Icon size={opts.collapsed ? 20 : 16} className={`shrink-0 ${opts.collapsed ? '' : 'mr-3'}`} />
+        {!opts.collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left">{group.name}</span>
+            <ChevronRight
+              size={16}
+              className={`ml-1 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+            />
+          </>
+        )}
+      </button>
+    )
+  }
+
+  /** channels 다음에 Operator B 그룹을 끼워 넣음 */
+  const renderSidebarNavList = (opts: { collapsed: boolean; onNavigate?: () => void }) => {
+    const nodes: React.ReactNode[] = []
+    for (const item of navigation) {
+      nodes.push(renderFlatNavItem(item, opts))
+      if (item.id === 'channels') {
+        for (const group of navGroups) {
+          nodes.push(renderNavGroupButton(group, opts))
+        }
+      }
+    }
+    // channels가 권한으로 숨겨진 경우에도 그룹은 노출
+    if (!navigation.some((i) => i.id === 'channels')) {
+      for (const group of navGroups) {
+        nodes.push(renderNavGroupButton(group, opts))
+      }
+    }
+    return nodes
+  }
 
   const showHeaderAddReservation = siteAccessHeaderReadAllowed('hq-reservations')
 
@@ -610,6 +744,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             </div>
             
             <div className="flex items-center space-x-1 sm:space-x-4">
+              <OperatorSwitcher />
               {/* 날씨 위젯 (데스크톱에서만 표시) */}
               <div className="hidden lg:block">
                 <AdminWeatherWidget />
@@ -942,36 +1077,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
           {/* 메인 네비게이션 */}
           <div className="mb-4">
-            {navigation.map((item) => {
-              const Icon = item.icon
-              const isActive = pathname === item.href
-              const isTeamChat = item.href.includes('/admin/team-chat')
-              const isDocuments = item.href.includes('/admin/documents')
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className={`flex items-center px-3 py-1 text-sm font-medium rounded-lg mb-0.5 transition-colors ${
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <Icon size={16} className="mr-3" />
-                  {item.name}
-                  {isTeamChat && teamChatUnreadCount > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
-                    </span>
-                  )}
-                  {isDocuments && expiringDocumentsCount > 0 && (
-                    <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
-                    </span>
-                  )}
-                </Link>
-              )
+            {renderSidebarNavList({
+              collapsed: false,
+              onNavigate: () => setSidebarOpen(false),
             })}
           </div>
           
@@ -1003,54 +1111,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               sidebarCollapsed ? 'px-1.5' : 'px-2'
             }`}
           >
-            {navigation.map((item) => {
-              const Icon = item.icon
-              const isActive = pathname === item.href
-              const isTeamChat = item.href.includes('/admin/team-chat')
-              const isDocuments = item.href.includes('/admin/documents')
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  prefetch={true}
-                  title={sidebarCollapsed ? item.name : undefined}
-                  className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
-                    sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
-                  } ${
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  }`}
-                >
-                  <Icon size={20} className={`shrink-0 ${sidebarCollapsed ? '' : 'mr-3'}`} />
-                  {!sidebarCollapsed && (
-                    <>
-                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                      {isTeamChat && teamChatUnreadCount > 0 && (
-                        <span className="ml-2 shrink-0 bg-red-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
-                          {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
-                        </span>
-                      )}
-                      {isDocuments && expiringDocumentsCount > 0 && (
-                        <span className="ml-2 shrink-0 bg-orange-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
-                          {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
-                        </span>
-                      )}
-                    </>
-                  )}
-                  {sidebarCollapsed && isTeamChat && teamChatUnreadCount > 0 && (
-                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                      {teamChatUnreadCount > 9 ? '9+' : teamChatUnreadCount}
-                    </span>
-                  )}
-                  {sidebarCollapsed && isDocuments && expiringDocumentsCount > 0 && (
-                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold leading-none text-white">
-                      {expiringDocumentsCount > 9 ? '9+' : expiringDocumentsCount}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
+            {renderSidebarNavList({ collapsed: sidebarCollapsed })}
           </nav>
 
           {/* 데스크톱: 사이드바 접기 (로그아웃은 상단 사용자 메뉴) */}
@@ -1073,6 +1134,72 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         </div>
       </div>
 
+      {/* Operator B 등 하위 메뉴 패널 (사이드바 옆 새 창) */}
+      {openNavGroup && (
+        <>
+          <button
+            type="button"
+            aria-label="Close submenu"
+            className="fixed inset-0 z-[40] bg-black/20 lg:bg-transparent"
+            onClick={() => setOpenNavGroupId(null)}
+          />
+          <aside
+            className={`fixed z-[45] flex flex-col border border-border/60 bg-white shadow-xl ${
+              sidebarCollapsed
+                ? 'lg:left-[var(--app-sidebar-width-collapsed)]'
+                : 'lg:left-[var(--app-sidebar-width)]'
+            } top-[var(--header-height,4rem)] bottom-0 left-0 right-0 m-3 max-h-[calc(100vh-var(--header-height,4rem)-1.5rem)] rounded-2xl lg:right-auto lg:m-0 lg:mt-2 lg:mb-2 lg:ml-2 lg:w-72 lg:max-h-none lg:rounded-xl`}
+            role="dialog"
+            aria-label={tSidebar('operatorBPanelTitle')}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground">
+                  {tSidebar('operatorBPanelHint')}
+                </p>
+                <h2 className="mt-0.5 truncate text-base font-semibold text-foreground">
+                  {openNavGroup.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpenNavGroupId(null)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+              {openNavGroup.children.map((child) => {
+                const ChildIcon = child.icon
+                const isActive =
+                  pathname === child.href || pathname.startsWith(`${child.href}/`)
+                return (
+                  <Link
+                    key={child.id}
+                    href={child.href}
+                    prefetch={true}
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      setOpenNavGroupId(null)
+                    }}
+                    className={`flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                  >
+                    <ChildIcon size={18} className="mr-3 shrink-0" />
+                    <span className="truncate">{child.name}</span>
+                  </Link>
+                )
+              })}
+            </nav>
+          </aside>
+        </>
+      )}
+
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div
         className={`admin-main-shell pt-[var(--header-height)] transition-[padding-left] duration-300 ${
@@ -1085,7 +1212,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             className={`mx-auto w-full min-w-0 max-w-full ${
               pathname.includes('/admin/reservations')
                 ? 'px-0'
-                : 'px-[var(--admin-main-gutter-x)] sm:px-2'
+                : pathname.includes('/admin/reservation-imports')
+                  ? 'px-[calc(var(--admin-main-gutter-x)/2)] sm:px-2'
+                  : 'px-[var(--admin-main-gutter-x)] sm:px-2'
             }`}
           >
             {children}

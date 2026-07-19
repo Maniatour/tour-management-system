@@ -1,8 +1,13 @@
 /** 모든 페이지에 필요한 최소 네임스페이스 */
 export const I18N_CORE_NAMESPACES = ['common', 'auth', 'awayChanges'] as const
 
-/** Admin 셸(사이드바·헤더) */
-const I18N_ADMIN_SHELL_NAMESPACES = ['sidebar', 'admin', 'siteDirectory'] as const
+/** Admin 셸(사이드바·헤더) — OperatorSwitcher는 adminOperators 사용 */
+const I18N_ADMIN_SHELL_NAMESPACES = [
+  'sidebar',
+  'admin',
+  'siteDirectory',
+  'adminOperators',
+] as const
 
 /** Admin 화면 간 공유(대조·지출 모달 등) */
 const I18N_ADMIN_SHARED_NAMESPACES = ['expenses'] as const
@@ -29,6 +34,9 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'companyExpense',
   'adminReceiptOcrParseRules',
   'adminPaidForLabels',
+  'adminOperators',
+  'adminOtaDistribution',
+  'adminOperatorBManual',
   'adminMaintenanceCatalog',
   'expensePaymentMethodNormalize',
   'tagTranslations',
@@ -126,6 +134,18 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
   {
     test: (p) => /\/admin\/(channels|tag-translations|options)/.test(p),
     namespaces: ['channels', 'tagTranslations', 'options', 'products'],
+  },
+  {
+    test: (p) => /\/admin\/operators/.test(p),
+    namespaces: ['adminOperators'],
+  },
+  {
+    test: (p) => /\/admin\/operator-b\//.test(p),
+    namespaces: ['adminOperatorBManual', 'adminOperators'],
+  },
+  {
+    test: (p) => /\/admin\/commerce\//.test(p),
+    namespaces: ['adminOtaDistribution', 'adminOperators'],
   },
   {
     test: (p) => /\/admin\/(attendance|team(?!-)|team-chat)/.test(p),

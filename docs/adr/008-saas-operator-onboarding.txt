@@ -1,0 +1,63 @@
+================================================================================
+ADR 008 — SaaS Operator Onboarding (Phase 5a)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Commerce v2 + OTA dry-run foundation exist. Next step toward multi-tenant is
+creating Operator B and inviting members without Stripe Connect / public
+self-serve yet.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Additive columns on operators:
+   subdomain, custom_domain, stripe_connect_account_id,
+   stripe_connect_status, plan_limits
+
+2. Staff-only create/invite APIs (not public signup):
+   GET/POST /api/admin/operators
+   GET/POST /api/admin/operators/:id/members
+
+3. Admin UI: /{locale}/admin/operators (sidebar: super_only)
+
+4. OperatorContext:
+   - loads all memberships for the signed-in email
+   - setActiveOperatorId + localStorage persistence
+   - invited → active on resolve
+   - header OperatorSwitcher when multiple memberships
+
+5. Stripe Connect / subdomain routing / plan hard-enforcement
+   were stubs at 5a; Connect onboarding wired in ADR 011 (Phase 5d).
+   Subdomain routing and Connect checkout cutover remain later.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Live Stripe Connect Express onboarding
+- Customer site subdomain reverse-proxy
+- Full RLS isolation audit for every legacy table
+- Public self-serve operator signup
+
+
+Pilot checklist
+--------------------------------------------------------------------------------
+1. Apply migration 20260718150000_saas_operator_onboarding.sql
+2. Super admin → Operators → create Operator B (owner = your email)
+3. Header switcher shows both Kovegas + B
+4. Invite another email; they see B after login
+5. Confirm commerce writes still default to Kovegas until product UIs
+   filter by active operatorId (gradual cutover)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718150000_saas_operator_onboarding.sql
+src/lib/operators/*
+src/contexts/OperatorContext.tsx
+src/components/admin/OperatorsAdmin.tsx
+src/components/admin/OperatorSwitcher.tsx
+src/app/api/admin/operators/**
+================================================================================

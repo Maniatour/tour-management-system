@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { X, ChevronUp, ChevronDown, GripVertical, Star } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -15,6 +17,7 @@ interface FavoriteOrderModalProps {
 }
 
 export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }: FavoriteOrderModalProps) {
+  const { operatorId } = useOperatorOptional()
   const [favoriteProducts, setFavoriteProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -23,18 +26,18 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
 
   useEffect(() => {
     if (isOpen) {
-      fetchFavoriteProducts()
+      void fetchFavoriteProducts()
     }
-  }, [isOpen])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, operatorId])
 
   const fetchFavoriteProducts = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_favorite', true)
-        .order('favorite_order', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase.from('products').select('*').eq('is_favorite', true),
+        operatorId
+      ).order('favorite_order', { ascending: true })
 
       if (error) {
         console.error('Failed to fetch favorite products:', error)
@@ -119,6 +122,7 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
           .from('products')
           .update({ favorite_order: index })
           .eq('id', product.id)
+          .eq('operator_id', resolveOperatorId(operatorId))
       )
 
       const results = await Promise.all(updatePromises)

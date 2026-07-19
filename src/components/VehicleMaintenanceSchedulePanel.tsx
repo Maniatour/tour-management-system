@@ -39,6 +39,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Gauge, Edit, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 type VehicleLabelFields = {
   id: string
@@ -107,6 +109,8 @@ export default function VehicleMaintenanceSchedulePanel({
   hidden = false,
 }: Props) {
   const t = useTranslations('vehicleMaintenance')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   let locale = 'ko'
   try {
     locale = useLocale()
@@ -129,14 +133,15 @@ export default function VehicleMaintenanceSchedulePanel({
   const loadCatalogAndSchedules = useCallback(async () => {
     try {
       setLoading(true)
+      const scheduleParams = new URLSearchParams({ operatorId: activeOperatorId })
+      if (vehicleIds.length === 1) {
+        scheduleParams.set('vehicle_id', vehicleIds[0])
+      }
       const [catalogRes, schedulesRes] = await Promise.all([
         fetch('/api/vehicle-maintenance/catalog', { headers: apiBearerAuthHeaders() }),
-        fetch(
-          vehicleIds.length === 1
-            ? `/api/vehicle-maintenance/schedules?vehicle_id=${encodeURIComponent(vehicleIds[0])}`
-            : '/api/vehicle-maintenance/schedules',
-          { headers: apiBearerAuthHeaders() }
-        ),
+        fetch(`/api/vehicle-maintenance/schedules?${scheduleParams.toString()}`, {
+          headers: apiBearerAuthHeaders(),
+        }),
       ])
       const catalogJson = await catalogRes.json()
       const schedulesJson = await schedulesRes.json()
@@ -152,7 +157,7 @@ export default function VehicleMaintenanceSchedulePanel({
     } finally {
       setLoading(false)
     }
-  }, [vehicleIds, t])
+  }, [vehicleIds, t, activeOperatorId])
 
   useEffect(() => {
     if (hidden || vehicleIds.length === 0) return
@@ -285,7 +290,7 @@ export default function VehicleMaintenanceSchedulePanel({
       const res = await fetch('/api/vehicle-maintenance/schedules', {
         method: 'PUT',
         headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({ ...editForm, operatorId: activeOperatorId }),
       })
       const json = await res.json()
       if (!res.ok) {

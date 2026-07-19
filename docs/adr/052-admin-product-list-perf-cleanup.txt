@@ -1,0 +1,46 @@
+================================================================================
+ADR 052 — Admin product list perf + catalog cleanup (Phase 6d.4c)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+After clone/delete (ADR 051), admin products list still did N+1 product_media
+queries. Edit page / pricing hook had heavy debug console.log noise.
+Full god-component split of DynamicPricingManager (~4k) / ProductDetailsTab
+(~3.7k) deferred — Refactored variant is not feature-complete for cutover.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. src/lib/fetchProductPrimaryImagesBatch.ts
+   - One (chunked) product_media query → Map product_id → primary/first image
+   - ProductsPageInner uses withPrimaryImages()
+
+2. src/lib/adminProductChoiceCombinations.ts
+   - Extract list net-price combination builder from ProductsPageInner
+
+3. Cleanup
+   - Remove debug console.log from product edit page + useDynamicPricing
+   - Drop obsolete “auth check disabled” comments on edit page
+
+4. Non-goals
+   - Do not switch production to DynamicPricingManagerRefactored yet
+   - Do not split ProductDetailsTab in this pass
+
+
+Next
+--------------------------------------------------------------------------------
+Optional: cut over DynamicPricingManager → Refactored after feature parity check
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/fetchProductPrimaryImagesBatch.ts
+src/lib/adminProductChoiceCombinations.ts
+src/app/[locale]/admin/products/ProductsPageInner.tsx
+src/app/[locale]/admin/products/[id]/page.tsx
+src/hooks/useDynamicPricing.ts
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

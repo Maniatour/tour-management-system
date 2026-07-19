@@ -5,6 +5,8 @@ import { X, Save, Calendar, DollarSign, Users, Printer, CheckCircle } from 'luci
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
 import { useTranslations, useLocale } from 'next-intl'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
@@ -98,6 +100,8 @@ interface OfficeTipsModalProps {
 }
 
 export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const t = useTranslations('attendancePage')
   const locale = useLocale()
   const [startDate, setStartDate] = useState('')
@@ -194,6 +198,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
           reservation_ids,
           products!inner(name_ko)
         `)
+        .eq('operator_id', activeOperatorId)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
         .in('tour_status', ['Confirmed', 'Recruiting'])
@@ -206,6 +211,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
 
       const { data: officeTipsData } = await fromUntypedTable(supabase, 'tour_office_tips')
         .select('tour_id, office_tip_amount, note, settled_at')
+        .eq('operator_id', activeOperatorId)
         .in('tour_id', toursData.map((t: { id: string }) => t.id))
 
       const tipsByTour = new Map(
@@ -298,7 +304,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
     } finally {
       setLoading(false)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, activeOperatorId])
 
   const fetchAttendanceForStaff = useCallback(async () => {
     if (selectedStaffEmails.length === 0) {
@@ -309,6 +315,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       const { data: allRecords, error } = await supabase
         .from('attendance_records')
         .select('employee_email, date, check_in_time, work_hours')
+        .eq('operator_id', activeOperatorId)
         .in('employee_email', selectedStaffEmails)
         .not('check_out_time', 'is', null)
 
@@ -339,6 +346,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
 
       const { data: mealRows, error: mealErr } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email, meal_date')
+        .eq('operator_id', activeOperatorId)
         .in('employee_email', selectedStaffEmails)
 
       if (mealErr) {
@@ -400,7 +408,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       console.error('근무 기록 조회 오류:', e)
       setEmployeeStats([])
     }
-  }, [selectedStaffEmails, startDate, endDate, opMembers])
+  }, [selectedStaffEmails, startDate, endDate, opMembers, activeOperatorId])
 
   useEffect(() => {
     if (!isOpen) return
@@ -544,17 +552,22 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         tour_id: tour.id,
         office_tip_amount: tour.office_tip_amount,
         note: tour.note || null,
-        settled_at: settledAt ?? tour.settled_at ?? null
+        settled_at: settledAt ?? tour.settled_at ?? null,
+        operator_id: activeOperatorId,
       }
       const { data: existing, error: fetchError } = await fromUntypedTable(supabase, 'tour_office_tips')
         .select('id')
+        .eq('operator_id', activeOperatorId)
         .eq('tour_id', tour.id)
         .maybeSingle()
       if (fetchError) {
         throw new Error(`투어 팁 조회 실패: ${fetchError.message}`)
       }
       if (existing) {
-        const { error: updateError } = await fromUntypedTable(supabase, 'tour_office_tips').update(payload).eq('tour_id', tour.id)
+        const { error: updateError } = await fromUntypedTable(supabase, 'tour_office_tips')
+          .update(payload)
+          .eq('operator_id', activeOperatorId)
+          .eq('tour_id', tour.id)
         if (updateError) {
           throw new Error(`저장 실패 (투어 ${tour.tour_date}): ${updateError.message}`)
         }

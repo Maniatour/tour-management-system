@@ -8,6 +8,8 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { ChannelForm } from '@/components/channels/ChannelForm'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, withOperatorId } from '@/lib/operators/scopeQuery'
 
 interface Channel {
   id: string
@@ -55,6 +57,7 @@ const CHANNELS_LIST_UI_DEFAULT = {
 
 export default function AdminChannels() {
   const t = useTranslations('channels')
+  const { operatorId } = useOperatorOptional()
   
   const [channels, setChannels] = useState<Channel[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,20 +87,21 @@ export default function AdminChannels() {
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEditData, setBulkEditData] = useState<Record<string, Partial<Channel>>>({})
 
-  // Supabase에서 채널 데이터 가져오기
+  // Supabase에서 채널 데이터 가져오기 (테넌트 전환 시 재조회)
   useEffect(() => {
-    fetchChannels()
-    fetchProducts()
-    fetchChannelProducts()
-  }, [])
+    void fetchChannels()
+    void fetchProducts()
+    void fetchChannelProducts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operatorId])
 
   const fetchChannels = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('channels')
-        .select('*')
-        .order('name')
+      const { data, error } = await withOperatorId(
+        supabase.from('channels').select('*'),
+        operatorId
+      ).order('name')
 
       if (error) {
         console.error('Error fetching channels:', error)
@@ -125,11 +129,13 @@ export default function AdminChannels() {
   const fetchProducts = async () => {
     try {
       setLoadingProducts(true)
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, name_ko, category, sub_category, description, base_price, status')
-        .eq('status', 'active')
-        .order('name_ko', { ascending: true })
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('products')
+          .select('id, name, name_ko, category, sub_category, description, base_price, status')
+          .eq('status', 'active'),
+        operatorId
+      ).order('name_ko', { ascending: true })
 
       if (error) {
         console.error('Error fetching products:', error)
@@ -178,10 +184,13 @@ export default function AdminChannels() {
 
   const fetchChannelProducts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('channel_products')
-        .select('id, channel_id, product_id, is_active, variant_key, variant_name_ko, variant_name_en')
-        .eq('is_active', true)
+      const { data, error } = await withOperatorId(
+        supabase
+          .from('channel_products')
+          .select('id, channel_id, product_id, is_active, variant_key, variant_name_ko, variant_name_en')
+          .eq('is_active', true),
+        operatorId
+      )
 
       if (error) {
         console.error('Error fetching channel products:', error)
@@ -232,7 +241,8 @@ export default function AdminChannels() {
         manager_contact: (channel as any).manager_contact || '',
         contract_url: (channel as any).contract_url || '',
         commission_base_price_only: (channel as any).commission_base_price_only ?? false,
-        pricing_type: (channel as any).pricing_type || 'separate'
+        pricing_type: (channel as any).pricing_type || 'separate',
+        ...operatorIdInsert(operatorId),
       }
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1250,7 +1260,8 @@ export default function AdminChannels() {
                     productsToAdd.map(productId => ({
                       channel_id: selectedChannelForProducts.id,
                       product_id: productId,
-                      is_active: true
+                      is_active: true,
+                      ...operatorIdInsert(operatorId),
                     }))
                   )
 
@@ -1423,6 +1434,7 @@ function VariantEditForm({ variant, onSave, onCancel }: VariantEditFormProps) {
 }
 
 function ChannelProductSelectionForm({ channel, products, channelProducts, loading = false, onSave, onCancel, onVariantChange }: ChannelProductSelectionFormProps) {
+  const { operatorId } = useOperatorOptional()
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedSubCategories, setExpandedSubCategories] = useState<Set<string>>(new Set())
@@ -1486,7 +1498,8 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
           channel_id: channel.id,
           product_id: productId,
           variant_key: newVariantKey,
-          is_active: true
+          is_active: true,
+          ...operatorIdInsert(operatorId),
         } as any)
         .select()
         .single()

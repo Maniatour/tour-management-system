@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { Database } from '@/lib/database.types'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,9 @@ export async function POST(request: NextRequest) {
     const supabase = await getSupabaseForApiRoute(request)
     if (supabase instanceof NextResponse) return supabase
     const body = await request.json()
+    const requestOperatorId = resolveOperatorId(
+      typeof body.operatorId === 'string' ? body.operatorId : null
+    )
     
     const {
       // 차량 정비 정보
@@ -65,13 +69,17 @@ export async function POST(request: NextRequest) {
     // 차량 정보 조회
     const { data: vehicleData, error: vehicleError } = await supabase
       .from('vehicles')
-      .select('vehicle_number, vehicle_type, vehicle_category')
+      .select('vehicle_number, vehicle_type, vehicle_category, operator_id')
       .eq('id', vehicle_id)
       .single()
     
     if (vehicleError || !vehicleData) {
       return NextResponse.json({ error: '차량 정보를 찾을 수 없습니다.' }, { status: 404 })
     }
+
+    const operator_id = resolveOperatorId(
+      (vehicleData.operator_id as string | null) || requestOperatorId
+    )
     
     // 회사 지출 데이터 생성
     const expenseId = `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -93,7 +101,8 @@ export async function POST(request: NextRequest) {
       vehicle_id,
       maintenance_type,
       notes: notes || null,
-      attachments: receipts || null
+      attachments: receipts || null,
+      operator_id,
     }
     
     // 차량 정비 데이터 생성
@@ -101,6 +110,7 @@ export async function POST(request: NextRequest) {
     const maintenanceData: VehicleMaintenanceInsert = {
       id: maintenanceId,
       vehicle_id,
+      operator_id,
       maintenance_date,
       mileage: mileage ? parseInt(mileage) : null,
       maintenance_type,
@@ -182,6 +192,7 @@ export async function GET(request: NextRequest) {
     const vehicleId = searchParams.get('vehicle_id')
     const maintenanceId = searchParams.get('maintenance_id')
     const expenseId = searchParams.get('expense_id')
+    const operatorId = resolveOperatorId(searchParams.get('operatorId'))
     
     let query = supabase
       .from('vehicle_maintenance')
@@ -197,6 +208,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
+      .eq('operator_id', operatorId)
     
     if (vehicleId) {
       query = query.eq('vehicle_id', vehicleId)

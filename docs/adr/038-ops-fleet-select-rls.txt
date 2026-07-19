@@ -1,0 +1,52 @@
+================================================================================
+ADR 038 — Ops fleet SELECT RLS + operator_members (Phase 6c.5)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.0–6b.1 stamped vehicles / vehicle_maintenance / schedules.
+SELECT was staff-only (or open authenticated for schedules). Finance tables
+already have soft member SELECT (6c.1–6c.4).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719270000_saas_fleet_select_rls.sql
+   SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+   on vehicles, vehicle_maintenance, vehicle_maintenance_schedules
+   (schedules: replace USING(true) — important tighten)
+
+2. Writes unchanged
+
+3. Smoke: saas_fleet_select_rls_ready()
+
+4. Attendance deliberately deferred
+   - SELECT is own_or_admin (privacy)
+   - is_operator_member() short-circuits is_staff() → would let all staff
+     see every attendance row if OR'd naively
+   - Needs is_operator_member_strict + role design before rewrite
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Attendance / monthly_attendance_stats SELECT rewrite
+- Staff cross-tenant lock-down
+- Booking/payment logic
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.6 attendance SELECT tenancy (ADR 039)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719270000_saas_fleet_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

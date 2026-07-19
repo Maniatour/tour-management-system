@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { X, Calculator, ChevronDown, ChevronRight, Clock, DollarSign, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import Link from 'next/link'
 import {
   fetchEmployeeHourlyRatePeriods,
@@ -100,6 +102,8 @@ interface EmployeeData {
 }
 
 export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', onOverdueCountChange }: TotalEmployeesModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [employeeData, setEmployeeData] = useState<EmployeeData[]>([])
@@ -205,6 +209,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           work_hours,
           status
         `)
+        .eq('operator_id', activeOperatorId)
         .gte('date', new Date(new Date(startDate).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0])
         .lte('date', new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0])
         .order('date', { ascending: true })
@@ -216,6 +221,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
       const { data: mealRows, error: mealError } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email, meal_date')
+        .eq('operator_id', activeOperatorId)
         .gte('meal_date', startDate)
         .lte('meal_date', endDate)
       if (mealError) {
@@ -616,7 +622,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     employeeEmail: string
   ): Promise<{ share: number; prepayment_tip_total: number }> => {
     try {
-      return await calculateEmployeePrepaidTips(supabase, tour, employeeEmail)
+      return await calculateEmployeePrepaidTips(supabase, tour, employeeEmail, activeOperatorId)
     } catch (error) {
       console.error('Prepaid tip 계산 오류:', error)
       return { share: 0, prepayment_tip_total: 0 }
@@ -720,6 +726,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     const { data: existingTipShare } = await supabase
       .from('tour_tip_shares')
       .select('id, total_tip, guide_amount, assistant_amount')
+      .eq('operator_id', activeOperatorId)
       .eq('tour_id', tourId)
       .maybeSingle()
 
@@ -727,6 +734,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
       const { error: updateError } = await supabase
         .from('tour_tip_shares')
         .update({ total_tip: newTotalTip, guide_amount: guideAmount, assistant_amount: assistantAmount })
+        .eq('operator_id', activeOperatorId)
         .eq('tour_id', tourId)
       if (updateError) {
         console.error('팁 쉐어 업데이트 오류:', updateError)
@@ -741,7 +749,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         guide_amount: guideAmount,
         assistant_amount: assistantAmount,
         guide_percent: newTotalTip > 0 ? (guideAmount / newTotalTip) * 100 : 0,
-        assistant_percent: newTotalTip > 0 ? (assistantAmount / newTotalTip) * 100 : 0
+        assistant_percent: newTotalTip > 0 ? (assistantAmount / newTotalTip) * 100 : 0,
+        operator_id: activeOperatorId,
       })
       if (insertError) {
         console.error('팁 쉐어 생성 오류:', insertError)

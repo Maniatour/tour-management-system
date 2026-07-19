@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 const ID_CHUNK = 200
 const ID_FETCH_PARALLEL = 3
@@ -85,12 +86,14 @@ export function pickReservationsForOperationalQueue<T>(
 export async function fetchReservationsByIdsProgressive(
   supabase: SupabaseClient,
   ids: string[],
-  handlers: FetchReservationsByIdsChunkHandlers
+  handlers: FetchReservationsByIdsChunkHandlers,
+  operatorId?: string | null
 ): Promise<{ error: Error | null; loadedRowCount: number }> {
   const unique = [...new Set(ids.map((id) => String(id ?? '').trim()).filter(Boolean))]
   if (unique.length === 0) {
     return { error: null, loadedRowCount: 0 }
   }
+  const opId = resolveOperatorId(operatorId)
 
   let loadedRowCount = 0
   try {
@@ -106,6 +109,7 @@ export async function fetchReservationsByIdsProgressive(
           const { data, error } = await supabase
             .from('reservations')
             .select(RESERVATION_LIST_SELECT)
+            .eq('operator_id', opId)
             .in('id', chunkIds)
             .order('created_at', { ascending: false })
             .order('id', { ascending: false })

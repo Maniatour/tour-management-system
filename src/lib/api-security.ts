@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Database } from '@/lib/database.types'
+import { applyActiveOperatorSession } from '@/lib/operators/applyActiveOperatorSession'
 
 const STAFF_EMAIL_WHITELIST = new Set(['info@maniatour.com', 'wooyong.shim09@gmail.com'])
 
@@ -116,6 +117,9 @@ export async function requireStaffApiAuth(request: NextRequest): Promise<
       response: NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 }),
     }
   }
+
+  // Phase 6c.9: request-scoped active operator GUC (prep; no staff RLS lock-down yet)
+  await applyActiveOperatorSession(staffClient, request)
 
   return { ok: true, userEmail }
 }

@@ -1,0 +1,45 @@
+================================================================================
+ADR 048 — Commerce isolation smoke expand (inventory + joins) (Phase 6e.1)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6e.0 covered catalog/commerce stamp + Direct + offer↔product sample.
+Inventory v2 tables and channel_products joins were still unchecked.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Expand evaluateCommerceIsolation:
+   - stampInventoryCore: resources + allotments + bindings
+   - stampInventoryHoldsLedger: holds + ledger
+   - channelProductSameTenant: sample channel_products vs product/channel
+   - inventoryBindingResourceSameTenant: sample bindings vs resources
+
+2. Still read-only — no hold/checkout/Stripe calls
+
+3. Empty inventory tables pass when NULL operator_id count is 0
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking/payment/checkout logic
+- Automatic browser E2E
+- Inventory RLS rewrite
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6e.2 host book readiness (ADR 049)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/commerceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

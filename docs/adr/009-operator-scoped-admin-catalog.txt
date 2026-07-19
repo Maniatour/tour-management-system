@@ -1,0 +1,51 @@
+================================================================================
+ADR 009 — Operator-scoped Admin Catalog (Phase 5b)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Operator create/switch exists (ADR 008), but admin Products/Channels still
+listed the entire shared DB. Operator B could see Kovegas catalog rows.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Helper: src/lib/operators/scopeQuery.ts
+   withOperatorId(query, operatorId)
+   operatorIdInsert(operatorId)
+
+2. Admin catalog reads filter by active operator_id:
+   - Products list / favorites
+   - Channels list + channel_products
+   - useChannelManagement (Dynamic Pricing channel picker)
+   - Product edit load (cross-tenant id → redirect)
+
+3. Admin catalog writes stamp operator_id:
+   - product create / copy
+   - channel create
+   - channel_products link / variant insert
+
+4. M00001 homepage channel is only force-included for Kovegas operator.
+
+5. Customer checkout / booking paths unchanged (still Kovegas Direct Web).
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Full RLS rewrite for every table
+- Reservations / tours / expenses operator filtering
+- Stripe Connect
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/scopeQuery.ts
+src/app/[locale]/admin/products/ProductsPageInner.tsx
+src/app/[locale]/admin/products/[id]/page.tsx
+src/components/product/BasicInfoTab.tsx
+src/components/admin/FavoriteOrderModal.tsx
+src/app/[locale]/admin/channels/page.tsx
+src/hooks/useChannelManagement.ts
+================================================================================

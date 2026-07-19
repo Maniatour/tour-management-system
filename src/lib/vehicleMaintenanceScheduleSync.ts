@@ -5,6 +5,8 @@ import {
   type VehicleMaintenanceCatalogRow,
 } from '@/lib/vehicleMaintenanceCatalog'
 import { buildScheduleUpsertFromMaintenance } from '@/lib/vehicleMaintenanceSchedule'
+import { lookupVehicleOperatorId } from '@/lib/operators/lookupVehicleOperatorId'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 type MaintenanceLike = {
   id: string
@@ -13,6 +15,7 @@ type MaintenanceLike = {
   mileage: number | null
   subcategory: string | null
   mileage_interval: number | null
+  operator_id?: string | null
 }
 
 export async function loadActiveMaintenanceCatalog(
@@ -45,6 +48,11 @@ export async function syncVehicleMaintenanceSchedulesFromRecord(
   const codes = catalogCodesForMaintenanceSubcategories(catalogRows, maintenance.subcategory)
   if (codes.length === 0) return 0
 
+  const operator_id = resolveOperatorId(
+    maintenance.operator_id ||
+      (await lookupVehicleOperatorId(supabase, maintenance.vehicle_id, null))
+  )
+
   let updated = 0
   for (const catalogCode of codes) {
     const patch = buildScheduleUpsertFromMaintenance({
@@ -59,6 +67,7 @@ export async function syncVehicleMaintenanceSchedulesFromRecord(
     const { error } = await supabase.from('vehicle_maintenance_schedules').upsert(
       {
         ...patch,
+        operator_id,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'vehicle_id,catalog_code' }

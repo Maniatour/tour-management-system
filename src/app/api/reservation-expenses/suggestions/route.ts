@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 const db = supabaseAdmin ?? supabase
 
@@ -7,10 +8,12 @@ const db = supabaseAdmin ?? supabase
 export async function GET(request: NextRequest) {
   try {
     const q = (request.nextUrl.searchParams.get('q') ?? '').trim()
+    const activeOperatorId = resolveOperatorId(request.nextUrl.searchParams.get('operatorId'))
 
     let query = db
       .from('reservation_expenses')
       .select('paid_for')
+      .eq('operator_id', activeOperatorId)
       .not('paid_for', 'is', null)
       .neq('paid_for', '')
 

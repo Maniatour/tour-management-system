@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { TrendingUp, PieChart } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 interface ExpenseReportTabProps {
   dateRange: { start: string; end: string }
@@ -10,12 +12,14 @@ interface ExpenseReportTabProps {
 }
 
 export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadExpenseStats()
-  }, [dateRange, period])
+  }, [dateRange, period, activeOperatorId])
 
   const loadExpenseStats = async () => {
     setLoading(true)
@@ -52,16 +56,19 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
         supabase
           .from('tour_expenses')
           .select('amount, paid_for, payment_method')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
           .from('reservation_expenses')
           .select('amount, paid_for, payment_method')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
           .from('company_expenses')
           .select('amount, category, payment_method')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
@@ -73,6 +80,7 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
         supabase
           .from('tours')
           .select('guide_fee, assistant_fee')
+          .eq('operator_id', activeOperatorId)
           .gte('tour_date', dateRange.start)
           .lte('tour_date', dateRange.end)
       ])

@@ -1,0 +1,55 @@
+================================================================================
+ADR 001 — SaaS Tenancy, Modules, Payments
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+단일 운영사(Kovegas/Mania) 시스템을, 다른 투어 공급자도 쓰는
+멀티테넌트 SaaS로 전환한다. 가격 아키텍처 v2와 함께 진행한다.
+
+
+Decision (권장안 확정)
+--------------------------------------------------------------------------------
+D1. Tenancy
+  Shared Database + operator_id + Postgres RLS
+  (Schema/DB-per-tenant는 초대형 고객 예외로만 나중에 검토)
+
+D2. Timeline
+  Tenant foundation → Commerce v2 → Booking → OTA → 외부 공급자 파일럿
+  외부 공급자 목표: 약 6~7개월 (내부 일정에 따라 조정)
+
+D3. Operations Suite
+  차량·가이드·출근·내부 경비 등은 Commerce Core와 분리
+  Kovegas는 모듈 ON, 기본 SaaS 고객에게 강제하지 않음
+
+D4. Payments
+  Stripe Connect (Express/Standard) 로 Operator별 결제 계정 분리
+
+D5. Customer sites
+  1단계: subdomain (operator-slug.platform…)
+  이후: custom domain
+
+
+Consequences
+--------------------------------------------------------------------------------
+- 모든 Commerce 테이블에 operator_id 필수
+- Kovegas = Tenant #1 (well-known id)
+- 기존 team 권한은 operator_members로 점진 이전
+- dynamic_pricing 등 레거시는 dual-write 후 제거 (ADR 후속)
+
+
+Well-known IDs
+--------------------------------------------------------------------------------
+Kovegas operator_id:
+  a0000000-0000-4000-8000-000000000001
+
+Slug: kovegas
+
+
+Related docs
+--------------------------------------------------------------------------------
+docs/pricing-architecture-v2-greenfield.txt
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

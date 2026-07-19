@@ -1,0 +1,48 @@
+================================================================================
+ADR 036 — company_expenses SELECT RLS + operator_members (Phase 6c.3)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.3 stamped company_expenses.operator_id. Phase 6c.2 added member SELECT
+on cash/statement/match. company_expenses remained staff-only SELECT
+(rls_is_staff_session_ok), so non-staff Operator B members could not read their
+tenant company expenses.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719250000_saas_company_expenses_select_rls.sql
+   SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+   INSERT/UPDATE/DELETE unchanged
+
+2. Smoke: saas_company_expenses_select_rls_ready() in opsFinanceIsolation
+
+3. Deferred:
+   - journal_entries / journal_lines (no operator_id column yet)
+   - staff cross-tenant lock-down
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout logic
+- Write-policy tenant tightening
+- Schema changes beyond RLS
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.4 journal_* operator_id + SELECT RLS (ADR 037)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719250000_saas_company_expenses_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

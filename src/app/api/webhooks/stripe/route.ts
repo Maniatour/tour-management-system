@@ -7,6 +7,7 @@ import {
   getStripeClient,
 } from '@/lib/customerBookingCheckout'
 import { markInvoicePaidFromStripeWebhook } from '@/lib/payableInvoice'
+import { syncOperatorFromStripeAccountEvent } from '@/lib/operators/stripeConnect'
 
 export const runtime = 'nodejs'
 
@@ -14,6 +15,7 @@ export const runtime = 'nodejs'
  * POST /api/webhooks/stripe
  * - payment_intent.succeeded → 고객 웹 예약 확정 (idempotent)
  * - invoice.paid → 스태프 발행 인보이스 paid 처리 (idempotent)
+ * - account.updated → SaaS operator Stripe Connect status sync
  */
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -59,6 +61,15 @@ export async function POST(request: NextRequest) {
       const result = await markInvoicePaidFromStripeWebhook(supabaseAdmin, stripeInvoice)
       console.log('[webhooks/stripe] invoice.paid', {
         stripeInvoiceId: stripeInvoice.id,
+        ...result,
+      })
+    }
+
+    if (event.type === 'account.updated') {
+      const account = event.data.object as Stripe.Account
+      const result = await syncOperatorFromStripeAccountEvent(supabaseAdmin, account)
+      console.log('[webhooks/stripe] account.updated', {
+        accountId: account.id,
         ...result,
       })
     }

@@ -9,9 +9,35 @@ import {
   deliverCustomerBookingConfirmationEmail,
   parseBookingLocale,
 } from '@/lib/customerBookingEmail'
+import { resolvePriceV2 } from '@/lib/commerce/resolvePriceV2'
+import { isCommerceV2ReadEnabled } from '@/lib/commerce/commerceV2Flags'
+import { calculateBookingPriceV2 } from '@/lib/commerce/calculateBookingPriceV2'
+import {
+  commitInventoryForReservation,
+  holdInventoryForBooking,
+  releaseInventoryForReservation,
+} from '@/lib/commerce/inventoryEngine'
+import { buildBookingMoneyBreakdown } from '@/lib/commerce/bookingMoneyBreakdown'
+import { KOVEgAS_DIRECT_CHANNEL_ID } from '@/lib/operators/resolvePublicDirectChannel'
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
-export const HOMEPAGE_CHANNEL_ID = 'M00001'
+/** @deprecated Prefer KOVEgAS_DIRECT_CHANNEL_ID — kept for existing imports */
+export const HOMEPAGE_CHANNEL_ID = KOVEgAS_DIRECT_CHANNEL_ID
 export const CUSTOMER_CHECKOUT_PURPOSE = 'customer_web_booking'
+
+export type BookingTenantContext = {
+  operatorId: string
+  channelId: string
+}
+
+export function defaultBookingTenantContext(): BookingTenantContext {
+  return {
+    operatorId: KOVEgAS_OPERATOR_ID,
+    channelId: KOVEgAS_DIRECT_CHANNEL_ID,
+  }
+}
 export const STRIPE_PI_NOTE_PREFIX = 'stripe_payment_intent_id:'
 
 export type CustomerBookingCustomerInput = {
@@ -48,6 +74,10 @@ export type CustomerBookingPriceResult = {
   couponDiscount: number
   totalPrice: number
   calculationMethod: string
+  /** Commerce v2 metadata when priced via v2; null/undefined for legacy */
+  commerceRatePlanId?: string | null
+  commerceOfferId?: string | null
+  commerceOfferCode?: string | null
 }
 
 type AdminClient = SupabaseClient<Database>
@@ -136,11 +166,16 @@ export function parseCustomerBookingCustomer(raw: unknown): CustomerBookingCusto
   }
 }
 
-async function assertProductBookable(admin: AdminClient, productId: string): Promise<void> {
+async function assertProductBookable(
+  admin: AdminClient,
+  productId: string,
+  operatorId: string
+): Promise<void> {
   const { data, error } = await admin
     .from('products')
-    .select('id, status, is_published')
+    .select('id, status, is_published, operator_id')
     .eq('id', productId)
+    .eq('operator_id', resolveOperatorId(operatorId))
     .maybeSingle()
 
   if (error || !data) {
@@ -158,13 +193,37 @@ async function assertDateSaleAvailable(
   admin: AdminClient,
   productId: string,
   tourDate: string,
+  channelId: string,
   variantKey?: string | null
 ): Promise<void> {
+  // When v2 read is enabled, prefer price_overrides / stop_sells for the plan
+  if (isCommerceV2ReadEnabled(productId)) {
+    try {
+      const v2 = await resolvePriceV2({
+        client: admin,
+        productId,
+        channelId,
+        variantKey: variantKey || 'default',
+        date: tourDate,
+      })
+      if (v2.found && !v2.isSaleAvailable) {
+        throw new Error('선택한 날짜는 판매 중이 아닙니다.')
+      }
+      // If v2 found and open, still allow; if not found, fall through to legacy check
+      if (v2.found && v2.isSaleAvailable) {
+        return
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('판매 중')) throw err
+      console.warn('[customerBookingCheckout] v2 sale check failed', err)
+    }
+  }
+
   let query = admin
     .from('dynamic_pricing')
     .select('id, is_sale_available')
     .eq('product_id', productId)
-    .eq('channel_id', HOMEPAGE_CHANNEL_ID)
+    .eq('channel_id', channelId)
     .eq('date', tourDate)
     .limit(5)
 
@@ -293,11 +352,18 @@ export async function calculateServerBookingPrice(
   admin: AdminClient,
   line: CustomerBookingLineInput,
   couponCode?: string | null,
-  opts?: { enforceMinAmount?: boolean }
+  opts?: { enforceMinAmount?: boolean; tenant?: BookingTenantContext }
 ): Promise<CustomerBookingPriceResult> {
   const enforceMinAmount = opts?.enforceMinAmount !== false
-  await assertProductBookable(admin, line.productId)
-  await assertDateSaleAvailable(admin, line.productId, line.tourDate, line.variantKey)
+  const tenant = opts?.tenant || defaultBookingTenantContext()
+  await assertProductBookable(admin, line.productId, tenant.operatorId)
+  await assertDateSaleAvailable(
+    admin,
+    line.productId,
+    line.tourDate,
+    tenant.channelId,
+    line.variantKey
+  )
 
   const { choiceOptionIds, additionalOptionIds } = await classifySelectedOptions(
     admin,
@@ -305,49 +371,143 @@ export async function calculateServerBookingPrice(
     line.selectedOptions
   )
 
-  const { data, error } = await admin.rpc('calculate_dynamic_price', {
-    p_product_id: line.productId,
-    p_channel_id: HOMEPAGE_CHANNEL_ID,
-    p_date: line.tourDate,
-    p_adults: line.adults,
-    p_children: line.child,
-    p_infants: line.infant,
-    p_selected_choices: choiceOptionIds as unknown as Json,
-    p_selected_additional_options: additionalOptionIds as unknown as Json,
-  })
+  let basePrice = 0
+  let choicesPrice = 0
+  let additionalOptionsPrice = 0
+  let subtotal = 0
+  let calculationMethod = 'unknown'
+  let usedCommerceV2 = false
+  let commerceRatePlanId: string | null = null
+  let commerceOfferId: string | null = null
+  let commerceOfferCode: string | null = null
 
-  if (error) {
-    console.error('[customerBookingCheckout] calculate_dynamic_price', error)
-    throw new Error('서버 가격 계산에 실패했습니다.')
+  // Feature-flagged Commerce Core v2 read (falls back to legacy RPC on any miss)
+  if (isCommerceV2ReadEnabled(line.productId)) {
+    try {
+      const v2 = await calculateBookingPriceV2({
+        client: admin,
+        productId: line.productId,
+        channelId: tenant.channelId,
+        operatorId: tenant.operatorId,
+        variantKey: line.variantKey || 'default',
+        tourDate: line.tourDate,
+        adults: line.adults,
+        child: line.child,
+        infant: line.infant,
+        selectedOptions: line.selectedOptions,
+        additionalOptionIds,
+      })
+      if (v2 && v2.subtotal > 0) {
+        basePrice = v2.basePrice
+        choicesPrice = v2.choicesPrice
+        additionalOptionsPrice = v2.additionalOptionsPrice
+        subtotal = v2.subtotal
+        calculationMethod = v2.calculationMethod
+        commerceRatePlanId = v2.ratePlanId
+        commerceOfferId = v2.offerId
+        commerceOfferCode = v2.offerCode
+        usedCommerceV2 = true
+        console.info('[customerBookingCheckout] commerce_v2 price', {
+          productId: line.productId,
+          date: line.tourDate,
+          method: calculationMethod,
+          subtotal,
+          offerCode: v2.offerCode,
+        })
+      } else {
+        console.warn('[customerBookingCheckout] commerce_v2 miss → legacy RPC', {
+          productId: line.productId,
+          date: line.tourDate,
+        })
+      }
+    } catch (v2Err) {
+      console.warn('[customerBookingCheckout] commerce_v2 error → legacy RPC', v2Err)
+    }
   }
 
-  const row = data?.[0]
-  let basePrice = Number(row?.base_price) || 0
-  let choicesPrice = Number(row?.choices_price) || 0
-  let additionalOptionsPrice = Number(row?.additional_options_price) || 0
-  let subtotal = roundMoney(
-    Number(row?.total_price) || basePrice + choicesPrice + additionalOptionsPrice
-  )
-  let calculationMethod = row?.calculation_method || 'unknown'
+  if (!usedCommerceV2) {
+    const { data, error } = await admin.rpc('calculate_dynamic_price', {
+      p_product_id: line.productId,
+      p_channel_id: tenant.channelId,
+      p_date: line.tourDate,
+      p_adults: line.adults,
+      p_children: line.child,
+      p_infants: line.infant,
+      p_selected_choices: choiceOptionIds as unknown as Json,
+      p_selected_additional_options: additionalOptionIds as unknown as Json,
+    })
 
-  // 동적 가격 미설정(not_found / $0)이면 상품 카탈로그 가격으로 폴백
-  // (맞춤 투어 MNCUSTOM 등: 화면은 base_price=$1인데 RPC만 0을 반환하던 케이스)
-  if (subtotal <= 0 || calculationMethod === 'not_found') {
-    const fallback = await calculateCatalogFallbackPrice(
-      admin,
-      line,
-      choiceOptionIds,
-      additionalOptionIds
+    if (error) {
+      console.error('[customerBookingCheckout] calculate_dynamic_price', error)
+      throw new Error('서버 가격 계산에 실패했습니다.')
+    }
+
+    const row = data?.[0]
+    basePrice = Number(row?.base_price) || 0
+    choicesPrice = Number(row?.choices_price) || 0
+    additionalOptionsPrice = Number(row?.additional_options_price) || 0
+    subtotal = roundMoney(
+      Number(row?.total_price) || basePrice + choicesPrice + additionalOptionsPrice
     )
-    basePrice = fallback.basePrice
-    choicesPrice = fallback.choicesPrice
-    additionalOptionsPrice = fallback.additionalOptionsPrice
-    subtotal = fallback.subtotal
-    calculationMethod = fallback.calculationMethod
+    calculationMethod = row?.calculation_method || 'unknown'
+
+    // 동적 가격 미설정(not_found / $0)이면 상품 카탈로그 가격으로 폴백
+    if (subtotal <= 0 || calculationMethod === 'not_found') {
+      const fallback = await calculateCatalogFallbackPrice(
+        admin,
+        line,
+        choiceOptionIds,
+        additionalOptionIds
+      )
+      basePrice = fallback.basePrice
+      choicesPrice = fallback.choicesPrice
+      additionalOptionsPrice = fallback.additionalOptionsPrice
+      subtotal = fallback.subtotal
+      calculationMethod = fallback.calculationMethod
+    }
   }
 
   if (subtotal <= 0) {
     throw new Error('계산된 결제 금액이 올바르지 않습니다. 날짜/옵션을 다시 확인해 주세요.')
+  }
+
+  // Phase 2 shadow: log-only compare vs Commerce Core v2 (never affects checkout)
+  if (process.env.COMMERCE_V2_SHADOW === '1') {
+    const shadowLine = line
+    const shadowBase = basePrice
+    const shadowSubtotal = subtotal
+    const shadowMethod = calculationMethod
+    void (async () => {
+      try {
+        const v2 = await resolvePriceV2({
+          client: admin,
+          productId: shadowLine.productId,
+          channelId: tenant.channelId,
+          variantKey: shadowLine.variantKey || 'default',
+          date: shadowLine.tourDate,
+        })
+        console.info('[commerce-v2-shadow]', {
+          productId: shadowLine.productId,
+          date: shadowLine.tourDate,
+          variantKey: shadowLine.variantKey || 'default',
+          legacy: {
+            basePrice: shadowBase,
+            subtotal: shadowSubtotal,
+            method: shadowMethod,
+          },
+          v2: {
+            found: v2.found,
+            source: v2.source,
+            adult: v2.adult,
+            child: v2.child,
+            infant: v2.infant,
+            isSaleAvailable: v2.isSaleAvailable,
+          },
+        })
+      } catch (shadowErr) {
+        console.warn('[commerce-v2-shadow] failed', shadowErr)
+      }
+    })()
   }
 
   let couponDiscount = 0
@@ -373,6 +533,9 @@ export async function calculateServerBookingPrice(
     couponDiscount,
     totalPrice,
     calculationMethod,
+    commerceRatePlanId,
+    commerceOfferId,
+    commerceOfferCode,
   }
 }
 
@@ -459,13 +622,15 @@ export async function resolveCouponDiscount(
 
 async function createOrReuseCustomer(
   admin: AdminClient,
-  customer: CustomerBookingCustomerInput
+  customer: CustomerBookingCustomerInput,
+  tenant: BookingTenantContext
 ): Promise<string> {
   const email = customer.email.trim().toLowerCase()
   const { data: existing } = await admin
     .from('customers')
     .select('id')
     .ilike('email', email)
+    .eq('operator_id', tenant.operatorId)
     .eq('archive', false)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -479,7 +644,8 @@ async function createOrReuseCustomer(
         phone: customer.phone,
         language: customer.language || null,
         special_requests: customer.specialRequests || null,
-        channel_id: HOMEPAGE_CHANNEL_ID,
+        channel_id: tenant.channelId,
+        operator_id: tenant.operatorId,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
@@ -494,7 +660,8 @@ async function createOrReuseCustomer(
     phone: customer.phone,
     language: customer.language || null,
     special_requests: customer.specialRequests || null,
-    channel_id: HOMEPAGE_CHANNEL_ID,
+    channel_id: tenant.channelId,
+    operator_id: tenant.operatorId,
     status: 'active',
   })
   if (error) {
@@ -627,12 +794,15 @@ export async function createPendingCustomerBooking(
     status?: 'pending' | 'inquiry'
     /** 장바구니 합계 쿠폰 배분 등 사전 계산된 가격 */
     priceOverride?: CustomerBookingPriceResult
+    /** Public host tenant; defaults to Kovegas + M00001 */
+    tenant?: BookingTenantContext
   }
 ): Promise<CreatePendingBookingResult> {
+  const tenant = args.tenant || defaultBookingTenantContext()
   const price =
     args.priceOverride ||
-    (await calculateServerBookingPrice(admin, args.line, args.couponCode))
-  const customerId = await createOrReuseCustomer(admin, args.customer)
+    (await calculateServerBookingPrice(admin, args.line, args.couponCode, { tenant }))
+  const customerId = await createOrReuseCustomer(admin, args.customer, tenant)
   const reservationId = generateReservationId()
   const totalPeople = args.line.adults + args.line.child + args.line.infant
   const now = new Date().toISOString()
@@ -660,10 +830,32 @@ export async function createPendingCustomerBooking(
     .filter(Boolean)
     .join('\n') || null
 
+  const moneyBreakdown = buildBookingMoneyBreakdown({
+    calculationMethod: price.calculationMethod,
+    channelId: tenant.channelId,
+    variantKey: args.line.variantKey || 'default',
+    tourDate: args.line.tourDate,
+    productId: args.line.productId,
+    adults: args.line.adults,
+    child: args.line.child,
+    infant: args.line.infant,
+    basePrice: price.basePrice,
+    choicesPrice: price.choicesPrice,
+    additionalOptionsPrice: price.additionalOptionsPrice,
+    subtotal: price.subtotal,
+    couponCode: price.couponCode,
+    couponDiscount: price.couponDiscount,
+    totalPrice: price.totalPrice,
+    ratePlanId: price.commerceRatePlanId ?? null,
+    offerId: price.commerceOfferId ?? null,
+    offerCode: price.commerceOfferCode ?? null,
+  })
+
   const reservationInsert: Database['public']['Tables']['reservations']['Insert'] = {
     id: reservationId,
     product_id: args.line.productId,
-    channel_id: HOMEPAGE_CHANNEL_ID,
+    channel_id: tenant.channelId,
+    operator_id: tenant.operatorId,
     customer_id: customerId,
     tour_date: args.line.tourDate,
     tour_time: args.line.tourTime || null,
@@ -677,6 +869,10 @@ export async function createPendingCustomerBooking(
     selected_options: args.line.selectedOptions as unknown as Json,
     selected_choices: args.line.selectedOptions as unknown as Json,
     status: args.status || 'pending',
+    commerce_offer_id: price.commerceOfferId ?? null,
+    commerce_rate_plan_id: price.commerceRatePlanId ?? null,
+    commerce_pricing_source: price.calculationMethod,
+    money_breakdown_json: moneyBreakdown as unknown as Json,
     created_at: now,
     updated_at: now,
   }
@@ -694,7 +890,37 @@ export async function createPendingCustomerBooking(
   try {
     await insertReservationChoicesAndOptions(admin, reservationId, args.line, totalPeople)
     await upsertReservationPricing(admin, reservationId, price, args.line.adults)
+
+    const choiceOptionIds = Object.values(args.line.selectedOptions || {}).filter(Boolean)
+    const hold = await holdInventoryForBooking(admin, {
+      productId: args.line.productId,
+      tourDate: args.line.tourDate,
+      tourTime: args.line.tourTime || null,
+      guestQty: totalPeople,
+      reservationId,
+      choiceOptionIds,
+    })
+    if (!hold.ok) {
+      throw new Error(hold.reason || '재고 확보에 실패했습니다.')
+    }
+
+    if (hold.holdIds.length > 0) {
+      const { error: holdSnapErr } = await admin
+        .from('reservations')
+        .update({
+          inventory_hold_ids: hold.holdIds,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', reservationId)
+      if (holdSnapErr) {
+        console.warn(
+          '[customerBookingCheckout] inventory_hold_ids snapshot failed',
+          holdSnapErr.message
+        )
+      }
+    }
   } catch (err) {
+    await releaseInventoryForReservation(admin, reservationId).catch(() => 0)
     await admin.from('reservations').delete().eq('id', reservationId)
     throw err
   }
@@ -714,9 +940,22 @@ export async function createStripePaymentIntentForReservation(args: {
   customerName: string
   customerEmail: string
   extraMetadata?: Record<string, string>
+  /** Phase 5f: when set, create destination charge to Connect account */
+  connect?: {
+    destinationAccountId: string
+    applicationFeeCents?: number
+  } | null
 }): Promise<Stripe.PaymentIntent> {
   const stripe = getStripeClient()
-  return stripe.paymentIntents.create({
+  const connect = args.connect
+  const useDestination =
+    !!connect?.destinationAccountId && connect.destinationAccountId.trim().length > 0
+  const applicationFeeCents =
+    useDestination && connect?.applicationFeeCents != null && connect.applicationFeeCents > 0
+      ? Math.min(connect.applicationFeeCents, Math.max(0, args.amountCents - 1))
+      : 0
+
+  const params: Stripe.PaymentIntentCreateParams = {
     amount: args.amountCents,
     currency: 'usd',
     metadata: {
@@ -725,12 +964,37 @@ export async function createStripePaymentIntentForReservation(args: {
       reservationId: args.reservationId,
       customerName: args.customerName,
       customerEmail: args.customerEmail,
+      connect_mode: useDestination ? 'destination' : 'platform',
+      ...(useDestination
+        ? {
+            connect_account_id: connect!.destinationAccountId,
+            ...(applicationFeeCents > 0
+              ? { application_fee_cents: String(applicationFeeCents) }
+              : {}),
+          }
+        : {}),
       ...(args.extraMetadata || {}),
     },
     automatic_payment_methods: { enabled: true },
     receipt_email: args.customerEmail,
-    description: `Kovegas booking ${args.reservationId}`,
-  })
+    description: `Tour booking ${args.reservationId}`,
+  }
+
+  if (useDestination) {
+    params.transfer_data = {
+      destination: connect!.destinationAccountId,
+    }
+    if (applicationFeeCents > 0) {
+      params.application_fee_amount = applicationFeeCents
+    }
+    console.info('[customerBookingCheckout] Connect destination PI', {
+      reservationId: args.reservationId,
+      destination: connect!.destinationAccountId,
+      applicationFeeCents,
+    })
+  }
+
+  return stripe.paymentIntents.create(params)
 }
 
 export async function recordPendingStripePayment(
@@ -750,7 +1014,10 @@ export async function recordPendingStripePayment(
 
   if (existing?.id) return
 
+  const operatorId = await lookupReservationOperatorId(admin, args.reservationId)
+
   const { error } = await admin.from('payment_records').insert({
+    operator_id: operatorId,
     reservation_id: args.reservationId,
     amount: args.amountUsd,
     payment_method: 'card',
@@ -848,7 +1115,9 @@ async function finalizeSingleReservationPayment(
       .eq('id', pendingRow.id)
     if (payUpdateError) throw new Error(`결제 기록 확정 실패: ${payUpdateError.message}`)
   } else {
+    const operatorId = await lookupReservationOperatorId(admin, args.reservationId)
     const { error: payInsertError } = await admin.from('payment_records').insert({
+      operator_id: operatorId,
       reservation_id: args.reservationId,
       amount: args.amountUsdForRecord,
       payment_method: 'card',
@@ -863,6 +1132,16 @@ async function finalizeSingleReservationPayment(
   }
 
   // 예약 status는 pending/inquiry 유지 — 관리자가 시스템에서 수동으로 confirmed 처리
+
+  try {
+    await commitInventoryForReservation(admin, args.reservationId)
+  } catch (invErr) {
+    console.error(
+      '[customerBookingCheckout] inventory commit failed (payment already confirmed)',
+      args.reservationId,
+      invErr
+    )
+  }
 
   if (args.sendEmail && reservation.customer_id) {
     const { data: customer } = await admin

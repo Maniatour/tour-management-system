@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Receipt, DollarSign, TrendingUp, PieChart } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 interface SettlementReportTabProps {
   dateRange: { start: string; end: string }
@@ -10,12 +12,14 @@ interface SettlementReportTabProps {
 }
 
 export default function SettlementReportTab({ dateRange, period }: SettlementReportTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadSettlementStats()
-  }, [dateRange, period])
+  }, [dateRange, period, activeOperatorId])
 
   const loadSettlementStats = async () => {
     setLoading(true)
@@ -69,6 +73,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
         supabase
           .from('payment_records')
           .select('amount')
+          .eq('operator_id', activeOperatorId)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])

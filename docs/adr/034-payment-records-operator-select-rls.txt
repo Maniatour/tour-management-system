@@ -1,0 +1,56 @@
+================================================================================
+ADR 034 — payment_records SELECT RLS + operator_members (Phase 6c.1)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.11 stamped payment_records.operator_id; Phase 6c.0 smoke checks NULL
+coverage. RLS still used staff/assignee/customer only (20260619250000) with no
+operator_members path. Commerce v2 tables already use:
+  is_staff() OR is_operator_member(operator_id)
+
+App set_current_operator_id is transaction-local (PostgREST RPC), so
+operator_id = current_operator_id() is NOT reliable for browser RLS.
+Checkout/webhooks use service_role and bypass RLS.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719230000_saas_payment_records_operator_select_rls.sql
+   - DROP legacy SELECT policy; CREATE
+     payment_records_select_staff_member_assignee_or_customer
+   - USING: is_staff() OR is_operator_member(operator_id)
+            OR assignee OR reservation customer
+   - INSERT/UPDATE/DELETE policies unchanged
+
+2. Smoke: saas_payment_records_select_rls_ready() + opsFinanceIsolation check
+
+3. Staff cross-tenant lock-down deferred
+   - is_staff() still sees all tenants (same as Commerce v2)
+   - App .eq('operator_id', activeOperatorId) remains first line for staff UI
+   - Future: JWT active operator + platform-admin role before tightening staff
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout / refund logic
+- Write-policy tenant tightening
+- RLS on cash_transactions / statement_* / match tables (later)
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.2 Ops finance SELECT RLS (ADR 035)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719230000_saas_payment_records_operator_select_rls.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

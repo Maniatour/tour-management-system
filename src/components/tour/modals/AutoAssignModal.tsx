@@ -6,6 +6,8 @@ import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { normalizeReservationIds } from '@/utils/tourUtils'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 type TourRow = {
   id: string
@@ -163,6 +165,8 @@ export default function AutoAssignModal({
   getCustomerLanguage,
   onSuccess
 }: AutoAssignModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
   const [teamMembers, setTeamMembers] = useState<TeamRow[]>([])
@@ -418,7 +422,7 @@ export default function AutoAssignModal({
         const [toursRes, teamRes, vehiclesRes, reservRes, pickupHotelsRes, channelsRes] = await Promise.all([
           supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id').eq('product_id', productId).eq('tour_date', tourDate),
           supabase.from('team').select('email, languages, name_ko, nick_name'),
-          supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date'),
+          supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date').eq('operator_id', activeOperatorId),
           supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id').eq('product_id', productId).eq('tour_date', tourDate),
           supabase
             .from('pickup_hotels')
@@ -582,7 +586,7 @@ export default function AutoAssignModal({
     }
 
     load()
-  }, [isOpen, productId, tourDate])
+  }, [isOpen, productId, tourDate, activeOperatorId])
 
   const saveProposedTours = useCallback(async () => {
     setApplying(true)

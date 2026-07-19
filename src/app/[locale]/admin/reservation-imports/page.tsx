@@ -14,8 +14,13 @@ import {
   isMyrealtripChannelFromEmail,
   isTripComNewOrderEmailSubject,
   isZoomZoomTourNewBookingEmailSubject,
+  isKlookOrderEmailSubjectForReservation,
 } from '@/lib/emailReservationParser'
-import { formatKlookReservationImportPlatformLabel } from '@/lib/resolveImportChannelVariant'
+import {
+  formatKlookReservationImportPlatformLabel,
+  isKlookKoreanGuideChannelVariant,
+} from '@/lib/resolveImportChannelVariant'
+import ReactCountryFlag from 'react-country-flag'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -330,12 +335,18 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isZoomZoomRow = (row: ImportItem) =>
     row.platform_key === 'zoomzoom' || isZoomZoomTourNewBookingEmailSubject(row.subject)
 
+  /** GetYourGuide: platform_key 또는 발신 */
+  const isGetYourGuideRow = (row: ImportItem) =>
+    (row.platform_key || '').toLowerCase() === 'getyourguide' ||
+    (row.source_email || '').toLowerCase().includes('getyourguide')
+
   /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함). Klook은 variant까지 표시 */
   const displayPlatform = (row: ImportItem) => {
     if (isKKdayRow(row)) return 'kkday'
     if (isManiaTourRow(row)) return 'maniatour'
     if (isTidesquareRow(row)) return '타이드스퀘어'
-    if (isMyrealtripRow(row)) return '마이리얼트립'
+    if (isMyrealtripRow(row)) return 'MYT'
+    if (isGetYourGuideRow(row)) return 'GYG'
     if (isTripComRow(row)) return 'Trip.com'
     if (isZoomZoomRow(row)) return '줌줌투어'
     const base = row.platform_key ?? '-'
@@ -346,6 +357,31 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       )
     }
     return base
+  }
+
+  /** 플랫폼 UI (Klook 한국인 가이드 → 국기 아이콘) */
+  const renderPlatform = (row: ImportItem) => {
+    if (
+      (row.platform_key || '').toLowerCase() === 'klook' &&
+      isKlookKoreanGuideChannelVariant(
+        row.extracted_data?.channel_variant_label,
+        row.extracted_data?.channel_variant_key
+      )
+    ) {
+      return (
+        <span className="inline-flex items-center gap-1">
+          <span>Klook</span>
+          <ReactCountryFlag
+            countryCode="KR"
+            svg
+            title="한국인 가이드"
+            aria-label="한국인 가이드"
+            style={{ width: '1.1em', height: '0.825em' }}
+          />
+        </span>
+      )
+    }
+    return displayPlatform(row)
   }
 
   /** GetYourGuide 발신 + 예약 접수 제목 (DB에 is_booking_confirmed 없을 때 목록·탭 보정) */
@@ -359,8 +395,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   /** 예약 접수 여부 (파서 자동 + 목록 API의 Klook 보강 + 사용자 드래그 + KKday/Viator/maniatour/GYG 제목 보정) */
   const isBookingConfirmed = (row: ImportItem) =>
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
-    (row.platform_key === 'klook' &&
-      (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')) ||
+    isKlookOrderEmailSubjectForReservation(row.subject) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
     (row.platform_key === 'viator' && isViatorBookingSubject(row)) ||
     (isTidesquareRow(row) && isTidesquareNewBookingEmailSubject(row.subject)) ||
@@ -392,6 +427,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     } else if (platformFilter) {
       if (platformFilter === 'klook') {
         if ((row.platform_key || '').toLowerCase() !== 'klook') return false
+      } else if (platformFilter === 'getyourguide') {
+        if (!isGetYourGuideRow(row)) return false
       } else if (platformFilter === 'tidesquare') {
         if (!isTidesquareRow(row)) return false
       } else if (platformFilter === 'myrealtrip') {
@@ -449,13 +486,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   /** 플랫폼 필터 옵션 (전체 + 주요 플랫폼 + 기타) */
   const PLATFORM_FILTER_OPTIONS: { value: string; label: string }[] = [
     { value: '', label: '전체 플랫폼' },
-    { value: 'getyourguide', label: 'GetYourGuide' },
+    { value: 'getyourguide', label: 'GYG' },
     { value: 'klook', label: 'Klook' },
     { value: 'kkday', label: 'KKday' },
     { value: 'viator', label: 'Viator' },
     { value: 'maniatour', label: 'Maniatour (홈페이지)' },
     { value: 'tidesquare', label: '타이드스퀘어' },
-    { value: 'myrealtrip', label: '마이리얼트립' },
+    { value: 'myrealtrip', label: 'MYT' },
     { value: 'tripcom', label: 'Trip.com' },
     { value: 'tripadvisor', label: 'Tripadvisor' },
     { value: 'booking', label: 'Booking' },
@@ -624,7 +661,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   }
 
   return (
-    <div className="space-y-4 px-2 sm:px-0">
+    <div className="space-y-4 px-1 sm:px-0">
       {/* 이메일 연동 (Gmail) 섹션 */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-gray-900 mb-1">이메일 연동 (Gmail)</h2>
@@ -1024,7 +1061,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                           <span className="truncate">{row.subject ?? '-'}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{displayPlatform(row)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{renderPlatform(row)}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 max-w-[280px] truncate" title={summary(row.extracted_data)}>
                         {summary(row.extracted_data)}
                       </td>
@@ -1069,8 +1106,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       </div>
                       <p className="text-xs text-gray-500 mt-1">{formatDate(row.received_at ?? row.created_at)}</p>
                       {(displayPlatform(row) !== '-' || summary(row.extracted_data) !== '-') && (
-                        <p className="text-xs text-gray-600 mt-1 truncate">
-                          {displayPlatform(row) !== '-' ? `${displayPlatform(row)} · ` : ''}{summary(row.extracted_data)}
+                        <p className="text-xs text-gray-600 mt-1 flex items-center gap-1 min-w-0">
+                          {displayPlatform(row) !== '-' && (
+                            <>
+                              <span className="inline-flex items-center gap-1 shrink-0">{renderPlatform(row)}</span>
+                              <span className="shrink-0">·</span>
+                            </>
+                          )}
+                          <span className="truncate">{summary(row.extracted_data)}</span>
                         </p>
                       )}
                     </div>

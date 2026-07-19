@@ -1173,8 +1173,8 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
           <div className="bg-muted/50 border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-foreground mb-2">📋 개요</h3>
             <p className="text-sm text-primary">
-              통합 옵션 - 초이스 관리에서는 <strong>템플릿</strong>을 생성하고 관리합니다. 
-              이 템플릿은 상품 편집 - 초이스 관리에서 불러와서 사용할 수 있으며, 
+              초이스 템플릿 라이브러리에서는 <strong>재사용 템플릿</strong>을 생성하고 관리합니다.
+              이 템플릿은 상품 편집의 <strong>이 상품의 초이스</strong>에서 불러올 수 있으며,
               각 상품에서 필요한 옵션만 선택하거나 수정할 수 있습니다.
             </p>
           </div>
@@ -1247,7 +1247,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">상품 편집에서 템플릿 사용</h3>
                 <div className="space-y-2 text-sm text-gray-700">
-                  <p>1. <strong>상품 편집</strong> &gt; <strong>초이스 관리</strong> 탭으로 이동</p>
+                  <p>1. <strong>상품 편집</strong> &gt; <strong>이 상품의 초이스</strong> 탭으로 이동</p>
                   <p>2. <strong>"템플릿에서 불러오기"</strong> 버튼 클릭</p>
                   <p>3. 생성한 템플릿 선택 (예: "국립공원 입장료")</p>
                   <p>4. 템플릿의 모든 옵션이 포함된 초이스 그룹이 생성됩니다.</p>
@@ -1317,7 +1317,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center mr-3">1</div>
                 <div className="flex-1">
-                  <p className="font-medium">통합 옵션 - 초이스 관리</p>
+                  <p className="font-medium">옵션·초이스 템플릿 → 초이스 템플릿</p>
                   <p className="text-xs text-gray-600">"국립공원 입장료" 템플릿 그룹 생성 + 모든 옵션 등록</p>
                 </div>
               </div>
@@ -1327,7 +1327,7 @@ function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">2</div>
                 <div className="flex-1">
-                  <p className="font-medium">상품 편집 - 초이스 관리</p>
+                  <p className="font-medium">상품 편집 → 이 상품의 초이스</p>
                   <p className="text-xs text-gray-600">템플릿에서 "국립공원 입장료" 불러오기</p>
                 </div>
               </div>

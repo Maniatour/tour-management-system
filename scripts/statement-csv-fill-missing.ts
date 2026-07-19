@@ -139,7 +139,7 @@ async function main() {
 
   const { data: accounts, error: accErr } = await supabase
     .from('financial_accounts')
-    .select('id,name,account_type,statement_csv_direction_mode')
+    .select('id,name,account_type,statement_csv_direction_mode,operator_id')
     .ilike('name', accountName.replace(/[()]/g, '%').replace(/\s+/g, '%'))
   if (accErr) throw accErr
 
@@ -153,7 +153,11 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`계정: ${account.name} (${account.id})`)
+  const operatorId =
+    String((account as { operator_id?: string | null }).operator_id ?? '').trim() ||
+    'a0000000-0000-4000-8000-000000000001'
+
+  console.log(`계정: ${account.name} (${account.id}) operator=${operatorId}`)
 
   const invert = shouldInvertStatementCsvDirections(
     String(account.account_type ?? ''),
@@ -299,6 +303,7 @@ async function main() {
   const { data: imp, error: eImp } = await supabase
     .from('statement_imports')
     .insert({
+      operator_id: operatorId,
       financial_account_id: account.id,
       period_label: periodStart.slice(0, 7),
       period_start: periodStart,
@@ -318,6 +323,7 @@ async function main() {
 
   const importId = String(imp.id)
   const rows = toAdd.map((r, i) => ({
+    operator_id: operatorId,
     statement_import_id: importId,
     posted_date: r.postedDate,
     amount: r.amount,

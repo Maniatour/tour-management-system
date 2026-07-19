@@ -1,0 +1,53 @@
+================================================================================
+ADR 028 — Ops Finance: recon/cash expense query operator scope (Phase 6b.7)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.3/6b.6 stamped operator_id on company/tour/reservation expenses.
+Statement reconciliation and cash ledger UIs still loaded those tables without
+an operator filter, so Operator B with Ops ON could see Kovegas expense rows
+in auto-match, pickers, and cash reports.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. No new migration — expense columns already exist.
+
+2. App-only .eq('operator_id', activeOperatorId) on expense list/pool queries:
+   - StatementReconciliationTab (picker window, browse, auto-match, ops ledger)
+   - CashReportTab + CashManagement (company/reservation cash expense loads)
+   - cash-transaction-auto-match expense pool
+   - expense-cash-ledger-match similar/search expense candidates
+
+3. Deferred:
+   - cash_transactions / financial_accounts / statement_lines /
+     reconciliation_matches operator_id migration
+   - payment_records / ticket / hotel booking recon tenancy
+   - Full CashLedger rewrite
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Booking / payment / checkout changes
+- Changing match scoring business logic
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6b.8 (cash_transactions + financial_accounts). See ADR 029.
+
+
+Files
+--------------------------------------------------------------------------------
+src/components/reports/StatementReconciliationTab.tsx
+src/components/reports/CashReportTab.tsx
+src/components/CashManagement.tsx
+src/lib/cash-transaction-auto-match.ts
+src/lib/expense-cash-ledger-match.ts
+src/components/reconciliation/CashTransactionBulkAutoMatchModal.tsx
+src/components/reconciliation/ExpenseStatementSimilarLinesModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

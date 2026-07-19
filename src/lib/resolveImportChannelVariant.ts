@@ -42,9 +42,19 @@ export function resolveImportChannelVariantKey(
   return kCanon || String(key ?? '').trim() || undefined
 }
 
+/** Klook 입장료 불포함 (한국인 가이드) variant 여부 */
+export function isKlookKoreanGuideChannelVariant(
+  channelVariantLabel?: string | null,
+  _channelVariantKey?: string | null
+): boolean {
+  const label = String(channelVariantLabel ?? '').trim()
+  return /한국인|korean\s*guide/i.test(label)
+}
+
 /**
  * 예약 가져오기 목록·상세: Klook variant 표기
- * All Inclusive → `Klook ✅`, With Exclusions → `Klook ➕`, 그 외·라벨만 있으면 `Klook - {라벨}`
+ * All Inclusive → `Klook ✅`, With Exclusions → `Klook ➕`,
+ * 한국인 가이드 → `Klook 🇰🇷`, 그 외·라벨만 있으면 `Klook - {라벨}`
  */
 export function formatKlookReservationImportPlatformLabel(
   channelVariantLabel: string | null | undefined,
@@ -66,6 +76,9 @@ export function formatKlookReservationImportPlatformLabel(
       lower.includes('with exclusion')
     ) {
       return 'Klook ➕'
+    }
+    if (isKlookKoreanGuideChannelVariant(label, channelVariantKey)) {
+      return 'Klook 🇰🇷'
     }
     return `Klook - ${label}`
   }

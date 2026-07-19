@@ -12,6 +12,7 @@ import type { Product } from '@/types/reservation'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
 type ImportRow = {
   id: string
@@ -77,8 +78,10 @@ async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): 
     rawBase != null && !Number.isNaN(Number(rawBase)) ? Number(rawBase) : 0
 
   const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const operatorId = await lookupReservationOperatorId(supabase, reservationId)
   const { error } = await supabase.from('payment_records').insert({
     id: paymentId,
+    operator_id: operatorId,
     reservation_id: reservationId,
     payment_status: '환불됨 (파트너)',
     amount,

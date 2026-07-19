@@ -24,6 +24,8 @@ import ReservationExpenseTabPager, {
   reservationExpenseTotalPages
 } from '@/components/expenses/ReservationExpenseTabPager'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 const ALL_TOURS_RECEIPT_VIEW_PORTAL_CLASS =
   'fixed inset-0 z-[12000] pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4'
@@ -69,6 +71,8 @@ interface TourExpense {
 }
 
 export default function AllTourExpensesManager() {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const t = useTranslations('tours.tourExpense')
   const tRes = useTranslations('reservations')
   const tStmt = useTranslations('expenses.statementRecon')
@@ -177,6 +181,7 @@ export default function AllTourExpensesManager() {
       let query = supabase
         .from('tour_expenses')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .order('created_at', { ascending: false })
 
       // 필터 적용
@@ -286,7 +291,7 @@ export default function AllTourExpensesManager() {
         setLoading(false)
       }
     }
-  }, [statusFilter, dateFrom, dateTo, tourIdFilter, searchTerm])
+  }, [statusFilter, dateFrom, dateTo, tourIdFilter, searchTerm, activeOperatorId])
 
   useEffect(() => {
     loadExpenses()

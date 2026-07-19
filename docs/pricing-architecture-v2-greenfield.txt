@@ -1,0 +1,747 @@
+================================================================================
+TOUR COMMERCE PLATFORM v2.0 — GREENFIELD ARCHITECTURE
+Inspired by: FareHarbor · Bokun · Rezdy · Peek Pro · TrekkSoft
+작성일: 2026-07-18
+전제: 기존 스키마는 무시. 처음부터 이상적 도메인 모델을 설계.
+================================================================================
+
+목표 규모
+- hundreds of products
+- unlimited OTA channels
+- unlimited variants/packages
+- unlimited choice groups
+- rule-based pricing / fixed pricing / promotions
+- inventory allocation
+- OTA synchronization / package mapping
+- dynamic (date) pricing
+- future AI automation
+
+================================================================================
+1. DOMAIN MODEL
+================================================================================
+
+핵심 원칙
+--------------------------------------------------------------------------------
+1. Catalog ≠ Offer ≠ Price ≠ Inventory ≠ Booking
+   각각 다른 생명주기와 변경 빈도를 가진다.
+
+2. Customer Choice ≠ Sellable SKU
+   "언어 선택"은 UX 차원이고, "US Resident + Lower Antelope"는
+   판매 단위(Offer)일 수 있다. 둘을 강제로 동일시하지 않는다.
+
+3. Price is computed, then snapshotted
+   판매가는 엔진이 계산하고, 예약 시점의 결과만 불변 스냅샷으로 남긴다.
+
+4. Inventory is a resource, not a price row
+   재고는 가격 테이블의 컬럼이 아니라 독립 자원 풀이다.
+
+5. Channels are adapters, not product owners
+   OTA는 매핑·동기화 계층이다. 상품의 소유권은 내부 Catalog/Offer에 있다.
+
+6. Everything effective-dated
+   가격·규칙·매핑·재고는 유효기간을 갖는다. 삭제 대신 deprecate.
+
+
+도메인 객체
+--------------------------------------------------------------------------------
+
+[A] CATALOG DOMAIN — "무엇을 파는가"
+
+Tenant
+  멀티테넌시 대비 최상위 (단일 운영사라도 명시)
+
+Product (Experience / Activity)
+  - 그랜드 캐년 선라이즈 투어
+  - 마케팅 콘텐츠, 일정 템플릿, 정책, 미디어
+  - 자체로는 가격/재고를 갖지 않음
+
+ProductOption (Package / Variant)
+  - All Inclusive / Tour Only / Korean Version / English Version
+  - Product 안의 판매 가능한 "패키지 축"
+  - 채널과 무관한 내부 정의 (채널 노출은 Distribution에서)
+
+ChoiceGroup (Configuration Dimension)
+  - US Resident / Non-US / Pass Holder
+  - Antelope type
+  - Language
+  - 선택 규칙: required, min/max, exclusivity, visibility conditions
+
+ChoiceOption
+  - ChoiceGroup의 개별 값
+  - presentation only 또는 inventory-affecting 또는 price-affecting 플래그
+
+Addon (Extra)
+  - 초이스와 별개의 부가 상품 (호텔 픽업 업그레이드, 사진 패키지 등)
+  - 수량형/인원형/1회형
+
+
+[B] OFFER DOMAIN — "실제로 팔리는 단위"
+
+Offer (Sellable Unit / SKU / Pricing Category)
+  - 하나 이상의 ChoiceOption 조합(+ Option)으로 정의되는 판매 단위
+  - 예: "All Inclusive · US Resident · Lower Antelope"
+  - OTA package / rate code / SKU의 내부 대응물
+  - creation_mode: curated | generated | imported
+  - 모든 카테시안 조합을 강제 생성하지 않음 (curated/selective)
+
+OfferComponent
+  - Offer ↔ ChoiceOption (또는 Addon) 매핑
+  - 조합의 정본(canonical composition)
+
+OfferSet
+  - 같은 ProductOption 아래에서 함께 관리되는 Offer 묶음
+  - pricing_strategy: FIXED | RULE | HYBRID
+
+
+[C] PRICING DOMAIN — "얼마에 파는가"
+
+RatePlan
+  - ProductOption (+ optional Channel)에 적용되는 요금 정책 컨테이너
+  - currency, tax behavior, person-type model (adult/child/infant/custom)
+  - strategy: FIXED_OFFER | RULE_BASED | HYBRID
+
+PriceRule (Rule-based)
+  - base amount / percent
+  - scope: RatePlan | Offer | ChoiceOption | Addon | PersonType
+  - conditions: date range, weekday, season, lead time, occupancy, channel
+  - stackability, priority
+
+PriceOverride (Fixed / Exception)
+  - Offer + date(+time) 또는 date range에 대한 절대 가격
+  - source: manual | bulk | ota_import | ai_suggested | computed_cache
+
+PersonType
+  - Adult / Child / Infant / Senior / Custom
+  - age band, billing behavior
+
+Promotion
+  - coupon / automatic discount / channel promo
+  - conditions + actions (percent off, amount off, free addon)
+  - never mutates base rates; applied at quote time
+
+MoneyBreakdown (value object, not table)
+  - base, adjustments[], overrides, promotions[], tax, fees, commission
+  - total, net, currency
+
+
+[D] INVENTORY DOMAIN — "몇 개까지 팔 수 있는가"
+
+Resource
+  - 물리적/논리적 용량 단위
+  - 예: TourDepartureSeatPool, LowerAntelopeTicketPool, GuideLanguageSlot
+  - capacity_type: shared | exclusive
+
+Allotment
+  - Resource의 날짜/시간대별 할당량
+  - total, reserved, sold, available (derived or maintained)
+
+InventoryBinding
+  - ProductOption / Offer / ChoiceOption / Addon → Resource 연결
+  - consumption_qty_formula (예: 1 guest = 1 seat, 또는 pass covers 4)
+
+Hold
+  - 결제 전 임시 점유 (TTL)
+  - Booking 확정 시 Sold로 전환, 만료 시 해제
+
+InventoryPolicy
+  - oversell rules, cutoff hours, stop-sell, shared vs per-channel allotment
+
+
+[E] AVAILABILITY / CALENDAR DOMAIN — "언제 팔 수 있는가"
+
+AvailabilitySlot
+  - ProductOption + start_at (date/time) + duration
+  - status: open | limited | closed | cutoff
+  - derived from Inventory + stop-sell + schedule rules
+
+ScheduleRule
+  - 운영 요일, 출발 시각, 시즌 캘린더, blackout
+
+StopSell
+  - ProductOption / Offer / Channel / Resource 단위 판매 중지
+
+
+[F] DISTRIBUTION DOMAIN — "어디에 파는가"
+
+Channel
+  - Direct Web / Klook / GYG / KKday / Viator / Trip.com / Custom
+  - type: direct | ota | agency | wholesale
+  - commercial terms: commission model, net/gross, settlement
+
+ChannelListing
+  - 특정 Channel에 ProductOption(또는 OfferSet)을 노출
+  - status, sync mode (push/pull/manual)
+
+ExternalMapping
+  - internal_id + internal_type (product|option|offer|addon|slot)
+  - platform + external_ids (product/package/sku/rate)
+  - sync_state, last_synced_at, checksum
+
+SyncJob / SyncEvent
+  - outbox 패턴: price/inventory/content change → OTA adapter
+
+
+[G] BOOKING DOMAIN — "무엇이 팔렸는가"
+
+Booking
+  - channel, status lifecycle, customer, payment refs
+  - immutable commercial snapshot reference
+
+BookingLineItem
+  - Offer (or Addon) + qty + person breakdown
+  - unit prices, totals, tax, commission — all snapshotted
+  - inventory hold/sale references
+
+BookingGuest
+  - per-guest attributes (name, resident status, pass, etc.)
+
+Quote (optional but important)
+  - pre-booking price resolution result with TTL
+  - used by Direct Web and OTA availability/price APIs
+
+
+[H] AUTOMATION DOMAIN (future AI)
+
+PricingSuggestion
+  - AI-proposed PriceOverride / PriceRule deltas
+  - requires human approve or policy auto-apply bounds
+
+DemandSignal
+  - occupancy, pace, competitor refs (optional)
+  - input to automation, never writes booking money directly
+
+
+관계 요약 (한 줄)
+--------------------------------------------------------------------------------
+Product
+  → ProductOption (packages)
+      → ChoiceGroups/Options (configure)
+      → Offers (sellable compositions)
+      → RatePlans / Rules / Overrides (price)
+      → Resources / Allotments (inventory)
+      → AvailabilitySlots (when)
+      → ChannelListings + ExternalMappings (where)
+          → Quotes → Bookings (sold)
+
+
+================================================================================
+2. ERD
+================================================================================
+
+논리 ERD (핵심 테이블)
+
+TENANT
+  └── PRODUCT
+        ├── PRODUCT_OPTION
+        │     ├── CHOICE_GROUP
+        │     │     └── CHOICE_OPTION
+        │     ├── ADDON
+        │     ├── OFFER_SET
+        │     │     └── OFFER
+        │     │           ├── OFFER_COMPONENT ──► CHOICE_OPTION / ADDON
+        │     │           ├── PRICE_OVERRIDE
+        │     │           └── EXTERNAL_MAPPING
+        │     ├── RATE_PLAN
+        │     │     ├── PRICE_RULE
+        │     │     └── PERSON_TYPE_RATE (optional)
+        │     ├── INVENTORY_BINDING ──► RESOURCE
+        │     │                              └── ALLOTMENT
+        │     ├── SCHEDULE_RULE
+        │     ├── AVAILABILITY_SLOT
+        │     └── CHANNEL_LISTING ──► CHANNEL
+        │
+        ├── PROMOTION (scoped to product/option/channel)
+        └── MEDIA / CONTENT (omitted detail)
+
+BOOKING
+  ├── BOOKING_LINE_ITEM ──► OFFER / ADDON (ref + snapshot JSON)
+  ├── BOOKING_GUEST
+  ├── BOOKING_PAYMENT
+  └── INVENTORY_HOLD / SALE ledger refs
+
+QUOTE
+  └── QUOTE_LINE (resolved MoneyBreakdown JSON)
+
+
+권장 물리 테이블 (이름)
+
+catalog
+  tenants
+  products
+  product_options
+  choice_groups
+  choice_options
+  addons
+
+offer
+  offer_sets
+  offers
+  offer_components
+
+pricing
+  rate_plans
+  person_types
+  price_rules
+  price_overrides
+  promotions
+  promotion_redemptions
+
+inventory
+  resources
+  allotments
+  inventory_bindings
+  inventory_holds
+  inventory_ledger   -- append-only movements (hold/sale/release/adjust)
+
+calendar
+  schedule_rules
+  availability_slots   -- can be materialized or virtual
+  stop_sells
+
+distribution
+  channels
+  channel_listings
+  external_mappings
+  sync_jobs
+  sync_events          -- outbox
+
+booking
+  bookings
+  booking_line_items
+  booking_guests
+  quotes
+  quote_lines
+
+automation (later)
+  pricing_suggestions
+  demand_signals
+
+
+인덱스 전략 (스케일)
+--------------------------------------------------------------------------------
+- offers(product_option_id, is_active)
+- offer_components(offer_id), (choice_option_id)
+- price_overrides(offer_id, date)
+- price_rules(rate_plan_id, priority)
+- allotments(resource_id, date, start_time)
+- availability_slots(product_option_id, start_at)
+- external_mappings(platform, external_sku) UNIQUE
+- sync_events(status, created_at) for outbox workers
+- booking_line_items(booking_id), (offer_id) for analytics only
+
+
+희소(sparse) 저장 원칙
+--------------------------------------------------------------------------------
+매일 × 모든 Offer 가격 행을 만들지 않는다.
+- 기본: RatePlan + PriceRule
+- 예외: PriceOverride (특정 날짜/기간)
+- 캘린더는 엔진이 규칙을 평가해 뷰를 만든다.
+- OTA push가 필요하면 computed_cache로 선택적 materialize.
+
+
+================================================================================
+3. SERVICE BOUNDARIES
+================================================================================
+
+마이크로서비스까지 쪼갤 필요는 없다.
+먼저 Modular Monolith + 명확한 bounded context.
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        API Gateway / BFF                         │
+│              (Admin BFF · Customer BFF · OTA Webhooks)           │
+└───────────────┬─────────────────────┬───────────────────────────┘
+                │                     │
+     ┌──────────▼──────────┐   ┌──────▼──────────────┐
+     │  Catalog Service    │   │  Offer Service      │
+     │  products/options/  │   │  offers/components  │
+     │  choices/addons     │   │  offer sets         │
+     └──────────┬──────────┘   └──────┬──────────────┘
+                │                     │
+     ┌──────────▼─────────────────────▼──────────────┐
+     │              Pricing Service (Price Engine)    │
+     │   rate plans · rules · overrides · promotions  │
+     │   quote() / resolvePrice()                     │
+     └──────────┬─────────────────────────────────────┘
+                │
+     ┌──────────▼──────────┐   ┌──────────────────────┐
+     │ Inventory Service   │   │ Calendar Service     │
+     │ resources/allotments│   │ slots / stop-sell    │
+     │ hold/commit/release │   │ schedule evaluation  │
+     └──────────┬──────────┘   └──────────┬───────────┘
+                │                         │
+     ┌──────────▼─────────────────────────▼───────────┐
+     │              Booking Service                    │
+     │   quote → hold inventory → pay → commit booking │
+     │   immutable snapshots                           │
+     └──────────┬─────────────────────────────────────┘
+                │
+     ┌──────────▼──────────┐   ┌──────────────────────┐
+     │ Distribution / OTA  │   │ Automation Service   │
+     │ listings/mappings   │   │ suggestions / AI     │
+     │ sync workers        │   │ (reads only at first)│
+     └─────────────────────┘   └──────────────────────┘
+
+경계 규칙
+--------------------------------------------------------------------------------
+- Catalog는 가격을 모름
+- Offer는 "무엇이 팔리는지"만 앎 (금액 계산은 Pricing에 위임)
+- Pricing은 재고를 차감하지 않음 (읽기: availability hint만)
+- Inventory는 금액을 모름
+- Booking만 돈+재고 커밋을 오케스트레이션
+- OTA Sync는 Catalog/Offer/Pricing/Inventory 변경 이벤트를 구독
+- Automation은 제안만; 적용은 Pricing/Inventory admin policy를 통함
+
+이벤트 (최소)
+--------------------------------------------------------------------------------
+ProductOptionUpdated
+OfferChanged
+PriceRuleChanged / PriceOverrideUpserted
+AllotmentChanged / HoldExpired
+BookingConfirmed / BookingCancelled
+ListingMapped / SyncFailed
+
+
+================================================================================
+4. PRICE ENGINE
+================================================================================
+
+책임
+--------------------------------------------------------------------------------
+단일 함수로 견적:
+  quote(input) → QuoteResult
+
+input:
+  channel_id
+  product_option_id
+  offer_id? OR selected choice_option_ids[]
+  start_at
+  person_counts { person_type → qty }
+  addons[]
+  promo_codes[]
+  currency?
+
+처리 파이프라인
+--------------------------------------------------------------------------------
+1. Resolve Offer
+   - offer_id가 있으면 사용
+   - 없으면 selected choices로 Offer 매칭
+     (정확 매칭 → 부분 매칭 정책 → 실패)
+
+2. Load RatePlan
+   - channel-specific plan 우선, 없으면 default plan
+
+3. Determine strategy
+   FIXED_OFFER:
+     default override / date override
+   RULE_BASED:
+     base(person_type) + Σ matching PriceRules
+   HYBRID:
+     rule compute → date/offer override wins if present
+
+4. Apply Addons
+   - each addon priced independently (rule or fixed)
+
+5. Apply Promotions
+   - eligibility → stacking policy → discount lines
+
+6. Commercial layer
+   - tax/fees (policy)
+   - channel commission estimate (optional at quote)
+   - not-included amounts as separate display lines (not mixed into sell price)
+
+7. Emit MoneyBreakdown + explanation (rule ids applied)
+   - AI/debug/admin audit에 필수
+
+불변식
+--------------------------------------------------------------------------------
+- Quote는 TTL을 가진다 (예: 15분)
+- Booking은 Quote를 재검증 후 스냅샷 저장
+- 과거 Booking 금액은 Price Engine을 다시 돌리지 않음
+- PriceOverride는 예외이며, 기본 운영은 Rule
+
+동적 가격 (Dynamic Pricing)
+--------------------------------------------------------------------------------
+동적 가격 = 날짜 조건 PriceRule + Override + (나중) Automation suggestions
+별도 "dynamic_pricing 거대 JSON 테이블"을 만들지 않는다.
+
+
+================================================================================
+5. INVENTORY ENGINE
+================================================================================
+
+책임
+--------------------------------------------------------------------------------
+check(bindings, start_at, qty) → Availability
+hold(...) → Hold
+commit(hold_id) → Sale
+release(hold_id|sale_id) → Restored
+adjust(resource, date, delta, reason) → LedgerEntry
+
+모델
+--------------------------------------------------------------------------------
+Resource (pool)
+  capacity semantics:
+    - shared across offers (버스 좌석)
+    - exclusive per offer/choice (특정 티켓 쿼터)
+    - channel allotment (OTA에 50석 할당)
+
+Binding
+  ProductOption → Resource (default shared seats)
+  ChoiceOption → Resource (antelope tickets)
+  Offer → Resource (package-specific quota)
+
+평가
+--------------------------------------------------------------------------------
+요청 Offer의 모든 Binding을 수집 → 각 Resource available 검사
+→ 가장 제한적인 자원이 병목
+→ stop-sell / cutoff이면 closed
+
+Hold
+--------------------------------------------------------------------------------
+- short TTL
+- payment intent / OTA reserve와 연동
+- 만료 job이 release
+
+Ledger
+--------------------------------------------------------------------------------
+append-only:
+  adjust / hold / commit / release / oversell_correction
+Allotment.available는
+  (a) 파생 계산 또는
+  (b) 트랜잭션으로 유지 + ledger로 감사
+고경쟁 슬롯은 (b) + row lock / optimistic version 권장
+
+
+================================================================================
+6. OTA SYNC ENGINE
+--------------------------------------------------------------------------------
+
+책임
+--------------------------------------------------------------------------------
+내부 진실(source of truth) ↔ OTA 외부 ID/패키지/재고/가격 동기화
+
+구성
+--------------------------------------------------------------------------------
+1. ExternalMapping registry
+2. Outbox (sync_events)
+3. Per-platform Adapters
+   KlookAdapter, GygAdapter, KkdayAdapter, ViatorAdapter, TripAdapter
+4. Sync Workers
+   push_availability / push_rates / pull_bookings / reconcile
+5. Conflict policy
+   internal_wins | channel_wins | manual_review
+
+흐름
+--------------------------------------------------------------------------------
+Admin changes Offer/Price/Inventory
+  → domain event
+  → outbox row
+  → worker loads mappings for affected offers
+  → adapter transforms to platform payload
+  → API call
+  → store sync result + checksum
+
+Inbound bookings
+--------------------------------------------------------------------------------
+OTA webhook/email/API
+  → normalize to BookingDraft
+  → map external package → Offer
+  → Price: trust OTA commercial fields as snapshot
+    (내부 quote와 diff는 리포트)
+  → Inventory commit (or soft oversell flag)
+
+Package mapping UI 필수
+--------------------------------------------------------------------------------
+OTA package/SKU ↔ internal Offer
+매핑 없는 SKU는 sync skip + alert
+절대 이름 문자열 휴리스틱만으로 확정 예약 생성 금지
+
+
+================================================================================
+7. CALENDAR ENGINE
+--------------------------------------------------------------------------------
+
+책임
+--------------------------------------------------------------------------------
+날짜/시간 그리드에서
+  status + remaining + from-price (+ per-offer breakdown)
+을 빠르게 제공
+
+입력
+--------------------------------------------------------------------------------
+ScheduleRule + StopSell + Inventory + Pricing(+ optional offer filter)
+
+출력
+--------------------------------------------------------------------------------
+CalendarDay / CalendarSlot DTO:
+  start_at
+  status: open|limited|closed|cutoff
+  remaining (min across bindings)
+  from_price (cheapest bookable offer for channel)
+  offers[] (optional detail)
+
+구현 전략
+--------------------------------------------------------------------------------
+- Online compute for admin/direct (rules are sparse)
+- Materialized projection for hot OTA push windows
+- Bulk update API:
+  set overrides / allotments / stop-sell for date ranges + weekdays
+  (writes rules/overrides/allotments — not millions of dumb rows)
+
+Admin calendar ≠ Customer calendar ≠ OTA feed
+같은 엔진, 다른 projection/projection
+
+
+================================================================================
+8. ADMIN UI ARCHITECTURE
+================================================================================
+
+정보 구조 (IA)
+--------------------------------------------------------------------------------
+1. Catalog
+   Products → Options → Choice Groups → Addons → Content
+
+2. Offers
+   Offer Set board
+   - curated offers
+   - generate-from-choices (optional wizard)
+   - component inspector
+
+3. Pricing
+   Rate Plans
+   Rules builder (condition → effect)
+   Overrides calendar
+   Promotions
+
+4. Inventory
+   Resources
+   Allotment calendar
+   Bindings
+   Holds monitor
+
+5. Distribution
+   Channels
+   Listings
+   Mapping console (internal Offer ↔ OTA SKU)
+   Sync health
+
+6. Calendar (ops cockpit)
+   Option/channel/offer filters
+   bulk edit drawer (price / allotment / stop-sell)
+
+7. Bookings
+   timeline, rebook, cancel, refund
+   snapshot inspector (why this price?)
+
+8. Automation (later)
+   suggestion inbox (approve/reject)
+
+UI 원칙
+--------------------------------------------------------------------------------
+- 한 화면 한 책임
+- Price explanation panel 필수 (적용된 rule/override/promo 나열)
+- Offer 없는 상품은 Direct Web rule-based로도 판매 가능
+  (Offer는 OTA/고정패키지/독립재고가 필요할 때 강조)
+- Spreadsheet bulk editor는 Calendar/Overrides/Allotments에만
+- JSON blob 편집 UI 금지
+
+
+프론트 아키텍처
+--------------------------------------------------------------------------------
+Admin Shell
+  feature modules per bounded context
+  shared design system
+  server-driven validation via Quote/Inventory check APIs
+
+상태
+  URL = product_option + channel + date range + offer filter
+  optimistic updates + sync job toasts
+
+
+================================================================================
+WHY THIS IS SUPERIOR
+================================================================================
+
+1. 관심사 분리로 복잡도 폭발을 막는다
+   현재식 "날짜 행 + 거대 choices_pricing JSON"은
+   가격·재고·OTA·조합을 한 덩어리로 섞는다.
+   v2는 Catalog/Offer/Price/Inventory/Distribution/Booking을 분리해
+   각 축이 독립적으로 스케일된다.
+
+2. 조합 폭증을 선택적으로 통제한다
+   모든 카테시안 조합을 매일 materialize하지 않는다.
+   Offer는 curated/generated/imported로 필요할 때만 만든다.
+   Rule-based 상품은 조합 테이블 없이도 판매 가능하다.
+
+3. FareHarbor/Bokun류와 같은 산업 표준에 가깝다
+   - Product/Option
+   - Pricing Category ≈ Offer
+   - Availability slot + allotment
+   - Channel mapping
+   이 모델은 OTA API 계약(패키지/요금/가용성)과 정합성이 높다.
+
+4. 예약 금액의 무결성이 강하다
+   Quote → Hold → Commit + immutable line snapshots
+   과거 예약은 가격 규칙을 다시 계산하지 않는다.
+   정산·환불·감사에 유리하다.
+
+5. 진짜 인벤토리가 가능하다
+   shared seat pool, choice ticket pool, channel allotment, holds
+   "판매 on/off 플래그" 수준을 넘어 multi-resource bottleneck을 표현한다.
+
+6. OTA를 무한히 늘릴 수 있다
+   Adapter + ExternalMapping + Outbox
+   채널 추가 = 어댑터 추가이지 상품 스키마 변경이 아니다.
+
+7. 프로모션·동적가격·AI를 안전하게 얹을 수 있다
+   Promotion은 quote-time layer
+   Dynamic pricing은 rule/override
+   AI는 suggestion lane (직접 ledger/booking money에 쓰지 않음)
+
+8. 운영 UI가 가능해진다
+   Price explanation, mapping console, bulk calendar, sync health
+   JSON 수동 편집이 아닌 도메인 도구로 운영한다.
+
+9. 점진 구현이 가능하다
+   Modular monolith로 시작 → 엔진별 서비스 분리
+   Direct Web 먼저 (Catalog+Pricing+Booking)
+   → Inventory
+   → Offers/OTA mapping
+   → Automation
+
+
+================================================================================
+MINIMAL VIABLE v2 SLICE (구현 우선순위)
+================================================================================
+
+MVP-1 Direct selling
+  Product, ProductOption, ChoiceGroups, RatePlan(RULE), Quote, Booking snapshot
+
+MVP-2 Calendar ops
+  ScheduleRule, StopSell, PriceOverride sparse, Admin calendar bulk
+
+MVP-3 Inventory
+  Resource, Allotment, Hold/Commit, bindings
+
+MVP-4 Offers + OTA
+  Offer/OfferComponent, ExternalMapping, one adapter (e.g. Viator or Klook)
+  Sync outbox
+
+MVP-5 Promotions + multi-adapter + AI suggestions
+
+
+================================================================================
+ONE-SENTENCE SUMMARY
+================================================================================
+
+v2의 이상 모델은
+"상품(Catalog)을 설정하고, 필요한 것만 Offer(SKU)로 만들고,
+가격은 Rule/Override 엔진으로 계산하며, 재고는 Resource 풀로 할당하고,
+채널은 Mapping/Adapter로 동기화하며, 예약은 불변 스냅샷으로 고정한다"
+는 것이다.
+
+이것이 FareHarbor/Bokun급으로 확장 가능한 이유다.
+
+================================================================================
+END
+================================================================================

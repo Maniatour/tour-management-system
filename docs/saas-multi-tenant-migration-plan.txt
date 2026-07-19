@@ -1,0 +1,885 @@
+================================================================================
+MULTI-TENANT SaaS 전환 계획
+Tour Commerce Platform → Supplier SaaS (FareHarbor / Bokun / Rezdy 급)
+작성일: 2026-07-18
+기반 문서: pricing-architecture-v2-greenfield.txt
+현재 상태: 단일 운영사(Kovegas/Mania) 내부 시스템 + team RLS
+목표 상태: 다른 공급자(Operator)도 가입·운영하는 SaaS
+================================================================================
+
+================================================================================
+0. 결론 (먼저 읽기)
+================================================================================
+
+권장 전략
+--------------------------------------------------------------------------------
+1) 테넌시: Shared Database + tenant_id (Row-Level Isolation)
+   - 초기·중기 최적. Schema-per-tenant / DB-per-tenant는 나중에 엔터프라이즈만.
+
+2) 도메인: v2 greenfield 모델을 그대로 쓰되, 모든 비즈니스 테이블에
+   operator_id (tenant) 를 최상위 키로 둔다.
+
+3) 마이그레이션: Big-bang 금지.
+   - Phase A: 현재 DB에 operator_id 도입 (Kovegas = tenant #1)
+   - Phase B: v2 가격/재고/Offer 엔진을 tenant-aware로 신설 (dual-write)
+   - Phase C: 신규 공급자 onboarding 오픈
+   - Phase D: 레거시 테이블 deprecate
+
+4) 제품 분리
+   - Platform (SaaS 본사): 빌링, 권한, 채널 커넥터, 인프라
+   - Operator (공급자): 상품·가격·재고·예약·정산
+   - 현재 회사 운영 기능(차량, 가이드 출근, 내부 경비 등)은
+     Operator add-on 또는 별 모듈로 분리 (모든 SaaS 고객에 강제하지 않음)
+
+한 줄:
+  "지금 시스템을 고치는 것"이 아니라
+  "tenant-aware Commerce Core를 만들고, Kovegas를 첫 Operator로 이전"한다.
+
+
+================================================================================
+1. SaaS 목표 아키텍처
+================================================================================
+
+1.1 액터
+--------------------------------------------------------------------------------
+Platform Admin     SaaS 운영자 (당신/본사)
+Operator           투어 공급사 (Kovegas, 다른 Las Vegas/다른 도시 업체)
+Operator User      Operator 직원 (owner / admin / ops / finance / guide…)
+Channel Partner    OTA (Klook, GYG…) — Operator별로 연결
+End Customer       여행객 — Operator의 Direct Web 또는 OTA경유
+
+1.2 테넌시 모델 (권장: Shared DB)
+--------------------------------------------------------------------------------
+
+                    ┌─────────────────────────────┐
+                    │         PLATFORM            │
+                    │  billing · auth · connectors│
+                    │  feature flags · audit      │
+                    └──────────────┬──────────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+        Operator A           Operator B           Operator C
+        (Kovegas)            (Other Co)           (...)
+        tenant_id=T1         tenant_id=T2
+              │                    │
+     products/offers/        own isolated rows
+     prices/inventory/       via tenant_id + RLS
+     bookings
+
+왜 Shared DB + tenant_id 인가
+- 수백~수천 Operator까지 운영 비용·마이그레이션·쿼리 단순
+- Supabase/Postgres RLS와 잘 맞음
+- 나중에 초대형 고객만 dedicated schema/DB로 분리 가능 (예외 경로)
+
+쓰지 말 것 (초기)
+- DB-per-tenant: 운영 악몽, 마이그레이션·커넥터 배포 비용 폭증
+- 테이블마다 다른 격리 방식 혼용
+
+
+1.3 모든 비즈니스 테이블의 공통 컬럼
+--------------------------------------------------------------------------------
+operator_id      UUID NOT NULL   -- tenant
+created_at / updated_at
+created_by / updated_by (optional)
+deleted_at       (soft delete)
+
+유니크 제약 예시
+  UNIQUE (operator_id, product_code)
+  UNIQUE (operator_id, channel_id, external_sku)  -- mapping
+절대 글로벌 UNIQUE(product_code) 금지
+
+
+1.4 Platform vs Operator 데이터 소유
+--------------------------------------------------------------------------------
+PLATFORM (tenant 없음 또는 platform_id)
+  operators
+  operator_subscriptions / plans / invoices
+  platform_users (optional)
+  channel_connector_definitions   -- Viator adapter metadata (코드+설정 스키마)
+  feature_flags
+  audit_logs (platform scope)
+
+OPERATOR-SCOPED
+  users / memberships / roles
+  products, product_options, choices, offers
+  rate_plans, price_rules, overrides, promotions
+  resources, allotments, holds
+  channels (operator's connected channels)
+  channel_listings, external_mappings
+  bookings, quotes, payments (operator merchant)
+  customers (operator CRM; 이메일은 operator 내에서 unique)
+  (optional modules) fleet, guides, expenses…
+
+
+1.5 Identity & Access
+--------------------------------------------------------------------------------
+Auth: Supabase Auth (또는 Clerk 등) — 사용자는 글로벌
+Membership: operator_members(user_id, operator_id, role)
+
+Roles (최소)
+  owner, admin, ops, finance, guide, read_only
+
+RLS 패턴
+  current_operator_id() from JWT claim / session setting
+  USING (operator_id = current_operator_id())
+
+중요
+  - 직원은 여러 Operator에 속할 수 있음 (agency/멀티브랜드)
+  - 요청마다 active_operator_id 필수
+  - Platform admin은 bypass role
+
+
+1.6 Commerce Core (v2) — tenant-aware
+--------------------------------------------------------------------------------
+v2 greenfield 문서의 도메인을 그대로 사용하되 전부 operator_id:
+
+Catalog    Product / ProductOption / Choice* / Addon
+Offer      OfferSet / Offer / OfferComponent
+Pricing    RatePlan / PriceRule / PriceOverride / Promotion
+Inventory  Resource / Allotment / Hold / Ledger
+Calendar   ScheduleRule / AvailabilitySlot / StopSell
+Distribution Channel / Listing / ExternalMapping / Sync*
+Booking    Quote / Booking / LineItem (snapshot)
+Automation PricingSuggestion (later)
+
+엔진 API는 항상 첫 인자로 operator context:
+  quote(operator_id, …)
+  holdInventory(operator_id, …)
+  syncOffer(operator_id, …)
+
+
+1.7 Direct Web / White-label
+--------------------------------------------------------------------------------
+Operator마다
+  - custom domain / subdomain (kovegas.com, other.com)
+  - branding theme
+  - checkout & payment account (Stripe Connect 권장)
+
+Platform은
+  - hosted booking widget / pages
+  - Connect onboarding
+  - 수수료(application fee) 옵션
+
+
+1.8 OTA Connectors (플랫폼 자산)
+--------------------------------------------------------------------------------
+Adapter는 Platform이 소유 (코드)
+Credentials·mapping은 Operator 소유 (데이터)
+
+operators
+  └── channel_connections (operator_id, platform, credentials vault ref)
+        └── external_mappings
+        └── sync_jobs
+
+새 OTA 추가 = Platform에 Adapter 배포
+새 공급자 추가 = Connection + Mapping만 (코드 변경 없음)
+
+
+================================================================================
+2. 현재 시스템과의 갭
+================================================================================
+
+현재 (대략)
+--------------------------------------------------------------------------------
+- 단일 회사 데이터, tenant 개념 없음
+- 권한 = team 테이블 + is_staff()
+- suppliers 테이블은 "티켓/벤더 매입"용이지 SaaS tenant 아님
+- 가격 SSOT = dynamic_pricing JSON
+- 재고 ledger 없음
+- OTA = 채널 행 + 수동/이메일 import 중심
+- 고객 사이트·어드민·운영(차량/가이드/경비)이 한 모노리스에 강하게 결합
+
+SaaS에 부족한 것
+--------------------------------------------------------------------------------
+[필수]
+  operator/tenant 모델 + RLS
+  membership/roles
+  tenant-aware commerce core (v2)
+  Stripe Connect (또는 동등) 결제 분리
+  onboarding wizard
+  data export / offboarding
+
+[중요]
+  feature flags / plan limits
+  audit log per operator
+  channel credential vault
+  sync health dashboard
+
+[나중/모듈화]
+  차량·가이드 출근·내부 경비·팀 채팅 등
+  → "Operations Suite" add-on
+  → 모든 공급자에게 기본 강제하지 말 것
+
+
+================================================================================
+3. 타깃 스키마 (SaaS 핵심만)
+================================================================================
+
+-- PLATFORM
+operators (
+  id, name, slug, status,              -- active|suspended
+  timezone, default_currency,
+  plan_id, created_at
+)
+
+operator_plans (
+  id, code, limits JSONB, features JSONB, price…
+)
+
+operator_members (
+  id, operator_id, user_id, role, status, invited_at
+)
+
+-- COMMERCE (모든 테이블에 operator_id)
+products (id, operator_id, code, …)
+product_options (…)
+choice_groups / choice_options
+offer_sets / offers / offer_components
+rate_plans / price_rules / price_overrides / promotions
+resources / allotments / inventory_holds / inventory_ledger
+schedule_rules / stop_sells / availability_slots
+channels (operator_id, type, …)          -- operator-local channel config
+channel_connections (credentials)
+channel_listings
+external_mappings
+quotes / quote_lines
+bookings / booking_line_items / booking_guests
+
+-- optional module schemas later
+ops_fleet.*, ops_hr.*, ops_finance.*
+
+
+================================================================================
+4. 마이그레이션 전략 (Kovegas → Tenant #1 → Multi-tenant)
+================================================================================
+
+원칙
+--------------------------------------------------------------------------------
+- 기존 예약/정산/운영을 멈추지 않는다
+- 새 SaaS 코어를 옆에 만들고 dual-read/write 후 전환
+- "다른 공급자 오픈"은 Kovegas가 v2 코어에서 안정화된 뒤
+
+
+PHASE 0 — 결정·동결 (1~2주)
+--------------------------------------------------------------------------------
+산출물
+  - Operator/Plan/Role 용어 확정 (ADR)
+  - 모듈 경계: Commerce Core vs Operations Suite
+  - calculate_dynamic_price 등 원격 RPC를 repo에 고정
+  - 가격 golden dataset (상품×채널×날짜×초이스 → 금액)
+  - 성공 지표: 가격 diff 0, 예약 생성 성공률, RLS 누수 0
+
+결정 (권장 기본값)
+  - tenancy = shared DB + operator_id
+  - PK = UUID
+  - 결제 = Stripe Connect Express/Standard
+  - 멀티브랜드 = membership multi-operator
+
+
+PHASE 1 — Tenant Foundation (무중단)
+--------------------------------------------------------------------------------
+작업
+  1. operators 테이블 생성
+  2. Kovegas row 생성 (T_KOVEgAS)
+  3. 핵심 테이블에 operator_id NULL 허용으로 추가
+  4. backfill: 모든 기존 행 operator_id = T_KOVEgAS
+  5. NOT NULL + 인덱스 + (operator_id, …) unique 재정의
+  6. operator_members: 기존 team 이메일을 membership으로 매핑
+  7. RLS: current_operator_id() 도입 (초기엔 Kovegas 고정 claim)
+  8. 앱 컨텍스트에 activeOperatorId 주입
+
+성공 조건
+  - 기존 UI/예약 100% 동작
+  - 쿼리에 operator_id 필터가 생기기 시작
+  - 다른 tenant 행이 아직 없어도 격리 코드 경로 존재
+
+
+PHASE 2 — Commerce Core v2 (신설, dual-write)
+--------------------------------------------------------------------------------
+작업
+  1. v2 테이블 생성 (모두 operator_id 포함)
+  2. Price Engine / Inventory Engine / Quote API
+  3. 관리자 저장 시:
+       legacy dynamic_pricing 기록 + v2 rules/offers/overrides 기록
+  4. Backfill 스크립트 (Kovegas 데이터 → v2)
+  5. Shadow quote: 구 RPC vs 신 Engine 금액 비교 로그
+  6. feature flag로 상품 단위 cutover
+
+성공 조건
+  - shadow diff ≈ 0 (허용 오차 정의)
+  - 홈페이지 checkout이 flag on 상품에서 v2 quote 사용
+
+
+PHASE 3 — Booking Snapshot & Inventory
+--------------------------------------------------------------------------------
+작업
+  1. Quote → Hold → Booking commit 오케스트레이션
+  2. reservation_* 를 v2 booking_* 로 매핑 또는
+     기존 reservations를 booking facade 뒤로 숨김
+  3. 새 예약부터 offer_id / money_breakdown_json / inventory_sale_id 저장
+  4. 과거 예약은 스냅샷 그대로 유지 (강제 변환 금지)
+
+성공 조건
+  - 신규 예약 읽기/정산/취소 정상
+  - 과거 예약 조회·정산 회귀 없음
+
+
+PHASE 4 — Distribution & First OTA Adapter
+--------------------------------------------------------------------------------
+작업
+  1. channel_connections + external_mappings
+  2. outbox sync_events
+  3. Adapter 1개 (Viator 또는 Klook 중 실제 계약 있는 것)
+  4. Mapping admin UI
+
+성공 조건
+  - 1개 OTA에 availability/rate push 또는 booking pull 중 하나 E2E
+
+
+PHASE 5 — SaaS Onboarding (두 번째 Operator)
+--------------------------------------------------------------------------------
+작업
+  1. Sign-up / Create Operator wizard
+  2. Invite members
+  3. Stripe Connect onboarding
+  4. Subdomain/custom domain
+  5. Plan limits (products, users, channels)
+  6. 내부 테스트용 "Operator B" 생성 후 완전 격리 검증
+  7. 첫 외부 공급자 파일럿 (제한 기능)
+
+성공 조건
+  - Operator B가 A 데이터를 어떤 API/UI로도 볼 수 없음 (침투 테스트)
+  - 파일럿 공급자가 상품 등록→가격→예약 가능
+
+
+PHASE 6 — Modularize Operations Suite
+--------------------------------------------------------------------------------
+작업
+  - 차량/가이드/내부 경비/팀 도구를 operator module로 분리
+  - Commerce-only 고객은 이 모듈 없이 사용
+  - Kovegas는 모듈 ON
+
+
+PHASE 7 — Decommission Legacy
+--------------------------------------------------------------------------------
+작업
+  - dynamic_pricing JSON 경로 제거
+  - 구 RPC 제거
+  - 문서/어드민 레거시 화면 제거
+  - backup retention 정책
+
+
+================================================================================
+5. 데이터 이전 맵 (레거시 → SaaS v2)
+================================================================================
+
+레거시                        SaaS v2
+----------------------------  ----------------------------------
+(암묵적 단일 회사)             operators (Kovegas)
+team                         operator_members + roles
+products                     products (+ operator_id)
+channel_products             product_options + channel_listings
+product_choices/options      choice_groups/choice_options
+dynamic_pricing              rate_plans + price_rules
+                             + price_overrides (sparse)
+choices_pricing JSON         offers + offer_components
+                             (필요한 조합만) 또는 rule만
+channels                     channels (operator-scoped)
+                             + channel_connections
+reservations                 bookings
+reservation_pricing          booking_line_items snapshots
+reservation_choices          booking configuration snapshot
+tours / vehicles / …         ops_* modules (optional)
+suppliers (티켓 벤더)         purchasing module (optional)
+                             ≠ SaaS operator
+
+
+Backfill 규칙
+--------------------------------------------------------------------------------
+1. 모든 행에 operator_id = Kovegas
+2. base_plus → PriceRule adjustments
+3. absolute 소조합 → Offer + PriceOverride
+4. is_sale_available=false → StopSell / slot closed
+5. 예약 금액 재계산 금지 (스냅샷 보존)
+6. OTA external ids는 매핑 테이블로만 (추측 자동확정 금지)
+
+
+================================================================================
+6. 보안·격리 체크리스트
+================================================================================
+
+- [ ] 모든 SELECT/INSERT/UPDATE/DELETE에 operator_id RLS
+- [ ] Storage bucket path에 operator_id prefix
+- [ ] RPC/Edge Function도 operator context 검증
+- [ ] Admin API에 active operator header/claim 필수
+- [ ] Platform admin 감사 로그
+- [ ] Cross-tenant E2E 테스트 (자동)
+- [ ] Export: operator가 자기 데이터만 dump
+- [ ] Delete/offboard: soft → hard purge job
+- [ ] Secrets: OTA keys는 vault, 로그에 미출력
+
+
+================================================================================
+7. 제품/요금 (SaaS 비즈니스 뼈대)
+================================================================================
+
+Plans 예시
+  Starter   : Direct Web + 수동 예약 + 기본 가격
+  Growth    : Calendar + Inventory + 1 OTA connector
+  Pro       : Unlimited OTA + Promotions + API
+  Ops Add-on: Fleet/Guide/Expense modules
+
+Metering (나중)
+  bookings/month, OTA sync calls, seats, team users
+
+
+================================================================================
+8. 조직·실행 로드맵 (권장 순서)
+================================================================================
+
+월 0-1   Phase 0+1  Tenant foundation (operator_id, membership, RLS)
+월 1-3   Phase 2    Commerce Core v2 + shadow pricing
+월 3-4   Phase 3    Quote/Hold/Booking cutover (Direct)
+월 4-6   Phase 4    Mapping UI + first OTA adapter
+월 6-7   Phase 5    Onboarding + Operator B + pilot supplier
+월 7+    Phase 6-7  Ops modularize + legacy kill
+
+병렬로 하면 안 되는 것
+  - tenant 없이 OTA SaaS 판매
+  - legacy JSON을 유지한 채 멀티테넌트만 추가 (복잡도가 제곱)
+  - 전 운영 모듈을 모든 고객 필수 기능으로 패키징
+
+
+================================================================================
+9. 의사결정 — 확정 (2026-07-18)
+================================================================================
+
+D1. 테넌시: Shared DB + operator_id + RLS          ✅ 확정
+D2. 외부 공급자 목표: 약 6~7개월                    ✅ 확정
+D3. Operations Suite: Kovegas 전용 모듈 (a)         ✅ 확정
+D4. 결제: Stripe Connect                           ✅ 확정
+D5. 고객 사이트: subdomain 먼저                    ✅ 확정
+
+ADR: docs/adr/001-saas-tenancy-and-modules.txt
+ADR: docs/adr/002-commerce-core-v2-dual-write.txt
+
+Phase 1 (DONE):
+  supabase/migrations/20260718100000_saas_operators_foundation.sql
+  supabase/migrations/20260718100100~106_saas_operator_id_*.sql
+
+Phase 2 (APPLY):
+  supabase/migrations/20260718110000_commerce_core_v2_tables.sql
+  App dual-write: src/lib/commerce/dualWritePricing.ts
+  Stub resolver: src/lib/commerce/resolvePriceV2.ts (not on checkout yet)
+
+Phase 2b (DONE — backfill + shadow):
+  POST /api/admin/commerce/backfill-v2
+  POST /api/admin/commerce/shadow-compare
+  Optional: COMMERCE_V2_SHADOW=1 for checkout log-only
+  ADR: docs/adr/003-commerce-v2-backfill-shadow.txt
+
+Phase 2c (DONE — feature-flag checkout read):
+  COMMERCE_V2_READ_PRODUCTS=<productId> | * 
+  ADR: docs/adr/004-commerce-v2-checkout-read-cutover.txt
+
+Phase 3a (DONE — inventory engine additive):
+  Migration: 20260718120000_commerce_inventory_v2_tables.sql
+  Engine: check/hold/commit/release + expire
+  Flag: COMMERCE_V2_INVENTORY_PRODUCTS (default OFF)
+  Seed: POST /api/admin/commerce/inventory-seed
+  ADR: docs/adr/005-commerce-v2-inventory-engine.txt
+
+Phase 3b (DONE — booking commerce snapshot):
+  Migration: 20260718130000_commerce_booking_snapshot_columns.sql
+  Columns: commerce_offer_id, commerce_rate_plan_id, commerce_pricing_source,
+           money_breakdown_json, inventory_hold_ids
+  Written on createPendingCustomerBooking (all Direct Web bookings)
+  ADR: docs/adr/006-commerce-v2-booking-snapshot.txt
+
+Phase 4a (DONE — OTA distribution foundation, dry-run):
+  Migration: 20260718140000_commerce_ota_distribution_tables.sql
+  Tables: channel_connections, external_mappings, sync_events
+  Flag: COMMERCE_V2_OTA_SYNC=1 (enqueue after dual-write; default OFF)
+  APIs: /api/admin/commerce/ota/{mappings,outbox,process-outbox}
+  Adapter: dry-run only (no live OTA HTTP)
+  ADR: docs/adr/007-commerce-v2-ota-distribution.txt
+
+Phase 4b (DONE — Mapping / Outbox admin UI):
+  Page: /{locale}/admin/commerce/ota-mappings
+  Sidebar: otaDistribution (admin_or_manager)
+  Component: OtaDistributionAdmin.tsx
+
+Phase 4c (DONE — Viator live rate-push adapter):
+  Flag: COMMERCE_V2_OTA_LIVE=1 (default OFF; double-gate with status=active)
+  Adapter: viatorLiveAdapter (credentials_ref env:*, ratesPushUrl / simulate)
+  API: GET/PATCH /api/admin/commerce/ota/connections
+  Admin UI: connection status / credentials / rates URL
+  ADR: docs/adr/016-ota-viator-live-adapter.txt
+
+Phase 5a (DONE — Operator create / invite / switch):
+  Migration: 20260718150000_saas_operator_onboarding.sql
+  APIs: /api/admin/operators (+ /:id/members)
+  Page: /{locale}/admin/operators (super_only)
+  OperatorContext multi-membership + header switcher
+  Stripe Connect / subdomain routing = stub fields only
+  ADR: docs/adr/008-saas-operator-onboarding.txt
+
+Phase 5b (DONE — operator-scoped admin catalog):
+  Helper: src/lib/operators/scopeQuery.ts
+  Products/Channels list+create filtered/stamped by active operator_id
+  Product edit blocks cross-tenant ids
+  useChannelManagement scoped (M00001 only for Kovegas)
+  ADR: docs/adr/009-operator-scoped-admin-catalog.txt
+
+Phase 5c (DONE — operator-scoped reservations/customers/tours):
+  Migration: 20260718160000_saas_operator_id_tours.sql
+  Admin reservation list/search/create + operational queue hydrate scoped
+  useReservationData catalogs scoped by active operator_id
+  Admin customers list/create + /api/admin/customers stamp
+  Admin tours list/create + tourAutoCreation stamp from product.operator_id
+  ADR: docs/adr/010-operator-scoped-reservations-customers-tours.txt
+
+Phase 5d (DONE — Stripe Connect Express onboarding):
+  Lib: src/lib/operators/stripeConnect.ts
+  API: POST/GET /api/admin/operators/:id/stripe-connect
+  Webhook: account.updated → operators.stripe_connect_* sync
+  UI: OperatorsAdmin Connect start / continue / sync
+  Checkout PI / destination charge: NOT cut over (future flag)
+  ADR: docs/adr/011-stripe-connect-onboarding.txt
+
+Phase 5e (DONE — subdomain host → public operator resolution):
+  Migration: 20260718170000_saas_public_operator_host_lookup.sql
+  Middleware stamps x-operator-id + tms_public_operator_id cookie
+  Lib: resolveOperatorFromHost / getPublicOperatorId
+  Debug: GET /api/debug/public-operator (dev only)
+  ADR: docs/adr/012-subdomain-customer-site-routing.txt
+
+Phase 5e.1 (DONE — public catalog scoped by public operator_id):
+  Home / listing / tags / detail / recommendations / product-reviews filtered
+  Admin preview (?preview=1) skips operator filter
+  Empty-catalog copy for zero-product tenants
+  ADR: docs/adr/013-public-catalog-operator-scope.txt
+
+Phase 5e.2 (DONE — per-operator Direct channel on public checkout):
+  resolvePublicDirectChannel: Kovegas=M00001; others Website/Homepage or DW-{slug}
+  create-checkout / create-inquiry stamp operator_id + channel_id
+  BookingFlow + availability use GET /api/public/direct-channel
+  ADR: docs/adr/014-per-operator-direct-channel-checkout.txt
+
+Phase 5f (DONE — Stripe Connect destination checkout flag):
+  COMMERCE_STRIPE_CONNECT_CHECKOUT (*|1|operator ids); default OFF = platform PI
+  Destination charge when Connect status=enabled; else platform fallback
+  STRIPE_CONNECT_APPLICATION_FEE_BPS (optional platform fee)
+  Refunds: reverse_transfer + refund_application_fee for destination PIs
+  ADR: docs/adr/015-stripe-connect-checkout-destination.txt
+
+Phase 4c noted above (DONE).
+
+Phase 6a (DONE — Ops module sidebar gate + Operator B manual):
+  requiresOperationsModule on fleet/HR/expense sidebar entries
+  Hidden when active operator modules.operations !== true
+  Manual: /{locale}/admin/operator-b/manual (Operator B group)
+  ADR: docs/adr/017-ops-module-sidebar-gate-and-operator-b-manual.txt
+
+Phase 6a.1 (DONE — Ops route guard + live pilot checklist):
+  OpsModuleRouteGuard redirects Ops URLs → manual when Ops OFF
+  GET /api/admin/operators/pilot-status (manual live checks)
+  Manual updated: score, refresh, ops_blocked banner, opsRouteGuard todo
+  ADR: docs/adr/018-operator-b-pilot-status-and-ops-route-guard.txt
+
+Phase 4d (DONE — OTA inbound booking webhooks):
+  Migration: 20260718180000_commerce_ota_inbound_events.sql
+  POST /api/webhooks/ota/:platform (secret); inbox + mapping guard
+  COMMERCE_V2_OTA_INBOUND + config.autoCreateInquiry → inquiry reservation
+  Admin inbound list / test ingest / process on ota-mappings page
+  Manual: doneOtaInbound + commerce structure note
+  ADR: docs/adr/019-ota-inbound-webhooks.txt
+
+Phase 6a.2 (DONE — Kovegas regression + safe pilot manual):
+  evaluateKovegasRegression (read-only) on pilot-status
+  Manual: regression card, safety principles, E2E order
+  Booking/payment/legacy paths unchanged; SaaS flags remain opt-in
+  ADR: docs/adr/020-kovegas-regression-and-safe-pilot.txt
+
+Phase 6b.0 (DONE — Ops fleet root operator_id on vehicles):
+  Migration: 20260719120000_saas_operator_id_vehicles.sql (Kovegas backfill)
+  Admin vehicles / ScheduleView / maintenance lists filter + create stamp
+  No ops_* schema rename/move; booking/payment unchanged
+  ADR: docs/adr/021-ops-vehicles-operator-id.txt
+
+Phase 6b.1 (DONE — vehicle_maintenance + schedules operator_id):
+  Migration: 20260719130000_saas_operator_id_vehicle_maintenance.sql
+  Backfill from vehicles.operator_id; catalog stays shared
+  API list/create + expense sync + UI pass operatorId
+  ADR: docs/adr/022-ops-vehicle-maintenance-operator-id.txt
+
+Phase 6b.2 (DONE — attendance_records + monthly_attendance_stats operator_id):
+  Migration: 20260719140000_saas_operator_id_attendance.sql
+  Stats RPC/trigger scoped by operator_id; UNIQUE(operator, email, month)
+  Attendance UI/API/check-in stamp + list filter
+  ADR: docs/adr/023-ops-attendance-operator-id.txt
+
+Phase 6b.3 (DONE — company_expenses.operator_id):
+  Migration: 20260719150000_saas_operator_id_company_expenses.sql (Kovegas backfill)
+  GET/POST /api/company-expenses + CompanyExpenseManager list/create stamp
+  Maintenance→expense auto-create + expense→maintenance sync scoped
+  reservation_expenses / full recon rewrite deferred
+  ADR: docs/adr/024-ops-company-expenses-operator-id.txt
+
+Phase 6b.4 (DONE — office_meal_log + tour_office_tips operator_id):
+  Migration: 20260719160000_saas_operator_id_office_meal_tips.sql
+  Meal UNIQUE (operator_id, meal_date, employee_email); tips backfill from tours
+  OfficeMealModal / Attendance / Biweekly / TotalEmployees / OfficeTips scoped
+  tour_tip_shares deferred
+  ADR: docs/adr/025-ops-office-meal-tips-operator-id.txt
+
+Phase 6b.5 (DONE — tour_tip_shares + tour_tip_share_ops operator_id):
+  Migration: 20260719170000_saas_operator_id_tour_tip_shares.sql
+  Backfill from tours / parent share; UNIQUE(tour_id) unchanged
+  TipsShareModal / Biweekly / TotalEmployees / prepaid-tips scoped
+  Guide page: tour_id only (unique; no OperatorContext)
+  ADR: docs/adr/026-ops-tour-tip-shares-operator-id.txt
+
+Phase 6b.6 (DONE — tour_expenses + reservation_expenses operator_id):
+  Migration: 20260719180000_saas_operator_id_tour_reservation_expenses.sql
+  Backfill from tours / reservations; orphan → Kovegas
+  Managers + reservation-expenses API + ExpenseReportTab + sync stamp
+  Statement bulk/adjustment inserts stamp operator_id
+  Full CashLedger / recon rewrite deferred
+  ADR: docs/adr/027-ops-tour-reservation-expenses-operator-id.txt
+
+Phase 6b.7 (DONE — recon/cash expense query operator scope):
+  No migration — filter existing expense operator_id columns
+  StatementReconciliationTab picker/browse/auto-match/ops ledger
+  CashReportTab + CashManagement company/reservation loads
+  cash-transaction-auto-match + expense-cash-ledger-match pools
+  Deferred: cash_transactions / financial_accounts / statement_lines tenancy
+  ADR: docs/adr/028-ops-recon-cash-expense-operator-scope.txt
+
+Phase 6b.8 (DONE — cash_transactions + financial_accounts operator_id):
+  Migration: 20260719190000_saas_operator_id_cash_financial.sql
+  Kovegas backfill; statement_imports/lines inherit via account FK (no column)
+  GET/POST/PATCH/flip financial accounts API stamp + operatorId guard
+  CashManagement / CashReportTab / CashLedgerReportEditModals stamp+filter
+  StatementReconciliationTab accounts + ops-ledger cash scoped
+  expense-cash-ledger-match cash list/search/picker scoped
+  ADR: docs/adr/029-ops-cash-financial-accounts-operator-id.txt
+
+Phase 6b.9 (DONE — statement_imports + statement_lines operator_id):
+  Migration: 20260719200000_saas_operator_id_statement_imports_lines.sql
+  Backfill imports←accounts, lines←imports; orphan → Kovegas
+  StatementReconciliationTab loadImports/importCsv/reset/lock/delete scoped
+  expense-statement-auto-match + similar-lines pool/search/probe scoped
+  PNL statement inflows + fill-missing script stamp
+  ADR: docs/adr/030-ops-statement-imports-lines-operator-id.txt
+
+Phase 6b.10 (DONE — reconciliation_matches + expense_cash_ledger_matches):
+  Migration: 20260719210000_saas_operator_id_recon_match_tables.sql
+  Backfill matches←statement_lines / cash_transactions (+ expense fallback)
+  Stamp insert/replace paths; filter P0 full-table “already linked” scans
+  ADR: docs/adr/031-ops-recon-match-tables-operator-id.txt
+
+Phase 6b.11 (DONE — payment_records.operator_id):
+  Migration: 20260719220000_saas_operator_id_payment_records.sql
+  Backfill from reservations.operator_id; orphan → Kovegas
+  POST/GET payment-records API stamp + optional operatorId filter
+  Checkout/refund/resident-check: copy reservation.operator_id only (no logic change)
+  Cash / PNL / Statement / Deposit / Settlement / Comprehensive list filters
+  Deferred: payment_records RLS
+  ADR: docs/adr/032-ops-payment-records-operator-id.txt
+
+Phase 6c.0 (DONE — Ops finance isolation smoke / Operator B E2E):
+  Read-only evaluator: src/lib/operators/opsFinanceIsolation.ts
+  pilot-status returns opsFinance (NULL stamp + Kovegas baseline + partition detail)
+  Operator B manual: Ops finance card + E2E steps (opsFinanceSmoke / opsFinanceUi)
+  ADR: docs/adr/033-ops-finance-isolation-smoke.txt
+
+Phase 6c.1 (DONE — payment_records SELECT RLS + operator_members):
+  Migration: 20260719230000_saas_payment_records_operator_select_rls.sql
+  SELECT: is_staff() OR is_operator_member(operator_id) OR assignee OR customer
+  INSERT/UPDATE/DELETE unchanged; checkout/service_role unaffected
+  Smoke RPC: saas_payment_records_select_rls_ready() in opsFinanceIsolation
+  Deferred: staff cross-tenant lock-down; cash/statement/match RLS
+  ADR: docs/adr/034-payment-records-operator-select-rls.txt
+
+Phase 6c.2 (DONE — Ops finance SELECT RLS + operator_members):
+  Migration: 20260719240000_saas_ops_finance_select_rls.sql
+  SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+  Tables: cash_transactions, financial_accounts, statement_imports/lines,
+          reconciliation_matches, expense_cash_ledger_matches
+  Writes / statement uploaders unchanged
+  Smoke RPC: saas_ops_finance_select_rls_ready()
+  Deferred: company_expenses / journal_* member SELECT; staff lock-down
+  ADR: docs/adr/035-ops-finance-select-rls.txt
+
+Phase 6c.3 (DONE — company_expenses SELECT RLS + operator_members):
+  Migration: 20260719250000_saas_company_expenses_select_rls.sql
+  SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+  Writes unchanged
+  Smoke RPC: saas_company_expenses_select_rls_ready()
+  Deferred: journal_* (no operator_id yet); staff lock-down
+  ADR: docs/adr/036-company-expenses-select-rls.txt
+
+Phase 6c.4 (DONE — journal_* operator_id + SELECT RLS):
+  Migration: 20260719260000_saas_operator_id_journal.sql
+  Backfill: statement_imports → financial_accounts → Kovegas
+  SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+  card-payment API stamps operator_id; rejects cross-tenant bank/card pair
+  Smoke RPC: saas_journal_select_rls_ready()
+  ADR: docs/adr/037-ops-journal-operator-id-select-rls.txt
+
+Phase 6c.5 (DONE — fleet SELECT RLS + operator_members):
+  Migration: 20260719270000_saas_fleet_select_rls.sql
+  SELECT: rls_is_staff_session_ok() OR is_operator_member(operator_id)
+  Tables: vehicles, vehicle_maintenance, vehicle_maintenance_schedules
+  (schedules: tightened from open authenticated SELECT)
+  Deferred: attendance own_or_admin (is_operator_member staff bypass conflict)
+  Smoke RPC: saas_fleet_select_rls_ready()
+  ADR: docs/adr/038-ops-fleet-select-rls.txt
+
+Phase 6c.6 (DONE — attendance SELECT tenancy + strict member helpers):
+  Migration: 20260719280000_saas_attendance_select_rls.sql
+  Helpers: is_operator_member_strict(), is_operator_hr_member()
+  SELECT: own OR rls_admin_session_ok OR (NOT staff AND tenant HR)
+  Tables: attendance_records, monthly_attendance_stats
+  Kovegas staff privacy preserved (no is_operator_member staff bypass)
+  Smoke RPC: saas_attendance_select_rls_ready()
+  ADR: docs/adr/039-ops-attendance-select-rls.txt
+
+Phase 6c.7 (DONE — Ops tip/meal SELECT tenant HR):
+  Migration: 20260719290000_saas_ops_tip_meal_select_rls.sql
+  office_meal_log: own OR staff OR (NOT staff AND is_operator_hr_member)
+  tour_office_tips / tour_tip_shares / tour_tip_share_ops: ADD tenant HR SELECT
+  Existing tip own/admin staff policies unchanged
+  Smoke RPC: saas_ops_tip_meal_select_rls_ready()
+  ADR: docs/adr/040-ops-tip-meal-select-rls.txt
+
+Phase 6c.8 (DONE — tour/reservation expenses SELECT soft member):
+  Migration: 20260719300000_saas_ops_tour_reservation_expenses_select_rls.sql
+  SELECT: rls_is_staff_session_ok() OR is_operator_member OR assignee
+  Tables: tour_expenses, reservation_expenses
+  Writes unchanged
+  Smoke RPC: saas_ops_tour_reservation_expenses_select_rls_ready()
+  ADR: docs/adr/041-ops-tour-reservation-expenses-select-rls.txt
+
+Phase 6c.9 (DONE — active operator cookie/header + API GUC prep):
+  Cookie tms_active_operator_id mirrors localStorage on tenant switch
+  Middleware stamps x-active-operator-id
+  requireStaffApiAuth / financial API auth call set_current_operator_id per request
+  pilot-status + Operator B manual show cookie prep status
+  Deferred: staff SELECT lock-down to current_operator_id(); JWT app_metadata write
+  ADR: docs/adr/042-active-operator-session-prep.txt
+
+Phase 6d.0 (DONE — staff tenant lock pilot via JWT claim):
+  Migration: 20260719310000_saas_staff_tenant_lock_pilot.sql
+  staff_can_select_operator_row(): unscoped until JWT claim; then current_operator_id()
+  Pilot SELECT: company_expenses
+  Env SAAS_STAFF_TENANT_LOCK (default OFF) → POST active-session stamps app_metadata
+  OperatorContext refreshSession after stamp
+  ADR: docs/adr/043-staff-tenant-lock-pilot.txt
+
+Phase 6d.1 (DONE — staff tenant lock expand cash/accounts/payments):
+  Migration: 20260719320000_saas_staff_tenant_lock_expand.sql
+  SELECT: staff_can_select_operator_row OR is_operator_member_strict
+  Tables: cash_transactions, financial_accounts, payment_records (+ assignee/customer)
+  Smoke helpers accept renamed policies
+  ADR: docs/adr/044-staff-tenant-lock-expand.txt
+
+Phase 6d.2 (DONE — staff tenant lock expand statement/match):
+  Migration: 20260719330000_saas_staff_tenant_lock_statement_match.sql
+  SELECT: staff_can_select_operator_row OR is_operator_member_strict
+  Tables: statement_imports, statement_lines, reconciliation_matches,
+          expense_cash_ledger_matches
+  saas_staff_tenant_lock_pilot_ready() covers full ops-finance lock surface
+  ADR: docs/adr/045-staff-tenant-lock-statement-match.txt
+
+Phase 6d.3 (DONE — staff tenant lock expand journal_*):
+  Migration: 20260719340000_saas_staff_tenant_lock_journal.sql
+  SELECT: staff_can_select_operator_row OR is_operator_member_strict
+  Tables: journal_entries, journal_lines
+  card-payment stamp unchanged; smoke accepts renamed policies
+  ADR: docs/adr/046-staff-tenant-lock-journal.txt
+
+Phase 6e.0 (DONE — commerce isolation smoke / Operator B E2E prep):
+  Evaluator: src/lib/operators/commerceIsolation.ts
+  Stamp: products/channels/channel_products/dynamic_pricing/reservations/customers
+         + rate_plans/offers
+  Partition + Direct resolve (ensure:false) + offer↔product same-tenant sample
+  pilot-status.commerceIsolation + Operator B manual card + E2E step
+  No checkout/Stripe/hold calls; booking logic unchanged
+  ADR: docs/adr/047-commerce-isolation-smoke.txt
+
+Phase 6e.1 (DONE — commerce isolation expand inventory + joins):
+  stampInventoryCore + stampInventoryHoldsLedger
+  channelProductSameTenant + inventoryBindingResourceSameTenant samples
+  ADR: docs/adr/048-commerce-isolation-inventory.txt
+
+Phase 6e.2 (DONE — host book readiness preflight):
+  Evaluator: src/lib/operators/hostBookReadiness.ts
+  subdomain + routing env + host resolve ({sub}.localhost) + catalog + Direct
+  pilot-status.hostBook + Operator B manual card + E2E step
+  No checkout/Stripe calls
+  ADR: docs/adr/049-host-book-readiness.txt
+
+Phase 6d.4 (DONE — staff tenant lock admin catalog):
+  Migration: 20260719350000_saas_staff_tenant_lock_catalog.sql
+  SELECT + WRITE: products, product_choices, dynamic_pricing (JWT-aware)
+  App: UPDATE/DELETE operator_id filter; choices/pricing INSERT stamp;
+       dual-write uses active operatorId; name-en + preparation-info staff-gated
+  ADR: docs/adr/050-staff-tenant-lock-catalog.txt
+
+Phase 6d.4b (DONE — admin product clone + cascade delete):
+  cloneAdminProduct: choices/options/media/details/faqs/schedules/pricing + ID remap
+  deleteAdminProductCascade: catalog children then products (operator-scoped)
+  List loadError UX; homepage channel scoped; legacy details → edit hub
+  ADR: docs/adr/051-admin-product-clone-delete.txt
+
+Phase 6d.4c (DONE — admin product list perf + cleanup):
+  Batch product_media primary images; extract choice combinations helper
+  Strip debug console.log on edit page / useDynamicPricing
+  DynamicPricingManager full split deferred (Refactored not parity-ready)
+  ADR: docs/adr/052-admin-product-list-perf-cleanup.txt
+
+Phase 6d.4d (DONE — admin product choices UX labels + template picker):
+  Clarify product instance vs template library (copy model unchanged)
+  ChoiceTemplatePickerModal; deep link ?tab=choices; global options filter
+  ADR: docs/adr/053-admin-product-choices-ux.txt
+  Next: Manual host book + Connect when Commerce + Host book badges green
+
+
+================================================================================
+10. 다음 실행 단위 (코드 착수 시)
+================================================================================
+
+Immediate next
+  1) Manual Operator B E2E: Commerce+Host book green → B host book/inquiry → Connect opt-in
+  2) Manual verify SAAS_STAFF_TENANT_LOCK=1 on ops finance + journal + products lists
+  3) Keep SAAS_STAFF_TENANT_LOCK default OFF in production until verified
+
+아직 하지 말 것
+  - dynamic_pricing DROP
+  - 전 상품 Offer materialize
+  - 두 번째 공급자 실제 데이터 투입 (격리 검증 전)
+  - booking/payment/checkout 비즈니스 로직 변경
+  - SAAS_STAFF_TENANT_LOCK 전역 ON without verification
+  - attendance/tip SELECT에 단순 is_operator_member() OR (스태프 프라이버시 누수)
+  - fleet staff lock without product need (privacy/ops scope TBD)
+
+
+================================================================================
+왜 이 길이 맞는가
+================================================================================
+
+1. FareHarbor/Bokun도 "공급자(Operator) = tenant" 모델이다.
+2. 가격 v2와 테넌시를 같이 가져가야
+   나중에 "tenant 없는 레거시 + tenant 있는 신가격" 이중 지옥이 없다.
+3. Kovegas를 Tenant #1로 이전하면
+   외부 공급자 오픈 전에 실전 데이터로 엔진을 검증한다.
+4. Operations를 모듈로 분리해야
+   가벼운 공급자(상품·예약만 필요)도 쓸 수 있는 진짜 SaaS가 된다.
+
+
+================================================================================
+END
+================================================================================

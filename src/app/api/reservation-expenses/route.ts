@@ -3,6 +3,8 @@ import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { buildReservationExpenseSearchOrClause } from '@/lib/reservationExpenseSearch'
 import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
 const db = supabaseAdmin ?? supabase
 
@@ -88,6 +90,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const search = searchParams.get('search')
+    const activeOperatorId = resolveOperatorId(searchParams.get('operatorId'))
     /** all | unmatched — 명세 대조 미연결 지출만 */
     const statementMatch = (searchParams.get('statement_match') || 'all').toLowerCase()
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
@@ -114,7 +117,7 @@ export async function GET(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyListFilters = (q: any): any => {
-      let next = q
+      let next = q.eq('operator_id', activeOperatorId)
       if (useBaseTable) {
         next = next.is('deleted_at', null)
       }
@@ -281,7 +284,8 @@ export async function POST(request: NextRequest) {
       file_path,
       reservation_id,
       event_id,
-      status = 'pending'
+      status = 'pending',
+      operatorId: bodyOperatorId,
     } = body
 
     // 필수 필드 검증 (amount는 음수 허용 — null/undefined/'' 만 누락으로 처리)
@@ -329,6 +333,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const operator_id = await lookupReservationOperatorId(db, rid || null, bodyOperatorId)
+
     const { data, error } = await db
       .from('reservation_expenses')
       .insert({
@@ -344,6 +350,7 @@ export async function POST(request: NextRequest) {
         reservation_id,
         event_id,
         status,
+        operator_id,
       } as never)
       .select()
       .single()

@@ -5,6 +5,8 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -153,6 +155,8 @@ function computeMaintenanceStats(rows: VehicleMaintenance[]): VehicleMaintenance
 
 export default function VehicleMaintenanceManager() {
   const t = useTranslations('vehicleMaintenance')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   let locale = 'ko'
   try {
     locale = useLocale()
@@ -188,6 +192,7 @@ export default function VehicleMaintenanceManager() {
       if (maintenanceTypeFilter && maintenanceTypeFilter !== 'all') params.append('maintenance_type', maintenanceTypeFilter)
       if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
+      params.append('operatorId', activeOperatorId)
       
       const response = await fetch(`/api/vehicle-maintenance?${params.toString()}`, {
         headers: apiBearerAuthHeaders(),
@@ -213,7 +218,7 @@ export default function VehicleMaintenanceManager() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, maintenanceTypeFilter, categoryFilter, statusFilter])
+  }, [searchTerm, maintenanceTypeFilter, categoryFilter, statusFilter, activeOperatorId])
 
   const vehicleById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles])
 
@@ -428,14 +433,15 @@ export default function VehicleMaintenanceManager() {
       const { data, error } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .order('vehicle_number')
-      
+
       if (error) throw error
       setVehicles(data || [])
     } catch (error) {
       console.error('차량 목록 로드 오류:', error)
     }
-  }, [supabase])
+  }, [activeOperatorId])
 
   const loadExpenseStandardCategories = useCallback(async () => {
     try {

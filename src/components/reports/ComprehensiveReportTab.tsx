@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, DollarSign, Users, Receipt, CreditCard, Calendar, Wallet, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
@@ -73,6 +75,8 @@ export default function ComprehensiveReportTab({
   customers: _customers,
   reservationsAggregateReady = true,
 }: ComprehensiveReportTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [stats, setStats] = useState<ComprehensiveStats | null>(null)
   const [loading, setLoading] = useState(true)
   
@@ -87,7 +91,7 @@ export default function ComprehensiveReportTab({
       return
     }
     loadComprehensiveStats()
-  }, [dateRange, period, reservationsAggregateReady])
+  }, [dateRange, period, reservationsAggregateReady, activeOperatorId])
 
   const handleCategoryClick = (category: string) => {
     setSelectedCategory(category)
@@ -397,6 +401,7 @@ export default function ComprehensiveReportTab({
       const { data: deposits } = await supabase
         .from('payment_records')
         .select('amount, payment_method')
+        .eq('operator_id', activeOperatorId)
         .gte('submit_on', dateRange.start)
         .lte('submit_on', dateRange.end)
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
@@ -498,10 +503,12 @@ export default function ComprehensiveReportTab({
         supabase
           .from('cash_transactions')
           .select('transaction_type, amount')
+          .eq('operator_id', activeOperatorId)
           .gte('transaction_date', baseDate + 'T00:00:00'),
         supabase
           .from('payment_records')
           .select('amount')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
           .gte('submit_on', baseDate + 'T00:00:00'),
@@ -509,12 +516,14 @@ export default function ComprehensiveReportTab({
         supabase
           .from('cash_transactions')
           .select('transaction_type, amount')
+          .eq('operator_id', activeOperatorId)
           .gte('transaction_date', startISO)
           .lte('transaction_date', endISO),
         // 기간 내 payment_records에서 현금 입금 조회
         supabase
           .from('payment_records')
           .select('amount')
+          .eq('operator_id', activeOperatorId)
           .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
           .gte('submit_on', startISO)

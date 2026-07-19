@@ -9,6 +9,8 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -197,6 +199,8 @@ export default function CompanyExpenseManager({
     console.warn('로케일을 가져올 수 없습니다. 기본값(ko)을 사용합니다.', error)
   }
   const { user } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
@@ -459,6 +463,7 @@ export default function CompanyExpenseManager({
       }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
+      params.append('operatorId', activeOperatorId)
 
       const response = await fetch(`/api/company-expenses?${params.toString()}`, {
         headers: apiBearerAuthHeaders(),
@@ -498,6 +503,7 @@ export default function CompanyExpenseManager({
     dateTo,
     page,
     pageLimit,
+    activeOperatorId,
   ])
 
   useEffect(() => {
@@ -544,6 +550,7 @@ export default function CompanyExpenseManager({
       const { data, error } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .order('vehicle_number')
       
       if (error) throw error
@@ -552,7 +559,7 @@ export default function CompanyExpenseManager({
       if (isAbortError(error)) return
       console.error('차량 목록 로드 오류:', error)
     }
-  }, [supabase])
+  }, [activeOperatorId])
 
   const loadTeamMembers = useCallback(async () => {
     try {
@@ -1342,7 +1349,7 @@ export default function CompanyExpenseManager({
           ...apiBearerAuthHeaders(),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submitData)
+        body: JSON.stringify({ ...submitData, operatorId: activeOperatorId }),
       })
       
       const result = await response.json()
@@ -1753,7 +1760,7 @@ export default function CompanyExpenseManager({
     void (async () => {
       try {
         const res = await fetch(
-          `/api/vehicle-maintenance/integration?vehicle_id=${encodeURIComponent(vehicleId)}`,
+          `/api/vehicle-maintenance/integration?vehicle_id=${encodeURIComponent(vehicleId)}&operatorId=${encodeURIComponent(activeOperatorId)}`,
           { headers: apiBearerAuthHeaders() }
         )
         const json: { data?: VehicleMaintenanceIntegrationRow[]; error?: string } = await res.json()

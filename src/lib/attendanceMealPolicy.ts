@@ -5,6 +5,7 @@ import {
   workCalendarDateYmd,
   type EmployeeRatePeriod,
 } from '@/lib/employeeHourlyRates'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /** 신규 정산: 8시간 자동 식사차감 없음 → 사무실 식사 기록으로만 차감 (이 날짜부터 적용, 달력 YYYY-MM-DD) */
 export const OFFICE_MEAL_POLICY_START = '2026-04-01'
@@ -158,11 +159,13 @@ export function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
 export async function fetchOfficeMealCountsInRange(
   client: SupabaseClient,
   startYmd: string,
-  endYmd: string
+  endYmd: string,
+  operatorId?: string | null
 ): Promise<Record<string, number>> {
   const { data, error } = await client
     .from('office_meal_log')
     .select('employee_email')
+    .eq('operator_id', resolveOperatorId(operatorId))
     .gte('meal_date', startYmd)
     .lte('meal_date', endYmd)
 

@@ -1,0 +1,59 @@
+================================================================================
+ADR 015 — Stripe Connect Destination Checkout (Phase 5f)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 5d wired Express onboarding + account.updated sync. Phase 5e.2 stamps
+reservation.operator_id / Direct channel. Customer PaymentIntents still settled
+on the platform account — Operator B could not receive payouts.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Feature flag COMMERCE_STRIPE_CONNECT_CHECKOUT (default OFF):
+   - empty → platform PI (unchanged)
+   - * | 1 | true | on → all operators eligible
+   - comma-separated operator UUIDs → those operators only
+
+2. When flag matches AND operators.stripe_connect_status = enabled
+   AND stripe_connect_account_id present:
+   - PaymentIntent uses transfer_data.destination = acct_…
+   - Optional application_fee_amount from STRIPE_CONNECT_APPLICATION_FEE_BPS
+     (basis points; default 0)
+
+3. Otherwise fall back to platform PI (log warn). Do not fail checkout if
+   Connect is incomplete — keeps Kovegas and misconfigured pilots booking.
+
+4. Staff refunds: if PI was a destination charge, create refund with
+   reverse_transfer + refund_application_fee.
+
+5. create-inquiry (no card) unchanged.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Separate charges / direct charges on connected accounts
+- Standard Connect
+- Changing webhook confirm-payment success path
+- Hard-failing checkout when Connect not ready
+
+
+Pilot
+--------------------------------------------------------------------------------
+1. Operator B: Connect 시작 → status=enabled (Dashboard + webhook)
+2. Env: COMMERCE_STRIPE_CONNECT_CHECKOUT=<operatorB-uuid>
+   Optional: STRIPE_CONNECT_APPLICATION_FEE_BPS=290
+3. Book on Operator B host → PI metadata connect_mode=destination
+4. Roll back: unset COMMERCE_STRIPE_CONNECT_CHECKOUT
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/stripeConnectCheckout.ts
+src/lib/customerBookingCheckout.ts (createStripePaymentIntentForReservation)
+src/lib/customerBookingCancel.ts (Connect-aware refund)
+src/app/api/booking/create-checkout/route.ts
+================================================================================

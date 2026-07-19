@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -159,6 +161,8 @@ function isCashRowStmtMatched(tx: CashTransaction, reconciledKeys: Set<string>):
 }
 
 export default function CashManagement() {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   useTranslations('cashManagement')
   let locale = 'ko'
   try {
@@ -292,6 +296,7 @@ export default function CashManagement() {
       let cashTransactionsQuery = supabase
         .from('cash_transactions')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .order('transaction_date', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -327,6 +332,7 @@ export default function CashManagement() {
       let paymentRecordsQuery = supabase
         .from('payment_records')
         .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
+        .eq('operator_id', activeOperatorId)
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
@@ -359,6 +365,7 @@ export default function CashManagement() {
       let companyExpensesQuery = supabase
         .from('company_expenses')
         .select('id, amount, submit_on, submit_by, description, notes, paid_for, paid_to')
+        .eq('operator_id', activeOperatorId)
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
@@ -391,6 +398,7 @@ export default function CashManagement() {
       let reservationExpensesQuery = supabase
         .from('reservation_expenses')
         .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
+        .eq('operator_id', activeOperatorId)
         .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
@@ -542,7 +550,7 @@ export default function CashManagement() {
         setLoading(false)
       }
     }
-  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamDisplayLabel])
+  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamDisplayLabel, activeOperatorId])
 
   const applySearch = useCallback(() => {
     setSearchTerm(searchInput.trim())
@@ -628,6 +636,7 @@ export default function CashManagement() {
               notes: newValues.notes,
               updated_at: new Date().toISOString()
             })
+            .eq('operator_id', activeOperatorId)
             .eq('id', editingTransaction.id)
             .select()
 
@@ -696,7 +705,8 @@ export default function CashManagement() {
             description: newValues.description,
             category: newValues.category,
             notes: newValues.notes,
-            created_by: user?.email || ''
+            created_by: user?.email || '',
+            operator_id: activeOperatorId,
           })
           .select()
           .single()
@@ -821,6 +831,7 @@ export default function CashManagement() {
         const { error } = await supabase
           .from('cash_transactions')
           .delete()
+          .eq('operator_id', activeOperatorId)
           .eq('id', id)
 
         if (error) throw error

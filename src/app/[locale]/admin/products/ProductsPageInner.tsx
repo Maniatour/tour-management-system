@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import ProductLocaleReadinessModal from '@/components/admin/ProductLocaleReadinessModal'
 import AdminProductCardPreviewLocaleToggle from '@/components/admin/AdminProductCardPreviewLocaleToggle'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -20,6 +21,12 @@ import {
   productsHomeSectionsManualTitles,
 } from '@/lib/productsHomeSectionsManualDocument'
 import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
+import { withPrimaryImages } from '@/lib/fetchProductPrimaryImagesBatch'
+import { fetchAdminChoiceCombinations } from '@/lib/adminProductChoiceCombinations'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { cloneAdminProduct } from '@/lib/adminProductClone'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -38,6 +45,7 @@ export default function AdminProducts() {
   const locale = paramsObj.locale as string
   const t = useTranslations('products')
   const tCommon = useTranslations('common')
+  const { operatorId } = useOperatorOptional()
 
   const initialListUi = useMemo(
     () => ({
@@ -102,188 +110,52 @@ export default function AdminProducts() {
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
   const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
+  const [isLocaleReadinessModalOpen, setIsLocaleReadinessModalOpen] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Supabase에서 상품 데이터 가져오기
+  // Supabase에서 상품 데이터 가져오기 (테넌트 전환 시 재조회)
   useEffect(() => {
-    fetchProducts()
-    fetchHomepageChannel()
-  }, [])
+    void fetchProducts()
+    void fetchHomepageChannel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when active operator changes
+  }, [operatorId])
 
-  // 홈페이지 채널 정보 가져오기
+  // 홈페이지 채널 정보 가져오기 (테넌트 스코프; Kovegas만 M00001 보정)
   const fetchHomepageChannel = async () => {
     try {
-      const { data, error } = await supabase
-        .from('channels')
-        .select('*')
-        .or('id.eq.M00001,name.ilike.%홈페이지%,name.ilike.%homepage%')
-        .limit(1)
-        .single()
+      const opId = resolveOperatorId(operatorId)
+      const scoped = withOperatorId(
+        supabase
+          .from('channels')
+          .select('*')
+          .or('name.ilike.%홈페이지%,name.ilike.%homepage%,name.ilike.%direct%')
+          .eq('status', 'active')
+          .limit(1),
+        opId
+      )
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('홈페이지 채널 조회 오류:', error)
-      } else if (data) {
-        setHomepageChannel(data)
+      const [scopedResult, m00001Result] = await Promise.all([
+        scoped.maybeSingle(),
+        opId === KOVEgAS_OPERATOR_ID
+          ? supabase.from('channels').select('*').eq('id', 'M00001').maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ])
+
+      if (scopedResult.error && scopedResult.error.code !== 'PGRST116') {
+        console.error('홈페이지 채널 조회 오류:', scopedResult.error)
       }
+
+      const channel = m00001Result.data || scopedResult.data
+      setHomepageChannel(channel ?? null)
     } catch (error) {
       console.error('홈페이지 채널 조회 중 예상치 못한 오류:', error)
     }
   }
 
-  // 모든 초이스 조합 생성 함수
-  const generateCombinations = (groups: Array<Array<any>>): Array<Array<any>> => {
-    if (groups.length === 0) return [[]]
-    if (groups.length === 1) return groups[0].map(item => [item])
-    
-    const [firstGroup, ...restGroups] = groups
-    const restCombinations = generateCombinations(restGroups)
-    
-    const combinations: Array<Array<any>> = []
-    firstGroup.forEach(item => {
-      restCombinations.forEach(restCombo => {
-        combinations.push([item, ...restCombo])
-      })
-    })
-    
-    return combinations
-  }
-
-  // 상품별 초이스 조합 정보 가져오기
   const fetchChoicePrices = async (productIds: string[]) => {
     try {
-      const { data, error } = await supabase
-        .from('product_choices')
-        .select(`
-          product_id,
-          choice_group,
-          choice_group_ko,
-          sort_order,
-          options:choice_options (
-            id,
-            option_name,
-            option_name_ko,
-            adult_price,
-            child_price,
-            infant_price,
-            sort_order,
-            is_default
-          )
-        `)
-        .in('product_id', productIds)
-        .order('sort_order', { ascending: true })
-
-      if (error) {
-        console.error('초이스 가격 조회 오류:', error)
-        return
-      }
-
-      const combinationsMap: { 
-        [productId: string]: Array<{
-          id: string
-          combinationName: string
-          combinationNameKo: string
-          totalPrice: number
-          choices: Array<{
-            id: string
-            name: string
-            name_ko: string
-            adult_price: number
-            child_price: number
-            infant_price: number
-          }>
-        }>
-      } = {}
-      
-      if (data) {
-        // 상품별로 그룹화
-        const productGroups: { [productId: string]: any[] } = {}
-        data.forEach((choice: any) => {
-          const productId = choice.product_id
-          if (!productGroups[productId]) {
-            productGroups[productId] = []
-          }
-          
-          if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-            // 각 옵션을 정렬
-            const sortedOptions = [...choice.options].sort((a, b) => {
-              const sortA = a.sort_order || 0
-              const sortB = b.sort_order || 0
-              if (sortA !== sortB) return sortA - sortB
-              return (a.option_name_ko || a.option_name || '').localeCompare(b.option_name_ko || b.option_name || '', 'ko')
-            })
-            
-            productGroups[productId].push({
-              groupName: choice.choice_group_ko || choice.choice_group || '',
-              options: sortedOptions.map((option: any) => ({
-                id: option.id,
-                name: option.option_name || '',
-                name_ko: option.option_name_ko || option.option_name || '',
-                adult_price: parseFloat(option.adult_price) || 0,
-                child_price: parseFloat(option.child_price) || 0,
-                infant_price: parseFloat(option.infant_price) || 0,
-                is_default: option.is_default || false
-              }))
-            })
-          }
-        })
-        
-        // 각 상품별로 모든 조합 생성
-        Object.keys(productGroups).forEach(productId => {
-          const groups = productGroups[productId]
-          if (groups.length === 0) {
-            combinationsMap[productId] = []
-            return
-          }
-          
-          // 각 그룹의 옵션 배열 추출
-          const optionArrays = groups.map(group => group.options)
-          
-          // 모든 조합 생성
-          const allCombinations = generateCombinations(optionArrays)
-          
-          // 각 그룹에서 기본 옵션 찾기
-          const defaultOptions = groups.map(group => {
-            return group.options.find((opt: { is_default?: boolean }) => opt.is_default === true) || group.options[0]
-          })
-          
-          // 조합을 표시용 데이터로 변환
-          type ChoiceItem = {
-            id: string
-            name: string
-            name_ko: string
-            adult_price: number
-            child_price: number
-            infant_price: number
-            is_default: boolean
-          }
-          type ComboItem = {
-            id: string
-            combinationName: string
-            combinationNameKo: string
-            totalPrice: number
-            isDefault: boolean
-            choices: ChoiceItem[]
-          }
-          combinationsMap[productId] = allCombinations.map((combo, index): ComboItem => {
-            const combinationNameKo = combo.map((option: ChoiceItem) => `${option.name_ko || option.name}`).join(' - ')
-            const combinationName = combo.map((option: ChoiceItem) => option.name || option.name_ko).join(' - ')
-            const totalPrice = combo.reduce((sum: number, option: ChoiceItem) => sum + option.adult_price, 0)
-            const isDefault = combo.every((option: ChoiceItem, idx: number) => {
-              const defaultOpt = defaultOptions[idx]
-              return defaultOpt && option.id === defaultOpt.id
-            })
-            return {
-              id: `combo-${productId}-${index}`,
-              combinationName,
-              combinationNameKo,
-              totalPrice,
-              isDefault,
-              choices: combo as ChoiceItem[]
-            }
-          })
-        })
-        
-        setChoiceCombinations(combinationsMap as typeof choiceCombinations)
-      }
+      const combinationsMap = await fetchAdminChoiceCombinations(supabase, productIds)
+      setChoiceCombinations(combinationsMap as typeof choiceCombinations)
     } catch (error) {
       console.error('초이스 가격 조회 중 예상치 못한 오류:', error)
     }
@@ -292,13 +164,12 @@ export default function AdminProducts() {
   const fetchProducts = async () => {
     try {
       setLoading(true)
-      
-      console.log('Products 데이터 조회 시작...')
-      
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name', { ascending: true })
+      setLoadError(null)
+
+      const { data, error } = await withOperatorId(
+        supabase.from('products').select('*'),
+        operatorId
+      ).order('name', { ascending: true })
 
       if (error) {
         console.error('Products 데이터 조회 오류:', error)
@@ -314,52 +185,12 @@ export default function AdminProducts() {
         }
         
         setProducts([])
+        setLoadError(error.message || t('retry'))
         return
       }
 
-      console.log('Products 데이터 조회 성공:', data?.length || 0, '개')
-      
-      // 각 상품의 대표사진 가져오기
-      const productsWithImages = await Promise.all(
-        (data || []).map(async (product: Product) => {
-          try {
-            // 1. product_media에서 대표사진 찾기
-            const { data: mediaData } = await supabase
-              .from('product_media')
-              .select('file_url')
-              .eq('product_id', product.id)
-              .eq('file_type', 'image')
-              .eq('is_active', true)
-              .eq('is_primary', true)
-              .maybeSingle()
-            
-            if (mediaData && 'file_url' in mediaData) {
-              return { ...product, primary_image: (mediaData as any).file_url }
-            }
-            
-            // 2. product_media에서 첫 번째 이미지 찾기
-            const { data: firstMediaData } = await supabase
-              .from('product_media')
-              .select('file_url')
-              .eq('product_id', product.id)
-              .eq('file_type', 'image')
-              .eq('is_active', true)
-              .order('order_index', { ascending: true })
-              .limit(1)
-              .maybeSingle()
-            
-            if (firstMediaData && 'file_url' in firstMediaData) {
-              return { ...product, primary_image: (firstMediaData as any).file_url }
-            }
-            
-            return { ...product, primary_image: null }
-          } catch (err) {
-            console.error(`Error fetching image for product ${product.id}:`, err)
-            return { ...product, primary_image: null }
-          }
-        })
-      )
-      
+      // 대표사진 배치 조회 (N+1 제거)
+      const productsWithImages = await withPrimaryImages(data || [])
       const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
       setProducts(productsWithChoicePrices as Product[])
       
@@ -431,6 +262,7 @@ export default function AdminProducts() {
     } catch (error) {
       console.error('Products 조회 중 예상치 못한 오류:', error)
       setProducts([])
+      setLoadError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
@@ -656,6 +488,7 @@ export default function AdminProducts() {
         .from('products')
         .update({ status: newStatus })
         .eq('id', productId)
+        .eq('operator_id', resolveOperatorId(operatorId))
       
       if (error) {
         console.error('상품 상태 업데이트 오류:', error)
@@ -700,6 +533,7 @@ export default function AdminProducts() {
         .from('products')
         .update({ is_published: newPublished })
         .eq('id', productId)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('상품 배포 상태 업데이트 오류:', error)
@@ -760,6 +594,7 @@ export default function AdminProducts() {
         .from('products')
         .update(updateData)
         .eq('id', productId)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('상품 업데이트 오류:', error)
@@ -821,60 +656,32 @@ export default function AdminProducts() {
     return filtered
   }
 
-  // 상품 복사 핸들러
+  // 상품 복사 핸들러 (초이스·미디어·상세·가격 포함)
   const handleCopyProduct = async (product: Product) => {
     if (copyingProducts.has(product.id)) return
     
     try {
       setCopyingProducts(prev => new Set(prev).add(product.id))
-      
-      const copyData = {
-        name: `${product.name} (복사본)`,
-        name_en: product.name_en ? `${product.name_en} (Copy)` : null,
-        product_code: product.product_code ? `${product.product_code}_COPY` : null,
-        category: product.category,
-        sub_category: product.sub_category,
-        description: product.description,
-        duration: product.duration,
-        base_price: product.base_price,
-        max_participants: product.max_participants,
-        status: 'draft' as const,
-        departure_city: product.departure_city,
-        arrival_city: product.arrival_city,
-        departure_country: product.departure_country,
-        arrival_country: product.arrival_country,
-        languages: product.languages,
-        group_size: product.group_size,
-        adult_age: product.adult_age,
-        child_age_min: product.child_age_min,
-        child_age_max: product.child_age_max,
-        infant_age: product.infant_age,
-        tags: product.tags
-      }
-      
-      const { data: newProduct, error: productError } = await supabase
-        .from('products')
-        .insert(copyData)
-        .select()
-        .single()
-      
-      if (productError) {
-        console.error('상품 복사 오류:', productError)
-        alert('상품 복사 중 오류가 발생했습니다.')
-        return
-      }
-      
-      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProduct?.id}`)
-      
-      // 목록 새로고침
+
+      const result = await cloneAdminProduct(
+        supabase,
+        product.id,
+        operatorId,
+        locale === 'en' ? 'en' : 'ko'
+      )
+
+      alert(
+        locale === 'en'
+          ? `Product copied. New id: ${result.newProductId}`
+          : `상품이 복사되었습니다. (초이스 ${result.counts.choices}, 가격 ${result.counts.pricing}건 포함)\n새 ID: ${result.newProductId}`
+      )
+
       fetchProducts()
-      
-      // 새 상품 편집 페이지로 이동
-      window.location.href = `/${locale}/admin/products/${newProduct?.id}`
-      
+      window.location.href = `/${locale}/admin/products/${result.newProductId}`
     } catch (error) {
       console.error('상품 복사 중 예상치 못한 오류:', error)
-      alert('상품 복사 중 오류가 발생했습니다.')
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(locale === 'en' ? `Copy failed: ${msg}` : `상품 복사 중 오류: ${msg}`)
     } finally {
       setCopyingProducts(prev => {
         const next = new Set(prev)
@@ -895,18 +702,20 @@ export default function AdminProducts() {
     )
   }
 
-  // 오류 상태 표시 (products가 빈 배열이고 로딩이 완료된 경우)
+  // 로드 실패 vs 빈 목록 구분
   if (products.length === 0 && !loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
-          <Link
-            href={`/${locale}/admin/products/new`}
-            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md text-sm font-medium hover:bg-primary/90"
-          >
-            {t('addProduct')}
-          </Link>
+          {!loadError && (
+            <Link
+              href={`/${locale}/admin/products/new`}
+              className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md text-sm font-medium hover:bg-primary/90"
+            >
+              {t('addProduct')}
+            </Link>
+          )}
         </div>
         
         <div className="text-center py-12">
@@ -915,9 +724,15 @@ export default function AdminProducts() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noProducts')}</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {loadError
+              ? locale === 'en'
+                ? 'Failed to load products'
+                : '상품을 불러오지 못했습니다'
+              : t('noProducts')}
+          </h3>
           <p className="text-gray-600 mb-4">
-            {t('noProductsDescription')}
+            {loadError || t('noProductsDescription')}
           </p>
           <div className="space-y-2">
             <button
@@ -926,9 +741,11 @@ export default function AdminProducts() {
             >
               {t('retry')}
             </button>
-            <div className="text-xs text-gray-500">
-              {t('orAddNewProduct')}
-            </div>
+            {!loadError && (
+              <div className="text-xs text-gray-500">
+                {t('orAddNewProduct')}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -964,7 +781,15 @@ export default function AdminProducts() {
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => setIsLocaleReadinessModalOpen(true)}
+            className="bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <Languages size={16} />
+            <span>{t('localeReadiness.button')}</span>
+          </button>
           <button
             onClick={() => setIsFavoriteOrderModalOpen(true)}
             className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
@@ -1865,6 +1690,14 @@ export default function AdminProducts() {
           </div>
         </div>
       )}
+
+      <ProductLocaleReadinessModal
+        isOpen={isLocaleReadinessModalOpen}
+        onClose={() => setIsLocaleReadinessModalOpen(false)}
+        products={filteredProducts}
+        homepageChannelId={homepageChannel?.id ?? null}
+        locale={locale}
+      />
 
       {/* 즐겨찾기 순서 조정 모달 */}
       <FavoriteOrderModal

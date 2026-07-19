@@ -1,0 +1,554 @@
+================================================================================
+가격 아키텍처 리뷰 (코드 작성 없음)
+Tour Management System — Pricing Architecture Review
+작성일: 2026-07-18
+================================================================================
+
+조사 범위
+- Prisma 스키마: 없음 (Supabase Postgres 기준)
+- Supabase migrations / database.types.ts
+- 예약·가격·가용성·초이스·캘린더·OTA 로직
+
+--------------------------------------------------------------------------------
+현재 아키텍처 요약
+--------------------------------------------------------------------------------
+
+products
+  ├─ channel_products (channel_id + product_id + variant_key)
+  ├─ product_choices → choice_options          ← UX 선택지 (상품 공통)
+  ├─ product_options                           ← 추가 옵션
+  └─ dynamic_pricing                           ← 판매가 SSOT
+       UNIQUE(product_id, channel_id, date, price_type, variant_key)
+       adult/child/infant_price
+       choices_pricing JSONB   ← 조합별 가격 (런타임 카테시안 × JSON)
+       options_pricing JSONB
+       price_calculation_method: absolute | base_plus
+       is_sale_available
+
+reservations
+  ├─ product_id, channel_id, variant_key, tour_date, 인원
+  ├─ reservation_choices / reservation_options
+  └─ reservation_pricing                       ← 금액 스냅샷 (dynamic_pricing FK 없음)
+
+핵심 사실
+1. Variant는 테이블이 아니라 channel_products.variant_key 문자열이다.
+2. 초이스 조합(Pricing Category에 해당하는 것)은 DB에 없고,
+   UI/useChoiceManagement가 카테시안 곱을 만든 뒤 choices_pricing JSON에 넣는다.
+3. 이미 Mode 1/2에 가까운 것이 있다: absolute(조합 최종가) / base_plus(기본가+증감).
+4. 재고 ledger는 없다. is_sale_available, products/tours.max_participants,
+   choice_options.capacity 정도이다.
+5. OTA 전용 ID 컬럼은 없다. 채널은 channels + dynamic_pricing.channel_id로만 구분된다.
+6. 고객 결제는 홈페이지 채널(M00001) + RPC calculate_dynamic_price가 권위이다.
+
+================================================================================
+11개 질문에 대한 답
+================================================================================
+
+1. 기존 스키마를 마이그레이션할 수 있는가?
+--------------------------------------------------------------------------------
+가능합니다. 단, "테이블을 갈아엎는 빅뱅"이 아니라
+새 가격 계층을 옆에 두고 이중 기록(dual-write) → 전환이 맞습니다.
+
+이유: 예약 금액이 dynamic_pricing을 참조하지 않고 reservation_pricing에
+스냅샷되어 있어, 카탈로그 가격 구조를 바꿔도 과거 예약 금액은 상대적으로 안전합니다.
+위험은 과거가 아니라 앞으로의 가격 계산·관리자 UI·RPC·가용성입니다.
+
+
+2. 그대로 둘 수 있는 테이블
+--------------------------------------------------------------------------------
+유지                         이유
+---------------------------  ------------------------------------------
+products                     카탈로그·정원·게시 상태
+channels                     커미션·pricing_type·채널 메타
+channel_products             Product×Channel×Variant 연결
+product_choices /            고객 UX 선택 모델
+  choice_options
+product_options / options    추가 옵션
+reservations (+ customers,   운영·배차·상태
+  tours 등)
+reservation_pricing          재무 스냅샷 (확장만)
+reservation_choices /        선택 이력
+  reservation_options
+choice_option_aliases        옵션 ID 안정성
+
+
+3. 재설계가 필요한 부분
+--------------------------------------------------------------------------------
+영역                              현재 문제                    재설계 방향
+--------------------------------  ---------------------------  ------------------------
+dynamic_pricing.choices_pricing   조합 폭증, 쿼리·무결성·      정규화된 sellable unit
+  JSON                            OTA ID 불가                  + 일자 가격
+조합 생성(앱 런타임)              동일 로직 중복, 키 불안정    DB에 명시적 Offer/SKU
+                                                              (선택적 materialize)
+인벤토리                          플래그만 존재                shared / choice / offer
+                                                              단위 allotment
+OTA 매핑                          없음                         platform별 external ID
+calculate_dynamic_price           마이그레이션에 본문 거의     새 resolve API
+                                  없음, 앱과 암묵 결합         + 호환 래퍼
+variant_key vs RPC                저장·가용성에는 쓰이지만     가격 해석에 variant를
+                                  RPC에 미전달                 명시적으로 포함
+
+
+4. 기존 예약 이력은 유지되는가?
+--------------------------------------------------------------------------------
+예. reservation_pricing / reservation_choices / reservations.selected_* 는
+스냅샷이라 카탈로그 재설계와 분리되어 있습니다.
+
+주의:
+- 과거 예약을 새 Pricing Category ID로 역매핑할 필요는 거의 없습니다.
+- 선택적으로 reservation_pricing.pricing_offer_id 같은 nullable 컬럼만
+  추가하면 신규 예약부터 추적 가능합니다.
+- reservation_choices.total_price = 0 인 케이스가 있어,
+  초이스 단가 복원은 reservation_pricing 합계에 의존합니다.
+
+
+5. 기존 예약은 계속 동작하는가?
+--------------------------------------------------------------------------------
+운영·정산·투어 배정은 계속 동작해야 합니다. 단, 다음을 건드리면 깨집니다.
+
+- selectedOptions = choice_id → option_id 계약
+- calculate_dynamic_price 시그니처/반환
+- M00001 하드코딩 가정
+- choices_pricing 키 / ota_sale_price / is_sale_available 형태를
+  일방적으로 제거
+
+권장: 전환 기간 동안 구 경로를 살려 두고,
+새 resolver가 구 JSON도 읽을 수 있게 합니다.
+
+
+6. 무중단 마이그레이션 가능한가?
+--------------------------------------------------------------------------------
+가능합니다 (점진적). 조건:
+
+1. 새 테이블을 additive로 추가
+2. dual-write (관리자 저장 시 JSON + 정규화 테이블 동시 기록)
+3. 읽기는 feature flag로 상품/채널 단위 전환
+4. 구 dynamic_pricing은 deprecate 후 나중에 drop
+5. RPC는 새 함수를 추가하고 구 함수는 래퍼로 유지
+
+불가에 가까운 것: dynamic_pricing을 한 번에 DROP하고
+앱을 동시에 배포하는 방식.
+
+
+7. 주요 리스크
+--------------------------------------------------------------------------------
+1. 조합 폭발
+   3그룹 × 3옵션 × 365일 × 6채널 × N variant → 행 수가 급증.
+   "모든 조합을 매일 materialize"하면 관리·비용이 악화됩니다.
+
+2. 가격 모드 혼재
+   absolute JSON과 base_plus가 이미 섞여 있음. 변환 시 금액 드리프트.
+
+3. 클라이언트 ≠ 서버 가격
+   BookingFlow 미리보기와 checkout RPC/폴백이 이미 다름
+   (쿠폰 범위, 애뉴얼 패스 하드코딩 등). 리팩터 시 회귀 위험 큼.
+
+4. RPC 암묵 결합
+   함수 정의가 repo에 거의 없음 → 원격 DB와 앱이 어긋나기 쉬움.
+
+5. 초이스 의미 혼동
+   "언어" vs "엔텔로프 티켓"을 같은 Pricing Category로 묶으면
+   인벤토리·OTA 매핑이 꼬입니다.
+
+6. 채널별 초이스 스코프 부재
+   초이스는 상품 공통인데, OTA는 variant/패키지마다 선택지가 다름.
+
+7. 정산 레이어
+   관리자 reservation_pricing 정산(커미션·불포함가)은
+   고객 checkout과 별 레이어 — 가격 모델 변경 시 양쪽 검증 필요.
+
+
+8. 점진 마이그레이션 vs 완전 신규 테이블?
+--------------------------------------------------------------------------------
+신규 가격 테이블을 추가하는 점진 방식이 맞습니다.
+기존 dynamic_pricing을 in-place로 "Pricing Category화"하면
+JSON·unique 제약·앱 전체가 동시에 깨집니다.
+
+권장 전략: Strangler Fig
+- Phase A: 새 Offer/Rule/Calendar 테이블 추가
+- Phase B: dual-write + backfill
+- Phase C: 읽기 전환 (상품별)
+- Phase D: 구 JSON 컬럼 read-only → 제거
+
+
+9. 구 데이터 → Pricing Category 변환
+--------------------------------------------------------------------------------
+현재                              신규
+--------------------------------  --------------------------------
+channel_products 행               ChannelProduct / Variant
+카테시안 조합 1개                 pricing_offers (sellable unit) 1행
+choices_pricing[comboKey]         offer의 일자 가격 또는 rule 결과
+adult/child/infant_price          variant base (rule mode)
+price_calculation_method          offer_set.pricing_mode
+is_sale_available                 offer_date_status 또는 shared calendar
+(없음)                            offer_external_ids (OTA)
+
+변환 규칙 제안:
+1. 활성 조합만 materialize
+   (가격이 있거나 기본 조합, 최근 N개월·향후 M개월).
+2. base_plus 상품은 전 조합을 가격 행으로 펼치지 말고
+   choice adjustment + 예외 override만 생성.
+3. absolute이고 조합 수가 적을 때만 조합별 고정가로 펼침.
+4. 키 파싱: 안정 키(choice_group_key+option_key) 우선,
+   UUID 키는 alias/매칭 유틸로 복구.
+5. backfill 후 금액 샘플링 diff
+   (상품×채널×날짜×조합)로 드리프트 검증.
+
+
+10. 수백 상품 × OTA 채널에서 스케일되는가?
+--------------------------------------------------------------------------------
+제안하신 "모든 Pricing Category × 매일 가격"만으로는 스케일이 나쁩니다.
+
+대략:
+100 products × 6 channels × 3 variants × 20 categories × 365 days
+≈ 1,300만 행/년 (가격만)
+여기에 inventory/status까지 붙이면 더 큼.
+
+스케일하려면:
+- 희소(sparse) 저장: 기본 규칙 + 예외 날짜만 저장
+- materialize는 OTA/재고가 필요한 축만
+- 캘린더 UI는 "규칙 평가 + override merge"로 표시
+- 인덱스: (offer_id, date), (channel_product_id, date)
+
+수백 상품은 정규화 + 규칙 우선이면 충분합니다.
+전 조합 daily rows는 피해야 합니다.
+
+
+11. 더 나은 아키텍처를 권하는가?
+--------------------------------------------------------------------------------
+예. 제안안을 그대로 쓰기보다 "관심사 분리형 Offer 모델"을 권합니다.
+
+제안안의 강점(sellable unit, OTA ID, 일자별 상태)은 유지하되,
+Pricing Category를 유일한 가격 단위로 강제하지 마세요.
+
+문제점:
+1. Mode 2(규칙 기반)와 "Category = 조합 가격 저장"은 본질적으로 충돌합니다.
+   규칙을 쓰면서도 모든 조합을 Category로 만들면 이중 관리가 됩니다.
+2. 모든 초이스가 "판매 SKU"가 아닙니다.
+   언어/미팅포인트는 presentation, 엔텔로프 티켓은 inventory SKU입니다.
+3. 인벤토리를 Category에만 두면 Shared inventory(투어 버스 정원)를
+   표현하기 어렵습니다.
+
+================================================================================
+권장 아키텍처
+================================================================================
+
+설계 원칙
+--------------------------------------------------------------------------------
+1. Catalog(선택 UX) / Offer(판매 단위) / Price(금액) / Inventory(재고) 를 분리
+2. 상품마다 pricing_mode: rule_based | offer_fixed | hybrid
+3. Offer는 필요할 때만 생성 (OTA sync, 고정가 조합, 독립 재고)
+4. 일자 데이터는 override/sparse; 기본은 규칙
+5. 예약은 계속 스냅샷; Offer FK는 nullable 추가만
+
+
+권장 ERD (논리)
+--------------------------------------------------------------------------------
+
+products
+channels
+channel_products (product × channel × variant_key)     -- 유지
+
+product_choices → choice_options                       -- UX 카탈로그 유지
+product_options                                        -- 유지
+
+── 신규 ──
+
+pricing_policies
+  id, channel_product_id (→ channel_products)
+  pricing_mode: rule_based | offer_fixed | hybrid
+  inventory_mode: shared | choice | offer | none
+  currency, is_active
+
+-- Mode 2: 규칙
+pricing_bases
+  policy_id, adult/child/infant, effective_from/to (nullable = default)
+
+choice_price_adjustments
+  policy_id, choice_option_id
+  adj_adult/child/infant
+  effective_from/to
+
+-- Mode 1 / OTA / 예외: 판매 단위
+pricing_offers
+  id, policy_id
+  code, name_ko/en
+  is_active, sort_order
+  -- optional: generated from mapping; or manually curated
+
+pricing_offer_components
+  offer_id, choice_option_id
+  UNIQUE(offer_id, choice_group implied via option)
+
+offer_price_overrides          -- 예외/고정가
+  offer_id, date (nullable for default)
+  adult/child/infant
+  source: manual | imported | computed_cache
+
+offer_external_ids             -- OTA
+  offer_id, platform (klook|gyg|kkday|viator|trip)
+  external_product_id, external_package_id, external_sku
+  raw_meta JSONB
+  UNIQUE(platform, external_sku)
+
+-- 일자 상태/재고 (희소)
+availability_calendars
+  id, scope_type: product|channel_product|choice_option|offer
+  scope_id
+  date
+  status: open|closed|cutoff
+  allotment (nullable), booked (nullable)
+  UNIQUE(scope_type, scope_id, date)
+
+-- 기존 호환/캐시 (전환기)
+dynamic_pricing                -- 당분간 유지, 이후 view 또는 drop
+
+
+가격 해석 순서 (권장)
+--------------------------------------------------------------------------------
+1. policy.pricing_mode 확인
+2. rule_based / hybrid:
+     base(date) + Σ(selected choice adjustments)
+     → offer override가 있으면 그 금액으로 대체
+3. offer_fixed:
+     offer default/override price only
+4. commission/markup/coupon/not_included는
+   기존 channels + reservation_pricing 레이어 유지
+5. inventory:
+     shared → product/tour calendar
+     choice → choice_option calendar
+     offer → offer calendar
+     (가장 제한적인 것 AND)
+
+
+기존 개념과의 대응
+--------------------------------------------------------------------------------
+제안안                         권장안
+-----------------------------  --------------------------------
+Pricing Category               pricing_offers
+Choice Mapping                 pricing_offer_components
+Simple combination price       offer_price_overrides (default+date)
+Rule-based                     pricing_bases + choice_price_adjustments
+Override                       같은 overrides 테이블, source=manual
+OTA Category IDs               offer_external_ids
+Date price/inventory/status    sparse offer_price_overrides
+                               + availability_calendars
+
+================================================================================
+마이그레이션 전략
+================================================================================
+
+Phase 0 — 동결·측정 (1주)
+--------------------------------------------------------------------------------
+- 상품별 초이스 그룹 수·조합 수·absolute vs base_plus 비율 집계
+- OTA 채널별 실제 필요 SKU 수 파악
+- calculate_dynamic_price 정의를 DB에서 export해 repo에 고정
+- 가격 golden tests:
+  샘플 (product, channel, variant, date, choices) → expected total
+
+Phase 1 — Additive schema (무중단)
+--------------------------------------------------------------------------------
+- 위 신규 테이블 생성
+- reservation_pricing.pricing_offer_id nullable 추가
+- 기존 테이블 DROP 금지
+
+Phase 2 — Backfill
+--------------------------------------------------------------------------------
+- channel_products → pricing_policies
+  (mode는 기존 price_calculation_method에서 추론)
+- base_plus → bases + adjustments
+- absolute + 소조합 → offers + components + default prices
+- 향후 12개월 dynamic_pricing → sparse overrides / availability
+- OTA ID는 수동/CSV로 offer_external_ids (자동화는 이후)
+
+Phase 3 — Dual-write
+--------------------------------------------------------------------------------
+- useDynamicPricing 저장 경로가 구 JSON + 신 테이블 동시 기록
+- RPC 래퍼: 신 resolver 실패 시 구 calculate_dynamic_price
+
+Phase 4 — Read cutover (상품 단위)
+--------------------------------------------------------------------------------
+- feature flag: pricing_v2_products[]
+- 고객 checkout → 신 resolver (홈페이지)
+- 관리자 캘린더 → 신 모델 기반 UI (기존 UI 점진 교체)
+- 금액 diff 모니터링
+
+Phase 5 — Deprecate
+--------------------------------------------------------------------------------
+- choices_pricing read 중단
+- dynamic_pricing을 요약 view로 축소 또는 archive
+- 구 RPC 제거
+
+================================================================================
+구현 로드맵 (권장 순서)
+================================================================================
+
+단계   내용                                              산출물
+-----  ------------------------------------------------  --------------------
+R1     도메인 용어 확정 (Offer vs Choice vs Variant)     ADR
+R2     DB 스키마 + RLS + 인덱스                          migrations
+R3     Price Resolver 서비스 (단일 SSOT 함수)            server lib + RPC
+R4     Golden price tests + shadow compare               CI
+R5     Admin: policy/mode/adjustments UI                 관리 화면
+R6     Admin: offer curator (조합 선택적 생성)           관리 화면
+R7     Calendar sparse editor (bulk update)              기존 캘린더 진화
+R8     Checkout cutover (홈페이지)                       booking
+R9     Inventory modes (shared → offer)                  availability
+R10    offer_external_ids + OTA sync adapters            Klook/GYG…
+R11    구 JSON/테이블 폐기                               cleanup
+
+절대 먼저 하지 말 것:
+- 전 상품 전 조합 daily materialize
+- 예약 테이블 재작성
+- OTA API 연동을 스키마보다 먼저
+
+================================================================================
+현재 시스템 상세 (조사 결과)
+================================================================================
+
+A. 계층 관계
+--------------------------------------------------------------------------------
+products (id TEXT)
+  │
+  ├─► channel_products ──► channels
+  │      UNIQUE(channel_id, product_id, variant_key)
+  │      ※ variants 테이블 없음 — variant_key 문자열만 사용
+  │
+  ├─► product_choices (초이스 그룹)
+  │      UNIQUE(product_id, choice_group)
+  │      UNIQUE(product_id, choice_group_key)
+  │         │
+  │         └─► choice_options (옵션)
+  │                UNIQUE(choice_id, option_key)
+  │                FK choice_id → product_choices.id
+  │
+  ├─► product_options (추가 옵션 — 초이스와 별개)
+  │
+  └─► dynamic_pricing
+         UNIQUE(product_id, channel_id, date, price_type, variant_key)
+         FK → products, channels
+
+reservations
+  ├─ product_id, channel_id, variant_key, tour_date, 인원
+  ├─ selected_choices / selected_options / choices (JSONB)
+  ├─► reservation_choices  (choice/option 선택 행)
+  ├─► reservation_options  (추가옵션 행 + 단가)
+  └─► reservation_pricing  (금액 스냅샷 — dynamic_pricing FK 없음)
+
+
+B. 가격이 어디에 있는가
+--------------------------------------------------------------------------------
+우선순위   위치                              용도
+---------  --------------------------------  --------------------------------
+1          dynamic_pricing                   채널·날짜·variant·초이스별
+                                             실제 판매가
+2          products.*_base_price /           동적가격 없을 때 폴백
+             base_price
+3          choice_options.*_price            초이스 카탈로그 폴백
+4          product_options.*_price_          추가 옵션
+             adjustment
+5          channels                          커미션/불포함 정책
+
+계산:
+- RPC calculate_dynamic_price(...) →
+  base_price, choices_price, additional_options_price,
+  total_price, calculation_method
+- 호출: src/lib/customerBookingCheckout.ts,
+        src/lib/newDynamicPricingService.ts
+- 폴백: RPC not_found/0 → 카탈로그 단가 × 인원
+- 모드: absolute vs base_plus — src/lib/choicePricingMode.ts
+
+
+C. 인벤토리 / 가용성
+--------------------------------------------------------------------------------
+재고(inventory) 전용 테이블 없음.
+
+메커니즘            테이블.컬럼
+------------------  ------------------------------------------------
+날짜 마감           dynamic_pricing.is_sale_available
+                    (+ choices_pricing.*.is_sale_available)
+상품 정원           products.max_participants
+투어 정원           tours.max_participants (차량/배차 연동)
+옵션 수용           choice_options.capacity
+채널 판매 연결      channel_products.is_active
+게시/활성           products.is_published, products.status
+
+
+D. 예약 가격 스냅샷 방식
+--------------------------------------------------------------------------------
+1. 조회/계산: calculate_dynamic_price (+ is_sale_available 검사)
+2. reservations: 상품·채널·variant·날짜·인원 + selected_* JSON
+3. reservation_choices: 선택 행
+4. reservation_options: 추가옵션 단가×수량 스냅샷
+5. reservation_pricing: product_price_total, choices_total,
+   option_total, subtotal, coupon_*, total_price 등 재무 스냅샷
+
+이후 dynamic_pricing을 바꿔도 기존 예약 금액은 reservation_pricing에 남음.
+
+
+E. 고객 예약 데이터 흐름
+--------------------------------------------------------------------------------
+선택(selectedOptions)
+  → POST /api/booking/create-checkout
+  → calculate_dynamic_price(M00001) | catalog_fallback
+  → reservations + reservation_choices/options + reservation_pricing
+  → Stripe (카드) / inquiry (비카드)
+
+
+F. 스키마 변경 시 깨지기 쉬운 결합
+--------------------------------------------------------------------------------
+고위험:
+1. dynamic_pricing.choices_pricing / options_pricing JSON 형태
+2. calculate_dynamic_price 시그니처·반환 컬럼
+3. selectedOptions = choice_id → option_id 계약
+4. M00001 하드코딩
+5. price_calculation_method absolute/base_plus
+
+중위험:
+6. 클라이언트 vs 서버 가격 불일치
+7. reservation_choices.total_price = 0
+8. variant_key — 저장/가용성과 RPC 불일치
+9. 이름 기반 휴리스틱 (pass/resident/room)
+10. 레거시 경로 (hybridReservationService, simpleReservationService)
+
+
+G. 핵심 파일 경로
+--------------------------------------------------------------------------------
+DB 타입 (권위)       src/lib/database.types.ts
+동적가격 TS 타입     src/lib/types/dynamic-pricing.ts
+초이스 모드          src/lib/choicePricingMode.ts
+체크아웃·스냅샷      src/lib/customerBookingCheckout.ts
+RPC 래퍼             src/lib/newDynamicPricingService.ts
+OTA 매핑             src/lib/platformChannelMapping.ts
+Dynamic Pricing UI   src/components/DynamicPricingManager.tsx
+캘린더               src/components/dynamic-pricing/PricingCalendar.tsx
+훅                   src/hooks/useDynamicPricing.ts
+                     src/hooks/useChoiceManagement.ts
+고객 Booking UI      src/components/booking/BookingFlow.tsx
+초기 스키마          supabase/migrations/20250101000000_create_all_tables.sql
+reservation_pricing  supabase/migrations/20250101000043_create_reservation_pricing.sql
+choices_pricing      supabase/migrations/20250101000101_update_dynamic_pricing_for_choices.sql
+variant_key          supabase/migrations/20250116000006~0009_*.sql
+price_type           supabase/migrations/20250129000009_add_price_type_to_dynamic_pricing.sql
+안정 초이스 키       supabase/migrations/20250203000000_refactor_choices_system_with_stable_keys.sql
+
+================================================================================
+최종 권고
+================================================================================
+
+마이그레이션은 가능하고, 예약 이력은 스냅샷 덕분에 보존 가능합니다.
+다만 제안하신 "모든 것을 Pricing Category로 저장"은
+현재 JSON 조합 문제의 형태만 바꾼 채 행 폭증을 부를 수 있습니다.
+
+권장:
+  channel_products / 초이스 카탈로그 / reservation_* 는 유지하고,
+  Pricing Policy + Rule adjustments + (선택적) Pricing Offers
+  + sparse date calendar + OTA external IDs 를 신규로 붙인 뒤,
+  dynamic_pricing JSON을 점진적으로 대체하십시오.
+
+이 방향이 Mode 1/2, 공유·초이스·카테고리 재고, 일자별 가격, OTA API를
+모두 수용하면서도 현재 운영(예약·정산·배차)을 깨지 않습니다.
+
+================================================================================
+끝
+================================================================================

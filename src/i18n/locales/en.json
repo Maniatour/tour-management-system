@@ -2,10 +2,16 @@
   "sidebar": {
     "customerPages": "Customer Pages",
     "products": "Products",
-    "options": "Options",
+    "options": "Options & Choice Templates",
     "courses": "Tour Courses",
     "tourCostCalculator": "Tour Cost Calculator",
     "channels": "Channels",
+    "otaDistribution": "OTA Mapping",
+    "operators": "Operators (tenants)",
+    "operatorB": "Operator B",
+    "operatorBManual": "Manual",
+    "operatorBPanelTitle": "Operator B menu",
+    "operatorBPanelHint": "Manual · tenants · OTA distribution",
     "coupons": "Coupons",
     "tagTranslationManagement": "Tag Translation",
     "pickupHotels": "Pickup Hotels",
@@ -284,7 +290,7 @@
     "tours": "Tours",
     "channels": "Channels",
     "products": "Products",
-    "options": "Options",
+    "options": "Options & Choice Templates",
     "employees": "Employees",
     "team": "Team",
     "courses": "Tour Courses",
@@ -308,6 +314,8 @@
     "items": "items",
     "noSearchResults": "No search results",
     "tryDifferentSearch": "Try different keywords or filters",
+    "emptyCatalogTitle": "No tours available yet",
+    "emptyCatalogHint": "There are no published tours on this site yet. Please check back later.",
     "loadingCustomerList": "Loading customer list...",
     "noCustomers": "No customers",
     "myInfo": "My Info",
@@ -883,7 +891,7 @@
     "removeDepartureTime": "Remove Departure Time",
     "basicInfo": "Basic Information",
     "dynamicPricing": "Dynamic Pricing",
-    "choicesManagement": "Choice Management",
+    "choicesManagement": "This Product's Choices",
     "optionsManagement": "Options Management",
     "tourCourses": "Tour Courses",
     "schedule": "Schedule",
@@ -918,6 +926,47 @@
     "pageDescription": "Add, edit, and delete tour products.",
     "homeSectionsManualHint": "See the book icon next to the title for how products appear under Explore Top Destinations and Choose Your Adventure.",
     "favoriteOrder": "Reorder favorites",
+    "localeReadiness": {
+      "button": "Locale readiness",
+      "title": "Locale readiness",
+      "subtitle": "See how much customer-facing content (name, summary, details) is filled per language. Fields hidden on the customer page are excluded.",
+      "summary": "{count} products · KO avg {avgKo}% · EN avg {avgEn}% · Incomplete {incomplete}",
+      "searchPlaceholder": "Search products…",
+      "incompleteOnly": "Incomplete only",
+      "sortLabel": "Sort",
+      "sortOverall": "Lowest overall first",
+      "sortKo": "Lowest Korean first",
+      "sortEn": "Lowest English first",
+      "sortName": "Product name",
+      "loading": "Loading readiness…",
+      "loadError": "Failed to load readiness.",
+      "empty": "No products to show.",
+      "close": "Close",
+      "localeKo": "Korean",
+      "localeEn": "English",
+      "published": "Published",
+      "unpublished": "Unpublished",
+      "overall": "Avg {percent}%",
+      "editCustomerPage": "Edit customer page",
+      "allReady": "All key fields are ready for this language.",
+      "fields": {
+        "customerName": "Customer product name",
+        "summary": "Short summary",
+        "slogan1": "Slogan (headline)",
+        "slogan2": "Slogan (subhead)",
+        "slogan3": "Slogan (blurb)",
+        "description": "Description",
+        "included": "Included",
+        "not_included": "Not included",
+        "pickup_drop_info": "Pickup / drop-off",
+        "luggage_info": "Luggage",
+        "tour_operation_info": "Tour operation",
+        "preparation_info": "What to bring",
+        "small_group_info": "Small group",
+        "notice_info": "Notices",
+        "cancellation_policy": "Cancellation policy"
+      }
+    },
     "totalProducts": "Total {count} products",
     "searchResults": "search results",
     "clearFilters": "Clear filters",
@@ -1399,7 +1448,27 @@
       "allAgesSamePrice": "One unified price for all ages.",
       "eachAgeSeparate": "Adult/Child/Infant managed separately.",
       "basePriceSection": "Base Price",
+      "channelBasePriceEditable": "Base price",
+      "channelBasePriceEditableHint": "Enter the base price for this channel and date range. It will be combined with per-choice unit surcharges/discounts.",
+      "choiceUnitPriceSection": "Per-choice unit price (surcharge/discount)",
+      "choiceUnitPriceHint": "Enter a unit price for each option in a choice group (e.g. US resident, Lower Antelope, room). On save, combination prices are calculated as the sum of selected options.",
+      "noChoiceOptionsForUnitPrice": "No choice options available.",
       "choicePricingSection": "Choice Pricing",
+      "choiceGroupResidencyShort": "Residency",
+      "choicePricingCalcMode": "Pricing calculation mode",
+      "choicePricingModeAbsolute": "Per-choice absolute price",
+      "choicePricingModeAbsoluteHint": "Enter the final sale price for each choice combination.",
+      "choicePricingModeBasePlus": "Base + per-choice surcharge/discount",
+      "choicePricingModeBasePlusHint": "Final price = channel base + choice surcharge or discount.",
+      "basePriceShort": "Base",
+      "choiceAdjAmount": "Surcharge/Discount",
+      "finalSalePrice": "Final sale",
+      "choiceAdjAdult": "Adult adj.",
+      "choiceAdjChild": "Child adj.",
+      "choiceAdjInfant": "Infant adj.",
+      "finalSaleAdult": "Adult final",
+      "finalSaleChild": "Child final",
+      "finalSaleInfant": "Infant final",
       "tableView": "Table view",
       "cardView": "Card view",
       "singlePriceWithAmount": "Single price:",
@@ -5603,6 +5672,582 @@
     "templateAmountChip_total_ko": "합계 (Korean total)",
     "templateAmountChip_payment_ko": "결제 (Korean payment)",
     "templateAmountChip_card_total": "card total"
+  },
+  "adminOperatorBManual": {
+    "eyebrow": "SaaS · Operator B",
+    "title": "Operator B manual",
+    "description": "Multi-tenant structure, completed work, next pilot tasks, and key admin screens in one place.",
+    "activeOperator": "Active tenant: {name}",
+    "badgeKovegas": "Kovegas (Tenant #1)",
+    "badgeTenantB": "Non-Kovegas tenant",
+    "opsOn": "Operations module ON",
+    "opsOff": "Operations module OFF (commerce-only)",
+    "structureTitle": "Architecture",
+    "structureHint": "Shared DB + operator_id. Kovegas is Tenant #1; Operator B is the second-supplier pilot.",
+    "structure": {
+      "tenancy": {
+        "title": "Tenancy",
+        "body": "operators / operator_members. Switch active operator in the header. Catalog, reservations, and customers are scoped by operator_id."
+      },
+      "commerce": {
+        "title": "Commerce Core",
+        "body": "Products, channels, dynamic pricing, bookings. OTA has outbox (push) plus inbound webhook inbox. v2 Offer/Inventory cut over via flags."
+      },
+      "public": {
+        "title": "Customer site",
+        "body": "Host → public operator (subdomain/custom domain). Catalog, Direct channel, and checkout stamp that tenant."
+      },
+      "payments": {
+        "title": "Payments (Stripe Connect)",
+        "body": "After Express onboarding, enable destination charges with COMMERCE_STRIPE_CONNECT_CHECKOUT. Default remains platform PI."
+      },
+      "ops": {
+        "title": "Operations Suite",
+        "body": "Fleet, attendance, expenses, cash, and statements appear only when modules.operations=true. When OFF, direct Ops URLs redirect here. Phase 6b stamps operator_id on fleet/finance tables; 6c.0 adds smoke checks."
+      }
+    },
+    "todoTitle": "Next steps (live checklist)",
+    "todoHint": "Re-evaluates DB/env for the tenant selected in the header. Green check = pass.",
+    "todoKovegasHint": "You are on Kovegas. Switch to Operator B for meaningful Connect/catalog/Ops OFF scores.",
+    "statusRefresh": "Refresh status",
+    "statusLoading": "Checking…",
+    "statusLoadError": "Failed to load pilot status.",
+    "pilotScore": "Pilot {passed}/{total}",
+    "regressionScore": "Kovegas regression {passed}/{total}",
+    "opsFinanceScore": "Ops finance {passed}/{total}",
+    "commerceIsolationScore": "Commerce {passed}/{total}",
+    "hostBookScore": "Host book {passed}/{total}",
+    "activeOperatorSessionBadge": "Active operator: {state}",
+    "activeOperatorSessionOk": "cookie OK",
+    "activeOperatorSessionPending": "cookie pending/error",
+    "activeOperatorSessionTitle": "Active operator session prep (Phase 6c.9)",
+    "activeOperatorSessionHint": "Mirrors header tenant to cookie, middleware header, and API GUC. Staff SELECT lock-down is not applied yet.",
+    "activeOperatorSessionCheckTitle": "tms_active_operator_id cookie/header",
+    "activeOperatorSessionCheckBody": "Pass after switching tenant once so the cookie syncs as a UUID. Outline badge if missing.",
+    "staffTenantLockBadge": "Staff lock: {state}",
+    "staffTenantLockOff": "OFF (default)",
+    "staffTenantLockOnReady": "ON + JWT",
+    "staffTenantLockOnMissingJwt": "ON · no JWT",
+    "staffTenantLockCheckTitle": "Staff tenant lock pilot (ops finance + journal)",
+    "staffTenantLockCheckBody": "Only when SAAS_STAFF_TENANT_LOCK=1: stamp JWT claim and scope ops finance + journal staff SELECT. Default OFF.",
+    "opsBlockedBanner": "Operations module is off, so Ops page URLs are blocked. You were redirected here.",
+    "regressionTitle": "Legacy regression (Kovegas)",
+    "regressionHint": "Read-only checks that Tenant #1 baselines still hold. Booking/payment logic is not modified. All items should be green.",
+    "opsFinanceTitle": "Ops finance stamp smoke (Phase 6b)",
+    "opsFinanceHint": "Read-only: no NULL operator_id on fleet/expense/cash/statement/match/payment tables. Red if Phase 6b migrations are not applied.",
+    "commerceIsolationTitle": "Commerce isolation smoke (Phase 6e.0–6e.1)",
+    "commerceIsolationHint": "Read-only stamp/partition checks for catalog, v2 offers, inventory, Direct resolve, and cross-tenant join samples. Does not call checkout or payment APIs.",
+    "hostBookTitle": "Host book readiness (Phase 6e.2)",
+    "hostBookHint": "Read-only preflight before manual host book: subdomain, host resolve, catalog, Direct. Does not call checkout APIs.",
+    "hostBookChecks": {
+      "subdomainConfigured": {
+        "title": "Subdomain configured",
+        "body": "Operator B requires operators.subdomain. Kovegas uses apex/localhost → Tenant #1."
+      },
+      "routingEnvReady": {
+        "title": "Routing env",
+        "body": "SAAS_PLATFORM_ROOT_DOMAIN / SUBDOMAIN_MAP / APEX. Local pilot may use sub.localhost."
+      },
+      "hostResolveMatches": {
+        "title": "Host → operator resolve",
+        "body": "For B: sub.localhost must resolve to that operator_id."
+      },
+      "catalogReadyForHost": {
+        "title": "Host catalog ready",
+        "body": "Active tenant products > 0."
+      },
+      "directChannelReady": {
+        "title": "Direct channel ready",
+        "body": "Kovegas=M00001; B=Homepage/Website (lookup without ensure)."
+      },
+      "debugEndpointAvailable": {
+        "title": "Debug endpoint note",
+        "body": "Non-prod: confirm middleware stamp via /api/debug/public-operator on B host."
+      }
+    },
+    "commerceIsolation": {
+      "stampProducts": {
+        "title": "products stamp",
+        "body": "operator_id NOT NULL (Phase 1b)."
+      },
+      "stampChannels": {
+        "title": "channels stamp",
+        "body": "operator_id NOT NULL."
+      },
+      "stampChannelProducts": {
+        "title": "channel_products stamp",
+        "body": "operator_id NOT NULL."
+      },
+      "stampDynamicPricing": {
+        "title": "dynamic_pricing stamp",
+        "body": "operator_id NOT NULL."
+      },
+      "stampReservations": {
+        "title": "reservations stamp",
+        "body": "operator_id NOT NULL."
+      },
+      "stampCustomers": {
+        "title": "customers stamp",
+        "body": "operator_id NOT NULL."
+      },
+      "stampRatePlans": {
+        "title": "rate_plans stamp",
+        "body": "commerce v2 rate_plans operator_id NOT NULL."
+      },
+      "stampOffers": {
+        "title": "offers stamp",
+        "body": "commerce v2 offers operator_id NOT NULL (empty table still passes if no NULLs)."
+      },
+      "kovegasCatalogBaseline": {
+        "title": "Kovegas catalog baseline",
+        "body": "Tenant #1 products must not be empty."
+      },
+      "tenantPartitionProducts": {
+        "title": "Tenant partition (products)",
+        "body": "Active tenant slice ≤ total. B UI must not list Kovegas products."
+      },
+      "tenantPartitionChannels": {
+        "title": "Tenant partition (channels)",
+        "body": "B channels are B-scoped only. Kovegas Direct stays M00001."
+      },
+      "directChannelResolve": {
+        "title": "Direct channel resolve",
+        "body": "Kovegas=M00001; B=Homepage/Website channel (lookup without ensure)."
+      },
+      "v2OfferProductSameTenant": {
+        "title": "v2 offer ↔ product same tenant",
+        "body": "Sample-check that offer.operator_id matches product.operator_id."
+      },
+      "connectCheckoutFlag": {
+        "title": "Connect checkout flag",
+        "body": "Kovegas stays on platform PI. For B, flag state is informational (OFF still passes isolation smoke)."
+      },
+      "stampInventoryCore": {
+        "title": "inventory core stamp",
+        "body": "inventory_resources / allotments / bindings operator_id NOT NULL (Phase 6e.1)."
+      },
+      "stampInventoryHoldsLedger": {
+        "title": "inventory holds/ledger stamp",
+        "body": "inventory_holds and inventory_ledger operator_id NOT NULL (empty tables still pass if no NULLs)."
+      },
+      "channelProductSameTenant": {
+        "title": "channel_products ↔ product/channel same tenant",
+        "body": "Sample-check channel_products.operator_id matches product and channel."
+      },
+      "inventoryBindingResourceSameTenant": {
+        "title": "inventory binding ↔ resource same tenant",
+        "body": "Sample-check binding.operator_id matches resource.operator_id."
+      }
+    },
+    "opsFinance": {
+      "stampVehicles": {
+        "title": "vehicles stamp",
+        "body": "operator_id NOT NULL (Phase 6b.0)."
+      },
+      "stampCompanyExpenses": {
+        "title": "company_expenses stamp",
+        "body": "operator_id NOT NULL (Phase 6b.3)."
+      },
+      "stampCashFinancial": {
+        "title": "cash / financial_accounts stamp",
+        "body": "cash_transactions and financial_accounts NOT NULL (Phase 6b.8)."
+      },
+      "stampStatement": {
+        "title": "statement imports/lines stamp",
+        "body": "statement_imports and statement_lines NOT NULL (Phase 6b.9)."
+      },
+      "stampMatchTables": {
+        "title": "match tables stamp",
+        "body": "reconciliation_matches and expense_cash_ledger_matches NOT NULL (Phase 6b.10)."
+      },
+      "stampPaymentRecords": {
+        "title": "payment_records stamp",
+        "body": "operator_id NOT NULL (Phase 6b.11)."
+      },
+      "kovegasPaymentBaseline": {
+        "title": "Kovegas payment baseline",
+        "body": "Tenant #1 payment_records must not be empty."
+      },
+      "tenantPartitionPayments": {
+        "title": "Tenant partition (payments)",
+        "body": "Active-tenant slice ≤ total. As B, deposit lists must not show Kovegas rows."
+      },
+      "paymentRecordsSelectRls": {
+        "title": "payment_records SELECT RLS",
+        "body": "staff / operator_members / tour assignee / reservation customer SELECT (Phase 6c.1). Writes and payment logic unchanged."
+      },
+      "opsFinanceSelectRls": {
+        "title": "Ops finance SELECT RLS",
+        "body": "cash / accounts / statement / match SELECT include operator_members (Phase 6c.2). Writes and uploader privileges unchanged."
+      },
+      "companyExpensesSelectRls": {
+        "title": "company_expenses SELECT RLS",
+        "body": "staff session OR operator_members SELECT (Phase 6c.3). Write policies unchanged."
+      },
+      "stampJournal": {
+        "title": "journal_* stamp",
+        "body": "journal_entries and journal_lines operator_id NOT NULL (Phase 6c.4)."
+      },
+      "journalSelectRls": {
+        "title": "journal_* SELECT RLS",
+        "body": "Journal header/line SELECT include operator_members (Phase 6c.4). Card-payment API stamp only."
+      },
+      "fleetSelectRls": {
+        "title": "Fleet SELECT RLS",
+        "body": "vehicles / maintenance / schedules SELECT include operator_members (Phase 6c.5)."
+      },
+      "attendanceSelectRls": {
+        "title": "Attendance SELECT RLS",
+        "body": "Own / platform admin / non-staff tenant owner·admin (Phase 6c.6). Uses is_operator_member_strict — Kovegas staff privacy kept."
+      },
+      "tipMealSelectRls": {
+        "title": "Tip/Meal SELECT RLS",
+        "body": "Meal / office tips / tip shares get non-staff tenant HR SELECT (Phase 6c.7). Existing staff/own policies kept."
+      },
+      "tourResExpensesSelectRls": {
+        "title": "Tour/Reservation expenses SELECT RLS",
+        "body": "staff / operator_members / assignee SELECT (Phase 6c.8). Write policies unchanged."
+      },
+      "staffTenantLockPilot": {
+        "title": "Staff tenant lock pilot",
+        "body": "Ops finance + journal SELECT use staff_can_select_operator_row (Phase 6d.3). Without JWT claim, staff stay all-tenant."
+      }
+    },
+    "regression": {
+      "kovegasRow": {
+        "title": "Kovegas operator row",
+        "body": "The well-known operator_id row must exist."
+      },
+      "kovegasOpsOn": {
+        "title": "Operations module ON",
+        "body": "Kovegas continues to use fleet/expense Ops menus."
+      },
+      "m00001Channel": {
+        "title": "M00001 Homepage channel",
+        "body": "Direct Web homepage channel row must exist."
+      },
+      "directChannelM00001": {
+        "title": "Direct channel resolve = M00001",
+        "body": "Public checkout for Kovegas must keep using M00001."
+      },
+      "kovegasCatalog": {
+        "title": "Kovegas product catalog",
+        "body": "Existing products must remain under Kovegas operator_id."
+      },
+      "platformCheckoutDefault": {
+        "title": "Checkout default = platform PI",
+        "body": "Connect flag must not force destination charges for Kovegas."
+      },
+      "otaLiveDefaultOff": {
+        "title": "OTA LIVE default OFF",
+        "body": "With COMMERCE_V2_OTA_LIVE off, behavior stays dry-run."
+      },
+      "otaInboundDefaultOff": {
+        "title": "OTA INBOUND default OFF",
+        "body": "Auto inquiry creation stays disabled by default."
+      },
+      "commerceV2ReadNotGlobal": {
+        "title": "Commerce v2 read not global",
+        "body": "Unless COMMERCE_V2_READ_PRODUCTS=*, legacy RPC pricing remains default."
+      }
+    },
+    "safetyTitle": "Safety principles (keep legacy working)",
+    "safetyHint": "All SaaS features are opt-in. With flags unset, Kovegas operations match the previous system.",
+    "safety": {
+      "flagsOff": {
+        "title": "New flags default OFF",
+        "body": "Connect checkout / OTA LIVE / OTA INBOUND / Commerce v2 read·inventory do nothing unless env is set."
+      },
+      "kovegasUnchanged": {
+        "title": "Kovegas = Tenant #1",
+        "body": "Existing products, reservations, channels, and Ops UI stay under Kovegas. No big-bang cutover."
+      },
+      "m00001": {
+        "title": "Homepage = M00001",
+        "body": "Customer Direct channel for Kovegas is always M00001. Only Operator B uses DW-slug style channels."
+      },
+      "opsOptional": {
+        "title": "Operations is optional",
+        "body": "Ops menus/URLs hide only for commerce-only B. Kovegas keeps operations=true."
+      },
+      "pilotOptIn": {
+        "title": "Pilot is opt-in",
+        "body": "Operator B create, Connect, subdomain, and checkout flags apply only after you enable them."
+      }
+    },
+    "e2eTitle": "Operator B E2E order (minimize legacy impact)",
+    "e2eHint": "Run in this order, then switch back to Kovegas and confirm the regression badge stays green.",
+    "e2e": {
+      "switchB": {
+        "title": "Switch header to Operator B",
+        "body": "Ops menus disappear; product list is B-scoped."
+      },
+      "catalogPrice": {
+        "title": "B products & dynamic pricing",
+        "body": "Add B-only catalog/Direct prices. Do not edit Kovegas rows."
+      },
+      "commerceIsolationSmoke": {
+        "title": "Commerce isolation smoke all green",
+        "body": "Confirm the Commerce isolation card on this page passes (stamp, partition, Direct)."
+      },
+      "hostBookReadiness": {
+        "title": "Host book readiness all green",
+        "body": "Confirm the Host book readiness card passes, then open the B host."
+      },
+      "hostBook": {
+        "title": "Book on B host",
+        "body": "Confirm public operator is B via subdomain/map, then test booking or inquiry."
+      },
+      "connectOptIn": {
+        "title": "Connect only when needed",
+        "body": "Put only B’s uuid in COMMERCE_STRIPE_CONNECT_CHECKOUT — avoid global *."
+      },
+      "opsFinanceSmoke": {
+        "title": "Ops finance smoke all green",
+        "body": "Confirm the Ops finance card on this page passes (after Phase 6b migrations)."
+      },
+      "opsFinanceUi": {
+        "title": "B cash / statement / deposits UI",
+        "body": "As B (or Ops-ON tenant), Cash/Statement must not show Kovegas-only rows. If Ops OFF, only confirm menus are hidden."
+      },
+      "switchBack": {
+        "title": "Switch back to Kovegas",
+        "body": "Ops and the legacy catalog must look unchanged."
+      },
+      "regressionGreen": {
+        "title": "Confirm regression badge",
+        "body": "Refresh this page; «Kovegas regression» should be all pass."
+      }
+    },
+    "todos": {
+      "createOperator": {
+        "title": "Create Operator B & invite members",
+        "body": "Create tenant → invite owner/admin → switch in the header."
+      },
+      "connect": {
+        "title": "Finish Stripe Connect",
+        "body": "Start Connect → complete Dashboard onboarding → status=enabled."
+      },
+      "subdomain": {
+        "title": "Subdomain / host mapping",
+        "body": "Set operators.subdomain plus SAAS_PLATFORM_ROOT_DOMAIN / map env. Verify via /api/debug/public-operator."
+      },
+      "catalog": {
+        "title": "Products, channels, Direct channel",
+        "body": "Create products as B. Missing Homepage/Website channel is auto-ensured as a DW-slug channel on checkout."
+      },
+      "pricing": {
+        "title": "Enter dynamic pricing",
+        "body": "Without dynamic_pricing on B’s Direct channel, the calendar may stay open and prices may use catalog_fallback."
+      },
+      "checkoutFlag": {
+        "title": "Connect checkout flag",
+        "body": "Set COMMERCE_STRIPE_CONNECT_CHECKOUT to Operator B’s UUID, book on B’s host, confirm connect_mode=destination."
+      },
+      "isolation": {
+        "title": "Isolation checks",
+        "body": "As B, Kovegas catalog/reservations must not appear; B host catalog must be B-only."
+      },
+      "opsOff": {
+        "title": "Confirm Operations OFF",
+        "body": "With modules.operations=false, fleet/expense Ops menus must disappear from the sidebar."
+      },
+      "opsRouteGuard": {
+        "title": "Block direct Ops URLs",
+        "body": "With Ops OFF, opening /admin/vehicles (etc.) must redirect to this manual."
+      }
+    },
+    "pagesTitle": "Page guide",
+    "pagesHint": "Operator B group and core commerce screens. Click a card to open it.",
+    "pageManualTitle": "Manual (this page)",
+    "pageManualBody": "Architecture, todos, and page guide. Start here for pilot onboarding.",
+    "pageOperatorsTitle": "Operators (tenants)",
+    "pageOperatorsBody": "Create tenants, invite members, Stripe Connect. Super only.",
+    "pageOtaTitle": "OTA mapping",
+    "pageOtaBody": "Connection, SKU maps, outbox push, inbound webhook inbox. LIVE/INBOUND flags gate external calls and inquiry create.",
+    "pageProductsTitle": "Products",
+    "pageProductsBody": "Scoped to active operator. B products feed B catalog/bookings only.",
+    "pageChannelsTitle": "Channels",
+    "pageChannelsBody": "OTA/Website channels. Direct Web is used for public checkout channel resolve.",
+    "pageReservationsTitle": "Reservations",
+    "pageReservationsBody": "operator_id-scoped list. Public bookings stamp host tenant + Direct channel.",
+    "pageCustomersTitle": "Customers",
+    "pageCustomersBody": "Per-tenant customers. Same email can exist under different operator_id.",
+    "badgeHere": "Current",
+    "badgeSuper": "super",
+    "doneTitle": "Already shipped",
+    "doneHint": "Items already reflected in code/ADRs.",
+    "doneTenant": "operators / membership / OperatorSwitcher",
+    "doneCatalog": "Admin products/channels/reservations/customers/tours scoped by operator_id",
+    "donePublic": "host → public operator + catalog filter + Direct channel",
+    "doneCheckout": "create-checkout / inquiry stamp operator + channel",
+    "doneConnect": "Connect onboarding + destination checkout flag",
+    "doneOta": "OTA outbox + Viator live adapter (double gate)",
+    "doneOpsGate": "Hide Ops sidebar when Operations module is OFF (Phase 6a)",
+    "doneOpsRouteGuard": "Ops URL route guard — redirect to manual when Ops OFF (Phase 6a.1)",
+    "donePilotStatus": "Live checklist API on the manual (pilot-status)",
+    "doneOtaInbound": "OTA inbound webhook inbox + mapping guard (Phase 4d, COMMERCE_V2_OTA_INBOUND)",
+    "doneRegression": "Kovegas regression checks + safety/E2E guide (Phase 6a.2, read-only)",
+    "doneOpsVehicles": "Ops fleet: vehicles.operator_id + list/create scope (Phase 6b.0, no schema move)",
+    "doneOpsMaintenance": "Ops fleet: vehicle_maintenance + schedules operator_id (Phase 6b.1, shared catalog)",
+    "doneOpsAttendance": "Ops HR: attendance_records + monthly stats operator_id (Phase 6b.2)",
+    "doneOpsExpenses": "Ops finance: company_expenses.operator_id + list/create scope (Phase 6b.3)",
+    "doneOpsMealTips": "Ops HR: office_meal_log + tour_office_tips operator_id (Phase 6b.4; tip_shares deferred)",
+    "doneOpsTipShares": "Ops HR: tour_tip_shares + tour_tip_share_ops operator_id (Phase 6b.5)",
+    "doneOpsTourResExpenses": "Ops finance: tour_expenses + reservation_expenses operator_id (Phase 6b.6; CashLedger deferred)",
+    "doneOpsReconCashScope": "Ops finance: recon/cash expense query operator_id filter (Phase 6b.7; ledger tables deferred)",
+    "doneOpsCashFinancial": "Ops finance: cash_transactions + financial_accounts operator_id (Phase 6b.8; statement_lines deferred)",
+    "doneOpsStatementImports": "Ops finance: statement_imports + statement_lines operator_id (Phase 6b.9; match tables deferred)",
+    "doneOpsReconMatches": "Ops finance: reconciliation_matches + expense_cash_ledger_matches operator_id (Phase 6b.10)",
+    "doneOpsPaymentRecords": "Ops finance: payment_records.operator_id (Phase 6b.11; no payment logic changes)",
+    "doneOpsFinanceSmoke": "Ops finance isolation smoke + E2E steps (Phase 6c.0, read-only pilot-status)",
+    "doneOpsPaymentRecordsRls": "payment_records SELECT RLS + operator_members (Phase 6c.1; writes/payment logic unchanged)",
+    "doneOpsFinanceSelectRls": "Ops finance SELECT RLS (cash/statement/match + member, Phase 6c.2)",
+    "doneOpsCompanyExpensesRls": "company_expenses SELECT RLS + operator_members (Phase 6c.3)",
+    "doneOpsJournal": "journal_entries/lines operator_id + SELECT RLS (Phase 6c.4; card-payment stamp)",
+    "doneOpsFleetSelectRls": "Fleet SELECT RLS (vehicles/maintenance/schedules, Phase 6c.5)",
+    "doneOpsAttendanceSelectRls": "Attendance SELECT tenancy + is_operator_member_strict (Phase 6c.6)",
+    "doneOpsTipMealSelectRls": "Tip/Meal SELECT tenant HR path (Phase 6c.7)",
+    "doneOpsTourResExpensesSelectRls": "Tour/Reservation expenses SELECT staff|member|assignee (Phase 6c.8)",
+    "doneOpsActiveOperatorSession": "Active operator cookie/header + API GUC prep (Phase 6c.9; no staff RLS lock-down)",
+    "doneOpsStaffTenantLockPilot": "Staff tenant lock: JWT + ops finance/journal SELECT (Phase 6d.0–6d.3; opt-in)",
+    "doneCommerceIsolationSmoke": "Commerce isolation smoke: catalog/inventory/joins (Phase 6e.0–6e.1)",
+    "doneHostBookReadiness": "Host book readiness: subdomain/host resolve/Direct preflight (Phase 6e.2)"
+  },
+  "adminOperators": {
+    "eyebrow": "SaaS · Tenancy",
+    "title": "Operators (tenants)",
+    "description": "Create a second supplier (Operator B) and invite members. You can start Stripe Connect Express onboarding (destination-charge checkout is still behind a future flag).",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "loadError": "Failed to load operators.",
+    "createTitle": "Create operator",
+    "createHint": "Slug: lowercase, numbers, hyphens. Owner email gets an owner membership.",
+    "fieldName": "Name",
+    "fieldSlug": "Slug",
+    "fieldSubdomain": "Subdomain",
+    "fieldSubdomainHint": "e.g. demo → demo.localhost (local) or demo.platform-root. Defaults to slug when empty.",
+    "fieldOwnerEmail": "Owner email",
+    "fieldEnableOperations": "Enable Operations Suite module (fleet/guides — default OFF)",
+    "create": "Create",
+    "saving": "Saving…",
+    "createSuccess": "Operator created.",
+    "createError": "Failed to create operator.",
+    "fieldsRequired": "Name, slug, and owner email are required.",
+    "listTitle": "Operators",
+    "listHint": "Select a row to invite members. After Connect status=enabled, set COMMERCE_STRIPE_CONNECT_CHECKOUT for destination charges (ADR 015).",
+    "empty": "No operators yet.",
+    "colName": "Name",
+    "colSlug": "Slug",
+    "colStatus": "Status",
+    "colConnect": "Stripe Connect",
+    "colPlan": "Plan",
+    "colActions": "Actions",
+    "manageMembers": "Members",
+    "membersTitle": "Memberships",
+    "membersHint": "Invited members become active on sign-in and appear in OperatorContext.",
+    "membersLoadError": "Failed to load members.",
+    "emptyMembers": "No members.",
+    "fieldInviteEmail": "Invite email",
+    "fieldInviteRole": "Role",
+    "invite": "Invite",
+    "inviteRequired": "Select an operator and enter an email.",
+    "inviteSuccess": "Invitation saved.",
+    "inviteError": "Failed to invite.",
+    "colEmail": "Email",
+    "colRole": "Role",
+    "switcherLabel": "Active operator",
+    "connectStart": "Start Connect",
+    "connectContinue": "Continue Connect",
+    "connectRefresh": "Sync status",
+    "connectStartSuccess": "Opening Stripe onboarding…",
+    "connectStartError": "Failed to start Stripe Connect onboarding.",
+    "connectSyncSuccess": "Connect status: {status}",
+    "connectSyncError": "Failed to sync Connect status."
+  },
+  "adminOtaDistribution": {
+    "eyebrow": "Commerce · Distribution",
+    "title": "OTA mapping & sync",
+    "description": "Map internal products/offers to OTA SKUs and process the sync outbox. Live HTTP runs only when COMMERCE_V2_OTA_LIVE=1 and connection status=active.",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "loadError": "Failed to load mappings.",
+    "outboxLoadError": "Failed to load outbox events.",
+    "connectionTitle": "Viator connection",
+    "connectionHint": "credentials_ref must be env:VAR. Switching to active requires COMMERCE_V2_OTA_LIVE=1.",
+    "connectionLoadError": "Failed to load connections.",
+    "connectionMissing": "No channel_connections seed. Apply migration 4a.",
+    "connectionSaveSuccess": "Connection settings saved.",
+    "connectionSaveError": "Failed to save connection settings.",
+    "fieldConnectionStatus": "Connection status",
+    "fieldCredentialsRef": "Credentials ref",
+    "fieldRatesPushUrl": "Rates push URL (optional)",
+    "saveConnection": "Save connection",
+    "liveFlagOn": "LIVE flag ON",
+    "liveFlagOff": "LIVE flag OFF",
+    "lastSynced": "Last synced: {at}",
+    "connectionStatus": {
+      "disabled": "disabled (no sync)",
+      "dry_run": "dry_run (local only)",
+      "active": "active (live HTTP)"
+    },
+    "mappingTitle": "External mappings",
+    "mappingHint": "Register Offer/Product ↔ external SKU on the Viator connection. Unmapped entities are skipped during sync.",
+    "fieldInternalType": "Internal type",
+    "fieldInternalId": "Internal ID",
+    "fieldExternalSku": "External SKU",
+    "fieldExternalProductId": "External product ID (optional)",
+    "fieldExternalPackageId": "External package ID (optional)",
+    "placeholderInternalId": "product id or offer uuid",
+    "placeholderExternalSku": "e.g. VIATOR-PKG-123",
+    "saveMapping": "Save mapping",
+    "saving": "Saving…",
+    "saveSuccess": "Mapping saved.",
+    "saveError": "Failed to save mapping.",
+    "fieldsRequired": "Internal ID and external SKU are required.",
+    "deactivate": "Deactivate",
+    "deactivateSuccess": "Mapping deactivated.",
+    "emptyMappings": "No mappings yet.",
+    "colInternalType": "Type",
+    "colInternalId": "Internal ID",
+    "colExternalSku": "External SKU",
+    "colStatus": "Status",
+    "colActions": "Actions",
+    "active": "Active",
+    "inactive": "Inactive",
+    "internalType": {
+      "product": "Product",
+      "offer": "Offer",
+      "rate_plan": "Rate plan",
+      "choice_option": "Choice option"
+    },
+    "outboxTitle": "Sync outbox",
+    "outboxHint": "With COMMERCE_V2_OTA_SYNC=1, dual-write enqueues push_rates. dry_run validates locally; active+LIVE flag posts to Viator URL.",
+    "processOutbox": "Process outbox",
+    "processing": "Processing…",
+    "processSuccess": "Done — claimed {claimed}, succeeded {succeeded}, skipped {skipped}, failed {failed}",
+    "processError": "Failed to process outbox.",
+    "emptyOutbox": "No outbox events.",
+    "colEvent": "Event",
+    "colEntity": "Entity",
+    "colAttempts": "Attempts",
+    "colError": "Error",
+    "colCreated": "Created",
+    "inboundTitle": "Inbound webhooks (inbox)",
+    "inboundHint": "POST /api/webhooks/ota/viator with secret. Unmapped SKUs are skipped. Auto inquiry needs COMMERCE_V2_OTA_INBOUND=1 and config.autoCreateInquiry=true.",
+    "inboundFlagOn": "INBOUND flag ON",
+    "inboundFlagOff": "INBOUND flag OFF",
+    "inboundLoadError": "Failed to load inbound events.",
+    "inboundIngestTest": "Test ingest",
+    "inboundProcessBatch": "Process inbound",
+    "inboundTestSku": "Test external SKU (must be mapped)",
+    "inboundSkuRequired": "Enter a test SKU.",
+    "inboundIngestSuccess": "Inbound event stored.",
+    "inboundIngestError": "Test ingest failed.",
+    "inboundProcessSuccess": "Inbound processed — claimed {claimed}",
+    "inboundProcessError": "Failed to process inbound.",
+    "emptyInbound": "No inbound events.",
+    "colReservation": "Reservation ID"
   },
   "adminPaidForLabels": {
     "title": "Paid-for standard labels",

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 export type OpenAttendanceSession = {
   id: string
@@ -10,12 +11,14 @@ export type OpenAttendanceSession = {
 /** 퇴근(check_out)이 없는 진행 중 세션이 있으면 반환 */
 export async function findOpenAttendanceSession(
   supabase: SupabaseClient,
-  employeeEmail: string
+  employeeEmail: string,
+  operatorId?: string | null
 ): Promise<OpenAttendanceSession | null> {
   const { data, error } = await supabase
     .from('attendance_records')
     .select('id, session_number, date, check_in_time')
     .eq('employee_email', employeeEmail)
+    .eq('operator_id', resolveOperatorId(operatorId))
     .is('check_out_time', null)
     .not('check_in_time', 'is', null)
     .order('check_in_time', { ascending: false })

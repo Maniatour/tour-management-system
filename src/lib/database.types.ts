@@ -23,6 +23,7 @@ export type Database = {
           employee_email: string
           id: string
           notes: string | null
+          operator_id: string
           session_number: number
           status: string | null
           updated_at: string
@@ -36,6 +37,7 @@ export type Database = {
           employee_email: string
           id?: string
           notes?: string | null
+          operator_id?: string
           session_number?: number
           status?: string | null
           updated_at?: string
@@ -49,12 +51,21 @@ export type Database = {
           employee_email?: string
           id?: string
           notes?: string | null
+          operator_id?: string
           session_number?: number
           status?: string | null
           updated_at?: string
           work_hours?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "attendance_records_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       attraction_categories: {
         Row: {
@@ -492,6 +503,7 @@ export type Database = {
           description: string | null
           id: string
           notes: string | null
+          operator_id: string
           reference_id: string | null
           reference_type: string | null
           transaction_date: string
@@ -506,6 +518,7 @@ export type Database = {
           description?: string | null
           id?: string
           notes?: string | null
+          operator_id?: string
           reference_id?: string | null
           reference_type?: string | null
           transaction_date?: string
@@ -520,13 +533,22 @@ export type Database = {
           description?: string | null
           id?: string
           notes?: string | null
+          operator_id?: string
           reference_id?: string | null
           reference_type?: string | null
           transaction_date?: string
           transaction_type?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "cash_transactions_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       channel_products: {
         Row: {
@@ -534,6 +556,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_active: boolean | null
+          operator_id: string
           product_id: string
           updated_at: string | null
           variant_description_en: string | null
@@ -547,6 +570,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          operator_id?: string
           product_id: string
           updated_at?: string | null
           variant_description_en?: string | null
@@ -560,6 +584,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          operator_id?: string
           product_id?: string
           updated_at?: string | null
           variant_description_en?: string | null
@@ -621,6 +646,7 @@ export type Database = {
           name: string
           not_included_price: number | null
           not_included_type: string | null
+          operator_id: string
           pricing_type: string | null
           status: string | null
           sub_channels: string[] | null
@@ -648,6 +674,7 @@ export type Database = {
           name: string
           not_included_price?: number | null
           not_included_type?: string | null
+          operator_id?: string
           pricing_type?: string | null
           status?: string | null
           sub_channels?: string[] | null
@@ -675,6 +702,7 @@ export type Database = {
           name?: string
           not_included_price?: number | null
           not_included_type?: string | null
+          operator_id?: string
           pricing_type?: string | null
           status?: string | null
           sub_channels?: string[] | null
@@ -1037,6 +1065,7 @@ export type Database = {
           ledger_expense_origin: string
           maintenance_type: string | null
           notes: string | null
+          operator_id: string
           paid_by: string | null
           paid_for: string | null
           paid_for_label_id: string | null
@@ -1078,6 +1107,7 @@ export type Database = {
           ledger_expense_origin?: string
           maintenance_type?: string | null
           notes?: string | null
+          operator_id?: string
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
@@ -1118,6 +1148,7 @@ export type Database = {
           ledger_expense_origin?: string
           maintenance_type?: string | null
           notes?: string | null
+          operator_id?: string
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
@@ -1141,7 +1172,15 @@ export type Database = {
           updated_by?: string | null
           vehicle_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "company_expenses_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_expense_paid_for_labels: {
         Row: {
@@ -1986,6 +2025,7 @@ export type Database = {
           id_photo_url: string | null
           language: string | null
           name: string
+          operator_id: string
           pass_photo_url: string | null
           phone: string | null
           resident_status: string | null
@@ -2006,6 +2046,7 @@ export type Database = {
           id_photo_url?: string | null
           language?: string | null
           name: string
+          operator_id?: string
           pass_photo_url?: string | null
           phone?: string | null
           resident_status?: string | null
@@ -2026,6 +2067,7 @@ export type Database = {
           id_photo_url?: string | null
           language?: string | null
           name?: string
+          operator_id?: string
           pass_photo_url?: string | null
           phone?: string | null
           resident_status?: string | null
@@ -2386,6 +2428,7 @@ export type Database = {
           markup_amount: number | null
           markup_percent: number | null
           not_included_price: number | null
+          operator_id: string
           options_pricing: Json | null
           price_adjustment_adult: number | null
           price_adjustment_child: number | null
@@ -2416,6 +2459,7 @@ export type Database = {
           markup_amount?: number | null
           markup_percent?: number | null
           not_included_price?: number | null
+          operator_id?: string
           options_pricing?: Json | null
           price_adjustment_adult?: number | null
           price_adjustment_child?: number | null
@@ -2446,6 +2490,7 @@ export type Database = {
           markup_amount?: number | null
           markup_percent?: number | null
           not_included_price?: number | null
+          operator_id?: string
           options_pricing?: Json | null
           price_adjustment_adult?: number | null
           price_adjustment_child?: number | null
@@ -3346,6 +3391,7 @@ export type Database = {
           first_half_hours: number
           id: string
           month: string
+          operator_id: string
           present_days: number
           second_half_hours: number
           total_days: number
@@ -3361,6 +3407,7 @@ export type Database = {
           first_half_hours?: number
           id?: string
           month: string
+          operator_id?: string
           present_days?: number
           second_half_hours?: number
           total_days?: number
@@ -3376,13 +3423,22 @@ export type Database = {
           first_half_hours?: number
           id?: string
           month?: string
+          operator_id?: string
           present_days?: number
           second_half_hours?: number
           total_days?: number
           total_work_hours?: number
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "monthly_attendance_stats_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       off_schedules: {
         Row: {
@@ -3427,6 +3483,758 @@ export type Database = {
             referencedColumns: ["email"]
           },
         ]
+      }
+      operator_members: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          operator_id: string
+          role: string
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          operator_id: string
+          role?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          operator_id?: string
+          role?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_members_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operators: {
+        Row: {
+          created_at: string
+          custom_domain: string | null
+          default_currency: string
+          id: string
+          modules: Json
+          name: string
+          plan_code: string
+          plan_limits: Json
+          slug: string
+          status: string
+          stripe_connect_account_id: string | null
+          stripe_connect_status: string
+          subdomain: string | null
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          custom_domain?: string | null
+          default_currency?: string
+          id: string
+          modules?: Json
+          name: string
+          plan_code?: string
+          plan_limits?: Json
+          slug: string
+          status?: string
+          stripe_connect_account_id?: string | null
+          stripe_connect_status?: string
+          subdomain?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          custom_domain?: string | null
+          default_currency?: string
+          id?: string
+          modules?: Json
+          name?: string
+          plan_code?: string
+          plan_limits?: Json
+          slug?: string
+          status?: string
+          stripe_connect_account_id?: string | null
+          stripe_connect_status?: string
+          subdomain?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      offer_components: {
+        Row: {
+          choice_option_id: string | null
+          component_key: string
+          created_at: string
+          id: string
+          offer_id: string
+          operator_id: string
+        }
+        Insert: {
+          choice_option_id?: string | null
+          component_key: string
+          created_at?: string
+          id?: string
+          offer_id: string
+          operator_id: string
+        }
+        Update: {
+          choice_option_id?: string | null
+          component_key?: string
+          created_at?: string
+          id?: string
+          offer_id?: string
+          operator_id?: string
+        }
+        Relationships: []
+      }
+      offers: {
+        Row: {
+          code: string
+          created_at: string
+          creation_mode: string
+          id: string
+          is_active: boolean
+          name: string | null
+          operator_id: string
+          rate_plan_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          creation_mode?: string
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          operator_id: string
+          rate_plan_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          creation_mode?: string
+          id?: string
+          is_active?: boolean
+          name?: string | null
+          operator_id?: string
+          rate_plan_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      price_overrides: {
+        Row: {
+          adult_price: number
+          child_price: number
+          commission_percent: number | null
+          coupon_percent: number | null
+          created_at: string
+          date: string
+          id: string
+          infant_price: number
+          is_sale_available: boolean
+          legacy_dynamic_pricing_id: string | null
+          markup_amount: number | null
+          markup_percent: number | null
+          not_included_price: number | null
+          offer_id: string | null
+          operator_id: string
+          ota_sale_price: number | null
+          rate_plan_id: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          adult_price?: number
+          child_price?: number
+          commission_percent?: number | null
+          coupon_percent?: number | null
+          created_at?: string
+          date: string
+          id?: string
+          infant_price?: number
+          is_sale_available?: boolean
+          legacy_dynamic_pricing_id?: string | null
+          markup_amount?: number | null
+          markup_percent?: number | null
+          not_included_price?: number | null
+          offer_id?: string | null
+          operator_id: string
+          ota_sale_price?: number | null
+          rate_plan_id: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          adult_price?: number
+          child_price?: number
+          commission_percent?: number | null
+          coupon_percent?: number | null
+          created_at?: string
+          date?: string
+          id?: string
+          infant_price?: number
+          is_sale_available?: boolean
+          legacy_dynamic_pricing_id?: string | null
+          markup_amount?: number | null
+          markup_percent?: number | null
+          not_included_price?: number | null
+          offer_id?: string | null
+          operator_id?: string
+          ota_sale_price?: number | null
+          rate_plan_id?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      price_rules: {
+        Row: {
+          adult_amount: number
+          child_amount: number
+          created_at: string
+          effective_from: string | null
+          effective_to: string | null
+          id: string
+          infant_amount: number
+          is_active: boolean
+          operator_id: string
+          priority: number
+          rate_plan_id: string
+          rule_type: string
+          scope_key: string | null
+          scope_type: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          adult_amount?: number
+          child_amount?: number
+          created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          infant_amount?: number
+          is_active?: boolean
+          operator_id: string
+          priority?: number
+          rate_plan_id: string
+          rule_type: string
+          scope_key?: string | null
+          scope_type?: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          adult_amount?: number
+          child_amount?: number
+          created_at?: string
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          infant_amount?: number
+          is_active?: boolean
+          operator_id?: string
+          priority?: number
+          rate_plan_id?: string
+          rule_type?: string
+          scope_key?: string | null
+          scope_type?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rate_plans: {
+        Row: {
+          channel_id: string
+          created_at: string
+          currency: string
+          id: string
+          is_active: boolean
+          legacy_price_type: string | null
+          operator_id: string
+          pricing_mode: string
+          product_id: string
+          updated_at: string
+          variant_key: string
+        }
+        Insert: {
+          channel_id: string
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          legacy_price_type?: string | null
+          operator_id: string
+          pricing_mode?: string
+          product_id: string
+          updated_at?: string
+          variant_key?: string
+        }
+        Update: {
+          channel_id?: string
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          legacy_price_type?: string | null
+          operator_id?: string
+          pricing_mode?: string
+          product_id?: string
+          updated_at?: string
+          variant_key?: string
+        }
+        Relationships: []
+      }
+      stop_sells: {
+        Row: {
+          created_at: string
+          date: string
+          id: string
+          offer_id: string | null
+          operator_id: string
+          rate_plan_id: string
+          reason: string | null
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          id?: string
+          offer_id?: string | null
+          operator_id: string
+          rate_plan_id: string
+          reason?: string | null
+          source?: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          id?: string
+          offer_id?: string | null
+          operator_id?: string
+          rate_plan_id?: string
+          reason?: string | null
+          source?: string
+        }
+        Relationships: []
+      }
+      inventory_resources: {
+        Row: {
+          capacity_type: string
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          operator_id: string
+          unit_label: string
+          updated_at: string
+        }
+        Insert: {
+          capacity_type?: string
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          operator_id: string
+          unit_label?: string
+          updated_at?: string
+        }
+        Update: {
+          capacity_type?: string
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          operator_id?: string
+          unit_label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_allotments: {
+        Row: {
+          created_at: string
+          date: string
+          held_qty: number
+          id: string
+          operator_id: string
+          resource_id: string
+          sold_qty: number
+          start_time: string | null
+          total_qty: number
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          held_qty?: number
+          id?: string
+          operator_id: string
+          resource_id: string
+          sold_qty?: number
+          start_time?: string | null
+          total_qty?: number
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          held_qty?: number
+          id?: string
+          operator_id?: string
+          resource_id?: string
+          sold_qty?: number
+          start_time?: string | null
+          total_qty?: number
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      inventory_bindings: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          operator_id: string
+          qty_per_guest: number
+          resource_id: string
+          scope_id: string
+          scope_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          operator_id: string
+          qty_per_guest?: number
+          resource_id: string
+          scope_id: string
+          scope_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          operator_id?: string
+          qty_per_guest?: number
+          resource_id?: string
+          scope_id?: string
+          scope_type?: string
+        }
+        Relationships: []
+      }
+      inventory_holds: {
+        Row: {
+          allotment_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          operator_id: string
+          qty: number
+          reservation_id: string | null
+          resource_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          allotment_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          operator_id: string
+          qty: number
+          reservation_id?: string | null
+          resource_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          allotment_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          operator_id?: string
+          qty?: number
+          reservation_id?: string | null
+          resource_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_ledger: {
+        Row: {
+          allotment_id: string | null
+          created_at: string
+          hold_id: string | null
+          id: string
+          movement_type: string
+          note: string | null
+          operator_id: string
+          qty_delta: number
+          reservation_id: string | null
+          resource_id: string
+        }
+        Insert: {
+          allotment_id?: string | null
+          created_at?: string
+          hold_id?: string | null
+          id?: string
+          movement_type: string
+          note?: string | null
+          operator_id: string
+          qty_delta: number
+          reservation_id?: string | null
+          resource_id: string
+        }
+        Update: {
+          allotment_id?: string | null
+          created_at?: string
+          hold_id?: string | null
+          id?: string
+          movement_type?: string
+          note?: string | null
+          operator_id?: string
+          qty_delta?: number
+          reservation_id?: string | null
+          resource_id?: string
+        }
+        Relationships: []
+      }
+      channel_connections: {
+        Row: {
+          channel_id: string | null
+          config: Json
+          conflict_policy: string
+          created_at: string
+          credentials_ref: string | null
+          display_name: string
+          id: string
+          last_synced_at: string | null
+          operator_id: string
+          platform: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          channel_id?: string | null
+          config?: Json
+          conflict_policy?: string
+          created_at?: string
+          credentials_ref?: string | null
+          display_name: string
+          id?: string
+          last_synced_at?: string | null
+          operator_id: string
+          platform: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          channel_id?: string | null
+          config?: Json
+          conflict_policy?: string
+          created_at?: string
+          credentials_ref?: string | null
+          display_name?: string
+          id?: string
+          last_synced_at?: string | null
+          operator_id?: string
+          platform?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      external_mappings: {
+        Row: {
+          connection_id: string
+          created_at: string
+          external_package_id: string | null
+          external_product_id: string | null
+          external_sku: string
+          id: string
+          internal_id: string
+          internal_type: string
+          is_active: boolean
+          metadata: Json
+          operator_id: string
+          updated_at: string
+        }
+        Insert: {
+          connection_id: string
+          created_at?: string
+          external_package_id?: string | null
+          external_product_id?: string | null
+          external_sku: string
+          id?: string
+          internal_id: string
+          internal_type: string
+          is_active?: boolean
+          metadata?: Json
+          operator_id: string
+          updated_at?: string
+        }
+        Update: {
+          connection_id?: string
+          created_at?: string
+          external_package_id?: string | null
+          external_product_id?: string | null
+          external_sku?: string
+          id?: string
+          internal_id?: string
+          internal_type?: string
+          is_active?: boolean
+          metadata?: Json
+          operator_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ota_inbound_events: {
+        Row: {
+          connection_id: string | null
+          created_at: string
+          event_type: string
+          external_booking_id: string | null
+          external_event_id: string
+          external_sku: string | null
+          id: string
+          last_error: string | null
+          operator_id: string
+          payload: Json
+          platform: string
+          processed_at: string | null
+          reservation_id: string | null
+          result: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          connection_id?: string | null
+          created_at?: string
+          event_type?: string
+          external_booking_id?: string | null
+          external_event_id: string
+          external_sku?: string | null
+          id?: string
+          last_error?: string | null
+          operator_id: string
+          payload?: Json
+          platform: string
+          processed_at?: string | null
+          reservation_id?: string | null
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          connection_id?: string | null
+          created_at?: string
+          event_type?: string
+          external_booking_id?: string | null
+          external_event_id?: string
+          external_sku?: string | null
+          id?: string
+          last_error?: string | null
+          operator_id?: string
+          payload?: Json
+          platform?: string
+          processed_at?: string | null
+          reservation_id?: string | null
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sync_events: {
+        Row: {
+          attempts: number
+          available_at: string
+          connection_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id: string
+          idempotency_key: string | null
+          last_error: string | null
+          max_attempts: number
+          operator_id: string
+          payload: Json
+          result: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          connection_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id?: string
+          idempotency_key?: string | null
+          last_error?: string | null
+          max_attempts?: number
+          operator_id: string
+          payload?: Json
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          connection_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          event_type?: string
+          id?: string
+          idempotency_key?: string | null
+          last_error?: string | null
+          max_attempts?: number
+          operator_id?: string
+          payload?: Json
+          result?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       op_todos: {
         Row: {
@@ -3873,6 +4681,7 @@ export type Database = {
           id: string
           image_file_url: string | null
           note: string | null
+          operator_id: string
           payment_method: string | null
           payment_status: string | null
           reservation_id: string
@@ -3889,6 +4698,7 @@ export type Database = {
           id?: string
           image_file_url?: string | null
           note?: string | null
+          operator_id?: string
           payment_method?: string | null
           payment_status?: string | null
           reservation_id: string
@@ -3905,6 +4715,7 @@ export type Database = {
           id?: string
           image_file_url?: string | null
           note?: string | null
+          operator_id?: string
           payment_method?: string | null
           payment_status?: string | null
           reservation_id?: string
@@ -3913,6 +4724,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "payment_records_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "payment_records_reservation_id_fkey"
             columns: ["reservation_id"]
@@ -4238,6 +5056,7 @@ export type Database = {
           is_required: boolean | null
           max_selections: number | null
           min_selections: number | null
+          operator_id: string
           product_id: string | null
           sort_order: number | null
         }
@@ -4255,6 +5074,7 @@ export type Database = {
           is_required?: boolean | null
           max_selections?: number | null
           min_selections?: number | null
+          operator_id?: string
           product_id?: string | null
           sort_order?: number | null
         }
@@ -4272,6 +5092,7 @@ export type Database = {
           is_required?: boolean | null
           max_selections?: number | null
           min_selections?: number | null
+          operator_id?: string
           product_id?: string | null
           sort_order?: number | null
         }
@@ -5151,6 +5972,7 @@ export type Database = {
           name: string
           name_en: string | null
           name_ko: string | null
+          operator_id: string
           product_code: string | null
           status: string | null
           sub_category: string | null
@@ -5193,6 +6015,7 @@ export type Database = {
           name: string
           name_en?: string | null
           name_ko?: string | null
+          operator_id?: string
           product_code?: string | null
           status?: string | null
           sub_category?: string | null
@@ -5235,6 +6058,7 @@ export type Database = {
           name?: string
           name_en?: string | null
           name_ko?: string | null
+          operator_id?: string
           product_code?: string | null
           status?: string | null
           sub_category?: string | null
@@ -5553,6 +6377,7 @@ export type Database = {
           id: string
           image_url: string | null
           note: string | null
+          operator_id: string
           paid_for: string | null
           paid_to: string | null
           payment_method: string | null
@@ -5576,6 +6401,7 @@ export type Database = {
           id: string
           image_url?: string | null
           note?: string | null
+          operator_id?: string
           paid_for?: string | null
           paid_to?: string | null
           payment_method?: string | null
@@ -5599,6 +6425,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           note?: string | null
+          operator_id?: string
           paid_for?: string | null
           paid_to?: string | null
           payment_method?: string | null
@@ -5613,6 +6440,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "reservation_expenses_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "reservation_expenses_reservation_id_fkey"
             columns: ["reservation_id"]
@@ -6191,13 +7025,19 @@ export type Database = {
           channel_rn: string | null
           child: number | null
           choices: Json | null
+          commerce_offer_id: string | null
+          commerce_pricing_source: string | null
+          commerce_rate_plan_id: string | null
           created_at: string | null
           customer_communication_channel: string | null
           customer_id: string | null
           event_note: string | null
           id: string
           infant: number | null
+          inventory_hold_ids: string[] | null
           is_private_tour: boolean | null
+          money_breakdown_json: Json | null
+          operator_id: string
           pickup_hotel: string | null
           pickup_notification_sent: boolean | null
           pickup_time: string | null
@@ -6222,13 +7062,19 @@ export type Database = {
           channel_rn?: string | null
           child?: number | null
           choices?: Json | null
+          commerce_offer_id?: string | null
+          commerce_pricing_source?: string | null
+          commerce_rate_plan_id?: string | null
           created_at?: string | null
           customer_communication_channel?: string | null
           customer_id?: string | null
           event_note?: string | null
           id?: string
           infant?: number | null
+          inventory_hold_ids?: string[] | null
           is_private_tour?: boolean | null
+          money_breakdown_json?: Json | null
+          operator_id?: string
           pickup_hotel?: string | null
           pickup_notification_sent?: boolean | null
           pickup_time?: string | null
@@ -6253,13 +7099,19 @@ export type Database = {
           channel_rn?: string | null
           child?: number | null
           choices?: Json | null
+          commerce_offer_id?: string | null
+          commerce_pricing_source?: string | null
+          commerce_rate_plan_id?: string | null
           created_at?: string | null
           customer_communication_channel?: string | null
           customer_id?: string | null
           event_note?: string | null
           id?: string
           infant?: number | null
+          inventory_hold_ids?: string[] | null
           is_private_tour?: boolean | null
+          money_breakdown_json?: Json | null
+          operator_id?: string
           pickup_hotel?: string | null
           pickup_notification_sent?: boolean | null
           pickup_time?: string | null
@@ -8488,6 +9340,7 @@ export type Database = {
           id: string
           image_url: string | null
           note: string | null
+          operator_id: string
           paid_for: string
           paid_to: string | null
           payment_method: string | null
@@ -8512,6 +9365,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           note?: string | null
+          operator_id?: string
           paid_for: string
           paid_to?: string | null
           payment_method?: string | null
@@ -8536,6 +9390,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           note?: string | null
+          operator_id?: string
           paid_for?: string
           paid_to?: string | null
           payment_method?: string | null
@@ -8550,7 +9405,15 @@ export type Database = {
           tour_id?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tour_expenses_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tour_hotel_bookings: {
         Row: {
@@ -9054,6 +9917,7 @@ export type Database = {
           op_amount: number | null
           op_email: string
           op_percent: number | null
+          operator_id: string
           tour_tip_share_id: string
           updated_at: string | null
         }
@@ -9063,6 +9927,7 @@ export type Database = {
           op_amount?: number | null
           op_email: string
           op_percent?: number | null
+          operator_id?: string
           tour_tip_share_id: string
           updated_at?: string | null
         }
@@ -9072,6 +9937,7 @@ export type Database = {
           op_amount?: number | null
           op_email?: string
           op_percent?: number | null
+          operator_id?: string
           tour_tip_share_id?: string
           updated_at?: string | null
         }
@@ -9082,6 +9948,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "team"
             referencedColumns: ["email"]
+          },
+          {
+            foreignKeyName: "tour_tip_share_ops_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "tour_tip_share_ops_tour_tip_share_id_fkey"
@@ -9105,6 +9978,7 @@ export type Database = {
           op_amount: number | null
           op_email: string | null
           op_percent: number | null
+          operator_id: string
           total_tip: number | null
           tour_id: string
           updated_at: string | null
@@ -9121,6 +9995,7 @@ export type Database = {
           op_amount?: number | null
           op_email?: string | null
           op_percent?: number | null
+          operator_id?: string
           total_tip?: number | null
           tour_id: string
           updated_at?: string | null
@@ -9137,6 +10012,7 @@ export type Database = {
           op_amount?: number | null
           op_email?: string | null
           op_percent?: number | null
+          operator_id?: string
           total_tip?: number | null
           tour_id?: string
           updated_at?: string | null
@@ -9164,6 +10040,13 @@ export type Database = {
             referencedColumns: ["email"]
           },
           {
+            foreignKeyName: "tour_tip_shares_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tour_tip_shares_tour_id_fkey"
             columns: ["tour_id"]
             isOneToOne: true
@@ -9182,6 +10065,7 @@ export type Database = {
           id: string
           is_private_tour: boolean | null
           max_participants: number
+          operator_id: string
           photos_extended_access: boolean | null
           product_id: string | null
           reservation_ids: string[] | null
@@ -9208,6 +10092,7 @@ export type Database = {
           id?: string
           is_private_tour?: boolean | null
           max_participants?: number
+          operator_id?: string
           photos_extended_access?: boolean | null
           product_id?: string | null
           reservation_ids?: string[] | null
@@ -9234,6 +10119,7 @@ export type Database = {
           id?: string
           is_private_tour?: boolean | null
           max_participants?: number
+          operator_id?: string
           photos_extended_access?: boolean | null
           product_id?: string | null
           reservation_ids?: string[] | null
@@ -9252,6 +10138,13 @@ export type Database = {
           pickup_group_representative_overrides?: Record<string, unknown> | null
         }
         Relationships: [
+          {
+            foreignKeyName: "tours_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tours_product_id_fkey"
             columns: ["product_id"]
@@ -9438,6 +10331,7 @@ export type Database = {
           next_maintenance_date: string | null
           next_maintenance_mileage: number | null
           notes: string | null
+          operator_id: string
           other_cost: number | null
           parts_cost: number | null
           parts_cost_breakdown: Json | null
@@ -9482,6 +10376,7 @@ export type Database = {
           next_maintenance_date?: string | null
           next_maintenance_mileage?: number | null
           notes?: string | null
+          operator_id?: string
           other_cost?: number | null
           parts_cost?: number | null
           parts_cost_breakdown?: Json | null
@@ -9526,6 +10421,7 @@ export type Database = {
           next_maintenance_date?: string | null
           next_maintenance_mileage?: number | null
           notes?: string | null
+          operator_id?: string
           other_cost?: number | null
           parts_cost?: number | null
           parts_cost_breakdown?: Json | null
@@ -9555,6 +10451,13 @@ export type Database = {
             columns: ["company_expense_id"]
             isOneToOne: false
             referencedRelation: "company_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicle_maintenance_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
             referencedColumns: ["id"]
           },
           {
@@ -9637,6 +10540,7 @@ export type Database = {
           next_due_date: string | null
           notes: string | null
           last_maintenance_id: string | null
+          operator_id: string
           created_at: string
           updated_at: string
         }
@@ -9653,6 +10557,7 @@ export type Database = {
           next_due_date?: string | null
           notes?: string | null
           last_maintenance_id?: string | null
+          operator_id?: string
           created_at?: string
           updated_at?: string
         }
@@ -9669,6 +10574,7 @@ export type Database = {
           next_due_date?: string | null
           notes?: string | null
           last_maintenance_id?: string | null
+          operator_id?: string
           created_at?: string
           updated_at?: string
         }
@@ -9692,6 +10598,13 @@ export type Database = {
             columns: ["last_maintenance_id"]
             isOneToOne: false
             referencedRelation: "vehicle_maintenance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicle_maintenance_schedules_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
             referencedColumns: ["id"]
           },
         ]
@@ -9917,6 +10830,7 @@ export type Database = {
           mileage_at_purchase: number | null
           monthly_payment: number | null
           nick: string | null
+          operator_id: string
           payment_due_date: string | null
           purchase_amount: number | null
           purchase_date: string | null
@@ -9963,6 +10877,7 @@ export type Database = {
           mileage_at_purchase?: number | null
           monthly_payment?: number | null
           nick?: string | null
+          operator_id?: string
           payment_due_date?: string | null
           purchase_amount?: number | null
           purchase_date?: string | null
@@ -10009,6 +10924,7 @@ export type Database = {
           mileage_at_purchase?: number | null
           monthly_payment?: number | null
           nick?: string | null
+          operator_id?: string
           payment_due_date?: string | null
           purchase_amount?: number | null
           purchase_date?: string | null
@@ -10022,6 +10938,7 @@ export type Database = {
           rental_start_date?: string | null
           rental_status?: string | null
           rental_total_cost?: number | null
+          status?: string
           updated_at?: string | null
           vehicle_category?: string | null
           vehicle_image_url?: string | null
@@ -10032,7 +10949,15 @@ export type Database = {
           windshield_wiper_size?: string | null
           year?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       weather_data: {
         Row: {
@@ -11233,7 +12158,11 @@ export type Database = {
         Returns: string
       }
       calculate_monthly_attendance_stats: {
-        Args: { p_employee_email: string; p_month: string }
+        Args: {
+          p_employee_email: string
+          p_month: string
+          p_operator_id?: string
+        }
         Returns: undefined
       }
       calculate_reservation_choices_total: {
@@ -11293,6 +12222,13 @@ export type Database = {
         | { Args: never; Returns: boolean }
         | { Args: { p_email: string }; Returns: boolean }
       current_email: { Args: never; Returns: string }
+      current_operator_id: { Args: never; Returns: string }
+      is_operator_member: { Args: { p_operator_id?: string }; Returns: boolean }
+      kovegas_operator_id: { Args: never; Returns: string }
+      set_current_operator_id: {
+        Args: { p_operator_id: string }
+        Returns: undefined
+      }
       evaluate_workflow_condition: {
         Args: { p_condition_data?: Json; p_step_id: string }
         Returns: boolean

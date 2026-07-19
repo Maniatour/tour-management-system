@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { CreditCard, DollarSign, TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 interface DepositReportTabProps {
@@ -11,12 +13,14 @@ interface DepositReportTabProps {
 }
 
 export default function DepositReportTab({ dateRange, period }: DepositReportTabProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadDepositStats()
-  }, [dateRange, period])
+  }, [dateRange, period, activeOperatorId])
 
   const loadDepositStats = async () => {
     setLoading(true)
@@ -44,6 +48,7 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       const { data: deposits } = await supabase
         .from('payment_records')
         .select('id, amount, payment_method, payment_status, submit_on, reservation_id')
+        .eq('operator_id', activeOperatorId)
         .gte('submit_on', startISO)
         .lte('submit_on', endISO)
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])

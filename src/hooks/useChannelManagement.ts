@@ -1,5 +1,8 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useOperatorOptional } from '@/contexts/OperatorContext';
+import { withOperatorId } from '@/lib/operators/scopeQuery';
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants';
 
 interface Channel {
   id: string;
@@ -12,6 +15,7 @@ interface Channel {
 }
 
 export function useChannelManagement() {
+  const { operatorId } = useOperatorOptional();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
   const [selectedChannelType, setSelectedChannelType] = useState<'OTA' | 'SELF' | ''>('');
@@ -57,18 +61,17 @@ export function useChannelManagement() {
     try {
       setIsLoadingChannels(true);
       
-      // 활성 채널과 M00001 채널을 모두 가져오기
+      // 활성 채널 (테넌트 스코프) + Kovegas일 때만 M00001 보정
+      const activeQuery = withOperatorId(
+        supabase.from('channels').select('*').eq('status', 'active'),
+        operatorId
+      ).order('name');
+
       const [activeChannelsResult, m00001Result] = await Promise.all([
-        supabase
-          .from('channels')
-          .select('*')
-          .eq('status', 'active')
-          .order('name'),
-        supabase
-          .from('channels')
-          .select('*')
-          .eq('id', 'M00001')
-          .single()
+        activeQuery,
+        operatorId === KOVEgAS_OPERATOR_ID
+          ? supabase.from('channels').select('*').eq('id', 'M00001').maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
       ]);
 
       if (activeChannelsResult.error) {
@@ -77,7 +80,7 @@ export function useChannelManagement() {
 
       const activeChannels = activeChannelsResult.data || [];
       
-      // M00001 채널이 활성 채널 목록에 없으면 추가
+      // M00001 채널이 활성 채널 목록에 없으면 추가 (Kovegas only)
       let allChannels = [...activeChannels];
       if (m00001Result.data && !activeChannels.find((ch: any) => ch.id === 'M00001')) {
         allChannels.push(m00001Result.data);
@@ -116,7 +119,7 @@ export function useChannelManagement() {
     } finally {
       setIsLoadingChannels(false);
     }
-  }, []);
+  }, [operatorId]);
 
   const handleChannelTypeSelect = useCallback((channelType: 'OTA' | 'SELF') => {
     setSelectedChannelType(channelType);

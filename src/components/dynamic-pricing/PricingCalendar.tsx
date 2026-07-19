@@ -424,8 +424,13 @@ export const PricingCalendar = memo(function PricingCalendar({
       (channelInfo as { pricing_type?: string } | null)?.pricing_type === 'single';
     
     // 단일가 채널·OTA·홈페이지는 ota_sale_price를 우선 사용.
-    // 그 외에도 ota_sale_price만 저장된 경우(성인/아동 필드 없음) 표시되도록 폴백.
-    if (otaSalePrice > 0 && (isOTA || isHomepageChannel || isSinglePriceChannel || choicePrice === 0)) {
+    // base_plus 모드에서는 기본가+초이스 추가금 경로를 사용.
+    const calculationMethod = rule.price_calculation_method === 'base_plus' ? 'base_plus' : 'absolute';
+    if (
+      calculationMethod === 'absolute' &&
+      otaSalePrice > 0 &&
+      (isOTA || isHomepageChannel || isSinglePriceChannel || choicePrice === 0)
+    ) {
       maxSalePrice = otaSalePrice;
     } else {
       const markupAmount = rule.markup_amount || 0;
@@ -448,6 +453,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     let netPrice = 0;
     const commissionPercent = rule.commission_percent || 0;
     const useOtaNet =
+      calculationMethod === 'absolute' &&
       otaSalePrice > 0 &&
       (isOTA || isHomepageChannel || isSinglePriceChannel || choicePrice === 0);
 

@@ -1,0 +1,50 @@
+================================================================================
+ADR 046 — Staff tenant lock expand (journal_*) (Phase 6d.3)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6d.2 completed ops finance SELECT lock (expenses through match tables).
+journal_entries / journal_lines still used
+rls_is_staff_session_ok OR is_operator_member (staff bypass).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719340000_saas_staff_tenant_lock_journal.sql
+   SELECT rewrite:
+   - journal_entries
+   - journal_lines
+
+2. Pattern:
+     staff_can_select_operator_row(operator_id)
+     OR is_operator_member_strict(operator_id)
+
+3. saas_staff_tenant_lock_pilot_ready() includes journal_*
+4. card-payment stamp / cross-tenant reject unchanged
+5. SAAS_STAFF_TENANT_LOCK still gates JWT stamp (default OFF)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- fleet / tip / attendance staff lock (privacy-sensitive; separate ADR)
+- Booking/payment logic
+- Default lock ON in production
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6e.0 commerce isolation smoke (ADR 047)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719340000_saas_staff_tenant_lock_journal.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/lib/operators/staffTenantLock.ts
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

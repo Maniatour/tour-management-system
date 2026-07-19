@@ -1,0 +1,57 @@
+================================================================================
+ADR 003 — Commerce v2 Backfill + Shadow Compare
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 2 dual-write covers new admin saves only.
+Historical dynamic_pricing and confidence for cutover need
+backfill + shadow comparison before any checkout read switch.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Staff API backfill:
+   POST /api/admin/commerce/backfill-v2
+   - pages via offset/limit
+   - default fromDate = today - 3 months
+   - uses service role + dualWriteDynamicPricingToV2
+
+2. Staff API shadow compare:
+   POST /api/admin/commerce/shadow-compare
+   - compares plan + sample offer codes
+   - returns matchRatePercent + diffs
+   - does NOT change booking
+
+3. Optional checkout shadow log:
+   COMMERCE_V2_SHADOW=1
+   - logs legacy RPC totals vs v2 plan resolve
+   - never changes price / never fails checkout
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Feature-flagged checkout cutover (next after match rate healthy)
+- Inventory / booking snapshot rewrite
+
+
+How to run (staff JWT)
+--------------------------------------------------------------------------------
+# Backfill one page (homepage channel example)
+POST /api/admin/commerce/backfill-v2
+{ "productId": "YOUR_PRODUCT", "channelId": "M00001", "monthsBack": 6, "limit": 100, "offset": 0 }
+
+# Repeat with nextOffset until null
+
+# Shadow compare
+POST /api/admin/commerce/shadow-compare
+{ "productId": "YOUR_PRODUCT", "channelId": "M00001", "limit": 50 }
+
+
+Success criteria before read cutover
+--------------------------------------------------------------------------------
+- matchRatePercent >= 99 for sampled homepage products
+- missingInV2 ≈ 0 for dates that have dynamic_pricing
+================================================================================

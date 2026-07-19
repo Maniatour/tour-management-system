@@ -20,6 +20,9 @@ import {
 import AdminProductCardEditModals from '@/components/admin/product-card/AdminProductCardEditModals'
 import type { AdminProductCardEditSection } from '@/lib/adminProductCardEdit'
 import { buildAdminProductCustomerEditPath } from '@/lib/adminProductCustomerEdit'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
+import { cloneAdminProduct } from '@/lib/adminProductClone'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -60,6 +63,7 @@ export default function ProductCard({
   const t = useTranslations('products')
   const tCardEdit = useTranslations('products.cardEditModal')
   const router = useRouter()
+  const { operatorId } = useOperatorOptional()
   const cardLocale: AdminProductCardPreviewLocale =
     displayLocale ?? (locale === 'en' ? 'en' : 'ko')
   const previewLabels = getProductCardPreviewLabels(cardLocale)
@@ -117,7 +121,11 @@ export default function ProductCard({
       setIsUpdating(true)
       setLocalStatus(newStatus)
 
-      const { error } = await supabase.from('products').update({ status: newStatus }).eq('id', localProduct.id)
+      const { error } = await supabase
+        .from('products')
+        .update({ status: newStatus })
+        .eq('id', localProduct.id)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('상품 상태 업데이트 오류:', error)
@@ -150,6 +158,7 @@ export default function ProductCard({
         .from('products')
         .update({ is_published: newPublished })
         .eq('id', localProduct.id)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('상품 배포 상태 업데이트 오류:', error)
@@ -182,13 +191,16 @@ export default function ProductCard({
 
       let favoriteOrder: number | null = null
       if (newFavoriteStatus) {
-        const { data: favorites } = await supabase
-          .from('products')
-          .select('favorite_order')
-          .eq('is_favorite', true)
-          .not('favorite_order', 'is', null)
-          .order('favorite_order', { ascending: false })
-          .limit(1)
+        const { data: favorites } = await withOperatorId(
+          supabase
+            .from('products')
+            .select('favorite_order')
+            .eq('is_favorite', true)
+            .not('favorite_order', 'is', null)
+            .order('favorite_order', { ascending: false })
+            .limit(1),
+          operatorId
+        )
 
         favoriteOrder =
           favorites && favorites.length > 0 ? ((favorites[0] as { favorite_order: number }).favorite_order || 0) + 1 : 1
@@ -201,6 +213,7 @@ export default function ProductCard({
           favorite_order: favoriteOrder,
         })
         .eq('id', product.id)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('즐겨찾기 상태 업데이트 오류:', error)
@@ -226,49 +239,24 @@ export default function ProductCard({
     try {
       setIsCopying(true)
 
-      const copyData = {
-        name: locale === 'en' ? `${product.name_en || product.name} (Copy)` : `${product.name} (복사본)`,
-        name_en: product.name_en ? `${product.name_en} (Copy)` : null,
-        product_code: product.product_code ? `${product.product_code}_COPY` : null,
-        category: product.category,
-        sub_category: product.sub_category,
-        description: product.description,
-        duration: product.duration,
-        base_price: product.base_price,
-        max_participants: product.max_participants,
-        status: 'draft' as const,
-        departure_city: product.departure_city,
-        arrival_city: product.arrival_city,
-        departure_country: product.departure_country,
-        arrival_country: product.arrival_country,
-        languages: product.languages,
-        group_size: product.group_size,
-        adult_age: product.adult_age,
-        child_age_min: product.child_age_min,
-        child_age_max: product.child_age_max,
-        infant_age: product.infant_age,
-        tags: product.tags,
-      }
+      const result = await cloneAdminProduct(
+        supabase,
+        product.id,
+        operatorId,
+        locale === 'en' ? 'en' : 'ko'
+      )
 
-      const { data: newProduct, error: productError } = await supabase
-        .from('products')
-        .insert(copyData)
-        .select()
-        .single()
-
-      if (productError) {
-        console.error('상품 복사 오류:', productError)
-        alert('상품 복사 중 오류가 발생했습니다.')
-        return
-      }
-
-      const newProductData = newProduct as { id: string } | null
-      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProductData?.id}`)
-      onProductCopied?.(newProductData?.id || '')
-      window.location.href = `/${locale}/admin/products/${newProductData?.id}`
+      alert(
+        locale === 'en'
+          ? `Product copied. New id: ${result.newProductId}`
+          : `상품이 복사되었습니다. (초이스 ${result.counts.choices}, 가격 ${result.counts.pricing}건)\n새 ID: ${result.newProductId}`
+      )
+      onProductCopied?.(result.newProductId)
+      window.location.href = `/${locale}/admin/products/${result.newProductId}`
     } catch (error) {
       console.error('상품 복사 중 예상치 못한 오류:', error)
-      alert('상품 복사 중 오류가 발생했습니다.')
+      const msg = error instanceof Error ? error.message : String(error)
+      alert(locale === 'en' ? `Copy failed: ${msg}` : `상품 복사 중 오류: ${msg}`)
     } finally {
       setIsCopying(false)
     }
@@ -283,7 +271,11 @@ export default function ProductCard({
       setIsTogglingRibbon(true)
       setLocalTags(nextTags)
 
-      const { error } = await supabase.from('products').update({ tags: nextTags }).eq('id', product.id)
+      const { error } = await supabase
+        .from('products')
+        .update({ tags: nextTags })
+        .eq('id', product.id)
+        .eq('operator_id', resolveOperatorId(operatorId))
 
       if (error) {
         console.error('리본 상태 업데이트 오류:', error)

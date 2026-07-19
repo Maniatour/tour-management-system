@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { ArrowDownCircle } from 'lucide-react'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { isPaymentRequestedStatus } from '@/utils/reservationPricingBalance'
 import {
@@ -82,6 +84,8 @@ export default function PnlUnifiedDepositSection({
   onExportSnapshotReady,
 }: PnlUnifiedDepositSectionProps) {
   const locale = useLocale()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [loading, setLoading] = useState(true)
   const [monthlyCells, setMonthlyCells] = useState<Record<string, Record<string, number>>>({})
   const [detailLines, setDetailLines] = useState<PnlPaymentRecordLine[]>([])
@@ -120,7 +124,11 @@ export default function PnlUnifiedDepositSection({
   }, [])
 
   const reloadStatementInflows = useCallback(async () => {
-    const statementRes = await fetchStatementInflowsForPnlReport(dateRange.start, dateRange.end)
+    const statementRes = await fetchStatementInflowsForPnlReport(
+      dateRange.start,
+      dateRange.end,
+      activeOperatorId
+    )
     if (statementRes.error) {
       console.error('통합 PNL 명세 입금 조회 오류:', statementRes.error)
       setStatementInflowMonthly({})
@@ -130,7 +138,7 @@ export default function PnlUnifiedDepositSection({
       return
     }
     await applyStatementInflowData(statementRes.data)
-  }, [dateRange.start, dateRange.end, applyStatementInflowData])
+  }, [dateRange.start, dateRange.end, applyStatementInflowData, activeOperatorId])
 
   useEffect(() => {
     onRegisterReloadStatementInflows?.(reloadStatementInflows)
@@ -161,8 +169,8 @@ export default function PnlUnifiedDepositSection({
 
     const [cashMethods, { data: rows, error }, statementRes] = await Promise.all([
       getCashPaymentMethodFilterValues(),
-      fetchPaymentRecordsForPnlReport(startISO, endISO),
-      fetchStatementInflowsForPnlReport(dateRange.start, dateRange.end),
+      fetchPaymentRecordsForPnlReport(startISO, endISO, activeOperatorId),
+      fetchStatementInflowsForPnlReport(dateRange.start, dateRange.end, activeOperatorId),
     ])
 
     if (statementRes.error) {
@@ -196,7 +204,7 @@ export default function PnlUnifiedDepositSection({
       rows.filter((r) => r.submit_on && !isPaymentRequestedStatus(r.payment_status)).length
     )
     setLoading(false)
-  }, [dateRange, applyStatementInflowData])
+  }, [dateRange, applyStatementInflowData, activeOperatorId])
 
   useEffect(() => {
     void loadDeposits()

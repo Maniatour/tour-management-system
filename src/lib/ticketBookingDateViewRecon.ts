@@ -7,6 +7,7 @@ import {
 import { softDeleteExpenseRecord, type ExpenseSoftDeleteTable } from '@/lib/expense-soft-delete'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import { ticketBookingCanyonKeyFromBooking } from '@/lib/ticketBookingDateView'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 export type CanyonVendorKey =
   | 'see_canyon'
@@ -98,8 +99,10 @@ async function fetchStatementLinesByPostedDate(
   supabase: SupabaseClient,
   startYmd: string,
   endYmd: string,
-  direction?: 'inflow' | 'outflow' | null
+  direction?: 'inflow' | 'outflow' | null,
+  operatorId?: string | null
 ): Promise<RawStatementLine[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const out: RawStatementLine[] = []
   let from = 0
   for (;;) {
@@ -108,6 +111,7 @@ async function fetchStatementLinesByPostedDate(
       .select(
         'id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status'
       )
+      .eq('operator_id', activeOperatorId)
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)
     if (direction) query = query.eq('direction', direction)
@@ -260,11 +264,12 @@ export async function fetchTicketDateViewReconForDates(
   dateYmds: string[],
   ticketBookingsByDate: Map<string, Array<Record<string, unknown>>>,
   locale: string,
-  opts?: { dayWindow?: number }
+  opts?: { dayWindow?: number; operatorId?: string | null }
 ): Promise<Map<string, TicketDateViewReconBundle>> {
   const out = new Map<string, TicketDateViewReconBundle>()
   const dates = [...new Set(dateYmds.map((d) => d.trim().slice(0, 10)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))]
   if (dates.length === 0) return out
+  const activeOperatorId = resolveOperatorId(opts?.operatorId)
 
   const pad = opts?.dayWindow ?? TICKET_BOOKING_STATEMENT_DAY_WINDOW
   let globalStart = dates[0]!
@@ -419,7 +424,13 @@ export async function fetchTicketDateViewReconForDates(
   for (const id of ceIds) if (id) allLedgerSourceKeys.add(`company_expenses:${id}`)
   for (const id of teIds) if (id) allLedgerSourceKeys.add(`tour_expenses:${id}`)
 
-  const stmtRaw = await fetchStatementLinesByPostedDate(supabase, globalStart, globalEnd)
+  const stmtRaw = await fetchStatementLinesByPostedDate(
+    supabase,
+    globalStart,
+    globalEnd,
+    null,
+    activeOperatorId
+  )
 
   const importIdsFromLines = [
     ...new Set(stmtRaw.map((l) => String(l.statement_import_id ?? '').trim()).filter(Boolean)),

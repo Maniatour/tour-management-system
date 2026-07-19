@@ -1,0 +1,52 @@
+================================================================================
+ADR 025 — Ops HR: office_meal_log + tour_office_tips operator_id (Phase 6b.4)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Attendance (6b.2) and company expenses (6b.3) are tenant-scoped. Office meal
+deductions and tour office tips still lived in unscoped Ops tables.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719160000_saas_operator_id_office_meal_tips.sql
+   - office_meal_log.operator_id NOT NULL (Kovegas backfill)
+   - UNIQUE (operator_id, meal_date, employee_email)
+   - tour_office_tips.operator_id NOT NULL (from tours.operator_id / Kovegas)
+
+2. App filter/stamp:
+   - OfficeMealModal, AttendancePageInner meal counts
+   - fetchOfficeMealCountsInRange(operatorId)
+   - Biweekly / TotalEmployees / OfficeTips meal queries
+   - OfficeTipsModal tours + tour_office_tips list/upsert stamp
+
+3. Deferred: tour_tip_shares / tour_tip_share_ops (guide + many call sites)
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- team.operator_id
+- Full tip-share rewrite
+- ops_* schema move
+- Booking / payment / checkout changes
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.5 tour_tip_shares (DONE) → Operator B E2E OR recon scoping
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719160000_saas_operator_id_office_meal_tips.sql
+src/lib/attendanceMealPolicy.ts
+src/components/attendance/OfficeMealModal.tsx
+src/components/attendance/OfficeTipsModal.tsx
+src/app/[locale]/admin/attendance/AttendancePageInner.tsx
+src/components/BiweeklyCalculatorModal.tsx
+src/components/TotalEmployeesModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

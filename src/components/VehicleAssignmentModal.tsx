@@ -5,6 +5,8 @@ import { X, Car, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { getVehicleStatusLabelKo } from '@/lib/vehicleStatus'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 interface Vehicle {
   id: string
@@ -39,6 +41,8 @@ export default function VehicleAssignmentModal({
   onClose, 
   onAssignmentComplete 
 }: VehicleAssignmentModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [selectedVehicle, setSelectedVehicle] = useState<string>('')
   const [vehicleType, setVehicleType] = useState<'company' | 'rental'>('company')
@@ -55,7 +59,7 @@ export default function VehicleAssignmentModal({
   useEffect(() => {
     fetchVehicles()
     fetchTourData()
-  }, [tourId, tourDate])
+  }, [tourId, tourDate, activeOperatorId])
 
   const fetchVehicles = async () => {
     try {
@@ -63,6 +67,7 @@ export default function VehicleAssignmentModal({
       const { data, error } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .order('vehicle_category', { ascending: true })
         .order('vehicle_number', { ascending: true })
 

@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { 
   Calendar,
   List,
-  ChevronDown,
-  ChevronUp,
   LayoutGrid,
   Table2
 } from 'lucide-react';
@@ -28,6 +26,14 @@ import { usePricingData } from '@/hooks/usePricingData';
 import { usePriceCalculation } from '@/hooks/usePriceCalculation';
 import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
 import { getOtaSalePriceWithFallback } from '@/utils/choicePricingMatcher';
+import {
+  type ChoicePricingMode,
+  expandOptionsPricingToChoicesPricing,
+  normalizeChoicesPricingForMode,
+  parseChoicePricingMode,
+  resolveChoiceFinalPrices,
+} from '@/lib/choicePricingMode';
+import { ChoiceOptionUnitPricingPanel, type OptionUnitPrice } from './dynamic-pricing/ChoiceOptionUnitPricingPanel';
 
 // UI 컴포넌트들
 import { ChannelSelector } from './dynamic-pricing/ChannelSelector';
@@ -89,11 +95,26 @@ interface DynamicPricingManagerProps {
   isNewProduct?: boolean;
 }
 
+const isResidencyChoiceGroupName = (name: string) => {
+  const n = name.trim().toLowerCase();
+  if (!n) return false;
+  if (n.includes('미국 거주자 구분') && n.includes('기타 입장료')) return true;
+  if (n === '미국 거주자 구분' || n === '미국 비거주자 구분') return true;
+  if (n.includes('resident') && (n.includes('admission') || n.includes('입장'))) return true;
+  if (n.includes('us resident') && n.includes('other')) return true;
+  return false;
+};
+
+const isAntelopeChoiceGroupName = (name: string) =>
+  /앤텔롭|antelope/i.test(name);
+
 export default function DynamicPricingManager({ 
   productId, 
   onSave
 }: DynamicPricingManagerProps) {
   const t = useTranslations('products.dynamicPricingPage');
+  const locale = useLocale();
+  const isKoUi = locale === 'ko' || locale.startsWith('ko');
   // 뷰 모드 상태
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -119,6 +140,10 @@ export default function DynamicPricingManager({
   
   // 초이스별 가격 설정 뷰 모드 (카드 / 테이블)
   const [choicePricingViewMode, setChoicePricingViewMode] = useState<'card' | 'table'>('table');
+  /** absolute: 초이스별 최종 판매가 | base_plus: 기본가 + 초이스 추가금/할인 */
+  const [choicePricingMode, setChoicePricingMode] = useState<ChoicePricingMode>('absolute');
+  /** base_plus 모드: 옵션(미국 거주자, 로어 등)별 단가 */
+  const [optionsPricing, setOptionsPricing] = useState<Record<string, OptionUnitPrice>>({});
   
   // 채널 수정 모달 상태
   const [editingChannel, setEditingChannel] = useState<{
@@ -205,28 +230,43 @@ export default function DynamicPricingManager({
 
   /** 테이블 뷰용 초이스 그룹 컬럼 (옵션 없는 그룹은 숨김) */
   const choiceGroupColumns = useMemo(() => {
+    const toDisplayName = (nameKo: string, nameEn: string, fallback: string) => {
+      const raw = (isKoUi ? nameKo || nameEn : nameEn || nameKo) || fallback;
+      if (isResidencyChoiceGroupName(nameKo) || isResidencyChoiceGroupName(nameEn) || isResidencyChoiceGroupName(raw)) {
+        return t('choiceGroupResidencyShort');
+      }
+      return raw;
+    };
+
     const fromGroups = (choiceGroups || [])
       .filter((group) => Array.isArray(group.options) && group.options.length > 0)
-      .map((group, index) => ({
-        id: group.id || `group-${index}`,
-        name: group.name_ko || group.name || t('choiceGroupN', { n: index + 1 }),
-      }));
+      .map((group, index) => {
+        const nameKo = group.name_ko || group.name || '';
+        const nameEn = group.name || group.name_ko || '';
+        return {
+          id: group.id || `group-${index}`,
+          name: toDisplayName(nameKo, nameEn, t('choiceGroupN', { n: index + 1 })),
+          wide: isAntelopeChoiceGroupName(nameKo) || isAntelopeChoiceGroupName(nameEn),
+        };
+      });
 
     if (fromGroups.length > 0) return fromGroups;
 
     const firstDetails = choiceCombinations[0]?.combination_details;
     if (firstDetails && firstDetails.length > 0) {
-      return firstDetails.map((detail, index) => ({
-        id: detail.groupId || `group-${index}`,
-        name:
-          detail.groupNameKo ||
-          detail.groupName ||
-          t('choiceGroupN', { n: index + 1 }),
-      }));
+      return firstDetails.map((detail, index) => {
+        const nameKo = detail.groupNameKo || detail.groupName || '';
+        const nameEn = detail.groupName || detail.groupNameKo || '';
+        return {
+          id: detail.groupId || `group-${index}`,
+          name: toDisplayName(nameKo, nameEn, t('choiceGroupN', { n: index + 1 })),
+          wide: isAntelopeChoiceGroupName(nameKo) || isAntelopeChoiceGroupName(nameEn),
+        };
+      });
     }
 
     return [];
-  }, [choiceGroups, choiceCombinations, t]);
+  }, [choiceGroups, choiceCombinations, t, isKoUi]);
 
   const {
     pricingConfig,
@@ -642,9 +682,6 @@ export default function DynamicPricingManager({
 
   // 상품 sub_category 상태
   const [productSubCategory, setProductSubCategory] = useState<string | null>(null);
-  
-  // 홈페이지 가격 정보 테이블 접기/펼치기 상태
-  const [isHomepagePriceTableExpanded, setIsHomepagePriceTableExpanded] = useState(false);
 
   // 상품 기본 가격 및 홈페이지 가격 타입 불러오기
   useEffect(() => {
@@ -951,6 +988,31 @@ export default function DynamicPricingManager({
 
   // 채널 수수료 자동 불러오기 (채널 선택 시)
   const lastSelectedChannelRef = useRef<string>('');
+
+  // 선택된 채널의 최신 가격 규칙에서 계산 방식 동기화
+  useEffect(() => {
+    if (!selectedChannel || !dynamicPricingData.length) return;
+    const channelRules = dynamicPricingData
+      .flatMap((d) => d.rules)
+      .filter((r) => r.channel_id === selectedChannel && (!selectedVariant || r.variant_key === selectedVariant || (!r.variant_key && selectedVariant === 'default')))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const latest = channelRules[0];
+    if (latest?.price_calculation_method) {
+      setChoicePricingMode(parseChoicePricingMode(latest.price_calculation_method));
+    }
+    if (latest?.options_pricing && typeof latest.options_pricing === 'object') {
+      const nextOptions: Record<string, OptionUnitPrice> = {};
+      Object.entries(latest.options_pricing).forEach(([optionId, data]) => {
+        if (!data || typeof data !== 'object') return;
+        nextOptions[optionId] = {
+          adult_price: Number((data as { adult_price?: number }).adult_price ?? 0),
+          child_price: Number((data as { child_price?: number }).child_price ?? 0),
+          infant_price: Number((data as { infant_price?: number }).infant_price ?? 0),
+        };
+      });
+      setOptionsPricing(nextOptions);
+    }
+  }, [selectedChannel, selectedVariant, dynamicPricingData]);
   
   useEffect(() => {
     // 채널이 선택되었을 때 해당 채널의 수수료(%) 값을 불러옴
@@ -1625,15 +1687,50 @@ export default function DynamicPricingManager({
           }
         });
         
-        // calculationConfig.choicePricing에서 기본 가격 정보는 추가하지 않음
-        // 사용자가 명시적으로 입력한 값만 저장
-        
+        // 초이스 통합 결과 정규화 (모드에 맞게 ota_sale_price / 추가금 정리)
+        const foundChannelForSave = channelGroups
+          .flatMap((group) => group.channels)
+          .find((ch) => ch.id === channelId);
+        const isSinglePriceForSave =
+          ((foundChannelForSave as { pricing_type?: string } | undefined)?.pricing_type || 'separate') === 'single';
+        const channelBaseForSave = {
+          adult: productBasePrice.adult + priceAdjustmentAdult,
+          child: productBasePrice.child + priceAdjustmentChild,
+          infant: productBasePrice.infant + priceAdjustmentInfant,
+        };
+
+        // base_plus: 옵션별 단가를 조합별로 합산해 choices_pricing 생성
+        let choicesForNormalize = allChoicesPricing as Record<string, Record<string, unknown>>;
+        if (choicePricingMode === 'base_plus') {
+          const expanded = expandOptionsPricingToChoicesPricing(optionsPricing, choiceCombinations);
+          const mergedExpanded: Record<string, Record<string, unknown>> = {};
+          Object.entries(expanded).forEach(([comboId, prices]) => {
+            const prev = (allChoicesPricing[comboId] || {}) as Record<string, unknown>;
+            mergedExpanded[comboId] = {
+              ...prices,
+              ...(prev.not_included_price !== undefined ? { not_included_price: prev.not_included_price } : {}),
+              ...(prev.not_included_price_adult !== undefined ? { not_included_price_adult: prev.not_included_price_adult } : {}),
+              ...(prev.not_included_price_child !== undefined ? { not_included_price_child: prev.not_included_price_child } : {}),
+              ...(prev.not_included_price_infant !== undefined ? { not_included_price_infant: prev.not_included_price_infant } : {}),
+            };
+          });
+          choicesForNormalize = mergedExpanded;
+        }
+
+        const normalizedChoicesPricing = normalizeChoicesPricingForMode(
+          choicesForNormalize,
+          choicePricingMode,
+          channelBaseForSave,
+          isSinglePriceForSave
+        );
+
         // 디버깅: 통합된 초이스 확인
         console.log('초이스 통합 결과:', {
           date,
           channel_id: channelId,
-          choicesCount: Object.keys(allChoicesPricing).length,
-          choices: Object.keys(allChoicesPricing),
+          choicePricingMode,
+          choicesCount: Object.keys(normalizedChoicesPricing).length,
+          choices: Object.keys(normalizedChoicesPricing),
           existingCount: Object.keys(existingChoices).length,
           currentInputCount: Object.keys(currentInputChoices).length
         });
@@ -1655,6 +1752,8 @@ export default function DynamicPricingManager({
           price_adjustment_adult: priceAdjustmentAdult,
           price_adjustment_child: priceAdjustmentChild,
           price_adjustment_infant: priceAdjustmentInfant,
+          price_calculation_method: choicePricingMode,
+          ...(choicePricingMode === 'base_plus' ? { options_pricing: optionsPricing } : {}),
           inclusions_ko: ((pricingConfig as Record<string, unknown>).inclusions_ko as string) || null,
           exclusions_ko: ((pricingConfig as Record<string, unknown>).exclusions_ko as string) || null,
           inclusions_en: ((pricingConfig as Record<string, unknown>).inclusions_en as string) || null,
@@ -1669,7 +1768,7 @@ export default function DynamicPricingManager({
         const noChoiceData = (pricingConfig.choices_pricing as any)?.[noChoiceKey];
         
         // no_choice 데이터가 있으면 allChoicesPricing에 포함 (ota_sale_price와 not_included_price만 저장)
-        if (noChoiceData && Object.keys(allChoicesPricing).length === 0) {
+        if (noChoiceData && Object.keys(normalizedChoicesPricing).length === 0) {
           const noChoiceNotIncludedPrice = noChoiceData.not_included_price !== undefined && noChoiceData.not_included_price !== null
             ? noChoiceData.not_included_price
             : notIncludedPrice;
@@ -1687,7 +1786,7 @@ export default function DynamicPricingManager({
           }
           
           if (Object.keys(noChoiceCleanedData).length > 0) {
-            allChoicesPricing[noChoiceKey] = noChoiceCleanedData;
+            normalizedChoicesPricing[noChoiceKey] = noChoiceCleanedData;
           }
         }
         
@@ -1697,7 +1796,7 @@ export default function DynamicPricingManager({
           ...commonFields,
           price_type: 'dynamic' as const, // 항상 'dynamic'으로 설정
           not_included_price: notIncludedPrice,
-          choices_pricing: allChoicesPricing
+          choices_pricing: normalizedChoicesPricing
         } as SimplePricingRuleDto;
         rulesData.push(ruleData);
         
@@ -1706,8 +1805,9 @@ export default function DynamicPricingManager({
           channel_id: ruleData.channel_id,
           variant_key: ruleData.variant_key,
           price_type: ruleData.price_type,
-          choicesCount: Object.keys(allChoicesPricing).length,
-          choices: Object.keys(allChoicesPricing)
+          price_calculation_method: ruleData.price_calculation_method,
+          choicesCount: Object.keys(normalizedChoicesPricing).length,
+          choices: Object.keys(normalizedChoicesPricing)
         });
       }
     }
@@ -1718,6 +1818,7 @@ export default function DynamicPricingManager({
         date: r.date,
         channel_id: r.channel_id,
         price_type: r.price_type,
+        price_calculation_method: r.price_calculation_method,
         choicesCount: Object.keys(r.choices_pricing || {}).length
       }))
     });
@@ -1851,7 +1952,7 @@ export default function DynamicPricingManager({
       setBatchProgress(null);
       setMessage(`❌ ${t('saveFailed')}: ${error instanceof Error ? error.message : ''}`);
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData]);
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData, choicePricingMode, selectedVariant, productBasePrice, t, optionsPricing, choiceCombinations]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
@@ -1881,6 +1982,20 @@ export default function DynamicPricingManager({
       not_included_price: rule.not_included_price || 0,
       choices_pricing: choicesPricing
     } as any);
+
+    setChoicePricingMode(parseChoicePricingMode(rule.price_calculation_method));
+    if (rule.options_pricing && typeof rule.options_pricing === 'object') {
+      const nextOptions: Record<string, OptionUnitPrice> = {};
+      Object.entries(rule.options_pricing).forEach(([optionId, data]) => {
+        if (!data || typeof data !== 'object') return;
+        nextOptions[optionId] = {
+          adult_price: Number((data as any).adult_price ?? 0),
+          child_price: Number((data as any).child_price ?? 0),
+          infant_price: Number((data as any).infant_price ?? 0),
+        };
+      });
+      setOptionsPricing(nextOptions);
+    }
     
     setSelectedDates([rule.date]);
     handleChannelSelect(rule.channel_id);
@@ -2096,10 +2211,6 @@ export default function DynamicPricingManager({
             initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
             selectedDates={selectedDates}
             onDateToggle={handleDateToggle}
-            isSaleAvailable={!!pricingConfig.is_sale_available}
-            onSaleAvailableToggle={() =>
-              handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })
-            }
           />
 
           <PriceCalculator
@@ -2292,12 +2403,130 @@ export default function DynamicPricingManager({
           </div>
              </div>
 
-        {/* 3열: 기본 가격 + 초이스별 가격 설정 */}
+        {/* 3열: 가격 계산 방식 + 기본 가격 + 초이스 가격 */}
         <div className="space-y-4">
+          {(() => {
+            const foundChannelForMode = selectedChannel
+              ? channelGroups.flatMap((g) => g.channels).find((ch) => ch.id === selectedChannel)
+              : null;
+            const isSinglePriceForMode =
+              ((foundChannelForMode as { pricing_type?: string } | undefined)?.pricing_type || 'separate') === 'single';
+
+            const switchToAbsolute = () => {
+              if (choicePricingMode === 'absolute') return;
+              const currentPricing = (pricingConfig.choices_pricing || {}) as Record<string, Record<string, unknown>>;
+              const channelAdjAdult = ((pricingConfig as Record<string, unknown>).price_adjustment_adult as number | undefined)
+                ?? ((pricingConfig.adult_price ?? 0) - productBasePrice.adult);
+              const channelAdjChild = ((pricingConfig as Record<string, unknown>).price_adjustment_child as number | undefined)
+                ?? ((pricingConfig.child_price ?? 0) - productBasePrice.child);
+              const channelAdjInfant = ((pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined)
+                ?? ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
+              const base = {
+                adult: productBasePrice.adult + channelAdjAdult,
+                child: productBasePrice.child + channelAdjChild,
+                infant: productBasePrice.infant + channelAdjInfant,
+              };
+              const nextPricing: Record<string, Record<string, unknown>> = {};
+              Object.entries(currentPricing).forEach(([choiceId, data]) => {
+                if (!data || typeof data !== 'object') return;
+                const resolved = resolveChoiceFinalPrices({
+                  mode: 'base_plus',
+                  base,
+                  choiceData: data as any,
+                  isSinglePrice: isSinglePriceForMode,
+                });
+                nextPricing[choiceId] = {
+                  ...data,
+                  adult_price: resolved.adult,
+                  child_price: resolved.child,
+                  infant_price: resolved.infant,
+                  adult: resolved.adult,
+                  child: resolved.child,
+                  infant: resolved.infant,
+                  ota_sale_price: resolved.adult,
+                };
+              });
+              updatePricingConfig({ choices_pricing: nextPricing });
+              setChoicePricingMode('absolute');
+            };
+
+            const switchToBasePlus = () => {
+              if (choicePricingMode === 'base_plus') return;
+              const currentPricing = (pricingConfig.choices_pricing || {}) as Record<string, Record<string, unknown>>;
+              const channelAdjAdult = ((pricingConfig as Record<string, unknown>).price_adjustment_adult as number | undefined)
+                ?? ((pricingConfig.adult_price ?? 0) - productBasePrice.adult);
+              const channelAdjChild = ((pricingConfig as Record<string, unknown>).price_adjustment_child as number | undefined)
+                ?? ((pricingConfig.child_price ?? 0) - productBasePrice.child);
+              const channelAdjInfant = ((pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined)
+                ?? ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
+              const base = {
+                adult: productBasePrice.adult + channelAdjAdult,
+                child: productBasePrice.child + channelAdjChild,
+                infant: productBasePrice.infant + channelAdjInfant,
+              };
+              const nextPricing: Record<string, Record<string, unknown>> = {};
+              Object.entries(currentPricing).forEach(([choiceId, data]) => {
+                if (!data || typeof data !== 'object') return;
+                const resolved = resolveChoiceFinalPrices({
+                  mode: 'absolute',
+                  base,
+                  choiceData: data as any,
+                  isSinglePrice: isSinglePriceForMode,
+                });
+                nextPricing[choiceId] = {
+                  ...data,
+                  adult_price: resolved.adjustmentAdult,
+                  child_price: resolved.adjustmentChild,
+                  infant_price: resolved.adjustmentInfant,
+                  adult: resolved.adjustmentAdult,
+                  child: resolved.adjustmentChild,
+                  infant: resolved.adjustmentInfant,
+                };
+                delete nextPricing[choiceId].ota_sale_price;
+              });
+              updatePricingConfig({ choices_pricing: nextPricing });
+              setChoicePricingMode('base_plus');
+            };
+
+            return (
+              <div className="rounded-xl border border-border/60 bg-white p-4 shadow-sm">
+                <div className="mb-2 text-sm font-semibold text-foreground">{t('choicePricingCalcMode')}</div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={switchToAbsolute}
+                    className={`flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      choicePricingMode === 'absolute'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border bg-muted/20 text-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{t('choicePricingModeAbsolute')}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{t('choicePricingModeAbsoluteHint')}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={switchToBasePlus}
+                    className={`flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      choicePricingMode === 'base_plus'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border bg-muted/20 text-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{t('choicePricingModeBasePlus')}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{t('choicePricingModeBasePlusHint')}</div>
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex flex-wrap items-center gap-2 mb-2">
-              <h4 className="text-md font-semibold text-gray-900">{t('basePriceSection')}</h4>
+              <h4 className="text-md font-semibold text-gray-900">
+                {choicePricingMode === 'base_plus' ? t('channelBasePriceEditable') : t('basePriceSection')}
+              </h4>
               <CustomerPageLocationHint
                 paths={[
                   ['상품 목록', '상품 카드', '시작 가격'],
@@ -2310,7 +2539,7 @@ export default function DynamicPricingManager({
             </div>
             
             <div className="space-y-4 mt-4">
-              {/* 상품 기본 가격 (읽기 전용) */}
+              {/* 상품/채널 기본 가격 */}
               {(() => {
                 // 선택된 채널의 pricing_type 확인
                 let foundChannel = null;
@@ -2320,7 +2549,119 @@ export default function DynamicPricingManager({
                 }
                 const pricingType = (foundChannel as any)?.pricing_type || 'separate';
                 const isSinglePrice = pricingType === 'single';
+                const channelAdjAdult = ((pricingConfig as Record<string, unknown>).price_adjustment_adult as number | undefined)
+                  ?? ((pricingConfig.adult_price ?? 0) - productBasePrice.adult);
+                const channelAdjChild = ((pricingConfig as Record<string, unknown>).price_adjustment_child as number | undefined)
+                  ?? ((pricingConfig.child_price ?? 0) - productBasePrice.child);
+                const channelAdjInfant = ((pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined)
+                  ?? ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
+                const channelBaseAdult = productBasePrice.adult + channelAdjAdult;
+                const channelBaseChild = productBasePrice.child + channelAdjChild;
+                const channelBaseInfant = productBasePrice.infant + channelAdjInfant;
+
+                const updateChannelBase = (field: 'adult' | 'child' | 'infant', value: number) => {
+                  const nextAdult = field === 'adult' ? value : channelBaseAdult;
+                  const nextChild = field === 'child' ? value : channelBaseChild;
+                  const nextInfant = field === 'infant' ? value : channelBaseInfant;
+                  handlePricingConfigUpdate({
+                    adult_price: nextAdult,
+                    child_price: nextChild,
+                    infant_price: nextInfant,
+                    price_adjustment_adult: nextAdult - productBasePrice.adult,
+                    price_adjustment_child: nextChild - productBasePrice.child,
+                    price_adjustment_infant: nextInfant - productBasePrice.infant,
+                  });
+                };
                 
+                if (choicePricingMode === 'base_plus') {
+                  return (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        {t('channelBasePriceEditable')}
+                      </label>
+                      <p className="text-xs text-muted-foreground mb-2">{t('channelBasePriceEditableHint')}</p>
+                      {isSinglePrice ? (
+                        <div>
+                          <label className="block text-[11px] text-gray-600 mb-1">{t('salePrice')}</label>
+                          <input
+                            type="number"
+                            value={channelBaseAdult === 0 ? '' : channelBaseAdult}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const n = v === '' || v === '-' ? 0 : parseFloat(v);
+                              if (v !== '' && v !== '-' && isNaN(n)) return;
+                              handlePricingConfigUpdate({
+                                adult_price: n,
+                                child_price: n,
+                                infant_price: n,
+                                price_adjustment_adult: n - productBasePrice.adult,
+                                price_adjustment_child: n - productBasePrice.child,
+                                price_adjustment_infant: n - productBasePrice.infant,
+                              });
+                            }}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
+                            placeholder="0"
+                          />
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {t('productBasePriceCommon')}: ${productBasePrice.adult.toFixed(2)}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[11px] text-gray-600 mb-1">{t('adult')}</label>
+                            <input
+                              type="number"
+                              value={channelBaseAdult === 0 ? '' : channelBaseAdult}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '' || v === '-') { updateChannelBase('adult', 0); return; }
+                                const n = parseFloat(v);
+                                if (!isNaN(n)) updateChannelBase('adult', n);
+                              }}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-gray-600 mb-1">{t('child')}</label>
+                            <input
+                              type="number"
+                              value={channelBaseChild === 0 ? '' : channelBaseChild}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '' || v === '-') { updateChannelBase('child', 0); return; }
+                                const n = parseFloat(v);
+                                if (!isNaN(n)) updateChannelBase('child', n);
+                              }}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-gray-600 mb-1">{t('infant')}</label>
+                            <input
+                              type="number"
+                              value={channelBaseInfant === 0 ? '' : channelBaseInfant}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '' || v === '-') { updateChannelBase('infant', 0); return; }
+                                const n = parseFloat(v);
+                                if (!isNaN(n)) updateChannelBase('infant', n);
+                              }}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-ring focus:border-ring"
+                              placeholder="0"
+                            />
+                          </div>
+                          <p className="col-span-3 text-[11px] text-muted-foreground">
+                            {t('productBasePriceCommon')}: {t('adult')} ${productBasePrice.adult.toFixed(2)} / {t('child')} ${productBasePrice.child.toFixed(2)} / {t('infant')} ${productBasePrice.infant.toFixed(2)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 return (
                   <div className="relative group">
                     <label className="block text-xs font-medium text-gray-700 mb-2">
@@ -2345,7 +2686,6 @@ export default function DynamicPricingManager({
                         </div>
                       )}
                     </div>
-                    {/* 마우스 오버 시 표시되는 안내 텍스트 */}
                     <div className="absolute left-0 top-full mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                       <div className="bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
                         {t('basePriceEditHint')}
@@ -2354,236 +2694,6 @@ export default function DynamicPricingManager({
                   </div>
                 );
               })()}
-
-              {/* 홈페이지 가격 정보 (20%할인) - 초이스가 있을 때만 표시 */}
-              {choiceCombinations.length > 0 && (() => {
-                // 홈페이지 채널 찾기
-                const homepageChannel = channelGroups
-                  .flatMap(group => group.channels)
-                  .find(ch => {
-                    const id = ch.id?.toLowerCase() || '';
-                    const name = ch.name?.toLowerCase() || '';
-                    return id === 'm00001' || 
-                           id === 'homepage' ||
-                           name.includes('홈페이지') ||
-                           name.includes('homepage') ||
-                           name.includes('website') ||
-                           name.includes('웹사이트');
-                  });
-
-                if (!homepageChannel) return null;
-
-                const formatPrice = (price: number) => {
-                  return `$${price.toFixed(2)}`;
-                };
-
-                const isSinglePrice = homepagePricingType === 'single';
-                
-                return (
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setIsHomepagePriceTableExpanded(!isHomepagePriceTableExpanded)}
-                          className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
-                        >
-                          {isHomepagePriceTableExpanded ? (
-                            <ChevronUp className="h-4 w-4 text-purple-600" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-purple-600" />
-                          )}
-                          <h5 className="text-sm font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                            {t('homepagePriceInfo')}
-                          </h5>
-                        </button>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
-                          {isSinglePrice ? t('singlePrice') : t('separatePrice')}
-                        </span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
-                          {t('forReference')}
-                        </span>
-                      </div>
-                    </div>
-                    {isHomepagePriceTableExpanded && (
-                      <div className="overflow-x-auto rounded-xl shadow-lg border border-purple-200 bg-white">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-gradient-to-r from-purple-600 via-purple-500 to-pink-500">
-                            <th className="text-center py-2 px-3 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30 w-1/3">
-                              {t('choice')}
-                            </th>
-                            <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              {t('base')}
-                            </th>
-                            <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              {t('choice')}
-                            </th>
-                            <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              {t('salePrice')}
-                            </th>
-                            <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              Gross
-                            </th>
-                            <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider">
-                              Net
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {choiceCombinations.map((combination) => {
-                            const combinationName = combination.combination_name_ko || combination.combination_name || combination.id;
-                            
-                            // 홈페이지 가격 계산
-                            const baseProductPrice = {
-                              adult: productBasePrice.adult || 0,
-                              child: productBasePrice.child || 0,
-                              infant: productBasePrice.infant || 0
-                            };
-                            
-                            // 초이스 가격 찾기 (M00001 채널의 고정값, 유연한 매칭 사용)
-                            let homepageChoiceData = homepagePricingConfig 
-                              ? findHomepageChoiceData(combination, homepagePricingConfig)
-                              : {};
-                            
-                            // 2. homepagePricingConfig에서 찾지 못한 경우, combination의 기본값 사용
-                            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0 || 
-                                 (homepageChoiceData.adult_price === 0 && homepageChoiceData.adult === 0)) && 
-                                combination) {
-                              homepageChoiceData = {
-                                adult_price: combination.adult_price || 0,
-                                child_price: combination.child_price || 0,
-                                infant_price: combination.infant_price || 0
-                              };
-                            }
-                            
-                            const choicePrice = {
-                              adult_price: homepageChoiceData?.adult_price || homepageChoiceData?.adult || 0,
-                              child_price: homepageChoiceData?.child_price || homepageChoiceData?.child || 0,
-                              infant_price: homepageChoiceData?.infant_price || homepageChoiceData?.infant || 0
-                            };
-                            
-                            // 단일 가격인 경우 성인 가격만 사용
-                            const basePrice = {
-                              adult: baseProductPrice.adult,
-                              child: isSinglePrice ? baseProductPrice.adult : baseProductPrice.child,
-                              infant: isSinglePrice ? baseProductPrice.adult : baseProductPrice.infant
-                            };
-                            
-                            // 초이스: 초이스별 가격 (M00001 채널의 고정값)
-                            const choicePriceValue = {
-                              adult: choicePrice.adult_price || 0,
-                              child: isSinglePrice ? choicePrice.adult_price || 0 : (choicePrice.child_price || 0),
-                              infant: isSinglePrice ? choicePrice.adult_price || 0 : (choicePrice.infant_price || 0)
-                            };
-                            
-                            // 판매가: 상품 기본가격 + 초이스별 가격
-                            const salePrice = {
-                              adult: basePrice.adult + choicePriceValue.adult,
-                              child: basePrice.child + choicePriceValue.child,
-                              infant: basePrice.infant + choicePriceValue.infant
-                            };
-                            
-                            // Gross: 판매가에서 20% 할인가격
-                            const grossPrice = {
-                              adult: salePrice.adult * 0.8,
-                              child: salePrice.child * 0.8,
-                              infant: salePrice.infant * 0.8
-                            };
-                            
-                            // Net: Gross - 초이스 가격
-                            const netPrice = {
-                              adult: grossPrice.adult - choicePriceValue.adult,
-                              child: grossPrice.child - choicePriceValue.child,
-                              infant: grossPrice.infant - choicePriceValue.infant
-                            };
-                            
-                            // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
-                            const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
-                            const rowBgClass = isLowerAntelope 
-                              ? 'bg-gradient-to-r from-purple-50 via-purple-50/50 to-white hover:from-purple-100 hover:via-purple-100/50' 
-                              : 'bg-gradient-to-r from-pink-50 via-pink-50/50 to-white hover:from-pink-100 hover:via-pink-100/50';
-                            const textClass = isLowerAntelope 
-                              ? 'text-purple-900 font-bold' 
-                              : 'text-pink-900 font-bold';
-                            const accentClass = isLowerAntelope 
-                              ? 'border-l-4 border-purple-500' 
-                              : 'border-l-4 border-pink-500';
-                            
-                            return (
-                              <tr 
-                                key={combination.id} 
-                                className={`${rowBgClass} ${accentClass} transition-all duration-200 hover:shadow-md group`}
-                              >
-                                <td className={`py-2 px-3 ${textClass} text-xs font-semibold`}>
-                                  <span className="leading-tight">{combinationName}</span>
-                                </td>
-                                <td className="py-2 px-2 text-right text-gray-700 text-xs font-medium group-hover:text-gray-900">
-                                  {formatPrice(basePrice.adult)}
-                                  {!isSinglePrice && (
-                                    <>
-                                      <br />
-                                      <span className="text-gray-500 text-[10px]">{t('child')}: {formatPrice(basePrice.child)}</span>
-                                      <br />
-                                      <span className="text-gray-500 text-[10px]">{t('infant')}: {formatPrice(basePrice.infant)}</span>
-                                    </>
-                                  )}
-                                </td>
-                                <td className="py-2 px-2 text-right text-gray-700 text-xs font-medium group-hover:text-gray-900">
-                                  {formatPrice(choicePriceValue.adult)}
-                                  {!isSinglePrice && (
-                                    <>
-                                      <br />
-                                      <span className="text-gray-500 text-[10px]">아동: {formatPrice(choicePriceValue.child)}</span>
-                                      <br />
-                                      <span className="text-gray-500 text-[10px]">유아: {formatPrice(choicePriceValue.infant)}</span>
-                                    </>
-                                  )}
-                                </td>
-                                <td className="py-2 px-2 text-right text-primary text-xs font-bold group-hover:text-foreground">
-                                  {formatPrice(salePrice.adult)}
-                                  {!isSinglePrice && (
-                                    <>
-                                      <br />
-                                      <span className="text-primary text-[10px]">{t('child')}: {formatPrice(salePrice.child)}</span>
-                                      <br />
-                                      <span className="text-primary text-[10px]">{t('infant')}: {formatPrice(salePrice.infant)}</span>
-                                    </>
-                                  )}
-                                </td>
-                                <td className="py-2 px-2 text-right text-indigo-700 text-xs font-bold group-hover:text-indigo-900">
-                                  {formatPrice(grossPrice.adult)}
-                                  {!isSinglePrice && (
-                                    <>
-                                      <br />
-                                      <span className="text-indigo-500 text-[10px]">{t('child')}: {formatPrice(grossPrice.child)}</span>
-                                      <br />
-                                      <span className="text-indigo-500 text-[10px]">{t('infant')}: {formatPrice(grossPrice.infant)}</span>
-                                    </>
-                                  )}
-                                </td>
-                                <td className="py-2 px-2 text-right text-emerald-700 text-xs font-extrabold group-hover:text-emerald-900">
-                                  {formatPrice(netPrice.adult)}
-                                  {!isSinglePrice && (
-                                    <>
-                                      <br />
-                                      <span className="text-emerald-500 text-[10px]">{t('child')}: {formatPrice(netPrice.child)}</span>
-                                      <br />
-                                      <span className="text-emerald-500 text-[10px]">{t('infant')}: {formatPrice(netPrice.infant)}</span>
-                                    </>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-
 
               {/* 수수료 - 한 줄에 2개 */}
               <div className="grid grid-cols-2 gap-3">
@@ -2707,8 +2817,8 @@ export default function DynamicPricingManager({
                               </div>
                             </div>
 
-          {/* 초이스별 가격 설정 */}
-          {choiceCombinations.length > 0 && (() => {
+          {/* 초이스별 가격 설정 / 옵션 단가 */}
+          {(choiceCombinations.length > 0 || (choicePricingMode === 'base_plus' && choiceGroups.length > 0)) && (() => {
             // OTA 채널인지 확인
             const foundChannel = selectedChannel ? channelGroups
               .flatMap(group => group.channels)
@@ -2744,7 +2854,9 @@ export default function DynamicPricingManager({
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <h4 className="text-md font-semibold text-gray-900">{t('choicePricingSection')}</h4>
+                  <h4 className="text-md font-semibold text-gray-900">
+                    {choicePricingMode === 'base_plus' ? t('choiceUnitPriceSection') : t('choicePricingSection')}
+                  </h4>
                   <CustomerPageLocationHint
                     paths={[
                       ['상품 상세', '우측 예약 패널', '옵션별 추가 금액'],
@@ -2753,6 +2865,7 @@ export default function DynamicPricingManager({
                     variant="compact"
                   />
                 </div>
+                {choicePricingMode === 'absolute' ? (
                 <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-100 shrink-0">
                   <button
                     type="button"
@@ -2771,9 +2884,22 @@ export default function DynamicPricingManager({
                     {t('cardView')}
                   </button>
                 </div>
+                ) : null}
               </div>
-              
-              {choicePricingViewMode === 'table' ? (
+
+              {choicePricingMode === 'base_plus' ? (
+                <ChoiceOptionUnitPricingPanel
+                  choiceGroups={choiceGroups}
+                  optionsPricing={optionsPricing}
+                  isSinglePrice={isTableChannelSinglePrice}
+                  onChange={(optionId, next) => {
+                    setOptionsPricing((prev) => ({
+                      ...prev,
+                      [optionId]: next,
+                    }));
+                  }}
+                />
+              ) : choicePricingViewMode === 'table' ? (
                 <div className="overflow-x-auto rounded-lg border border-gray-200 text-xs">
                   <table className="w-full min-w-[800px] text-xs">
                     <thead>
@@ -2782,7 +2908,9 @@ export default function DynamicPricingManager({
                           choiceGroupColumns.map((group) => (
                             <th
                               key={group.id}
-                              className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]"
+                              className={`text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px] ${
+                                group.wide ? 'min-w-[8.5rem]' : 'min-w-[5.5rem]'
+                              }`}
                             >
                               {group.name}
                             </th>
@@ -2805,12 +2933,16 @@ export default function DynamicPricingManager({
                             <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedInfant')}</th>
                           </>
                         )}
-                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('commissionLabel')} / {t('couponLabel')}</th>
-                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('netPriceLabel')}</th>
-                        {homepageChannel && (
+                        {!isHomepageChannelSelected && (
                           <>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('homepageLabel')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('differenceLabel')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('commissionLabel')} / {t('couponLabel')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('netPriceLabel')}</th>
+                            {homepageChannel && (
+                              <>
+                                <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('homepageLabel')}</th>
+                                <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('differenceLabel')}</th>
+                              </>
+                            )}
                           </>
                         )}
                       </tr>
@@ -2825,16 +2957,36 @@ export default function DynamicPricingManager({
                         const notIncludedPrice = choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null 
                           ? choiceNotIncludedPrice 
                           : ((pricingConfig as any)?.not_included_price || 0);
-                        const adultPrice = (currentChoiceData.adult_price as number) ?? (currentChoiceData.adult as number) ?? combination.adult_price ?? 0;
-                        const childPrice = (currentChoiceData.child_price as number) ?? (currentChoiceData.child as number) ?? combination.child_price ?? 0;
-                        const infantPrice = (currentChoiceData.infant_price as number) ?? (currentChoiceData.infant as number) ?? combination.infant_price ?? 0;
+                        const channelAdjAdult = ((pricingConfig as Record<string, unknown>).price_adjustment_adult as number | undefined)
+                          ?? ((pricingConfig.adult_price ?? 0) - productBasePrice.adult);
+                        const channelAdjChild = ((pricingConfig as Record<string, unknown>).price_adjustment_child as number | undefined)
+                          ?? ((pricingConfig.child_price ?? 0) - productBasePrice.child);
+                        const channelAdjInfant = ((pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined)
+                          ?? ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
+                        const channelBase = {
+                          adult: productBasePrice.adult + channelAdjAdult,
+                          child: productBasePrice.child + channelAdjChild,
+                          infant: productBasePrice.infant + channelAdjInfant,
+                        };
+                        const resolvedPrices = resolveChoiceFinalPrices({
+                          mode: choicePricingMode,
+                          base: channelBase,
+                          choiceData: currentChoiceData,
+                          isSinglePrice: isTableChannelSinglePrice,
+                        });
+                        const adultPrice = resolvedPrices.adult;
+                        const childPrice = resolvedPrices.child;
+                        const infantPrice = resolvedPrices.infant;
+                        const displaySaleSingle = isTableChannelSinglePrice
+                          ? (otaSalePrice > 0 ? otaSalePrice : adultPrice)
+                          : adultPrice;
                         const notIncludedAdult = (currentChoiceData.not_included_price_adult as number) ?? (currentChoiceData.not_included_price as number) ?? 0;
                         const notIncludedChild = (currentChoiceData.not_included_price_child as number) ?? 0;
                         const notIncludedInfant = (currentChoiceData.not_included_price_infant as number) ?? 0;
                         let netPrice = 0;
                         if (isTableChannelSinglePrice) {
-                          if (otaSalePrice > 0) {
-                            const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+                          if (displaySaleSingle > 0) {
+                            const baseNetPrice = displaySaleSingle * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
                             netPrice = notIncludedPrice > 0 ? baseNetPrice + notIncludedPrice : baseNetPrice;
                           }
                         } else {
@@ -2848,7 +3000,7 @@ export default function DynamicPricingManager({
                         let homepageNetPrice = 0;
                         let priceDifference = 0;
                         if (homepageChannel) {
-                          const saleForHomepage = isTableChannelSinglePrice ? otaSalePrice : (adultPrice + childPrice + infantPrice);
+                          const saleForHomepage = isTableChannelSinglePrice ? displaySaleSingle : (adultPrice + childPrice + infantPrice);
                           if (saleForHomepage > 0) {
                             const basePrice = productBasePrice.adult || 0;
                             let foundChoiceData = homepagePricingConfig ? findHomepageChoiceData(combination, homepagePricingConfig) : {};
@@ -2866,7 +3018,7 @@ export default function DynamicPricingManager({
                           const preservedData = {
                             ...currentChoiceDataRow,
                             not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice,
-                            ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice
+                            ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice,
                           };
                           const nextAdult = field === 'adult_price' ? numValue : (currentChoiceDataRow.adult_price as number) ?? (currentChoiceDataRow.adult as number) ?? combination.adult_price ?? 0;
                           const nextChild = field === 'child_price' ? numValue : (currentChoiceDataRow.child_price as number) ?? (currentChoiceDataRow.child as number) ?? combination.child_price ?? 0;
@@ -2910,23 +3062,15 @@ export default function DynamicPricingManager({
                           const byId = details.find((d) => d.groupId && d.groupId === groupId);
                           const detail = byId || details[groupIndex];
                           if (detail) {
-                            return {
-                              primary: detail.optionNameKo || detail.optionName || '-',
-                              secondary:
-                                detail.optionName && detail.optionNameKo && detail.optionName !== detail.optionNameKo
-                                  ? detail.optionName
-                                  : undefined,
-                            };
+                            if (isKoUi) {
+                              return detail.optionNameKo || detail.optionName || '-';
+                            }
+                            return detail.optionName || detail.optionNameKo || '-';
                           }
-                          return {
-                            primary: namePartsKo[groupIndex] || namePartsEn[groupIndex] || '-',
-                            secondary:
-                              namePartsKo[groupIndex] &&
-                              namePartsEn[groupIndex] &&
-                              namePartsKo[groupIndex] !== namePartsEn[groupIndex]
-                                ? namePartsEn[groupIndex]
-                                : undefined,
-                          };
+                          if (isKoUi) {
+                            return namePartsKo[groupIndex] || namePartsEn[groupIndex] || '-';
+                          }
+                          return namePartsEn[groupIndex] || namePartsKo[groupIndex] || '-';
                         };
 
                         return (
@@ -2935,18 +3079,23 @@ export default function DynamicPricingManager({
                               choiceGroupColumns.map((group, groupIndex) => {
                                 const label = getGroupOptionLabel(groupIndex, group.id);
                                 return (
-                                  <td key={`${combination.id}-${group.id}`} className="py-1.5 px-2 align-top">
-                                    <div className="font-medium text-gray-900 text-xs">{label.primary}</div>
-                                    {label.secondary ? (
-                                      <div className="text-[10px] text-gray-500 mt-0.5">{label.secondary}</div>
-                                    ) : null}
+                                  <td
+                                    key={`${combination.id}-${group.id}`}
+                                    className={`py-1.5 px-2 align-top ${
+                                      group.wide ? 'min-w-[8.5rem]' : 'min-w-[5.5rem]'
+                                    }`}
+                                  >
+                                    <div className="font-medium text-gray-900 text-xs">{label}</div>
                                   </td>
                                 );
                               })
                             ) : (
                               <td className="py-1.5 px-2 align-top">
-                                <div className="font-medium text-gray-900 text-xs">{combination.combination_name_ko || combination.combination_name}</div>
-                                <div className="text-[10px] text-gray-500 mt-0.5">{combination.combination_name}</div>
+                                <div className="font-medium text-gray-900 text-xs">
+                                  {isKoUi
+                                    ? combination.combination_name_ko || combination.combination_name
+                                    : combination.combination_name || combination.combination_name_ko}
+                                </div>
                               </td>
                             )}
                             {isTableChannelSinglePrice ? (
@@ -3027,20 +3176,24 @@ export default function DynamicPricingManager({
                                 </td>
                               </>
                             )}
-                            <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-[11px]">
-                              {commissionPercent}% / {couponPercent}%
-                            </td>
-                            <td className="py-1.5 px-1.5 align-top text-center font-medium text-xs">
-                              {netPrice > 0 ? `$${netPrice.toFixed(2)}` : '-'}
-                            </td>
-                            {homepageChannel && (
+                            {!isHomepageChannelSelected && (
                               <>
-                                <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-xs">
-                                  {homepageNetPrice > 0 ? `$${homepageNetPrice.toFixed(2)}` : '-'}
+                                <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-[11px]">
+                                  {commissionPercent}% / {couponPercent}%
                                 </td>
-                                <td className={`py-1.5 px-1.5 align-top text-center font-medium text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  {homepageNetPrice > 0 ? `${priceDifference >= 0 ? '+' : ''}$${priceDifference.toFixed(2)}` : '-'}
+                                <td className="py-1.5 px-1.5 align-top text-center font-medium text-xs">
+                                  {netPrice > 0 ? `$${netPrice.toFixed(2)}` : '-'}
                                 </td>
+                                {homepageChannel && (
+                                  <>
+                                    <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-xs">
+                                      {homepageNetPrice > 0 ? `$${homepageNetPrice.toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className={`py-1.5 px-1.5 align-top text-center font-medium text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {homepageNetPrice > 0 ? `${priceDifference >= 0 ? '+' : ''}$${priceDifference.toFixed(2)}` : '-'}
+                                    </td>
+                                  </>
+                                )}
                               </>
                             )}
                           </tr>
@@ -3179,14 +3332,17 @@ export default function DynamicPricingManager({
                       {/* 제목과 옵션 뱃지를 같은 줄에 배치 */}
                       <div className="flex items-center justify-between mb-1">
                         <h5 className="text-sm font-semibold text-gray-900">
-                          {combination.combination_name_ko || combination.combination_name}
+                          {isKoUi
+                            ? combination.combination_name_ko || combination.combination_name
+                            : combination.combination_name || combination.combination_name_ko}
                         </h5>
                         {/* 조합 구성 요소 표시 - 오른쪽 끝에 배치 */}
                         {combination.combination_details && combination.combination_details.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {combination.combination_details.map((detail, index) => {
-                              // 디버깅: 불필요한 로그 제거
-                              // console.log(`조합 ${combination.id}의 detail ${index}:`, detail);
+                              const optionLabel = isKoUi
+                                ? detail.optionNameKo || detail.optionName || t('option')
+                                : detail.optionName || detail.optionNameKo || t('option');
                               return (
                                 <span
                                   key={index}
@@ -3197,16 +3353,13 @@ export default function DynamicPricingManager({
                                     'bg-orange-100 text-orange-800'
                                   }`}
                                 >
-                                  {detail.optionNameKo || detail.optionName || t('option')}: ${detail.adult_price || 0}
+                                  {optionLabel}: ${detail.adult_price || 0}
                                 </span>
                               );
                             })}
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-gray-600">
-                        {combination.combination_name}
-                      </p>
                     </div>
                     
                     {isOTAChannel ? (

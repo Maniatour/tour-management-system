@@ -1,0 +1,41 @@
+================================================================================
+ADR 049 — Host book readiness smoke (Phase 6e.2)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Commerce isolation (6e.0–6e.1) proves DB stamps. Manual host book still needed a
+preflight for subdomain + host→operator resolve + Direct without calling checkout.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Evaluator: src/lib/operators/hostBookReadiness.ts
+   - subdomainConfigured
+   - routingEnvReady (informational env echo)
+   - hostResolveMatches ({sub}.localhost or localhost→Kovegas)
+   - catalogReadyForHost (products > 0)
+   - directChannelReady (ensure:false)
+   - debugEndpointAvailable (dev note)
+
+2. pilot-status.hostBook + Operator B manual card + E2E step hostBookReadiness
+
+3. Non-goals: no create-checkout / Stripe / inquiry writes
+
+
+Next
+--------------------------------------------------------------------------------
+Manual Operator B host book + Connect opt-in when Host book + Commerce badges green
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/hostBookReadiness.ts
+src/app/api/admin/operators/pilot-status/route.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

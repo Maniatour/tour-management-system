@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Database } from '@/lib/database.types'
+import { applyActiveOperatorSession } from '@/lib/operators/applyActiveOperatorSession'
 
 const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
 
@@ -71,10 +72,12 @@ export async function resolveFinancialApiAuth(request: NextRequest): Promise<
     if (userErr || !user?.email) {
       const cookieAuth = await resolveCookieSession()
       if (cookieAuth) {
+        await applyActiveOperatorSession(cookieAuth.supabase, request)
         return { ok: true, supabase: cookieAuth.supabase, userEmail: cookieAuth.userEmail }
       }
       return { ok: false, response: NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }) }
     }
+    await applyActiveOperatorSession(supabase, request)
     return { ok: true, supabase, userEmail: user.email }
   }
 
@@ -82,5 +85,6 @@ export async function resolveFinancialApiAuth(request: NextRequest): Promise<
   if (!cookieAuth) {
     return { ok: false, response: NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }) }
   }
+  await applyActiveOperatorSession(cookieAuth.supabase, request)
   return { ok: true, supabase: cookieAuth.supabase, userEmail: cookieAuth.userEmail }
 }

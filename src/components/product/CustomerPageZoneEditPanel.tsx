@@ -305,12 +305,14 @@ export default function CustomerPageZoneEditPanel({
       setSlotBindings(bindings)
       setSlotValues({})
     }
-    if (useDetailFieldSlots || config?.editType === 'detail-fields' || config?.editType === 'field-picker') {
+    // Reset detail slots on zone change only — not when useDetailFieldSlots flips
+    // after picking a field (that would clear pickedField and bounce back to the list).
+    if (config?.editType === 'detail-fields' || config?.editType === 'field-picker') {
       setDetailSlotBindings({})
       setDetailSlotValues({})
     }
     onDirtyChange?.(false)
-  }, [resolvedZone, zone, onDirtyChange, useBasicFieldSlots, basicFieldSlots, useDetailFieldSlots, config?.editType])
+  }, [resolvedZone, zone, onDirtyChange, useBasicFieldSlots, basicFieldSlots, config?.editType])
 
   const captureSnapshot = () => {
     if (useBasicFieldSlots) {

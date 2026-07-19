@@ -1,0 +1,60 @@
+================================================================================
+ADR 019 — OTA Inbound Booking Webhooks (Phase 4d)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Outbound rate push (4a–4c) exists. Partner OTAs also send booking notifications
+inbound. We must never invent reservations for unmapped SKUs.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Table ota_inbound_events (inbox): idempotent on
+   (operator_id, platform, external_event_id).
+
+2. Public webhook: POST /api/webhooks/ota/:platform
+   Auth: x-ota-webhook-secret or Bearer == credentials_ref env
+   or OTA_{PLATFORM}_WEBHOOK_SECRET / OTA_WEBHOOK_SECRET.
+   Always stores received row.
+
+3. Process (staff or auto when COMMERCE_V2_OTA_INBOUND=1 on create):
+   - no SKU / no mapping → skipped
+   - mapping found, flag OFF or autoCreateInquiry≠true → processed (mapped_only)
+   - flag ON + config.autoCreateInquiry=true + guest/date fields →
+     createPendingCustomerBooking status=inquiry
+
+4. Admin:
+   GET/POST /api/admin/commerce/ota/inbound
+   UI on OTA mappings page: test ingest + process batch.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Full official Viator webhook schema parity
+- Auto-cancel/amend of existing reservations
+- Creating confirmed paid bookings from OTA without staff review
+
+
+Pilot
+--------------------------------------------------------------------------------
+1. Apply migration 20260718180000_commerce_ota_inbound_events.sql
+2. Map product ↔ external SKU
+3. Set OTA_VIATOR_WEBHOOK_SECRET=…
+4. POST webhook or Admin “테스트 수신”
+5. Process inbound → mapped_only (default)
+6. Optional: COMMERCE_V2_OTA_INBOUND=1 + config.autoCreateInquiry=true
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718180000_commerce_ota_inbound_events.sql
+src/lib/commerce/ota/receiveInboundEvent.ts
+src/lib/commerce/ota/processInboundEvent.ts
+src/lib/commerce/ota/normalizeInboundPayload.ts
+src/app/api/webhooks/ota/[platform]/route.ts
+src/app/api/admin/commerce/ota/inbound/route.ts
+src/components/admin/OtaDistributionAdmin.tsx
+================================================================================

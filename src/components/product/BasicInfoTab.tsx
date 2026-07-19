@@ -19,6 +19,8 @@ import ProductTagsBilingualEditor, {
 import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
 import { PRODUCT_NAME_EMAILS, PRODUCT_NAME_EMAIL_NOTE } from '@/lib/productEmailDestinations'
 import { BASIC_INFO_SECTION_LOCATIONS } from '@/lib/productCustomerPageLocations'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 
 interface CategoryItem {
   value: string
@@ -95,6 +97,7 @@ export default function BasicInfoTab({
   onSaveSuccess,
 }: BasicInfoTabProps) {
   const locale = useLocale()
+  const { operatorId } = useOperatorOptional()
   const t = useTranslations('common')
   const tBasic = useTranslations('products.basicInfoTab')
   const tProducts = useTranslations('products')
@@ -360,7 +363,8 @@ export default function BasicInfoTab({
             tour_departure_times: formData.tourDepartureTimes || null,
             customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || tBasic('defaultProductName'),
             customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
-            transportation_methods: formData.transportationMethods || []
+            transportation_methods: formData.transportationMethods || [],
+            ...operatorIdInsert(operatorId),
           }] as never[])
           .select()
           .single()
@@ -437,6 +441,7 @@ export default function BasicInfoTab({
             transportation_methods: formData.transportationMethods || []
           } as never)
           .eq('id', productId)
+          .eq('operator_id', resolveOperatorId(operatorId))
 
         if (error) throw error
 
@@ -462,7 +467,7 @@ export default function BasicInfoTab({
       const [categoriesResult, subCategoriesResult, productsResult] = await Promise.all([
         supabase.from('product_categories').select('*').eq('is_active', true).order('sort_order'),
         supabase.from('product_sub_categories').select('*, product_categories(name)').eq('is_active', true).order('sort_order'),
-        supabase.from('products').select('category, sub_category')
+        withOperatorId(supabase.from('products').select('category, sub_category'), operatorId),
       ])
 
       if (categoriesResult.error) throw categoriesResult.error
@@ -550,9 +555,10 @@ export default function BasicInfoTab({
       
       // DB 테이블이 없을 경우 기존 방식으로 폴백
       try {
-        const { data: products, error } = await supabase
-          .from('products')
-          .select('category, sub_category')
+        const { data: products, error } = await withOperatorId(
+          supabase.from('products').select('category, sub_category'),
+          operatorId
+        )
 
         if (error) throw error
 
@@ -597,7 +603,7 @@ export default function BasicInfoTab({
         console.error('폴백 카테고리 데이터 가져오기 오류:', fallbackError)
       }
     }
-  }, [formData, setFormData, isNewProduct])
+  }, [formData, setFormData, isNewProduct, operatorId])
 
   // 카테고리와 서브카테고리 데이터 가져오기
   useEffect(() => {

@@ -29,6 +29,7 @@ import Image from 'next/image'
 import { getStoredAccessTokenIfValid, supabase } from '@/lib/supabase'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
@@ -1647,8 +1648,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           }
         })()
 
+      const operatorId = await lookupReservationOperatorId(supabase, reservation.id)
       const { error: paymentInsertError } = await supabase.from('payment_records').insert({
         id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        operator_id: operatorId,
         reservation_id: reservation.id,
         payment_status: 'Balance Received',
         amount: balanceAmount,
@@ -1749,8 +1752,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           }
         })()
 
+      const operatorId = await lookupReservationOperatorId(supabase, reservation.id)
       const { error: paymentInsertError } = await supabase.from('payment_records').insert({
         id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        operator_id: operatorId,
         reservation_id: reservation.id,
         payment_status: '환불됨 (우리)',
         amount: refundAmount,

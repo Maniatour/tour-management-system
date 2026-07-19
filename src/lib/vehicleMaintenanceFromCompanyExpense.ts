@@ -13,6 +13,8 @@ import {
 import { VEHICLE_MAINTENANCE_DEFAULT_STANDARD_LEAF_ID } from '@/lib/vehicleMaintenanceStandardCategory'
 import { VEHICLE_MAINTENANCE_PAID_FOR_LABEL_CODE } from '@/lib/companyExpensePaidForLabels'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 type CompanyExpenseRow = Database['public']['Tables']['company_expenses']['Row']
 type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenance']['Insert']
@@ -57,7 +59,9 @@ function ymdFromSubmitOn(submitOn: string | null): string {
 /** 회사 지출 한 건 → vehicle_maintenance insert 행 */
 export function companyExpenseToVehicleMaintenanceInsert(
   expense: CompanyExpenseRow,
-  validVehicleIds?: Set<string>
+  validVehicleIds?: Set<string>,
+  operatorIdByVehicle?: Map<string, string>,
+  fallbackOperatorId: string = KOVEgAS_OPERATOR_ID
 ): VehicleMaintenanceInsert {
   const receipts: string[] = []
   if (expense.photo_url) receipts.push(expense.photo_url)
@@ -82,9 +86,14 @@ export function companyExpenseToVehicleMaintenanceInsert(
     vehicleId = null
   }
 
+  const operator_id = resolveOperatorId(
+    (vehicleId && operatorIdByVehicle?.get(vehicleId)) || fallbackOperatorId
+  )
+
   return {
     id: `MAINT-EXP-${expense.id}`,
     vehicle_id: vehicleId,
+    operator_id,
     maintenance_date: ymdFromSubmitOn(expense.submit_on),
     maintenance_type: maintenanceType,
     category,
@@ -153,8 +162,10 @@ export async function pruneIneligibleSyncedVehicleMaintenance(
 }
 
 export async function syncVehicleMaintenanceFromCompanyExpenses(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  opts?: { operatorId?: string | null }
 ): Promise<{ imported: number; skipped: number; pruned: number }> {
+  const scopeOperatorId = resolveOperatorId(opts?.operatorId)
   const [{ data: catRows, error: catErr }, { data: mappingRows, error: mapErr }] = await Promise.all([
     supabase
       .from('expense_standard_categories')
@@ -212,6 +223,7 @@ export async function syncVehicleMaintenanceFromCompanyExpenses(
       .from('company_expenses')
       .select('*')
       .is('deleted_at', null)
+      .eq('operator_id', scopeOperatorId)
       .in('paid_for_label_id', labelIds)
       .order('submit_on', { ascending: false })
       .limit(EXPENSE_SCAN_LIMIT)
@@ -230,6 +242,7 @@ export async function syncVehicleMaintenanceFromCompanyExpenses(
       .from('company_expenses')
       .select('*')
       .is('deleted_at', null)
+      .eq('operator_id', scopeOperatorId)
       .or(orClause)
       .order('submit_on', { ascending: false })
       .limit(EXPENSE_SCAN_LIMIT)
@@ -250,14 +263,28 @@ export async function syncVehicleMaintenanceFromCompanyExpenses(
     return { imported: 0, skipped: expenseById.size, pruned }
   }
 
-  const { data: vehicleRows, error: vehicleErr } = await supabase.from('vehicles').select('id')
+  let vehicleQuery = supabase.from('vehicles').select('id, operator_id')
+  vehicleQuery = vehicleQuery.eq('operator_id', scopeOperatorId)
+  const { data: vehicleRows, error: vehicleErr } = await vehicleQuery
   if (vehicleErr) {
     console.error('syncVehicleMaintenanceFromCompanyExpenses: vehicles lookup failed', vehicleErr)
     return { imported: 0, skipped: toImport.length, pruned }
   }
   const validVehicleIds = new Set((vehicleRows ?? []).map((v) => v.id))
+  const operatorIdByVehicle = new Map(
+    (vehicleRows ?? []).map((v) => [v.id, resolveOperatorId(v.operator_id as string)])
+  )
 
-  const inserts = toImport.map((e) => companyExpenseToVehicleMaintenanceInsert(e, validVehicleIds))
+  const inserts = toImport
+    .filter((e) => !e.vehicle_id || validVehicleIds.has(e.vehicle_id))
+    .map((e) =>
+      companyExpenseToVehicleMaintenanceInsert(
+        e,
+        validVehicleIds,
+        operatorIdByVehicle,
+        scopeOperatorId
+      )
+    )
 
   const BATCH = 100
   let imported = 0

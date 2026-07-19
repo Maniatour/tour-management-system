@@ -1,0 +1,56 @@
+================================================================================
+ADR 002 — Commerce Core v2 + Dual-Write
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 1 introduced operator_id (Kovegas = Tenant #1).
+Phase 2 introduces FareHarbor/Bokun-style pricing tables without breaking
+legacy dynamic_pricing (still the read SSOT for checkout).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Additive tables only:
+   rate_plans, price_rules, offers, offer_components,
+   price_overrides, stop_sells
+
+2. Legacy dynamic_pricing remains the authority for customer checkout
+   until shadow quote + cutover (later Phase).
+
+3. Admin save path (useDynamicPricing) dual-writes into v2 best-effort.
+   Dual-write failures must NOT fail legacy saves.
+
+4. Mapping:
+   absolute + choices_pricing → offers + offer price_overrides
+   base_plus + options_pricing → price_rules (choice_adjustment)
+   adult/child/infant on row → price_rules(base) + plan-level override
+   is_sale_available=false → stop_sells (+ override flag)
+
+
+Migration
+--------------------------------------------------------------------------------
+supabase/migrations/20260718110000_commerce_core_v2_tables.sql
+
+App
+--------------------------------------------------------------------------------
+src/lib/commerce/dualWritePricing.ts
+src/hooks/useDynamicPricing.ts (post-save dual-write)
+
+
+Non-goals (this ADR)
+--------------------------------------------------------------------------------
+- Inventory engine
+- OTA sync
+- Replacing calculate_dynamic_price
+- Backfilling all historical dynamic_pricing rows (optional later job)
+
+
+Next
+--------------------------------------------------------------------------------
+- Optional backfill script for recent N months
+- Shadow quote compare (v2 vs RPC)
+- Feature-flagged read cutover per product
+================================================================================

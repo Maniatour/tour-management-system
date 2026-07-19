@@ -10,6 +10,8 @@ import {
 } from '@/lib/productDetailDisplay'
 import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
 import type { Product } from '@/components/product/productDetailTypes'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 
 export const PRODUCT_RECOMMENDATION_SECTIONS = [
   {
@@ -128,8 +130,11 @@ async function hydrateProductRows(
 export async function fetchProductRecommendations(
   sourceProductId: string,
   sectionKey: ProductRecommendationSectionKey,
-  locale: string
+  locale: string,
+  operatorId?: string | null
 ): Promise<ProductRecommendationView[]> {
+  const opId = resolveOperatorId(operatorId ?? readPublicOperatorIdBrowser())
+
   const { data: recommendationRows, error } = await fromUntypedTable(
     supabase,
     'product_recommendations'
@@ -155,6 +160,7 @@ export async function fetchProductRecommendations(
     .from('products')
     .select('*')
     .in('id', productIds)
+    .eq('operator_id', opId)
     .eq('status', 'active')
     .eq('is_published', true)
 

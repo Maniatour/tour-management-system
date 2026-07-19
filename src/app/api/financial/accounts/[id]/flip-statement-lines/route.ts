@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /**
  * 금융 계정에 묶인 모든 명세 줄의 direction 만 반전합니다.
  * statement_csv_direction_mode(CSV 규칙)는 변경하지 않습니다.
  */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const auth = await resolveFinancialApiAuth(_request)
+    const auth = await resolveFinancialApiAuth(request)
     if (!auth.ok) return auth.response
 
     const gate = await assertSuper(auth.supabase, auth.userEmail)
@@ -22,6 +23,24 @@ export async function POST(
     const accountId = (id ?? '').trim()
     if (!accountId) {
       return NextResponse.json({ error: '계정 ID가 없습니다.' }, { status: 400 })
+    }
+
+    const activeOperatorId = resolveOperatorId(request.nextUrl.searchParams.get('operatorId'))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: accountRow, error: accountErr } = await (auth.supabase as any)
+      .from('financial_accounts')
+      .select('id')
+      .eq('id', accountId)
+      .eq('operator_id', activeOperatorId)
+      .maybeSingle()
+
+    if (accountErr) {
+      console.error('financial_accounts ownership check:', accountErr)
+      return NextResponse.json({ error: '금융 계정을 확인하지 못했습니다.' }, { status: 500 })
+    }
+    if (!accountRow) {
+      return NextResponse.json({ error: '해당 금융 계정을 찾을 수 없습니다.' }, { status: 404 })
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

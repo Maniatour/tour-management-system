@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, Fragment, useMemo } fr
 import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOperatorOptional } from '@/contexts/OperatorContext';
+import { resolveOperatorId } from '@/lib/operators/scopeQuery';
 import { isSuperAdminActor } from '@/lib/superAdmin';
 import {
   filterTicketBookingsExcludedFromMainUi,
@@ -1171,6 +1173,8 @@ const TICKET_TABLE_AXES_UNDO_STACK_MAX = 50;
 export default function TicketBookingList() {
   const locale = useLocale();
   const { user, userPosition, permissions } = useAuth();
+  const { operatorId } = useOperatorOptional();
+  const activeOperatorId = resolveOperatorId(operatorId);
   const canSuperDeleteTicketBooking = useMemo(
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
@@ -4335,6 +4339,7 @@ export default function TicketBookingList() {
       try {
         const map = await fetchTicketDateViewReconForDates(supabase, dates, tbByDate, locale, {
           dayWindow: TICKET_BOOKING_STATEMENT_DAY_WINDOW,
+          operatorId: activeOperatorId,
         });
         if (!cancelled && gen === dateViewReconFetchGenRef.current) setDateViewReconByDate(map);
       } catch (e) {
@@ -4349,7 +4354,7 @@ export default function TicketBookingList() {
     return () => {
       cancelled = true;
     };
-  }, [dateViewReconDatesKey, locale]);
+  }, [dateViewReconDatesKey, locale, activeOperatorId]);
 
   const refreshDateViewReconForDate = useCallback(
     async (dateYmd: string, opts?: { reloadBookings?: boolean }) => {
@@ -4373,6 +4378,7 @@ export default function TicketBookingList() {
       try {
         const map = await fetchTicketDateViewReconForDates(supabase, [dateYmd], tbByDate, locale, {
           dayWindow: TICKET_BOOKING_STATEMENT_DAY_WINDOW,
+          operatorId: activeOperatorId,
         });
         const bundle = map.get(dateYmd);
         if (bundle) {
@@ -4389,7 +4395,7 @@ export default function TicketBookingList() {
         if (!isAbortLikeError(e)) console.error('[TicketBookingList] refresh date view recon:', e);
       }
     },
-    [locale]
+    [locale, activeOperatorId]
   );
 
   const openDateViewLedgerRow = useCallback(

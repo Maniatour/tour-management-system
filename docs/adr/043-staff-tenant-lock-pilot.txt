@@ -1,0 +1,48 @@
+================================================================================
+ADR 043 — Staff tenant lock pilot (JWT claim + company_expenses) (Phase 6d.0)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6c.9 set request GUC via set_current_operator_id, but PostgREST uses one
+HTTP request per query — transaction-local GUC does not stick for browser
+supabase.from(). Staff SELECT lock-down needs JWT app_metadata.operator_id,
+which current_operator_id() already reads.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Helpers (migration 20260719310000):
+   - saas_jwt_active_operator_id()
+   - staff_can_select_operator_row(op):
+       staff AND (JWT claim NULL → all rows OR op = current_operator_id())
+
+2. Pilot table: company_expenses SELECT =
+     staff_can_select_operator_row(operator_id)
+     OR is_operator_member_strict(operator_id)
+
+3. Opt-in env SAAS_STAFF_TENANT_LOCK=1|true|on|*
+   - OFF (default): active-session API skips JWT write; staff unscoped
+   - ON: POST /api/admin/operators/active-session stamps app_metadata.operator_id;
+     OperatorContext refreshSession() after switch
+
+4. Non-goals: lock all Ops tables; booking/payment changes
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6d.1 expand cash/accounts/payment_records (ADR 044)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719310000_saas_staff_tenant_lock_pilot.sql
+src/lib/operators/staffTenantLock.ts
+src/app/api/admin/operators/active-session/route.ts
+src/contexts/OperatorContext.tsx
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

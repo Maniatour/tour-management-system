@@ -1,6 +1,7 @@
 import type { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { readSheetData } from '@/lib/googleSheets'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 
 interface ReservationExpenseData {
   ID: string
@@ -94,6 +95,11 @@ export class ReservationExpensesSyncService {
         return
       }
 
+      const operator_id = await lookupReservationOperatorId(
+        supabase,
+        data['Reservation ID'] || null
+      )
+
       // 새 데이터 삽입
       const insertData = {
         id: data.ID,
@@ -108,6 +114,7 @@ export class ReservationExpensesSyncService {
         file_path: data.File || null,
         status: (data.Status || 'pending').toLowerCase() as 'pending' | 'approved' | 'rejected',
         reservation_id: data['Reservation ID'] || null,
+        operator_id,
       }
 
       const { error } = await supabase

@@ -7,6 +7,8 @@ import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -100,6 +102,8 @@ export default function VehicleMaintenanceVehicleModal({
   vehicleLabel,
 }: VehicleMaintenanceVehicleModalProps) {
   const t = useTranslations('vehicleMaintenance')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   let locale = 'ko'
   try {
     locale = useLocale()
@@ -146,7 +150,10 @@ export default function VehicleMaintenanceVehicleModal({
   const loadMaintenances = useCallback(async () => {
     try {
       setLoading(true)
-      const params = new URLSearchParams({ vehicle_id: vehicleId })
+      const params = new URLSearchParams({
+        vehicle_id: vehicleId,
+        operatorId: activeOperatorId,
+      })
       const response = await fetch(`/api/vehicle-maintenance?${params.toString()}`, {
         headers: apiBearerAuthHeaders(),
       })
@@ -162,7 +169,7 @@ export default function VehicleMaintenanceVehicleModal({
     } finally {
       setLoading(false)
     }
-  }, [vehicleId])
+  }, [vehicleId, activeOperatorId])
 
   const loadVehicle = useCallback(async () => {
     try {
@@ -177,13 +184,17 @@ export default function VehicleMaintenanceVehicleModal({
 
   const loadAllVehicles = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('vehicles').select('*').order('vehicle_number')
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('operator_id', activeOperatorId)
+        .order('vehicle_number')
       if (error) throw error
       setAllVehicles(data || [])
     } catch (error) {
       console.error('차량 목록 로드 오류:', error)
     }
-  }, [])
+  }, [activeOperatorId])
 
   const loadExpenseStandardCategories = useCallback(async () => {
     try {

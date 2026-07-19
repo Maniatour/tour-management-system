@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /**
  * 금융 계정 목록 — 명세 대조 화면용 (클라이언트 직접 SELECT 대신 사용, abort/권한 이슈 완화)
@@ -15,10 +16,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: gate.message }, { status: gate.status })
     }
 
+    const activeOperatorId = resolveOperatorId(request.nextUrl.searchParams.get('operatorId'))
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (auth.supabase as any)
       .from('financial_accounts')
       .select('id, name, account_type, currency, is_active, statement_csv_direction_mode')
+      .eq('operator_id', activeOperatorId)
       .eq('is_active', true)
       .order('name')
 
@@ -54,11 +58,13 @@ export async function POST(request: NextRequest) {
       name?: string
       account_type?: string
       currency?: string
+      operatorId?: string
     }
 
     const name = (body.name ?? '').trim()
     const accountType = body.account_type ?? ''
     const currency = (body.currency ?? 'USD').trim() || 'USD'
+    const activeOperatorId = resolveOperatorId(body.operatorId)
 
     if (!name) {
       return NextResponse.json({ error: '계정 이름을 입력하세요.' }, { status: 400 })
@@ -75,6 +81,7 @@ export async function POST(request: NextRequest) {
     const { data: existingRows, error: existErr } = await (auth.supabase as any)
       .from('financial_accounts')
       .select('id, name')
+      .eq('operator_id', activeOperatorId)
       .eq('account_type', accountType)
       .eq('is_active', true)
 
@@ -108,6 +115,7 @@ export async function POST(request: NextRequest) {
         account_type: accountType,
         currency,
         is_active: true,
+        operator_id: activeOperatorId,
       })
       .select('id, name, account_type, currency, is_active, statement_csv_direction_mode')
       .single()

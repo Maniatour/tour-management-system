@@ -1,0 +1,52 @@
+================================================================================
+ADR 044 — Staff tenant lock expand (cash / accounts / payments) (Phase 6d.1)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6d.0 piloted staff_can_select_operator_row on company_expenses.
+Next finance tables still used is_operator_member (staff bypass), which would
+undo JWT lock if left as OR is_operator_member.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719320000_saas_staff_tenant_lock_expand.sql
+   SELECT rewrite:
+   - cash_transactions
+   - financial_accounts
+   - payment_records (+ assignee + customer preserved)
+
+2. Pattern:
+     staff_can_select_operator_row(operator_id)
+     OR is_operator_member_strict(operator_id)
+     [OR assignee/customer for payment_records]
+
+3. SAAS_STAFF_TENANT_LOCK still gates JWT stamp (default OFF)
+
+4. Smoke helpers updated for renamed policies
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- statement/match/fleet lock expand (later)
+- Booking/payment logic
+- Default lock ON in production
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6d.2 statement/match lock (ADR 045)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719320000_saas_staff_tenant_lock_expand.sql
+src/lib/operators/opsFinanceIsolation.ts
+src/components/admin/OperatorBManual.tsx
+src/i18n/locales/ko.json
+src/i18n/locales/en.json
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

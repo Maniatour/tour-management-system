@@ -1,0 +1,60 @@
+================================================================================
+ADR 032 — Ops Finance: payment_records.operator_id (Phase 6b.11)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.10 stamped match tables. payment_records still lacked operator_id, so
+Cash / PNL / statement recon / deposit reports could load Kovegas deposits when
+Operator B had Ops ON. Checkout already stamps reservations.operator_id.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719220000_saas_operator_id_payment_records.sql
+   - payment_records.operator_id NOT NULL
+   - Backfill from reservations.operator_id; orphan → Kovegas
+
+2. App (tenancy only — NO booking/payment/checkout logic changes):
+   - POST /api/payment-records + GET optional operatorId filter
+   - Direct inserts stamp via lookupReservationOperatorId
+   - Checkout/refund/resident-check: copy reservation.operator_id column only
+   - Ops list filters: CashManagement, CashReportTab, PNL, Statement recon,
+     cash-transaction-auto-match payment pool, Deposit/Settlement/Comprehensive,
+     PaymentRecordsHistoryTab
+
+3. Deferred (at accept time):
+   - payment_records RLS → DONE in Phase 6c.1 (ADR 034)
+   - Operator B E2E checklist run → partial via 6c.0 smoke
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Amount / status / Stripe / Connect / refund business logic
+- Changing syncReservationPricingAggregates behavior beyond existing call
+
+
+Next
+--------------------------------------------------------------------------------
+DONE → Phase 6c.1 payment_records SELECT RLS (ADR 034)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719220000_saas_operator_id_payment_records.sql
+src/lib/database.types.ts
+src/app/api/sync/schema/route.ts
+src/app/api/payment-records/route.ts
+src/lib/pnlReportDataFetch.ts
+src/lib/cash-transaction-auto-match.ts
+src/components/CashManagement.tsx
+src/components/reports/CashReportTab.tsx
+src/components/reports/StatementReconciliationTab.tsx
+src/components/expenses/PaymentRecordsHistoryTab.tsx
+src/components/reports/DepositReportTab.tsx
+src/components/reports/SettlementReportTab.tsx
+src/components/reports/ComprehensiveReportTab.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { X, DollarSign, Calendar, Save, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 async function teamMapForPaymentMethodEmails(
   rows: Array<{ user_email?: string | null }>
@@ -132,6 +134,8 @@ interface TipShare {
 }
 
 export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko', tourId, onReservationClick, overlayClassName = 'z-50' }: TipsShareModalProps) {
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [toursWithTips, setToursWithTips] = useState<TourWithTip[]>([])
@@ -261,6 +265,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
           reservation_ids,
           products!inner(name, name_ko, name_en)
         `)
+        .eq('operator_id', activeOperatorId)
       
       // 단일 투어 모드면 해당 투어만 조회
       if (isSingleTourMode && tourId) {
@@ -508,6 +513,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
       const { data, error } = await supabase
         .from('tour_tip_shares')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .in('tour_id', tourIds)
 
       if (error) {
@@ -524,6 +530,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
         const { data: opSharesData, error: opSharesError } = await supabase
           .from('tour_tip_share_ops')
           .select('op_email, op_amount, op_percent')
+          .eq('operator_id', activeOperatorId)
           .eq('tour_tip_share_id', share.id)
 
         // 테이블이 없을 수 있으므로 에러 무시
@@ -956,6 +963,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
       const { data: existingShares } = await supabase
         .from('tour_tip_shares')
         .select('id')
+        .eq('operator_id', activeOperatorId)
         .in('tour_id', tourIds)
 
       // 기존 OP 데이터 삭제
@@ -964,6 +972,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
         const { error: deleteOpError } = await supabase
           .from('tour_tip_share_ops')
           .delete()
+          .eq('operator_id', activeOperatorId)
           .in('tour_tip_share_id', existingShareIds)
 
         if (deleteOpError && deleteOpError.code !== '42P01') {
@@ -975,6 +984,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
       const { error: deleteError } = await supabase
         .from('tour_tip_shares')
         .delete()
+        .eq('operator_id', activeOperatorId)
         .in('tour_id', tourIds)
 
       if (deleteError && deleteError.code !== '42P01') { // 테이블이 없으면 무시
@@ -996,7 +1006,8 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
           assistant_amount: share.assistant_amount,
           op_amount: share.op_amount,
           total_tip: share.total_tip,
-          deduct_fee: share.deduct_fee !== false
+          deduct_fee: share.deduct_fee !== false,
+          operator_id: activeOperatorId,
         })) as never)
         .select('id, tour_id')
 
@@ -1016,7 +1027,8 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
               tour_tip_share_id: insertedShare.id,
               op_email: opShare.op_email,
               op_amount: opShare.op_amount,
-              op_percent: opShare.op_percent
+              op_percent: opShare.op_percent,
+              operator_id: activeOperatorId,
             })
           })
         }

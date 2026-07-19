@@ -3,6 +3,7 @@ import { createTourPhotosBucket } from './tourPhotoBucket'
 import { generateTourId } from './entityIds'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -23,7 +24,7 @@ export async function autoCreateOrUpdateTour(
     // 1. 해당 상품의 sub_category 확인
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('sub_category')
+      .select('sub_category, operator_id')
       .eq('id', productId)
       .single()
 
@@ -47,6 +48,9 @@ export async function autoCreateOrUpdateTour(
         message: '해당 상품은 자동 투어 생성 대상이 아닙니다.'
       }
     }
+
+    const tourOperatorId =
+      (product as { operator_id?: string | null }).operator_id || KOVEgAS_OPERATOR_ID
 
     // 2. 같은 날짜·상품의 투어 (삭제/취소는 스케줄 충돌·병합 대상에서 제외)
     const { data: existingTours, error: tourError } = await supabase
@@ -165,7 +169,8 @@ export async function autoCreateOrUpdateTour(
           tour_date: tourDate,
           reservation_ids: [reservationId], // TEXT[] 형식으로 저장
           tour_status: 'scheduled',
-          is_private_tour: isPrivateTour || false
+          is_private_tour: isPrivateTour || false,
+          operator_id: tourOperatorId,
         })
         .select()
         .single()
@@ -248,7 +253,7 @@ export async function createAdditionalActiveTourForReservations(
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('sub_category')
+      .select('sub_category, operator_id')
       .eq('id', productId)
       .single()
 
@@ -265,6 +270,9 @@ export async function createAdditionalActiveTourForReservations(
         message: '해당 상품은 자동 투어 생성 대상이 아닙니다.',
       }
     }
+
+    const tourOperatorId =
+      (product as { operator_id?: string | null }).operator_id || KOVEgAS_OPERATOR_ID
 
     const { data: existingTours, error: tourError } = await supabase
       .from('tours')
@@ -348,6 +356,7 @@ export async function createAdditionalActiveTourForReservations(
         reservation_ids: reservationIdsForTour,
         tour_status: 'scheduled',
         is_private_tour: isPrivate,
+        operator_id: tourOperatorId,
       })
       .select()
       .single()

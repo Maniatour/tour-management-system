@@ -1,0 +1,67 @@
+================================================================================
+ADR 007 — Commerce v2 OTA Distribution (Outbox + Dry-run Adapter)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Inventory + booking snapshots exist. Next is Distribution without stopping
+manual/email OTA ops. Live Viator/Klook contracts are not assumed in Phase 4a.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Tables (all with operator_id):
+   - channel_connections
+   - external_mappings
+   - sync_events (transactional outbox)
+
+2. Seed Kovegas Viator connection in status=dry_run
+   id c0000000-0000-4000-8000-000000000001
+
+3. Env COMMERCE_V2_OTA_SYNC=1 enables enqueue after dual-write.
+   Default OFF — pricing saves never block on outbox.
+
+4. Adapters:
+   - Phase 4a: dry-run only for all platforms (no live HTTP)
+   - Phase 4c: Viator live push_rates when status=active + COMMERCE_V2_OTA_LIVE
+     (see ADR 016)
+   - Unmapped SKU → sync_events status=skipped (never invent bookings)
+
+5. Staff APIs:
+   - POST/GET /api/admin/commerce/ota/mappings
+   - GET /api/admin/commerce/ota/outbox
+   - POST /api/admin/commerce/ota/process-outbox
+
+6. credentials_ref is a vault pointer; do not store raw API secrets in config
+   for production use.
+
+7. Phase 4b Admin UI:
+   /{locale}/admin/commerce/ota-mappings
+   Sidebar: otaDistribution (admin_or_manager)
+   Component: src/components/admin/OtaDistributionAdmin.tsx
+
+
+Non-goals (this ADR)
+--------------------------------------------------------------------------------
+- Live OTA API push/pull E2E → push live in ADR 016; inbound in ADR 019
+- Inbound OTA booking webhooks → ADR 019 (Phase 4d)
+
+
+Rollout
+--------------------------------------------------------------------------------
+1. Apply migration 20260718140000_commerce_ota_distribution_tables.sql
+2. POST mappings: product/offer → externalSku
+3. COMMERCE_V2_OTA_SYNC=1
+4. Save dynamic pricing (dual-write) → sync_events pending
+5. POST process-outbox → succeeded (dry_run) or skipped (no mapping)
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718140000_commerce_ota_distribution_tables.sql
+src/lib/commerce/ota/*
+src/lib/commerce/dualWritePricing.ts (enqueue hook)
+src/app/api/admin/commerce/ota/*
+================================================================================

@@ -12,6 +12,8 @@ import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
   isReservationCancelledStatus,
   normalizeReservationIds,
@@ -678,6 +680,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const tTourCal = useTranslations('tours.calendar')
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
   const { user, userRole, userPosition, hasPermission } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const tourHandlers = useTourHandlers()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
@@ -1958,6 +1962,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             .select(
               'id, tour_date, tour_status, tour_car_id, product_id, tour_guide_id, assistant_id, team_type, reservation_ids, products(name)',
             )
+            .eq('operator_id', activeOperatorId)
             .gte('tour_date', fetchStart)
             .lte('tour_date', fetchEnd)
             .order('tour_date', { ascending: true })
@@ -2055,7 +2060,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return () => {
       cancelled = true
     }
-  }, [tourCoversScheduleDate])
+  }, [tourCoversScheduleDate, activeOperatorId])
 
   // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
   const monthDays = useMemo(() => {
@@ -2168,6 +2173,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           *,
           products!inner(name)
         `)
+          .eq('operator_id', activeOperatorId)
           .gte('tour_date', startDate)
           .lte('tour_date', endDate)
           .or('tour_guide_id.is.null,tour_guide_id.eq.,assistant_id.is.null,assistant_id.eq.')
@@ -2188,7 +2194,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     } catch (error) {
       console.error('Error fetching unassigned tours:', error)
     }
-  }, [firstDayOfMonth, lastDayOfMonth])
+  }, [firstDayOfMonth, lastDayOfMonth, activeOperatorId])
 
   const loadFullTicketBookingAndOpen = useCallback(
     async (id: string) => {
@@ -2247,6 +2253,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('products' as any)
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .in('sub_category', ['Mania Tour', 'Mania Service'])
         .order('name')
 
@@ -2279,6 +2286,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .from('tours' as any)
           .select('*, products(name)')
+          .eq('operator_id', activeOperatorId)
           .gte('tour_date', startDate)
           .lte('tour_date', endDate)
           .order('tour_date', { ascending: true })
@@ -2319,6 +2327,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         .select(
           'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage, current_mileage',
         )
+        .eq('operator_id', activeOperatorId)
       const isCancelled = (s: string | null | undefined) => {
         if (!s) return false
         const lower = String(s).toLowerCase().trim()
@@ -2362,6 +2371,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           const { data: batch, error: maintErr } = await supabase
             .from('vehicle_maintenance')
             .select('vehicle_id, maintenance_date, mileage, subcategory')
+            .eq('operator_id', activeOperatorId)
             .in('vehicle_id', companyVehicleIds)
             .order('maintenance_date', { ascending: false })
             .order('mileage', { ascending: false })
@@ -2421,6 +2431,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           const { data: batch, error: oilToursErr } = await supabase
             .from('tours')
             .select('id, tour_date, tour_status, tour_car_id, product_id, products(name)')
+            .eq('operator_id', activeOperatorId)
             .gte('tour_date', oilHistStart)
             .lte('tour_date', oilHistEnd)
             .in('tour_car_id', companyVehicleIds)
@@ -2446,6 +2457,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('reservations' as any)
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
 
@@ -2604,6 +2616,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const { data: extraProductsData } = await (supabase as any)
           .from('products' as any)
           .select('*')
+          .eq('operator_id', activeOperatorId)
           .in('id', missingReferencedProductIds)
         const extraProducts = (extraProductsData || []) as Product[]
         if (extraProducts.length > 0) {
@@ -2650,7 +2663,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     } finally {
       setLoading(false)
     }
-  }, [firstDayOfMonth, lastDayOfMonth, loadUserSettings, fetchUnassignedTours])
+  }, [firstDayOfMonth, lastDayOfMonth, loadUserSettings, fetchUnassignedTours, activeOperatorId])
 
   const handleScheduleTicketBookingSaved = useCallback(async () => {
     closeScheduleTicketBookingForm()
@@ -2961,6 +2974,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const { data, error } = await supabase
         .from('tours')
         .select('id, tour_status')
+        .eq('operator_id', activeOperatorId)
         .eq('product_id', productId)
         .eq('tour_date', tourDate)
       if (error) {
@@ -2973,7 +2987,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       console.error('Error checking tour existence:', e)
       return false
     }
-  }, [])
+  }, [activeOperatorId])
 
   const handleProductCellModalCreateTour = useCallback(async () => {
     if (!productCellReservationsModal) return
@@ -3124,6 +3138,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           reservation_ids: [],
           tour_status: 'scheduled',
           is_private_tour: false,
+          ...operatorIdInsert(operatorId),
         })
         if (error) throw error
         try {
@@ -3300,7 +3315,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const vehiclesTable = (supabase as any).from('vehicles')
         const { error } = id
           ? await vehiclesTable.update(filteredData).eq('id', id)
-          : await vehiclesTable.insert([filteredData])
+          : await vehiclesTable.insert([{ ...filteredData, operator_id: activeOperatorId }])
         if (error) throw error
         await fetchData()
         setShowVehicleEditModal(false)
@@ -3314,7 +3329,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         )
       }
     },
-    [vehicleEditModalVehicle, fetchData, showMessage]
+    [vehicleEditModalVehicle, fetchData, showMessage, activeOperatorId]
   )
 
   // 로컬 임시 저장

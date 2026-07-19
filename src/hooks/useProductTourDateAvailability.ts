@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getTourDateStatus, toIsoDateLocal } from '@/lib/productTourDateStatus'
+import { fetchPublicDirectChannelBrowser } from '@/lib/operators/fetchPublicDirectChannelBrowser'
 
 export function useProductTourDateAvailability(productId: string | undefined) {
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set())
@@ -26,13 +27,15 @@ export function useProductTourDateAvailability(productId: string | undefined) {
       try {
         const endDate = new Date()
         endDate.setMonth(endDate.getMonth() + 6)
+        const { channelId } = await fetchPublicDirectChannelBrowser()
+        if (cancelled) return
 
         const [pricingRes, reservationsRes] = await Promise.all([
           supabase
             .from('dynamic_pricing')
             .select('date, is_sale_available')
             .eq('product_id', productId)
-            .eq('channel_id', 'M00001')
+            .eq('channel_id', channelId)
             .eq('price_type', 'dynamic')
             .gte('date', todayIso)
             .lte('date', toIsoDateLocal(endDate)),

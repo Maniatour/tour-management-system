@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
   expenseReconciliationAmountTolerance,
 } from '@/lib/expense-reconciliation-similar-lines'
@@ -119,11 +120,15 @@ function textOverlapBonus(cashText: string, targetText: string): number {
   return Math.min(TEXT_BONUS_MAX, 4 + shared * 4)
 }
 
-async function fetchCashLinkedExpenseKeys(supabase: SupabaseClient): Promise<Set<string>> {
+async function fetchCashLinkedExpenseKeys(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<Set<string>> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   try {
-    const { data, error } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE).select(
-      'expense_source_table, expense_source_id'
-    )
+    const { data, error } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE)
+      .select('expense_source_table, expense_source_id')
+      .eq('operator_id', activeOperatorId)
     if (error) return new Set()
     return new Set(
       ((data ?? []) as { expense_source_table?: string; expense_source_id?: string }[])
@@ -137,11 +142,15 @@ async function fetchCashLinkedExpenseKeys(supabase: SupabaseClient): Promise<Set
   }
 }
 
-async function fetchCashLinkedCashTransactionIds(supabase: SupabaseClient): Promise<Set<string>> {
+async function fetchCashLinkedCashTransactionIds(
+  supabase: SupabaseClient,
+  operatorId?: string | null
+): Promise<Set<string>> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   try {
-    const { data, error } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE).select(
-      'cash_transaction_id'
-    )
+    const { data, error } = await fromUntypedTable(supabase, EXPENSE_CASH_LEDGER_MATCHES_TABLE)
+      .select('cash_transaction_id')
+      .eq('operator_id', activeOperatorId)
     if (error) return new Set()
     return new Set(
       ((data ?? []) as { cash_transaction_id?: string }[])
@@ -155,10 +164,12 @@ async function fetchCashLinkedCashTransactionIds(supabase: SupabaseClient): Prom
 
 async function fetchExpensePoolForCashAutoMatch(
   supabase: SupabaseClient,
-  linkedExpenseKeys: Set<string>
+  linkedExpenseKeys: Set<string>,
+  operatorId?: string | null
 ): Promise<ExpensePoolRow[]> {
   const out: ExpensePoolRow[] = []
   const perTableLimit = 1200
+  const activeOperatorId = resolveOperatorId(operatorId)
 
   const pushRow = (row: ExpensePoolRow) => {
     if (linkedExpenseKeys.has(row.key)) return
@@ -170,16 +181,19 @@ async function fetchExpensePoolForCashAutoMatch(
     supabase
       .from('company_expenses')
       .select('id,submit_on,amount,paid_to,paid_for,description,notes')
+      .eq('operator_id', activeOperatorId)
       .order('submit_on', { ascending: false })
       .limit(perTableLimit),
     supabase
       .from('tour_expenses')
       .select('id,submit_on,amount,paid_to,paid_for,note,tour_date')
+      .eq('operator_id', activeOperatorId)
       .order('submit_on', { ascending: false })
       .limit(perTableLimit),
     supabase
       .from('reservation_expenses')
       .select('id,submit_on,amount,paid_to,paid_for,note')
+      .eq('operator_id', activeOperatorId)
       .order('submit_on', { ascending: false })
       .limit(perTableLimit),
     supabase
@@ -279,14 +293,17 @@ async function fetchExpensePoolForCashAutoMatch(
 }
 
 async function fetchPaymentPoolForCashAutoMatch(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  operatorId?: string | null
 ): Promise<PaymentPoolRow[]> {
+  const activeOperatorId = resolveOperatorId(operatorId)
   const cashPaymentMethods = await getCashPaymentMethodFilterValues()
   if (cashPaymentMethods.length === 0) return []
 
   const { data, error } = await supabase
     .from('payment_records')
     .select('id, amount, submit_on, note, payment_status')
+    .eq('operator_id', activeOperatorId)
     .in('payment_method', cashPaymentMethods)
     .order('submit_on', { ascending: false })
     .limit(1500)
@@ -401,7 +418,8 @@ export function isCashTransactionAlreadyMatchedForAutoMatch(
 /** 현금 거래(cash_transactions) → 지출·입금(payment_records) 자동 매칭 미리보기 */
 export async function prepareCashTransactionAutoMatchProposals(
   supabase: SupabaseClient,
-  cashRows: CashAutoMatchInputRow[]
+  cashRows: CashAutoMatchInputRow[],
+  operatorId?: string | null
 ): Promise<{
   proposals: CashAutoMatchProposal[]
   expensePoolSize: number
@@ -412,11 +430,11 @@ export async function prepareCashTransactionAutoMatchProposals(
     .filter((r) => r.id && isCashTransactionAutoMatchTarget(r))
     .slice(0, CASH_TRANSACTION_AUTO_MATCH_MAX)
 
-  const linkedExpenseKeys = await fetchCashLinkedExpenseKeys(supabase)
+  const linkedExpenseKeys = await fetchCashLinkedExpenseKeys(supabase, operatorId)
   const [linkedCashIds, expensePool, paymentPool] = await Promise.all([
-    fetchCashLinkedCashTransactionIds(supabase),
-    fetchExpensePoolForCashAutoMatch(supabase, linkedExpenseKeys),
-    fetchPaymentPoolForCashAutoMatch(supabase),
+    fetchCashLinkedCashTransactionIds(supabase, operatorId),
+    fetchExpensePoolForCashAutoMatch(supabase, linkedExpenseKeys, operatorId),
+    fetchPaymentPoolForCashAutoMatch(supabase, operatorId),
   ])
 
   const cashIds = targets.map((t) => t.id)
@@ -493,6 +511,7 @@ export async function applyCashTransactionAutoMatchProposals(
   supabase: SupabaseClient,
   params: {
     actorEmail: string
+    operatorId?: string | null
     items: {
       cash_id: string
       candidate: CashAutoMatchCandidate
@@ -500,6 +519,7 @@ export async function applyCashTransactionAutoMatchProposals(
     }[]
   }
 ): Promise<{ applied: number; skippedConflict: number; skippedInvalid: number }> {
+  const activeOperatorId = resolveOperatorId(params.operatorId)
   const usedExpenseKeys = new Set<string>()
   const usedPaymentIds = new Set<string>()
   const usedCashIds = new Set<string>()
@@ -536,6 +556,7 @@ export async function applyCashTransactionAutoMatchProposals(
           expenseSourceId: candidate.target_id,
           cashTransactionId: item.cash_id,
           matchedAmount: Math.min(Math.abs(item.cash_amount), candidate.amount),
+          operatorId: activeOperatorId,
         })
         usedExpenseKeys.add(ek)
         usedCashIds.add(item.cash_id)
@@ -552,6 +573,7 @@ export async function applyCashTransactionAutoMatchProposals(
             reference_id: candidate.target_id,
             updated_at: new Date().toISOString(),
           })
+          .eq('operator_id', activeOperatorId)
           .eq('id', item.cash_id)
         if (error) throw error
         usedPaymentIds.add(candidate.target_id)

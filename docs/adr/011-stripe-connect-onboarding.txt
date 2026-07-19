@@ -1,0 +1,56 @@
+================================================================================
+ADR 011 — Stripe Connect Onboarding (Phase 5d)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 5a stored stripe_connect_account_id / stripe_connect_status stubs.
+Operator B can be created and scoped (5b/5c), but payment accounts were not
+wired. D4 (ADR 001) requires Stripe Connect for per-operator payouts.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Express Connect Account + Account Link onboarding (staff-triggered).
+   Lib: src/lib/operators/stripeConnect.ts
+   API: POST/GET /api/admin/operators/:id/stripe-connect
+
+2. Status mapping (operators.stripe_connect_status CHECK values):
+   not_started | pending | restricted | enabled | disabled
+   Derived from Account.charges_enabled / payouts_enabled / requirements.
+
+3. Webhook: existing /api/webhooks/stripe handles account.updated and
+   updates the matching operators row (metadata.operator_id or account id).
+
+4. Admin UI: OperatorsAdmin “Connect 시작 / 이어하기 / 상태 동기화”.
+   Return/refresh URLs land on /{locale}/admin/operators?connect=1&operator=…
+
+5. Customer checkout destination charges: see ADR 015 (Phase 5f)
+   via COMMERCE_STRIPE_CONNECT_CHECKOUT (default OFF).
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Changing createStripePaymentIntentForReservation
+- Standard Connect (Express only for Phase 5d)
+- Public self-serve operator signup
+- Subdomain customer-site routing
+
+
+Ops notes
+--------------------------------------------------------------------------------
+- Requires STRIPE_SECRET_KEY
+- Stripe Dashboard webhook must include account.updated (Connect)
+- Connect platform settings must allow Express accounts
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/stripeConnect.ts
+src/app/api/admin/operators/[id]/stripe-connect/route.ts
+src/app/api/webhooks/stripe/route.ts
+src/components/admin/OperatorsAdmin.tsx
+src/lib/operators/operatorService.ts
+================================================================================

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 function qIdent(s: string): string {
   return String(s).replace(/"/g, '""')
@@ -91,6 +92,8 @@ export type FetchAdminReservationListArgs = {
   selectFieldsOverride?: string
   /** false면 count 생략(운영 큐 2페이지 이후 등) */
   includeExactCount?: boolean
+  /** Active SaaS tenant — defaults to Kovegas when omitted */
+  operatorId?: string | null
 }
 
 function collectIds(rows: unknown): string[] {
@@ -129,10 +132,12 @@ async function safeSelectIds(
 
 async function buildSearchOrClause(
   supabase: SupabaseClient,
-  term: string
+  term: string,
+  operatorId?: string | null
 ): Promise<string | null> {
   const t = term.trim()
   if (!t) return null
+  const opId = resolveOperatorId(operatorId)
 
   // 전체 UUID: 예약·고객·상품·채널 PK 등 btree eq만 사용 — customers/products/channels
   // 전부 ilike 조회(최대 3왕복)는 매우 느리므로 건너뜀.
@@ -178,6 +183,7 @@ async function buildSearchOrClause(
         supabase
           .from('customers')
           .select('id')
+          .eq('operator_id', opId)
           .or(customerOr)
           .eq('archive', false)
           .limit(lookupLimit)
@@ -186,13 +192,19 @@ async function buildSearchOrClause(
         supabase
           .from('products')
           .select('id')
+          .eq('operator_id', opId)
           .or(
             `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
           )
           .limit(lookupLimit)
       ),
       safeSelectIds('channels', () =>
-        supabase.from('channels').select('id').ilike('name', likePat).limit(lookupLimit)
+        supabase
+          .from('channels')
+          .select('id')
+          .eq('operator_id', opId)
+          .ilike('name', likePat)
+          .limit(lookupLimit)
       ),
     ])
 
@@ -204,6 +216,7 @@ async function buildSearchOrClause(
             supabase
               .from('customers')
               .select('id')
+              .eq('operator_id', opId)
               .or(customerOr)
               .eq('archive', true)
               .limit(lookupLimit)
@@ -225,6 +238,8 @@ type BuildQueryOpts = { includeExactCount?: boolean }
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyAdminReservationListRowFilters(q: any, args: FetchAdminReservationListArgs, searchOr: string | null): any {
+  q = q.eq('operator_id', resolveOperatorId(args.operatorId))
+
   if (args.customerIdFromUrl) {
     q = q.eq('customer_id', args.customerIdFromUrl)
   }
@@ -355,7 +370,7 @@ export async function fetchAdminReservationListActivityWindowRowCount(
     if (args.mode !== 'card-week' || !args.activityRangeStartIso || !args.activityRangeEndIso) {
       return { count: null, error: null }
     }
-    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const searchActive = args.debouncedSearchTerm.trim().length > 0
     const countMode = searchActive ? ('planned' as const) : ('exact' as const)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -379,7 +394,7 @@ export async function fetchAdminReservationList(
   args: FetchAdminReservationListArgs
 ): Promise<{ data: Record<string, unknown>[] | null; count: number | null; error: Error | null }> {
   try {
-    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
 
     if (args.mode === 'card-week' || args.mode === 'calendar') {
       const chunk =
@@ -620,7 +635,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
   handlers: CardWeekProgressiveHandlers
 ): Promise<{ error: Error | null; loadedRowCount: number }> {
   try {
-    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
     const merged: Record<string, unknown>[] = []
     let totalCount: number | null = null

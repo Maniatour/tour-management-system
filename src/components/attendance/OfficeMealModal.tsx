@@ -5,6 +5,8 @@ import { UtensilsCrossed, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useTranslations } from 'next-intl'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
   lasVegasTodayYmd,
   addCalendarDaysYmd,
@@ -40,6 +42,8 @@ interface OfficeMealModalProps {
 
 export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProps) {
   const t = useTranslations('attendancePage')
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const [mealDate, setMealDate] = useState(() => lasVegasTodayYmd())
   const [team, setTeam] = useState<TeamRow[]>([])
   const [mealEmails, setMealEmails] = useState<Set<string>>(new Set())
@@ -79,6 +83,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     async (d: string) => {
       const { data, error: err } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('employee_email')
+        .eq('operator_id', activeOperatorId)
         .eq('meal_date', d)
       if (err) {
         console.error(err)
@@ -94,7 +99,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
         )
       )
     },
-    [t]
+    [t, activeOperatorId]
   )
 
   const loadRangeSummary = useCallback(async () => {
@@ -104,6 +109,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     try {
       const { data, error: err } = await fromUntypedTable(supabase, 'office_meal_log')
         .select('meal_date, employee_email')
+        .eq('operator_id', activeOperatorId)
         .gte('meal_date', from)
         .lte('meal_date', to)
         .order('meal_date', { ascending: false })
@@ -134,7 +140,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     } finally {
       setRangeLoading(false)
     }
-  }, [rangeQuery])
+  }, [rangeQuery, activeOperatorId])
 
   useEffect(() => {
     if (!isOpen) return
@@ -192,12 +198,16 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     try {
       if (nextChecked) {
         const { error: upErr } = await fromUntypedTable(supabase, 'office_meal_log')
-          .upsert({ meal_date: mealDate, employee_email: email }, { onConflict: 'meal_date,employee_email' })
+          .upsert(
+            { meal_date: mealDate, employee_email: email, operator_id: activeOperatorId },
+            { onConflict: 'operator_id,meal_date,employee_email' }
+          )
         if (upErr) throw upErr
         setMealEmails((prev) => new Set(prev).add(email))
       } else {
         const { error: delErr } = await fromUntypedTable(supabase, 'office_meal_log')
           .delete()
+          .eq('operator_id', activeOperatorId)
           .eq('meal_date', mealDate)
           .eq('employee_email', email)
         if (delErr) throw delErr

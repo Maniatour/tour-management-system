@@ -1,0 +1,66 @@
+================================================================================
+ADR 005 — Commerce v2 Inventory Engine (Hold / Commit / Release)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Price dual-write and optional checkout read cutover exist. Next additive step
+is inventory pools with short-lived holds, without replacing legacy capacity
+heuristics (reservation total_people vs product.max_participants / tours).
+
+
+Decision
+--------------------------------------------------------------------------------
+1. New tables (operator_id on all):
+   inventory_resources, inventory_allotments, inventory_bindings,
+   inventory_holds, inventory_ledger
+
+2. Engine API (src/lib/commerce/inventoryEngine.ts):
+   check / hold / commit / release / expire + seedProductInventory
+
+3. Env flag COMMERCE_V2_INVENTORY_PRODUCTS
+   - unset/empty → no holds (legacy path unchanged)
+   - * or product ids → hold after pending reservation create;
+     commit on payment finalize; release on create failure
+
+4. Default resource seed: Kovegas `default_shared_seats`
+   (id b0000000-0000-4000-8000-000000000001)
+
+5. If flag is ON but product has no inventory_bindings → allow booking
+   (no block). Binding + allotment required for enforcement.
+
+6. Missing allotment on hold: auto-create from products.max_participants
+   (fallback 12) when autoEnsureAllotment=true (checkout default).
+   Admin can pre-seed via POST /api/admin/commerce/inventory-seed.
+
+7. Optimistic concurrency via allotments.version.
+   Hold TTL default 30 minutes; expireStaleHolds runs before check/hold.
+
+
+Non-goals (this ADR)
+--------------------------------------------------------------------------------
+- Replacing reservations / tours max_participants UI
+- Channel allotment push to OTAs (Phase 4)
+- Overbooking policy UI
+
+
+Rollout
+--------------------------------------------------------------------------------
+1. Apply migration 20260718120000_commerce_inventory_v2_tables.sql
+2. POST /api/admin/commerce/inventory-seed { productId, fromDate, toDate }
+3. Set COMMERCE_V2_INVENTORY_PRODUCTS=<productId>
+4. Place test pending booking → inventory_holds status=held
+5. Complete payment → status=committed, sold_qty increased
+6. Rollback: unset env → immediate no-op holds
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260718120000_commerce_inventory_v2_tables.sql
+src/lib/commerce/inventoryEngine.ts
+src/lib/commerce/commerceV2Flags.ts
+src/lib/customerBookingCheckout.ts
+src/app/api/admin/commerce/inventory-seed/route.ts
+================================================================================

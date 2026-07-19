@@ -437,6 +437,12 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'confirmed_on', type: 'timestamp with time zone', nullable: true, default: null },
       { name: 'confirmed_by', type: 'character varying(255)', nullable: true, default: null },
       { name: 'amount_krw', type: 'numeric(10, 2)', nullable: true, default: null },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ],
@@ -531,11 +537,18 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
         nullable: false,
         default: "'auto'"
       },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],
     journal_entries: [
       { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'operator_id', type: 'uuid', nullable: false, default: "'a0000000-0000-4000-8000-000000000001'::uuid" },
       { name: 'entry_date', type: 'date', nullable: false, default: null },
       { name: 'memo', type: 'text', nullable: true, default: null },
       { name: 'source', type: 'text', nullable: false, default: "'manual'" },
@@ -545,6 +558,7 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
     ],
     journal_lines: [
       { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'operator_id', type: 'uuid', nullable: false, default: "'a0000000-0000-4000-8000-000000000001'::uuid" },
       { name: 'journal_entry_id', type: 'text', nullable: false, default: null },
       { name: 'financial_account_id', type: 'text', nullable: false, default: null },
       { name: 'line_memo', type: 'text', nullable: true, default: null },
@@ -581,6 +595,31 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'source_table', type: 'text', nullable: false, default: null },
       { name: 'source_id', type: 'text', nullable: false, default: null },
       { name: 'matched_amount', type: 'numeric', nullable: true, default: null },
+      { name: 'matched_by', type: 'text', nullable: true, default: null },
+      { name: 'matched_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_by', type: 'text', nullable: true, default: null },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: null },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
+    ],
+    expense_cash_ledger_matches: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'expense_source_table', type: 'text', nullable: false, default: null },
+      { name: 'expense_source_id', type: 'text', nullable: false, default: null },
+      { name: 'cash_transaction_id', type: 'text', nullable: false, default: null },
+      { name: 'matched_amount', type: 'numeric', nullable: true, default: null },
+      { name: 'matched_by', type: 'text', nullable: true, default: null },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],
     statement_imports: [
@@ -594,6 +633,12 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'status', type: 'text', nullable: false, default: "'imported'" },
       { name: 'imported_by', type: 'text', nullable: true, default: null },
       { name: 'notes', type: 'text', nullable: true, default: null },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],
@@ -612,6 +657,12 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'exclude_from_pnl', type: 'boolean', nullable: false, default: 'false' },
       { name: 'is_personal', type: 'boolean', nullable: false, default: 'false' },
       { name: 'personal_partner', type: 'text', nullable: true, default: null },
+      {
+        name: 'operator_id',
+        type: 'uuid',
+        nullable: false,
+        default: "'a0000000-0000-4000-8000-000000000001'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],

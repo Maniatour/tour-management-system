@@ -122,6 +122,15 @@ function mergeDbTranslations(fileMessages: MessagesRecord, dbTranslations: DbTra
     if (shouldKeepFileStringInsteadOfDb(existing, incoming)) {
       continue
     }
+    // Never replace a nested message tree with a scalar (keeps file children).
+    if (isPlainMessageObject(existing) && !isPlainMessageObject(incoming)) {
+      continue
+    }
+    // Deep-merge objects so DB partial branches cannot drop new file keys.
+    if (isPlainMessageObject(existing) && isPlainMessageObject(incoming)) {
+      current[leafKey] = restoreMissingMessageKeysFromFile(existing, incoming)
+      continue
+    }
     current[leafKey] = incoming
   }
 

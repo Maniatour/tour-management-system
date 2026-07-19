@@ -69,7 +69,7 @@ function readStringFromMessages(
 const FALLBACK_TITLES: Record<string, { ko: string; en: string }> = {
   // 사이드바
   'sidebar.products': { ko: '상품 관리', en: 'Products' },
-  'sidebar.options': { ko: '옵션 관리', en: 'Options' },
+  'sidebar.options': { ko: '옵션·초이스 템플릿', en: 'Options & Choice Templates' },
   'sidebar.courses': { ko: '투어 코스', en: 'Tour Courses' },
   'sidebar.tourCostCalculator': { ko: '투어 비용 계산기', en: 'Tour Cost Calculator' },
   'sidebar.channels': { ko: '채널 관리', en: 'Channels' },

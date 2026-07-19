@@ -8,6 +8,9 @@ import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManager
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
 import OptionManagementModal from './expense/OptionManagementModal'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
@@ -161,6 +164,8 @@ export default function TourExpenseManager({
   const t = useTranslations('tours.tourExpense')
   const locale = useLocale()
   const { userRole: authUserRole, userPosition, authUser } = useAuth()
+  const { operatorId } = useOperatorOptional()
+  const activeOperatorId = resolveOperatorId(operatorId)
   const canSeeReceiptOcrRulesLink =
     authUserRole === 'admin' ||
     authUserRole === 'manager' ||
@@ -727,6 +732,7 @@ export default function TourExpenseManager({
       const { data, error } = await supabase
         .from('reservation_expenses')
         .select('reservation_id, amount, status')
+        .eq('operator_id', activeOperatorId)
         .in('reservation_id', targetReservationIds)
         .not('status', 'eq', 'rejected')
       
@@ -752,7 +758,7 @@ export default function TourExpenseManager({
       console.error('❌ Error loading reservation expenses:', error)
       setReservationExpenses({})
     }
-  }, [reservations, reservationIds])
+  }, [reservations, reservationIds, activeOperatorId])
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -780,6 +786,7 @@ export default function TourExpenseManager({
       const { data, error } = await supabase
         .from('tour_expenses')
         .select('*')
+        .eq('operator_id', activeOperatorId)
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
 
@@ -841,7 +848,7 @@ export default function TourExpenseManager({
     } finally {
       setLoading(false)
     }
-  }, [tourId])
+  }, [tourId, activeOperatorId])
 
   useEffect(() => {
     const ids = expenses.map((e) => e.id)
@@ -1006,6 +1013,7 @@ export default function TourExpenseManager({
         console.log('투어의 product_id 사용:', finalProductId)
       }
       
+      const expenseOperatorId = await lookupTourOperatorId(supabase, tourId, activeOperatorId)
       const { data, error } = await supabase
         .from('tour_expenses')
         .insert({
@@ -1020,7 +1028,8 @@ export default function TourExpenseManager({
           submitted_by: effectiveSubmittedBy,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
-          status: 'pending'
+          status: 'pending',
+          operator_id: expenseOperatorId,
         } as never)
         .select()
         .single()
@@ -1159,6 +1168,7 @@ export default function TourExpenseManager({
         toast.info(t('receiptOcrAnalyzingAfterUpload'))
       }
 
+      const expenseOperatorId = await lookupTourOperatorId(supabase, tourId, activeOperatorId)
       for (const file of imageFiles) {
         try {
           const { filePath, imageUrl } = await handleImageUpload(file)
@@ -1176,7 +1186,8 @@ export default function TourExpenseManager({
               submitted_by: effectiveSubmittedBy,
               image_url: imageUrl,
               file_path: filePath,
-              status: 'pending'
+              status: 'pending',
+              operator_id: expenseOperatorId,
             })
             .select()
             .single()

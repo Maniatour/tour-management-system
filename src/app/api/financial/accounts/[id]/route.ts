@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
 import type { StatementCsvDirectionMode } from '@/lib/statement-csv'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 const MODES: StatementCsvDirectionMode[] = ['auto', 'invert', 'no_invert']
 
@@ -42,11 +43,14 @@ export async function PATCH(
       )
     }
 
+    const activeOperatorId = resolveOperatorId(request.nextUrl.searchParams.get('operatorId'))
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (auth.supabase as any)
       .from('financial_accounts')
       .update({ statement_csv_direction_mode: mode })
       .eq('id', accountId)
+      .eq('operator_id', activeOperatorId)
       .select('id, name, account_type, currency, is_active, statement_csv_direction_mode')
       .maybeSingle()
 

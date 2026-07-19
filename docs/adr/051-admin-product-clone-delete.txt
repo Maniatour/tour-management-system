@@ -1,0 +1,48 @@
+================================================================================
+ADR 051 — Admin product deep clone + cascade delete (Phase 6d.4 follow-up)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+After catalog tenant lock (ADR 050), product copy still created an empty shell
+and delete only removed product_options + products, leaving orphan children.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. src/lib/adminProductClone.ts
+   - Copy products shell (draft, unpublished) + operator_id stamp
+   - Children: product_choices + choice_options, product_media,
+     product_details_multilingual, product_faqs, product_schedules,
+     product_options, product_tour_courses, dynamic_pricing
+   - Remap choice/option UUIDs inside choices_pricing / options_pricing JSON
+   - Not copied: channel_products, reservations, Commerce v2
+
+2. src/lib/adminProductDelete.ts
+   - Cascade delete catalog children then products (operator-scoped)
+   - Clear error if reservations/other FKs block
+
+3. UX
+   - Products list: loadError vs empty catalog
+   - Homepage channel fetch scoped by operator (M00001 only for Kovegas)
+   - Legacy /admin/products/[id]/details → edit hub tab=details
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- God-component split (DynamicPricingManager / ProductDetailsTab)
+- Booking / payment / reservation deletes
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/adminProductClone.ts
+src/lib/adminProductDelete.ts
+src/app/[locale]/admin/products/ProductsPageInner.tsx
+src/app/[locale]/admin/products/[id]/page.tsx
+src/app/[locale]/admin/products/[id]/details/page.tsx
+src/components/ProductCard.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

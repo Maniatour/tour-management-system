@@ -14,11 +14,14 @@ import {
   type CustomerBookingPriceResult,
 } from '@/lib/customerBookingCheckout'
 import { parseBookingLocale } from '@/lib/customerBookingEmail'
+import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
+import { resolvePublicDirectChannel } from '@/lib/operators/resolvePublicDirectChannel'
+import { resolveConnectCheckoutDestination } from '@/lib/operators/stripeConnectCheckout'
 
 /**
  * POST /api/booking/create-checkout
  * 서버에서 고객·예약(pending)·가격을 생성하고 Stripe PaymentIntent를 발급합니다.
- * 장바구니 쿠폰은 합계 기준으로 계산한 뒤 라인에 비례 배분합니다.
+ * 장바구니 합계 쿠폰은 합계 기준으로 계산한 뒤 라인에 비례 배분합니다.
  */
 export async function POST(request: NextRequest) {
   const createdReservationIds: string[] = []
@@ -43,6 +46,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const publicOperatorId = await getPublicOperatorId()
+    const direct = await resolvePublicDirectChannel(supabaseAdmin, publicOperatorId, {
+      ensure: true,
+    })
+    const tenant = {
+      operatorId: direct.operatorId,
+      channelId: direct.channelId,
+    }
+
     const rawItems = Array.isArray(body.items) ? body.items : null
     const parsedLines: Array<CustomerBookingLineInput | null> = rawItems
       ? rawItems.map((item: unknown) => parseCustomerBookingLine(item))
@@ -61,7 +73,10 @@ export async function POST(request: NextRequest) {
     const basePrices: CustomerBookingPriceResult[] = []
     for (const line of lines) {
       basePrices.push(
-        await calculateServerBookingPrice(supabaseAdmin, line, null, { enforceMinAmount: false })
+        await calculateServerBookingPrice(supabaseAdmin, line, null, {
+          enforceMinAmount: false,
+          tenant,
+        })
       )
     }
 
@@ -110,6 +125,7 @@ export async function POST(request: NextRequest) {
         line: lines[i]!,
         status: 'pending',
         priceOverride: pricedLines[i],
+        tenant,
       })
       createdReservationIds.push(pending.reservationId)
       pendings.push(pending)
@@ -117,6 +133,11 @@ export async function POST(request: NextRequest) {
 
     const primary = pendings[0]!
     const reservationIdsCsv = pendings.map((p) => p.reservationId).join(',')
+    const connectDest = await resolveConnectCheckoutDestination(
+      supabaseAdmin,
+      tenant.operatorId,
+      totalCents
+    )
 
     let paymentIntent
     try {
@@ -125,9 +146,19 @@ export async function POST(request: NextRequest) {
         amountCents: totalCents,
         customerName: customer.name,
         customerEmail: customer.email,
+        connect:
+          connectDest.mode === 'destination' && connectDest.connectedAccountId
+            ? {
+                destinationAccountId: connectDest.connectedAccountId,
+                applicationFeeCents: connectDest.applicationFeeCents,
+              }
+            : null,
         extraMetadata: {
           reservation_ids: reservationIdsCsv,
           locale,
+          operator_id: tenant.operatorId,
+          channel_id: tenant.channelId,
+          connect_reason: connectDest.reason,
           ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
         },
       })

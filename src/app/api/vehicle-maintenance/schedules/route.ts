@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupVehicleOperatorId } from '@/lib/operators/lookupVehicleOperatorId'
 
 export const dynamic = 'force-dynamic'
 
 const SCHEDULE_SELECT =
-  'id, vehicle_id, catalog_code, is_enabled, custom_mileage_interval, custom_month_interval, last_service_date, last_service_mileage, next_due_mileage, next_due_date, notes, last_maintenance_id'
+  'id, vehicle_id, catalog_code, is_enabled, custom_mileage_interval, custom_month_interval, last_service_date, last_service_mileage, next_due_mileage, next_due_date, notes, last_maintenance_id, operator_id'
 
 function parseOptionalInt(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
@@ -24,8 +26,12 @@ export async function GET(request: NextRequest) {
     if (supabase instanceof NextResponse) return supabase
 
     const vehicleId = request.nextUrl.searchParams.get('vehicle_id')
+    const operatorId = resolveOperatorId(request.nextUrl.searchParams.get('operatorId'))
 
-    let query = supabase.from('vehicle_maintenance_schedules').select(SCHEDULE_SELECT)
+    let query = supabase
+      .from('vehicle_maintenance_schedules')
+      .select(SCHEDULE_SELECT)
+      .eq('operator_id', operatorId)
 
     if (vehicleId && vehicleId !== 'all') {
       query = query.eq('vehicle_id', vehicleId)
@@ -57,6 +63,7 @@ type ScheduleUpsertBody = {
   next_due_date?: string | null
   notes?: string | null
   last_maintenance_id?: string | null
+  operatorId?: string | null
 }
 
 export async function PUT(request: NextRequest) {
@@ -88,9 +95,16 @@ export async function PUT(request: NextRequest) {
       next_due_mileage = last_service_mileage + intervalForCalc
     }
 
+    const operator_id = await lookupVehicleOperatorId(
+      supabase,
+      vehicle_id,
+      body.operatorId
+    )
+
     const patch = {
       vehicle_id,
       catalog_code,
+      operator_id,
       is_enabled: body.is_enabled !== false,
       custom_mileage_interval,
       custom_month_interval,

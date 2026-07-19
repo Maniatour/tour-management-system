@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase'
 import type { HomeSectionConfig } from '@/lib/customerPageHomeSectionCatalog'
 import { loadCustomerPageHomeContent } from '@/lib/customerPageHomeContentPersistence'
 import { withLowestChoicePrices } from '@/lib/fetchLowestChoicePrices'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 
 export const HOME_SECTION_PRODUCT_SELECT =
   'id, name, name_en, customer_name_ko, customer_name_en, description, summary_ko, summary_en, base_price, adult_base_price, category, is_favorite, favorite_order, departure_city, departure_city_ko, departure_city_en, departure_country, departure_country_ko, departure_country_en, duration, max_participants, tags, created_at'
@@ -32,14 +34,17 @@ export type HomeSectionProductRow = {
 }
 
 export async function fetchHomeSectionProducts(
-  config: HomeSectionConfig
+  config: HomeSectionConfig,
+  operatorId?: string | null
 ): Promise<HomeSectionProductRow[]> {
+  const opId = resolveOperatorId(operatorId ?? readPublicOperatorIdBrowser())
   const limit = Math.min(12, Math.max(1, config.cardCount ?? 3))
   const query = config.productQuery ?? 'favorites'
 
   let builder = supabase
     .from('products')
     .select(HOME_SECTION_PRODUCT_SELECT)
+    .eq('operator_id', opId)
     .eq('status', 'active')
     .eq('is_published', true)
 
@@ -64,6 +69,7 @@ export async function fetchHomeSectionProducts(
     const { data: recent, error: recentError } = await supabase
       .from('products')
       .select(HOME_SECTION_PRODUCT_SELECT)
+      .eq('operator_id', opId)
       .eq('status', 'active')
       .eq('is_published', true)
       .order('created_at', { ascending: false })
@@ -76,14 +82,17 @@ export async function fetchHomeSectionProducts(
 }
 
 export async function fetchHomeSectionProductsByIds(
-  productIds: string[]
+  productIds: string[],
+  operatorId?: string | null
 ): Promise<HomeSectionProductRow[]> {
+  const opId = resolveOperatorId(operatorId ?? readPublicOperatorIdBrowser())
   const ids = productIds.filter(Boolean)
   if (ids.length === 0) return []
 
   const { data, error } = await supabase
     .from('products')
     .select(HOME_SECTION_PRODUCT_SELECT)
+    .eq('operator_id', opId)
     .eq('status', 'active')
     .eq('is_published', true)
     .in('id', ids)
@@ -103,11 +112,12 @@ export async function fetchHomeSectionProductsByIds(
 
 export async function fetchHomeSectionProductsForSection(
   instanceId: string,
-  config: HomeSectionConfig
+  config: HomeSectionConfig,
+  operatorId?: string | null
 ): Promise<HomeSectionProductRow[]> {
   const homeContent = loadCustomerPageHomeContent()
   if (instanceId === 'home-popular' && homeContent.popularProductIds.length > 0) {
-    return fetchHomeSectionProductsByIds(homeContent.popularProductIds)
+    return fetchHomeSectionProductsByIds(homeContent.popularProductIds, operatorId)
   }
-  return fetchHomeSectionProducts(config)
+  return fetchHomeSectionProducts(config, operatorId)
 }

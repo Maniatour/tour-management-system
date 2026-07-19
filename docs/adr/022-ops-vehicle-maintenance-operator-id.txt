@@ -1,0 +1,59 @@
+================================================================================
+ADR 022 — Ops Fleet: vehicle_maintenance* operator_id (Phase 6b.1)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.0 added vehicles.operator_id. Maintenance records and per-vehicle
+schedules still listed the whole shared DB, so a second tenant with Ops ON
+could see Kovegas fleet history.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719130000_saas_operator_id_vehicle_maintenance.sql
+   - vehicle_maintenance.operator_id NOT NULL (default Kovegas)
+   - vehicle_maintenance_schedules.operator_id NOT NULL (default Kovegas)
+   - Backfill from vehicles.operator_id when vehicle_id present
+   - No schema rename/move; catalog stays shared platform reference
+
+2. API list/create stamp:
+   - GET/POST /api/vehicle-maintenance?operatorId=
+   - GET/PUT /api/vehicle-maintenance/schedules?operatorId=
+   - Insert stamps from vehicle.operator_id (fallback request operator / Kovegas)
+   - sync from company_expenses stamps via vehicle map + operator scope
+
+3. Clients pass active operatorId on maintenance fetches.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- vehicle_maintenance_catalog tenant split (shared codes / FK)
+- company_expenses.operator_id (later 6b.x)
+- ops_* schema move
+- Booking / payment / checkout changes
+- Full Ops RLS rewrite
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.2: attendance_* operator_id OR company_expenses.operator_id
+OR Operator B E2E
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719130000_saas_operator_id_vehicle_maintenance.sql
+src/lib/database.types.ts
+src/lib/operators/lookupVehicleOperatorId.ts
+src/app/api/vehicle-maintenance/route.ts
+src/app/api/vehicle-maintenance/schedules/route.ts
+src/lib/vehicleMaintenanceFromCompanyExpense.ts
+src/lib/vehicleMaintenanceScheduleSync.ts
+src/components/VehicleMaintenanceManager.tsx
+src/components/vehicle-maintenance/VehicleMaintenanceVehicleModal.tsx
+src/components/VehicleMaintenanceSchedulePanel.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

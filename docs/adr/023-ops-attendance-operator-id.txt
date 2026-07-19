@@ -1,0 +1,59 @@
+================================================================================
+ADR 023 — Ops HR: attendance operator_id (Phase 6b.2)
+상태: Accepted
+날짜: 2026-07-19
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6b.0–6b.1 scoped fleet (vehicles / maintenance). Attendance and monthly
+stats still lived in shared public tables without operator_id. Operator B is
+commerce-only (Ops OFF), but Kovegas Ops must stay isolated when a second
+Ops-enabled tenant appears.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. Migration: 20260719140000_saas_operator_id_attendance.sql
+   - attendance_records.operator_id NOT NULL (default / backfill Kovegas)
+   - monthly_attendance_stats.operator_id NOT NULL (same)
+   - UNIQUE (operator_id, employee_email, month) replaces (employee_email, month)
+   - calculate_monthly_attendance_stats(email, month, operator_id DEFAULT Kovegas)
+   - Trigger passes NEW/OLD.operator_id
+
+2. App list/create stamp:
+   - AttendancePageInner, useAttendanceSync, attendanceOpenSession
+   - GET/POST /api/attendance-records?operatorId=
+   - Biweekly / TotalEmployees / OfficeTips modals filter by operator
+
+3. team table unchanged (still global staff directory for now).
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- team.operator_id / multi-tenant HR directory
+- office_meal_log / tip shares operator_id (later)
+- company_expenses.operator_id (Phase 6b.3 candidate)
+- ops_* schema move
+- Booking / payment / checkout changes
+
+
+Next
+--------------------------------------------------------------------------------
+Phase 6b.3: company_expenses.operator_id OR Operator B E2E
+
+
+Files
+--------------------------------------------------------------------------------
+supabase/migrations/20260719140000_saas_operator_id_attendance.sql
+src/lib/database.types.ts
+src/lib/attendanceOpenSession.ts
+src/hooks/useAttendanceSync.ts
+src/app/api/attendance-records/route.ts
+src/app/[locale]/admin/attendance/AttendancePageInner.tsx
+src/components/AddAttendanceForm.tsx
+src/components/BiweeklyCalculatorModal.tsx
+src/components/TotalEmployeesModal.tsx
+src/components/attendance/OfficeTipsModal.tsx
+docs/saas-multi-tenant-migration-plan.txt
+================================================================================

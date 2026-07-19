@@ -1,0 +1,45 @@
+================================================================================
+ADR 018 — Operator B Pilot Status + Ops Route Guard (Phase 6a.1)
+상태: Accepted
+날짜: 2026-07-18
+================================================================================
+
+Context
+--------------------------------------------------------------------------------
+Phase 6a hid Ops Suite from the sidebar when modules.operations=false, but
+direct URLs still opened those pages. The Operator B manual checklist was
+static and did not reflect live tenant/env state.
+
+
+Decision
+--------------------------------------------------------------------------------
+1. OpsModuleRouteGuard (AdminChrome):
+   If operationsEnabled=false and path matches requiresOperationsModule
+   registry paths → redirect to /admin/operator-b/manual?ops_blocked=1
+
+2. GET /api/admin/operators/pilot-status?operatorId=
+   Evaluates createOperator / connect / subdomain / catalog / pricing /
+   checkoutFlag / isolation / opsOff / opsRouteGuard for the selected tenant.
+
+3. Operator B manual:
+   Live checklist with green/gray icons + detail lines + refresh.
+   Banner when redirected via ops_blocked.
+   Manual “done” section updated for route guard + pilot-status.
+
+
+Non-goals
+--------------------------------------------------------------------------------
+- Full automated UI isolation crawler
+- ops_* physical table split (Phase 6b)
+- Blocking Ops REST APIs (page guard only)
+
+
+Files
+--------------------------------------------------------------------------------
+src/lib/operators/opsModulePaths.ts
+src/lib/operators/pilotStatus.ts
+src/components/admin/OpsModuleRouteGuard.tsx
+src/components/admin/AdminChrome.tsx
+src/components/admin/OperatorBManual.tsx
+src/app/api/admin/operators/pilot-status/route.ts
+================================================================================

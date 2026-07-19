@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
+import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 // 입금 내역 조회
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const reservationId = searchParams.get('reservation_id')
+    const operatorIdParam = searchParams.get('operatorId')
 
     const db = await getSupabaseForApiRoute(request)
     if (db instanceof NextResponse) return db
@@ -20,6 +23,8 @@ export async function GET(request: NextRequest) {
 
       if (reservationId) {
         query = query.eq('reservation_id', reservationId)
+      } else if (operatorIdParam) {
+        query = query.eq('operator_id', resolveOperatorId(operatorIdParam))
       }
 
       const { data: paymentRecords, error } = await query
@@ -81,10 +86,13 @@ export async function POST(request: NextRequest) {
 
     const db = supabaseAdmin ?? userDb
 
+    const operatorId = await lookupReservationOperatorId(db, reservation_id)
+
     const { data: newPaymentRecord, error } = await db
       .from('payment_records')
       .insert({
         id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        operator_id: operatorId,
         reservation_id,
         payment_status,
         amount: parsedAmount,

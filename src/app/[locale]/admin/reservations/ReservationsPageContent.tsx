@@ -31,6 +31,8 @@ import ReservationsPagination from '@/components/reservation/ReservationsPaginat
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { operatorIdInsert } from '@/lib/operators/scopeQuery'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
@@ -613,6 +615,7 @@ export default function AdminReservations() {
   const routeParams = useParams() as { locale?: string }
   const locale = routeParams?.locale || 'ko'
   const searchParams = useSearchParams()
+  const { operatorId } = useOperatorOptional()
 
   const awayNotifier = useAwayOtherUserChangesNotifier({
     supabase,
@@ -2032,6 +2035,7 @@ export default function AdminReservations() {
           debouncedSearchTerm,
           sortBy,
           sortOrder,
+          operatorId,
           calendarTourDateStart: calWindow.startYmd,
           calendarTourDateEnd: calWindow.endYmd,
           calendarCreatedStartIso: calWindow.rangeStartIso,
@@ -2062,6 +2066,7 @@ export default function AdminReservations() {
           debouncedSearchTerm,
           sortBy: 'created_at',
           sortOrder: 'desc',
+          operatorId,
         })
         if (error) throw error
         await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
@@ -2081,6 +2086,7 @@ export default function AdminReservations() {
         debouncedSearchTerm,
         sortBy,
         sortOrder,
+        operatorId,
         ...(groupByDate
           ? { activityRangeStartIso: rangeStartIso, activityRangeEndIso: rangeEndIso }
           : {}),
@@ -2260,6 +2266,7 @@ export default function AdminReservations() {
     regCancelMonthOffset,
     regCancelYearOffset,
     calendarMonthOffset,
+    operatorId,
     applyReservationListSideDataPrefetch,
     mergeReservationListSideDataPrefetch,
   ])
@@ -2299,9 +2306,14 @@ export default function AdminReservations() {
       if (candidateError) throw candidateError
 
       if (usedRpc) {
-        const { error } = await fetchReservationsByIdsProgressive(supabase, candidateIds ?? [], {
-          onChunk: (rows) => applyHydratedChunk(rows),
-        })
+        const { error } = await fetchReservationsByIdsProgressive(
+          supabase,
+          candidateIds ?? [],
+          {
+            onChunk: (rows) => applyHydratedChunk(rows),
+          },
+          operatorId
+        )
         if (error) throw error
         finalizeSnapshot()
         return
@@ -2317,6 +2329,7 @@ export default function AdminReservations() {
         sortOrder: 'desc' as const,
         selectFieldsOverride: RESERVATION_LIST_SELECT,
         includeExactCount: false,
+        operatorId,
       }
       const { error } = await fetchAdminReservationListAllFlatProgressive(supabase, flatArgs, {
         onChunk: async ({ rows }) => applyHydratedChunk(rows),
@@ -2333,7 +2346,7 @@ export default function AdminReservations() {
         setOperationalQueueLoading(false)
       }
     }
-  }, [customerIdFromUrl, hydrateAdminListRawRows])
+  }, [customerIdFromUrl, hydrateAdminListRawRows, operatorId])
 
   const ensureOperationalQueueSnapshot = useCallback(() => {
     void loadOperationalQueueSnapshot()
@@ -2379,7 +2392,7 @@ export default function AdminReservations() {
     setOperationalQueueSnapshot(null)
     operationalQueueFetchGenRef.current += 1
     operationalQueueInFlightRef.current = false
-  }, [customerIdFromUrl])
+  }, [customerIdFromUrl, operatorId])
 
   const refreshReservations = useCallback(async () => {
     setOperationalQueueSnapshot(null)
@@ -3295,7 +3308,8 @@ export default function AdminReservations() {
         selected_option_prices: reservation.selectedOptionPrices,
         is_private_tour: reservation.isPrivateTour || false,
         choices: reservation.choices,
-        variant_key: (reservation as any).variantKey || 'default' // variant_key ???
+        variant_key: (reservation as any).variantKey || 'default', // variant_key ???
+        ...operatorIdInsert(operatorId),
       }
 
       // ID? ?????upsert ??? (???? ????? update, ?????insert)
@@ -3701,7 +3715,7 @@ export default function AdminReservations() {
     } finally {
       isAddingReservationRef.current = false
     }
-  }, [refreshReservations])
+  }, [refreshReservations, operatorId, t, newReservationId])
 
   const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     if (!editingReservation) return

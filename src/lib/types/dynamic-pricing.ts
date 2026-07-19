@@ -126,17 +126,24 @@ export interface SimplePricingRuleDto {
   markup_amount: number;
   coupon_percent: number; // coupon_percentage_discount 대신 coupon_percent 사용
   is_sale_available: boolean;
-  not_included_price?: number;
-  markup_percent?: number;
-  price_type?: 'dynamic' | 'base'; // 동적 가격 또는 기본 가격
-  variant_key?: string; // Variant 식별자 (기본값: 'default')
-  price_adjustment_adult?: number; // 채널별 증차감 금액 (성인)
-  price_adjustment_child?: number; // 채널별 증차감 금액 (아동)
-  price_adjustment_infant?: number; // 채널별 증차감 금액 (유아)
-  inclusions_ko?: string | null;
-  exclusions_ko?: string | null;
-  inclusions_en?: string | null;
-  exclusions_en?: string | null;
+  not_included_price?: number | undefined;
+  markup_percent?: number | undefined;
+  price_type?: 'dynamic' | 'base' | undefined; // 동적 가격 또는 기본 가격
+  variant_key?: string | undefined; // Variant 식별자 (기본값: 'default')
+  /** absolute: 초이스별 최종가 | base_plus: 기본가 + 초이스 추가금/할인 */
+  price_calculation_method?: 'absolute' | 'base_plus' | undefined;
+  price_adjustment_adult?: number | undefined; // 채널별 증차감 금액 (성인)
+  price_adjustment_child?: number | undefined; // 채널별 증차감 금액 (아동)
+  price_adjustment_infant?: number | undefined; // 채널별 증차감 금액 (유아)
+  options_pricing?: Record<string, {
+    adult_price?: number;
+    child_price?: number;
+    infant_price?: number;
+  }> | undefined;
+  inclusions_ko?: string | null | undefined;
+  exclusions_ko?: string | null | undefined;
+  inclusions_en?: string | null | undefined;
+  exclusions_en?: string | null | undefined;
   choices_pricing?: Record<string, {
     adult_price?: number;
     child_price?: number;
@@ -147,7 +154,7 @@ export interface SimplePricingRuleDto {
     not_included_price_child?: number;
     not_included_price_infant?: number;
     is_sale_available?: boolean;
-  }>;
+  }> | undefined;
 }
 
 // 간단한 가격 규칙 (기존 코드 호환용)
@@ -167,6 +174,7 @@ export interface SimplePricingRule {
   markup_percent?: number;
   price_type?: 'dynamic' | 'base'; // 동적 가격 또는 기본 가격
   variant_key?: string; // Variant 식별자 (기본값: 'default')
+  price_calculation_method?: 'absolute' | 'base_plus';
   options_pricing?: Record<string, {
     adult_price: number;
     child_price: number;
