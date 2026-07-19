@@ -1,10 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Clock, ExternalLink, Loader2, MapPin, Save } from 'lucide-react'
 import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
-import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
-import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import { DETAIL_FIELD_LABELS } from '@/lib/customerPageZoneEditMap'
 import {
   getAdminEditLocaleLabel,
@@ -102,6 +101,8 @@ export default function CustomerPageScheduleEmbed({
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
+  const editLocaleRef = useRef(editLocale)
+  editLocaleRef.current = editLocale
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -137,8 +138,8 @@ export default function CustomerPageScheduleEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [row, scheduleResult] = await Promise.all([
-        fetchProductDetailsRowForLocale(productId, editLocale),
+      const [details, scheduleResult] = await Promise.all([
+        fetchProductDetailsForAdminEdit(productId, editLocale),
         supabase
           .from('product_schedules')
           .select(
@@ -152,22 +153,24 @@ export default function CustomerPageScheduleEmbed({
 
       if (scheduleResult.error) throw scheduleResult.error
 
+      const { row, values } = details
       const nextSchedules = (scheduleResult.data ?? []) as unknown as ScheduleItem[]
       const first = nextSchedules[0] ?? null
-      const nextPickup = String(row?.pickup_drop_info ?? '')
+      const nextPickup = String(values.pickup_drop_info ?? '')
 
       setRowId(row?.id ? String(row.id) : null)
       setPickupDropInfo(nextPickup)
-      setPickupVisible(readPickupVisibility(row))
+      setPickupVisible(readPickupVisibility(values))
       setSchedules(nextSchedules)
       setActiveScheduleId(first?.id ?? null)
+      const pickupVisible = readPickupVisibility(values)
       if (first) {
         const nextForm = scheduleToForm(first, editLocale)
         setScheduleForm(nextForm)
         setInitialSnapshot(
           JSON.stringify({
             pickup: nextPickup,
-            pickupVisible: readPickupVisibility(row),
+            pickupVisible,
             scheduleId: first.id,
             schedule: nextForm,
             locale: editLocale,
@@ -177,7 +180,7 @@ export default function CustomerPageScheduleEmbed({
         setInitialSnapshot(
           JSON.stringify({
             pickup: nextPickup,
-            pickupVisible: readPickupVisibility(row),
+            pickupVisible,
             scheduleId: null,
             schedule: {},
             locale: editLocale,
@@ -213,6 +216,7 @@ export default function CustomerPageScheduleEmbed({
   }, [activeScheduleId])
 
   const switchLocale = (next: AdminEditLocale) => {
+    if (next === editLocaleRef.current) return
     const merged = mergeScheduleI18n(
       scheduleForm,
       editLocale,
@@ -236,6 +240,11 @@ export default function CustomerPageScheduleEmbed({
     })
     setEditLocale(next)
   }
+
+  useEffect(() => {
+    switchLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only localeProp
+  }, [localeProp])
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot) return
@@ -386,17 +395,10 @@ export default function CustomerPageScheduleEmbed({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          DB: <code className="rounded bg-muted px-1">product_schedules</code> ·{' '}
-          <code className="rounded bg-muted px-1">pickup_drop_info</code>
-        </p>
-        <AdminEditLocaleToggle
-          value={editLocale}
-          onChange={switchLocale}
-          groupLabel="일정 편집 언어"
-        />
-      </div>
+      <p className="text-xs text-muted-foreground">
+        DB: <code className="rounded bg-muted px-1">product_schedules</code> ·{' '}
+        <code className="rounded bg-muted px-1">pickup_drop_info</code>
+      </p>
 
       <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">

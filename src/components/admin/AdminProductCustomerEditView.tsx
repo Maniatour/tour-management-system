@@ -4,15 +4,16 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { ArrowLeft, ExternalLink, Languages, Monitor, Smartphone } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Monitor, Smartphone } from 'lucide-react'
+import LocaleDropdown from '@/components/LocaleDropdown'
 import ProductDetailPageContent from '@/components/product/ProductDetailPageContent'
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider'
 import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider'
 import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell'
 import { CustomerPageZoneEditProvider } from '@/components/product/CustomerPageZoneEditProvider'
 import { buildAdminPathForEditTab, buildCustomerPageEditUrl } from '@/lib/customer-page-registry'
+import { normalizeSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
-type PreviewLocale = 'ko' | 'en'
 type PreviewViewport = 'desktop' | 'mobile'
 
 type AdminProductCustomerEditViewProps = {
@@ -26,7 +27,9 @@ export default function AdminProductCustomerEditView({
 }: AdminProductCustomerEditViewProps) {
   const t = useTranslations('products.customerPageEdit')
   const router = useRouter()
-  const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale === 'en' ? 'en' : 'ko')
+  const [previewLocale, setPreviewLocale] = useState<SiteLocale>(() =>
+    normalizeSiteLocale(locale)
+  )
   const [previewViewport, setPreviewViewport] = useState<PreviewViewport>('desktop')
 
   const customerPreviewUrl = useMemo(
@@ -38,7 +41,7 @@ export default function AdminProductCustomerEditView({
     router.push(buildAdminPathForEditTab(locale, tabId, productId))
   }
 
-  const handlePreviewLocaleChange = (nextLocale: PreviewLocale) => {
+  const handlePreviewLocaleChange = (nextLocale: SiteLocale) => {
     if (nextLocale === previewLocale) return
     setPreviewLocale(nextLocale)
   }
@@ -84,23 +87,13 @@ export default function AdminProductCustomerEditView({
               ))}
             </div>
 
-            <div className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-white/80 p-0.5">
-              <Languages className="ml-1 h-3.5 w-3.5 text-indigo-600" />
-              {(['ko', 'en'] as const).map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => handlePreviewLocaleChange(code)}
-                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                    previewLocale === code
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-gray-600 hover:bg-indigo-50'
-                  }`}
-                >
-                  {code === 'ko' ? t('localeKo') : t('localeEn')}
-                </button>
-              ))}
-            </div>
+            <LocaleDropdown
+              value={previewLocale}
+              onChange={handlePreviewLocaleChange}
+              size="sm"
+              showLabel
+              ariaLabel={t('editLocaleGroup')}
+            />
 
             <a
               href={customerPreviewUrl}
@@ -129,6 +122,7 @@ export default function AdminProductCustomerEditView({
             <CustomerPageZoneEditProvider
               productId={productId}
               previewLocale={previewLocale}
+              onPreviewLocaleChange={handlePreviewLocaleChange}
               onNavigateToTab={handleNavigateToTab}
             >
               <div

@@ -55,6 +55,16 @@ export function getFaqLocalizedText(
   return ''
 }
 
+/** Admin editors: only the selected locale (no customer-page fallback). */
+export function getFaqExactText(
+  faq: FaqI18nSource,
+  field: FaqI18nField,
+  locale: string
+): string {
+  const preferred = isSiteLocale(locale) ? locale : 'en'
+  return getFaqI18nMap(faq, field)[preferred]?.trim() || ''
+}
+
 export function setFaqI18nField(
   current: FaqContentI18n | null | undefined,
   field: FaqI18nField,

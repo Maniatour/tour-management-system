@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
-import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
-import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
+import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
+import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 import { getProductOverviewDescription } from '@/lib/productDetailDisplay'
 import {
   getAdminEditLocaleLabel,
@@ -64,6 +65,8 @@ export default function CustomerPageOverviewEmbed({
   onSaved,
   onDirtyChange,
 }: CustomerPageOverviewEmbedProps) {
+  const { showOnCustomerPage, editorUiLocale, contentPlaceholder } = useCustomerPageEditLabels()
+  const editorHeight = useModalEditorHeight(280)
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
@@ -83,12 +86,16 @@ export default function CustomerPageOverviewEmbed({
   const [productDescription, setProductDescription] = useState('')
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
+  useEffect(() => {
+    setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+  }, [localeProp])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setMessage(null)
     try {
-      const [row, productResult, translationRows] = await Promise.all([
-        fetchProductDetailsRowForLocale(productId, editLocale),
+      const [details, productResult, translationRows] = await Promise.all([
+        fetchProductDetailsForAdminEdit(productId, editLocale),
         supabase
           .from('products')
           .select('summary_ko, summary_en, description')
@@ -99,18 +106,23 @@ export default function CustomerPageOverviewEmbed({
 
       if (productResult.error) throw productResult.error
 
+      const { row, values } = details
       const productRow = (productResult.data ?? {}) as Record<string, unknown>
       const nextForm: OverviewForm = {
-        greeting: String(row?.greeting ?? ''),
-        description: String(row?.description ?? ''),
+        greeting: String(values.greeting ?? ''),
+        description: String(values.description ?? ''),
       }
       const nextVisibility: VisibilityForm = {
-        greeting: readVisibility(row, 'greeting'),
-        description: readVisibility(row, 'description'),
+        greeting: readVisibility(values, 'greeting'),
+        description: readVisibility(values, 'description'),
       }
       const summaryMap = buildProductTranslationMap(productRow, translationRows).summary || {}
       const nextSummary: SummaryForm = {
-        summary: summaryMap[editLocale] ?? '',
+        summary:
+          summaryMap[editLocale] ||
+          summaryMap.en ||
+          summaryMap.ko ||
+          '',
       }
 
       setRowId(row?.id ? String(row.id) : null)
@@ -181,6 +193,7 @@ export default function CustomerPageOverviewEmbed({
         const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .update(payload)
           .eq('id', rowId)
+          .eq('language_code', editLocale)
         if (error) throw error
       } else {
         const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
@@ -271,26 +284,14 @@ export default function CustomerPageOverviewEmbed({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">
-            DB:{' '}
-            <code className="rounded bg-muted px-1">product_details_multilingual</code>
-            {rowId ? (
-              <span className="ml-2 text-[11px]">행 ID: {rowId}</span>
-            ) : (
-              <span className="ml-2 text-amber-700">새 행 생성 예정</span>
-            )}
-          </p>
-        </div>
-        <AdminEditLocaleToggle
-          value={editLocale}
-          onChange={setEditLocale}
-          groupLabel="투어 소개 편집 언어"
-          koLabel="한국어"
-          enLabel="English"
-        />
-      </div>
+      <p className="text-xs text-muted-foreground">
+        DB: <code className="rounded bg-muted px-1">product_details_multilingual</code>
+        {rowId ? (
+          <span className="ml-2 text-[11px]">행 ID: {rowId}</span>
+        ) : (
+          <span className="ml-2 text-amber-700">새 행 생성 예정</span>
+        )}
+      </p>
 
       <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-1">
         {OVERVIEW_SLOTS.map((slot) => (
@@ -327,16 +328,18 @@ export default function CustomerPageOverviewEmbed({
               }
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
             />
-            고객 페이지 표시
+            {showOnCustomerPage}
           </label>
         </div>
 
         <LightRichEditor
           value={form[activeSlot]}
           onChange={(value) => setForm((prev) => ({ ...prev, [activeSlot]: value }))}
-          height={activeSlot === 'greeting' ? 120 : 220}
-          placeholder={`${activeMeta.label} 내용을 입력하세요`}
+          height={activeSlot === 'greeting' ? Math.min(180, editorHeight) : editorHeight}
+          placeholder={contentPlaceholder(activeMeta.label)}
           enableResize
+          uiLocale={editorUiLocale}
+          maxHeight={1200}
         />
 
         {activeSlot === 'description' && !form.description.trim() ? (

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Loader2, Save, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
 import LightRichEditor from '@/components/LightRichEditor'
+import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
+import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 import CustomerPageZoneAdminEmbed from '@/components/product/CustomerPageZoneAdminEmbed'
 import ProductTagsBilingualEditor, {
   saveProductTagsWithTranslations,
@@ -19,12 +20,11 @@ import {
 } from '@/lib/customerPageTranslations'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import {
   getZoneEditConfig,
   resolveCustomerPageZone,
-  BASIC_FIELD_LABELS,
-  DETAIL_FIELD_LABELS,
   type BasicFieldKey,
   type DetailFieldKey,
   type ZoneEditConfig,
@@ -60,11 +60,14 @@ import {
   zoneEditSupportsLocaleSwitch,
   type AdminEditLocale,
 } from '@/lib/adminEditLocales'
+import type { SiteLocale } from '@/lib/siteLocales'
 
 type CustomerPageZoneEditPanelProps = {
   zone: CustomerPageZone
   productId?: string | null
   locale: string
+  /** 콘텐츠 언어 변경 시 상단 미리보기 locale과 동기화 */
+  onContentLocaleChange?: (locale: SiteLocale) => void
   onSaved: () => void
   onNavigateToTab: (tabId: string) => void
   onClose: () => void
@@ -242,15 +245,22 @@ export default function CustomerPageZoneEditPanel({
   zone,
   productId,
   locale,
+  onContentLocaleChange,
   onSaved,
   onNavigateToTab,
   onClose,
   onDirtyChange,
   variant = 'sidebar',
 }: CustomerPageZoneEditPanelProps) {
-  const tEditLocale = useTranslations('products.customerPageEdit')
+  const {
+    t: tEdit,
+    zoneLabel: resolveZoneLabel,
+    zoneNote: resolveZoneNote,
+  } = useCustomerPageEditLabels()
   const resolvedZone = useMemo(() => resolveCustomerPageZone(zone), [zone])
   const config = useMemo(() => getZoneEditConfig(resolvedZone), [resolvedZone])
+  const zoneLabel = resolveZoneLabel(resolvedZone, config?.label ?? resolvedZone)
+  const zoneNote = resolveZoneNote(resolvedZone, config?.note)
   const basicFieldSlots = useMemo(
     () => (config?.basicFields ? resolveEditSlotsForBasicFields(config.basicFields) : []),
     [config]
@@ -277,6 +287,10 @@ export default function CustomerPageZoneEditPanel({
   const [detailSlotBindings, setDetailSlotBindings] = useState<Record<string, DetailBindingKey>>({})
   const [detailSlotValues, setDetailSlotValues] = useState<DetailSlotValues>({})
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() => normalizeAdminEditLocale(locale))
+
+  useEffect(() => {
+    setEditLocale(normalizeAdminEditLocale(locale))
+  }, [locale])
 
   const showLocaleToggle = zoneEditSupportsLocaleSwitch(config)
 
@@ -467,69 +481,56 @@ export default function CustomerPageZoneEditPanel({
           (config.editType === 'detail-fields' || config.editType === 'field-picker') &&
           detailFieldsToLoad.length > 0
         ) {
-          const [{ data: productData, error: productError }, { data, error }] = await Promise.all([
+          const [{ data: productData, error: productError }, details] = await Promise.all([
             supabase.from('products').select('*').eq('id', productId).maybeSingle(),
-            fromUntypedTable(supabase, 'product_details_multilingual')
-              .select('*')
-              .eq('product_id', productId)
-              .eq('language_code', editLocale)
-              .is('channel_id', null)
-              .eq('variant_key', 'default')
-              .maybeSingle(),
+            fetchProductDetailsForAdminEdit(productId, editLocale),
           ])
 
           if (productError) throw productError
-          if (error) throw error
           if (cancelled) return
 
           const productRow = (productData ?? {}) as Record<string, unknown>
           productRowRef.current = productRow
 
-          if (data) {
-            const row = data as Record<string, unknown>
+          const { row, values } = details
+          const vals: Partial<Record<DetailFieldKey, string>> = {}
+          for (const f of detailFieldsToLoad) {
+            vals[f] = values[f] != null ? String(values[f]) : ''
+          }
+          setDetailValues(vals)
+
+          const visRaw = values.customer_page_visibility
+          if (visRaw && typeof visRaw === 'object' && !Array.isArray(visRaw)) {
+            const rawVis = visRaw as Record<string, unknown>
+            const mergedVis: Record<string, boolean> = {}
+            for (const [k, v] of Object.entries(rawVis)) {
+              if (v === false) mergedVis[k] = false
+            }
+            setFullVisibility(mergedVis)
+            const vis: Partial<Record<DetailFieldKey, boolean>> = {}
+            for (const f of detailFieldsToLoad) {
+              vis[f] = rawVis[f] !== false
+            }
+            setVisibility(vis)
+          } else {
+            setFullVisibility({})
+          }
+
+          const slots = resolveEditSlotsForDetailFields(detailFieldsToLoad)
+          const bindings = loadZoneDetailFieldBindings(zone, slots)
+          setDetailSlotBindings(bindings)
+
+          if (row) {
             detailsRowRef.current = row
             setDetailsRowId(String(row.id ?? ''))
-            const vals: Partial<Record<DetailFieldKey, string>> = {}
-            for (const f of detailFieldsToLoad) {
-              vals[f] = row[f] != null ? String(row[f]) : ''
-            }
-            setDetailValues(vals)
-
-            const visRaw = row.customer_page_visibility
-            if (visRaw && typeof visRaw === 'object' && !Array.isArray(visRaw)) {
-              const rawVis = visRaw as Record<string, unknown>
-              const mergedVis: Record<string, boolean> = {}
-              for (const [k, v] of Object.entries(rawVis)) {
-                if (v === false) mergedVis[k] = false
-              }
-              setFullVisibility(mergedVis)
-              const vis: Partial<Record<DetailFieldKey, boolean>> = {}
-              for (const f of detailFieldsToLoad) {
-                vis[f] = rawVis[f] !== false
-              }
-              setVisibility(vis)
-            } else {
-              setFullVisibility({})
-            }
-
-            const slots = resolveEditSlotsForDetailFields(detailFieldsToLoad)
-            const bindings = loadZoneDetailFieldBindings(zone, slots)
-            setDetailSlotBindings(bindings)
             setDetailSlotValues(
-              buildDetailSlotValuesFromRows(slots, bindings, row, productRow)
+              buildDetailSlotValuesFromRows(slots, bindings, values, productRow)
             )
           } else {
             detailsRowRef.current = {}
             setDetailsRowId(null)
-            const vals: Partial<Record<DetailFieldKey, string>> = {}
-            for (const f of detailFieldsToLoad) vals[f] = ''
-            setDetailValues(vals)
-
-            const slots = resolveEditSlotsForDetailFields(detailFieldsToLoad)
-            const bindings = loadZoneDetailFieldBindings(zone, slots)
-            setDetailSlotBindings(bindings)
             setDetailSlotValues(
-              buildDetailSlotValuesFromRows(slots, bindings, {}, productRow)
+              buildDetailSlotValuesFromRows(slots, bindings, values, productRow)
             )
           }
         }
@@ -811,45 +812,50 @@ export default function CustomerPageZoneEditPanel({
       <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 shrink-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900">{config.label}</h3>
-            <p className="mt-0.5 text-xs text-gray-500">고객 페이지 영역 편집</p>
+            <h3 className="text-sm font-semibold text-gray-900">{zoneLabel}</h3>
+            <p className="mt-0.5 text-xs text-gray-500">{tEdit('zonePanelSubtitle')}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {showLocaleToggle ? (
               <AdminEditLocaleToggle
                 value={editLocale}
-                onChange={setEditLocale}
-                groupLabel={tEditLocale('editLocaleGroup')}
-                koLabel={tEditLocale('editLocaleKo')}
-                enLabel={tEditLocale('editLocaleEn')}
+                onChange={(next) => {
+                  setEditLocale(next)
+                  onContentLocaleChange?.(next)
+                }}
+                groupLabel={tEdit('editLocaleGroup')}
+                koLabel={tEdit('editLocaleKo')}
+                enLabel={tEdit('editLocaleEn')}
               />
             ) : null}
             <button
               type="button"
               onClick={handleRequestClose}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-white/80 hover:text-gray-600"
-              aria-label="닫기"
+              aria-label={tEdit('close')}
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
-        {config.note && (
-          <p className="text-xs text-gray-600 mt-2">{config.note}</p>
-        )}
+        {zoneNote ? (
+          <p className="text-xs text-gray-600 mt-2">{zoneNote}</p>
+        ) : null}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            불러오는 중…
+            {tEdit('loading')}
           </div>
         ) : (
           <>
             {missingProduct && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                이 영역을 편집하려면 상단에서 <strong>상품을 선택</strong>하세요.
+                {tEdit.rich('needProduct', {
+                  strong: (chunks) => <strong>{chunks}</strong>,
+                })}
               </div>
             )}
 
@@ -1016,7 +1022,7 @@ export default function CustomerPageZoneEditPanel({
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            저장
+            {tEdit('save')}
           </button>
         </div>
       )}
@@ -1046,11 +1052,12 @@ function FieldPickerPanel({
   config: ZoneEditConfig
   onPick: (field: DetailFieldKey) => void
 }) {
+  const { t, detailFieldLabel } = useCustomerPageEditLabels()
   const fields = config.detailFields ?? []
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-gray-600 mb-3">수정할 항목을 선택하세요.</p>
+      <p className="text-sm text-gray-600 mb-3">{t('pickFieldHint')}</p>
       {fields.map((field) => (
         <button
           key={field}
@@ -1058,7 +1065,7 @@ function FieldPickerPanel({
           onClick={() => onPick(field)}
           className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 hover:border-border hover:bg-muted/50 text-sm text-gray-800 transition-colors"
         >
-          {DETAIL_FIELD_LABELS[field]}
+          {detailFieldLabel(field)}
         </button>
       ))}
     </div>
@@ -1074,6 +1081,7 @@ function BasicFieldsForm({
   form: BasicFormState
   onChange: (next: BasicFormState) => void
 }) {
+  const { basicFieldLabel, t } = useCustomerPageEditLabels()
   const setField = (key: BasicFieldKey, value: string | string[]) => {
     onChange({ ...form, [key]: value })
   }
@@ -1096,7 +1104,7 @@ function BasicFieldsForm({
             <div key={field} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  {BASIC_FIELD_LABELS[field]}
+                  {basicFieldLabel(field)}
                 </label>
                 <input
                   type="text"
@@ -1107,7 +1115,7 @@ function BasicFieldsForm({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  {BASIC_FIELD_LABELS[enField]}
+                  {basicFieldLabel(enField)}
                 </label>
                 <input
                   type="text"
@@ -1128,7 +1136,7 @@ function BasicFieldsForm({
           return (
             <div key={field}>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                {BASIC_FIELD_LABELS[field]}
+                {basicFieldLabel(field)}
               </label>
               <input
                 type="text"
@@ -1142,7 +1150,7 @@ function BasicFieldsForm({
                 placeholder="한국어, English"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
-              <p className="text-[11px] text-gray-500 mt-1">쉼표로 구분</p>
+              <p className="text-[11px] text-gray-500 mt-1">{t('commaSeparated')}</p>
             </div>
           )
         }
@@ -1151,7 +1159,7 @@ function BasicFieldsForm({
           return (
             <div key={field}>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                {BASIC_FIELD_LABELS[field]}
+                {basicFieldLabel(field)}
               </label>
               <input
                 type="text"
@@ -1169,7 +1177,7 @@ function BasicFieldsForm({
                 placeholder="van, bus"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
-              <p className="text-[11px] text-gray-500 mt-1">쉼표로 구분</p>
+              <p className="text-[11px] text-gray-500 mt-1">{t('commaSeparated')}</p>
             </div>
           )
         }
@@ -1182,7 +1190,7 @@ function BasicFieldsForm({
         return (
           <div key={field}>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              {BASIC_FIELD_LABELS[field]}
+              {basicFieldLabel(field)}
             </label>
             <input
               type={inputType}
@@ -1210,35 +1218,46 @@ function DetailFieldsForm({
   onChange: (next: Partial<Record<DetailFieldKey, string>>) => void
   onVisibilityChange: (next: Partial<Record<DetailFieldKey, boolean>>) => void
 }) {
+  const {
+    detailFieldLabel,
+    showOnCustomerPage,
+    contentPlaceholder,
+    editorUiLocale,
+  } = useCustomerPageEditLabels()
+  const editorHeight = useModalEditorHeight(fields.length > 1 ? 360 : 260)
+
   return (
     <div className="space-y-6">
-      {fields.map((field) => (
-        <div key={field}>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-gray-700">
-              {DETAIL_FIELD_LABELS[field]}
-            </label>
-            <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={visibility[field] !== false}
-                onChange={(e) =>
-                  onVisibilityChange({ ...visibility, [field]: e.target.checked })
-                }
-                className="h-3.5 w-3.5 rounded border-gray-300 text-primary"
-              />
-              고객 페이지 표시
-            </label>
+      {fields.map((field) => {
+        const label = detailFieldLabel(field)
+        return (
+          <div key={field}>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-700">{label}</label>
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={visibility[field] !== false}
+                  onChange={(e) =>
+                    onVisibilityChange({ ...visibility, [field]: e.target.checked })
+                  }
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary"
+                />
+                {showOnCustomerPage}
+              </label>
+            </div>
+            <LightRichEditor
+              value={values[field] ?? ''}
+              onChange={(v) => onChange({ ...values, [field]: v })}
+              height={field.startsWith('slogan') ? 80 : editorHeight}
+              placeholder={contentPlaceholder(label)}
+              enableResize
+              uiLocale={editorUiLocale}
+              maxHeight={1200}
+            />
           </div>
-          <LightRichEditor
-            value={values[field] ?? ''}
-            onChange={(v) => onChange({ ...values, [field]: v })}
-            height={field.startsWith('slogan') ? 80 : 220}
-            placeholder={`${DETAIL_FIELD_LABELS[field]} 내용`}
-            enableResize
-          />
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

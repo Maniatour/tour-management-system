@@ -114,15 +114,9 @@ export async function fetchProductPageData(
 
     product = productData as unknown as Product
 
-    // 2. 다국어 상세 정보 — 요청 locale → en → ko 순 폴백
+    // 2. 다국어 상세 정보 — 필드 단위: 요청 locale → en → ko
     const siteLocale = normalizeSiteLocale(locale)
-    for (const languageCode of contentFallbackOrder(siteLocale)) {
-      const row = await loadDetailsRowForLanguage(productId, languageCode)
-      if (row) {
-        productDetails = row
-        break
-      }
-    }
+    productDetails = await loadMergedProductDetailsForLocale(productId, siteLocale)
 
     const fieldTranslations = await fetchProductFieldTranslations(productId)
 
@@ -466,16 +460,139 @@ export async function fetchProductPageData(
   }
 }
 
-/** 고객 페이지와 동일한 우선순위로 상세정보 행 1건 조회 (편집 모달용) */
+type FetchDetailsRowOptions = {
+  /**
+   * false(기본, 관리자 편집): 요청 언어 행만 조회. 없으면 null — 다른 언어 행을 덮어쓰지 않음.
+   * true: 고객 페이지와 동일하게 언어 fallback.
+   */
+  fallback?: boolean
+}
+
+/** 상세정보 행 1건 조회 (기본: exact locale only). */
 export async function fetchProductDetailsRowForLocale(
   productId: string,
-  locale: string
+  locale: string,
+  options?: FetchDetailsRowOptions
 ): Promise<Record<string, unknown> | null> {
   const siteLocale = normalizeSiteLocale(locale)
-  for (const languageCode of contentFallbackOrder(siteLocale)) {
+  const codes = options?.fallback ? contentFallbackOrder(siteLocale) : [siteLocale]
+  for (const languageCode of codes) {
     const row = await loadDetailsRowForLanguage(productId, languageCode)
     if (row) return row as unknown as Record<string, unknown>
   }
   return null
+}
+
+/** 상세정보 콘텐츠 폴백: 선택 언어 → 영어 → 한국어 */
+const DETAILS_CONTENT_FALLBACK = ['en', 'ko'] as const
+
+function isEmptyDetailsField(value: unknown): boolean {
+  if (value == null) return true
+  if (typeof value === 'string') {
+    return value.replace(/<[^>]*>/g, '').trim() === ''
+  }
+  return false
+}
+
+function mergeDetailsContentValues(
+  preferred: Record<string, unknown> | null,
+  fallbackRows: Array<Record<string, unknown> | null>
+): Record<string, unknown> {
+  const keys = new Set<string>()
+  if (preferred) Object.keys(preferred).forEach((k) => keys.add(k))
+  for (const row of fallbackRows) {
+    if (row) Object.keys(row).forEach((k) => keys.add(k))
+  }
+
+  const merged: Record<string, unknown> = preferred ? { ...preferred } : {}
+  for (const key of keys) {
+    if (key === 'id' || key === 'language_code' || key === 'product_id') continue
+    if (preferred && !isEmptyDetailsField(preferred[key])) {
+      merged[key] = preferred[key]
+      continue
+    }
+    let picked: unknown = preferred?.[key] ?? null
+    for (const row of fallbackRows) {
+      if (row && !isEmptyDetailsField(row[key])) {
+        picked = row[key]
+        break
+      }
+    }
+    merged[key] = picked
+  }
+
+  // visibility: exact locale 우선, 없으면 en → ko
+  const visibilitySources = [preferred, ...fallbackRows]
+  for (const row of visibilitySources) {
+    const vis = row?.customer_page_visibility
+    if (vis && typeof vis === 'object' && !Array.isArray(vis)) {
+      merged.customer_page_visibility = vis
+      break
+    }
+  }
+
+  return merged
+}
+
+async function loadDetailsRowsForContentFallback(
+  productId: string,
+  preferredLocale: string
+): Promise<{
+  preferred: Record<string, unknown> | null
+  fallbackRows: Array<Record<string, unknown> | null>
+}> {
+  const preferred = normalizeSiteLocale(preferredLocale)
+  const preferredRow = await loadDetailsRowForLanguage(productId, preferred)
+  const preferredRecord = preferredRow
+    ? (preferredRow as unknown as Record<string, unknown>)
+    : null
+
+  const fallbackRows: Array<Record<string, unknown> | null> = []
+  for (const code of DETAILS_CONTENT_FALLBACK) {
+    if (code === preferred) continue
+    const row = await loadDetailsRowForLanguage(productId, code)
+    fallbackRows.push(row ? (row as unknown as Record<string, unknown>) : null)
+  }
+
+  return { preferred: preferredRecord, fallbackRows }
+}
+
+/** 고객 상세 페이지용: 필드 단위 locale → en → ko 병합 */
+async function loadMergedProductDetailsForLocale(
+  productId: string,
+  locale: string
+): Promise<ProductDetails | null> {
+  const { preferred, fallbackRows } = await loadDetailsRowsForContentFallback(
+    productId,
+    locale
+  )
+  if (!preferred && fallbackRows.every((row) => row == null)) return null
+  return mergeDetailsContentValues(preferred, fallbackRows) as unknown as ProductDetails
+}
+
+export type AdminEditDetailsRow = {
+  /** 선택 언어의 실제 DB 행 (없으면 null — 저장 시 insert) */
+  row: Record<string, unknown> | null
+  /** 입력칸용 값: 선택 언어 → en → ko 필드 단위 폴백 */
+  values: Record<string, unknown>
+}
+
+/**
+ * 관리자 편집용 상세정보 로드.
+ * - row: 선택 언어 행만 (다른 언어 id로 update하지 않기 위함)
+ * - values: 빈 필드는 영어 → 한국어 순으로 채움
+ */
+export async function fetchProductDetailsForAdminEdit(
+  productId: string,
+  locale: string
+): Promise<AdminEditDetailsRow> {
+  const { preferred, fallbackRows } = await loadDetailsRowsForContentFallback(
+    productId,
+    locale
+  )
+  return {
+    row: preferred,
+    values: mergeDetailsContentValues(preferred, fallbackRows),
+  }
 }
 

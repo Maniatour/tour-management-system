@@ -1,35 +1,20 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { Loader2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
-import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
-import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
 
-const SLOGAN_SLOTS = [
-  {
-    id: 'slogan1' as const,
-    label: '슬로건 1',
-    sublabel: '대제목',
-    hint: '고객 페이지 상단 큰 제목 (airbnb-detail-slogan-main)',
-  },
-  {
-    id: 'slogan2' as const,
-    label: '슬로건 2',
-    sublabel: '부제',
-    hint: '대제목 아래 회색 부제 (airbnb-detail-slogan-sub)',
-  },
-  {
-    id: 'slogan3' as const,
-    label: '슬로건 3',
-    sublabel: '설명',
-    hint: '투어 하이라이트 목록 bullet 항목으로도 사용',
-  },
-]
+const SLOGAN_SLOT_IDS = ['slogan1', 'slogan2', 'slogan3'] as const
 
-type SloganKey = (typeof SLOGAN_SLOTS)[number]['id']
+type SloganKey = (typeof SLOGAN_SLOT_IDS)[number]
 
 type SloganForm = Record<SloganKey, string>
 
@@ -58,13 +43,16 @@ export default function CustomerPageSloganEmbed({
   onSaved,
   onDirtyChange,
 }: CustomerPageSloganEmbedProps) {
+  const t = useTranslations('products.customerPageEdit.sloganEmbed')
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
   const [activeSlot, setActiveSlot] = useState<SloganKey>('slogan1')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(
+    null
+  )
   const [rowId, setRowId] = useState<string | null>(null)
   const [form, setForm] = useState<SloganForm>({ slogan1: '', slogan2: '', slogan3: '' })
   const [visibility, setVisibility] = useState<VisibilityForm>({
@@ -74,20 +62,24 @@ export default function CustomerPageSloganEmbed({
   })
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
+  useEffect(() => {
+    setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+  }, [localeProp])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setMessage(null)
     try {
-      const row = await fetchProductDetailsRowForLocale(productId, editLocale)
+      const { row, values } = await fetchProductDetailsForAdminEdit(productId, editLocale)
       const nextForm: SloganForm = {
-        slogan1: stripHtmlToPlainText(String(row?.slogan1 ?? '')),
-        slogan2: stripHtmlToPlainText(String(row?.slogan2 ?? '')),
-        slogan3: stripHtmlToPlainText(String(row?.slogan3 ?? '')),
+        slogan1: stripHtmlToPlainText(String(values.slogan1 ?? '')),
+        slogan2: stripHtmlToPlainText(String(values.slogan2 ?? '')),
+        slogan3: stripHtmlToPlainText(String(values.slogan3 ?? '')),
       }
       const nextVisibility: VisibilityForm = {
-        slogan1: readVisibility(row, 'slogan1'),
-        slogan2: readVisibility(row, 'slogan2'),
-        slogan3: readVisibility(row, 'slogan3'),
+        slogan1: readVisibility(values, 'slogan1'),
+        slogan2: readVisibility(values, 'slogan2'),
+        slogan3: readVisibility(values, 'slogan3'),
       }
       setRowId(row?.id ? String(row.id) : null)
       setForm(nextForm)
@@ -97,11 +89,11 @@ export default function CustomerPageSloganEmbed({
       )
     } catch (error) {
       console.error('슬로건 로드 오류:', error)
-      setMessage('슬로건 데이터를 불러오지 못했습니다.')
+      setMessage({ text: t('loadError'), type: 'error' })
     } finally {
       setLoading(false)
     }
-  }, [editLocale, productId])
+  }, [editLocale, productId, t])
 
   useEffect(() => {
     void loadData()
@@ -123,6 +115,7 @@ export default function CustomerPageSloganEmbed({
           ? ((await fromUntypedTable(supabase, 'product_details_multilingual')
               .select('customer_page_visibility')
               .eq('id', rowId)
+              .eq('language_code', editLocale)
               .maybeSingle()).data as { customer_page_visibility?: Record<string, unknown> } | null)
           : null
 
@@ -145,6 +138,7 @@ export default function CustomerPageSloganEmbed({
         const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
           .update(payload)
           .eq('id', rowId)
+          .eq('language_code', editLocale)
         if (error) throw error
       } else {
         const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
@@ -163,68 +157,75 @@ export default function CustomerPageSloganEmbed({
         setRowId(String((data as { id: string }).id))
       }
 
-      setInitialSnapshot(
-        JSON.stringify({ form, visibility, locale: editLocale })
-      )
-      setMessage('저장되었습니다.')
+      setInitialSnapshot(JSON.stringify({ form, visibility, locale: editLocale }))
+      setMessage({ text: t('saved'), type: 'success' })
       onSaved?.()
     } catch (error) {
       console.error('슬로건 저장 오류:', error)
-      setMessage('저장 중 오류가 발생했습니다.')
+      setMessage({ text: t('saveError'), type: 'error' })
     } finally {
       setSaving(false)
     }
   }
 
-  const activeMeta = SLOGAN_SLOTS.find((slot) => slot.id === activeSlot) ?? SLOGAN_SLOTS[0]
+  const slotMeta = (id: SloganKey) => ({
+    id,
+    label: t(`slots.${id}.label`),
+    sublabel: t(`slots.${id}.sublabel`),
+    hint: t(`slots.${id}.hint`),
+  })
+
+  const activeMeta = slotMeta(activeSlot)
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        슬로건 불러오는 중…
+        {t('loading')}
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">
-            DB: <code className="rounded bg-muted px-1">product_details_multilingual</code>
-            {rowId ? (
-              <span className="ml-2 text-[11px]">행 ID: {rowId}</span>
-            ) : (
-              <span className="ml-2 text-amber-700">새 행 생성 예정</span>
-            )}
-          </p>
-        </div>
-        <AdminEditLocaleToggle
-          value={editLocale}
-          onChange={setEditLocale}
-          groupLabel="슬로건 편집 언어"
-          koLabel="한국어 슬로건"
-          enLabel="English slogan"
-        />
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">
+          DB: <code className="rounded bg-muted px-1">product_details_multilingual</code>
+          {rowId ? (
+            <span className="ml-2 text-[11px]">
+              {t('rowId', { id: rowId })}
+            </span>
+          ) : (
+            <span className="ml-2 text-amber-700">{t('newRowPending')}</span>
+          )}
+        </p>
+        <p className="text-xs text-indigo-700">
+          {t('editingLocale', { locale: getAdminEditLocaleLabel(editLocale) })}
+        </p>
+        {!rowId ? (
+          <p className="text-xs text-amber-700">{t('emptyLocaleHint')}</p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-1">
-        {SLOGAN_SLOTS.map((slot) => (
-          <button
-            key={slot.id}
-            type="button"
-            onClick={() => setActiveSlot(slot.id)}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-              activeSlot === slot.id
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-white hover:text-foreground'
-            }`}
-          >
-            {slot.label}
-            <span className="ml-1 font-normal opacity-80">({slot.sublabel})</span>
-          </button>
-        ))}
+        {SLOGAN_SLOT_IDS.map((id) => {
+          const slot = slotMeta(id)
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveSlot(id)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                activeSlot === id
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white hover:text-foreground'
+              }`}
+            >
+              {slot.label}
+              <span className="ml-1 font-normal opacity-80">({slot.sublabel})</span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
@@ -234,7 +235,7 @@ export default function CustomerPageSloganEmbed({
               {activeMeta.label} · {activeMeta.sublabel}
             </h4>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              컬럼: <code className="rounded bg-muted px-1">{activeMeta.id}</code> · {activeMeta.hint}
+              {t('columnHint', { column: activeMeta.id, hint: activeMeta.hint })}
             </p>
           </div>
           <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -246,7 +247,7 @@ export default function CustomerPageSloganEmbed({
               }
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
             />
-            고객 페이지 표시
+            {t('showOnCustomerPage')}
           </label>
         </div>
 
@@ -255,13 +256,13 @@ export default function CustomerPageSloganEmbed({
           onChange={(e) => setForm((prev) => ({ ...prev, [activeSlot]: e.target.value }))}
           rows={activeSlot === 'slogan3' ? 5 : 3}
           className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring"
-          placeholder={`${activeMeta.label} 내용을 입력하세요`}
+          placeholder={t('placeholder', { label: activeMeta.label })}
         />
 
         {form[activeSlot] ? (
           <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              미리보기
+              {t('preview')}
             </p>
             <p
               className={
@@ -279,8 +280,12 @@ export default function CustomerPageSloganEmbed({
       </div>
 
       {message ? (
-        <p className={`text-sm ${message.includes('오류') ? 'text-red-600' : 'text-green-600'}`}>
-          {message}
+        <p
+          className={`text-sm ${
+            message.type === 'error' ? 'text-red-600' : 'text-green-600'
+          }`}
+        >
+          {message.text}
         </p>
       ) : null}
 
@@ -291,7 +296,7 @@ export default function CustomerPageSloganEmbed({
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        저장
+        {t('save')}
       </button>
     </div>
   )

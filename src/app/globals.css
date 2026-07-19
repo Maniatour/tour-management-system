@@ -4970,60 +4970,6 @@ main:has(.maniatour-home) {
   }
 }
 
-.admin-products-preview-locale,
-.admin-edit-locale-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem;
-  border-radius: 9999px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
-}
-
-.admin-products-preview-locale__btn,
-.admin-edit-locale-toggle__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  border-radius: 9999px;
-  background: transparent;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.admin-products-preview-locale__btn.is-active,
-.admin-edit-locale-toggle__btn.is-active {
-  background: #eff6ff;
-  box-shadow: inset 0 0 0 1px #0071eb;
-}
-
-.admin-products-preview-locale__flag,
-.admin-edit-locale-toggle__flag {
-  width: 1.125rem !important;
-  height: 1.125rem !important;
-  border-radius: 9999px;
-  object-fit: cover;
-}
-
-.admin-products-preview-locale__btn:hover,
-.admin-edit-locale-toggle__btn:hover {
-  background: #f3f4f6;
-}
-
-.admin-products-preview-locale__flag svg,
-.admin-edit-locale-toggle__flag svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
 .gyg-listing .customer-page-zone.cp-ui-styled-zone {
   border: none !important;
   box-shadow: none !important;

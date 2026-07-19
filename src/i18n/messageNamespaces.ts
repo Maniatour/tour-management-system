@@ -123,7 +123,7 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
   },
   {
     test: (p) => /\/admin\/(products|coupons)/.test(p),
-    namespaces: ['products', 'tagTranslations', 'options', 'channels'],
+    namespaces: ['products', 'tagTranslations', 'options', 'channels', 'productDetail'],
   },
   {
     test: (p) => /\/admin\/(tour-courses|tour-cost-calculator)/.test(p),

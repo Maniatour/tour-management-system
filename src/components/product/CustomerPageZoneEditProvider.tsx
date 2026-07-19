@@ -8,11 +8,13 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useTranslations } from 'next-intl'
 import { Pencil } from 'lucide-react'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import { getZoneEditConfig } from '@/lib/customerPageZoneEditMap'
 import { confirmDiscardUnsavedChanges, dispatchCustomerPageSoftReload } from '@/lib/customerPageSoftReload'
 import CustomerPageZoneEditPanel from '@/components/product/CustomerPageZoneEditPanel'
+import type { SiteLocale } from '@/lib/siteLocales'
 
 type CustomerPageZoneEditContextValue = {
   openZoneEdit: (zone: CustomerPageZone, productId?: string | null) => void
@@ -28,6 +30,7 @@ type CustomerPageZoneEditProviderProps = {
   children: ReactNode
   productId: string
   previewLocale: string
+  onPreviewLocaleChange?: (locale: SiteLocale) => void
   onNavigateToTab: (tabId: string) => void
 }
 
@@ -35,8 +38,10 @@ export function CustomerPageZoneEditProvider({
   children,
   productId,
   previewLocale,
+  onPreviewLocaleChange,
   onNavigateToTab,
 }: CustomerPageZoneEditProviderProps) {
+  const t = useTranslations('products.customerPageEdit')
   const [selectedZone, setSelectedZone] = useState<CustomerPageZone | null>(null)
   const [editProductId, setEditProductId] = useState<string | null>(productId)
   const [editDirty, setEditDirty] = useState(false)
@@ -87,6 +92,7 @@ export function CustomerPageZoneEditProvider({
               zone={selectedZone}
               productId={editProductId ?? productId}
               locale={previewLocale}
+              {...(onPreviewLocaleChange ? { onContentLocaleChange: onPreviewLocaleChange } : {})}
               variant="modal"
               onDirtyChange={setEditDirty}
               onSaved={handleSaved}
@@ -101,7 +107,7 @@ export function CustomerPageZoneEditProvider({
         <div className="pointer-events-none fixed bottom-4 left-1/2 z-[60] hidden -translate-x-1/2 md:block">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-white/95 px-4 py-2 text-xs font-medium text-foreground shadow-lg backdrop-blur-sm">
             <Pencil className="h-3.5 w-3.5 text-primary" />
-            편집할 영역의 「수정」 버튼을 눌러 콘텐츠를 변경하세요.
+            {t('editHintBanner')}
           </div>
         </div>
       ) : null}

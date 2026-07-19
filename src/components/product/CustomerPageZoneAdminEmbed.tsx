@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import TagTranslationManager from '@/components/admin/TagTranslationManager'
 import ChoicesDisplayModeSelector from '@/components/product/ChoicesDisplayModeSelector'
@@ -51,15 +52,17 @@ const BOOKING_OPTION_TABS = [
 ] as const
 
 function NeedProductMessage() {
+  const t = useTranslations('products.customerPageEdit')
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      이 영역을 편집하려면 상단에서 <strong>상품을 선택</strong>하세요.
+      {t.rich('needProduct', {
+        strong: (chunks) => <strong>{chunks}</strong>,
+      })}
     </div>
   )
 }
 
 export default function CustomerPageZoneAdminEmbed({
-  config,
   zone,
   adminTab,
   productId,
@@ -67,6 +70,7 @@ export default function CustomerPageZoneAdminEmbed({
   onSaved,
   onOpenFullAdmin,
 }: CustomerPageZoneAdminEmbedProps) {
+  const t = useTranslations('products.customerPageEdit')
   const initialSubTab = useMemo(() => {
     if (zone === 'detail-tab-overview' || zone === 'detail-tab-details') return 'details'
     if (zone === 'detail-tab-itinerary') return 'tour-courses'
@@ -250,7 +254,7 @@ export default function CustomerPageZoneAdminEmbed({
       default:
         return (
           <p className="text-sm text-gray-600">
-            이 영역({tabLabel})은 아직 모달 편집을 지원하지 않습니다.
+            {t('unsupportedZone', { tab: tabLabel })}
           </p>
         )
     }
@@ -259,9 +263,7 @@ export default function CustomerPageZoneAdminEmbed({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-gray-500">
-          모달에서 바로 편집합니다. 저장 후 미리보기를 새로고침하세요.
-        </p>
+        <p className="text-xs text-gray-500">{t('modalEditHint')}</p>
         <div className="flex items-center gap-2">
           {onSaved && (
             <button
@@ -270,7 +272,7 @@ export default function CustomerPageZoneAdminEmbed({
               className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded-md hover:bg-gray-100"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              미리보기 새로고침
+              {t('refreshPreview')}
             </button>
           )}
           {onOpenFullAdmin && (needsProduct ? productId : true) && (
@@ -279,7 +281,7 @@ export default function CustomerPageZoneAdminEmbed({
               onClick={() => onOpenFullAdmin(activeTab)}
               className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded-md hover:bg-indigo-50"
             >
-              전체 화면
+              {t('fullScreen')}
               <ExternalLink className="h-3.5 w-3.5" />
             </button>
           )}
@@ -329,10 +331,6 @@ export default function CustomerPageZoneAdminEmbed({
             </button>
           ))}
         </div>
-      )}
-
-      {config.note && zone !== 'detail-tabs' && (
-        <p className="text-xs text-gray-500">{config.note}</p>
       )}
 
       {renderEmbed()}

@@ -1030,10 +1030,210 @@
       "localeKo": "Korean",
       "localeEn": "English",
       "openCustomerPage": "Customer page",
-      "classicAdmin": "전체 관리",
-      "editLocaleGroup": "Edit language",
+      "classicAdmin": "Full admin",
+      "editLocaleGroup": "Content language",
       "editLocaleKo": "Edit in Korean",
-      "editLocaleEn": "Edit in English"
+      "editLocaleEn": "Edit in English",
+      "zonePanelSubtitle": "Edit customer page section",
+      "close": "Close",
+      "loading": "Loading…",
+      "save": "Save",
+      "needProduct": "Select a <strong>product</strong> above to edit this section.",
+      "modalEditHint": "Edit here in the modal. Refresh the preview after saving.",
+      "refreshPreview": "Refresh preview",
+      "fullScreen": "Full screen",
+      "unsupportedZone": "This section ({tab}) does not support modal editing yet.",
+      "editHintBanner": "Click Edit on a section to change its content.",
+      "showOnCustomerPage": "Show on customer page",
+      "preview": "Preview",
+      "columnLabel": "Column: {column}",
+      "contentPlaceholder": "Enter {label}",
+      "pickFieldHint": "Select a field to edit.",
+      "commaSeparated": "Separate with commas",
+      "bindingHint": "Change the <strong>linked column</strong> on each field to edit or display a different column from product details or products. Settings are saved on the server.",
+      "bindingColumnAria": "Linked column for {label}",
+      "detailFields": {
+        "slogan1": "Slogan (headline)",
+        "slogan2": "Slogan (subtitle)",
+        "slogan3": "Slogan (description)",
+        "greeting": "Greeting",
+        "description": "Product description",
+        "included": "Included",
+        "not_included": "Not included",
+        "pickup_drop_info": "Pickup & drop-off",
+        "luggage_info": "Luggage",
+        "tour_operation_info": "Tour operations",
+        "preparation_info": "What to bring",
+        "small_group_info": "Small group info",
+        "companion_recruitment_info": "Companion recruitment",
+        "notice_info": "Notices",
+        "important_notes": "Important notes",
+        "private_tour_info": "Private tour info",
+        "cancellation_policy": "Cancellation policy",
+        "chat_announcement": "Chat announcement"
+      },
+      "basicFields": {
+        "customerNameKo": "Customer product name (Korean)",
+        "customerNameEn": "Customer product name (English)",
+        "internalNameKo": "Internal product name (Korean)",
+        "internalNameEn": "Internal product name (English)",
+        "summaryKo": "Summary (Korean)",
+        "summaryEn": "Summary (English)",
+        "description": "Product description (internal)",
+        "tags": "Tags",
+        "departureCity": "Departure city",
+        "arrivalCity": "Arrival city",
+        "departureCountry": "Departure country",
+        "arrivalCountry": "Arrival country",
+        "departureCityKo": "Departure city (Korean)",
+        "departureCityEn": "Departure city (English)",
+        "arrivalCityKo": "Arrival city (Korean)",
+        "arrivalCityEn": "Arrival city (English)",
+        "departureCountryKo": "Departure country (Korean)",
+        "departureCountryEn": "Departure country (English)",
+        "arrivalCountryKo": "Arrival country (Korean)",
+        "arrivalCountryEn": "Arrival country (English)",
+        "duration": "Duration (hours)",
+        "maxParticipants": "Max participants",
+        "groupSize": "Group size",
+        "languages": "Languages",
+        "transportationMethods": "Transportation",
+        "adultBasePrice": "Adult base price",
+        "childBasePrice": "Child base price",
+        "infantBasePrice": "Infant base price",
+        "adultAge": "Adult age",
+        "childAgeMin": "Child age (min)",
+        "childAgeMax": "Child age (max)",
+        "infantAge": "Infant age"
+      },
+      "thingsToKnow": {
+        "sectionBasic": "Basic info",
+        "sectionIncluded": "Included / Not included",
+        "sectionLogistics": "Operations",
+        "sectionPolicy": "Policies",
+        "highlightsHint": "Category and duration are edited in Tour Highlights.",
+        "loading": "Loading…",
+        "save": "Save",
+        "saved": "Saved.",
+        "saveError": "Could not save. Please try again.",
+        "loadError": "Could not load data."
+      },
+      "zones": {
+        "detail-overview-slogan": {
+          "label": "Slogan",
+          "note": "Edit the slogan1·2·3 columns in the product details table."
+        },
+        "detail-tab-overview": {
+          "label": "Tour overview",
+          "note": "Edit greeting and description in the product details DB. If description is empty, the product summary is shown."
+        },
+        "detail-tab-details": {
+          "label": "Things to know",
+          "note": "Edit basic info, inclusions, operations, and policy fields."
+        },
+        "detail-tab-itinerary": {
+          "label": "Itinerary (courses)",
+          "note": "Edit customer-facing course names and descriptions linked to this product."
+        },
+        "detail-tab-schedule": {
+          "label": "Tour schedule",
+          "note": "Edit schedule items and pickup/drop-off info."
+        },
+        "detail-tab-faq": {
+          "label": "FAQ",
+          "note": "Edit questions and answers in the product_faqs table."
+        },
+        "detail-faq-section": {
+          "label": "FAQ",
+          "note": "Edit questions and answers directly in the product_faqs table."
+        },
+        "detail-details-body": {
+          "label": "Details body",
+          "note": "Edit fields shown in the product details body."
+        },
+        "detail-overview": {
+          "label": "Tour overview",
+          "note": "Edit greeting and tour description."
+        },
+        "detail-faq": {
+          "label": "FAQ",
+          "note": "Edit questions and answers directly in the product_faqs table."
+        },
+        "detail-schedule": {
+          "label": "Tour schedule",
+          "note": "Edit schedule items and pickup/drop-off info."
+        },
+        "detail-things-to-know": {
+          "label": "Things to know",
+          "note": "Edit basic info, inclusions, operations, and policy fields."
+        },
+        "detail-highlights": {
+          "label": "Tour highlights",
+          "note": "Duration, group size, category, and departure city are stored on the product. Edit slogans in the Slogan section."
+        },
+        "detail-sidebar-included": {
+          "label": "Included / Not included summary",
+          "note": "Choose included/not included detail fields or products.description."
+        }
+      },
+      "faqEmbed": {
+        "loading": "Loading FAQs…",
+        "loadError": "Could not load FAQ data.",
+        "saved": "Saved.",
+        "saveError": "Could not save. Please try again.",
+        "validationError": "Please enter a question and answer in at least one language.",
+        "deleteConfirm": "Delete this FAQ?",
+        "deleteError": "Could not delete. Please try again.",
+        "reorderError": "Could not change order. Please try again.",
+        "add": "Add",
+        "empty": "No FAQs yet.",
+        "newFaq": "New FAQ",
+        "editTitle": "Edit FAQ ({locale})",
+        "showActive": "Show on customer page (is_active)",
+        "question": "Question ({locale})",
+        "answer": "Answer ({locale})",
+        "questionPlaceholder": "Frequently asked question",
+        "answerPlaceholder": "Answer",
+        "preview": "Preview",
+        "save": "Save",
+        "noQuestion": "(No question)",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "delete": "Delete",
+        "openFullAdmin": "Full FAQ management (AI recommend, translate, etc.)"
+      },
+      "sloganEmbed": {
+        "loading": "Loading slogans…",
+        "loadError": "Could not load slogan data.",
+        "saved": "Saved.",
+        "saveError": "Could not save. Please try again.",
+        "rowId": "Row ID: {id}",
+        "newRowPending": "A new row will be created",
+        "editingLocale": "Editing: {locale}",
+        "emptyLocaleHint": "No slogans saved for this language yet. Enter text and save to create a new row.",
+        "columnHint": "Column: {column} · {hint}",
+        "showOnCustomerPage": "Show on customer page",
+        "placeholder": "Enter {label}",
+        "preview": "Preview",
+        "save": "Save",
+        "slots": {
+          "slogan1": {
+            "label": "Slogan 1",
+            "sublabel": "Headline",
+            "hint": "Large title at the top of the customer page (airbnb-detail-slogan-main)"
+          },
+          "slogan2": {
+            "label": "Slogan 2",
+            "sublabel": "Subtitle",
+            "hint": "Gray subtitle under the headline (airbnb-detail-slogan-sub)"
+          },
+          "slogan3": {
+            "label": "Slogan 3",
+            "sublabel": "Description",
+            "hint": "Also used as bullet items in tour highlights"
+          }
+        }
+      }
     },
     "cardEditModal": {
       "locationTitle": "Edit departure & arrival",

@@ -23,14 +23,13 @@ export default function AdminEditLocaleToggle({
   className = '',
 }: AdminEditLocaleToggleProps) {
   return (
-    <div className={`admin-edit-locale-toggle ${className}`.trim()} role="group" aria-label={groupLabel}>
-      <LocaleDropdown
-        value={value}
-        onChange={onChange}
-        size="sm"
-        showLabel
-        ariaLabel={groupLabel}
-      />
-    </div>
+    <LocaleDropdown
+      value={value}
+      onChange={onChange}
+      size="sm"
+      showLabel
+      ariaLabel={groupLabel}
+      className={className}
+    />
   )
 }

@@ -1,10 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Loader2, MapPin, Pencil, Save } from 'lucide-react'
 import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
-import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
 import type { ProductTourCourse } from '@/components/product/productDetailTypes'
 import {
   getAdminEditLocaleLabel,
@@ -108,6 +107,8 @@ export default function CustomerPageTourCoursesEmbed({
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
+  const editLocaleRef = useRef(editLocale)
+  editLocaleRef.current = editLocale
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -200,6 +201,7 @@ export default function CustomerPageTourCoursesEmbed({
   }, [activeCourseId, editLocale, form, initialSnapshot, onDirtyChange])
 
   const switchLocale = (next: AdminEditLocale) => {
+    if (next === editLocaleRef.current) return
     const merged = mergeTourCourseI18n(
       form,
       editLocale,
@@ -218,6 +220,11 @@ export default function CustomerPageTourCoursesEmbed({
     })
     setEditLocale(next)
   }
+
+  useEffect(() => {
+    switchLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only localeProp
+  }, [localeProp])
 
   const handleSave = async () => {
     if (!activeCourseId) return
@@ -333,17 +340,10 @@ export default function CustomerPageTourCoursesEmbed({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          DB: <code className="rounded bg-muted px-1">tour_courses</code> · 연결{' '}
-          <code className="rounded bg-muted px-1">product_tour_courses</code>
-        </p>
-        <AdminEditLocaleToggle
-          value={editLocale}
-          onChange={switchLocale}
-          groupLabel="코스 편집 언어"
-        />
-      </div>
+      <p className="text-xs text-muted-foreground">
+        DB: <code className="rounded bg-muted px-1">tour_courses</code> · 연결{' '}
+        <code className="rounded bg-muted px-1">product_tour_courses</code>
+      </p>
 
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">

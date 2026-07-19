@@ -7,6 +7,7 @@ import { translateFaqFields, type FaqTranslationFields } from '@/lib/translation
 import { suggestFAQQuestion, suggestFAQAnswer } from '@/lib/chatgptService'
 import LocaleDropdown from '@/components/LocaleDropdown'
 import {
+  getFaqExactText,
   getFaqLocalizedText,
   mergeFaqI18n,
   type FaqContentI18n,
@@ -624,10 +625,10 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   const [formData, setFormData] = useState<FaqItem>(faq)
   const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
   const [questionDraft, setQuestionDraft] = useState(() =>
-    getFaqLocalizedText(faq, 'question', 'ko')
+    getFaqExactText(faq, 'question', 'ko')
   )
   const [answerDraft, setAnswerDraft] = useState(() =>
-    getFaqLocalizedText(faq, 'answer', 'ko')
+    getFaqExactText(faq, 'answer', 'ko')
   )
 
   const switchLocale = (next: SiteLocale) => {
@@ -635,8 +636,8 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
     const nextFaq = { ...formData, ...merged }
     setFormData(nextFaq)
     setEditLocale(next)
-    setQuestionDraft(getFaqLocalizedText(nextFaq, 'question', next))
-    setAnswerDraft(getFaqLocalizedText(nextFaq, 'answer', next))
+    setQuestionDraft(getFaqExactText(nextFaq, 'question', next))
+    setAnswerDraft(getFaqExactText(nextFaq, 'answer', next))
   }
 
   const handleSave = () => {

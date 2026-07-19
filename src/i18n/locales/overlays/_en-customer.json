@@ -854,10 +854,58 @@
       "localeKo": "Korean",
       "localeEn": "English",
       "openCustomerPage": "Customer page",
-      "classicAdmin": "전체 관리",
-      "editLocaleGroup": "Edit language",
+      "classicAdmin": "Full admin",
+      "editLocaleGroup": "Content language",
       "editLocaleKo": "Edit in Korean",
-      "editLocaleEn": "Edit in English"
+      "editLocaleEn": "Edit in English",
+      "zonePanelSubtitle": "Edit customer page section",
+      "close": "Close",
+      "loading": "Loading…",
+      "save": "Save",
+      "needProduct": "Select a <strong>product</strong> above to edit this section.",
+      "modalEditHint": "Edit here in the modal. Refresh the preview after saving.",
+      "refreshPreview": "Refresh preview",
+      "fullScreen": "Full screen",
+      "unsupportedZone": "This section ({tab}) does not support modal editing yet.",
+      "editHintBanner": "Click Edit on a section to change its content.",
+      "zones": {
+        "detail-overview-slogan": {
+          "label": "Slogan",
+          "note": "Edit the slogan1·2·3 columns in the product details table."
+        }
+      },
+      "sloganEmbed": {
+        "loading": "Loading slogans…",
+        "loadError": "Could not load slogan data.",
+        "saved": "Saved.",
+        "saveError": "Could not save. Please try again.",
+        "rowId": "Row ID: {id}",
+        "newRowPending": "A new row will be created",
+        "editingLocale": "Editing: {locale}",
+        "emptyLocaleHint": "No slogans saved for this language yet. Enter text and save to create a new row.",
+        "columnHint": "Column: {column} · {hint}",
+        "showOnCustomerPage": "Show on customer page",
+        "placeholder": "Enter {label}",
+        "preview": "Preview",
+        "save": "Save",
+        "slots": {
+          "slogan1": {
+            "label": "Slogan 1",
+            "sublabel": "Headline",
+            "hint": "Large title at the top of the customer page (airbnb-detail-slogan-main)"
+          },
+          "slogan2": {
+            "label": "Slogan 2",
+            "sublabel": "Subtitle",
+            "hint": "Gray subtitle under the headline (airbnb-detail-slogan-sub)"
+          },
+          "slogan3": {
+            "label": "Slogan 3",
+            "sublabel": "Description",
+            "hint": "Also used as bullet items in tour highlights"
+          }
+        }
+      }
     },
     "cardEditModal": {
       "locationTitle": "Edit departure & arrival",

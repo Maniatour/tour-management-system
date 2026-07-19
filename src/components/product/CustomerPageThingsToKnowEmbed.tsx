@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
-import AdminEditLocaleToggle from '@/components/admin/AdminEditLocaleToggle'
-import { fetchProductDetailsRowForLocale } from '@/lib/fetchProductDetail'
-import {
-  DETAIL_FIELD_LABELS,
-  type DetailFieldKey,
-} from '@/lib/customerPageZoneEditMap'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
+import type { DetailFieldKey } from '@/lib/customerPageZoneEditMap'
+import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
+import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
@@ -25,12 +23,7 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 type SectionId = 'basic' | 'included' | 'logistics' | 'policy'
 
-const SECTIONS: Array<{ id: SectionId; label: string }> = [
-  { id: 'basic', label: '기본 정보' },
-  { id: 'included', label: '포함/불포함' },
-  { id: 'logistics', label: '운영 정보' },
-  { id: 'policy', label: '정책' },
-]
+const SECTION_IDS: SectionId[] = ['basic', 'included', 'logistics', 'policy']
 
 const DETAIL_FIELDS_BY_SECTION: Record<Exclude<SectionId, 'basic'>, DetailFieldKey[]> = {
   included: ['included', 'not_included'],
@@ -101,9 +94,35 @@ export default function CustomerPageThingsToKnowEmbed({
   onSaved,
   onDirtyChange,
 }: CustomerPageThingsToKnowEmbedProps) {
+  const {
+    t,
+    detailFieldLabel,
+    showOnCustomerPage,
+    preview,
+    columnLabel,
+    contentPlaceholder,
+    editorUiLocale,
+  } = useCustomerPageEditLabels()
+  const editorHeight = useModalEditorHeight(300)
+  const sectionLabel = (id: SectionId) => {
+    switch (id) {
+      case 'basic':
+        return t('thingsToKnow.sectionBasic')
+      case 'included':
+        return t('thingsToKnow.sectionIncluded')
+      case 'logistics':
+        return t('thingsToKnow.sectionLogistics')
+      case 'policy':
+        return t('thingsToKnow.sectionPolicy')
+    }
+  }
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
+
+  useEffect(() => {
+    setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+  }, [localeProp])
   const [activeSection, setActiveSection] = useState<SectionId>('basic')
   const [activeDetailField, setActiveDetailField] = useState<DetailFieldKey>('included')
   const [loading, setLoading] = useState(true)
@@ -144,14 +163,15 @@ export default function CustomerPageThingsToKnowEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [row, productResult, translationRows] = await Promise.all([
-        fetchProductDetailsRowForLocale(productId, editLocale),
+      const [details, productResult, translationRows] = await Promise.all([
+        fetchProductDetailsForAdminEdit(productId, editLocale),
         supabase.from('products').select('*').eq('id', productId).maybeSingle(),
         fetchProductFieldTranslations(productId),
       ])
 
       if (productResult.error) throw productResult.error
 
+      const { row, values } = details
       const productRow = (productResult.data ?? {}) as Record<string, unknown>
       const locationMap = buildProductTranslationMap(productRow, translationRows)
       const allDetailKeys = [
@@ -163,15 +183,21 @@ export default function CustomerPageThingsToKnowEmbed({
       const nextDetailForm = emptyDetailForm(allDetailKeys)
       const nextVisibility: Partial<Record<DetailFieldKey, boolean>> = {}
       allDetailKeys.forEach((key) => {
-        nextDetailForm[key] = String(row?.[key] ?? '')
-        nextVisibility[key] = readVisibility(row, key)
+        nextDetailForm[key] = String(values[key] ?? '')
+        nextVisibility[key] = readVisibility(values, key)
       })
 
-      const tags = Array.isArray(row?.tags)
-        ? (row.tags as string[]).join(', ')
+      const tags = Array.isArray(values.tags)
+        ? (values.tags as string[]).join(', ')
         : Array.isArray(productRow.tags)
           ? (productRow.tags as string[]).join(', ')
           : ''
+
+      const pickLocation = (field: keyof typeof locationMap) =>
+        locationMap[field]?.[editLocale] ||
+        locationMap[field]?.en ||
+        locationMap[field]?.ko ||
+        ''
 
       const nextBasic: BasicForm = {
         sub_category: String(productRow.sub_category ?? ''),
@@ -182,10 +208,10 @@ export default function CustomerPageThingsToKnowEmbed({
         languages: Array.isArray(productRow.languages)
           ? (productRow.languages as string[]).join(', ')
           : '',
-        departure_city: locationMap.departure_city?.[editLocale] ?? '',
-        arrival_city: locationMap.arrival_city?.[editLocale] ?? '',
-        departure_country: locationMap.departure_country?.[editLocale] ?? '',
-        arrival_country: locationMap.arrival_country?.[editLocale] ?? '',
+        departure_city: pickLocation('departure_city'),
+        arrival_city: pickLocation('arrival_city'),
+        departure_country: pickLocation('departure_country'),
+        arrival_country: pickLocation('arrival_country'),
         adult_age: String(productRow.adult_age ?? ''),
         child_age_min: String(productRow.child_age_min ?? ''),
         child_age_max: String(productRow.child_age_max ?? ''),
@@ -207,11 +233,11 @@ export default function CustomerPageThingsToKnowEmbed({
       )
     } catch (error) {
       console.error('알아두실 사항 로드 오류:', error)
-      setMessage('데이터를 불러오지 못했습니다.')
+      setMessage(t('thingsToKnow.loadError'))
     } finally {
       setLoading(false)
     }
-  }, [editLocale, productId])
+  }, [editLocale, productId, t])
 
   useEffect(() => {
     void loadData()
@@ -348,11 +374,11 @@ export default function CustomerPageThingsToKnowEmbed({
           locale: editLocale,
         })
       )
-      setMessage('저장되었습니다.')
+      setMessage(t('thingsToKnow.saved'))
       onSaved?.()
     } catch (error) {
       console.error('알아두실 사항 저장 오류:', error)
-      setMessage('저장 중 오류가 발생했습니다.')
+      setMessage(t('thingsToKnow.saveError'))
     } finally {
       setSaving(false)
     }
@@ -362,40 +388,31 @@ export default function CustomerPageThingsToKnowEmbed({
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        알아두실 사항 불러오는 중…
+        {t('thingsToKnow.loading')}
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          DB: <code className="rounded bg-muted px-1">product_details_multilingual</code> ·{' '}
-          <code className="rounded bg-muted px-1">products</code>
-        </p>
-        <AdminEditLocaleToggle
-          value={editLocale}
-          onChange={setEditLocale}
-          groupLabel="편집 언어"
-          koLabel="한국어"
-          enLabel="English"
-        />
-      </div>
+      <p className="text-xs text-muted-foreground">
+        DB: <code className="rounded bg-muted px-1">product_details_multilingual</code> ·{' '}
+        <code className="rounded bg-muted px-1">products</code>
+      </p>
 
       <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-1">
-        {SECTIONS.map((section) => (
+        {SECTION_IDS.map((sectionId) => (
           <button
-            key={section.id}
+            key={sectionId}
             type="button"
-            onClick={() => setActiveSection(section.id)}
+            onClick={() => setActiveSection(sectionId)}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-              activeSection === section.id
+              activeSection === sectionId
                 ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:bg-white hover:text-foreground'
             }`}
           >
-            {section.label}
+            {sectionLabel(sectionId)}
           </button>
         ))}
       </div>
@@ -563,7 +580,7 @@ export default function CustomerPageThingsToKnowEmbed({
             </label>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            카테고리·소요 시간은 「투어 하이라이트」 영역에서 편집합니다.
+            {t('thingsToKnow.highlightsHint')}
           </p>
         </div>
       ) : (
@@ -580,7 +597,7 @@ export default function CustomerPageThingsToKnowEmbed({
                     : 'bg-muted text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {DETAIL_FIELD_LABELS[field]}
+                {detailFieldLabel(field)}
               </button>
             ))}
           </div>
@@ -589,10 +606,10 @@ export default function CustomerPageThingsToKnowEmbed({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h4 className="text-sm font-semibold text-foreground">
-                  {DETAIL_FIELD_LABELS[activeDetailField]}
+                  {detailFieldLabel(activeDetailField)}
                 </h4>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  컬럼: <code className="rounded bg-muted px-1">{activeDetailField}</code>
+                  {columnLabel(activeDetailField)}
                 </p>
               </div>
               <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -607,7 +624,7 @@ export default function CustomerPageThingsToKnowEmbed({
                   }
                   className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
                 />
-                고객 페이지 표시
+                {showOnCustomerPage}
               </label>
             </div>
 
@@ -616,15 +633,17 @@ export default function CustomerPageThingsToKnowEmbed({
               onChange={(value) =>
                 setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
               }
-              height={220}
-              placeholder={`${DETAIL_FIELD_LABELS[activeDetailField]} 내용`}
+              height={editorHeight}
+              placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
               enableResize
+              uiLocale={editorUiLocale}
+              maxHeight={1200}
             />
 
             {detailForm[activeDetailField] ? (
               <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  미리보기
+                  {preview}
                 </p>
                 <div
                   className="prose prose-sm mt-1 max-w-none text-foreground"
@@ -651,7 +670,7 @@ export default function CustomerPageThingsToKnowEmbed({
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        저장
+        {t('thingsToKnow.save')}
       </button>
     </div>
   )
