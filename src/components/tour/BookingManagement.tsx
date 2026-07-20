@@ -12,6 +12,7 @@ export interface TicketBookingDetailRow {
   reservation_id: string | null
   rn_number: string | null
   invoice_number?: string | null
+  status?: string | null
 }
 
 interface LocalTicketBooking {
@@ -228,26 +229,26 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                       className={`p-2 border rounded ${isAggregated ? '' : 'cursor-pointer hover:bg-gray-50'} transition-colors ${isStaff && !isAggregated ? '' : 'cursor-not-allowed'}`}
                       onClick={() => !isAggregated && onEditTicketBooking(booking)}
                     >
-                      {/* 첫 번째 줄: company, status, 삭제 요청 배지 */}
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-lg">🎫</span>
+                      {/* 첫 번째 줄: company, status(우상단), 삭제 요청 배지 */}
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex min-w-0 items-center space-x-2">
+                          <span className="text-lg shrink-0">🎫</span>
                           <span className="font-medium text-sm text-gray-900 truncate">
                             {booking.company || 'N/A'}
                           </span>
                           {!isAggregated && booking.deletion_requested_at && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                            <span className="shrink-0 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
                               {t('deletionRequested')}
                             </span>
                           )}
                         </div>
-                        {!isAggregated && booking.status && (
+                        {booking.status ? (
                           <span
-                            className={`text-xs px-2 py-1 rounded-full ${getTicketBookingStatusBadgeClass(booking.status)}`}
+                            className={`shrink-0 text-xs px-2 py-1 rounded-full ${getTicketBookingStatusBadgeClass(booking.status)}`}
                           >
                             {formatTicketBookingStatusLabel(booking.status, tCal, locale)}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       
                       {/* 두 번째 줄: 체크인·시간·인원·예약번호 뱃지 */}
@@ -267,6 +268,14 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                                   reservationLabel={badgeLabels.reservation}
                                 />
                                 <span className="flex flex-wrap items-center gap-1 text-[10px] text-gray-500">
+                                  {/* 카드 우상단 상태가 없을 때(회사 내 상태 혼재) 행별 상태 표시 */}
+                                  {!booking.status && row.status ? (
+                                    <span
+                                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${getTicketBookingStatusBadgeClass(row.status)}`}
+                                    >
+                                      {formatTicketBookingStatusLabel(row.status, tCal, locale)}
+                                    </span>
+                                  ) : null}
                                   {row.rn_number ? (
                                     <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 font-mono">
                                       {t('rnNumber')}: {row.rn_number}
