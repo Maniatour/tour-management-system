@@ -5,10 +5,12 @@ import {
   ChevronDown,
   ChevronUp,
   HelpCircle,
+  Library,
   Loader2,
   Plus,
   Save,
   Trash2,
+  X,
 } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import {
@@ -22,7 +24,11 @@ import {
   resolveFaqEditorDraftForLocale,
   type FaqContentI18n,
 } from '@/lib/productFaqLocales'
-import { fetchProductAttachedFaqs } from '@/lib/reusableContentLibrary'
+import {
+  fetchFaqLibrary,
+  fetchProductAttachedFaqs,
+  type FaqLibraryItem,
+} from '@/lib/reusableContentLibrary'
 import { supabase } from '@/lib/supabase'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
@@ -147,6 +153,10 @@ export default function CustomerPageFaqEmbed({
   const [form, setForm] = useState<FaqForm>(() => faqToForm(emptyFaq(productId, 0), 'ko'))
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
   const [isNewDraft, setIsNewDraft] = useState(false)
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false)
+  const [libraryItems, setLibraryItems] = useState<FaqLibraryItem[]>([])
+  const [librarySearch, setLibrarySearch] = useState('')
+  const [libraryLoading, setLibraryLoading] = useState(false)
 
   const activeFaq = faqs.find((item) => item.id === activeFaqId) ?? null
 
@@ -385,6 +395,83 @@ export default function CustomerPageFaqEmbed({
     setForm(faqToForm(draft, editLocale))
   }
 
+  const openLibraryPicker = async () => {
+    setShowLibraryPicker(true)
+    setLibraryLoading(true)
+    try {
+      const rows = await fetchFaqLibrary(supabase as never, {
+        activeOnly: true,
+        search: librarySearch,
+      })
+      const attachedIds = new Set(faqs.map((item) => item.id).filter(Boolean))
+      setLibraryItems(rows.filter((row) => !attachedIds.has(row.id)))
+    } catch (error) {
+      console.error('FAQ library load error:', error)
+      setMessage({ text: tf('libraryLoadError'), type: 'error' })
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
+  const attachLibraryFaq = async (faqId: string) => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const { data: link, error } = await supabase
+        .from('product_faq_links')
+        .insert([
+          {
+            product_id: productId,
+            faq_id: faqId,
+            order_index: faqs.length,
+            is_active: true,
+          },
+        ] as never)
+        .select('*')
+        .single()
+      if (error) throw error
+
+      const item = libraryItems.find((row) => row.id === faqId)
+      if (!item) throw new Error('library item missing')
+
+      const attachedItem: FaqItem = {
+        id: item.id,
+        link_id: String((link as Record<string, unknown>).id),
+        product_id: productId,
+        name: item.name,
+        question: item.question,
+        answer: item.answer,
+        question_en: item.question_en ?? '',
+        answer_en: item.answer_en ?? '',
+        content_i18n: item.content_i18n || {},
+        order_index: faqs.length,
+        is_active: true,
+      }
+
+      setFaqs((prev) => [...prev, attachedItem])
+      setActiveFaqId(attachedItem.id!)
+      setIsNewDraft(false)
+      const nextForm = faqToForm(attachedItem, editLocale)
+      setForm(nextForm)
+      setInitialSnapshot(
+        JSON.stringify({
+          faqId: attachedItem.id,
+          form: nextForm,
+          locale: editLocale,
+          isNewDraft: false,
+        })
+      )
+      setShowLibraryPicker(false)
+      setMessage({ text: tf('libraryAttached'), type: 'success' })
+      onSaved?.()
+    } catch (error) {
+      console.error('FAQ attach error:', error)
+      setMessage({ text: tf('libraryAttachError'), type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!activeFaqId || isNewDraft) {
       setIsNewDraft(false)
@@ -461,17 +548,25 @@ export default function CustomerPageFaqEmbed({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          재사용 라이브러리 · <code className="rounded bg-muted px-1">faq_library</code>
-        </p>
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {tf('add')}
-        </button>
+        <p className="text-xs text-muted-foreground">{tf('libraryHint')}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void openLibraryPicker()}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+          >
+            <Library className="h-3.5 w-3.5" />
+            {tf('addFromLibrary')}
+          </button>
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {tf('add')}
+          </button>
+        </div>
       </div>
 
       {faqs.length === 0 && !isNewDraft ? (
@@ -609,6 +704,71 @@ export default function CustomerPageFaqEmbed({
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         {tf('save')}
       </button>
+
+      {showLibraryPicker ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-card shadow-lg">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">{tf('libraryPickerTitle')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowLibraryPicker(false)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={tf('libraryClose')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2 border-b border-border px-4 py-3">
+              <input
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void openLibraryPicker()
+                }}
+                placeholder={tf('librarySearchPlaceholder')}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void openLibraryPicker()}
+                className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium hover:bg-muted/80"
+              >
+                {tf('librarySearch')}
+              </button>
+            </div>
+            <div className="flex-1 space-y-2 overflow-y-auto p-3">
+              {libraryLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {tf('libraryLoading')}
+                </div>
+              ) : libraryItems.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {tf('libraryEmpty')}
+                </p>
+              ) : (
+                libraryItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void attachLibraryFaq(item.id)}
+                    disabled={saving}
+                    className="w-full rounded-lg border border-border px-3 py-2.5 text-left hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
+                  >
+                    <div className="text-sm font-medium text-foreground">
+                      {item.name || item.question.slice(0, 80) || tf('libraryUnnamed')}
+                    </div>
+                    <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      {item.question}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
