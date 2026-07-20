@@ -19,8 +19,11 @@ import {
   type TranslationFormState,
 } from '@/lib/customerPageTranslations'
 import { supabase } from '@/lib/supabase'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
+import {
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import {
   getZoneEditConfig,
@@ -614,7 +617,7 @@ export default function CustomerPageZoneEditPanel({
       markSnapshotSaved()
       onSaved()
     } catch (err) {
-      setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
+      setMessage({ text: `저장 실패: ${formatSupabaseError(err)}`, type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -650,7 +653,7 @@ export default function CustomerPageZoneEditPanel({
       emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
-      setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
+      setMessage({ text: `저장 실패: ${formatSupabaseError(err)}`, type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -668,7 +671,7 @@ export default function CustomerPageZoneEditPanel({
       emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
-      setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
+      setMessage({ text: `저장 실패: ${formatSupabaseError(err)}`, type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -698,18 +701,13 @@ export default function CustomerPageZoneEditPanel({
           }
         }
 
-        const patch: Record<string, unknown> = {
-          product_id: productId,
-          language_code: editLocale,
-          channel_id: null,
-          variant_key: 'default',
-        }
+        const detailPatch: Record<string, unknown> = {}
 
         for (const [field, val] of Object.entries(detailFieldUpdates) as [
           DetailFieldKey,
           string,
         ][]) {
-          patch[field] = toNullIfEmpty(val)
+          detailPatch[field] = toNullIfEmpty(val)
         }
 
         const visPatch: Record<string, boolean> = { ...fullVisibility }
@@ -720,24 +718,18 @@ export default function CustomerPageZoneEditPanel({
             else delete visPatch[slot.slotId]
           }
         }
-        patch.customer_page_visibility = visPatch
+        detailPatch.customer_page_visibility = visPatch
 
         if (Object.keys(detailFieldUpdates).length > 0 || Object.keys(visPatch).length > 0) {
-          if (detailsRowId) {
-            const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-              .update({ ...patch, updated_at: new Date().toISOString() })
-              .eq('id', detailsRowId)
-            if (error) throw error
-          } else if (Object.keys(detailFieldUpdates).length > 0) {
-            const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-              .insert(patch)
-              .select('id')
-              .single()
-            if (error) throw error
-            setDetailsRowId(String((data as { id: string }).id))
-          }
+          const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+            productId,
+            languageCode: editLocale,
+            existingRowId: detailsRowId,
+            patch: detailPatch,
+          })
+          setDetailsRowId(savedRowId)
           if (detailsRowRef.current) {
-            detailsRowRef.current = { ...detailsRowRef.current, ...patch }
+            detailsRowRef.current = { ...detailsRowRef.current, ...detailPatch }
           }
         }
 
@@ -747,15 +739,10 @@ export default function CustomerPageZoneEditPanel({
         return
       }
 
-      const patch: Record<string, unknown> = {
-        product_id: productId,
-        language_code: editLocale,
-        channel_id: null,
-        variant_key: 'default',
-      }
+      const detailPatch: Record<string, unknown> = {}
 
       for (const f of activeDetailFields) {
-        patch[f] = toNullIfEmpty(detailValues[f] ?? '')
+        detailPatch[f] = toNullIfEmpty(detailValues[f] ?? '')
       }
 
       const visPatch: Record<string, boolean> = { ...fullVisibility }
@@ -763,28 +750,22 @@ export default function CustomerPageZoneEditPanel({
         if (visibility[f] === false) visPatch[f] = false
         else delete visPatch[f]
       }
-      patch.customer_page_visibility = visPatch
+      detailPatch.customer_page_visibility = visPatch
 
-      if (detailsRowId) {
-        const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .update({ ...patch, updated_at: new Date().toISOString() })
-          .eq('id', detailsRowId)
-        if (error) throw error
-      } else {
-        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .insert(patch)
-          .select('id')
-          .single()
-        if (error) throw error
-        setDetailsRowId(String((data as { id: string }).id))
-      }
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: detailsRowId,
+        patch: detailPatch,
+      })
+      setDetailsRowId(savedRowId)
 
       setMessage({ text: '저장되었습니다.', type: 'success' })
       markSnapshotSaved()
       emitCustomerPageBindingsUpdate(zone)
       onSaved()
     } catch (err) {
-      setMessage({ text: `저장 실패: ${String(err)}`, type: 'error' })
+      setMessage({ text: `저장 실패: ${formatSupabaseError(err)}`, type: 'error' })
     } finally {
       setSaving(false)
     }

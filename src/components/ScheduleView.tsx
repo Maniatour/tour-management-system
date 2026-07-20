@@ -669,10 +669,18 @@ export type ScheduleViewTourStatusChangePayload = {
 type ScheduleViewProps = {
   /** 스케줄 뷰에서 투어 상태 변경 시 부모(삭제함 등) 동기화 */
   onTourStatusChanged?: (payload: ScheduleViewTourStatusChangePayload) => void
+  /**
+   * display: 오늘부터 N일 테이블 + 우측 이벤트 카드 (스케줄 디스플레이 전용)
+   * default: 기존 월간 스케줄 뷰
+   */
+  variant?: 'default' | 'display'
+  /** display 모드에서 표시할 일수 (기본 15) */
+  displayDayCount?: number
 }
 
 export default function ScheduleView(props: ScheduleViewProps = {}) {
-  const { onTourStatusChanged } = props
+  const { onTourStatusChanged, variant = 'default', displayDayCount = 15 } = props
+  const isDisplayMode = variant === 'display'
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
@@ -1820,9 +1828,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [tours])
 
-  // 현재 월의 첫 번째 날과 마지막 날 계산 (dayjs)
-  const firstDayOfMonth = useMemo(() => dayjs(currentDate).startOf('month'), [currentDate])
-  const lastDayOfMonth = useMemo(() => dayjs(currentDate).endOf('month'), [currentDate])
+  // 현재 월의 첫 번째 날과 마지막 날 계산 (dayjs) — display 모드는 오늘부터 N일
+  const firstDayOfMonth = useMemo(() => {
+    if (isDisplayMode) return dayjs().startOf('day')
+    return dayjs(currentDate).startOf('month')
+  }, [currentDate, isDisplayMode])
+  const lastDayOfMonth = useMemo(() => {
+    if (isDisplayMode) return dayjs().startOf('day').add(Math.max(displayDayCount, 1) - 1, 'day')
+    return dayjs(currentDate).endOf('month')
+  }, [currentDate, isDisplayMode, displayDayCount])
   
   // 오늘 날짜 확인 함수
   const isToday = (dateString: string) => {
@@ -2063,9 +2077,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [tourCoversScheduleDate, activeOperatorId])
 
   // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
+  // display 모드: 오늘부터 displayDayCount일 (패딩 없음)
   const monthDays = useMemo(() => {
     const days = [] as { date: number; dateString: string; dayOfWeek: string; isEdgePadding: boolean }[]
     const dowMap = ['일', '월', '화', '수', '목', '금', '토']
+    if (isDisplayMode) {
+      const count = Math.max(displayDayCount, 1)
+      for (let i = 0; i < count; i++) {
+        const d = dayjs().startOf('day').add(i, 'day')
+        days.push({
+          date: d.date(),
+          dateString: d.format('YYYY-MM-DD'),
+          dayOfWeek: dowMap[d.day()],
+          isEdgePadding: false,
+        })
+      }
+      return days
+    }
     const first = dayjs(currentDate).startOf('month')
     const last = dayjs(currentDate).endOf('month')
     const prev = first.subtract(1, 'day')
@@ -2093,7 +2121,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       isEdgePadding: true,
     })
     return days
-  }, [currentDate])
+  }, [currentDate, isDisplayMode, displayDayCount])
 
   /** 당월 날만 (전월 말·익월 첫날 패딩 컬럼 제외) — 우측 합계 열 집계용 */
   const monthDaysCore = useMemo(
@@ -5017,21 +5045,37 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       .filter(k => (choiceCounts[k] || 0) > 0)
       .map(k => `${keyToLabel[k]} : ${choiceCounts[k]}`)
     const choiceLine = choiceParts.length > 0 ? `초이스: ${choiceParts.join(' / ')}` : null
+    /** 카드용: 캐년 X/L/U만 (거주자·객실·입장료 등 _other 제외) */
+    const choiceCardParts = displayOrder
+      .filter((k) => k !== '_other' && (choiceCounts[k] || 0) > 0)
+      .map((k) => `🏜️ ${keyToLabel[k]} : ${choiceCounts[k]}`)
+    const choiceCardLine = choiceCardParts.length > 0 ? choiceCardParts.join(' , ') : null
+    const maxParticipants = Number((tour as { max_participants?: number | null }).max_participants) || 0
+    const capacityDenom = maxParticipants > 0 ? maxParticipants : totalPeopleAll
+    const guideAssigned = !!(tour.tour_guide_id && String(tour.tour_guide_id).trim())
+    const assistantAssigned = !!(tour.assistant_id && String(tour.assistant_id).trim())
+    const requiresAssistant = tour.team_type !== '1guide'
 
     return {
       productName,
       tourDate,
       assignedPeople,
       totalPeopleAll,
+      capacityDenom,
       assignedKo,
       assignedEn,
       guideName,
       assistantName,
       vehicleNumber,
       vehicleAssigned,
+      guideAssigned,
+      assistantAssigned,
+      requiresAssistant,
       confirmedEa,
       isPrivateTour,
-      choiceLine
+      choiceLine,
+      choiceCardLine,
+      tourStatus: tour.tour_status || null,
     }
   }
 
@@ -5065,6 +5109,29 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     ]
     return lines.join('\n')
   }
+
+  /** display 모드 우측 카드: 오늘~기간 내 활성 투어 */
+  const displayEventCards = useMemo(() => {
+    if (!isDisplayMode) return []
+    const start = firstDayOfMonth.format('YYYY-MM-DD')
+    const end = lastDayOfMonth.format('YYYY-MM-DD')
+    return tours
+      .filter((tour) => {
+        const d = String(tour.tour_date || '').slice(0, 10)
+        if (!d || d < start || d > end) return false
+        if (isTourCancelled(tour.tour_status) || isTourDeleted(tour.tour_status)) return false
+        return true
+      })
+      .slice()
+      .sort((a, b) => {
+        const da = String(a.tour_date || '')
+        const db = String(b.tour_date || '')
+        if (da !== db) return da.localeCompare(db)
+        const na = a.products?.name || a.product_id || ''
+        const nb = b.products?.name || b.product_id || ''
+        return na.localeCompare(nb, 'ko')
+      })
+  }, [isDisplayMode, tours, firstDayOfMonth, lastDayOfMonth])
 
   const isStatusExcludedFromUnassignedList = useCallback((status: string) => {
     const s = (status || '').toLowerCase()
@@ -5494,6 +5561,167 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     return { vehicleMismatch, incompleteTours, ticketPeopleMismatch, unconfirmedToursWithPendingOrConfirmedRes }
   }, [scheduleHealthFetched, tourCoversScheduleDate, locale])
+
+  /** display 카드 — 스케줄 점검 요약(1~5) 해당 투어별 이슈 */
+  type DisplayTourHealthIssue = {
+    kind: 'capacity' | 'vehicle_day' | 'incomplete' | 'ticket' | 'unconfirmed'
+    message: string
+    borderClass: string
+    alertClass: string
+  }
+  const displayTourHealthByTourId = useMemo(() => {
+    const map = new Map<string, DisplayTourHealthIssue[]>()
+    if (!isDisplayMode || displayEventCards.length === 0) return map
+
+    const addIssue = (tourId: string, issue: DisplayTourHealthIssue) => {
+      const list = map.get(tourId) || []
+      if (list.some((x) => x.kind === issue.kind && x.message === issue.message)) return
+      list.push(issue)
+      map.set(tourId, list)
+    }
+
+    const tourMatchesOverflowItem = (tour: Tour, item: { productId: string; dateString: string }) => {
+      if (String(tour.tour_date || '').slice(0, 10) !== item.dateString) return false
+      const memberProductIds = isScheduleAggregatedRowKey(item.productId)
+        ? [
+            ...getScheduleRowMemberIdSet(
+              item.productId,
+              products,
+              airportPickupMemberIdSet,
+              airportSendingMemberIdSet,
+              miscTourProductIds,
+            ),
+          ]
+        : expandScheduleRowProductIdsWithMisc(item.productId, products, miscTourProductIds)
+      const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
+      return memberIdSet.has(canonicalScheduleProductId(tour.product_id))
+    }
+
+    const vehicleMismatchByDate = new Map(
+      scheduleHealthFromFetch.vehicleMismatch.map((row) => [row.dateString, row]),
+    )
+    const incompleteByTourId = new Map(
+      scheduleHealthFromFetch.incompleteTours.map((row) => [row.tourId, row]),
+    )
+    const ticketMismatchByTourId = new Map(
+      scheduleHealthFromFetch.ticketPeopleMismatch.map((row) => [row.tourId, row]),
+    )
+    const unconfirmedByTourId = new Map(
+      scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.map((row) => [row.tourId, row]),
+    )
+
+    for (const tour of displayEventCards) {
+      const tourId = String(tour.id)
+      const tourDate = String(tour.tour_date || '').slice(0, 10)
+
+      for (const item of scheduleCapacityOverflowItems) {
+        if (tourMatchesOverflowItem(tour, item)) {
+          addIssue(tourId, {
+            kind: 'capacity',
+            message:
+              locale === 'ko'
+                ? `정원 초과 — 배정 ${item.assigned}/${item.max}명`
+                : `Capacity exceeded — ${item.assigned}/${item.max} pax`,
+            borderClass: 'border-2 border-red-500 hover:border-red-600',
+            alertClass: 'bg-red-50 text-red-800 border-red-200',
+          })
+        }
+      }
+
+      const vehicleRow = vehicleMismatchByDate.get(tourDate)
+      if (vehicleRow) {
+        addIssue(tourId, {
+          kind: 'vehicle_day',
+          message:
+            locale === 'ko'
+              ? `차량·투어 건수 불일치 — 투어 ${vehicleRow.tourCount} / 차량 ${vehicleRow.vehicleCount}`
+              : `Vehicle vs tour count — tours ${vehicleRow.tourCount} / vehicles ${vehicleRow.vehicleCount}`,
+          borderClass: 'border-2 border-amber-500 hover:border-amber-600',
+          alertClass: 'bg-amber-50 text-amber-950 border-amber-200',
+        })
+      }
+
+      const incomplete = incompleteByTourId.get(tourId)
+      if (incomplete) {
+        addIssue(tourId, {
+          kind: 'incomplete',
+          message:
+            locale === 'ko'
+              ? `인력·배차 미배정 — ${incomplete.missingLabels}`
+              : `Missing assignment — ${incomplete.missingLabels}`,
+          borderClass: 'border-2 border-violet-500 hover:border-violet-600',
+          alertClass: 'bg-violet-50 text-violet-900 border-violet-200',
+        })
+      }
+
+      const ticket = ticketMismatchByTourId.get(tourId)
+      if (ticket) {
+        addIssue(tourId, {
+          kind: 'ticket',
+          message:
+            locale === 'ko'
+              ? `입장권 불일치 — 인원 ${ticket.people} / 입장권 ${ticket.ticketEa}`
+              : `Ticket mismatch — pax ${ticket.people} / tickets ${ticket.ticketEa}`,
+          borderClass: 'border-2 border-sky-500 hover:border-sky-600',
+          alertClass: 'bg-sky-50 text-sky-900 border-sky-200',
+        })
+      }
+
+      const unconfirmed = unconfirmedByTourId.get(tourId)
+      if (unconfirmed) {
+        const pendingPart =
+          unconfirmed.pendingResCount > 0
+            ? locale === 'ko'
+              ? `대기 ${unconfirmed.pendingResCount}건`
+              : `pending ${unconfirmed.pendingResCount}`
+            : ''
+        const confirmedPart =
+          unconfirmed.confirmedResCount > 0
+            ? locale === 'ko'
+              ? `확정 ${unconfirmed.confirmedResCount}건`
+              : `confirmed ${unconfirmed.confirmedResCount}`
+            : ''
+        const resPart = [pendingPart, confirmedPart].filter(Boolean).join(locale === 'ko' ? ' · ' : ', ')
+        addIssue(tourId, {
+          kind: 'unconfirmed',
+          message:
+            locale === 'ko'
+              ? `투어 미확정(${unconfirmed.tourStatusLabel}) — ${resPart} 예약`
+              : `Tour not confirmed (${unconfirmed.tourStatusLabel}) — ${resPart} reservations`,
+          borderClass: 'border-2 border-orange-500 hover:border-orange-600',
+          alertClass: 'bg-orange-50 text-orange-950 border-orange-200',
+        })
+      }
+    }
+
+    return map
+  }, [
+    isDisplayMode,
+    displayEventCards,
+    scheduleCapacityOverflowItems,
+    scheduleHealthFromFetch,
+    products,
+    airportPickupMemberIdSet,
+    airportSendingMemberIdSet,
+    miscTourProductIds,
+    locale,
+  ])
+
+  const getDisplayTourHealthBorderClass = useCallback((issues: DisplayTourHealthIssue[] | undefined) => {
+    if (!issues?.length) return 'border border-border/60 hover:border-primary/40'
+    const priority: DisplayTourHealthIssue['kind'][] = [
+      'capacity',
+      'incomplete',
+      'unconfirmed',
+      'ticket',
+      'vehicle_day',
+    ]
+    for (const kind of priority) {
+      const hit = issues.find((i) => i.kind === kind)
+      if (hit) return hit.borderClass
+    }
+    return issues[0]!.borderClass
+  }, [])
 
   const scheduleHealthIssueCount = useMemo(
     () =>
@@ -6305,6 +6533,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [tours, monthDays, tourCoversScheduleDate, reservations])
 
   const scheduleHealthFabEl = (() => {
+    if (isDisplayMode) return null
     if (!scheduleHealthFabHydrated || !scheduleHealthFabPos || scheduleHealthModalOpen) return null
     if (typeof document === 'undefined') return null
     const { left, top } = scheduleHealthFabPos
@@ -6353,8 +6582,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     )
   }
 
-  return (
-    <div className="bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2">
+  const scheduleMainPanel = (
+    <div className={`bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2 ${isDisplayMode ? 'min-w-0 flex-1 overflow-auto' : ''}`}>
       {/* 헤더 */}
       <div className="mb-2">
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
@@ -6458,6 +6687,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           {/* 가운데: 모바일은 한 줄 전체(겹침 방지), sm+ 는 절대배치로 화면 중앙 */}
           <div className="order-last flex w-full basis-full justify-center px-2 sm:pointer-events-none sm:absolute sm:inset-0 sm:order-none sm:w-auto sm:basis-auto sm:items-center sm:justify-center sm:px-24 md:px-32">
             <div className="flex items-center gap-1 sm:gap-2 sm:pointer-events-auto">
+              {isDisplayMode ? (
+                <h3 className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">
+                  {firstDayOfMonth.format('YYYY-MM-DD')} ~ {lastDayOfMonth.format('MM-DD')}
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    ({displayDayCount}
+                    {locale === 'ko' ? '일' : ' days'})
+                  </span>
+                </h3>
+              ) : (
+                <>
               <div className="flex items-center space-x-1 sm:space-x-4">
                 <button
                   type="button"
@@ -6484,6 +6723,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               >
                 오늘
               </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -11580,8 +11821,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         />
       )}
 
-      {scheduleHealthFabEl}
-
       <CancellationReasonModal
         isOpen={cancellationReasonModalOpen}
         locale={locale}
@@ -11600,6 +11839,125 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         />
       )}
 
+    </div>
+  )
+
+  if (!isDisplayMode) {
+    return (
+      <>
+        {scheduleMainPanel}
+        {scheduleHealthFabEl}
+      </>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col gap-0 bg-slate-50 lg:flex-row">
+      <div className="min-h-0 min-w-0 w-full overflow-auto p-2 sm:p-3 lg:w-1/2 lg:shrink-0">
+        {scheduleMainPanel}
+      </div>
+      <aside className="flex min-h-0 w-full min-w-0 flex-1 flex-col border-t border-border bg-white lg:h-full lg:border-l lg:border-t-0">
+        <div className="sticky top-0 z-10 border-b border-border bg-white px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            {locale === 'ko' ? '다가오는 투어' : 'Upcoming tours'}
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {firstDayOfMonth.format('YYYY-MM-DD')} ~ {lastDayOfMonth.format('YYYY-MM-DD')}
+            <span className="ml-1 tabular-nums">({displayEventCards.length})</span>
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {displayEventCards.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {locale === 'ko' ? '예정된 투어가 없습니다.' : 'No upcoming tours.'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {displayEventCards.map((tour) => {
+              const c = getTourSummaryCore(tour)
+              const status = c.tourStatus
+              const staffLine = [c.guideName, c.assistantName]
+                .filter((n) => n && n !== '-')
+                .join(' , ')
+              const healthIssues = displayTourHealthByTourId.get(String(tour.id))
+              const healthBorderClass = getDisplayTourHealthBorderClass(healthIssues)
+              return (
+                <button
+                  key={tour.id}
+                  type="button"
+                  onClick={() => {
+                    showGuideModalContent(
+                      locale === 'ko' ? '투어 상세 정보' : 'Tour details',
+                      getTourSummary(tour),
+                      tour.id,
+                    )
+                  }}
+                  className={`w-full rounded-xl bg-card p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${healthBorderClass}`}
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground">
+                      {dayjs(c.tourDate).locale('en').format('MM/DD (ddd)')} {c.productName}
+                      {c.isPrivateTour ? (
+                        <span className="ml-1 text-xs font-medium text-violet-700">(단독)</span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium ${getTourStatusColor(status)}`}
+                    >
+                      {getTourStatusLabel(status, locale)}
+                    </span>
+                  </div>
+                  <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
+                    <span className="tabular-nums font-medium">
+                      인원 {c.assignedPeople}/{c.capacityDenom}
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <ReactCountryFlag countryCode="KR" svg style={{ width: '1.1em', height: '0.85em' }} />
+                      <span className="tabular-nums">{c.assignedKo}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <ReactCountryFlag countryCode="US" svg style={{ width: '1.1em', height: '0.85em' }} />
+                      <span className="tabular-nums">{c.assignedEn}</span>
+                    </span>
+                  </div>
+                  {c.choiceCardLine ? (
+                    <p className="mb-1.5 text-xs leading-relaxed text-muted-foreground">{c.choiceCardLine}</p>
+                  ) : null}
+                  <p className={`text-xs text-foreground ${healthIssues?.length ? 'mb-2' : ''}`}>
+                    {staffLine || (locale === 'ko' ? '가이드 미배정' : 'No guide')}
+                    {c.vehicleNumber && c.vehicleNumber !== '-' ? (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        , 차량 {c.vehicleNumber}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        , {locale === 'ko' ? '차량 미배정' : 'No vehicle'}
+                      </span>
+                    )}
+                  </p>
+                  {healthIssues?.length ? (
+                    <div className="space-y-1 border-t border-border/50 pt-2">
+                      {healthIssues.map((issue) => (
+                        <p
+                          key={`${issue.kind}-${issue.message}`}
+                          className={`rounded-md border px-2 py-1.5 text-xs font-semibold leading-snug ${issue.alertClass}`}
+                        >
+                          {issue.message}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </button>
+              )
+            })}
+            </div>
+          )}
+        </div>
+      </aside>
+      {scheduleHealthFabEl}
     </div>
   )
 }

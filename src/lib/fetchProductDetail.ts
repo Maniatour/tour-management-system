@@ -11,6 +11,7 @@ import type {
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
+import { fetchDefaultProductDetailsRowForAdmin } from '@/lib/productDetailsMultilingualAdmin'
 import { contentFallbackOrder, normalizeSiteLocale } from '@/lib/siteLocales'
 
 export type {
@@ -586,10 +587,20 @@ export async function fetchProductDetailsForAdminEdit(
   productId: string,
   locale: string
 ): Promise<AdminEditDetailsRow> {
-  const { preferred, fallbackRows } = await loadDetailsRowsForContentFallback(
+  const siteLocale = normalizeSiteLocale(locale)
+  const preferred = await fetchDefaultProductDetailsRowForAdmin(
+    supabase,
     productId,
-    locale
+    siteLocale
   )
+
+  const fallbackRows: Array<Record<string, unknown> | null> = []
+  for (const code of DETAILS_CONTENT_FALLBACK) {
+    if (code === siteLocale) continue
+    const row = await fetchDefaultProductDetailsRowForAdmin(supabase, productId, code)
+    fallbackRows.push(row)
+  }
+
   return {
     row: preferred,
     values: mergeDetailsContentValues(preferred, fallbackRows),

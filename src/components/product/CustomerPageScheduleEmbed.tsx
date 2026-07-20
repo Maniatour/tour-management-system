@@ -14,8 +14,12 @@ import {
   mergeScheduleI18n,
   type ScheduleContentI18n,
 } from '@/lib/productScheduleLocales'
+import {
+  fetchDefaultProductDetailsCustomerPageVisibility,
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
 import { supabase } from '@/lib/supabase'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 
@@ -288,48 +292,30 @@ export default function CustomerPageScheduleEmbed({
     setSaving(true)
     setMessage(null)
     try {
-      const existingVisibility =
-        rowId != null
-          ? ((
-              await fromUntypedTable(supabase, 'product_details_multilingual')
-                .select('customer_page_visibility')
-                .eq('id', rowId)
-                .maybeSingle()
-            ).data as { customer_page_visibility?: Record<string, unknown> } | null)
-          : null
+      const existingVisibility = await fetchDefaultProductDetailsCustomerPageVisibility(
+        supabase,
+        productId,
+        editLocale,
+        rowId
+      )
 
       const mergedVisibility = {
-        ...(existingVisibility?.customer_page_visibility ?? {}),
+        ...existingVisibility,
         pickup_drop_info: pickupVisible,
       }
 
       const detailPayload = {
         pickup_drop_info: pickupDropInfo.trim() || null,
         customer_page_visibility: mergedVisibility,
-        updated_at: new Date().toISOString(),
       }
 
-      if (rowId) {
-        const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .update(detailPayload)
-          .eq('id', rowId)
-        if (error) throw error
-      } else {
-        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .insert([
-            {
-              product_id: productId,
-              language_code: editLocale,
-              channel_id: null,
-              variant_key: 'default',
-              ...detailPayload,
-            },
-          ])
-          .select('id')
-          .single()
-        if (error) throw error
-        setRowId(String((data as { id: string }).id))
-      }
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: rowId,
+        patch: detailPayload,
+      })
+      setRowId(savedRowId)
 
       if (activeScheduleId) {
         const merged = mergeScheduleI18n(
@@ -395,7 +381,7 @@ export default function CustomerPageScheduleEmbed({
       onSaved?.()
     } catch (error) {
       console.error('여행 일정 저장 오류:', error)
-      setMessage({ text: tf('saveError'), type: 'error' })
+      setMessage({ text: `${tf('saveError')} ${formatSupabaseError(error)}`, type: 'error' })
     } finally {
       setSaving(false)
     }

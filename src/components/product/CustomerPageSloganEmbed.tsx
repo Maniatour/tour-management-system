@@ -5,7 +5,11 @@ import { useTranslations } from 'next-intl'
 import { Loader2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import {
+  fetchDefaultProductDetailsCustomerPageVisibility,
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
@@ -110,17 +114,15 @@ export default function CustomerPageSloganEmbed({
     setSaving(true)
     setMessage(null)
     try {
-      const existingVisibility =
-        rowId != null
-          ? ((await fromUntypedTable(supabase, 'product_details_multilingual')
-              .select('customer_page_visibility')
-              .eq('id', rowId)
-              .eq('language_code', editLocale)
-              .maybeSingle()).data as { customer_page_visibility?: Record<string, unknown> } | null)
-          : null
+      const existingVisibility = await fetchDefaultProductDetailsCustomerPageVisibility(
+        supabase,
+        productId,
+        editLocale,
+        rowId
+      )
 
       const mergedVisibility = {
-        ...(existingVisibility?.customer_page_visibility ?? {}),
+        ...existingVisibility,
         slogan1: visibility.slogan1,
         slogan2: visibility.slogan2,
         slogan3: visibility.slogan3,
@@ -131,38 +133,22 @@ export default function CustomerPageSloganEmbed({
         slogan2: form.slogan2.trim() || null,
         slogan3: form.slogan3.trim() || null,
         customer_page_visibility: mergedVisibility,
-        updated_at: new Date().toISOString(),
       }
 
-      if (rowId) {
-        const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .update(payload)
-          .eq('id', rowId)
-          .eq('language_code', editLocale)
-        if (error) throw error
-      } else {
-        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .insert([
-            {
-              product_id: productId,
-              language_code: editLocale,
-              channel_id: null,
-              variant_key: 'default',
-              ...payload,
-            },
-          ])
-          .select('id')
-          .single()
-        if (error) throw error
-        setRowId(String((data as { id: string }).id))
-      }
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: rowId,
+        patch: payload,
+      })
+      setRowId(savedRowId)
 
       setInitialSnapshot(JSON.stringify({ form, visibility, locale: editLocale }))
       setMessage({ text: t('saved'), type: 'success' })
       onSaved?.()
     } catch (error) {
       console.error('슬로건 저장 오류:', error)
-      setMessage({ text: t('saveError'), type: 'error' })
+      setMessage({ text: `${t('saveError')} ${formatSupabaseError(error)}`, type: 'error' })
     } finally {
       setSaving(false)
     }

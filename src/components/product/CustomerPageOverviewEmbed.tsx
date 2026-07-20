@@ -12,13 +12,17 @@ import {
   type AdminEditLocale,
 } from '@/lib/adminEditLocales'
 import {
+  fetchDefaultProductDetailsCustomerPageVisibility,
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
+import {
   buildProductTranslationMap,
   fetchProductFieldTranslations,
   upsertProductFieldTranslations,
 } from '@/lib/productFieldTranslations'
 import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 const OVERVIEW_SLOTS = [
   {
@@ -163,18 +167,15 @@ export default function CustomerPageOverviewEmbed({
     setSaving(true)
     setMessage(null)
     try {
-      const existingVisibility =
-        rowId != null
-          ? ((
-              await fromUntypedTable(supabase, 'product_details_multilingual')
-                .select('customer_page_visibility')
-                .eq('id', rowId)
-                .maybeSingle()
-            ).data as { customer_page_visibility?: Record<string, unknown> } | null)
-          : null
+      const existingVisibility = await fetchDefaultProductDetailsCustomerPageVisibility(
+        supabase,
+        productId,
+        editLocale,
+        rowId
+      )
 
       const mergedVisibility = {
-        ...(existingVisibility?.customer_page_visibility ?? {}),
+        ...existingVisibility,
         greeting: visibility.greeting,
         description: visibility.description,
       }
@@ -183,31 +184,15 @@ export default function CustomerPageOverviewEmbed({
         greeting: form.greeting.trim() || null,
         description: form.description.trim() || null,
         customer_page_visibility: mergedVisibility,
-        updated_at: new Date().toISOString(),
       }
 
-      if (rowId) {
-        const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .update(payload)
-          .eq('id', rowId)
-          .eq('language_code', editLocale)
-        if (error) throw error
-      } else {
-        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .insert([
-            {
-              product_id: productId,
-              language_code: editLocale,
-              channel_id: null,
-              variant_key: 'default',
-              ...payload,
-            },
-          ])
-          .select('id')
-          .single()
-        if (error) throw error
-        setRowId(String((data as { id: string }).id))
-      }
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: rowId,
+        patch: payload,
+      })
+      setRowId(savedRowId)
 
       const legacyPatch = await upsertProductFieldTranslations({
         productId,
@@ -240,7 +225,7 @@ export default function CustomerPageOverviewEmbed({
       onSaved?.()
     } catch (error) {
       console.error('투어 소개 저장 오류:', error)
-      setMessage('저장 중 오류가 발생했습니다.')
+      setMessage(`저장 중 오류가 발생했습니다. ${formatSupabaseError(error)}`)
     } finally {
       setSaving(false)
     }

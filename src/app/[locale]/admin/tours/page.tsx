@@ -1155,6 +1155,16 @@ export default function AdminTours() {
               <CalendarDays size={16} />
               <span className="hidden sm:inline">{t('calendar.scheduleView')}</span>
             </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/${locale}/admin/schedule-display`)}
+              title="스케줄 디스플레이"
+              aria-label="스케줄 디스플레이"
+              className="px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium bg-slate-800 text-white hover:bg-slate-900"
+            >
+              <ExternalLink size={16} className="shrink-0" aria-hidden />
+              <span className="hidden sm:inline">스케줄 디스플레이</span>
+            </button>
             {viewerCanApproveOffSchedules && (
               <button
                 type="button"

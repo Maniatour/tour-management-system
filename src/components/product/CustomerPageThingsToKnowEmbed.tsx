@@ -17,9 +17,13 @@ import {
   fetchProductFieldTranslations,
   upsertProductFieldTranslations,
 } from '@/lib/productFieldTranslations'
+import {
+  fetchDefaultProductDetailsCustomerPageVisibility,
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
 import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
-import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 type SectionId = 'basic' | 'included' | 'logistics' | 'policy'
 
@@ -258,18 +262,15 @@ export default function CustomerPageThingsToKnowEmbed({
     setSaving(true)
     setMessage(null)
     try {
-      const existingVisibility =
-        rowId != null
-          ? ((
-              await fromUntypedTable(supabase, 'product_details_multilingual')
-                .select('customer_page_visibility')
-                .eq('id', rowId)
-                .maybeSingle()
-            ).data as { customer_page_visibility?: Record<string, unknown> } | null)
-          : null
+      const existingVisibility = await fetchDefaultProductDetailsCustomerPageVisibility(
+        supabase,
+        productId,
+        editLocale,
+        rowId
+      )
 
       const mergedVisibility = {
-        ...(existingVisibility?.customer_page_visibility ?? {}),
+        ...existingVisibility,
         ...visibility,
       }
 
@@ -280,7 +281,6 @@ export default function CustomerPageThingsToKnowEmbed({
       ]
 
       const detailPayload: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
         customer_page_visibility: mergedVisibility,
       }
       allDetailKeys.forEach((key) => {
@@ -293,27 +293,13 @@ export default function CustomerPageThingsToKnowEmbed({
         .filter(Boolean)
       detailPayload.tags = tagList
 
-      if (rowId) {
-        const { error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .update(detailPayload)
-          .eq('id', rowId)
-        if (error) throw error
-      } else {
-        const { data, error } = await fromUntypedTable(supabase, 'product_details_multilingual')
-          .insert([
-            {
-              product_id: productId,
-              language_code: editLocale,
-              channel_id: null,
-              variant_key: 'default',
-              ...detailPayload,
-            },
-          ])
-          .select('id')
-          .single()
-        if (error) throw error
-        setRowId(String((data as { id: string }).id))
-      }
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: rowId,
+        patch: detailPayload,
+      })
+      setRowId(savedRowId)
 
       const locationLegacyPatch = await upsertProductFieldTranslations({
         productId,
@@ -377,7 +363,7 @@ export default function CustomerPageThingsToKnowEmbed({
       onSaved?.()
     } catch (error) {
       console.error('알아두실 사항 저장 오류:', error)
-      setMessage(t('thingsToKnow.saveError'))
+      setMessage(`${t('thingsToKnow.saveError')} ${formatSupabaseError(error)}`)
     } finally {
       setSaving(false)
     }
