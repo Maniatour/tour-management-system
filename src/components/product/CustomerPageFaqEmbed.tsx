@@ -4,23 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronUp,
-  ExternalLink,
   HelpCircle,
   Loader2,
   Plus,
   Save,
   Trash2,
 } from 'lucide-react'
-import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
+import LightRichEditor from '@/components/LightRichEditor'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
   type AdminEditLocale,
 } from '@/lib/adminEditLocales'
 import {
-  getFaqExactText,
   getFaqLocalizedText,
   mergeFaqI18n,
+  resolveFaqEditorDraftForLocale,
   type FaqContentI18n,
 } from '@/lib/productFaqLocales'
 import { supabase } from '@/lib/supabase'
@@ -73,8 +72,9 @@ function emptyFaq(productId: string, orderIndex: number): FaqItem {
 
 function faqToForm(item: FaqItem, locale: AdminEditLocale): FaqForm {
   return {
-    questionDraft: getFaqExactText(item, 'question', locale),
-    answerDraft: getFaqExactText(item, 'answer', locale),
+    // Prefer selected locale, then en → ko (same as customer page)
+    questionDraft: getFaqLocalizedText(item, 'question', locale),
+    answerDraft: getFaqLocalizedText(item, 'answer', locale),
     is_active: item.is_active !== false,
     content_i18n: item.content_i18n || {},
     question: item.question ?? '',
@@ -85,7 +85,7 @@ function faqToForm(item: FaqItem, locale: AdminEditLocale): FaqForm {
 }
 
 function getFaqLabel(item: FaqItem, locale: AdminEditLocale, emptyLabel: string): string {
-  return getFaqExactText(item, 'question', locale) || emptyLabel
+  return getFaqLocalizedText(item, 'question', locale).trim() || emptyLabel
 }
 
 function mergeFormLocale(
@@ -95,17 +95,18 @@ function mergeFormLocale(
   questionDraft: string
   answerDraft: string
 } {
+  const source = {
+    question: form.question,
+    answer: form.answer,
+    question_en: form.question_en,
+    answer_en: form.answer_en,
+    content_i18n: form.content_i18n,
+  }
   const merged = mergeFaqI18n(
-    {
-      question: form.question,
-      answer: form.answer,
-      question_en: form.question_en,
-      answer_en: form.answer_en,
-      content_i18n: form.content_i18n,
-    },
+    source,
     locale,
-    form.questionDraft,
-    form.answerDraft
+    resolveFaqEditorDraftForLocale(source, 'question', locale, form.questionDraft),
+    resolveFaqEditorDraftForLocale(source, 'answer', locale, form.answerDraft)
   )
   return {
     ...form,
@@ -124,12 +125,11 @@ export default function CustomerPageFaqEmbed({
   locale: localeProp,
   onSaved,
   onDirtyChange,
-  onOpenFullAdmin,
 }: CustomerPageFaqEmbedProps) {
   const { t, editorUiLocale } = useCustomerPageEditLabels()
   const tf = (key: string, values?: Record<string, string>) =>
     values ? t(`faqEmbed.${key}`, values) : t(`faqEmbed.${key}`)
-  const editorHeight = useModalEditorHeight(320)
+  const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(80)
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
@@ -228,8 +228,8 @@ export default function CustomerPageFaqEmbed({
     }
     setForm({
       ...merged,
-      questionDraft: getFaqExactText(source, 'question', next),
-      answerDraft: getFaqExactText(source, 'answer', next),
+      questionDraft: getFaqLocalizedText(source, 'question', next),
+      answerDraft: getFaqLocalizedText(source, 'answer', next),
     })
     setEditLocale(next)
   }
@@ -537,30 +537,20 @@ export default function CustomerPageFaqEmbed({
             <span className="text-xs font-medium">
               {tf('answer', { locale: localeLabel })}
             </span>
-            <LightRichEditor
-              value={form.answerDraft}
-              onChange={(value) =>
-                setForm((prev) => ({ ...prev, answerDraft: value ?? '' }))
-              }
-              height={editorHeight}
-              placeholder={tf('answerPlaceholder')}
-              enableResize
-              uiLocale={editorUiLocale}
-              maxHeight={1200}
-            />
-          </label>
-
-          {form.answerDraft ? (
-            <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {tf('preview')}
-              </p>
-              <div
-                className="prose prose-sm mt-1 max-w-none text-foreground"
-                dangerouslySetInnerHTML={{ __html: markdownToHtml(form.answerDraft) }}
+            <div ref={editorMeasureRef}>
+              <LightRichEditor
+                value={form.answerDraft}
+                onChange={(value) =>
+                  setForm((prev) => ({ ...prev, answerDraft: value ?? '' }))
+                }
+                height={editorHeight}
+                placeholder={tf('answerPlaceholder')}
+                enableResize
+                uiLocale={editorUiLocale}
+                maxHeight={1200}
               />
             </div>
-          ) : null}
+          </label>
         </div>
       )}
 
@@ -583,17 +573,6 @@ export default function CustomerPageFaqEmbed({
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         {tf('save')}
       </button>
-
-      {onOpenFullAdmin ? (
-        <button
-          type="button"
-          onClick={() => onOpenFullAdmin('faq')}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
-        >
-          {tf('openFullAdmin')}
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
     </div>
   )
 }

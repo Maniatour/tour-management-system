@@ -60,6 +60,16 @@ export function getScheduleLocalizedText(
   return ''
 }
 
+/** Admin editors: only the selected locale (no customer-page fallback). */
+export function getScheduleExactText(
+  source: ScheduleI18nSource,
+  field: ScheduleI18nField,
+  locale: string
+): string {
+  const preferred = isSiteLocale(locale) ? locale : normalizeSiteLocale(locale)
+  return getScheduleI18nMap(source, field)[preferred]?.trim() || ''
+}
+
 export function setScheduleI18nField(
   current: ScheduleContentI18n | null | undefined,
   field: ScheduleI18nField,

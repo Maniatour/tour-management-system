@@ -1,20 +1,32 @@
 'use client'
 
 import Link from 'next/link'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Facebook, Instagram, Mail, MapPin, Phone, Youtube } from 'lucide-react'
 import { buildLegalPageHref, LEGAL_PAGE_SLUGS } from '@/lib/customerSiteRoutes'
 import { LEGAL_LABEL_KEYS } from '@/lib/legalPageLabels'
 import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
 import { getPublicInstagramProfileUrl } from '@/lib/instagramPublic'
+import { DEFAULT_ROUTING_LOCALE, isSiteLocale } from '@/lib/siteLocales'
 
 type Props = {
   locale: string
 }
 
-export default function CustomerSiteManiaTourFooter({ locale }: Props) {
+export default function CustomerSiteManiaTourFooter({ locale: localeProp }: Props) {
+  const intlLocale = useLocale()
+  const locale = isSiteLocale(localeProp)
+    ? localeProp
+    : isSiteLocale(intlLocale)
+      ? intlLocale
+      : DEFAULT_ROUTING_LOCALE
   const t = useTranslations('customerSiteFooter')
   const tCommon = useTranslations('common')
+  const year = new Date().getFullYear()
+  // Avoid ICU format when provider locale is invalid (e.g. literal "undefined").
+  const copyrightText = isSiteLocale(intlLocale)
+    ? t('copyright', { year })
+    : String(t.raw('copyright')).replace(/\{year\}/g, String(year))
 
   const tourLinks = [
     { href: `/${locale}/products?tag=${encodeURIComponent('그랜드캐년')}`, label: t('footerGrandCanyon') },
@@ -130,7 +142,7 @@ export default function CustomerSiteManiaTourFooter({ locale }: Props) {
 
       <div className="kv-footer-bottom">
         <div className="kv-container kv-footer-bottom-inner">
-          <p>{t('copyright', { year: new Date().getFullYear() })}</p>
+          <p>{copyrightText}</p>
           <div className="kv-footer-legal">
             <Link href={buildLegalPageHref(locale, 'terms')}>{t('terms')}</Link>
             <Link href={buildLegalPageHref(locale, 'privacy-policy')}>{t('privacyPolicy')}</Link>

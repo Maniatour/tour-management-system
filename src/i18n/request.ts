@@ -40,8 +40,11 @@ async function resolveRequestPathname(): Promise<string> {
   return headersList.get('x-pathname') ?? ''
 }
 
-export default getRequestConfig(async ({ locale }) => {
-  const resolvedLocale = await resolveLocaleWithCookie(locale)
+export default getRequestConfig(async ({ requestLocale, locale: localeOverride }) => {
+  // next-intl v4: segment locale comes from `requestLocale` (Promise).
+  // `locale` is only set when callers pass an explicit override (e.g. getMessages({ locale })).
+  const requested = localeOverride ?? (await requestLocale)
+  const resolvedLocale = await resolveLocaleWithCookie(requested)
   const pathname = await resolveRequestPathname()
   const loadMessages = shouldLoadFullLocaleMessages()
     ? loadLocaleMessages

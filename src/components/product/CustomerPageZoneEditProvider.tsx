@@ -86,7 +86,10 @@ export function CustomerPageZoneEditProvider({
             onClick={requestCloseEditModal}
             aria-hidden
           />
-          <div className="relative my-auto flex h-[min(88vh,calc(100dvh-2rem))] min-h-[min(480px,calc(100dvh-2rem))] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+          <div
+            data-customer-zone-edit-modal
+            className="relative my-auto flex h-[min(88vh,calc(100dvh-2rem))] min-h-[min(480px,calc(100dvh-2rem))] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+          >
             <CustomerPageZoneEditPanel
               key={`${selectedZone}-${editProductId ?? productId}`}
               zone={selectedZone}

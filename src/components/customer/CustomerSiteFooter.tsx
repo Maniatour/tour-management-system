@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Mail, MapPin, Phone, ShieldCheck } from 'lucide-react'
 import {
   LEGAL_PAGE_SLUGS,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/customerSiteRoutes'
 import { LEGAL_LABEL_KEYS } from '@/lib/legalPageLabels'
 import CustomerSiteLogo from '@/components/customer/CustomerSiteLogo'
+import { DEFAULT_ROUTING_LOCALE, isSiteLocale } from '@/lib/siteLocales'
 
 type CustomerSiteFooterProps = {
   locale: string
@@ -18,9 +19,22 @@ type CustomerSiteFooterProps = {
   forceShow?: boolean
 }
 
-export default function CustomerSiteFooter({ locale, forceShow = false }: CustomerSiteFooterProps) {
+export default function CustomerSiteFooter({
+  locale: localeProp,
+  forceShow = false,
+}: CustomerSiteFooterProps) {
   const pathname = usePathname()
+  const intlLocale = useLocale()
+  const locale = isSiteLocale(localeProp)
+    ? localeProp
+    : isSiteLocale(intlLocale)
+      ? intlLocale
+      : DEFAULT_ROUTING_LOCALE
   const t = useTranslations('customerSiteFooter')
+  const year = new Date().getFullYear()
+  const copyrightText = isSiteLocale(intlLocale)
+    ? t('copyright', { year })
+    : String(t.raw('copyright')).replace(/\{year\}/g, String(year))
 
   if (!forceShow && !isCustomerFacingPath(pathname)) {
     return null
@@ -116,7 +130,7 @@ export default function CustomerSiteFooter({ locale, forceShow = false }: Custom
         </div>
 
         <div className="mt-8 flex flex-col gap-3 border-t border-slate-800 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>{t('copyright', { year: new Date().getFullYear() })}</p>
+          <p>{copyrightText}</p>
           <p>{t('disclaimer')}</p>
         </div>
       </div>

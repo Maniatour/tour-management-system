@@ -38,7 +38,10 @@ export default function CustomerPageDetailFieldSlotsForm({
     contentPlaceholder,
     editorUiLocale,
   } = useCustomerPageEditLabels()
-  const editorHeight = useModalEditorHeight(slots.length > 1 ? 360 : 260)
+  const singleEditor = slots.filter((s) => !s.slotId.startsWith('slogan')).length <= 1
+  const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(
+    singleEditor ? 120 : 360
+  )
 
   return (
     <div className="space-y-6">
@@ -47,11 +50,14 @@ export default function CustomerPageDetailFieldSlotsForm({
           strong: (chunks) => <strong>{chunks}</strong>,
         })}
       </p>
-      {slots.map((slot) => {
+      {slots.map((slot, index) => {
         const bound = bindings[slot.slotId] ?? slot.defaultOption
         const hasAlternatives = slot.options.length > 0
         const showVisibility = slot.supportsVisibility && isDetailTableBinding(bound)
         const label = detailFieldLabel(slot.slotId)
+        const isPrimaryEditor = singleEditor && !slot.slotId.startsWith('slogan')
+        const isFirstEditor = !slot.slotId.startsWith('slogan') &&
+          slots.findIndex((s) => !s.slotId.startsWith('slogan')) === index
 
         return (
           <div key={slot.slotId} className="rounded-xl border border-gray-200 p-3 space-y-2">
@@ -91,15 +97,23 @@ export default function CustomerPageDetailFieldSlotsForm({
                 )}
               </div>
             </div>
-            <LightRichEditor
-              value={values[slot.slotId] ?? ''}
-              onChange={(v) => onValueChange(slot.slotId, v ?? '')}
-              height={slot.slotId.startsWith('slogan') ? 80 : editorHeight}
-              placeholder={contentPlaceholder(label)}
-              enableResize
-              uiLocale={editorUiLocale}
-              maxHeight={1200}
-            />
+            <div ref={isPrimaryEditor || isFirstEditor ? editorMeasureRef : undefined}>
+              <LightRichEditor
+                value={values[slot.slotId] ?? ''}
+                onChange={(v) => onValueChange(slot.slotId, v ?? '')}
+                height={
+                  slot.slotId.startsWith('slogan')
+                    ? 80
+                    : singleEditor
+                      ? editorHeight
+                      : Math.min(editorHeight, 240)
+                }
+                placeholder={contentPlaceholder(label)}
+                enableResize
+                uiLocale={editorUiLocale}
+                maxHeight={1200}
+              />
+            </div>
           </div>
         )
       })}

@@ -65,6 +65,24 @@ export function getFaqExactText(
   return getFaqI18nMap(faq, field)[preferred]?.trim() || ''
 }
 
+/**
+ * Editor drafts may show another locale via fallback. If this locale has no
+ * text yet and the draft still equals that fallback, keep the locale empty
+ * so Save does not copy Korean into English (etc.).
+ */
+export function resolveFaqEditorDraftForLocale(
+  faq: FaqI18nSource,
+  field: FaqI18nField,
+  locale: string,
+  draft: string
+): string {
+  const exact = getFaqExactText(faq, field, locale)
+  if (exact) return draft
+  const display = getFaqLocalizedText(faq, field, locale)
+  if (draft.trim() && draft.trim() === display.trim()) return ''
+  return draft
+}
+
 export function setFaqI18nField(
   current: FaqContentI18n | null | undefined,
   field: FaqI18nField,

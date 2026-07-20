@@ -1,22 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, ExternalLink, Loader2, MapPin, Save } from 'lucide-react'
-import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
+import { Clock, ExternalLink, Loader2, Save } from 'lucide-react'
+import LightRichEditor from '@/components/LightRichEditor'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
-import { DETAIL_FIELD_LABELS } from '@/lib/customerPageZoneEditMap'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
   type AdminEditLocale,
 } from '@/lib/adminEditLocales'
 import {
-  getScheduleLocalizedText,
+  getScheduleExactText,
   mergeScheduleI18n,
   type ScheduleContentI18n,
 } from '@/lib/productScheduleLocales'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
+import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 
 type ScheduleItem = {
   id: string
@@ -68,9 +69,9 @@ function readPickupVisibility(row: Record<string, unknown> | null): boolean {
 
 function scheduleToForm(item: ScheduleItem, locale: AdminEditLocale): ScheduleForm {
   return {
-    titleDraft: getScheduleLocalizedText(item, 'title', locale),
-    descriptionDraft: getScheduleLocalizedText(item, 'description', locale),
-    locationDraft: getScheduleLocalizedText(item, 'location', locale),
+    titleDraft: getScheduleExactText(item, 'title', locale),
+    descriptionDraft: getScheduleExactText(item, 'description', locale),
+    locationDraft: getScheduleExactText(item, 'location', locale),
     title_ko: item.title_ko ?? '',
     title_en: item.title_en ?? '',
     description_ko: item.description_ko ?? '',
@@ -85,10 +86,14 @@ function scheduleToForm(item: ScheduleItem, locale: AdminEditLocale): ScheduleFo
   }
 }
 
-function getScheduleLabel(item: ScheduleItem, locale: AdminEditLocale): string {
-  const title = getScheduleLocalizedText(item, 'title', locale)
+function getScheduleLabel(
+  item: ScheduleItem,
+  locale: AdminEditLocale,
+  untitled: string
+): string {
+  const title = getScheduleExactText(item, 'title', locale)
   const time = item.start_time ? item.start_time.slice(0, 5) : ''
-  return [time, title || `일정 #${item.order_index ?? ''}`].filter(Boolean).join(' · ')
+  return [time, title || untitled].filter(Boolean).join(' · ')
 }
 
 export default function CustomerPageScheduleEmbed({
@@ -98,6 +103,12 @@ export default function CustomerPageScheduleEmbed({
   onDirtyChange,
   onOpenFullAdmin,
 }: CustomerPageScheduleEmbedProps) {
+  const { t, editorUiLocale, detailFieldLabel, showOnCustomerPage } =
+    useCustomerPageEditLabels()
+  const tf = (key: string, values?: Record<string, string | number>) =>
+    values ? t(`scheduleEmbed.${key}`, values) : t(`scheduleEmbed.${key}`)
+  const { height: descriptionEditorHeight, measureRef: descriptionMeasureRef } =
+    useModalEditorHeight(120)
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
@@ -105,7 +116,9 @@ export default function CustomerPageScheduleEmbed({
   editLocaleRef.current = editLocale
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(
+    null
+  )
   const [rowId, setRowId] = useState<string | null>(null)
   const [pickupDropInfo, setPickupDropInfo] = useState('')
   const [pickupVisible, setPickupVisible] = useState(true)
@@ -133,6 +146,8 @@ export default function CustomerPageScheduleEmbed({
     )
   )
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
+
+  const localeLabel = getAdminEditLocaleLabel(editLocale)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -163,14 +178,14 @@ export default function CustomerPageScheduleEmbed({
       setPickupVisible(readPickupVisibility(values))
       setSchedules(nextSchedules)
       setActiveScheduleId(first?.id ?? null)
-      const pickupVisible = readPickupVisibility(values)
+      const nextPickupVisible = readPickupVisibility(values)
       if (first) {
         const nextForm = scheduleToForm(first, editLocale)
         setScheduleForm(nextForm)
         setInitialSnapshot(
           JSON.stringify({
             pickup: nextPickup,
-            pickupVisible,
+            pickupVisible: nextPickupVisible,
             scheduleId: first.id,
             schedule: nextForm,
             locale: editLocale,
@@ -180,7 +195,7 @@ export default function CustomerPageScheduleEmbed({
         setInitialSnapshot(
           JSON.stringify({
             pickup: nextPickup,
-            pickupVisible,
+            pickupVisible: nextPickupVisible,
             scheduleId: null,
             schedule: {},
             locale: editLocale,
@@ -189,10 +204,12 @@ export default function CustomerPageScheduleEmbed({
       }
     } catch (error) {
       console.error('여행 일정 로드 오류:', error)
-      setMessage('여행 일정 데이터를 불러오지 못했습니다.')
+      setMessage({ text: tf('loadError'), type: 'error' })
     } finally {
       setLoading(false)
     }
+    // tf is stable enough via t; omit to avoid reload loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editLocale, productId])
 
   useEffect(() => {
@@ -234,9 +251,9 @@ export default function CustomerPageScheduleEmbed({
       description_en: merged.description_en ?? '',
       location_ko: merged.location_ko ?? '',
       location_en: merged.location_en ?? '',
-      titleDraft: getScheduleLocalizedText(source, 'title', next),
-      descriptionDraft: getScheduleLocalizedText(source, 'description', next),
-      locationDraft: getScheduleLocalizedText(source, 'location', next),
+      titleDraft: getScheduleExactText(source, 'title', next),
+      descriptionDraft: getScheduleExactText(source, 'description', next),
+      locationDraft: getScheduleExactText(source, 'location', next),
     })
     setEditLocale(next)
   }
@@ -374,11 +391,11 @@ export default function CustomerPageScheduleEmbed({
           locale: editLocale,
         })
       )
-      setMessage('저장되었습니다.')
+      setMessage({ text: tf('saved'), type: 'success' })
       onSaved?.()
     } catch (error) {
       console.error('여행 일정 저장 오류:', error)
-      setMessage('저장 중 오류가 발생했습니다.')
+      setMessage({ text: tf('saveError'), type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -388,7 +405,7 @@ export default function CustomerPageScheduleEmbed({
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        여행 일정 불러오는 중…
+        {tf('loading')}
       </div>
     )
   }
@@ -404,11 +421,9 @@ export default function CustomerPageScheduleEmbed({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold text-foreground">
-              {DETAIL_FIELD_LABELS.pickup_drop_info}
+              {detailFieldLabel('pickup_drop_info')}
             </h4>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              여행 일정 상단에 표시되는 픽업·드롭 안내
-            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{tf('pickupHint')}</p>
           </div>
           <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
             <input
@@ -417,31 +432,26 @@ export default function CustomerPageScheduleEmbed({
               onChange={(e) => setPickupVisible(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
             />
-            고객 페이지 표시
+            {showOnCustomerPage}
           </label>
         </div>
         <LightRichEditor
           value={pickupDropInfo}
           onChange={(value) => setPickupDropInfo(value ?? '')}
-          height={140}
-          placeholder="픽업·드롭 안내 내용"
+          height={120}
+          placeholder={tf('pickupPlaceholder')}
           enableResize
+          uiLocale={editorUiLocale}
         />
-        {pickupDropInfo ? (
-          <div
-            className="prose prose-sm max-w-none rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-foreground"
-            dangerouslySetInnerHTML={{ __html: markdownToHtml(pickupDropInfo) }}
-          />
-        ) : null}
       </div>
 
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">
-          일정 항목 ({schedules.length}개)
+          {tf('itemsCount', { count: schedules.length })}
         </p>
         {schedules.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            등록된 일정이 없습니다. 전체 화면에서 일정을 추가하세요.
+            {tf('empty')}
           </div>
         ) : (
           <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-2">
@@ -463,14 +473,22 @@ export default function CustomerPageScheduleEmbed({
                     <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-booking" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">
-                        {getScheduleLabel(item, editLocale)}
+                        {getScheduleLabel(
+                          item,
+                          editLocale,
+                          tf('untitled', { index: String(item.order_index ?? '') })
+                        )}
                         {hidden ? (
-                          <span className="ml-1.5 text-[10px] text-amber-700">(숨김)</span>
+                          <span className="ml-1.5 text-[10px] text-amber-700">
+                            {tf('hidden')}
+                          </span>
                         ) : null}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         Day {item.day_number}
-                        {item.duration_minutes ? ` · ${item.duration_minutes}분` : ''}
+                        {item.duration_minutes
+                          ? ` · ${tf('durationMinutes', { minutes: item.duration_minutes })}`
+                          : ''}
                       </p>
                     </div>
                   </div>
@@ -483,7 +501,7 @@ export default function CustomerPageScheduleEmbed({
 
       {activeScheduleId ? (
         <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-          <h4 className="text-sm font-semibold text-foreground">선택한 일정 편집</h4>
+          <h4 className="text-sm font-semibold text-foreground">{tf('editSelected')}</h4>
           <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -496,12 +514,12 @@ export default function CustomerPageScheduleEmbed({
               }
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
             />
-            고객에게 표시 (show_to_customers)
+            {tf('showToCustomers')}
           </label>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block space-y-1">
-              <span className="text-xs font-medium">시작 시간</span>
+              <span className="text-xs font-medium">{tf('startTime')}</span>
               <input
                 type="time"
                 value={scheduleForm.start_time?.slice(0, 5) ?? ''}
@@ -512,7 +530,7 @@ export default function CustomerPageScheduleEmbed({
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">종료 시간</span>
+              <span className="text-xs font-medium">{tf('endTime')}</span>
               <input
                 type="time"
                 value={scheduleForm.end_time?.slice(0, 5) ?? ''}
@@ -523,7 +541,7 @@ export default function CustomerPageScheduleEmbed({
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-xs font-medium">소요(분)</span>
+              <span className="text-xs font-medium">{tf('duration')}</span>
               <input
                 type="number"
                 value={scheduleForm.duration_minutes}
@@ -536,9 +554,7 @@ export default function CustomerPageScheduleEmbed({
           </div>
 
           <label className="block space-y-1">
-            <span className="text-xs font-medium">
-              제목 ({getAdminEditLocaleLabel(editLocale)})
-            </span>
+            <span className="text-xs font-medium">{tf('title', { locale: localeLabel })}</span>
             <input
               value={scheduleForm.titleDraft}
               onChange={(e) =>
@@ -550,7 +566,7 @@ export default function CustomerPageScheduleEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              장소 ({getAdminEditLocaleLabel(editLocale)})
+              {tf('location', { locale: localeLabel })}
             </span>
             <input
               value={scheduleForm.locationDraft}
@@ -563,42 +579,35 @@ export default function CustomerPageScheduleEmbed({
 
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              설명 ({getAdminEditLocaleLabel(editLocale)})
+              {tf('description', { locale: localeLabel })}
             </span>
-            <LightRichEditor
-              value={scheduleForm.descriptionDraft}
-              onChange={(value) =>
-                setScheduleForm((prev) => ({
-                  ...prev,
-                  descriptionDraft: value ?? '',
-                }))
-              }
-              height={160}
-              placeholder="일정 설명"
-              enableResize
-            />
-          </label>
-
-          {scheduleForm.descriptionDraft ? (
-            <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
-              <p className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                <MapPin className="h-3 w-3" />
-                미리보기
-              </p>
-              <div
-                className="prose prose-sm max-w-none text-foreground"
-                dangerouslySetInnerHTML={{
-                  __html: markdownToHtml(scheduleForm.descriptionDraft),
-                }}
+            <div ref={descriptionMeasureRef}>
+              <LightRichEditor
+                value={scheduleForm.descriptionDraft}
+                onChange={(value) =>
+                  setScheduleForm((prev) => ({
+                    ...prev,
+                    descriptionDraft: value ?? '',
+                  }))
+                }
+                height={descriptionEditorHeight}
+                placeholder={tf('descriptionPlaceholder')}
+                enableResize
+                uiLocale={editorUiLocale}
+                maxHeight={1200}
               />
             </div>
-          ) : null}
+          </label>
         </div>
       ) : null}
 
       {message ? (
-        <p className={`text-sm ${message.includes('오류') ? 'text-red-600' : 'text-green-600'}`}>
-          {message}
+        <p
+          className={`text-sm ${
+            message.type === 'error' ? 'text-red-600' : 'text-green-600'
+          }`}
+        >
+          {message.text}
         </p>
       ) : null}
 
@@ -609,7 +618,7 @@ export default function CustomerPageScheduleEmbed({
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        저장
+        {tf('save')}
       </button>
 
       {onOpenFullAdmin ? (
@@ -618,7 +627,7 @@ export default function CustomerPageScheduleEmbed({
           onClick={() => onOpenFullAdmin('schedule')}
           className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
         >
-          일정 추가·삭제·순서 관리 (전체 화면)
+          {tf('openFullAdmin')}
           <ExternalLink className="h-3.5 w-3.5" />
         </button>
       ) : null}

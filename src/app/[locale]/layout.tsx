@@ -9,6 +9,7 @@ import LazyModalBackdropGuard from "@/components/layout/LazyModalBackdropGuard";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
+import { notFound } from 'next/navigation';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider';
 import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider';
@@ -16,7 +17,7 @@ import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGloba
 import CustomerPageEditModeQuickBar from '@/components/product/CustomerPageEditModeQuickBar';
 import { getLocaleLayoutMetadata, getCachedCustomerSiteBranding } from '@/lib/channelFaviconMetadata';
 import { CustomerSiteBrandingProvider } from '@/contexts/CustomerSiteBrandingContext';
-import { siteLocalePathTest } from '@/lib/siteLocales';
+import { isSiteLocale, siteLocalePathTest } from '@/lib/siteLocales';
 
 export async function generateMetadata(): Promise<Metadata> {
   return getLocaleLayoutMetadata();
@@ -29,7 +30,13 @@ export default async function LocaleLayout({
   children: React.ReactNode;
   params: Promise<{ locale: string }>;
 }) {
-  const { locale } = await params;
+  const { locale: localeParam } = await params;
+  // Invalid segment (e.g. /undefined/...) must not reach NextIntlClientProvider —
+  // ICU formatting throws: "Incorrect locale information provided (undefined)".
+  if (!isSiteLocale(localeParam)) {
+    notFound();
+  }
+  const locale = localeParam;
   setRequestLocale(locale);
   let messages;
   try {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Loader2, Save, X } from 'lucide-react'
+import { AlertCircle, ExternalLink, Loader2, Save, X } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
@@ -293,6 +293,9 @@ export default function CustomerPageZoneEditPanel({
   }, [locale])
 
   const showLocaleToggle = zoneEditSupportsLocaleSwitch(config)
+  const showFaqFullAdmin =
+    !!onNavigateToTab &&
+    (config?.adminTab === 'detail-faq' || config?.adminTab === 'faq')
 
   const fieldsToLoad = useMemo(
     () => resolveDetailFieldsToLoad(config, pickedField),
@@ -815,7 +818,7 @@ export default function CustomerPageZoneEditPanel({
             <h3 className="text-sm font-semibold text-gray-900">{zoneLabel}</h3>
             <p className="mt-0.5 text-xs text-gray-500">{tEdit('zonePanelSubtitle')}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {showLocaleToggle ? (
               <AdminEditLocaleToggle
                 value={editLocale}
@@ -827,6 +830,17 @@ export default function CustomerPageZoneEditPanel({
                 koLabel={tEdit('editLocaleKo')}
                 enLabel={tEdit('editLocaleEn')}
               />
+            ) : null}
+            {showFaqFullAdmin ? (
+              <button
+                type="button"
+                onClick={() => onNavigateToTab('faq')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm hover:bg-muted"
+                title={tEdit('faqEmbed.openFullAdmin')}
+              >
+                {tEdit('faqEmbed.openFullAdminShort')}
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
             ) : null}
             <button
               type="button"
@@ -843,7 +857,10 @@ export default function CustomerPageZoneEditPanel({
         ) : null}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
+      <div
+        data-customer-zone-edit-scroll
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4"
+      >
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1224,12 +1241,19 @@ function DetailFieldsForm({
     contentPlaceholder,
     editorUiLocale,
   } = useCustomerPageEditLabels()
-  const editorHeight = useModalEditorHeight(fields.length > 1 ? 360 : 260)
+  const singleEditor = fields.filter((f) => !f.startsWith('slogan')).length <= 1
+  const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(
+    singleEditor ? 120 : 360
+  )
 
   return (
     <div className="space-y-6">
-      {fields.map((field) => {
+      {fields.map((field, index) => {
         const label = detailFieldLabel(field)
+        const isPrimaryEditor = singleEditor && !field.startsWith('slogan')
+        const isFirstEditor =
+          !field.startsWith('slogan') &&
+          fields.findIndex((f) => !f.startsWith('slogan')) === index
         return (
           <div key={field}>
             <div className="flex items-center justify-between mb-2">
@@ -1246,15 +1270,23 @@ function DetailFieldsForm({
                 {showOnCustomerPage}
               </label>
             </div>
-            <LightRichEditor
-              value={values[field] ?? ''}
-              onChange={(v) => onChange({ ...values, [field]: v })}
-              height={field.startsWith('slogan') ? 80 : editorHeight}
-              placeholder={contentPlaceholder(label)}
-              enableResize
-              uiLocale={editorUiLocale}
-              maxHeight={1200}
-            />
+            <div ref={isPrimaryEditor || isFirstEditor ? editorMeasureRef : undefined}>
+              <LightRichEditor
+                value={values[field] ?? ''}
+                onChange={(v) => onChange({ ...values, [field]: v })}
+                height={
+                  field.startsWith('slogan')
+                    ? 80
+                    : singleEditor
+                      ? editorHeight
+                      : Math.min(editorHeight, 240)
+                }
+                placeholder={contentPlaceholder(label)}
+                enableResize
+                uiLocale={editorUiLocale}
+                maxHeight={1200}
+              />
+            </div>
           </div>
         )
       })}

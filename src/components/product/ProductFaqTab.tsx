@@ -7,9 +7,9 @@ import { translateFaqFields, type FaqTranslationFields } from '@/lib/translation
 import { suggestFAQQuestion, suggestFAQAnswer } from '@/lib/chatgptService'
 import LocaleDropdown from '@/components/LocaleDropdown'
 import {
-  getFaqExactText,
   getFaqLocalizedText,
   mergeFaqI18n,
+  resolveFaqEditorDraftForLocale,
   type FaqContentI18n,
 } from '@/lib/productFaqLocales'
 import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
@@ -625,23 +625,33 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   const [formData, setFormData] = useState<FaqItem>(faq)
   const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
   const [questionDraft, setQuestionDraft] = useState(() =>
-    getFaqExactText(faq, 'question', 'ko')
+    getFaqLocalizedText(faq, 'question', 'ko')
   )
   const [answerDraft, setAnswerDraft] = useState(() =>
-    getFaqExactText(faq, 'answer', 'ko')
+    getFaqLocalizedText(faq, 'answer', 'ko')
   )
 
   const switchLocale = (next: SiteLocale) => {
-    const merged = mergeFaqI18n(formData, editLocale, questionDraft, answerDraft)
+    const merged = mergeFaqI18n(
+      formData,
+      editLocale,
+      resolveFaqEditorDraftForLocale(formData, 'question', editLocale, questionDraft),
+      resolveFaqEditorDraftForLocale(formData, 'answer', editLocale, answerDraft)
+    )
     const nextFaq = { ...formData, ...merged }
     setFormData(nextFaq)
     setEditLocale(next)
-    setQuestionDraft(getFaqExactText(nextFaq, 'question', next))
-    setAnswerDraft(getFaqExactText(nextFaq, 'answer', next))
+    setQuestionDraft(getFaqLocalizedText(nextFaq, 'question', next))
+    setAnswerDraft(getFaqLocalizedText(nextFaq, 'answer', next))
   }
 
   const handleSave = () => {
-    const merged = mergeFaqI18n(formData, editLocale, questionDraft, answerDraft)
+    const merged = mergeFaqI18n(
+      formData,
+      editLocale,
+      resolveFaqEditorDraftForLocale(formData, 'question', editLocale, questionDraft),
+      resolveFaqEditorDraftForLocale(formData, 'answer', editLocale, answerDraft)
+    )
     const nextFaq = { ...formData, ...merged }
     const hasQ =
       !!getFaqLocalizedText(nextFaq, 'question', 'ko') ||

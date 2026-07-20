@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
-import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
+import LightRichEditor from '@/components/LightRichEditor'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
-import { getProductOverviewDescription } from '@/lib/productDetailDisplay'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
@@ -66,7 +65,7 @@ export default function CustomerPageOverviewEmbed({
   onDirtyChange,
 }: CustomerPageOverviewEmbedProps) {
   const { showOnCustomerPage, editorUiLocale, contentPlaceholder } = useCustomerPageEditLabels()
-  const editorHeight = useModalEditorHeight(280)
+  const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(120)
   const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
     normalizeAdminEditLocale(localeProp ?? 'ko')
   )
@@ -83,7 +82,6 @@ export default function CustomerPageOverviewEmbed({
   const [summaryForm, setSummaryForm] = useState<SummaryForm>({
     summary: '',
   })
-  const [productDescription, setProductDescription] = useState('')
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   useEffect(() => {
@@ -98,7 +96,7 @@ export default function CustomerPageOverviewEmbed({
         fetchProductDetailsForAdminEdit(productId, editLocale),
         supabase
           .from('products')
-          .select('summary_ko, summary_en, description')
+          .select('summary_ko, summary_en')
           .eq('id', productId)
           .maybeSingle(),
         fetchProductFieldTranslations(productId),
@@ -129,7 +127,6 @@ export default function CustomerPageOverviewEmbed({
       setForm(nextForm)
       setVisibility(nextVisibility)
       setSummaryForm(nextSummary)
-      setProductDescription(String(productRow.description ?? ''))
       setInitialSnapshot(
         JSON.stringify({
           form: nextForm,
@@ -251,28 +248,6 @@ export default function CustomerPageOverviewEmbed({
 
   const activeMeta = OVERVIEW_SLOTS.find((slot) => slot.id === activeSlot) ?? OVERVIEW_SLOTS[0]
 
-  const customerPreviewText = (() => {
-    if (activeSlot === 'greeting') return form.greeting
-    return getProductOverviewDescription(
-      {
-        summary_ko: editLocale === 'ko' ? summaryForm.summary : '',
-        summary_en: editLocale === 'en' ? summaryForm.summary : '',
-        description: productDescription,
-      },
-      form.description,
-      editLocale,
-      '',
-      [
-        {
-          product_id: productId,
-          field_key: 'summary',
-          locale: editLocale,
-          value: summaryForm.summary,
-        },
-      ]
-    )
-  })()
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -332,15 +307,17 @@ export default function CustomerPageOverviewEmbed({
           </label>
         </div>
 
-        <LightRichEditor
-          value={form[activeSlot]}
-          onChange={(value) => setForm((prev) => ({ ...prev, [activeSlot]: value }))}
-          height={activeSlot === 'greeting' ? Math.min(180, editorHeight) : editorHeight}
-          placeholder={contentPlaceholder(activeMeta.label)}
-          enableResize
-          uiLocale={editorUiLocale}
-          maxHeight={1200}
-        />
+        <div ref={editorMeasureRef}>
+          <LightRichEditor
+            value={form[activeSlot]}
+            onChange={(value) => setForm((prev) => ({ ...prev, [activeSlot]: value }))}
+            height={activeSlot === 'greeting' ? Math.min(180, editorHeight) : editorHeight}
+            placeholder={contentPlaceholder(activeMeta.label)}
+            enableResize
+            uiLocale={editorUiLocale}
+            maxHeight={1200}
+          />
+        </div>
 
         {activeSlot === 'description' && !form.description.trim() ? (
           <div className="space-y-3 rounded-lg border border-amber-200/80 bg-amber-50/60 p-3">
@@ -363,17 +340,6 @@ export default function CustomerPageOverviewEmbed({
           </div>
         ) : null}
 
-        {customerPreviewText ? (
-          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              고객 페이지 미리보기
-            </p>
-            <div
-              className="prose prose-sm mt-1 max-w-none text-foreground"
-              dangerouslySetInnerHTML={{ __html: markdownToHtml(customerPreviewText) }}
-            />
-          </div>
-        ) : null}
       </div>
 
       {message ? (

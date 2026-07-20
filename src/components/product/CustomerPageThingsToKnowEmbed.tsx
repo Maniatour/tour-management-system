@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
-import LightRichEditor, { markdownToHtml } from '@/components/LightRichEditor'
+import LightRichEditor from '@/components/LightRichEditor'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import type { DetailFieldKey } from '@/lib/customerPageZoneEditMap'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
@@ -98,12 +98,11 @@ export default function CustomerPageThingsToKnowEmbed({
     t,
     detailFieldLabel,
     showOnCustomerPage,
-    preview,
     columnLabel,
     contentPlaceholder,
     editorUiLocale,
   } = useCustomerPageEditLabels()
-  const editorHeight = useModalEditorHeight(300)
+  const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(120)
   const sectionLabel = (id: SectionId) => {
     switch (id) {
       case 'basic':
@@ -628,31 +627,19 @@ export default function CustomerPageThingsToKnowEmbed({
               </label>
             </div>
 
-            <LightRichEditor
-              value={detailForm[activeDetailField] ?? ''}
-              onChange={(value) =>
-                setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
-              }
-              height={editorHeight}
-              placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
-              enableResize
-              uiLocale={editorUiLocale}
-              maxHeight={1200}
-            />
-
-            {detailForm[activeDetailField] ? (
-              <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {preview}
-                </p>
-                <div
-                  className="prose prose-sm mt-1 max-w-none text-foreground"
-                  dangerouslySetInnerHTML={{
-                    __html: markdownToHtml(detailForm[activeDetailField] ?? ''),
-                  }}
-                />
-              </div>
-            ) : null}
+            <div ref={editorMeasureRef}>
+              <LightRichEditor
+                value={detailForm[activeDetailField] ?? ''}
+                onChange={(value) =>
+                  setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
+                }
+                height={editorHeight}
+                placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
+                enableResize
+                uiLocale={editorUiLocale}
+                maxHeight={1200}
+              />
+            </div>
           </div>
         </div>
       )}
