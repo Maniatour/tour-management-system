@@ -5064,6 +5064,7 @@ export type Database = {
           max_selections: number | null
           min_selections: number | null
           operator_id: string
+          pricing_unit: string
           product_id: string | null
           sort_order: number | null
         }
@@ -5083,6 +5084,7 @@ export type Database = {
           max_selections?: number | null
           min_selections?: number | null
           operator_id?: string
+          pricing_unit?: string
           product_id?: string | null
           sort_order?: number | null
         }
@@ -5102,6 +5104,7 @@ export type Database = {
           max_selections?: number | null
           min_selections?: number | null
           operator_id?: string
+          pricing_unit?: string
           product_id?: string | null
           sort_order?: number | null
         }
@@ -5427,6 +5430,168 @@ export type Database = {
           },
           {
             foreignKeyName: "product_details_multilingual_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_faq_links: {
+        Row: {
+          created_at: string | null
+          faq_id: string
+          id: string
+          is_active: boolean | null
+          order_index: number | null
+          product_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          faq_id: string
+          id?: string
+          is_active?: boolean | null
+          order_index?: number | null
+          product_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          faq_id?: string
+          id?: string
+          is_active?: boolean | null
+          order_index?: number | null
+          product_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_faq_links_faq_id_fkey"
+            columns: ["faq_id"]
+            isOneToOne: false
+            referencedRelation: "faq_library"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_faq_links_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      faq_library: {
+        Row: {
+          answer: string
+          answer_en: string | null
+          content_i18n: Json
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          question: string
+          question_en: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          answer?: string
+          answer_en?: string | null
+          content_i18n?: Json
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          question?: string
+          question_en?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          answer?: string
+          answer_en?: string | null
+          content_i18n?: Json
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          question?: string
+          question_en?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      detail_content_library: {
+        Row: {
+          body: string
+          body_en: string | null
+          content_i18n: Json
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          kind: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          body?: string
+          body_en?: string | null
+          content_i18n?: Json
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          kind: string
+          name?: string
+          updated_at?: string | null
+        }
+        Update: {
+          body?: string
+          body_en?: string | null
+          content_i18n?: Json
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          kind?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      product_detail_content_links: {
+        Row: {
+          created_at: string | null
+          id: string
+          kind: string
+          library_id: string
+          product_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          kind: string
+          library_id: string
+          product_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          kind?: string
+          library_id?: string
+          product_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_detail_content_links_library_id_fkey"
+            columns: ["library_id"]
+            isOneToOne: false
+            referencedRelation: "detail_content_library"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_detail_content_links_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"

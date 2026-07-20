@@ -55,6 +55,7 @@ export function groupProductChoices(
         choice_name_ko: choice.choice_name_ko,
         choice_name_en: choice.choice_name_en || null,
         choice_type: choice.choice_type,
+        pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
         choice_description: getChoiceGroupLocalizedText(groupSource, 'description', locale),
         choice_description_ko: choice.choice_description_ko || null,
         choice_description_en: choice.choice_description_en || null,

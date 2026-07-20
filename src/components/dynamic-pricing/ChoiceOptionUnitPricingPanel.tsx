@@ -70,6 +70,10 @@ export const ChoiceOptionUnitPricingPanel = memo(function ChoiceOptionUnitPricin
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">{t('choiceUnitPriceHint')}</p>
+      <p className="text-[11px] text-amber-800/90 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+        초이스 그룹에 「차량/단위별」이 설정된 경우, 입력한 금액은 인원으로 곱하지 않고 선택 1회(또는 대수)당 고정가로
+        청구됩니다.
+      </p>
       {choiceGroups.map((group) => (
         <div
           key={group.id}

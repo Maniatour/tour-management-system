@@ -22,6 +22,11 @@ import { KOVEgAS_DIRECT_CHANNEL_ID } from '@/lib/operators/resolvePublicDirectCh
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
+import {
+  calculateChoiceLineTotal,
+  isPerUnitPricing,
+  parseChoicePricingUnit,
+} from '@/lib/choicePricingUnit'
 
 /** @deprecated Prefer KOVEgAS_DIRECT_CHANNEL_ID — kept for existing imports */
 export const HOMEPAGE_CHANNEL_ID = KOVEgAS_DIRECT_CHANNEL_ID
@@ -313,13 +318,43 @@ async function calculateCatalogFallbackPrice(
   if (choiceOptionIds.length > 0) {
     const { data: choiceOptions } = await admin
       .from('choice_options')
-      .select('id, adult_price, child_price, infant_price')
+      .select('id, choice_id, adult_price, child_price, infant_price')
       .in('id', choiceOptionIds)
 
+    const choiceIds = [
+      ...new Set(
+        (choiceOptions || [])
+          .map((o) => o.choice_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      ),
+    ]
+    const pricingUnitByChoiceId = new Map<string, string>()
+    if (choiceIds.length > 0) {
+      const { data: choiceRows } = await admin
+        .from('product_choices')
+        .select('id, pricing_unit')
+        .in('id', choiceIds)
+      for (const row of choiceRows || []) {
+        pricingUnitByChoiceId.set(row.id, parseChoicePricingUnit(row.pricing_unit))
+      }
+    }
+
     for (const option of choiceOptions || []) {
-      const adultUnit = Number(option.adult_price) || 0
-      // BookingFlow 클라이언트는 option_price(adult) × 전체 인원으로 합산
-      choicesPrice += adultUnit * totalPeople
+      const choiceId = option.choice_id
+      const pricingUnit =
+        (typeof choiceId === 'string'
+          ? pricingUnitByChoiceId.get(choiceId)
+          : undefined) || 'per_person'
+      choicesPrice += calculateChoiceLineTotal({
+        pricingUnit,
+        adultPrice: Number(option.adult_price) || 0,
+        childPrice: Number(option.child_price) || 0,
+        infantPrice: Number(option.infant_price) || 0,
+        adults: line.adults,
+        children: line.child,
+        infants: line.infant,
+        quantity: 1,
+      })
     }
     choicesPrice = roundMoney(choicesPrice)
   }
@@ -345,6 +380,97 @@ async function calculateCatalogFallbackPrice(
     additionalOptionsPrice,
     subtotal,
     calculationMethod: 'catalog_fallback',
+  }
+}
+
+/**
+ * RPC/v2가 인원 곱셈으로 계산한 choices_price를
+ * product_choices.pricing_unit=per_unit 이면 단위 고정가로 보정합니다.
+ */
+async function applyPerUnitChoicesAdjustment(
+  admin: AdminClient,
+  line: CustomerBookingLineInput,
+  choiceOptionIds: string[],
+  current: {
+    basePrice: number
+    choicesPrice: number
+    additionalOptionsPrice: number
+    subtotal: number
+  }
+): Promise<{
+  basePrice: number
+  choicesPrice: number
+  additionalOptionsPrice: number
+  subtotal: number
+  adjusted: boolean
+}> {
+  if (choiceOptionIds.length === 0) {
+    return { ...current, adjusted: false }
+  }
+
+  const { data: choiceOptions } = await admin
+    .from('choice_options')
+    .select('id, choice_id, adult_price, child_price, infant_price')
+    .in('id', choiceOptionIds)
+
+  if (!choiceOptions?.length) {
+    return { ...current, adjusted: false }
+  }
+
+  const choiceIds = [
+    ...new Set(
+      choiceOptions
+        .map((o) => o.choice_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ),
+  ]
+  const { data: choiceRows } = await admin
+    .from('product_choices')
+    .select('id, pricing_unit')
+    .in('id', choiceIds)
+
+  const pricingUnitByChoiceId = new Map<string, string>()
+  for (const row of choiceRows || []) {
+    pricingUnitByChoiceId.set(row.id, parseChoicePricingUnit(row.pricing_unit))
+  }
+
+  const hasPerUnit = choiceOptions.some((o) =>
+    typeof o.choice_id === 'string'
+      ? isPerUnitPricing(pricingUnitByChoiceId.get(o.choice_id))
+      : false
+  )
+  if (!hasPerUnit) {
+    return { ...current, adjusted: false }
+  }
+
+  let choicesPrice = 0
+  for (const option of choiceOptions) {
+    const choiceId = option.choice_id
+    choicesPrice += calculateChoiceLineTotal({
+      pricingUnit:
+        (typeof choiceId === 'string'
+          ? pricingUnitByChoiceId.get(choiceId)
+          : undefined) || 'per_person',
+      adultPrice: Number(option.adult_price) || 0,
+      childPrice: Number(option.child_price) || 0,
+      infantPrice: Number(option.infant_price) || 0,
+      adults: line.adults,
+      children: line.child,
+      infants: line.infant,
+      quantity: 1,
+    })
+  }
+  choicesPrice = roundMoney(choicesPrice)
+  const subtotal = roundMoney(
+    current.basePrice + choicesPrice + current.additionalOptionsPrice
+  )
+
+  return {
+    basePrice: current.basePrice,
+    choicesPrice,
+    additionalOptionsPrice: current.additionalOptionsPrice,
+    subtotal,
+    adjusted: true,
   }
 }
 
@@ -465,6 +591,20 @@ export async function calculateServerBookingPrice(
       subtotal = fallback.subtotal
       calculationMethod = fallback.calculationMethod
     }
+  }
+
+  const adjusted = await applyPerUnitChoicesAdjustment(admin, line, choiceOptionIds, {
+    basePrice,
+    choicesPrice,
+    additionalOptionsPrice,
+    subtotal,
+  })
+  if (adjusted.adjusted) {
+    basePrice = adjusted.basePrice
+    choicesPrice = adjusted.choicesPrice
+    additionalOptionsPrice = adjusted.additionalOptionsPrice
+    subtotal = adjusted.subtotal
+    calculationMethod = `${calculationMethod}+per_unit`
   }
 
   if (subtotal <= 0) {

@@ -263,6 +263,41 @@ type Team = Database['public']['Tables']['team']['Row']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Reservation = any
 type Customer = Database['public']['Tables']['customers']['Row']
+type ProductCellPickupHotel = {
+  id: string
+  hotel?: string | null
+  internal_name?: string | null
+  pick_up_location?: string | null
+}
+
+function getLanguageFlagCountryCode(language: string | undefined | null): string {
+  if (!language) return 'US'
+  const lang = language.toLowerCase().trim()
+  if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === 'korean') return 'KR'
+  if (lang === 'en' || lang.startsWith('en-') || lang === 'english') return 'US'
+  if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === 'japanese') return 'JP'
+  if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === 'chinese') return 'CN'
+  if (lang === 'es' || lang.startsWith('es-') || lang === 'spanish') return 'ES'
+  if (lang === 'fr' || lang.startsWith('fr-') || lang === 'french') return 'FR'
+  if (lang === 'de' || lang.startsWith('de-') || lang === 'german') return 'DE'
+  if (lang === 'it' || lang.startsWith('it-') || lang === 'italian') return 'IT'
+  if (lang === 'pt' || lang.startsWith('pt-') || lang === 'portuguese') return 'PT'
+  if (lang === 'ru' || lang.startsWith('ru-') || lang === 'russian') return 'RU'
+  if (lang === 'th' || lang === 'thai') return 'TH'
+  if (lang === 'vi' || lang === 'vietnamese') return 'VN'
+  if (lang === 'id' || lang === 'indonesian') return 'ID'
+  if (lang === 'ms' || lang === 'malay') return 'MY'
+  if (lang === 'ph' || lang === 'filipino' || lang === 'tl') return 'PH'
+  return 'US'
+}
+
+/** 앤텔롭 캐년 초이스 뱃지 색상 (예약 카드와 동일) */
+function getAntelopeChoiceBadgeClass(key: string): string {
+  if (key === 'L') return 'bg-emerald-100 text-emerald-800 border-emerald-300'
+  if (key === 'X') return 'bg-violet-100 text-violet-800 border-violet-300'
+  if (key === 'U') return 'bg-amber-100 text-amber-800 border-amber-200'
+  return 'bg-gray-100 text-gray-800 border-gray-200'
+}
 
 /** 스케줄 그리드·호버 합계용 입장권 행 (ticket_bookings 일부 컬럼) */
 type ScheduleTicketBookingRow = {
@@ -1082,6 +1117,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     productName: string
   } | null>(null)
   const [productCellCancellationReasons, setProductCellCancellationReasons] = useState<Record<string, string>>({})
+  const [productCellPickupHotels, setProductCellPickupHotels] = useState<ProductCellPickupHotel[]>([])
   const [reservationIdForScheduleEdit, setReservationIdForScheduleEdit] = useState<string | null>(null)
   const [scheduleEditingReservation, setScheduleEditingReservation] = useState<Record<string, unknown> | null>(null)
   const [scheduleReservationFormData, setScheduleReservationFormData] = useState<{
@@ -2996,6 +3032,29 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       cancelled = true
     }
   }, [productCellReservationsModal, productCellReservationList])
+
+  useEffect(() => {
+    if (!productCellReservationsModal) return
+    if (productCellPickupHotels.length > 0) return
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('pickup_hotels')
+        .select('id, hotel, internal_name, pick_up_location')
+        .eq('use_for_pickup', true)
+        .or('is_active.is.null,is_active.eq.true')
+        .order('hotel', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.error('product cell pickup hotels load error:', error)
+        return
+      }
+      setProductCellPickupHotels((data || []) as ProductCellPickupHotel[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [productCellReservationsModal, productCellPickupHotels.length])
 
   const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
     try {
@@ -8960,7 +9019,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         </div>
         {unassignedTourCards.length > 0 ? (
           <div 
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
+            className={
+              isDisplayMode
+                ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
+                : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3'
+            }
             onDragOver={(e) => {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'move'
@@ -10525,6 +10588,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               productCellReservationList.map((res) => {
                 const st = String(res.status ?? '')
                 const normalizedSt = st.trim().toLowerCase()
+                const isCancelled = isReservationCancelledStatus(st)
+                const customer = (customers as Customer[]).find((c) => c.id === res.customer_id)
                 const subProductLabel =
                   productCellReservationsModal &&
                   isScheduleAggregatedRowKey(productCellReservationsModal.productId)
@@ -10535,6 +10600,25 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   normalizedSt && !quickSet.includes(normalizedSt)
                     ? [normalizedSt, ...quickSet]
                     : [...quickSet]
+                const pickupHotelId = String(res.pickup_hotel || '').trim()
+                const pickupHotel = pickupHotelId
+                  ? productCellPickupHotels.find((h) => h.id === pickupHotelId)
+                  : undefined
+                const pickupHotelLabel = pickupHotel
+                  ? (pickupHotel.internal_name?.trim() || pickupHotel.hotel?.trim() || '')
+                  : pickupHotelId
+                const pickupLocationLabel = pickupHotel?.pick_up_location?.trim() || ''
+                const cancellationLine = productCellCancellationReasons[String(res.id)]?.trim()
+                  ? productCellCancellationReasons[String(res.id)].trim()
+                  : tResCard('noCancellationReasonShort')
+                const antelopeChoiceKeys = [
+                  ...new Set(
+                    reservationChoices
+                      .filter((rc) => rc.reservation_id === String(res.id))
+                      .map((rc) => rc.choiceKey)
+                      .filter((k): k is 'X' | 'L' | 'U' => k === 'X' || k === 'L' || k === 'U')
+                  ),
+                ].sort((a, b) => ['X', 'L', 'U'].indexOf(a) - ['X', 'L', 'U'].indexOf(b))
                 return (
                   <div
                     key={res.id}
@@ -10542,34 +10626,62 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   >
                     <button
                       type="button"
-                      className="flex-1 min-w-0 text-left flex flex-col gap-1 justify-center rounded-md px-1 py-0.5 -m-0.5 hover:bg-gray-100/80 transition-colors"
+                      className="flex-1 min-w-0 text-left flex flex-col gap-0.5 justify-center rounded-md px-1 py-0.5 -m-0.5 hover:bg-gray-100/80 transition-colors"
                       onClick={() => {
                         setProductCellReservationsModal(null)
                         setReservationIdForScheduleEdit(String(res.id))
                       }}
                     >
                       <div className="flex items-center justify-between gap-2 min-w-0">
-                        <span className="font-medium text-sm text-gray-900 truncate">
-                          {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span
+                            className={`inline-flex shrink-0 text-xs px-2 py-0.5 rounded-md font-medium ${getStatusColor(st)}`}
+                          >
+                            {st ? getStatusLabel(st, tReservations) : '—'}
+                          </span>
+                          {customer?.language ? (
+                            <ReactCountryFlag
+                              countryCode={getLanguageFlagCountryCode(customer.language)}
+                              svg
+                              title={customer.language}
+                              style={{ width: '14px', height: '11px', borderRadius: '2px', flexShrink: 0 }}
+                            />
+                          ) : null}
+                          <span className="font-medium text-sm text-gray-900 truncate">
+                            {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
+                          </span>
+                          {antelopeChoiceKeys.map((key) => (
+                            <span
+                              key={key}
+                              className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${getAntelopeChoiceBadgeClass(key)}`}
+                            >
+                              {`🏜️ ${key}`}
+                            </span>
+                          ))}
+                        </div>
                         <span className="text-xs text-gray-600 shrink-0 tabular-nums">
                           {res.total_people ?? 0}
                           {locale === 'ko' ? '명' : ' pax'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                        <span
-                          className={`inline-flex shrink-0 text-xs px-2 py-0.5 rounded-md font-medium ${getStatusColor(st)}`}
-                        >
-                          {st ? getStatusLabel(st, tReservations) : '—'}
-                        </span>
-                        {isReservationCancelledStatus(st) ? (
-                          <span className="text-[11px] text-gray-600 truncate min-w-0 leading-snug">
-                            {productCellCancellationReasons[String(res.id)]?.trim()
-                              ? productCellCancellationReasons[String(res.id)].trim()
-                              : tResCard('noCancellationReasonShort')}
-                          </span>
-                        ) : null}
+                      <div className="text-[11px] text-gray-600 truncate min-w-0 leading-snug pl-0.5">
+                        {isCancelled ? (
+                          cancellationLine
+                        ) : pickupHotelId ? (
+                          <>
+                            <span className="font-bold text-gray-800">{pickupHotelLabel || (locale === 'ko' ? '픽업 미정' : 'Pickup TBD')}</span>
+                            {pickupLocationLabel ? (
+                              <>
+                                {' - '}
+                                <span>{pickupLocationLabel}</span>
+                              </>
+                            ) : null}
+                          </>
+                        ) : locale === 'ko' ? (
+                          '픽업 미정'
+                        ) : (
+                          'Pickup TBD'
+                        )}
                       </div>
                       {subProductLabel ? (
                         <span className="text-[10px] text-gray-500 truncate">{subProductLabel}</span>
@@ -11881,10 +11993,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 .join(' , ')
               const healthIssues = displayTourHealthByTourId.get(String(tour.id))
               const healthBorderClass = getDisplayTourHealthBorderClass(healthIssues)
+              const statusOptions = buildTourStatusSelectOptions(String(status || ''), locale)
+              const statusSelectValue = resolveTourStatusSelectValue(String(status || ''), statusOptions)
+              const isUpdatingStatus = updatingTourDetailModalStatusId === tour.id
               return (
-                <button
+                <div
                   key={tour.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     showGuideModalContent(
                       locale === 'ko' ? '투어 상세 정보' : 'Tour details',
@@ -11892,7 +12008,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       tour.id,
                     )
                   }}
-                  className={`w-full rounded-xl bg-card p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${healthBorderClass}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      showGuideModalContent(
+                        locale === 'ko' ? '투어 상세 정보' : 'Tour details',
+                        getTourSummary(tour),
+                        tour.id,
+                      )
+                    }
+                  }}
+                  className={`flex h-full w-full cursor-pointer flex-col items-stretch justify-start rounded-xl bg-card p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${healthBorderClass}`}
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">
@@ -11901,11 +12027,37 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         <span className="ml-1 text-xs font-medium text-violet-700">(단독)</span>
                       ) : null}
                     </span>
-                    <span
-                      className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium ${getTourStatusColor(status)}`}
+                    <div
+                      className="shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
                     >
-                      {getTourStatusLabel(status, locale)}
-                    </span>
+                      <Select
+                        {...(statusSelectValue ? { value: statusSelectValue } : {})}
+                        onValueChange={(v) => {
+                          void updateTourDetailModalTourStatus(tour.id, v)
+                        }}
+                        disabled={isUpdatingStatus}
+                      >
+                        <SelectTrigger
+                          className={`h-auto min-h-0 w-auto gap-1 border-0 px-2 py-0.5 text-[11px] font-medium shadow-none focus:ring-2 focus:ring-ring [&>svg]:h-3 [&>svg]:w-3 ${getTourStatusColor(status)}`}
+                          aria-label={locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
+                          title={locale === 'ko' ? '클릭하여 상태 변경' : 'Click to change status'}
+                        >
+                          <SelectValue
+                            placeholder={locale === 'ko' ? '상태' : 'Status'}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {getTourStatusLabel(option.value, locale)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
                     <span className="tabular-nums font-medium">
@@ -11924,20 +12076,65 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   {c.choiceCardLine ? (
                     <p className="mb-1.5 text-xs leading-relaxed text-muted-foreground">{c.choiceCardLine}</p>
                   ) : null}
-                  <p className={`text-xs text-foreground ${healthIssues?.length ? 'mb-2' : ''}`}>
-                    {staffLine || (locale === 'ko' ? '가이드 미배정' : 'No guide')}
-                    {c.vehicleNumber && c.vehicleNumber !== '-' ? (
-                      <span className="text-muted-foreground">
-                        {' '}
-                        , 차량 {c.vehicleNumber}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {' '}
-                        , {locale === 'ko' ? '차량 미배정' : 'No vehicle'}
-                      </span>
-                    )}
-                  </p>
+                  <div
+                    className={`flex items-center justify-between gap-2 text-xs text-foreground ${healthIssues?.length ? 'mb-2' : ''}`}
+                  >
+                    <p className="min-w-0 flex-1">
+                      {staffLine || (locale === 'ko' ? '가이드 미배정' : 'No guide')}
+                      {c.vehicleNumber && c.vehicleNumber !== '-' ? (
+                        <span className="text-muted-foreground">
+                          {' '}
+                          , 차량 {c.vehicleNumber}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {' '}
+                          , {locale === 'ko' ? '차량 미배정' : 'No vehicle'}
+                        </span>
+                      )}
+                    </p>
+                    <div
+                      className="flex shrink-0 items-center gap-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        aria-label={locale === 'ko' ? '투어 배정' : 'Assign staff'}
+                        title={locale === 'ko' ? '투어 배정' : 'Assign staff'}
+                        className="inline-flex items-center justify-center rounded-md border border-border bg-white/90 p-1 text-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const role: 'guide' | 'assistant' =
+                            !c.guideAssigned
+                              ? 'guide'
+                              : c.requiresAssistant && !c.assistantAssigned
+                                ? 'assistant'
+                                : 'guide'
+                          setUnassignedPersonAssignModal({ tour, role })
+                        }}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                        title={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                        className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white/90 p-1 text-amber-950 hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setUnassignedVehicleAssignModalTourId(tour.id)
+                        }}
+                      >
+                        <Car className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      </button>
+                    </div>
+                  </div>
                   {healthIssues?.length ? (
                     <div className="space-y-1 border-t border-border/50 pt-2">
                       {healthIssues.map((issue) => (
@@ -11950,7 +12147,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       ))}
                     </div>
                   ) : null}
-                </button>
+                </div>
               )
             })}
             </div>

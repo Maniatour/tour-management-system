@@ -2,6 +2,7 @@
   "sidebar": {
     "customerPages": "고객 페이지 작업",
     "products": "상품 관리",
+    "contentLibrary": "재사용 콘텐츠",
     "options": "옵션·초이스 템플릿",
     "courses": "투어 코스",
     "tourCostCalculator": "투어 비용 계산기",
@@ -1126,6 +1127,23 @@
         "saved": "저장되었습니다.",
         "saveError": "저장 중 오류가 발생했습니다.",
         "loadError": "데이터를 불러오지 못했습니다."
+      },
+      "reusableLibrary": {
+        "title": "재사용 라이브러리 · {kind}",
+        "customOption": "상품 전용 내용 (라이브러리 미연결)",
+        "unnamed": "(이름 없음)",
+        "unlink": "연결 해제",
+        "saveToLibrary": "현재 내용을 라이브러리에 저장",
+        "hintCustom": "라이브러리에서 선택하거나, 이 상품만의 내용을 작성한 뒤 라이브러리에 저장할 수 있습니다.",
+        "hintLinked": "라이브러리 항목을 수정하면 같은 항목을 쓰는 다른 상품에도 반영됩니다.",
+        "loading": "라이브러리 로딩…",
+        "loadError": "라이브러리를 불러오지 못했습니다.",
+        "unlinked": "라이브러리 연결을 해제했습니다. 이 상품 전용 내용으로 편집됩니다.",
+        "emptyContent": "저장할 내용이 없습니다.",
+        "namePrompt": "라이브러리 이름 ({kind})",
+        "nameRequired": "이름을 입력해 주세요.",
+        "savedAndLinked": "라이브러리에 저장하고 이 상품에 연결했습니다.",
+        "saveError": "라이브러리 저장에 실패했습니다."
       },
       "zones": {
         "detail-overview-slogan": {

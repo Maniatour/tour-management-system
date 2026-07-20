@@ -22,13 +22,17 @@ import {
   resolveFaqEditorDraftForLocale,
   type FaqContentI18n,
 } from '@/lib/productFaqLocales'
+import { fetchProductAttachedFaqs } from '@/lib/reusableContentLibrary'
 import { supabase } from '@/lib/supabase'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 
 type FaqItem = {
+  /** faq_library.id */
   id?: string
+  link_id?: string
   product_id: string
+  name?: string
   question: string
   answer: string
   question_en: string
@@ -150,24 +154,22 @@ export default function CustomerPageFaqEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const { data, error } = await supabase
-        .from('product_faqs')
-        .select('*')
-        .eq('product_id', productId)
-        .order('order_index', { ascending: true })
+      const attached = await fetchProductAttachedFaqs(supabase as never, productId, {
+        includeInactive: true,
+      })
 
-      if (error) throw error
-
-      const items = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-        id: String(row.id ?? ''),
-        product_id: String(row.product_id ?? productId),
-        question: String(row.question ?? ''),
-        answer: String(row.answer ?? ''),
-        question_en: String(row.question_en ?? ''),
-        answer_en: String(row.answer_en ?? ''),
-        content_i18n: (row.content_i18n as FaqContentI18n) || {},
-        order_index: Number(row.order_index ?? 0),
-        is_active: row.is_active !== false,
+      const items: FaqItem[] = attached.map((row) => ({
+        id: row.id,
+        link_id: row.link_id,
+        product_id: row.product_id,
+        name: row.name,
+        question: row.question ?? '',
+        answer: row.answer ?? '',
+        question_en: row.question_en ?? '',
+        answer_en: row.answer_en ?? '',
+        content_i18n: row.content_i18n || {},
+        order_index: row.order_index,
+        is_active: row.is_active !== false && row.link_is_active !== false,
       }))
 
       const visible = items.filter((item) => item.is_active)
@@ -256,8 +258,12 @@ export default function CustomerPageFaqEmbed({
     setSaving(true)
     setMessage(null)
     try {
-      const payload = {
-        product_id: productId,
+      const name =
+        merged.question.trim().slice(0, 120) ||
+        activeFaq?.name ||
+        'FAQ'
+      const libraryPayload = {
+        name,
         question: merged.question,
         answer: merged.answer,
         question_en: merged.question_en.trim() || null,
@@ -269,14 +275,25 @@ export default function CustomerPageFaqEmbed({
 
       if (activeFaqId && !isNewDraft) {
         const { error } = await supabase
-          .from('product_faqs')
-          .update(payload as never)
+          .from('faq_library')
+          .update(libraryPayload as never)
           .eq('id', activeFaqId)
         if (error) throw error
+
+        if (activeFaq?.link_id) {
+          await supabase
+            .from('product_faq_links')
+            .update({
+              is_active: merged.is_active,
+              updated_at: new Date().toISOString(),
+            } as never)
+            .eq('id', activeFaq.link_id)
+        }
 
         const updatedItem: FaqItem = {
           id: activeFaqId,
           product_id: productId,
+          name,
           question: merged.question,
           answer: merged.answer,
           question_en: merged.question_en,
@@ -285,6 +302,7 @@ export default function CustomerPageFaqEmbed({
           order_index: activeFaq?.order_index ?? 0,
           is_active: merged.is_active,
         }
+        if (activeFaq?.link_id) updatedItem.link_id = activeFaq.link_id
         setFaqs((prev) =>
           prev.map((item) => (item.id === activeFaqId ? updatedItem : item))
         )
@@ -301,16 +319,32 @@ export default function CustomerPageFaqEmbed({
       } else {
         const orderIndex = faqs.length
         const { data, error } = await supabase
-          .from('product_faqs')
-          .insert([{ ...payload, order_index: orderIndex }] as never)
+          .from('faq_library')
+          .insert([libraryPayload] as never)
           .select('*')
           .single()
         if (error) throw error
 
         const created = data as Record<string, unknown>
+        const { data: link, error: linkError } = await supabase
+          .from('product_faq_links')
+          .insert([
+            {
+              product_id: productId,
+              faq_id: created.id,
+              order_index: orderIndex,
+              is_active: true,
+            },
+          ] as never)
+          .select('*')
+          .single()
+        if (linkError) throw linkError
+
         const newItem: FaqItem = {
           id: String(created.id),
+          link_id: String((link as Record<string, unknown>).id),
           product_id: productId,
+          name,
           question: merged.question,
           answer: merged.answer,
           question_en: merged.question_en,
@@ -362,7 +396,9 @@ export default function CustomerPageFaqEmbed({
 
     setSaving(true)
     try {
-      const { error } = await supabase.from('product_faqs').delete().eq('id', activeFaqId)
+      const linkId = activeFaq?.link_id
+      if (!linkId) throw new Error('link missing')
+      const { error } = await supabase.from('product_faq_links').delete().eq('id', linkId)
       if (error) throw error
       const remaining = faqs.filter((item) => item.id !== activeFaqId)
       setFaqs(remaining)
@@ -395,11 +431,11 @@ export default function CustomerPageFaqEmbed({
     try {
       await Promise.all(
         withOrder.map((item) =>
-          item.id
+          item.link_id
             ? supabase
-                .from('product_faqs')
+                .from('product_faq_links')
                 .update({ order_index: item.order_index } as never)
-                .eq('id', item.id)
+                .eq('id', item.link_id)
             : Promise.resolve()
         )
       )
@@ -426,7 +462,7 @@ export default function CustomerPageFaqEmbed({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          DB: <code className="rounded bg-muted px-1">product_faqs</code>
+          재사용 라이브러리 · <code className="rounded bg-muted px-1">faq_library</code>
         </p>
         <button
           type="button"

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
+import ReusableDetailFieldPicker from '@/components/product/ReusableDetailFieldPicker'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import type { DetailFieldKey } from '@/lib/customerPageZoneEditMap'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
@@ -24,6 +25,16 @@ import {
 } from '@/lib/productDetailsMultilingualAdmin'
 import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
+import {
+  detailContentLegacyColumns,
+  fetchProductDetailContentLinks,
+  isReusableDetailKind,
+  linksToLibraryIdMap,
+  mergeDetailContentI18n,
+  upsertProductDetailContentLink,
+  REUSABLE_DETAIL_KINDS,
+  type ReusableDetailKind,
+} from '@/lib/reusableContentLibrary'
 
 type SectionId = 'basic' | 'included' | 'logistics' | 'policy'
 
@@ -149,6 +160,9 @@ export default function CustomerPageThingsToKnowEmbed({
   })
   const [detailForm, setDetailForm] = useState<Partial<Record<DetailFieldKey, string>>>({})
   const [visibility, setVisibility] = useState<Partial<Record<DetailFieldKey, boolean>>>({})
+  const [detailLibraryIds, setDetailLibraryIds] = useState<
+    Partial<Record<ReusableDetailKind, string | null>>
+  >({})
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   const sectionDetailFields = useMemo(() => {
@@ -166,15 +180,18 @@ export default function CustomerPageThingsToKnowEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [details, productResult, translationRows] = await Promise.all([
+      const [details, productResult, translationRows, contentLinks] = await Promise.all([
         fetchProductDetailsForAdminEdit(productId, editLocale),
         supabase.from('products').select('*').eq('id', productId).maybeSingle(),
         fetchProductFieldTranslations(productId),
+        fetchProductDetailContentLinks(supabase as never, productId).catch(() => []),
       ])
 
       if (productResult.error) throw productResult.error
 
       const { row, values } = details
+      const libraryMap = linksToLibraryIdMap(contentLinks)
+      setDetailLibraryIds(libraryMap)
       const productRow = (productResult.data ?? {}) as Record<string, unknown>
       const locationMap = buildProductTranslationMap(productRow, translationRows)
       const allDetailKeys = [
@@ -231,6 +248,7 @@ export default function CustomerPageThingsToKnowEmbed({
           basic: nextBasic,
           detail: nextDetailForm,
           visibility: nextVisibility,
+          library: libraryMap,
           locale: editLocale,
         })
       )
@@ -253,10 +271,11 @@ export default function CustomerPageThingsToKnowEmbed({
         basic: basicForm,
         detail: detailForm,
         visibility,
+        library: detailLibraryIds,
         locale: editLocale,
       }) !== initialSnapshot
     onDirtyChange(dirty)
-  }, [basicForm, detailForm, editLocale, initialSnapshot, onDirtyChange, visibility])
+  }, [basicForm, detailForm, detailLibraryIds, editLocale, initialSnapshot, onDirtyChange, visibility])
 
   const handleSave = async () => {
     setSaving(true)
@@ -300,6 +319,39 @@ export default function CustomerPageThingsToKnowEmbed({
         patch: detailPayload,
       })
       setRowId(savedRowId)
+
+      // Persist reusable detail library links (+ update linked snippet body for this locale)
+      for (const kind of REUSABLE_DETAIL_KINDS) {
+        const libraryId = detailLibraryIds[kind] ?? null
+        await upsertProductDetailContentLink(supabase as never, productId, kind, libraryId)
+        if (libraryId) {
+          const body = (detailForm[kind] ?? '').trim()
+          const { data: existing } = await supabase
+            .from('detail_content_library')
+            .select('body, body_en, content_i18n')
+            .eq('id', libraryId)
+            .maybeSingle()
+          const existingRow = (existing || {}) as {
+            body?: string | null
+            body_en?: string | null
+            content_i18n?: { body?: Partial<Record<string, string>> } | null
+          }
+          const content_i18n = mergeDetailContentI18n(
+            existingRow.content_i18n as never,
+            editLocale,
+            body
+          )
+          const legacy = detailContentLegacyColumns(editLocale, body, existingRow)
+          await supabase
+            .from('detail_content_library')
+            .update({
+              ...legacy,
+              content_i18n,
+              updated_at: new Date().toISOString(),
+            } as never)
+            .eq('id', libraryId)
+        }
+      }
 
       const locationLegacyPatch = await upsertProductFieldTranslations({
         productId,
@@ -614,17 +666,39 @@ export default function CustomerPageThingsToKnowEmbed({
             </div>
 
             <div ref={editorMeasureRef}>
-              <LightRichEditor
-                value={detailForm[activeDetailField] ?? ''}
-                onChange={(value) =>
-                  setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
-                }
-                height={editorHeight}
-                placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
-                enableResize
-                uiLocale={editorUiLocale}
-                maxHeight={1200}
-              />
+              {isReusableDetailKind(activeDetailField) ? (
+                <ReusableDetailFieldPicker
+                  productId={productId}
+                  kind={activeDetailField}
+                  locale={editLocale}
+                  value={detailForm[activeDetailField] ?? ''}
+                  onChange={(value) =>
+                    setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
+                  }
+                  libraryId={detailLibraryIds[activeDetailField] ?? null}
+                  onLibraryIdChange={(id) =>
+                    setDetailLibraryIds((prev) => ({
+                      ...prev,
+                      [activeDetailField as ReusableDetailKind]: id,
+                    }))
+                  }
+                  editorHeight={editorHeight}
+                  placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
+                  uiLocale={editorUiLocale}
+                />
+              ) : (
+                <LightRichEditor
+                  value={detailForm[activeDetailField] ?? ''}
+                  onChange={(value) =>
+                    setDetailForm((prev) => ({ ...prev, [activeDetailField]: value }))
+                  }
+                  height={editorHeight}
+                  placeholder={contentPlaceholder(detailFieldLabel(activeDetailField))}
+                  enableResize
+                  uiLocale={editorUiLocale}
+                  maxHeight={1200}
+                />
+              )}
             </div>
           </div>
         </div>

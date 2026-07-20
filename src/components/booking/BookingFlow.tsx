@@ -36,6 +36,10 @@ import {
   isPeopleCoverageSufficient,
   usesCapacityQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
+import {
+  calculateChoiceLineTotalFromUnitPrice,
+  isPerUnitPricing,
+} from '@/lib/choicePricingUnit'
 import { fetchPublicDirectChannelBrowser } from '@/lib/operators/fetchPublicDirectChannelBrowser'
 
 function bookingChoiceLabel(group: {
@@ -132,6 +136,7 @@ interface ChoiceGroup {
   choice_name_ko: string | null
   choice_name_en?: string | null
   choice_type: string
+  pricing_unit?: string | null
   choice_description: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
@@ -148,6 +153,7 @@ interface ProductChoice {
   choice_name: string
   choice_name_ko: string | null
   choice_type: string
+  pricing_unit?: string | null
   choice_description: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
@@ -1358,6 +1364,7 @@ export default function BookingFlow({
         choice_name_ko: choice.choice_name_ko,
         choice_name_en: (choice as any).choice_name_en || null,
         choice_type: choice.choice_type,
+        pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
         choice_description: choiceWithDescription.choice_description || null,
         choice_description_ko: choiceWithDescription.choice_description_ko || null,
         choice_description_en: choiceWithDescription.choice_description_en || null,
@@ -1584,6 +1591,7 @@ export default function BookingFlow({
           group.options.forEach((option) => {
             const quantity = groupQuantities[option.option_id] ?? 0
             if (quantity > 0 && option.option_price) {
+              // quantity UI: 단가 × 선택 수량 (인원 패스·객실·차량 대수 공통)
               choicesTotal += option.option_price * quantity
             }
           })
@@ -1598,7 +1606,12 @@ export default function BookingFlow({
               bookingData.participants.adults +
               bookingData.participants.children +
               bookingData.participants.infants
-            choicesTotal += option.option_price * totalParticipants
+            choicesTotal += calculateChoiceLineTotalFromUnitPrice({
+              pricingUnit: group.pricing_unit,
+              unitPrice: option.option_price,
+              totalParticipants,
+              quantity: 1,
+            })
           }
         }
       })
@@ -1973,6 +1986,29 @@ export default function BookingFlow({
       bookingData.participants.infants
 
     for (const group of requiredChoices) {
+      // 차량/단위 고정가 + 수용 인원: 선택 옵션 capacity 이내여야 함
+      if (isPerUnitPricing(group.pricing_unit) && group.choice_type !== 'quantity') {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (!selectedOptionId) continue
+        const option = group.options.find((opt) => opt.option_id === selectedOptionId)
+        const cap = option?.capacity
+        if (
+          typeof cap === 'number' &&
+          Number.isFinite(cap) &&
+          cap > 0 &&
+          totalParticipants > cap
+        ) {
+          const label = bookingChoiceLabel(group)
+          const optionLabel = option?.option_name_ko || option?.option_name || ''
+          return {
+            valid: false,
+            error: isEnglish
+              ? `${optionLabel || label} holds up to ${cap} travelers. Please choose a larger vehicle or reduce party size.`
+              : `${optionLabel || label} 최대 수용 ${cap}명입니다. 더 큰 차량을 선택하거나 인원을 줄여 주세요.`,
+          }
+        }
+      }
+
       const label = bookingChoiceLabel(group)
       const isCapacityGroup = usesCapacityQuantitySelection(
         group.choice_type,

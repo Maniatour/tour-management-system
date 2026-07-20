@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
 import { suggestTourDescription } from '@/lib/chatgptService'
 import LightRichEditor from '@/components/LightRichEditor'
+import ReusableDetailFieldPicker from '@/components/product/ReusableDetailFieldPicker'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
 import CustomerPageLocationHint from '@/components/product/CustomerPageLocationHint'
 import { DETAIL_FIELD_LOCATIONS } from '@/lib/productCustomerPageLocations'
@@ -17,6 +18,16 @@ import {
   getSiteLocaleMeta,
   isSiteLocale,
 } from '@/lib/siteLocales'
+import {
+  detailContentLegacyColumns,
+  fetchProductDetailContentLinks,
+  isReusableDetailKind,
+  linksToLibraryIdMap,
+  mergeDetailContentI18n,
+  upsertProductDetailContentLink,
+  REUSABLE_DETAIL_KINDS,
+  type ReusableDetailKind,
+} from '@/lib/reusableContentLibrary'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -428,6 +439,9 @@ export default function ProductDetailsTab({
   const [saveMessageType, setSaveMessageType] = useState<'success' | 'error' | null>(null)
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [detailLibraryIds, setDetailLibraryIds] = useState<
+    Partial<Record<ReusableDetailKind, string | null>>
+  >({})
   const [availableLanguages] = useState([...ROUTING_LOCALES])
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
@@ -758,6 +772,23 @@ export default function ProductDetailsTab({
   useEffect(() => {
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    if (isNewProduct || !productId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const links = await fetchProductDetailContentLinks(supabase as never, productId)
+        if (!cancelled) setDetailLibraryIds(linksToLibraryIdMap(links))
+      } catch (error) {
+        console.warn('detail content library links load skipped:', error)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per product
+  }, [isNewProduct, productId])
 
   // 채널 목록 로드
   const loadChannels = useCallback(async () => {
@@ -2978,6 +3009,38 @@ export default function ProductDetailsTab({
     } else {
       await handleSave()
     }
+
+    // Reusable 운영안내/정책 라이브러리 연결 저장
+    try {
+      const locale = formData.currentLanguage || 'ko'
+      for (const kind of REUSABLE_DETAIL_KINDS) {
+        const libraryId = detailLibraryIds[kind] ?? null
+        await upsertProductDetailContentLink(supabase as never, productId, kind, libraryId)
+        if (!libraryId) continue
+        const body = String(getValue(kind, true) || '').trim()
+        const { data: existing } = await (supabase as any)
+          .from('detail_content_library')
+          .select('body, body_en, content_i18n')
+          .eq('id', libraryId)
+          .maybeSingle()
+        const content_i18n = mergeDetailContentI18n(
+          (existing?.content_i18n as never) || null,
+          locale,
+          body
+        )
+        const legacy = detailContentLegacyColumns(locale, body, existing || {})
+        await (supabase as any)
+          .from('detail_content_library')
+          .update({
+            ...legacy,
+            content_i18n,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', libraryId)
+      }
+    } catch (error) {
+      console.warn('detail library link save failed:', error)
+    }
   }
 
   // 채널 간 전체 복사는 현재 미사용
@@ -3466,13 +3529,32 @@ export default function ProductDetailsTab({
                   </span>
                 </span>
               </label>
-              <LightRichEditor
-                value={String(getValue(previewEditingField, true) || '')}
-                onChange={(value) => handleInputChange(previewEditingField, value || '')}
-                height={300}
-                placeholder="고객에게 보여질 내용을 입력하세요"
-                enableResize={true}
-              />
+              {previewEditingField && isReusableDetailKind(previewEditingField) ? (
+                <ReusableDetailFieldPicker
+                  productId={productId}
+                  kind={previewEditingField}
+                  locale={formData.currentLanguage || 'ko'}
+                  value={String(getValue(previewEditingField, true) || '')}
+                  onChange={(value) => handleInputChange(previewEditingField, value || '')}
+                  libraryId={detailLibraryIds[previewEditingField] ?? null}
+                  onLibraryIdChange={(id) =>
+                    setDetailLibraryIds((prev) => ({
+                      ...prev,
+                      [previewEditingField]: id,
+                    }))
+                  }
+                  editorHeight={300}
+                  placeholder="고객에게 보여질 내용을 입력하세요"
+                />
+              ) : (
+                <LightRichEditor
+                  value={String(getValue(previewEditingField, true) || '')}
+                  onChange={(value) => handleInputChange(previewEditingField, value || '')}
+                  height={300}
+                  placeholder="고객에게 보여질 내용을 입력하세요"
+                  enableResize={true}
+                />
+              )}
             </div>
             <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
               <button

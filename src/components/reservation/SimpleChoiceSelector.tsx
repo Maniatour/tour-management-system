@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { calculateChoiceLineTotal, isPerUnitPricing } from '@/lib/choicePricingUnit';
+import { getOptionCapacity } from '@/lib/choiceOptionCapacity';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -20,6 +22,8 @@ interface ProductChoice {
   choice_group: string;
   choice_group_ko: string;
   choice_type: 'single' | 'multiple' | 'quantity';
+  /** per_person | per_unit */
+  pricing_unit?: 'per_person' | 'per_unit' | string;
   is_required: boolean;
   min_selections: number;
   max_selections: number;
@@ -160,20 +164,19 @@ export default function SimpleChoiceSelector({
                                            choice.choice_group?.toLowerCase().includes('거주');
             
             let calculatedPrice = 0;
-            if (choice.choice_type === 'single' && !isResidentStatusChoice) {
-              // 단일 선택 초이스: 인원 수에 따른 총액 계산
-              calculatedPrice = (adults * option.adult_price) + 
-                               (children * option.child_price) + 
-                               (infants * option.infant_price);
-            } else if (isResidentStatusChoice) {
-              // 거주자 구분 초이스: 수량에 따라 가격 계산
+            if (isResidentStatusChoice) {
               calculatedPrice = option.adult_price * (s.quantity || 1);
             } else {
-              // multiple/quantity 타입: 수량과 인원 수에 따른 가격 계산
-              const pricePerPerson = (adults * option.adult_price) + 
-                                    (children * option.child_price) + 
-                                    (infants * option.infant_price);
-              calculatedPrice = pricePerPerson * (s.quantity || 1);
+              calculatedPrice = calculateChoiceLineTotal({
+                pricingUnit: choice.pricing_unit,
+                adultPrice: option.adult_price,
+                childPrice: option.child_price,
+                infantPrice: option.infant_price,
+                adults,
+                children,
+                infants,
+                quantity: s.quantity || 1,
+              });
             }
             
             // 저장된 가격과 자동 계산된 가격이 다르면 수동 수정으로 간주
@@ -308,21 +311,24 @@ export default function SimpleChoiceSelector({
     adults: number,
     children: number,
     infants: number,
-    isResidentStatusChoice: boolean = false
+    isResidentStatusChoice: boolean = false,
+    pricingUnit?: string
   ) => {
     // 거주자 구분 초이스의 경우: 수량에 따라 가격 계산 (인원당 가격)
     if (isResidentStatusChoice) {
-      // 거주자 구분 초이스는 수량(quantity)에 따라 가격 계산
-      // 예: 비거주자 $100, 수량 1이면 $100 * 1 = $100
       return option.adult_price * quantity;
     }
-    
-    // 일반 초이스: 전체 인원에 대한 가격 계산
-    const pricePerPerson = (adults * option.adult_price) + 
-                          (children * option.child_price) + 
-                          (infants * option.infant_price);
-    
-    return pricePerPerson * quantity;
+
+    return calculateChoiceLineTotal({
+      pricingUnit,
+      adultPrice: option.adult_price,
+      childPrice: option.child_price,
+      infantPrice: option.infant_price,
+      adults,
+      children,
+      infants,
+      quantity,
+    });
   }, []);
 
   // 유효성 검사
@@ -369,6 +375,22 @@ export default function SimpleChoiceSelector({
         // totalPeople이 0이면 검증 건너뛰기 (아직 인원 수가 설정되지 않았을 수 있음)
         if (choiceSelections.length > 0 && totalPeople > 0 && totalQuantity !== totalPeople) {
           newErrors.push(`${choice.choice_group_ko} 선택 수량(${totalQuantity}명)이 총 인원 수(${totalPeople}명)와 일치하지 않습니다.`);
+        }
+      } else if (isPerUnitPricing(choice.pricing_unit) && !hasUndecided) {
+        const totalPeople = adults + children + infants;
+        for (const selection of choiceSelections) {
+          if (selection.option_id === UNDECIDED_OPTION_ID) continue;
+          const option = choice.options.find((o) => o.id === selection.option_id);
+          if (!option) continue;
+          const cap = getOptionCapacity(option);
+          if (cap != null && totalPeople > 0) {
+            const covered = cap * (selection.quantity || 1);
+            if (covered < totalPeople) {
+              newErrors.push(
+                `${option.option_name_ko || option.option_name} 최대 수용 ${cap}명 × ${selection.quantity || 1}대 = ${covered}명으로, 예약 인원(${totalPeople}명)을 수용할 수 없습니다.`
+              );
+            }
+          }
         }
       } else if (!hasUndecided) {
         // 일반 초이스는 기존 max_selections 검증 유지
@@ -524,7 +546,7 @@ export default function SimpleChoiceSelector({
                                 (infants * option.infant_price);
                   } else {
                     // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
-                    totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
+                    totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice, choice.pricing_unit);
                   }
                 }
                 
@@ -573,7 +595,7 @@ export default function SimpleChoiceSelector({
                                                   (infants * option.infant_price);
                           } else {
                             // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
-                            selectionTotalPrice = calculatePrice(option, 1, adults, children, infants, isResidentStatusChoice);
+                            selectionTotalPrice = calculatePrice(option, 1, adults, children, infants, isResidentStatusChoice, choice.pricing_unit);
                           }
                           handleSelectionChange(
                             choice.id,
@@ -670,7 +692,7 @@ export default function SimpleChoiceSelector({
                                     option.option_key,
                                     option.option_name_ko,
                                     currentQuantity - 1,
-                                    calculatePrice(option, currentQuantity - 1, adults, children, infants, isResidentStatusChoice)
+                                    calculatePrice(option, currentQuantity - 1, adults, children, infants, isResidentStatusChoice, choice.pricing_unit)
                                   );
                                 } else {
                                   // 수량이 1이면 선택 해제
@@ -713,7 +735,7 @@ export default function SimpleChoiceSelector({
                                   option.option_key,
                                   option.option_name_ko,
                                   currentQuantity + 1,
-                                  calculatePrice(option, currentQuantity + 1, adults, children, infants, isResidentStatusChoice)
+                                  calculatePrice(option, currentQuantity + 1, adults, children, infants, isResidentStatusChoice, choice.pricing_unit)
                                 );
                               }}
                               className="w-4 h-4 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"

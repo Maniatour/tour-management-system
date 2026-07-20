@@ -131,6 +131,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
           choice_group,
           choice_group_ko,
           choice_type,
+          pricing_unit,
           is_required,
           min_selections,
           max_selections,

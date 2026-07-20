@@ -13,6 +13,10 @@ import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorI
 import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
 import { fetchDefaultProductDetailsRowForAdmin } from '@/lib/productDetailsMultilingualAdmin'
 import { contentFallbackOrder, normalizeSiteLocale } from '@/lib/siteLocales'
+import {
+  applyDetailContentLibraryOverlay,
+  fetchProductDetailContentLinks,
+} from '@/lib/reusableContentLibrary'
 
 export type {
   Product,
@@ -289,6 +293,7 @@ export async function fetchProductPageData(
           description_en,
           content_i18n,
           choice_type,
+          pricing_unit,
           sort_order,
           options:choice_options (
             id,
@@ -331,6 +336,8 @@ export async function fetchProductPageData(
           // choice_group이 아이디인지 확인 (한글/영어 이름이 없으면 choice_group 사용)
           const choiceName = choiceNameKo || choiceNameEn || choice.choice_group || ''
           const choiceType = choice.choice_type || 'single'
+          const pricingUnit =
+            choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person'
           const choiceSortOrder = choice.sort_order ?? 0
           const options = (Array.isArray(choice.options) ? choice.options : [])
             .filter((opt: any) => opt.is_active !== false)
@@ -345,6 +352,7 @@ export async function fetchProductPageData(
             choice_name_ko: choiceNameKo,
             choice_name_en: choiceNameEn,
             choice_type: choiceType,
+            pricing_unit: pricingUnit,
             choice_description: choice.description_en || null,
             choice_description_ko: choice.description_ko || null,
             choice_description_en: choice.description_en || null,
@@ -558,7 +566,7 @@ async function loadDetailsRowsForContentFallback(
   return { preferred: preferredRecord, fallbackRows }
 }
 
-/** 고객 상세 페이지용: 필드 단위 locale → en → ko 병합 */
+/** 고객 상세 페이지용: 필드 단위 locale → en → ko 병합 + 재사용 라이브러리 오버레이 */
 async function loadMergedProductDetailsForLocale(
   productId: string,
   locale: string
@@ -568,7 +576,18 @@ async function loadMergedProductDetailsForLocale(
     locale
   )
   if (!preferred && fallbackRows.every((row) => row == null)) return null
-  return mergeDetailsContentValues(preferred, fallbackRows) as unknown as ProductDetails
+  const merged = mergeDetailsContentValues(preferred, fallbackRows) as unknown as ProductDetails
+  try {
+    const links = await fetchProductDetailContentLinks(supabase as never, productId)
+    return applyDetailContentLibraryOverlay(
+      merged as unknown as Record<string, unknown>,
+      links,
+      locale
+    ) as unknown as ProductDetails
+  } catch (error) {
+    console.warn('detail content library overlay skipped:', error)
+    return merged
+  }
 }
 
 export type AdminEditDetailsRow = {
@@ -601,9 +620,18 @@ export async function fetchProductDetailsForAdminEdit(
     fallbackRows.push(row)
   }
 
+  let values = mergeDetailsContentValues(preferred, fallbackRows)
+  try {
+    const links = await fetchProductDetailContentLinks(supabase as never, productId)
+    values =
+      applyDetailContentLibraryOverlay(values, links, siteLocale) ?? values
+  } catch {
+    /* library tables may not exist yet before migration */
+  }
+
   return {
     row: preferred,
-    values: mergeDetailsContentValues(preferred, fallbackRows),
+    values,
   }
 }
 

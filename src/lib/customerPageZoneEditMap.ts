@@ -349,7 +349,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-faq',
     requiresProduct: true,
-    note: '질문·답변은 product_faqs 테이블에서 직접 편집합니다.',
+    note: '질문·답변은 faq_library 재사용 라이브러리에서 관리하고, 상품에는 product_faq_links로 연결합니다.',
   },
   'detail-recommendations-viewed': {
     label: '다른 여행자가 함께 본 상품',
@@ -425,7 +425,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-faq',
     requiresProduct: true,
-    note: '질문·답변은 product_faqs 테이블에서 직접 편집합니다.',
+    note: '질문·답변은 faq_library 재사용 라이브러리에서 관리하고, 상품에는 product_faq_links로 연결합니다.',
   },
   'detail-overview-slogan': {
     label: '슬로건',

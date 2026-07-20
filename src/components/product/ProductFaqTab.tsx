@@ -13,10 +13,19 @@ import {
   type FaqContentI18n,
 } from '@/lib/productFaqLocales'
 import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
+import {
+  fetchFaqLibrary,
+  fetchProductAttachedFaqs,
+  type FaqLibraryItem,
+} from '@/lib/reusableContentLibrary'
 
 interface FaqItem {
+  /** faq_library.id */
   id?: string
+  /** product_faq_links.id */
+  link_id?: string
   product_id: string
+  name?: string
   question: string
   answer: string
   question_en?: string | null
@@ -51,23 +60,33 @@ export default function ProductFaqTab({
   const [suggesting, setSuggesting] = useState(false)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [viewLocale, setViewLocale] = useState<SiteLocale>('ko')
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false)
+  const [libraryItems, setLibraryItems] = useState<FaqLibraryItem[]>([])
+  const [librarySearch, setLibrarySearch] = useState('')
+  const [libraryLoading, setLibraryLoading] = useState(false)
 
-  // 기존 FAQ 데이터 로드
+  // 기존 FAQ 데이터 로드 (재사용 라이브러리 + 상품 연결)
   const fetchFaqs = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any)
-        .from('product_faqs')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('is_active', true)
-        .order('order_index', { ascending: true })
-
-      if (error) {
-        console.error('Supabase 오류:', error)
-        throw new Error(`데이터베이스 오류: ${error.message}`)
-      }
-
-      setFaqs(data || [])
+      const attached = await fetchProductAttachedFaqs(supabase as never, productId)
+      setFaqs(
+        attached.map((row) => {
+          const item: FaqItem = {
+            id: row.id,
+            link_id: row.link_id,
+            product_id: row.product_id,
+            name: row.name,
+            question: row.question,
+            answer: row.answer,
+            order_index: row.order_index,
+            is_active: row.is_active !== false,
+          }
+          if (row.question_en != null) item.question_en = row.question_en
+          if (row.answer_en != null) item.answer_en = row.answer_en
+          if (row.content_i18n != null) item.content_i18n = row.content_i18n
+          return item
+        })
+      )
     } catch (error) {
       console.error('FAQ 로드 오류:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
@@ -104,22 +123,24 @@ export default function ProductFaqTab({
   }
 
   const handleDeleteFaq = async (faqId: string) => {
-    if (!confirm('이 FAQ를 삭제하시겠습니까?')) return
+    const target = faqs.find((f) => f.id === faqId)
+    if (!target?.link_id) return
+    if (!confirm('이 상품에서 FAQ 연결을 해제하시겠습니까?\n(라이브러리 원본은 유지되며 다른 상품에는 영향이 없습니다.)')) return
 
     try {
       const { error } = await (supabase as any)
-        .from('product_faqs')
+        .from('product_faq_links')
         .delete()
-        .eq('id', faqId)
+        .eq('id', target.link_id)
 
       if (error) throw error
 
       setFaqs(prev => prev.filter(f => f.id !== faqId))
-      setSaveMessage('FAQ가 삭제되었습니다.')
+      setSaveMessage('FAQ 연결이 해제되었습니다.')
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('FAQ 삭제 오류:', error)
-      setSaveMessage('FAQ 삭제에 실패했습니다.')
+      setSaveMessage('FAQ 연결 해제에 실패했습니다.')
       setTimeout(() => setSaveMessage(''), 3000)
     }
   }
@@ -129,33 +150,78 @@ export default function ProductFaqTab({
     setSaveMessage('')
 
     try {
+      const name =
+        (faqData.name || '').trim() ||
+        (faqData.question || '').trim().slice(0, 120) ||
+        'FAQ'
+
+      const libraryPayload = {
+        name,
+        question: faqData.question,
+        answer: faqData.answer,
+        question_en: faqData.question_en ?? null,
+        answer_en: faqData.answer_en ?? null,
+        content_i18n: faqData.content_i18n ?? {},
+        is_active: faqData.is_active !== false,
+        updated_at: new Date().toISOString(),
+      }
+
       if (faqData.id) {
-        // 업데이트
         const { error } = await (supabase as any)
-          .from('product_faqs')
-          .update({
-            ...faqData,
-            updated_at: new Date().toISOString()
-          })
+          .from('faq_library')
+          .update(libraryPayload)
           .eq('id', faqData.id)
 
         if (error) throw error
 
-        setFaqs(prev => prev.map(f => f.id === faqData.id ? faqData : f))
+        if (faqData.link_id) {
+          await (supabase as any)
+            .from('product_faq_links')
+            .update({
+              order_index: faqData.order_index,
+              is_active: faqData.is_active !== false,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', faqData.link_id)
+        }
+
+        setFaqs(prev => prev.map(f => f.id === faqData.id ? { ...faqData, name } : f))
       } else {
-        // 새로 생성
-        const { data, error } = await (supabase as any)
-          .from('product_faqs')
-          .insert([faqData])
+        const { data: created, error } = await (supabase as any)
+          .from('faq_library')
+          .insert([libraryPayload])
           .select()
           .single()
 
         if (error) throw error
 
-        setFaqs(prev => [...prev, data])
+        const { data: link, error: linkError } = await (supabase as any)
+          .from('product_faq_links')
+          .insert([{
+            product_id: productId,
+            faq_id: created.id,
+            order_index: faqData.order_index,
+            is_active: true,
+          }])
+          .select()
+          .single()
+
+        if (linkError) throw linkError
+
+        setFaqs(prev => [...prev, {
+          ...faqData,
+          id: created.id,
+          link_id: link.id,
+          name,
+          question: created.question,
+          answer: created.answer,
+          question_en: created.question_en,
+          answer_en: created.answer_en,
+          content_i18n: created.content_i18n,
+        }])
       }
 
-      setSaveMessage('FAQ가 저장되었습니다!')
+      setSaveMessage('FAQ가 저장되었습니다! (재사용 라이브러리에 반영)')
       setTimeout(() => setSaveMessage(''), 3000)
       setShowAddModal(false)
       setEditingFaq(null)
@@ -165,6 +231,65 @@ export default function ProductFaqTab({
       setTimeout(() => setSaveMessage(''), 3000)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const openLibraryPicker = async () => {
+    setShowLibraryPicker(true)
+    setLibraryLoading(true)
+    try {
+      const rows = await fetchFaqLibrary(supabase as never, {
+        activeOnly: true,
+        search: librarySearch,
+      })
+      const attachedIds = new Set(faqs.map((f) => f.id).filter(Boolean))
+      setLibraryItems(rows.filter((row) => !attachedIds.has(row.id)))
+    } catch (error) {
+      console.error('FAQ library load error:', error)
+      setSaveMessage('FAQ 라이브러리를 불러오지 못했습니다.')
+    } finally {
+      setLibraryLoading(false)
+    }
+  }
+
+  const attachLibraryFaq = async (faqId: string) => {
+    try {
+      const { data: link, error } = await (supabase as any)
+        .from('product_faq_links')
+        .insert([{
+          product_id: productId,
+          faq_id: faqId,
+          order_index: faqs.length,
+          is_active: true,
+        }])
+        .select()
+        .single()
+      if (error) throw error
+
+      const item = libraryItems.find((row) => row.id === faqId)
+      if (item) {
+        const attachedItem: FaqItem = {
+          id: item.id,
+          link_id: link.id,
+          product_id: productId,
+          name: item.name,
+          question: item.question,
+          answer: item.answer,
+          order_index: faqs.length,
+          is_active: true,
+        }
+        if (item.question_en != null) attachedItem.question_en = item.question_en
+        if (item.answer_en != null) attachedItem.answer_en = item.answer_en
+        if (item.content_i18n != null) attachedItem.content_i18n = item.content_i18n
+        setFaqs((prev) => [...prev, attachedItem])
+      }
+      setShowLibraryPicker(false)
+      setSaveMessage('라이브러리 FAQ를 이 상품에 연결했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('FAQ attach error:', error)
+      setSaveMessage('FAQ 연결에 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
     }
   }
 
@@ -197,13 +322,14 @@ export default function ProductFaqTab({
 
     setFaqs(updatedFaqs)
 
-    // 데이터베이스 업데이트
+    // 데이터베이스 업데이트 (상품별 연결 순서)
     try {
       for (const faq of updatedFaqs) {
+        if (!faq.link_id) continue
         await (supabase as any)
-          .from('product_faqs')
+          .from('product_faq_links')
           .update({ order_index: faq.order_index })
-          .eq('id', faq.id)
+          .eq('id', faq.link_id)
       }
     } catch (error) {
       console.error('FAQ 순서 변경 오류:', error)
@@ -368,10 +494,13 @@ export default function ProductFaqTab({
           <HelpCircle className="h-5 w-5 mr-2" />
           자주 묻는 질문 (FAQ)
         </h3>
+        <p className="text-xs text-muted-foreground w-full md:w-auto md:mr-auto">
+          FAQ는 재사용 라이브러리에 저장되며, 여러 상품에 연결할 수 있습니다.
+        </p>
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {saveMessage && (
             <div className={`flex items-center text-sm ${
-              saveMessage.includes('성공') || saveMessage.includes('저장') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
+              saveMessage.includes('성공') || saveMessage.includes('저장') || saveMessage.includes('번역') || saveMessage.includes('연결') ? 'text-green-600' : 'text-red-600'
             }`}>
               <AlertCircle className="h-4 w-4 mr-1" />
               {saveMessage}
@@ -420,12 +549,20 @@ export default function ProductFaqTab({
           </button>
           <button
             type="button"
+            onClick={() => void openLibraryPicker()}
+            disabled={isNewProduct}
+            className="flex items-center px-3 py-2 border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            라이브러리에서 추가
+          </button>
+          <button
+            type="button"
             onClick={handleAddFaq}
             disabled={isNewProduct}
             className="flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4 mr-2" />
-            FAQ 추가
+            새 FAQ 만들기
           </button>
         </div>
       </div>
@@ -608,6 +745,69 @@ export default function ProductFaqTab({
           }}
           saving={saving}
         />
+      )}
+
+      {showLibraryPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">FAQ 라이브러리에서 추가</h3>
+              <button
+                type="button"
+                onClick={() => setShowLibraryPicker(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-2 border-b border-border px-4 py-3">
+              <input
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void openLibraryPicker()
+                }}
+                placeholder="이름·질문 검색…"
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void openLibraryPicker()}
+                className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium hover:bg-muted/80"
+              >
+                검색
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {libraryLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  로딩 중…
+                </div>
+              ) : libraryItems.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  연결 가능한 FAQ가 없습니다. 새 FAQ를 만들거나 관리 화면에서 라이브러리를 추가하세요.
+                </p>
+              ) : (
+                libraryItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void attachLibraryFaq(item.id)}
+                    className="w-full rounded-lg border border-border px-3 py-2.5 text-left hover:border-primary/40 hover:bg-primary/5"
+                  >
+                    <div className="text-sm font-medium text-foreground">
+                      {item.name || item.question.slice(0, 80) || '(제목 없음)'}
+                    </div>
+                    <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      {item.question}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

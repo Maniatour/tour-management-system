@@ -5,6 +5,7 @@ import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { getFaqLocalizedText, type FaqContentI18n } from '@/lib/productFaqLocales'
+import { fetchProductAttachedFaqs } from '@/lib/reusableContentLibrary'
 
 interface FaqItem {
   id: string
@@ -31,33 +32,19 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
 
   const fetchFaqs = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('product_faqs')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('is_active', true)
-        .order('order_index', { ascending: true })
-
-      if (error) {
-        console.error('Supabase 오류:', error)
-        throw new Error(`데이터베이스 오류: ${error.message}`)
-      }
-
+      const attached = await fetchProductAttachedFaqs(supabase as never, productId)
       setFaqs(
-        (data || []).map((row) => {
-          const r = row as Record<string, unknown>
-          return {
-            id: String(r.id),
-            product_id: String(r.product_id),
-            question: String(r.question ?? ''),
-            answer: String(r.answer ?? ''),
-            question_en: (r.question_en as string | null) ?? null,
-            answer_en: (r.answer_en as string | null) ?? null,
-            content_i18n: (r.content_i18n as FaqContentI18n | null) ?? null,
-            order_index: Number(r.order_index ?? 0),
-            is_active: r.is_active !== false,
-          }
-        })
+        attached.map((row) => ({
+          id: row.id,
+          product_id: row.product_id,
+          question: row.question ?? '',
+          answer: row.answer ?? '',
+          question_en: row.question_en ?? null,
+          answer_en: row.answer_en ?? null,
+          content_i18n: row.content_i18n ?? null,
+          order_index: row.order_index,
+          is_active: row.is_active !== false,
+        }))
       )
     } catch (error) {
       console.error('FAQ 로드 오류:', error)

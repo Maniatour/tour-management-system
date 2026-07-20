@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { calculateChoiceLineTotal } from '@/lib/choicePricingUnit';
 
 // 하이브리드 시스템 타입 정의
 interface ChoiceOption {
@@ -20,6 +21,7 @@ interface ProductChoice {
   choice_name: string;
   choice_name_ko: string;
   choice_type: 'single' | 'multiple' | 'quantity';
+  pricing_unit?: 'per_person' | 'per_unit' | string;
   is_required: boolean;
   min_selections: number;
   max_selections: number;
@@ -140,13 +142,19 @@ export default function HybridChoiceSelector({
     quantity: number,
     adults: number,
     children: number,
-    infants: number
+    infants: number,
+    pricingUnit?: string
   ) => {
-    const pricePerPerson = (adults * option.adult_price) + 
-                          (children * option.child_price) + 
-                          (infants * option.infant_price);
-    
-    return pricePerPerson * quantity;
+    return calculateChoiceLineTotal({
+      pricingUnit,
+      adultPrice: option.adult_price,
+      childPrice: option.child_price,
+      infantPrice: option.infant_price,
+      adults,
+      children,
+      infants,
+      quantity,
+    });
   }, []);
 
   // 가격 계산 함수 (Option용)
@@ -263,7 +271,7 @@ export default function HybridChoiceSelector({
                       c.choice_id === choice.id && c.choice_option_id === option.id
                     );
                     const currentQuantity = currentSelection?.quantity || 0;
-                    const totalPrice = calculateChoicePrice(option, currentQuantity, adults, children, infants);
+                    const totalPrice = calculateChoicePrice(option, currentQuantity, adults, children, infants, choice.pricing_unit);
                     
                     return (
                       <div 
@@ -300,7 +308,7 @@ export default function HybridChoiceSelector({
                                   option.option_key,
                                   option.option_name_ko,
                                   Math.max(0, currentQuantity - 1),
-                                  calculateChoicePrice(option, Math.max(0, currentQuantity - 1), adults, children, infants)
+                                  calculateChoicePrice(option, Math.max(0, currentQuantity - 1), adults, children, infants, choice.pricing_unit)
                                 )}
                                 className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
                                 disabled={currentQuantity === 0}
@@ -318,7 +326,7 @@ export default function HybridChoiceSelector({
                                   option.option_key,
                                   option.option_name_ko,
                                   currentQuantity + 1,
-                                  calculateChoicePrice(option, currentQuantity + 1, adults, children, infants)
+                                  calculateChoicePrice(option, currentQuantity + 1, adults, children, infants, choice.pricing_unit)
                                 )}
                                 className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
                               >
@@ -342,7 +350,7 @@ export default function HybridChoiceSelector({
                                 option.option_key,
                                 option.option_name_ko,
                                 newQuantity,
-                                calculateChoicePrice(option, newQuantity, adults, children, infants)
+                                calculateChoicePrice(option, newQuantity, adults, children, infants, choice.pricing_unit)
                               );
                             }}
                             className={`w-full py-2 px-4 rounded-md text-sm font-medium transition-colors ${

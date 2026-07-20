@@ -34,6 +34,7 @@ import {
   Truck,
   Users,
   Wrench,
+  Library,
 } from 'lucide-react'
 import type { UserRole } from '@/lib/roles'
 
@@ -151,6 +152,13 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     visibility: { type: 'admin_or_manager' },
   },
   { id: 'products', path: 'products', sidebarTranslationKey: 'products', icon: BookOpen, visibility: { type: 'always' } },
+  {
+    id: 'content-library',
+    path: 'content-library',
+    sidebarTranslationKey: 'contentLibrary',
+    icon: Library,
+    visibility: { type: 'always' },
+  },
   { id: 'options', path: 'options', sidebarTranslationKey: 'options', icon: Settings, visibility: { type: 'always' } },
   { id: 'tour-courses', path: 'tour-courses', sidebarTranslationKey: 'courses', icon: Globe, visibility: { type: 'always' } },
   {

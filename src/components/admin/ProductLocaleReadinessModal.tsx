@@ -206,9 +206,20 @@ export default function ProductLocaleReadinessModal({
           const chunk = ids.slice(i, i + chunkSize)
           const [faqRes, choiceRes, scheduleRes, courseRes] = await Promise.all([
             supabase
-              .from('product_faqs')
+              .from('product_faq_links')
               .select(
-                'product_id, is_active, question, answer, question_en, answer_en, content_i18n'
+                `
+                product_id,
+                is_active,
+                faq_library (
+                  is_active,
+                  question,
+                  answer,
+                  question_en,
+                  answer_en,
+                  content_i18n
+                )
+              `
               )
               .in('product_id', chunk),
             (supabase.from('product_choices') as any)
@@ -250,7 +261,41 @@ export default function ProductLocaleReadinessModal({
           ])
 
           if (!faqRes.error && faqRes.data) {
-            faqs.push(...(faqRes.data as unknown as LocaleReadinessFaqRow[]))
+            for (const row of faqRes.data as unknown as Array<{
+              product_id: string
+              is_active?: boolean | null
+              faq_library?:
+                | {
+                    is_active?: boolean | null
+                    question?: string | null
+                    answer?: string | null
+                    question_en?: string | null
+                    answer_en?: string | null
+                    content_i18n?: unknown
+                  }
+                | Array<{
+                    is_active?: boolean | null
+                    question?: string | null
+                    answer?: string | null
+                    question_en?: string | null
+                    answer_en?: string | null
+                    content_i18n?: unknown
+                  }>
+                | null
+            }>) {
+              const joined = row.faq_library
+              const faq = Array.isArray(joined) ? joined[0] : joined
+              if (!faq) continue
+              faqs.push({
+                product_id: row.product_id,
+                is_active: row.is_active !== false && faq.is_active !== false,
+                question: faq.question ?? '',
+                answer: faq.answer ?? '',
+                question_en: faq.question_en ?? null,
+                answer_en: faq.answer_en ?? null,
+                content_i18n: (faq.content_i18n as LocaleReadinessFaqRow['content_i18n']) ?? null,
+              })
+            }
           }
           if (!choiceRes.error && choiceRes.data) {
             choices.push(...(choiceRes.data as unknown as LocaleReadinessChoiceRow[]))

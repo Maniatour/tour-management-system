@@ -4,6 +4,7 @@ export type MappedProductChoice = {
   choice_group: string
   choice_group_ko: string
   choice_type: 'single' | 'multiple' | 'quantity'
+  pricing_unit?: 'per_person' | 'per_unit'
   is_required: boolean | null
   min_selections: number | null
   max_selections: number | null
@@ -33,6 +34,7 @@ export function mapSupabaseProductChoices(data: unknown[] | null | undefined): M
       choice_group: String(choice.choice_group ?? ''),
       choice_group_ko: String(choice.choice_group_ko ?? ''),
       choice_type: choice.choice_type as MappedProductChoice['choice_type'],
+      pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
       is_required: (choice.is_required as boolean | null) ?? null,
       min_selections: (choice.min_selections as number | null) ?? null,
       max_selections: (choice.max_selections as number | null) ?? null,

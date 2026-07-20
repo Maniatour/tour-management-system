@@ -2,6 +2,7 @@
   "sidebar": {
     "customerPages": "Customer Pages",
     "products": "Products",
+    "contentLibrary": "Reusable content",
     "options": "Options & Choice Templates",
     "courses": "Tour Courses",
     "tourCostCalculator": "Tour Cost Calculator",
@@ -1117,6 +1118,23 @@
         "saved": "Saved.",
         "saveError": "Could not save. Please try again.",
         "loadError": "Could not load data."
+      },
+      "reusableLibrary": {
+        "title": "Reusable library · {kind}",
+        "customOption": "Product-specific content (not linked)",
+        "unnamed": "(Untitled)",
+        "unlink": "Unlink",
+        "saveToLibrary": "Save current content to library",
+        "hintCustom": "Select from the library, or write product-specific content and save it to the library.",
+        "hintLinked": "Editing a library item updates every product that uses it.",
+        "loading": "Loading library…",
+        "loadError": "Could not load the library.",
+        "unlinked": "Unlinked from the library. You are now editing product-specific content.",
+        "emptyContent": "Nothing to save.",
+        "namePrompt": "Library name ({kind})",
+        "nameRequired": "Please enter a name.",
+        "savedAndLinked": "Saved to the library and linked to this product.",
+        "saveError": "Could not save to the library."
       },
       "zones": {
         "detail-overview-slogan": {

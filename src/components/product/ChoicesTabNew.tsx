@@ -67,6 +67,8 @@ interface ProductChoiceData {
   description_en?: string
   content_i18n?: ChoiceContentI18n | null
   choice_type: 'single' | 'multiple' | 'quantity'
+  /** per_person: 인당 / per_unit: 차량·선택 단위 고정가 */
+  pricing_unit?: 'per_person' | 'per_unit'
   is_required: boolean
   min_selections: number
   max_selections: number
@@ -140,6 +142,8 @@ interface ProductChoice {
   description_en?: string | null | undefined
   content_i18n?: ChoiceContentI18n | null | undefined
   choice_type: 'single' | 'multiple' | 'quantity'
+  /** per_person: 인당 / per_unit: 차량·선택 단위 고정가 */
+  pricing_unit: 'per_person' | 'per_unit'
   is_required: boolean
   min_selections: number
   max_selections: number
@@ -258,6 +262,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         description_en: descriptionEn,
         content_i18n: groupContentI18n,
         choice_type: choiceType as 'single' | 'multiple' | 'quantity',
+        pricing_unit: 'per_person',
         is_required: isRequired,
         min_selections: minSelections,
         max_selections: maxSelections,
@@ -370,6 +375,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           description_en,
           content_i18n,
           choice_type,
+          pricing_unit,
           is_required,
           min_selections,
           max_selections,
@@ -416,6 +422,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           ...choice,
           sort_order: choice.sort_order ?? choiceIndex,
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           options: [...(choice.options || [])]
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
             .map((option, optionIndex) => ({
@@ -458,6 +465,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           description_en,
           content_i18n,
           choice_type,
+          pricing_unit,
           is_required,
           min_selections,
           max_selections,
@@ -491,6 +499,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         backupData = backup.data.map(choice => ({
           ...choice,
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           options: (choice.options || []).map(option => ({
             ...option,
             image_url: option.image_url || undefined,
@@ -507,41 +516,40 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
     }
 
     try {
-      // 그룹 표시명을 기반으로 choice_group 자동 생성
-      // 단, 기존 choice_group이 유효하면 유지 (템플릿에서 불러온 경우 등)
-      const processedChoices = productChoices.map(choice => {
+      // choice_group은 안정적인 내부 키.
+      // 이미 값이 있으면 유지한다 (choice_group_* 포함 — 저장마다 재생성하면
+      // 이후 삭제 로직이 방금 갱신한 행을 지우는 버그가 난다).
+      const processedChoices = productChoices.map((choice) => {
         const displayName =
           getChoiceGroupLocalizedText(choice, 'name', 'ko') ||
           getChoiceGroupLocalizedText(choice, 'name', 'en') ||
           getChoiceGroupLocalizedText(choice, 'name', editLocale)
         let generatedGroup = choice.choice_group?.trim() || ''
-        
-        // choice_group이 이미 유효한 값이면 유지 (임시값이 아니고 비어있지 않으면)
-        // 템플릿에서 불러온 choice_group을 보존하기 위함
-        const isValidGroup = generatedGroup && 
-                            !generatedGroup.startsWith('choice_group_') && 
-                            generatedGroup.length >= 2
-        
-        // 표시명이 있고 choice_group가 임시값이거나 비어있으면 자동 생성
-        if (displayName && !isValidGroup) {
-          // 표시 이름을 URL-friendly ID로 변환
-          // 영문, 숫자만 추출하고 나머지는 언더스코어로 변환
-          generatedGroup = displayName
-            .toLowerCase()
-            .replace(/[^a-z0-9]/g, '_') // 영문, 숫자만 허용, 나머지는 언더스코어
-            .replace(/_+/g, '_') // 연속된 언더스코어를 하나로
-            .replace(/^_|_$/g, '') // 앞뒤 언더스코어 제거
-            .substring(0, 50) // 최대 50자로 제한
-          
-          // 빈 문자열이거나 너무 짧으면 타임스탬프 사용
-          if (!generatedGroup || generatedGroup.length < 2) {
-            generatedGroup = `choice_group_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+
+        if (generatedGroup.length >= 2) {
+          return {
+            ...choice,
+            choice_group: generatedGroup,
           }
         }
-        
+
+        // 키가 비어 있을 때만 표시명 기반 자동 생성
+        if (displayName) {
+          generatedGroup = displayName
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '')
+            .substring(0, 50)
+        }
+
+        if (!generatedGroup || generatedGroup.length < 2) {
+          generatedGroup = `choice_group_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+        }
+
         return {
           ...choice,
-          choice_group: generatedGroup
+          choice_group: generatedGroup,
         }
       })
 
@@ -579,9 +587,12 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         .from('product_choices')
         .select('id, choice_group')
         .eq('product_id', productId)
-      
-      const existingChoicesMap = new Map(
-        ((existingChoices || []) as Array<{ id: string; choice_group: string }>).map(ec => [ec.choice_group, ec.id])
+
+      const existingChoiceRows =
+        (existingChoices || []) as Array<{ id: string; choice_group: string }>
+      const existingChoiceIds = new Set(existingChoiceRows.map((ec) => ec.id))
+      const existingChoicesByGroup = new Map(
+        existingChoiceRows.map((ec) => [ec.choice_group, ec.id])
       )
 
       // UI 배열 순서 → sort_order 강제 동기화 (저장 시 순서 누락/null 방지)
@@ -595,6 +606,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             sort_order: optionIndex,
           })),
       }))
+
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      const savedChoiceIds: string[] = []
 
       // 새로운 choices 저장 (syncedChoices 사용)
       for (let index = 0; index < syncedChoices.length; index++) {
@@ -617,36 +632,36 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           description_en: choice.description_en?.trim() || null,
           content_i18n: choice.content_i18n || {},
           choice_type: choice.choice_type,
+          pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
           sort_order: choice.sort_order ?? index,
         }
 
-        // 기존 choice_id 확인 (choice_group으로 매칭)
-        const existingChoiceId = existingChoicesMap.get(trimmedChoiceGroup)
-        const isValidId = choice.id && 
-                         !choice.id.startsWith('temp_') && 
-                         choice.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-        
+        // UUID가 있으면 ID로 매칭 (choice_group 문자열 변경과 무관하게 행 유지)
+        const isValidId =
+          Boolean(choice.id) &&
+          !String(choice.id).startsWith('temp_') &&
+          uuidRe.test(String(choice.id))
+        const updateId =
+          (isValidId && existingChoiceIds.has(String(choice.id))
+            ? String(choice.id)
+            : undefined) ||
+          existingChoicesByGroup.get(trimmedChoiceGroup)
+
         let choiceData: ProductChoiceData
 
-        if (existingChoiceId || isValidId) {
-          // 기존 레코드 업데이트 시도 (ID 유지)
-          const updateId = existingChoiceId || choice.id
-          
+        if (updateId) {
           const { data: updatedChoices, error: updateError } = await supabase
             .from('product_choices')
             .update(groupI18nPayload as never)
             .eq('id', updateId)
             .select() as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
-          // UPDATE가 성공하고 결과가 있으면 사용
           if (!updateError && updatedChoices && updatedChoices.length > 0) {
             choiceData = updatedChoices[0]
-            // 옵션 ID를 유지하기 위해 전체 삭제하지 않음 (아래에서 upsert)
           } else {
-            // UPDATE 실패 또는 레코드가 없으면 INSERT
             console.log(`Update failed or no record found for id ${updateId}, inserting new record`)
             const { data: insertedChoice, error: insertError } = await supabase
               .from('product_choices')
@@ -662,7 +677,6 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             choiceData = insertedChoice
           }
         } else {
-          // 새 레코드 삽입
           const { data: insertedChoice, error: insertError } = await supabase
             .from('product_choices')
             .insert({
@@ -677,10 +691,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choiceData = insertedChoice
         }
 
+        savedChoiceIds.push(choiceData.id)
+
         // 초이스 옵션 저장 (ID 유지 upsert — 삭제 후 재삽입 시 예약 JSON의 option_id가 orphan 됨)
         if (choice.options && choice.options.length > 0) {
-          const uuidRe =
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
           const keptOptionIds: string[] = []
 
           for (const option of choice.options) {
@@ -754,12 +768,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         }
       }
 
-      // 삭제된 choices 제거 (더 이상 존재하지 않는 choice_group)
-      const currentChoiceGroups = syncedChoices.map(c => c.choice_group.trim())
-      const choicesToDelete = ((existingChoices || []) as Array<{ id: string; choice_group: string }>).filter(
-        ec => !currentChoiceGroups.includes(ec.choice_group)
+      // UI에 없는 기존 그룹만 삭제 (choice_group 문자열이 아니라 저장된 ID 기준)
+      const choicesToDelete = existingChoiceRows.filter(
+        (ec) => !savedChoiceIds.includes(ec.id)
       )
-      
+
       if (choicesToDelete.length > 0) {
         const idsToDelete = choicesToDelete.map(c => c.id)
         await supabase
@@ -807,15 +820,18 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
 
   // 초이스 그룹 추가
   const addChoiceGroup = useCallback(() => {
+    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     const newGroup: ProductChoice = {
-      id: `temp_${Date.now()}`,
-      choice_group: `choice_group_${Date.now()}`, // 빈 문자열 대신 임시 고유값 사용
+      id: `temp_${uniqueSuffix}`,
+      // 저장 시에도 유지되는 안정 키 (표시명과 별개)
+      choice_group: `choice_group_${uniqueSuffix}`,
       choice_group_ko: '',
       choice_group_en: '',
       description_ko: '',
       description_en: '',
       content_i18n: {},
       choice_type: 'single',
+      pricing_unit: 'per_person',
       is_required: true,
       min_selections: 1,
       max_selections: 1,
@@ -1087,6 +1103,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choice_group,
           choice_group_ko,
           choice_type,
+          pricing_unit,
           is_required,
           min_selections,
           max_selections,
@@ -1117,6 +1134,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           ...(choice.description_ko !== undefined && { description_ko: choice.description_ko }),
           ...(choice.description_en !== undefined && { description_en: choice.description_en }),
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
@@ -1165,6 +1183,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           description_ko: choice.description_ko || '',
           description_en: choice.description_en || '',
           choice_type: (choice.choice_type || 'single') as 'single' | 'multiple' | 'quantity',
+          pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           is_required: choice.is_required !== false,
           min_selections: choice.min_selections || 1,
           max_selections: choice.max_selections || 1,
@@ -1583,6 +1602,30 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                         <option value="quantity">수량 선택</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="flex items-center text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                        가격 단위
+                      </label>
+                      <select
+                        value={choice.pricing_unit || 'per_person'}
+                        onChange={(e) =>
+                          updateChoiceGroup(
+                            groupIndex,
+                            'pricing_unit',
+                            e.target.value === 'per_unit' ? 'per_unit' : 'per_person'
+                          )
+                        }
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="per_person">인원별 (×인원)</option>
+                        <option value="per_unit">차량/단위별 (고정가)</option>
+                      </select>
+                      {choice.pricing_unit === 'per_unit' ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                          예: 미니밴 $80 · 3명이어도 1대면 $80 (수용 인원 이내)
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div>
@@ -1637,9 +1680,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                      .filter(Boolean)
                    const priceLabel =
                      option.adult_price > 0
-                       ? homepagePricingType === 'single'
-                         ? `+$${option.adult_price}`
-                         : `성인 $${option.adult_price}`
+                       ? choice.pricing_unit === 'per_unit'
+                         ? `$${option.adult_price} / 대`
+                         : homepagePricingType === 'single'
+                           ? `+$${option.adult_price}`
+                           : `성인 $${option.adult_price}`
                        : null
                    return (
                    <div
@@ -2053,11 +2098,13 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-2">
                     가격
-                    {homepagePricingType === 'single' ? (
+                    {group.pricing_unit === 'per_unit' ? (
+                      <span className="ml-2 text-xs text-amber-700 font-normal">(차량/단위당 고정가)</span>
+                    ) : homepagePricingType === 'single' ? (
                       <span className="ml-2 text-xs text-primary font-normal">(단일 가격)</span>
                     ) : null}
                   </label>
-                  {homepagePricingType === 'single' ? (
+                  {homepagePricingType === 'single' || group.pricing_unit === 'per_unit' ? (
                     <input
                       type="number"
                       value={option.adult_price}
@@ -2104,9 +2151,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
-                  {group.choice_type === 'quantity' ? (
+                  {group.choice_type === 'quantity' || group.pricing_unit === 'per_unit' ? (
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">수용</label>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {group.pricing_unit === 'per_unit' ? '최대 수용 인원' : '수용'}
+                      </label>
                       <input
                         type="number"
                         value={option.capacity}
@@ -2385,7 +2434,8 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
                         {choice.choice_group_ko || choice.choice_group || '이름 없음'}
                       </div>
                       <div className="text-sm text-gray-500 mt-1">
-                        타입: {choice.choice_type === 'single' ? '단일 선택' : choice.choice_type === 'multiple' ? '다중 선택' : '수량 선택'} | 
+                        타입: {choice.choice_type === 'single' ? '단일 선택' : choice.choice_type === 'multiple' ? '다중 선택' : '수량 선택'}
+                        {choice.pricing_unit === 'per_unit' ? ' · 차량/단위가' : ' · 인원별'} | 
                         초이스 {choice.options?.length || 0}개
                         {choice.is_required && (
                           <span className="ml-2 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded">필수</span>
@@ -2602,6 +2652,30 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
         </div>
         
         <div className="space-y-6">
+          {/* 가격 단위 */}
+          <div className="border border-amber-200 bg-amber-50/50 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center mr-3">
+                <span className="text-amber-700 font-semibold text-sm">$</span>
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">가격 단위</h4>
+            </div>
+            <div className="ml-11 space-y-3">
+              <div className="bg-white p-3 rounded-md border border-gray-100">
+                <p className="text-sm font-medium text-gray-900 mb-1">인원별 (×인원)</p>
+                <p className="text-sm text-gray-600">
+                  단가 × 예약 인원. 예: 성인 $50 × 3명 = $150
+                </p>
+              </div>
+              <div className="bg-white p-3 rounded-md border border-gray-100">
+                <p className="text-sm font-medium text-gray-900 mb-1">차량/단위별 (고정가)</p>
+                <p className="text-sm text-gray-600">
+                  선택한 차량·단위 1개 가격만 청구합니다. 예: 공항픽업 미니밴 $80 · 3명이어도 수용 인원 이내면 $80
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* 단일 선택 */}
           <div className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center mb-3">

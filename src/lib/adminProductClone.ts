@@ -280,15 +280,15 @@ async function cloneAdminProductChildren(
     counts.details = detailInserts.length
   }
 
-  // --- faqs ---
-  const { data: faqRows, error: faqErr } = await db
-    .from('product_faqs')
+  // --- faqs (reusable library links) ---
+  const { data: faqLinks, error: faqErr } = await db
+    .from('product_faq_links')
     .select('*')
     .eq('product_id', sourceProductId)
 
   if (faqErr) throw faqErr
-  if (faqRows && faqRows.length > 0) {
-    const faqInserts = faqRows.map((row) => ({
+  if (faqLinks && faqLinks.length > 0) {
+    const faqInserts = faqLinks.map((row) => ({
       ...omitKeys(row as Record<string, unknown>, [
         'id',
         'created_at',
@@ -296,9 +296,31 @@ async function cloneAdminProductChildren(
       ]),
       product_id: newProductId,
     }))
-    const { error } = await db.from('product_faqs').insert(faqInserts as never)
+    const { error } = await db.from('product_faq_links').insert(faqInserts as never)
     if (error) throw error
     counts.faqs = faqInserts.length
+  }
+
+  // --- detail content library links ---
+  const { data: detailLinks, error: detailLinkErr } = await db
+    .from('product_detail_content_links')
+    .select('*')
+    .eq('product_id', sourceProductId)
+
+  if (detailLinkErr) throw detailLinkErr
+  if (detailLinks && detailLinks.length > 0) {
+    const detailLinkInserts = detailLinks.map((row) => ({
+      ...omitKeys(row as Record<string, unknown>, [
+        'id',
+        'created_at',
+        'updated_at',
+      ]),
+      product_id: newProductId,
+    }))
+    const { error } = await db
+      .from('product_detail_content_links')
+      .insert(detailLinkInserts as never)
+    if (error) throw error
   }
 
   // --- schedules ---
