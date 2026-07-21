@@ -148,15 +148,15 @@ export function ReservationFormEmailSendButtons({
           disabled={!!sending || !!previewKind}
           title={
             uiLocale === 'en'
-              ? 'Preview and send reservation confirmation email'
-              : '예약 확인 이메일 미리보기·발송'
+              ? 'Preview and send reservation received email'
+              : '예약 접수 이메일 미리보기·발송'
           }
           onClick={() => openPreview('confirmation')}
         >
           {sending === 'confirmation' ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
           ) : null}
-          <span className="truncate">{uiLocale === 'en' ? 'Booking' : '예약확인'}</span>
+          <span className="truncate">{uiLocale === 'en' ? 'Received' : '예약접수'}</span>
         </button>
         <button
           type="button"
@@ -165,14 +165,14 @@ export function ReservationFormEmailSendButtons({
           title={
             uiLocale === 'en'
               ? 'Preview and send tour departure confirmation email'
-              : '투어 출발 확정 이메일 미리보기·발송'
+              : '투어 확정 이메일 미리보기·발송'
           }
           onClick={() => openPreview('departure')}
         >
           {sending === 'departure' ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
           ) : null}
-          <span className="truncate">{uiLocale === 'en' ? 'Departure' : '출발확정'}</span>
+          <span className="truncate">{uiLocale === 'en' ? 'Departure' : '투어확정'}</span>
         </button>
         <button
           type="button"

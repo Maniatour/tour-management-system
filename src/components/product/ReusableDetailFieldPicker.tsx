@@ -1,18 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Library, Loader2, Plus, Unlink } from 'lucide-react'
+import { Library, Loader2, Plus, Save, Unlink } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import ContentLibraryLocaleBadges from '@/components/admin/ContentLibraryLocaleBadges'
 import LightRichEditor from '@/components/LightRichEditor'
 import { supabase } from '@/lib/supabase'
 import {
   REUSABLE_DETAIL_KIND_LABELS,
-  detailContentLegacyColumns,
+  buildDetailLibraryPayload,
   fetchDetailContentLibrary,
   getDetailContentExactText,
+  getDetailContentFilledLocales,
   getDetailContentLocalizedText,
   isReusableDetailKind,
-  mergeDetailContentI18n,
   upsertProductDetailContentLink,
   type DetailContentLibraryItem,
   type ReusableDetailKind,
@@ -148,29 +149,62 @@ export default function ReusableDetailFieldPicker({
       setMessage(t('emptyContent'))
       return
     }
-    const name = window.prompt(
-      t('namePrompt', { kind: kindLabel }),
-      body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || kindLabel
-    )
-    if (name == null) return
-    if (!name.trim()) {
-      setMessage(t('nameRequired'))
-      return
-    }
 
     setSavingNew(true)
     setMessage(null)
     try {
-      const content_i18n = mergeDetailContentI18n(null, locale, body)
-      const legacy = detailContentLegacyColumns(locale, body)
+      if (libraryId) {
+        const existing = items.find((row) => row.id === libraryId) || selected
+        const bodyByLocale: Partial<Record<string, string>> = {}
+        if (existing) {
+          for (const code of getDetailContentFilledLocales(existing)) {
+            bodyByLocale[code] = getDetailContentExactText(existing, code)
+          }
+        }
+        bodyByLocale[locale] = body
+
+        const payload = {
+          ...buildDetailLibraryPayload({
+            kind: kind as ReusableDetailKind,
+            name: existing?.name || kindLabel,
+            bodyByLocale,
+          }),
+          updated_at: new Date().toISOString(),
+        }
+
+        const { error } = await supabase
+          .from('detail_content_library')
+          .update(payload as never)
+          .eq('id', libraryId)
+        if (error) throw error
+
+        setItems((prev) =>
+          prev.map((row) => (row.id === libraryId ? { ...row, ...payload } : row))
+        )
+        setMessage(t('updatedLibrary'))
+        return
+      }
+
+      const name = window.prompt(
+        t('namePrompt', { kind: kindLabel }),
+        body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || kindLabel
+      )
+      if (name == null) return
+      if (!name.trim()) {
+        setMessage(t('nameRequired'))
+        return
+      }
+
+      const payload = buildDetailLibraryPayload({
+        kind: kind as ReusableDetailKind,
+        name: name.trim(),
+        bodyByLocale: { [locale]: body },
+      })
+
       const { data, error } = await supabase
         .from('detail_content_library')
         .insert({
-          kind,
-          name: name.trim(),
-          body: legacy.body ?? (locale === 'ko' ? body : ''),
-          body_en: legacy.body_en ?? null,
-          content_i18n,
+          ...payload,
           is_active: true,
         } as never)
         .select('*')
@@ -210,6 +244,11 @@ export default function ReusableDetailFieldPicker({
             {items.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name || t('unnamed')}
+                {getDetailContentFilledLocales(item).length > 0
+                  ? ` [${getDetailContentFilledLocales(item)
+                      .map((code) => code.toUpperCase())
+                      .join(', ')}]`
+                  : ''}
               </option>
             ))}
           </select>
@@ -230,12 +269,15 @@ export default function ReusableDetailFieldPicker({
             disabled={disabled || savingNew || !value.trim()}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
           >
-            {savingNew ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            {t('saveToLibrary')}
+            {savingNew ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : libraryId ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            {libraryId ? t('updateLibrary') : t('saveToLibrary')}
           </button>
         </div>
         {selected ? (
-          <p className="text-[11px] text-amber-700">{t('hintLinked')}</p>
+          <div className="space-y-1">
+            <p className="text-[11px] text-amber-700">{t('hintLinked')}</p>
+            <ContentLibraryLocaleBadges locales={getDetailContentFilledLocales(selected)} />
+          </div>
         ) : (
           <p className="text-[11px] text-muted-foreground">{t('hintCustom')}</p>
         )}

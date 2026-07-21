@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ExternalLink, Loader2, Save, X } from 'lucide-react'
+import { AlertCircle, Loader2, Save, X } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
@@ -296,9 +296,6 @@ export default function CustomerPageZoneEditPanel({
   }, [locale])
 
   const showLocaleToggle = zoneEditSupportsLocaleSwitch(config)
-  const showFaqFullAdmin =
-    !!onNavigateToTab &&
-    (config?.adminTab === 'detail-faq' || config?.adminTab === 'faq')
 
   const fieldsToLoad = useMemo(
     () => resolveDetailFieldsToLoad(config, pickedField),
@@ -811,17 +808,6 @@ export default function CustomerPageZoneEditPanel({
                 koLabel={tEdit('editLocaleKo')}
                 enLabel={tEdit('editLocaleEn')}
               />
-            ) : null}
-            {showFaqFullAdmin ? (
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('faq')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm hover:bg-muted"
-                title={tEdit('faqEmbed.openFullAdmin')}
-              >
-                {tEdit('faqEmbed.openFullAdminShort')}
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </button>
             ) : null}
             <button
               type="button"

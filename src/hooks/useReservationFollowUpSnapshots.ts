@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import {
   computeNeedsResidentFlow,
   emailLogStatusSuccess,
+  reservationEligibleForConfirmationInferredFromDeparture,
   type ReservationFollowUpPipelineSnapshot,
 } from '@/lib/reservationFollowUpPipeline'
 
@@ -25,14 +26,19 @@ function isLikelyAbortError(e: unknown): boolean {
   return blob.includes('AbortError') || blob.includes('signal is aborted')
 }
 
-type ReservationLite = { id: string; productId: string }
+type ReservationLite = {
+  id: string
+  productId: string
+  status?: string | null
+  tourStatus?: string | null
+}
 
 function buildReservationLiteKey(reservations: ReservationLite[]): string {
   return reservations
     .map((r) => {
       const id = String(r.id ?? '').trim()
       if (!id) return ''
-      return `${id}\u0001${String(r.productId ?? '').trim()}`
+      return `${id}\u0001${String(r.productId ?? '').trim()}\u0001${String(r.status ?? '').trim()}\u0001${String(r.tourStatus ?? '').trim()}`
     })
     .filter(Boolean)
     .sort()
@@ -44,10 +50,12 @@ function parseReservationLiteKey(key: string): ReservationLite[] {
   const out: ReservationLite[] = []
   for (const part of key.split('\u001f')) {
     if (!part) continue
-    const sep = part.indexOf('\u0001')
-    const id = sep >= 0 ? part.slice(0, sep) : part
-    const productId = sep >= 0 ? part.slice(sep + 1) : ''
-    if (id) out.push({ id, productId })
+    const bits = part.split('\u0001')
+    const id = bits[0] ?? ''
+    const productId = bits[1] ?? ''
+    const status = bits[2] ?? ''
+    const tourStatus = bits[3] ?? ''
+    if (id) out.push({ id, productId, status: status || null, tourStatus: tourStatus || null })
   }
   return out
 }
@@ -118,9 +126,13 @@ export function useReservationFollowUpSnapshots(
 
     const productCodeById = new Map(products.map((p) => [p.id, p.product_code ?? null]))
     const productCodeByReservationId = new Map<string, string | null>()
+    const reservationStatusById = new Map<string, string | null>()
+    const tourStatusByReservationId = new Map<string, string | null>()
     for (const e of entries) {
       const pid = String(e.productId ?? '').trim()
       productCodeByReservationId.set(e.id, pid ? (productCodeById.get(pid) ?? null) : null)
+      reservationStatusById.set(e.id, e.status ?? null)
+      tourStatusByReservationId.set(e.id, e.tourStatus ?? null)
     }
 
     let cancelled = false
@@ -235,8 +247,17 @@ export function useReservationFollowUpSnapshots(
             const cFu = m?.cancel_follow_up_manual ?? false
             const cRe = m?.cancel_rebooking_outreach_manual ?? false
             const departureEffective = departureSent.has(rid) || md
+            const confirmationSentDirect = confirmationSent.has(rid) || mc
+            const eligibleForInference = reservationEligibleForConfirmationInferredFromDeparture(
+              reservationStatusById.get(rid) ?? null,
+              tourStatusByReservationId.get(rid) ?? null
+            )
+            const confirmationInferredFromDeparture =
+              eligibleForInference && departureEffective && !confirmationSentDirect
             next.set(rid, {
-              confirmationSent: confirmationSent.has(rid) || mc || departureEffective,
+              confirmationSent: confirmationSentDirect || confirmationInferredFromDeparture,
+              confirmationSentDirect,
+              confirmationInferredFromDeparture,
               residentInquirySent: residentInquirySent.has(rid) || mr,
               guestResidentFlowCompleted: guestDone.has(rid) || mr,
               departureSent: departureEffective,

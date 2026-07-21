@@ -514,6 +514,37 @@ export function generateEmailContent(
       .replace(/"/g, '&quot;')
   }
 
+  /** 이메일 클라이언트 호환 — 예약 정보 필드 한 줄(세로 스택) */
+  const emailDetailFieldRow = (label: string, valueHtml: string) => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+      <tr>
+        <td style="vertical-align: top;">
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${label}</div>
+          ${valueHtml}
+        </td>
+      </tr>
+    </table>`
+
+  /** 이메일 클라이언트 호환 — 가격 라벨/금액 양끝 정렬 */
+  const emailPriceRow = (
+    label: string,
+    amount: string,
+    opts?: {
+      labelStyle?: string
+      amountStyle?: string
+      padding?: string
+      borderTop?: string
+      borderBottom?: string
+      wrapperStyle?: string
+    }
+  ) => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${opts?.wrapperStyle ?? ''}${opts?.borderTop ? ` border-top: ${opts.borderTop};` : ''}${opts?.borderBottom === 'none' ? ' border-bottom: none;' : ' border-bottom: 1px solid #f3f4f6;'}">
+      <tr>
+        <td style="padding: ${opts?.padding ?? '10px 0'}; vertical-align: top; ${opts?.labelStyle ?? 'color: #6b7280; font-size: 14px;'}">${label}</td>
+        <td style="padding: ${opts?.padding ?? '10px 0'}; vertical-align: top; text-align: right; white-space: nowrap; ${opts?.amountStyle ?? 'font-weight: 600; color: #111827;'}">${amount}</td>
+      </tr>
+    </table>`
+
   const decodeCommonEntities = (value: string | null | undefined): string => {
     if (!value) return ''
     let decoded = value
@@ -544,7 +575,6 @@ export function generateEmailContent(
   })
 
   const isRecruiting = tourStatus?.toLowerCase() === 'recruiting'
-  const isConfirmed = tourStatus?.toLowerCase() === 'confirmed' || reservation.status?.toLowerCase() === 'confirmed'
 
   // 시간 포맷팅 함수
   const formatTime = (time: string) => {
@@ -629,8 +659,8 @@ export function generateEmailContent(
     </div>
   ` : ''
 
-  // Confirmed 상태 안내
-  const confirmedNotice = isConfirmed && !isRecruiting ? `
+  // 예약 접수 안내 (첫 번째 이메일 — 투어 확정·픽업 안내는 별도 발송)
+  const receivedNotice = !isDepartureConfirmation ? `
     <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 20px; margin-bottom: 30px; border-radius: 4px;">
       <div style="display: flex; align-items: start;">
         <div style="flex-shrink: 0; margin-right: 12px;">
@@ -640,12 +670,12 @@ export function generateEmailContent(
         </div>
         <div style="flex: 1;">
           <p style="margin: 0; font-size: 16px; font-weight: 600; color: #065f46;">
-            ${isEnglish ? '✅ Reservation Confirmed' : '✅ 예약 확정'}
+            ${isEnglish ? '✅ Reservation Received' : '✅ 예약 접수'}
           </p>
           <p style="margin: 8px 0 0 0; font-size: 14px; color: #047857; line-height: 1.6;">
             ${isEnglish 
-              ? 'Your reservation has been confirmed. We look forward to seeing you on the tour!'
-              : '예약이 확정되었습니다. 투어에서 만나뵙기를 기대하겠습니다!'}
+              ? 'Your reservation has been received. We will send tour departure confirmation and pickup details separately before your tour date.'
+              : '예약이 접수되었습니다. 투어일 전에 투어 확정 및 픽업 안내를 별도로 보내드리겠습니다.'}
           </p>
         </div>
       </div>
@@ -768,33 +798,29 @@ export function generateEmailContent(
               qty > 0
                 ? ` <span style="color:#9ca3af;font-size:12px;">(${qty}×${currencySymbol}${unit.toFixed(2)})</span>`
                 : ''
-            return `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${escapeEmailText(x.label)}${qtyHint}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${line.toFixed(2)}</span>
-          </div>`
+            return emailPriceRow(
+              `${escapeEmailText(x.label)}${qtyHint}`,
+              `${currencySymbol}${line.toFixed(2)}`
+            )
           })
           .join('')
       : ''
 
     const aggregateOptionRowsHtml =
       !showReservationOptionBreakdown && rot > 0
-        ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Required options' : '필수 예약 옵션'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${rot.toFixed(2)}</span>
-          </div>
-          `
+        ? emailPriceRow(
+            isEnglish ? 'Required options' : '필수 예약 옵션',
+            `${currencySymbol}${rot.toFixed(2)}`
+          )
         : ''
     const aggregateOptionalRowsHtml =
       !showReservationOptionBreakdown && ot > 0
-        ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Optional add-ons' : '선택 예약 ��션'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${ot.toFixed(2)}</span>
-          </div>
-          `
+        ? emailPriceRow(
+            isEnglish ? 'Optional add-ons' : '선택 예약 옵션',
+            `${currencySymbol}${ot.toFixed(2)}`
+          )
         : ''
+
 
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
@@ -804,67 +830,67 @@ export function generateEmailContent(
           </h3>
         </div>
         <div style="padding: 20px;">
-          ${adults > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Adults' : '성인'} x ${adults}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${((pricing.adult_product_price || 0) * adults).toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${children > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Children' : '아동'} x ${children}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${((pricing.child_product_price || 0) * children).toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${infants > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Infants' : '유아'} x ${infants}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${((pricing.infant_product_price || 0) * infants).toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${rawPt > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 15px 0; margin-top: 10px; border-top: 2px solid #e5e7eb; border-bottom: 1px solid #f3f4f6;">
-            <span style="font-weight: 600; color: #374151;">${isEnglish ? 'Product Total' : '상품 총액'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${displayProductTotal.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${niTotal > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Not included (pay separately)' : '불포함 가격'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${niTotal.toFixed(2)}</span>
-          </div>
-          ` : ''}
+          ${adults > 0 ? emailPriceRow(
+            `${isEnglish ? 'Adults' : '성인'} x ${adults}`,
+            `${currencySymbol}${((pricing.adult_product_price || 0) * adults).toFixed(2)}`
+          ) : ''}
+          ${children > 0 ? emailPriceRow(
+            `${isEnglish ? 'Children' : '아동'} x ${children}`,
+            `${currencySymbol}${((pricing.child_product_price || 0) * children).toFixed(2)}`
+          ) : ''}
+          ${infants > 0 ? emailPriceRow(
+            `${isEnglish ? 'Infants' : '유아'} x ${infants}`,
+            `${currencySymbol}${((pricing.infant_product_price || 0) * infants).toFixed(2)}`
+          ) : ''}
+          ${rawPt > 0 ? emailPriceRow(
+            isEnglish ? 'Product Total' : '상품 총액',
+            `${currencySymbol}${displayProductTotal.toFixed(2)}`,
+            {
+              labelStyle: 'font-weight: 600; color: #374151;',
+              padding: '15px 0',
+              borderTop: '2px solid #e5e7eb',
+            }
+          ) : ''}
+          ${niTotal > 0 ? emailPriceRow(
+            isEnglish ? 'Not included (pay separately)' : '불포함 가격',
+            `${currencySymbol}${niTotal.toFixed(2)}`
+          ) : ''}
           ${showReservationOptionBreakdown ? reservationOptionRowsHtml : `${aggregateOptionRowsHtml}${aggregateOptionalRowsHtml}`}
-          ${pricing.coupon_discount && pricing.coupon_discount !== 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #10b981; font-size: 14px;">${isEnglish ? 'Coupon Discount' : '쿠폰 할인'}</span>
-            <span style="font-weight: 600; color: #10b981;">-${currencySymbol}${Math.abs(pricing.coupon_discount).toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${residentFeesFromChoices > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Non-resident fees' : '비거주자 비용'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${residentFeesFromChoices.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${showGrandBlock ? `
-          <div style="display: flex; justify-content: space-between; padding: 20px 0; margin-top: 10px; background: #eff6ff; border-radius: 6px; padding: 15px;">
-            <span style="font-size: 18px; font-weight: 700; color: #1e40af;">${isEnglish ? 'Grand Total' : '최종 결제 금액'}</span>
-            <span style="font-size: 20px; font-weight: 700; color: #1e40af;">${currencySymbol}${grandTotal.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${depositAmount > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0; margin-top: 15px; border-top: 1px solid #e5e7eb;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Deposit' : '입금액'}</span>
-            <span style="font-weight: 600; color: #7c3aed;">${currencySymbol}${depositAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${balanceAmount > 0 ? `
-          <div style="display: flex; justify-content: space-between; padding: 10px 0;">
-            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Balance' : '잔액'}</span>
-            <span style="font-weight: 600; color: #dc2626;">${currencySymbol}${balanceAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
+          ${pricing.coupon_discount && pricing.coupon_discount !== 0 ? emailPriceRow(
+            isEnglish ? 'Coupon Discount' : '쿠폰 할인',
+            `-${currencySymbol}${Math.abs(pricing.coupon_discount).toFixed(2)}`,
+            { labelStyle: 'color: #10b981; font-size: 14px;', amountStyle: 'font-weight: 600; color: #10b981;' }
+          ) : ''}
+          ${residentFeesFromChoices > 0 ? emailPriceRow(
+            isEnglish ? 'Non-resident fees' : '비거주자 비용',
+            `${currencySymbol}${residentFeesFromChoices.toFixed(2)}`
+          ) : ''}
+          ${showGrandBlock ? emailPriceRow(
+            isEnglish ? 'Grand Total' : '최종 결제 금액',
+            `${currencySymbol}${grandTotal.toFixed(2)}`,
+            {
+              labelStyle: 'font-size: 18px; font-weight: 700; color: #1e40af;',
+              amountStyle: 'font-size: 20px; font-weight: 700; color: #1e40af;',
+              padding: '15px',
+              borderTop: 'none',
+              borderBottom: 'none',
+              wrapperStyle: 'margin-top: 10px; background: #eff6ff; border-radius: 6px;',
+            }
+          ) : ''}
+          ${depositAmount > 0 ? emailPriceRow(
+            isEnglish ? 'Deposit' : '입금액',
+            `${currencySymbol}${depositAmount.toFixed(2)}`,
+            {
+              padding: '10px 0',
+              borderTop: '1px solid #e5e7eb',
+              amountStyle: 'font-weight: 600; color: #7c3aed;',
+            }
+          ) : ''}
+          ${balanceAmount > 0 ? emailPriceRow(
+            isEnglish ? 'Balance' : '잔액',
+            `${currencySymbol}${balanceAmount.toFixed(2)}`,
+            { amountStyle: 'font-weight: 600; color: #dc2626;' }
+          ) : ''}
         </div>
       </div>
     `
@@ -1223,34 +1249,32 @@ export function generateEmailContent(
   const reservationInfoSection = `
     <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
       <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px;">
-        <h1 style="margin: 0 0 10px 0; font-size: 28px; font-weight: 700;">${isEnglish ? 'Reservation Confirmation' : '예약 확인'}</h1>
+        <h1 style="margin: 0 0 10px 0; font-size: 28px; font-weight: 700;">${isDepartureConfirmation ? (isEnglish ? 'Tour Departure Confirmation' : '투어 출발 확정') : (isEnglish ? 'Reservation Received' : '예약 접수')}</h1>
         <p style="margin: 0; font-size: 16px; opacity: 0.9;">${isEnglish ? `Reservation ID: ${reservation.id}` : `예약 번호: ${reservation.id}`}</p>
       </div>
       <div style="padding: 25px;">
-        <div style="display: flex; flex-direction: column; gap: 20px; margin-bottom: 20px;">
-          <div>
-            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Customer Name' : '고객명'}</div>
-            <div style="font-size: 16px; font-weight: 600; color: #111827;">${customer.name}</div>
-          </div>
-          <div>
-            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Tour Date' : '투어 날짜'}</div>
-            <div style="font-size: 16px; font-weight: 600; color: #111827;">${tourDate}</div>
-            ${gcSunrise && (type === 'voucher' || type === 'both') ? renderGrandCanyonSunriseDateHighlightRow(gcSunrise, isEnglish) : ''}
-          </div>
-          <div>
-            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Product' : '상품'}</div>
-            <div style="font-size: 16px; font-weight: 600; color: #111827;">${productName}</div>
-          </div>
-          <div>
-            <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Total People' : '총 인원'}</div>
-            <div style="font-size: 16px; font-weight: 600; color: #111827;">
+        ${emailDetailFieldRow(
+          isEnglish ? 'Customer Name' : '고객명',
+          `<div style="font-size: 16px; font-weight: 600; color: #111827;">${escapeEmailText(customer.name)}</div>`
+        )}
+        ${emailDetailFieldRow(
+          isEnglish ? 'Tour Date' : '투어 날짜',
+          `<div style="font-size: 16px; font-weight: 600; color: #111827;">${tourDate}</div>`
+        )}
+        ${gcSunrise && (type === 'voucher' || type === 'both') ? renderGrandCanyonSunriseDateHighlightRow(gcSunrise, isEnglish) : ''}
+        ${emailDetailFieldRow(
+          isEnglish ? 'Product' : '상품',
+          `<div style="font-size: 16px; font-weight: 600; color: #111827;">${escapeEmailText(productName)}</div>`
+        )}
+        ${emailDetailFieldRow(
+          isEnglish ? 'Total People' : '총 인원',
+          `<div style="font-size: 16px; font-weight: 600; color: #111827;">
               ${totalPeople} ${isEnglish ? (totalPeople === 1 ? 'person' : 'people') : '명'}
               <span style="font-size: 13px; color: #6b7280; font-weight: 400; margin-left: 8px;">
                 (${isEnglish ? 'Adults' : '성인'}: ${adults}, ${isEnglish ? 'Children' : '아동'}: ${children}, ${isEnglish ? 'Infants' : '유아'}: ${infants})
               </span>
-            </div>
-          </div>
-        </div>
+            </div>`
+        )}
         ${reservation.pickup_time || (pickupHotelRow && pickupHotelRow.hotel) ? `
         <div style="padding: 15px; background: #eff6ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
           <div style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
@@ -1308,7 +1332,7 @@ export function generateEmailContent(
     <body>
       <div class="email-container">
         <div class="email-content">
-          ${isDepartureConfirmation ? departureNotice : confirmedNotice}
+          ${isDepartureConfirmation ? departureNotice : receivedNotice}
           ${grandCanyonSunrisePickupNotice}
           ${recruitingNotice}
           ${reservationInfoSection}
@@ -1338,10 +1362,10 @@ export function generateEmailContent(
     subject = isEnglish 
       ? (isDepartureConfirmation 
         ? `Tour Departure Confirmed - ${reservation.id}`
-        : `Reservation Confirmation - ${reservation.id}`)
+        : `Reservation Received - ${reservation.id}`)
       : (isDepartureConfirmation
         ? `투어 출발 확정 - ${reservation.id}`
-        : `예약 확인 - ${reservation.id}`)
+        : `예약 접수 - ${reservation.id}`)
     
     html = mainEmailHtml
   } else {

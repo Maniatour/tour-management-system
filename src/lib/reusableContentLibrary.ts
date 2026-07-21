@@ -1,6 +1,11 @@
-import { contentFallbackOrder, isSiteLocale, type SiteLocale } from '@/lib/siteLocales'
+import { contentFallbackOrder, isSiteLocale, SITE_LOCALES, type SiteLocale } from '@/lib/siteLocales'
 import type { FaqContentI18n, FaqI18nSource } from '@/lib/productFaqLocales'
-import { getFaqLocalizedText, mergeFaqI18n } from '@/lib/productFaqLocales'
+import {
+  getFaqExactText,
+  getFaqLocalizedText,
+  legacyFaqColumnsFromI18n,
+  mergeFaqI18n,
+} from '@/lib/productFaqLocales'
 
 /** Fields that can be shared via detail_content_library */
 export const REUSABLE_DETAIL_KINDS = [
@@ -216,6 +221,122 @@ export function attachedFaqAsI18nSource(faq: AttachedProductFaq | FaqLibraryItem
 }
 
 export { getFaqLocalizedText, mergeFaqI18n }
+
+/** Locales that have at least question or answer text in a FAQ library item. */
+export function getFaqFilledLocales(faq: FaqI18nSource): SiteLocale[] {
+  return SITE_LOCALES.map((item) => item.code).filter(
+    (code) =>
+      !!getFaqExactText(faq, 'question', code) || !!getFaqExactText(faq, 'answer', code)
+  )
+}
+
+/** Locales that have body text in a detail content library item. */
+export function getDetailContentFilledLocales(item: {
+  body?: string | null
+  body_en?: string | null
+  content_i18n?: DetailContentI18n | null
+}): SiteLocale[] {
+  return SITE_LOCALES.map((entry) => entry.code).filter(
+    (code) => !!getDetailContentExactText(item, code)
+  )
+}
+
+export function buildFaqLibraryPayload(input: {
+  name: string
+  questionByLocale: Partial<Record<SiteLocale, string>>
+  answerByLocale: Partial<Record<SiteLocale, string>>
+  is_active?: boolean
+}): {
+  name: string
+  question: string
+  answer: string
+  question_en: string | null
+  answer_en: string | null
+  content_i18n: FaqContentI18n
+  is_active: boolean
+} {
+  const content_i18n: FaqContentI18n = { question: {}, answer: {} }
+  for (const entry of SITE_LOCALES) {
+    const q = input.questionByLocale[entry.code]?.trim()
+    const a = input.answerByLocale[entry.code]?.trim()
+    if (q) content_i18n.question![entry.code] = q
+    if (a) content_i18n.answer![entry.code] = a
+  }
+  const legacy = legacyFaqColumnsFromI18n(content_i18n)
+  return {
+    name: input.name.trim() || legacy.question.slice(0, 120) || 'FAQ',
+    ...legacy,
+    content_i18n,
+    is_active: input.is_active !== false,
+  }
+}
+
+export function buildDetailLibraryPayload(input: {
+  kind: ReusableDetailKind
+  name: string
+  bodyByLocale: Partial<Record<SiteLocale, string>>
+  is_active?: boolean
+}): {
+  kind: ReusableDetailKind
+  name: string
+  body: string
+  body_en: string | null
+  content_i18n: DetailContentI18n
+  is_active: boolean
+} {
+  const content_i18n: DetailContentI18n = { body: {} }
+  for (const entry of SITE_LOCALES) {
+    const text = input.bodyByLocale[entry.code]?.trim()
+    if (text) content_i18n.body![entry.code] = text
+  }
+  const ko = content_i18n.body?.ko?.trim() || ''
+  const en = content_i18n.body?.en?.trim() || null
+  return {
+    kind: input.kind,
+    name: input.name.trim() || REUSABLE_DETAIL_KIND_LABELS[input.kind],
+    body: ko || en || '',
+    body_en: en,
+    content_i18n,
+    is_active: input.is_active !== false,
+  }
+}
+
+export function faqDraftFromLibraryItem(item: FaqLibraryItem): {
+  name: string
+  questionByLocale: Partial<Record<SiteLocale, string>>
+  answerByLocale: Partial<Record<SiteLocale, string>>
+} {
+  const questionByLocale: Partial<Record<SiteLocale, string>> = {}
+  const answerByLocale: Partial<Record<SiteLocale, string>> = {}
+  for (const entry of SITE_LOCALES) {
+    const q = getFaqExactText(item, 'question', entry.code)
+    const a = getFaqExactText(item, 'answer', entry.code)
+    if (q) questionByLocale[entry.code] = q
+    if (a) answerByLocale[entry.code] = a
+  }
+  return {
+    name: item.name || '',
+    questionByLocale,
+    answerByLocale,
+  }
+}
+
+export function detailDraftFromLibraryItem(item: DetailContentLibraryItem): {
+  name: string
+  kind: ReusableDetailKind
+  bodyByLocale: Partial<Record<SiteLocale, string>>
+} {
+  const bodyByLocale: Partial<Record<SiteLocale, string>> = {}
+  for (const entry of SITE_LOCALES) {
+    const text = getDetailContentExactText(item, entry.code)
+    if (text) bodyByLocale[entry.code] = text
+  }
+  return {
+    name: item.name || '',
+    kind: item.kind,
+    bodyByLocale,
+  }
+}
 
 export type SupabaseLike = {
   from: (table: string) => any

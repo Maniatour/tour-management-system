@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp, Languages, Loader2, Sparkles } from 'lucide-react'
+import ContentLibraryLocaleBadges from '@/components/admin/ContentLibraryLocaleBadges'
 import { supabase } from '@/lib/supabase'
 import { translateFaqFields, type FaqTranslationFields } from '@/lib/translationService'
 import { suggestFAQQuestion, suggestFAQAnswer } from '@/lib/chatgptService'
@@ -16,6 +17,7 @@ import { getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 import {
   fetchFaqLibrary,
   fetchProductAttachedFaqs,
+  getFaqFilledLocales,
   type FaqLibraryItem,
 } from '@/lib/reusableContentLibrary'
 
@@ -40,13 +42,18 @@ interface ProductFaqTabProps {
   isNewProduct: boolean
   formData: Record<string, unknown>
   setFormData: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
+  onMutated?: () => void
+  /** When rendered inside another modal, raise nested dialog z-index */
+  embedded?: boolean
 }
 
 export default function ProductFaqTab({
   productId,
   isNewProduct,
   formData: _formData,
-  setFormData: _setFormData
+  setFormData: _setFormData,
+  onMutated,
+  embedded = false,
 }: ProductFaqTabProps) {
   const [faqs, setFaqs] = useState<FaqItem[]>([])
   const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null)
@@ -64,6 +71,10 @@ export default function ProductFaqTab({
   const [libraryItems, setLibraryItems] = useState<FaqLibraryItem[]>([])
   const [librarySearch, setLibrarySearch] = useState('')
   const [libraryLoading, setLibraryLoading] = useState(false)
+
+  const notifyMutated = useCallback(() => {
+    onMutated?.()
+  }, [onMutated])
 
   // 기존 FAQ 데이터 로드 (재사용 라이브러리 + 상품 연결)
   const fetchFaqs = useCallback(async () => {
@@ -137,6 +148,7 @@ export default function ProductFaqTab({
 
       setFaqs(prev => prev.filter(f => f.id !== faqId))
       setSaveMessage('FAQ 연결이 해제되었습니다.')
+      notifyMutated()
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('FAQ 삭제 오류:', error)
@@ -222,6 +234,7 @@ export default function ProductFaqTab({
       }
 
       setSaveMessage('FAQ가 저장되었습니다! (재사용 라이브러리에 반영)')
+      notifyMutated()
       setTimeout(() => setSaveMessage(''), 3000)
       setShowAddModal(false)
       setEditingFaq(null)
@@ -285,6 +298,7 @@ export default function ProductFaqTab({
       }
       setShowLibraryPicker(false)
       setSaveMessage('라이브러리 FAQ를 이 상품에 연결했습니다.')
+      notifyMutated()
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('FAQ attach error:', error)
@@ -331,6 +345,7 @@ export default function ProductFaqTab({
           .update({ order_index: faq.order_index })
           .eq('id', faq.link_id)
       }
+      notifyMutated()
     } catch (error) {
       console.error('FAQ 순서 변경 오류:', error)
       setSaveMessage('FAQ 순서 변경에 실패했습니다.')
@@ -379,6 +394,7 @@ export default function ProductFaqTab({
 
       setFaqs(updatedFaqs)
       setSaveMessage('모든 FAQ가 번역되었습니다!')
+      notifyMutated()
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('전체 FAQ 번역 오류:', error)
@@ -476,6 +492,8 @@ export default function ProductFaqTab({
       setSuggesting(false)
     }
   }
+
+  const nestedModalClass = embedded ? 'z-[70]' : 'z-50'
 
   if (loading) {
     return (
@@ -744,11 +762,12 @@ export default function ProductFaqTab({
             setEditingFaq(null)
           }}
           saving={saving}
+          embedded={embedded}
         />
       )}
 
       {showLibraryPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className={`fixed inset-0 ${nestedModalClass} flex items-center justify-center bg-black/50 p-4`}>
           <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">FAQ 라이브러리에서 추가</h3>
@@ -796,11 +815,14 @@ export default function ProductFaqTab({
                     onClick={() => void attachLibraryFaq(item.id)}
                     className="w-full rounded-lg border border-border px-3 py-2.5 text-left hover:border-primary/40 hover:bg-primary/5"
                   >
-                    <div className="text-sm font-medium text-foreground">
-                      {item.name || item.question.slice(0, 80) || '(제목 없음)'}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-medium text-foreground">
+                        {item.name || item.question.slice(0, 80) || '(제목 없음)'}
+                      </div>
+                      <ContentLibraryLocaleBadges locales={getFaqFilledLocales(item)} />
                     </div>
                     <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      {item.question}
+                      {getFaqLocalizedText(item, 'question', viewLocale) || item.question}
                     </div>
                   </button>
                 ))
@@ -819,9 +841,10 @@ interface FaqModalProps {
   onSave: (faq: FaqItem) => void
   onClose: () => void
   saving: boolean
+  embedded?: boolean
 }
 
-function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
+function FaqModal({ faq, onSave, onClose, saving, embedded = false }: FaqModalProps) {
   const [formData, setFormData] = useState<FaqItem>(faq)
   const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
   const [questionDraft, setQuestionDraft] = useState(() =>
@@ -878,7 +901,9 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div
+      className={`fixed inset-0 ${embedded ? 'z-[70]' : 'z-50'} flex items-center justify-center bg-black bg-opacity-50`}
+    >
       <div
         className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6"
         onKeyDown={handleKeyDown}

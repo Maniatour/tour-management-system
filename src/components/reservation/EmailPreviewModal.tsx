@@ -302,9 +302,9 @@ ${printHtml}
   if (!isOpen) return null
 
   const emailTypeLabels = {
-    confirmation: '예약 확인 이메일',
-    departure: '투어 출발 확정 이메일',
-    pickup: '픽업 notification 이메일'
+    confirmation: '예약 접수 이메일',
+    departure: '투어 확정 이메일',
+    pickup: '픽업 안내 이메일'
   }
 
   const canSendEmail = !!customerEmail?.trim()

@@ -111,12 +111,18 @@ export function renderGrandCanyonSunriseDateHighlightRow(
   const color = gc.showDifferentDatesWarning ? '#b91c1c' : '#92400e'
   const label = isEnglish ? 'Hotel pickup date (calendar)' : '\ud638\ud154 \ud53d\uc5c5\uc77c(\ub2ec\ub825)'
   return `
-          <div style="padding: 14px; border-radius: 8px; border: 2px solid ${border}; background: ${bg}; margin-top: 4px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+      <tr>
+        <td style="vertical-align: top;">
+          <div style="padding: 14px; border-radius: 8px; border: 2px solid ${border}; background: ${bg};">
             <div style="font-size: 12px; color: ${color}; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">
               ${label}
             </div>
             <div style="font-size: 17px; font-weight: 800; color: ${color};">
               ${pickupLong}
             </div>
-          </div>`
+          </div>
+        </td>
+      </tr>
+    </table>`
 }

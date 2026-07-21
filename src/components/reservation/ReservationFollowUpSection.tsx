@@ -202,9 +202,21 @@ export default function ReservationFollowUpSection({
   const reservationsLiteForPipeline = useMemo(
     () =>
       showFollowUpPipeline && reservationId
-        ? [{ id: reservationId, productId: String(followUpPipelineProductId ?? '').trim() }]
+        ? [
+            {
+              id: reservationId,
+              productId: String(followUpPipelineProductId ?? '').trim(),
+              status: followUpPipelineReservation?.status ?? null,
+              tourStatus: null,
+            },
+          ]
         : [],
-    [showFollowUpPipeline, reservationId, followUpPipelineProductId]
+    [
+      showFollowUpPipeline,
+      reservationId,
+      followUpPipelineProductId,
+      followUpPipelineReservation?.status,
+    ]
   )
 
   const [pipelineLocalRevision, setPipelineLocalRevision] = useState(0)

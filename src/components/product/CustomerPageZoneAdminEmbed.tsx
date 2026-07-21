@@ -221,7 +221,6 @@ export default function CustomerPageZoneAdminEmbed({
             productId={productId!}
             locale={locale}
             {...(onSaved ? { onSaved } : {})}
-            {...(onOpenFullAdmin ? { onOpenFullAdmin } : {})}
           />
         )
 

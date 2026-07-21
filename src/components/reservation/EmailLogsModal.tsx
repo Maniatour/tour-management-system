@@ -97,11 +97,11 @@ export default function EmailLogsModal({ isOpen, onClose, reservationId }: Email
 
   const getEmailTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
-      'confirmation': '예약 확인',
-      'departure': '투어 출발 확정',
-      'pickup': '픽업 알림',
-      'receipt': '예약 확인',
-      'voucher': '투어 출발 확정'
+      'confirmation': '예약 접수',
+      'departure': '투어 확정',
+      'pickup': '픽업 안내',
+      'receipt': '예약 접수',
+      'voucher': '투어 확정'
     }
     return labels[type] || type
   }

@@ -22,13 +22,13 @@ export const PRODUCT_EMAIL_DESTINATIONS: Record<
 > = {
   reservation_confirmation: {
     key: 'reservation_confirmation',
-    label: '예약 확인 이메일',
-    description: '예약 확정 시 발송 (투어 바우처). 상품명·상세 정보·일정 등 포함',
+    label: '예약 접수 이메일',
+    description: '예약 접수 시 발송. 상품명·상세 정보·일정 등 포함. 투어 확정·픽업 안내는 별도 발송',
   },
   tour_departure_confirmed: {
     key: 'tour_departure_confirmed',
-    label: '투어 출발 확정 이메일',
-    description: '투어 출발 확정(voucher) 시 발송. 예약 확인 이메일과 동일 본문 + 출발 확정 안내',
+    label: '투어 확정 이메일',
+    description: '투어 출발 확정(voucher) 시 발송. 예약 접수 이메일과 동일 본문 + 출발 확정 안내',
   },
   payment_receipt: {
     key: 'payment_receipt',

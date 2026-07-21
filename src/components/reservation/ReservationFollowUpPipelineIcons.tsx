@@ -19,10 +19,11 @@ export type FollowUpPipelineEmailType =
   | 'departure'
   | 'pickup'
 
-type StepVisual = 'done' | 'action' | 'upcoming' | 'na'
+type StepVisual = 'done' | 'doneInferred' | 'action' | 'upcoming' | 'na'
 
 function stepClasses(v: StepVisual): string {
   if (v === 'done') return 'text-emerald-700 bg-emerald-50 border-emerald-200'
+  if (v === 'doneInferred') return 'text-sky-800 bg-sky-50 border-sky-300'
   if (v === 'action') return 'text-amber-800 bg-amber-50 border-amber-300 ring-1 ring-amber-200'
   if (v === 'na') return 'text-gray-300 bg-gray-50 border-gray-100 opacity-70'
   return 'text-gray-400 bg-gray-50 border-gray-100'
@@ -37,7 +38,13 @@ function resolveSteps(
   departure: StepVisual
   pickup: StepVisual
 } {
-  const confirm: StepVisual = s.confirmationSent ? 'done' : 'action'
+  const confirm: StepVisual = s.confirmationSentDirect
+    ? 'done'
+    : s.confirmationInferredFromDeparture
+      ? 'doneInferred'
+      : s.confirmationSent
+        ? 'done'
+        : 'action'
 
   let resident: StepVisual = 'na'
   if (s.needsResidentFlow) {
@@ -87,6 +94,8 @@ function pipelineStepFromIconKey(key: string): FollowUpPipelineStepKey | null {
 
 const EMPTY_PIPELINE_SNAPSHOT: ReservationFollowUpPipelineSnapshot = {
   confirmationSent: false,
+  confirmationSentDirect: false,
+  confirmationInferredFromDeparture: false,
   residentInquirySent: false,
   guestResidentFlowCompleted: false,
   departureSent: false,
@@ -207,7 +216,14 @@ export function ReservationFollowUpPipelineIcons({
         : 'action'
 
   const items: { key: string; Icon: typeof Mail; visual: StepVisual; label: string }[] = [
-    { key: 'c', Icon: Mail, visual: confirm, label: t('followUpPipeline.step1IconTitle') },
+    {
+      key: 'c',
+      Icon: Mail,
+      visual: confirm,
+      label: effectiveSnapshot.confirmationInferredFromDeparture
+        ? t('followUpPipeline.step1IconTitleInferred')
+        : t('followUpPipeline.step1IconTitle'),
+    },
     {
       key: 'r',
       Icon: residentHidden ? Minus : ClipboardCheck,

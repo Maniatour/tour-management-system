@@ -16,6 +16,10 @@ export function emailLogStatusSuccess(status: string | null | undefined): boolea
 
 export type ReservationFollowUpPipelineSnapshot = {
   confirmationSent: boolean
+  /** 예약 접수 메일(또는 수동 완료)로 직접 완료 */
+  confirmationSentDirect: boolean
+  /** 투어 확정 메일 발송으로 예약 접수 단계가 간접 완료 */
+  confirmationInferredFromDeparture: boolean
   residentInquirySent: boolean
   guestResidentFlowCompleted: boolean
   departureSent: boolean
@@ -90,6 +94,22 @@ export function reservationCancellationGroupingDateKey(r: {
 
 export function computeNeedsResidentFlow(productCode: string | null | undefined): boolean {
   return productShowsResidentStatusSectionByCode(productCode)
+}
+
+/**
+ * 모집중이 아닌, 접수 직후 투어 출발이 확정된 예약.
+ * 이 경우 투어 확정 메일만내도 예약 접수 단계를 완료로 간주한다.
+ */
+export function reservationEligibleForConfirmationInferredFromDeparture(
+  reservationStatus: string | null | undefined,
+  tourStatus: string | null | undefined
+): boolean {
+  const rs = String(reservationStatus ?? '').trim().toLowerCase()
+  const ts = String(tourStatus ?? '').trim().toLowerCase()
+  if (!rs || reservationExcludedFromFollowUpPipeline(rs)) return false
+  if (reservationExcludedFromOperationalFollowUps(rs)) return false
+  if (rs === 'recruiting' || ts === 'recruiting') return false
+  return isReservationStatusConfirmed(rs) || rs === 'completed' || ts === 'confirmed'
 }
 
 /**

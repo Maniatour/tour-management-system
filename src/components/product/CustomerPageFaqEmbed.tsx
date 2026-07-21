@@ -12,6 +12,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import ContentLibraryLocaleBadges from '@/components/admin/ContentLibraryLocaleBadges'
+import FaqLibraryManagerPanel from '@/components/admin/FaqLibraryManagerPanel'
 import LightRichEditor from '@/components/LightRichEditor'
 import {
   getAdminEditLocaleLabel,
@@ -27,6 +29,7 @@ import {
 import {
   fetchFaqLibrary,
   fetchProductAttachedFaqs,
+  getFaqFilledLocales,
   type FaqLibraryItem,
 } from '@/lib/reusableContentLibrary'
 import { supabase } from '@/lib/supabase'
@@ -64,7 +67,6 @@ type CustomerPageFaqEmbedProps = {
   locale?: string
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
-  onOpenFullAdmin?: (tabId: string) => void
 }
 
 function emptyFaq(productId: string, orderIndex: number): FaqItem {
@@ -98,6 +100,30 @@ function getFaqLabel(item: FaqItem, locale: AdminEditLocale, emptyLabel: string)
   return getFaqLocalizedText(item, 'question', locale).trim() || emptyLabel
 }
 
+function faqsSnapshot(items: FaqItem[]) {
+  return items.map((item) => ({
+    id: item.id ?? null,
+    link_id: item.link_id ?? null,
+    order_index: item.order_index,
+    is_active: item.is_active,
+  }))
+}
+
+function buildEditorSnapshot(
+  faqId: string | null,
+  form: FaqForm,
+  locale: AdminEditLocale,
+  isNewDraft: boolean,
+  items: FaqItem[]
+) {
+  return JSON.stringify({
+    faqId,
+    form,
+    locale,
+    isNewDraft,
+    faqs: faqsSnapshot(items),
+  })
+}
 function mergeFormLocale(
   form: FaqForm,
   locale: AdminEditLocale
@@ -157,8 +183,36 @@ export default function CustomerPageFaqEmbed({
   const [libraryItems, setLibraryItems] = useState<FaqLibraryItem[]>([])
   const [librarySearch, setLibrarySearch] = useState('')
   const [libraryLoading, setLibraryLoading] = useState(false)
+  const [showLibraryManager, setShowLibraryManager] = useState(false)
+
+  const syncActiveFormToFaqs = useCallback(() => {
+    if (!activeFaqId || isNewDraft) return
+    const merged = mergeFormLocale(form, editLocale)
+    setFaqs((prev) =>
+      prev.map((item) =>
+        item.id === activeFaqId
+          ? {
+              ...item,
+              question: merged.question,
+              answer: merged.answer,
+              question_en: merged.question_en,
+              answer_en: merged.answer_en,
+              content_i18n: merged.content_i18n,
+              is_active: merged.is_active,
+            }
+          : item
+      )
+    )
+  }, [activeFaqId, editLocale, form, isNewDraft])
 
   const activeFaq = faqs.find((item) => item.id === activeFaqId) ?? null
+
+  const selectFaq = (item: FaqItem) => {
+    syncActiveFormToFaqs()
+    setIsNewDraft(false)
+    setActiveFaqId(item.id ?? null)
+    setForm(faqToForm(item, editLocale))
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -193,11 +247,11 @@ export default function CustomerPageFaqEmbed({
         const nextForm = faqToForm(first, editLocale)
         setForm(nextForm)
         setInitialSnapshot(
-          JSON.stringify({ faqId: first.id, form: nextForm, locale: editLocale })
+          buildEditorSnapshot(first.id ?? null, nextForm, editLocale, false, items)
         )
       } else {
         setForm(faqToForm(emptyFaq(productId, 0), editLocale))
-        setInitialSnapshot(JSON.stringify({ faqId: null, form: {}, locale: editLocale }))
+        setInitialSnapshot(buildEditorSnapshot(null, faqToForm(emptyFaq(productId, 0), editLocale), editLocale, false, []))
       }
     } catch (error) {
       console.error('FAQ 로드 오류:', error)
@@ -213,20 +267,15 @@ export default function CustomerPageFaqEmbed({
 
   useEffect(() => {
     if (isNewDraft || !activeFaq) return
-    const nextForm = faqToForm(activeFaq, editLocale)
-    setForm(nextForm)
-    setInitialSnapshot(
-      JSON.stringify({ faqId: activeFaq.id, form: nextForm, locale: editLocale })
-    )
-  }, [activeFaq?.id])
+    setForm(faqToForm(activeFaq, editLocale))
+  }, [activeFaq?.id, editLocale, activeFaq, isNewDraft])
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot) return
     const dirty =
-      JSON.stringify({ faqId: activeFaqId, form, locale: editLocale, isNewDraft }) !==
-      initialSnapshot
+      buildEditorSnapshot(activeFaqId, form, editLocale, isNewDraft, faqs) !== initialSnapshot
     onDirtyChange(dirty)
-  }, [activeFaqId, editLocale, form, initialSnapshot, isNewDraft, onDirtyChange])
+  }, [activeFaqId, editLocale, form, initialSnapshot, isNewDraft, onDirtyChange, faqs])
 
   const switchLocale = (next: AdminEditLocale) => {
     if (next === editLocaleRef.current) return
@@ -283,25 +332,24 @@ export default function CustomerPageFaqEmbed({
         updated_at: new Date().toISOString(),
       }
 
-      if (activeFaqId && !isNewDraft) {
+      if (activeFaqId && activeFaq?.link_id && !isNewDraft) {
         const { error } = await supabase
           .from('faq_library')
           .update(libraryPayload as never)
           .eq('id', activeFaqId)
         if (error) throw error
 
-        if (activeFaq?.link_id) {
-          await supabase
-            .from('product_faq_links')
-            .update({
-              is_active: merged.is_active,
-              updated_at: new Date().toISOString(),
-            } as never)
-            .eq('id', activeFaq.link_id)
-        }
+        await supabase
+          .from('product_faq_links')
+          .update({
+            is_active: merged.is_active,
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq('id', activeFaq.link_id)
 
         const updatedItem: FaqItem = {
           id: activeFaqId,
+          link_id: activeFaq.link_id,
           product_id: productId,
           name,
           question: merged.question,
@@ -309,22 +357,57 @@ export default function CustomerPageFaqEmbed({
           question_en: merged.question_en,
           answer_en: merged.answer_en,
           content_i18n: merged.content_i18n,
-          order_index: activeFaq?.order_index ?? 0,
+          order_index: activeFaq.order_index,
           is_active: merged.is_active,
         }
-        if (activeFaq?.link_id) updatedItem.link_id = activeFaq.link_id
-        setFaqs((prev) =>
-          prev.map((item) => (item.id === activeFaqId ? updatedItem : item))
-        )
+        const nextFaqs = faqs.map((item) => (item.id === activeFaqId ? updatedItem : item))
+        setFaqs(nextFaqs)
         const nextForm = faqToForm(updatedItem, editLocale)
         setForm(nextForm)
         setInitialSnapshot(
-          JSON.stringify({
-            faqId: activeFaqId,
-            form: nextForm,
-            locale: editLocale,
-            isNewDraft: false,
-          })
+          buildEditorSnapshot(activeFaqId, nextForm, editLocale, false, nextFaqs)
+        )
+      } else if (activeFaqId && !activeFaq?.link_id && !isNewDraft) {
+        const { error } = await supabase
+          .from('faq_library')
+          .update(libraryPayload as never)
+          .eq('id', activeFaqId)
+        if (error) throw error
+
+        const orderIndex = activeFaq?.order_index ?? faqs.length
+        const { data: link, error: linkError } = await supabase
+          .from('product_faq_links')
+          .insert([
+            {
+              product_id: productId,
+              faq_id: activeFaqId,
+              order_index: orderIndex,
+              is_active: merged.is_active,
+            },
+          ] as never)
+          .select('*')
+          .single()
+        if (linkError) throw linkError
+
+        const linkedItem: FaqItem = {
+          id: activeFaqId,
+          link_id: String((link as Record<string, unknown>).id),
+          product_id: productId,
+          name,
+          question: merged.question,
+          answer: merged.answer,
+          question_en: merged.question_en,
+          answer_en: merged.answer_en,
+          content_i18n: merged.content_i18n,
+          order_index: orderIndex,
+          is_active: merged.is_active,
+        }
+        const nextFaqs = faqs.map((item) => (item.id === activeFaqId ? linkedItem : item))
+        setFaqs(nextFaqs)
+        const nextForm = faqToForm(linkedItem, editLocale)
+        setForm(nextForm)
+        setInitialSnapshot(
+          buildEditorSnapshot(activeFaqId, nextForm, editLocale, false, nextFaqs)
         )
       } else {
         const orderIndex = faqs.length
@@ -363,18 +446,14 @@ export default function CustomerPageFaqEmbed({
           order_index: orderIndex,
           is_active: merged.is_active,
         }
-        setFaqs((prev) => [...prev, newItem])
+        const nextFaqs = [...faqs, newItem]
+        setFaqs(nextFaqs)
         setActiveFaqId(newItem.id!)
         setIsNewDraft(false)
         const nextForm = faqToForm(newItem, editLocale)
         setForm(nextForm)
         setInitialSnapshot(
-          JSON.stringify({
-            faqId: newItem.id,
-            form: nextForm,
-            locale: editLocale,
-            isNewDraft: false,
-          })
+          buildEditorSnapshot(newItem.id ?? null, nextForm, editLocale, false, nextFaqs)
         )
       }
 
@@ -413,63 +492,31 @@ export default function CustomerPageFaqEmbed({
     }
   }
 
-  const attachLibraryFaq = async (faqId: string) => {
-    setSaving(true)
-    setMessage(null)
-    try {
-      const { data: link, error } = await supabase
-        .from('product_faq_links')
-        .insert([
-          {
-            product_id: productId,
-            faq_id: faqId,
-            order_index: faqs.length,
-            is_active: true,
-          },
-        ] as never)
-        .select('*')
-        .single()
-      if (error) throw error
+  const attachLibraryFaq = (faqId: string) => {
+    const item = libraryItems.find((row) => row.id === faqId)
+    if (!item) return
 
-      const item = libraryItems.find((row) => row.id === faqId)
-      if (!item) throw new Error('library item missing')
-
-      const attachedItem: FaqItem = {
-        id: item.id,
-        link_id: String((link as Record<string, unknown>).id),
-        product_id: productId,
-        name: item.name,
-        question: item.question,
-        answer: item.answer,
-        question_en: item.question_en ?? '',
-        answer_en: item.answer_en ?? '',
-        content_i18n: item.content_i18n || {},
-        order_index: faqs.length,
-        is_active: true,
-      }
-
-      setFaqs((prev) => [...prev, attachedItem])
-      setActiveFaqId(attachedItem.id!)
-      setIsNewDraft(false)
-      const nextForm = faqToForm(attachedItem, editLocale)
-      setForm(nextForm)
-      setInitialSnapshot(
-        JSON.stringify({
-          faqId: attachedItem.id,
-          form: nextForm,
-          locale: editLocale,
-          isNewDraft: false,
-        })
-      )
-      setShowLibraryPicker(false)
-      setMessage({ text: tf('libraryAttached'), type: 'success' })
-      onSaved?.()
-    } catch (error) {
-      console.error('FAQ attach error:', error)
-      setMessage({ text: tf('libraryAttachError'), type: 'error' })
-    } finally {
-      setSaving(false)
+    const attachedItem: FaqItem = {
+      id: item.id,
+      product_id: productId,
+      name: item.name,
+      question: item.question,
+      answer: item.answer,
+      question_en: item.question_en ?? '',
+      answer_en: item.answer_en ?? '',
+      content_i18n: item.content_i18n || {},
+      order_index: faqs.length,
+      is_active: true,
     }
+
+    const nextFaqs = [...faqs, attachedItem]
+    setFaqs(nextFaqs)
+    setActiveFaqId(attachedItem.id!)
+    setIsNewDraft(false)
+    const nextForm = faqToForm(attachedItem, editLocale)
+    setForm(nextForm)
+    setShowLibraryPicker(false)
+    setMessage({ text: tf('libraryAttachedDraft'), type: 'success' })
   }
 
   const handleDelete = async () => {
@@ -479,6 +526,17 @@ export default function CustomerPageFaqEmbed({
       if (faqs[0]) setForm(faqToForm(faqs[0], editLocale))
       return
     }
+
+    if (!activeFaq?.link_id) {
+      const remaining = faqs.filter((item) => item.id !== activeFaqId)
+      setFaqs(remaining)
+      const next = remaining[0] ?? null
+      setActiveFaqId(next?.id ?? null)
+      if (next) setForm(faqToForm(next, editLocale))
+      setMessage({ text: tf('libraryAttachCancelled'), type: 'success' })
+      return
+    }
+
     if (!confirm(tf('deleteConfirm'))) return
 
     setSaving(true)
@@ -492,6 +550,15 @@ export default function CustomerPageFaqEmbed({
       const next = remaining[0] ?? null
       setActiveFaqId(next?.id ?? null)
       if (next) setForm(faqToForm(next, editLocale))
+      setInitialSnapshot(
+        buildEditorSnapshot(
+          next?.id ?? null,
+          next ? faqToForm(next, editLocale) : form,
+          editLocale,
+          false,
+          remaining
+        )
+      )
       setMessage({ text: tf('saved'), type: 'success' })
       onSaved?.()
     } catch (error) {
@@ -516,23 +583,32 @@ export default function CustomerPageFaqEmbed({
     setFaqs(withOrder)
 
     try {
-      await Promise.all(
-        withOrder.map((item) =>
-          item.link_id
-            ? supabase
-                .from('product_faq_links')
-                .update({ order_index: item.order_index } as never)
-                .eq('id', item.link_id)
-            : Promise.resolve()
+      const linkedUpdates = withOrder.filter((item) => item.link_id)
+      if (linkedUpdates.length > 0) {
+        await Promise.all(
+          linkedUpdates.map((item) =>
+            supabase
+              .from('product_faq_links')
+              .update({ order_index: item.order_index } as never)
+              .eq('id', item.link_id!)
+          )
         )
+        onSaved?.()
+      }
+      setInitialSnapshot(
+        buildEditorSnapshot(activeFaqId, form, editLocale, isNewDraft, withOrder)
       )
-      onSaved?.()
     } catch (error) {
       console.error('FAQ 순서 변경 오류:', error)
       setMessage({ text: tf('reorderError'), type: 'error' })
       void loadData()
     }
   }
+
+  const refreshAfterLibraryChange = useCallback(async () => {
+    await loadData()
+    onSaved?.()
+  }, [loadData, onSaved])
 
   const localeLabel = getAdminEditLocaleLabel(editLocale)
 
@@ -560,6 +636,14 @@ export default function CustomerPageFaqEmbed({
           </button>
           <button
             type="button"
+            onClick={() => setShowLibraryManager(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+            title={tf('manageLibraryTitle')}
+          >
+            {tf('manageLibrary')}
+          </button>
+          <button
+            type="button"
             onClick={handleAdd}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted"
           >
@@ -578,20 +662,17 @@ export default function CustomerPageFaqEmbed({
         <div className="flex flex-wrap gap-1.5">
           {faqs.map((item, index) => (
             <button
-              key={item.id}
+              key={`${item.id ?? 'draft'}-${item.link_id ?? 'pending'}-${index}`}
               type="button"
-              onClick={() => {
-                setIsNewDraft(false)
-                setActiveFaqId(item.id ?? null)
-                setForm(faqToForm(item, editLocale))
-              }}
+              onClick={() => selectFaq(item)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                 !isNewDraft && activeFaqId === item.id
                   ? 'bg-primary text-primary-foreground'
                   : 'border border-border bg-card text-muted-foreground hover:bg-muted'
-              }`}
+              } ${!item.link_id ? 'border-dashed border-amber-300' : ''}`}
             >
               Q{index + 1}. {getFaqLabel(item, editLocale, tf('noQuestion'))}
+              {!item.link_id ? ` (${tf('unsaved')})` : ''}
             </button>
           ))}
           {isNewDraft ? (
@@ -752,19 +833,49 @@ export default function CustomerPageFaqEmbed({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => void attachLibraryFaq(item.id)}
+                    onClick={() => attachLibraryFaq(item.id)}
                     disabled={saving}
                     className="w-full rounded-lg border border-border px-3 py-2.5 text-left hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
                   >
-                    <div className="text-sm font-medium text-foreground">
-                      {item.name || item.question.slice(0, 80) || tf('libraryUnnamed')}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-medium text-foreground">
+                        {item.name || item.question.slice(0, 80) || tf('libraryUnnamed')}
+                      </div>
+                      <ContentLibraryLocaleBadges locales={getFaqFilledLocales(item)} />
                     </div>
                     <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      {item.question}
+                      {getFaqLocalizedText(item, 'question', editLocale) || item.question}
                     </div>
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showLibraryManager ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 sm:p-6">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-card shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">{tf('manageLibraryTitle')}</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLibraryManager(false)
+                  void refreshAfterLibraryChange()
+                }}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={tf('libraryClose')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <FaqLibraryManagerPanel
+                listMaxHeight="max-h-[50vh]"
+                onMutated={() => void refreshAfterLibraryChange()}
+              />
             </div>
           </div>
         </div>

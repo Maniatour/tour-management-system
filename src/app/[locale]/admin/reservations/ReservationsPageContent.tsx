@@ -1730,9 +1730,22 @@ export default function AdminReservations() {
    * - 모달·운영 큐 로드 완료 후 운영 큐 id 추가 병합(로딩 중 id 폭주·취소 방지)
    */
   const reservationsLiteForFollowUp = useMemo(() => {
-    const byId = new Map<string, { id: string; productId: string }>()
+    const byId = new Map<
+      string,
+      { id: string; productId: string; status?: string | null; tourStatus?: string | null }
+    >()
+    const addLite = (r: { id: string; productId: string; status?: string | null }) => {
+      const linkedTourId = tourIdByReservationId.get(r.id)
+      const tourStatus = linkedTourId ? (tourInfoMap.get(linkedTourId)?.status ?? null) : null
+      byId.set(r.id, {
+        id: r.id,
+        productId: r.productId,
+        status: r.status ?? null,
+        tourStatus,
+      })
+    }
     for (const r of filteredReservations) {
-      byId.set(r.id, { id: r.id, productId: r.productId })
+      addLite(r)
     }
     const modalOpen = showActionRequiredModal || followUpQueueModalOpen
     if (
@@ -1741,7 +1754,7 @@ export default function AdminReservations() {
       operationalQueueHasReservations(operationalQueueSnapshot)
     ) {
       for (const r of operationalQueueSnapshot!.reservations) {
-        byId.set(r.id, { id: r.id, productId: r.productId })
+        addLite(r)
       }
     }
     return [...byId.values()]
@@ -1751,6 +1764,8 @@ export default function AdminReservations() {
     followUpQueueModalOpen,
     operationalQueueLoading,
     operationalQueueSnapshot,
+    tourIdByReservationId,
+    tourInfoMap,
   ])
 
   const {

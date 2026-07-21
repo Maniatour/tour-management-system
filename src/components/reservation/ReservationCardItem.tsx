@@ -1694,6 +1694,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     (!!pa &&
       !!na &&
       pa.confirmationSent === na.confirmationSent &&
+      pa.confirmationSentDirect === na.confirmationSentDirect &&
+      pa.confirmationInferredFromDeparture === na.confirmationInferredFromDeparture &&
       pa.residentInquirySent === na.residentInquirySent &&
       pa.guestResidentFlowCompleted === na.guestResidentFlowCompleted &&
       pa.departureSent === na.departureSent &&
