@@ -71,6 +71,7 @@ export default function ProductFaqTab({
   const [libraryItems, setLibraryItems] = useState<FaqLibraryItem[]>([])
   const [librarySearch, setLibrarySearch] = useState('')
   const [libraryLoading, setLibraryLoading] = useState(false)
+  const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set())
 
   const notifyMutated = useCallback(() => {
     onMutated?.()
@@ -249,6 +250,7 @@ export default function ProductFaqTab({
 
   const openLibraryPicker = async () => {
     setShowLibraryPicker(true)
+    setSelectedLibraryIds(new Set())
     setLibraryLoading(true)
     try {
       const rows = await fetchFaqLibrary(supabase as never, {
@@ -265,39 +267,69 @@ export default function ProductFaqTab({
     }
   }
 
-  const attachLibraryFaq = async (faqId: string) => {
+  const toggleLibrarySelection = (faqId: string) => {
+    setSelectedLibraryIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(faqId)) next.delete(faqId)
+      else next.add(faqId)
+      return next
+    })
+  }
+
+  const toggleSelectAllLibrary = () => {
+    setSelectedLibraryIds((prev) => {
+      if (prev.size === libraryItems.length) return new Set()
+      return new Set(libraryItems.map((item) => item.id))
+    })
+  }
+
+  const attachSelectedLibraryFaqs = async () => {
+    const selectedItems = libraryItems.filter((row) => selectedLibraryIds.has(row.id))
+    if (selectedItems.length === 0) {
+      setSaveMessage('추가할 FAQ를 하나 이상 선택해주세요.')
+      setTimeout(() => setSaveMessage(''), 3000)
+      return
+    }
+
     try {
-      const { data: link, error } = await (supabase as any)
+      const inserts = selectedItems.map((item, idx) => ({
+        product_id: productId,
+        faq_id: item.id,
+        order_index: faqs.length + idx,
+        is_active: true,
+      }))
+
+      const { data: links, error } = await (supabase as any)
         .from('product_faq_links')
-        .insert([{
-          product_id: productId,
-          faq_id: faqId,
-          order_index: faqs.length,
-          is_active: true,
-        }])
+        .insert(inserts)
         .select()
-        .single()
       if (error) throw error
 
-      const item = libraryItems.find((row) => row.id === faqId)
-      if (item) {
+      const attachedItems: FaqItem[] = selectedItems.map((item, idx) => {
         const attachedItem: FaqItem = {
           id: item.id,
-          link_id: link.id,
+          link_id: links[idx].id,
           product_id: productId,
           name: item.name,
           question: item.question,
           answer: item.answer,
-          order_index: faqs.length,
+          order_index: faqs.length + idx,
           is_active: true,
         }
         if (item.question_en != null) attachedItem.question_en = item.question_en
         if (item.answer_en != null) attachedItem.answer_en = item.answer_en
         if (item.content_i18n != null) attachedItem.content_i18n = item.content_i18n
-        setFaqs((prev) => [...prev, attachedItem])
-      }
+        return attachedItem
+      })
+
+      setFaqs((prev) => [...prev, ...attachedItems])
       setShowLibraryPicker(false)
-      setSaveMessage('라이브러리 FAQ를 이 상품에 연결했습니다.')
+      setSelectedLibraryIds(new Set())
+      setSaveMessage(
+        selectedItems.length === 1
+          ? '라이브러리 FAQ를 이 상품에 연결했습니다.'
+          : `${selectedItems.length}개의 라이브러리 FAQ를 이 상품에 연결했습니다.`
+      )
       notifyMutated()
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
@@ -808,25 +840,77 @@ export default function ProductFaqTab({
                   연결 가능한 FAQ가 없습니다. 새 FAQ를 만들거나 관리 화면에서 라이브러리를 추가하세요.
                 </p>
               ) : (
-                libraryItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => void attachLibraryFaq(item.id)}
-                    className="w-full rounded-lg border border-border px-3 py-2.5 text-left hover:border-primary/40 hover:bg-primary/5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-medium text-foreground">
-                        {item.name || item.question.slice(0, 80) || '(제목 없음)'}
-                      </div>
-                      <ContentLibraryLocaleBadges locales={getFaqFilledLocales(item)} />
-                    </div>
-                    <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      {getFaqLocalizedText(item, 'question', viewLocale) || item.question}
-                    </div>
-                  </button>
-                ))
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50">
+                    <input
+                      type="checkbox"
+                      checked={
+                        libraryItems.length > 0 &&
+                        selectedLibraryIds.size === libraryItems.length
+                      }
+                      onChange={toggleSelectAllLibrary}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
+                    />
+                    {selectedLibraryIds.size === libraryItems.length ? '전체 해제' : '전체 선택'}
+                  </label>
+                  {libraryItems.map((item) => {
+                    const checked = selectedLibraryIds.has(item.id)
+                    return (
+                      <label
+                        key={item.id}
+                        className={`flex w-full cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          checked
+                            ? 'border-primary/50 bg-primary/5'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleLibrarySelection(item.id)}
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-ring"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="text-sm font-medium text-foreground">
+                              {item.name || item.question.slice(0, 80) || '(제목 없음)'}
+                            </div>
+                            <ContentLibraryLocaleBadges locales={getFaqFilledLocales(item)} />
+                          </div>
+                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            {getFaqLocalizedText(item, 'question', viewLocale) || item.question}
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </>
               )}
+            </div>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">
+              <span className="text-xs text-muted-foreground">
+                {selectedLibraryIds.size}개 선택됨
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLibraryPicker(false)
+                    setSelectedLibraryIds(new Set())
+                  }}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                >
+                  닫기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void attachSelectedLibraryFaqs()}
+                  disabled={selectedLibraryIds.size === 0}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  선택 항목 추가 ({selectedLibraryIds.size})
+                </button>
+              </div>
             </div>
           </div>
         </div>
