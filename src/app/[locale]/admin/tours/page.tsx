@@ -1122,7 +1122,7 @@ export default function AdminTours() {
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
 
   return (
-    <div className="-mx-2 px-1 sm:mx-0 sm:px-6 py-3 sm:py-6">
+    <div className="px-1 pt-0 pb-1.5 sm:px-0 sm:pb-3">
       {loading && (
         <div
           className="fixed top-2 right-2 z-[1200] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm px-3 py-1.5 text-xs text-gray-600"

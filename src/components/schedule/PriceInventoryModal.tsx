@@ -68,12 +68,23 @@ import {
   buildClosureHistoryByListingAndDate,
   formatClosureHistoryActor,
   formatClosureHistoryDetail,
+  buildAllChannelHistoryForDate,
+  formatOtaHistoryHoverLine,
+  type OtaHistoryHoverItem,
   requiresOtaPlatformClosure,
   resolveClosureHistoryEntries,
   isVehicleRemainingLow,
   resolveDefaultChannelVariantListing,
   resolveDefaultGoblinProductId,
 } from '@/lib/otaPriceInventory'
+import {
+  buildOfficeScheduleStaffByDate,
+  formatOfficeScheduleDayStaff,
+  type OfficeScheduleDayStaffChip,
+  type OfficeScheduleOffDayRow,
+  type OfficeScheduleSlotRow,
+  type OfficeScheduleStaffMember,
+} from '@/lib/officeScheduleDayStaff'
 
 type ProductOption = {
   id: string
@@ -138,6 +149,150 @@ function isMissingOtaTableError(error: unknown): boolean {
   if (e.status === 404) return true
   const msg = (e.message || '').toLowerCase()
   return msg.includes('does not exist') || msg.includes('could not find the table')
+}
+
+function handleHistoryPanelWheel(e: React.WheelEvent<HTMLElement>) {
+  e.stopPropagation()
+  const el = e.currentTarget
+  if (el.scrollHeight <= el.clientHeight) return
+  const { scrollTop, scrollHeight, clientHeight } = el
+  const delta = e.deltaY
+  const atTop = scrollTop <= 0
+  const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+  if ((delta < 0 && atTop) || (delta > 0 && atBottom)) {
+    e.preventDefault()
+  }
+}
+
+function OtaInventoryHistoryLines({
+  items,
+  teamMembers,
+  maxItems,
+  listClassName = 'max-h-48 space-y-1 overflow-y-auto overscroll-contain',
+  emptyClassName = 'text-[10px] text-muted-foreground',
+}: {
+  items: OtaHistoryHoverItem[]
+  teamMembers: TeamMemberLite[]
+  maxItems?: number
+  listClassName?: string
+  emptyClassName?: string
+}) {
+  const visibleItems = maxItems != null ? items.slice(0, maxItems) : items
+
+  if (visibleItems.length === 0) {
+    return <p className={emptyClassName}>아직 기록이 없습니다.</p>
+  }
+
+  return (
+    <ul className={listClassName} onWheel={handleHistoryPanelWheel}>
+      {visibleItems.map((item, index) => (
+        <li
+          key={item.row.id || `${item.listingLabel}-${item.row.recorded_at}-${index}`}
+          className="rounded-md bg-slate-50 px-2 py-1 text-[10px] leading-snug text-foreground"
+        >
+          {formatOtaHistoryHoverLine(item, teamMembers)}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function OtaInventoryUpdateStamp({
+  updater,
+  updatedStamp,
+  historyItems,
+  teamMembers,
+  onOpenModal,
+}: {
+  updater: string
+  updatedStamp: string
+  historyItems: OtaHistoryHoverItem[]
+  teamMembers: TeamMemberLite[]
+  onOpenModal: () => void
+}) {
+  const anchorRef = useRef<HTMLButtonElement>(null)
+  const hideTimerRef = useRef<number | null>(null)
+  const [open, setOpen] = useState(false)
+  const [coords, setCoords] = useState({ top: 0, left: 0 })
+
+  const showPopover = useCallback(() => {
+    if (hideTimerRef.current != null) {
+      window.clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setOpen(true)
+  }, [])
+
+  const scheduleHidePopover = useCallback(() => {
+    hideTimerRef.current = window.setTimeout(() => setOpen(false), 140)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return
+    const rect = anchorRef.current.getBoundingClientRect()
+    setCoords({
+      top: rect.top - 8,
+      left: rect.left + rect.width / 2,
+    })
+  }, [open])
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current != null) window.clearTimeout(hideTimerRef.current)
+    }
+  }, [])
+
+  const popover =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className="fixed z-[12050] w-[min(92vw,320px)] -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-white p-2.5 text-left shadow-xl"
+            style={{ top: coords.top, left: coords.left }}
+            onMouseEnter={showPopover}
+            onMouseLeave={scheduleHidePopover}
+            onWheel={handleHistoryPanelWheel}
+            role="tooltip"
+          >
+            <p className="mb-1 text-[10px] font-medium text-muted-foreground">OTA 반영 히스토리</p>
+            <OtaInventoryHistoryLines
+              items={historyItems}
+              teamMembers={teamMembers}
+              maxItems={24}
+            />
+          </div>,
+          document.body
+        )
+      : null
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className="inline-block max-w-full cursor-pointer truncate border-b border-dotted border-muted-foreground/40 text-left text-[9px] leading-tight text-muted-foreground hover:text-foreground"
+        onMouseEnter={showPopover}
+        onMouseLeave={scheduleHidePopover}
+        onFocus={showPopover}
+        onBlur={scheduleHidePopover}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (hideTimerRef.current != null) {
+            window.clearTimeout(hideTimerRef.current)
+            hideTimerRef.current = null
+          }
+          setOpen(false)
+          onOpenModal()
+        }}
+        title="클릭하여 OTA 반영 히스토리 보기"
+      >
+        {updater}
+        {updater && updatedStamp ? ', ' : ''}
+        {updatedStamp}
+      </button>
+      {popover}
+    </>
+  )
 }
 
 function OtaClosureChannelButton({
@@ -318,6 +473,10 @@ export default function PriceInventoryModal({
   const [statusMenuDate, setStatusMenuDate] = useState<string | null>(null)
   const [savingStatusDate, setSavingStatusDate] = useState<string | null>(null)
   const [syncingOtaKey, setSyncingOtaKey] = useState<string | null>(null)
+  const [officeStaffByDate, setOfficeStaffByDate] = useState<
+    Record<string, OfficeScheduleDayStaffChip[]>
+  >({})
+  const [historyModalDate, setHistoryModalDate] = useState<string | null>(null)
   const [draft, setDraft] = useState({
     antelope_x_seats: '',
     antelope_l_seats: '',
@@ -868,9 +1027,62 @@ export default function PriceInventoryModal({
   }, [selectedProductId, selectedChannelId, selectedVariantKey, selectedListingId, currentMonth])
 
   useEffect(() => {
+    if (!isOpen) setHistoryModalDate(null)
+  }, [isOpen])
+
+  const loadOfficeSchedule = useCallback(async () => {
+    const { start, end } = getMonthDateRange(currentMonth)
+    try {
+      const [teamRes, slotsRes, offDaysRes] = await Promise.all([
+        supabase
+          .from('team')
+          .select('email, name_en, display_name, nick_name, name_ko, position')
+          .eq('is_active', true)
+          .or('position.ilike.op,position.ilike.office manager'),
+        fromUntypedTable(supabase, 'office_schedule_slots')
+          .select('employee_email, schedule_date, hour_slot')
+          .gte('schedule_date', start)
+          .lte('schedule_date', end),
+        fromUntypedTable(supabase, 'office_schedule_off_days')
+          .select('employee_email, schedule_date')
+          .gte('schedule_date', start)
+          .lte('schedule_date', end),
+      ])
+
+      if (teamRes.error) throw teamRes.error
+      if (slotsRes.error) throw slotsRes.error
+      if (offDaysRes.error) throw offDaysRes.error
+
+      const staff = ((teamRes.data || []) as OfficeScheduleStaffMember[]).map((row) => ({
+        email: row.email,
+        display_name: row.display_name ?? null,
+        name_en: row.name_en ?? null,
+        nick_name: row.nick_name ?? null,
+        name_ko: row.name_ko ?? null,
+      }))
+
+      setOfficeStaffByDate(
+        buildOfficeScheduleStaffByDate(
+          staff,
+          (slotsRes.data || []) as OfficeScheduleSlotRow[],
+          (offDaysRes.data || []) as OfficeScheduleOffDayRow[]
+        )
+      )
+    } catch (error) {
+      console.error('Office schedule load failed:', error)
+      setOfficeStaffByDate({})
+    }
+  }, [currentMonth])
+
+  useEffect(() => {
     if (!isOpen || !selectedProductId || !selectedListingId) return
     void loadMonthData()
   }, [isOpen, selectedProductId, selectedListingId, currentMonth, loadMonthData])
+
+  useEffect(() => {
+    if (!isOpen) return
+    void loadOfficeSchedule()
+  }, [isOpen, currentMonth, loadOfficeSchedule])
 
   useEffect(() => {
     if (!selectedDate) return
@@ -1276,6 +1488,21 @@ export default function PriceInventoryModal({
 
   const calendarDays = useMemo(() => buildCalendarDays(currentMonth), [currentMonth])
 
+  const historyModalItems = useMemo(() => {
+    if (!historyModalDate) return []
+    return buildAllChannelHistoryForDate(
+      historyModalDate,
+      closureTargetListings,
+      closureHistoryByListingAndDate,
+      inventoryByListingAndDate
+    )
+  }, [
+    historyModalDate,
+    closureTargetListings,
+    closureHistoryByListingAndDate,
+    inventoryByListingAndDate,
+  ])
+
   const getDayMeta = useCallback(
     (date: string) => {
       const inventory = inventoryByDate[date]
@@ -1329,6 +1556,7 @@ export default function PriceInventoryModal({
   const selectedMeta = selectedDate ? getDayMeta(selectedDate) : null
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className="flex max-h-[92vh] w-[min(98vw,1536px)] max-w-none flex-col gap-0 overflow-hidden p-0"
@@ -1477,6 +1705,15 @@ export default function PriceInventoryModal({
                   const isSavingStatus = savingStatusDate === cell.date
                   const closureListings = getClosureListingsForDate(cell.date, meta.status)
                   const internalRemaining = meta.internalCapacity?.totalSpotsLeft
+                  const officeStaffLine = formatOfficeScheduleDayStaff(
+                    officeStaffByDate[cell.date] || []
+                  )
+                  const inventoryHistoryItems = buildAllChannelHistoryForDate(
+                    cell.date,
+                    closureTargetListings,
+                    closureHistoryByListingAndDate,
+                    inventoryByListingAndDate
+                  )
 
                   return (
                     <div
@@ -1496,7 +1733,7 @@ export default function PriceInventoryModal({
                         }
                       }}
                       className={[
-                        'relative min-h-[130px] cursor-pointer rounded-xl border p-1.5 text-left transition-all',
+                        'relative flex min-h-[130px] cursor-pointer flex-col rounded-xl border p-1.5 text-left transition-all',
                         cellSurfaceClass,
                         cellFocusClass,
                         meta.isLowVehicleRemaining
@@ -1695,14 +1932,34 @@ export default function PriceInventoryModal({
                         </div>
                       ) : null}
 
-                      {updater || updatedStamp ? (
-                        <p className="truncate text-[9px] leading-tight text-muted-foreground">
-                          {updater}
-                          {updater && updatedStamp ? ', ' : ''}
-                          {updatedStamp}
-                        </p>
+                      {updater || updatedStamp || officeStaffLine ? (
+                        <div className="mt-auto flex items-end justify-between gap-1">
+                          {updater || updatedStamp ? (
+                            <p className="min-w-0 flex-1 truncate text-[9px] leading-tight">
+                              <OtaInventoryUpdateStamp
+                                updater={updater}
+                                updatedStamp={updatedStamp}
+                                historyItems={inventoryHistoryItems}
+                                teamMembers={teamMembers}
+                                onOpenModal={() => setHistoryModalDate(cell.date)}
+                              />
+                            </p>
+                          ) : officeStaffLine ? (
+                            <span className="min-w-0 flex-1" aria-hidden />
+                          ) : (
+                            <p className="min-w-0 flex-1 text-[9px] text-muted-foreground/60">미기록</p>
+                          )}
+                          {officeStaffLine ? (
+                            <p
+                              className="shrink-0 text-right text-[8px] font-semibold leading-tight text-slate-700"
+                              title="Office Schedule 출근"
+                            >
+                              {officeStaffLine}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
-                        <p className="text-[9px] text-muted-foreground/60">미기록</p>
+                        <p className="mt-auto text-[9px] text-muted-foreground/60">미기록</p>
                       )}
                     </div>
                   )
@@ -1900,5 +2157,38 @@ export default function PriceInventoryModal({
           </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={historyModalDate != null}
+      onOpenChange={(open) => {
+        if (!open) setHistoryModalDate(null)
+      }}
+    >
+      <DialogContent
+        className="max-w-md gap-0 overflow-hidden p-0 sm:max-w-lg"
+        forceZIndex={11150}
+      >
+        <DialogHeader className="border-b px-4 py-3 sm:px-6">
+          <DialogTitle className="text-base sm:text-lg">
+            {historyModalDate
+              ? `${dayjs(historyModalDate).format('M월 D일 (ddd)')} OTA 반영 히스토리`
+              : 'OTA 반영 히스토리'}
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground">GYG · Klook variant 4개 채널</p>
+        </DialogHeader>
+        <div
+          className="max-h-[min(60vh,420px)] overflow-y-auto overscroll-contain p-4 sm:p-6"
+          onWheel={handleHistoryPanelWheel}
+        >
+          <OtaInventoryHistoryLines
+            items={historyModalItems}
+            teamMembers={teamMembers}
+            listClassName="space-y-1.5"
+            emptyClassName="text-sm text-muted-foreground"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

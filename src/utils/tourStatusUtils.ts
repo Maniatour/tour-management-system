@@ -173,6 +173,42 @@ export const getStatusText = (status: string | null, locale: string = 'ko') => {
   return status
 }
 
+/** 투어 캘린더·스케줄 디스플레이 — 상태를 아이콘만 표시 */
+export function getTourStatusIcon(status: string | null | undefined): string | null {
+  if (!status) return null
+  const normalizedStatus = String(status).toLowerCase().trim()
+  if (normalizedStatus.includes('canceled') || normalizedStatus.includes('cancel')) {
+    return '🚫'
+  }
+  if (normalizedStatus.includes('deleted') || normalizedStatus.includes('requested for delete')) {
+    return '🗑️'
+  }
+  switch (normalizedStatus) {
+    case 'recruiting':
+      return '📢'
+    case 'confirmed':
+    case 'confirm':
+      return '✓'
+    case 'scheduled':
+      return '📅'
+    case 'approved':
+      return '✅'
+    case 'requested':
+      return '📝'
+    case 'complete':
+    case 'completed':
+      return '✔️'
+    default:
+      if (normalizedStatus.includes('recruiting')) return '📢'
+      if (normalizedStatus.includes('confirm')) return '✓'
+      if (normalizedStatus.includes('scheduled')) return '📅'
+      if (normalizedStatus.includes('complete')) return '✔️'
+      if (normalizedStatus.includes('approved')) return '✅'
+      if (normalizedStatus.includes('requested')) return '📝'
+      return null
+  }
+}
+
 export const getAssignmentStatusColor = (tour: any) => {
   if (!tour?.assignment_status) {
     return 'bg-gray-100 text-gray-800'

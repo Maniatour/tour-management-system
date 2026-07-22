@@ -515,6 +515,78 @@ export function formatClosureHistoryDetail(row: OtaChannelInventoryHistoryRow): 
   return parts.length > 0 ? parts.join(' · ') : '변경 기록'
 }
 
+export function formatOtaHistoryListingShortLabel(listing: ChannelVariantListing): string {
+  if (isGetYourGuideChannel(listing.channelId, listing.channelName)) {
+    return 'GYG'
+  }
+
+  if (isKlookChannel(listing.channelId, listing.channelName)) {
+    const label = `${listing.variantLabel} ${listing.variantKey}`.toLowerCase()
+    if (/korean|한국|\bkr\b/.test(label)) return 'Klook kr'
+    if (/all.?inclusive|올인|전체\s*포함|exclusion|불포함/.test(label)) return 'Klook +'
+    const abbr = abbreviateKlookVariantLabel(listing.variantKey, listing.variantLabel)
+    if (abbr === '🇰🇷') return 'Klook kr'
+    if (abbr === '➕' || abbr === '✅') return 'Klook +'
+    const variantShort = listing.variantLabel.trim() || listing.variantKey
+    return variantShort ? `Klook ${variantShort}` : 'Klook'
+  }
+
+  const channelName = (listing.channelName || listing.channelId).trim()
+  if (listing.variantKey && listing.variantKey !== 'default') {
+    const variantShort = listing.variantLabel.trim() || listing.variantKey
+    return variantShort ? `${channelName} ${variantShort}` : channelName
+  }
+  return channelName
+}
+
+export type OtaHistoryHoverItem = {
+  row: OtaChannelInventoryHistoryRow
+  listingLabel: string
+}
+
+export function formatOtaHistoryHoverLine(
+  item: OtaHistoryHoverItem,
+  teamMembers: Array<{ email: string; nick_name?: string | null; name_ko?: string | null }> = []
+): string {
+  const { row, listingLabel } = item
+  const actor = formatClosureHistoryActor(row, teamMembers)
+  const stamp = formatOtaUpdateStamp(row.recorded_at)
+  const seats =
+    row.ota_synced_vehicle_seats != null
+      ? row.ota_synced_vehicle_seats
+      : row.vehicle_seats != null
+        ? row.vehicle_seats
+        : null
+  const seatsPart = seats != null ? `${seats}석 반영` : '반영'
+  const statusPart = row.sale_status
+    ? OTA_STATUS_META[row.sale_status]?.label || row.sale_status
+    : ''
+  return `${actor} ${stamp} - ${listingLabel} ${seatsPart}${statusPart ? ` - ${statusPart}` : ''}`
+}
+
+export function buildAllChannelHistoryForDate(
+  date: string,
+  listings: ChannelVariantListing[],
+  historyByListingAndDate: Record<string, Record<string, OtaChannelInventoryHistoryRow[]>>,
+  inventoryByListingAndDate: Record<string, Record<string, OtaChannelInventoryRow>>
+): OtaHistoryHoverItem[] {
+  const result: OtaHistoryHoverItem[] = []
+
+  for (const listing of listings) {
+    const history = historyByListingAndDate[listing.id]?.[date]
+    const inventory = inventoryByListingAndDate[listing.id]?.[date]
+    const entries = resolveClosureHistoryEntries(history, inventory)
+    const listingLabel = formatOtaHistoryListingShortLabel(listing)
+    for (const row of entries) {
+      result.push({ row, listingLabel })
+    }
+  }
+
+  return result.sort(
+    (a, b) => dayjs(b.row.recorded_at).valueOf() - dayjs(a.row.recorded_at).valueOf()
+  )
+}
+
 export function buildClosureHistoryByListingAndDate(
   rows: OtaChannelInventoryHistoryRow[]
 ): Record<string, Record<string, OtaChannelInventoryHistoryRow[]>> {

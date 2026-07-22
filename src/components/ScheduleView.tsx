@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, ListFilter } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -123,6 +123,28 @@ import {
   canShowTicketBookingSoftDeleteUi,
 } from '@/lib/ticketBookingSoftDelete'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
+import {
+  buildTourCanyonDisplayBadges,
+  formatTourCanyonChoiceCardLine,
+} from '@/lib/ticketBookingDateView'
+import type { OtaSaleStatus } from '@/lib/otaPriceInventory'
+import {
+  buildDisplayOtaSaleStatusByProductDate,
+  resolveDisplayOtaSaleStatus,
+  resolveScheduleDisplayInternalProductNameForTour,
+  getScheduleDisplayCalendarWeekStart,
+  getScheduleDisplayThreeWeekDateRange,
+} from '@/lib/scheduleDisplayCalendarMeta'
+import ScheduleDisplayCalendar, {
+  ScheduleDisplayCalendarNav,
+  type ScheduleDisplayCalendarTourSummary,
+} from '@/components/schedule/ScheduleDisplayCalendar'
+import ScheduleDisplayStatusFilterModal from '@/components/schedule/ScheduleDisplayStatusFilterModal'
+import {
+  DEFAULT_SCHEDULE_DISPLAY_STATUS_FILTER,
+  tourMatchesScheduleDisplayStatusFilter,
+  type ScheduleDisplayStatusFilterId,
+} from '@/lib/scheduleDisplayStatusFilter'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
 import GuideAssignmentEmailModal from '@/components/GuideAssignmentEmailModal'
@@ -311,6 +333,7 @@ type ScheduleTicketBookingRow = {
   status: string | null
   ea: number | null
   company?: string
+  category?: string | null
   time?: string
   check_in_date?: string
   booking_status?: string | null
@@ -730,6 +753,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     onPriceInventoryLaunchConsumed,
   } = props
   const isDisplayMode = variant === 'display'
+  const [displayCalendarWeekStart, setDisplayCalendarWeekStart] = useState(() =>
+    getScheduleDisplayCalendarWeekStart()
+  )
+  const [displayOtaSaleStatusByKey, setDisplayOtaSaleStatusByKey] = useState<
+    Record<string, OtaSaleStatus>
+  >({})
+  const [displayCalendarStatusFilter, setDisplayCalendarStatusFilter] = useState(
+    () => new Set<ScheduleDisplayStatusFilterId>(DEFAULT_SCHEDULE_DISPLAY_STATUS_FILTER)
+  )
+  const [displayStatusFilterModalOpen, setDisplayStatusFilterModalOpen] = useState(false)
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
@@ -2364,8 +2397,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         .order('name_ko')
 
       // 투어·예약: 멀티데이 이전 달 꼬리(최대 3일) + 그리드 끝(익월 1일 컬럼)까지
-      const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
-      const endDate = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
+      // display 모드: 좌측 그리드(오늘~N일) + 우측 달력(선택 월 전체·지난 투어 포함) 합집합
+      const startDate = (() => {
+        if (!isDisplayMode) return firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
+        const gridStart = dayjs().startOf('day')
+        const { start: calStartStr } = getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+        const calStart = dayjs(calStartStr)
+        const earliest = gridStart.isBefore(calStart, 'day') ? gridStart : calStart
+        return earliest.subtract(3, 'day').format('YYYY-MM-DD')
+      })()
+      const endDate = (() => {
+        if (!isDisplayMode) return lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
+        const gridEnd = dayjs().startOf('day').add(Math.max(displayDayCount, 1) - 1, 'day')
+        const { end: calEndStr } = getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+        const calEnd = dayjs(calEndStr)
+        const latest = gridEnd.isAfter(calEnd, 'day') ? gridEnd : calEnd
+        return latest.add(1, 'day').format('YYYY-MM-DD')
+      })()
       
       /** PostgREST max-rows(1000) 회피 — 한 달·버퍼 구간에 투어가 매우 많을 때 누락 방지 */
       const TOURS_PAGE = 1000
@@ -2643,7 +2691,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('ticket_bookings' as any)
         .select(
-          'id, tour_id, status, ea, company, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status, deletion_requested_at'
+          'id, tour_id, status, ea, company, category, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status, deletion_requested_at'
         )
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
@@ -2753,7 +2801,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     } finally {
       setLoading(false)
     }
-  }, [firstDayOfMonth, lastDayOfMonth, loadUserSettings, fetchUnassignedTours, activeOperatorId])
+  }, [
+    firstDayOfMonth,
+    lastDayOfMonth,
+    loadUserSettings,
+    fetchUnassignedTours,
+    activeOperatorId,
+    isDisplayMode,
+    displayDayCount,
+    displayCalendarWeekStart,
+  ])
 
   const handleScheduleTicketBookingSaved = useCallback(async () => {
     closeScheduleTicketBookingForm()
@@ -2789,6 +2846,51 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    if (!isDisplayMode) return
+    let cancelled = false
+    const { start: windowStart, end: windowEnd } =
+      getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+    const productIds = [
+      ...new Set(
+        tours
+          .filter((tour) => {
+            const date = String(tour.tour_date || '').slice(0, 10)
+            if (date < windowStart || date > windowEnd) return false
+            return tourMatchesScheduleDisplayStatusFilter(
+              tour.tour_status,
+              displayCalendarStatusFilter
+            )
+          })
+          .map((tour) => String(tour.product_id || ''))
+          .filter(Boolean)
+      ),
+    ]
+    if (productIds.length === 0) {
+      setDisplayOtaSaleStatusByKey({})
+      return () => {
+        cancelled = true
+      }
+    }
+    void (async () => {
+      try {
+        const statusMap = await buildDisplayOtaSaleStatusByProductDate({
+          weekStart: displayCalendarWeekStart,
+          tours,
+          reservations,
+          productIds,
+        })
+        if (!cancelled) setDisplayOtaSaleStatusByKey(statusMap)
+      } catch (error) {
+        console.error('Display calendar OTA status load failed:', error)
+        if (!cancelled) setDisplayOtaSaleStatusByKey({})
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDisplayMode, displayCalendarWeekStart, tours, reservations, displayCalendarStatusFilter])
 
   const convertScheduleReservationToFormType = useCallback((reservation: Record<string, unknown>) => {
     return {
@@ -5131,22 +5233,24 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       .map(k => `${keyToLabel[k]} : ${choiceCounts[k]}`)
     const choiceLine = choiceParts.length > 0 ? `초이스: ${choiceParts.join(' / ')}` : null
     /** 카드용: 캐년 X/L/U만 (거주자·객실·입장료 등 _other 제외) */
-    const choiceCardParts = displayOrder
-      .filter((k) => k !== '_other' && (choiceCounts[k] || 0) > 0)
-      .map((k) => `🏜️ ${keyToLabel[k]} : ${choiceCounts[k]}`)
-    const choiceCardLine = choiceCardParts.length > 0 ? choiceCardParts.join(' , ') : null
+    const tourTicketBookings = ticketBookings.filter((tb) => tb.tour_id === tour.id)
+    const choiceCardLine = formatTourCanyonChoiceCardLine(choiceCounts, tourTicketBookings)
     const maxParticipants = Number((tour as { max_participants?: number | null }).max_participants) || 0
     const capacityDenom = maxParticipants > 0 ? maxParticipants : totalPeopleAll
+    const spotsLeft = Math.max(0, capacityDenom - assignedPeople)
     const guideAssigned = !!(tour.tour_guide_id && String(tour.tour_guide_id).trim())
     const assistantAssigned = !!(tour.assistant_id && String(tour.assistant_id).trim())
     const requiresAssistant = tour.team_type !== '1guide'
+    const canyonBadges = buildTourCanyonDisplayBadges(choiceCounts, tourTicketBookings)
 
     return {
       productName,
+      productInternalName: resolveScheduleDisplayInternalProductNameForTour(tour, products, locale),
       tourDate,
       assignedPeople,
       totalPeopleAll,
       capacityDenom,
+      spotsLeft,
       assignedKo,
       assignedEn,
       guideName,
@@ -5160,9 +5264,68 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       isPrivateTour,
       choiceLine,
       choiceCardLine,
+      choiceCounts,
+      canyonBadges,
       tourStatus: tour.tour_status || null,
     }
   }
+
+  const getTourDisplayCalendarSummary = useCallback(
+    (tour: Tour): ScheduleDisplayCalendarTourSummary => {
+      const c = getTourSummaryCore(tour)
+      const colorValue = getScheduleProductColorForProductId(
+        tour.product_id,
+        productColors,
+        products,
+        defaultPresetIds,
+        airportPickupMemberIdSet,
+        airportSendingMemberIdSet,
+      )
+      const productColorProps = getProductDisplayProps(colorValue)
+      return {
+        productLabel: c.productInternalName,
+        tourStatus: c.tourStatus,
+        tourStatusLabel: getTourStatusLabel(c.tourStatus, locale),
+        saleStatus: resolveDisplayOtaSaleStatus(
+          displayOtaSaleStatusByKey,
+          tour.product_id,
+          tour.tour_date
+        ),
+        ...(productColorProps.className
+          ? { productColorClassName: productColorProps.className }
+          : {}),
+        ...(productColorProps.style ? { productColorStyle: productColorProps.style } : {}),
+        assignedPeople: c.assignedPeople,
+        capacityDenom: c.capacityDenom,
+        spotsLeft: c.spotsLeft,
+        assignedKo: c.assignedKo,
+        assignedEn: c.assignedEn,
+        guideName: c.guideName,
+        assistantName: c.assistantName,
+        vehicleNumber: c.vehicleNumber,
+        vehicleAssigned: c.vehicleAssigned,
+        guideAssigned: c.guideAssigned,
+        assistantAssigned: c.assistantAssigned,
+        requiresAssistant: c.requiresAssistant,
+        canyonBadges: c.canyonBadges,
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getTourSummaryCore closes over reservations/ticketBookings
+    [
+      reservations,
+      ticketBookings,
+      reservationChoices,
+      teamMembers,
+      customerIdToIsKo,
+      displayOtaSaleStatusByKey,
+      locale,
+      productColors,
+      products,
+      defaultPresetIds,
+      airportPickupMemberIdSet,
+      airportSendingMemberIdSet,
+    ]
+  )
 
   /** 가이드 스케줄 셀 호버: 상세 모달과 동일 집계, 빠른 확인용 줄 순서 */
   const getGuideScheduleTourHoverText = (tour: Tour) => {
@@ -5195,28 +5358,38 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return lines.join('\n')
   }
 
-  /** display 모드 우측 카드: 오늘~기간 내 활성 투어 */
-  const displayEventCards = useMemo(() => {
-    if (!isDisplayMode) return []
-    const start = firstDayOfMonth.format('YYYY-MM-DD')
-    const end = lastDayOfMonth.format('YYYY-MM-DD')
-    return tours
-      .filter((tour) => {
-        const d = String(tour.tour_date || '').slice(0, 10)
-        if (!d || d < start || d > end) return false
-        if (isTourCancelled(tour.tour_status) || isTourDeleted(tour.tour_status)) return false
-        return true
-      })
-      .slice()
-      .sort((a, b) => {
-        const da = String(a.tour_date || '')
-        const db = String(b.tour_date || '')
-        if (da !== db) return da.localeCompare(db)
+  const displayToursByDate = useMemo(() => {
+    const map = new Map<string, Tour[]>()
+    if (!isDisplayMode) return map
+    const { start: windowStart, end: windowEnd } =
+      getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+    for (const tour of tours) {
+      const date = String(tour.tour_date || '').slice(0, 10)
+      if (!date || date < windowStart || date > windowEnd) continue
+      if (!tourMatchesScheduleDisplayStatusFilter(tour.tour_status, displayCalendarStatusFilter)) {
+        continue
+      }
+      const list = map.get(date) || []
+      list.push(tour)
+      map.set(date, list)
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => {
         const na = a.products?.name || a.product_id || ''
         const nb = b.products?.name || b.product_id || ''
         return na.localeCompare(nb, 'ko')
       })
-  }, [isDisplayMode, tours, firstDayOfMonth, lastDayOfMonth])
+    }
+    return map
+  }, [isDisplayMode, tours, displayCalendarWeekStart, displayCalendarStatusFilter])
+
+  const displayCalendarVisibleTourCount = useMemo(() => {
+    let count = 0
+    for (const list of displayToursByDate.values()) count += list.length
+    return count
+  }, [displayToursByDate])
+
+  const displayCalendarStatusFilterActiveCount = displayCalendarStatusFilter.size
 
   const isStatusExcludedFromUnassignedList = useCallback((status: string) => {
     const s = (status || '').toLowerCase()
@@ -5646,167 +5819,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     return { vehicleMismatch, incompleteTours, ticketPeopleMismatch, unconfirmedToursWithPendingOrConfirmedRes }
   }, [scheduleHealthFetched, tourCoversScheduleDate, locale])
-
-  /** display 카드 — 스케줄 점검 요약(1~5) 해당 투어별 이슈 */
-  type DisplayTourHealthIssue = {
-    kind: 'capacity' | 'vehicle_day' | 'incomplete' | 'ticket' | 'unconfirmed'
-    message: string
-    borderClass: string
-    alertClass: string
-  }
-  const displayTourHealthByTourId = useMemo(() => {
-    const map = new Map<string, DisplayTourHealthIssue[]>()
-    if (!isDisplayMode || displayEventCards.length === 0) return map
-
-    const addIssue = (tourId: string, issue: DisplayTourHealthIssue) => {
-      const list = map.get(tourId) || []
-      if (list.some((x) => x.kind === issue.kind && x.message === issue.message)) return
-      list.push(issue)
-      map.set(tourId, list)
-    }
-
-    const tourMatchesOverflowItem = (tour: Tour, item: { productId: string; dateString: string }) => {
-      if (String(tour.tour_date || '').slice(0, 10) !== item.dateString) return false
-      const memberProductIds = isScheduleAggregatedRowKey(item.productId)
-        ? [
-            ...getScheduleRowMemberIdSet(
-              item.productId,
-              products,
-              airportPickupMemberIdSet,
-              airportSendingMemberIdSet,
-              miscTourProductIds,
-            ),
-          ]
-        : expandScheduleRowProductIdsWithMisc(item.productId, products, miscTourProductIds)
-      const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
-      return memberIdSet.has(canonicalScheduleProductId(tour.product_id))
-    }
-
-    const vehicleMismatchByDate = new Map(
-      scheduleHealthFromFetch.vehicleMismatch.map((row) => [row.dateString, row]),
-    )
-    const incompleteByTourId = new Map(
-      scheduleHealthFromFetch.incompleteTours.map((row) => [row.tourId, row]),
-    )
-    const ticketMismatchByTourId = new Map(
-      scheduleHealthFromFetch.ticketPeopleMismatch.map((row) => [row.tourId, row]),
-    )
-    const unconfirmedByTourId = new Map(
-      scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.map((row) => [row.tourId, row]),
-    )
-
-    for (const tour of displayEventCards) {
-      const tourId = String(tour.id)
-      const tourDate = String(tour.tour_date || '').slice(0, 10)
-
-      for (const item of scheduleCapacityOverflowItems) {
-        if (tourMatchesOverflowItem(tour, item)) {
-          addIssue(tourId, {
-            kind: 'capacity',
-            message:
-              locale === 'ko'
-                ? `정원 초과 — 배정 ${item.assigned}/${item.max}명`
-                : `Capacity exceeded — ${item.assigned}/${item.max} pax`,
-            borderClass: 'border-2 border-red-500 hover:border-red-600',
-            alertClass: 'bg-red-50 text-red-800 border-red-200',
-          })
-        }
-      }
-
-      const vehicleRow = vehicleMismatchByDate.get(tourDate)
-      if (vehicleRow) {
-        addIssue(tourId, {
-          kind: 'vehicle_day',
-          message:
-            locale === 'ko'
-              ? `차량·투어 건수 불일치 — 투어 ${vehicleRow.tourCount} / 차량 ${vehicleRow.vehicleCount}`
-              : `Vehicle vs tour count — tours ${vehicleRow.tourCount} / vehicles ${vehicleRow.vehicleCount}`,
-          borderClass: 'border-2 border-amber-500 hover:border-amber-600',
-          alertClass: 'bg-amber-50 text-amber-950 border-amber-200',
-        })
-      }
-
-      const incomplete = incompleteByTourId.get(tourId)
-      if (incomplete) {
-        addIssue(tourId, {
-          kind: 'incomplete',
-          message:
-            locale === 'ko'
-              ? `인력·배차 미배정 — ${incomplete.missingLabels}`
-              : `Missing assignment — ${incomplete.missingLabels}`,
-          borderClass: 'border-2 border-violet-500 hover:border-violet-600',
-          alertClass: 'bg-violet-50 text-violet-900 border-violet-200',
-        })
-      }
-
-      const ticket = ticketMismatchByTourId.get(tourId)
-      if (ticket) {
-        addIssue(tourId, {
-          kind: 'ticket',
-          message:
-            locale === 'ko'
-              ? `입장권 불일치 — 인원 ${ticket.people} / 입장권 ${ticket.ticketEa}`
-              : `Ticket mismatch — pax ${ticket.people} / tickets ${ticket.ticketEa}`,
-          borderClass: 'border-2 border-sky-500 hover:border-sky-600',
-          alertClass: 'bg-sky-50 text-sky-900 border-sky-200',
-        })
-      }
-
-      const unconfirmed = unconfirmedByTourId.get(tourId)
-      if (unconfirmed) {
-        const pendingPart =
-          unconfirmed.pendingResCount > 0
-            ? locale === 'ko'
-              ? `대기 ${unconfirmed.pendingResCount}건`
-              : `pending ${unconfirmed.pendingResCount}`
-            : ''
-        const confirmedPart =
-          unconfirmed.confirmedResCount > 0
-            ? locale === 'ko'
-              ? `확정 ${unconfirmed.confirmedResCount}건`
-              : `confirmed ${unconfirmed.confirmedResCount}`
-            : ''
-        const resPart = [pendingPart, confirmedPart].filter(Boolean).join(locale === 'ko' ? ' · ' : ', ')
-        addIssue(tourId, {
-          kind: 'unconfirmed',
-          message:
-            locale === 'ko'
-              ? `투어 미확정(${unconfirmed.tourStatusLabel}) — ${resPart} 예약`
-              : `Tour not confirmed (${unconfirmed.tourStatusLabel}) — ${resPart} reservations`,
-          borderClass: 'border-2 border-orange-500 hover:border-orange-600',
-          alertClass: 'bg-orange-50 text-orange-950 border-orange-200',
-        })
-      }
-    }
-
-    return map
-  }, [
-    isDisplayMode,
-    displayEventCards,
-    scheduleCapacityOverflowItems,
-    scheduleHealthFromFetch,
-    products,
-    airportPickupMemberIdSet,
-    airportSendingMemberIdSet,
-    miscTourProductIds,
-    locale,
-  ])
-
-  const getDisplayTourHealthBorderClass = useCallback((issues: DisplayTourHealthIssue[] | undefined) => {
-    if (!issues?.length) return 'border border-border/60 hover:border-primary/40'
-    const priority: DisplayTourHealthIssue['kind'][] = [
-      'capacity',
-      'incomplete',
-      'unconfirmed',
-      'ticket',
-      'vehicle_day',
-    ]
-    for (const kind of priority) {
-      const hit = issues.find((i) => i.kind === kind)
-      if (hit) return hit.borderClass
-    }
-    return issues[0]!.borderClass
-  }, [])
 
   const scheduleHealthIssueCount = useMemo(
     () =>
@@ -12023,195 +12035,98 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-0 bg-slate-50 lg:flex-row">
-      <div className="min-h-0 min-w-0 w-full overflow-auto p-2 sm:p-3 lg:w-1/2 lg:shrink-0">
+      <div className="min-h-0 min-w-0 w-full flex-1 overflow-auto p-2 sm:p-3 lg:w-1/2 lg:flex-none lg:shrink-0">
         {scheduleMainPanel}
       </div>
-      <aside className="flex min-h-0 w-full min-w-0 flex-1 flex-col border-t border-border bg-white lg:h-full lg:border-l lg:border-t-0">
-        <div className="sticky top-0 z-10 border-b border-border bg-white px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">
-            {locale === 'ko' ? '다가오는 투어' : 'Upcoming tours'}
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {firstDayOfMonth.format('YYYY-MM-DD')} ~ {lastDayOfMonth.format('YYYY-MM-DD')}
-            <span className="ml-1 tabular-nums">({displayEventCards.length})</span>
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {displayEventCards.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {locale === 'ko' ? '예정된 투어가 없습니다.' : 'No upcoming tours.'}
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {displayEventCards.map((tour) => {
-              const c = getTourSummaryCore(tour)
-              const status = c.tourStatus
-              const staffLine = [c.guideName, c.assistantName]
-                .filter((n) => n && n !== '-')
-                .join(' , ')
-              const healthIssues = displayTourHealthByTourId.get(String(tour.id))
-              const healthBorderClass = getDisplayTourHealthBorderClass(healthIssues)
-              const statusOptions = buildTourStatusSelectOptions(String(status || ''), locale)
-              const statusSelectValue = resolveTourStatusSelectValue(String(status || ''), statusOptions)
-              const isUpdatingStatus = updatingTourDetailModalStatusId === tour.id
-              return (
-                <div
-                  key={tour.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
+      <aside className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-t border-border bg-white lg:h-full lg:max-h-full lg:border-l lg:border-t-0">
+        {(() => {
+          const { start: calRangeStart, end: calRangeEnd } =
+            getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+          const statusFilterButton = (
+            <button
+              type="button"
+              onClick={() => setDisplayStatusFilterModalOpen(true)}
+              className="relative inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-medium hover:bg-muted"
+              aria-label={locale === 'ko' ? '투어 상태 필터' : 'Tour status filter'}
+              title={locale === 'ko' ? '투어 상태 필터' : 'Tour status filter'}
+            >
+              <ListFilter className="h-3.5 w-3.5" aria-hidden />
+              <span>{locale === 'ko' ? '상태' : 'Status'}</span>
+              <span className="tabular-nums text-muted-foreground">({displayCalendarStatusFilterActiveCount})</span>
+            </button>
+          )
+          return (
+            <>
+              <div className="shrink-0 border-b border-border bg-white px-4 py-3">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 lg:flex-nowrap lg:whitespace-nowrap">
+                    <h2 className="shrink-0 text-sm font-semibold text-foreground">
+                      {locale === 'ko' ? '다가오는 투어' : 'Upcoming tours'}
+                    </h2>
+                    <p className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {calRangeStart} ~ {calRangeEnd}
+                      <span className="ml-1">({displayCalendarVisibleTourCount})</span>
+                    </p>
+                  </div>
+                  <div className="hidden items-center gap-2 lg:flex">
+                    {statusFilterButton}
+                    <ScheduleDisplayCalendarNav
+                      locale={locale}
+                      weekStart={displayCalendarWeekStart}
+                      onWeekStartChange={setDisplayCalendarWeekStart}
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 lg:hidden">
+                  {statusFilterButton}
+                  <ScheduleDisplayCalendarNav
+                    locale={locale}
+                    weekStart={displayCalendarWeekStart}
+                    onWeekStartChange={setDisplayCalendarWeekStart}
+                  />
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <ScheduleDisplayCalendar
+                  toursByDate={displayToursByDate}
+                  getTourSummary={getTourDisplayCalendarSummary}
+                  locale={locale}
+                  weekStart={displayCalendarWeekStart}
+                  onWeekStartChange={setDisplayCalendarWeekStart}
+                  hideNavigation
+                  onTourClick={(tour) => {
                     showGuideModalContent(
                       locale === 'ko' ? '투어 상세 정보' : 'Tour details',
                       getTourSummary(tour),
                       tour.id,
                     )
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      showGuideModalContent(
-                        locale === 'ko' ? '투어 상세 정보' : 'Tour details',
-                        getTourSummary(tour),
-                        tour.id,
-                      )
-                    }
+                  onAssignStaff={(tour) => {
+                    const c = getTourSummaryCore(tour)
+                    const role: 'guide' | 'assistant' =
+                      !c.guideAssigned
+                        ? 'guide'
+                        : c.requiresAssistant && !c.assistantAssigned
+                          ? 'assistant'
+                          : 'guide'
+                    setUnassignedPersonAssignModal({ tour, role })
                   }}
-                  className={`flex h-full w-full cursor-pointer flex-col items-stretch justify-start rounded-xl bg-card p-4 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${healthBorderClass}`}
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">
-                      {dayjs(c.tourDate).locale('en').format('MM/DD (ddd)')} {c.productName}
-                      {c.isPrivateTour ? (
-                        <span className="ml-1 text-xs font-medium text-violet-700">(단독)</span>
-                      ) : null}
-                    </span>
-                    <div
-                      className="shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                    >
-                      <Select
-                        {...(statusSelectValue ? { value: statusSelectValue } : {})}
-                        onValueChange={(v) => {
-                          void updateTourDetailModalTourStatus(tour.id, v)
-                        }}
-                        disabled={isUpdatingStatus}
-                      >
-                        <SelectTrigger
-                          className={`h-auto min-h-0 w-auto gap-1 border-0 px-2 py-0.5 text-[11px] font-medium shadow-none focus:ring-2 focus:ring-ring [&>svg]:h-3 [&>svg]:w-3 ${getTourStatusColor(status)}`}
-                          aria-label={locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
-                          title={locale === 'ko' ? '클릭하여 상태 변경' : 'Click to change status'}
-                        >
-                          <SelectValue
-                            placeholder={locale === 'ko' ? '상태' : 'Status'}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statusOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {getTourStatusLabel(option.value, locale)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
-                    <span className="tabular-nums font-medium">
-                      인원 {c.assignedPeople}/{c.capacityDenom}
-                    </span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="inline-flex items-center gap-1">
-                      <ReactCountryFlag countryCode="KR" svg style={{ width: '1.1em', height: '0.85em' }} />
-                      <span className="tabular-nums">{c.assignedKo}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <ReactCountryFlag countryCode="US" svg style={{ width: '1.1em', height: '0.85em' }} />
-                      <span className="tabular-nums">{c.assignedEn}</span>
-                    </span>
-                  </div>
-                  {c.choiceCardLine ? (
-                    <p className="mb-1.5 text-xs leading-relaxed text-muted-foreground">{c.choiceCardLine}</p>
-                  ) : null}
-                  <div
-                    className={`flex items-center justify-between gap-2 text-xs text-foreground ${healthIssues?.length ? 'mb-2' : ''}`}
-                  >
-                    <p className="min-w-0 flex-1">
-                      {staffLine || (locale === 'ko' ? '가이드 미배정' : 'No guide')}
-                      {c.vehicleNumber && c.vehicleNumber !== '-' ? (
-                        <span className="text-muted-foreground">
-                          {' '}
-                          , 차량 {c.vehicleNumber}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {' '}
-                          , {locale === 'ko' ? '차량 미배정' : 'No vehicle'}
-                        </span>
-                      )}
-                    </p>
-                    <div
-                      className="flex shrink-0 items-center gap-0.5"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        aria-label={locale === 'ko' ? '투어 배정' : 'Assign staff'}
-                        title={locale === 'ko' ? '투어 배정' : 'Assign staff'}
-                        className="inline-flex items-center justify-center rounded-md border border-border bg-white/90 p-1 text-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const role: 'guide' | 'assistant' =
-                            !c.guideAssigned
-                              ? 'guide'
-                              : c.requiresAssistant && !c.assistantAssigned
-                                ? 'assistant'
-                                : 'guide'
-                          setUnassignedPersonAssignModal({ tour, role })
-                        }}
-                      >
-                        <UserPlus className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
-                        title={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
-                        className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white/90 p-1 text-amber-950 hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setUnassignedVehicleAssignModalTourId(tour.id)
-                        }}
-                      >
-                        <Car className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      </button>
-                    </div>
-                  </div>
-                  {healthIssues?.length ? (
-                    <div className="space-y-1 border-t border-border/50 pt-2">
-                      {healthIssues.map((issue) => (
-                        <p
-                          key={`${issue.kind}-${issue.message}`}
-                          className={`rounded-md border px-2 py-1.5 text-xs font-semibold leading-snug ${issue.alertClass}`}
-                        >
-                          {issue.message}
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-            </div>
-          )}
-        </div>
+                  onAssignVehicle={(tour) => {
+                    setUnassignedVehicleAssignModalTourId(tour.id)
+                  }}
+                />
+              </div>
+            </>
+          )
+        })()}
       </aside>
+      <ScheduleDisplayStatusFilterModal
+        open={displayStatusFilterModalOpen}
+        onOpenChange={setDisplayStatusFilterModalOpen}
+        locale={locale}
+        selected={displayCalendarStatusFilter}
+        onApply={setDisplayCalendarStatusFilter}
+      />
       {scheduleHealthFabEl}
     </div>
   )

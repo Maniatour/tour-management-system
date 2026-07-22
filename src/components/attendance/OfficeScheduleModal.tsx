@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { CalendarClock, Briefcase, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eraser, Eye, EyeOff, History, Loader2, Redo2, Save, Undo2, X } from 'lucide-react'
 import dayjs from 'dayjs'
 import { OFFICE_SCHEDULE_COPY as C } from '@/lib/officeScheduleCopy'
@@ -1400,9 +1401,9 @@ export default function OfficeScheduleModal({
 
   if (!isOpen) return null
 
-  return (
+  const modal = (
     <div
-      className="modal-inset-below-chrome max-lg:bg-black/45 lg:!fixed lg:!inset-0 lg:!top-0 lg:!bottom-0 lg:z-[100] lg:flex lg:items-center lg:justify-center lg:p-2 lg:bg-black/55"
+      className="modal-inset-below-chrome z-[1100] max-lg:bg-black/45 lg:!fixed lg:!inset-0 lg:!top-0 lg:!bottom-0 lg:flex lg:items-center lg:justify-center lg:p-2 lg:bg-black/55"
       role="dialog"
       aria-modal="true"
       aria-labelledby="office-schedule-modal-title"
@@ -2154,4 +2155,7 @@ export default function OfficeScheduleModal({
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modal
+  return createPortal(modal, document.body)
 }

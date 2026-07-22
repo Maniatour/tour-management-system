@@ -220,6 +220,60 @@ export function formatCanyonCountsInline(counts: TourChoiceCounts): string {
   return keys.map((k) => `${k}: ${counts[k]}`).join(' · ')
 }
 
+/** 스케줄 디스플레이 달력 — 투어별 🏜️ X/L 예약·입장권 뱃지 (Price & Inventory 형식) */
+export function buildTourCanyonDisplayBadges(
+  choiceCounts: TourChoiceCounts,
+  tourTicketBookings: Array<{
+    ea?: number | null
+    company?: string | null
+    category?: string | null
+    status?: string | null
+  }>
+): Array<{ key: 'X' | 'L' | 'U'; text: string; mismatch: boolean }> {
+  const displayOrder: Array<'X' | 'L' | 'U'> = ['X', 'L', 'U']
+  const countingBookings = tourTicketBookings.filter((b) => isTicketBookingEaCountingStatus(b.status))
+  const hasAnyTickets = countingBookings.length > 0
+  const ticketCounts = aggregateTicketEaByCanyon(countingBookings)
+  return displayOrder
+    .filter((k) => (choiceCounts[k] || 0) > 0)
+    .map((k) => {
+      const resCount = choiceCounts[k] || 0
+      const ticketCount = ticketCounts[k] || 0
+      const ticketLabel = hasAnyTickets ? String(ticketCount) : '?'
+      const mismatch = hasAnyTickets && resCount !== ticketCount
+      return {
+        key: k,
+        text: `🏜️ ${k} ${resCount} / ${ticketLabel}`,
+        mismatch,
+      }
+    })
+}
+
+/** 스케줄 디스플레이 투어 카드 — 예약 초이스 vs 해당 투어 입장권 EA (🏜️ X : 9 / 13) */
+export function formatTourCanyonChoiceCardLine(
+  choiceCounts: TourChoiceCounts,
+  tourTicketBookings: Array<{
+    ea?: number | null
+    company?: string | null
+    category?: string | null
+    status?: string | null
+  }>
+): string | null {
+  const displayOrder: Array<'X' | 'L' | 'U'> = ['X', 'L', 'U']
+  const countingBookings = tourTicketBookings.filter((b) => isTicketBookingEaCountingStatus(b.status))
+  const hasAnyTickets = countingBookings.length > 0
+  const ticketCounts = aggregateTicketEaByCanyon(countingBookings)
+  const parts = displayOrder
+    .filter((k) => (choiceCounts[k] || 0) > 0)
+    .map((k) => {
+      const resCount = choiceCounts[k] || 0
+      const ticketCount = ticketCounts[k] || 0
+      const suffix = hasAnyTickets ? ` / ${ticketCount}` : ''
+      return `🏜️ ${k} : ${resCount}${suffix}`
+    })
+  return parts.length > 0 ? parts.join(' , ') : null
+}
+
 export type TicketDateViewTourRow = {
   tourId: string
   label: string

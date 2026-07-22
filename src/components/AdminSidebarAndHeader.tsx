@@ -92,6 +92,7 @@ const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
+  const isAdminToursPage = /\/admin\/tours\/?$/.test(pathname)
   const router = useRouter()
   const { signOut, authUser, userRole, userPosition, isSimulating, stopSimulation, teamChatUnreadCount } = useAuth()
   const { operationsEnabled } = useOperator()
@@ -1219,14 +1220,20 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         }`}
       >
         {/* 페이지 콘텐츠 — 예약 관리는 좌우 패딩을 줄여 카드 열을 더 확보 */}
-        <main className="main-safe-area min-w-0 max-w-full overflow-x-clip pt-2 sm:pt-3 lg:pt-4">
+        <main
+          className={`main-safe-area min-w-0 max-w-full overflow-x-clip ${
+            isAdminToursPage ? 'pt-0' : 'pt-2 sm:pt-3 lg:pt-4'
+          }`}
+        >
           <div
             className={`mx-auto w-full min-w-0 max-w-full ${
               pathname.includes('/admin/reservations')
                 ? 'px-0'
                 : pathname.includes('/admin/reservation-imports')
                   ? 'px-[calc(var(--admin-main-gutter-x)/2)] sm:px-2'
-                  : 'px-[var(--admin-main-gutter-x)] sm:px-2'
+                  : isAdminToursPage
+                    ? 'px-0'
+                    : 'px-[var(--admin-main-gutter-x)] sm:px-2'
             }`}
           >
             {children}
