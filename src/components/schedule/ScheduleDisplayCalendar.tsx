@@ -54,6 +54,8 @@ export type ScheduleDisplayCalendarProps<T extends TourLike = TourLike> = {
   onAssignStaff?: (tour: T) => void
   onAssignVehicle?: (tour: T) => void
   hideNavigation?: boolean
+  /** API prefetch 데이터가 있으면 클라이언트 office schedule 조회 생략 */
+  officeStaffByDate?: Record<string, OfficeScheduleDayStaffChip[]>
 }
 
 export type ScheduleDisplayCalendarNavProps = {
@@ -140,12 +142,14 @@ export default function ScheduleDisplayCalendar<T extends TourLike>({
   onAssignStaff,
   onAssignVehicle,
   hideNavigation = false,
+  officeStaffByDate: officeStaffByDateProp,
 }: ScheduleDisplayCalendarProps<T>) {
-  const [officeStaffByDate, setOfficeStaffByDate] = useState<
+  const [officeStaffByDateFetched, setOfficeStaffByDateFetched] = useState<
     Record<string, OfficeScheduleDayStaffChip[]>
   >({})
 
   const loadOfficeSchedule = useCallback(async () => {
+    if (officeStaffByDateProp) return
     const { start, end } = getScheduleDisplayThreeWeekDateRange(weekStart)
     try {
       const [teamRes, slotsRes, offDaysRes] = await Promise.all([
@@ -176,7 +180,7 @@ export default function ScheduleDisplayCalendar<T extends TourLike>({
         name_ko: row.name_ko ?? null,
       }))
 
-      setOfficeStaffByDate(
+      setOfficeStaffByDateFetched(
         buildOfficeScheduleStaffByDate(
           staff,
           (slotsRes.data || []) as OfficeScheduleSlotRow[],
@@ -185,13 +189,16 @@ export default function ScheduleDisplayCalendar<T extends TourLike>({
       )
     } catch (error) {
       console.error('Schedule display calendar office schedule load failed:', error)
-      setOfficeStaffByDate({})
+      setOfficeStaffByDateFetched({})
     }
-  }, [weekStart])
+  }, [weekStart, officeStaffByDateProp])
 
   useEffect(() => {
+    if (officeStaffByDateProp) return
     void loadOfficeSchedule()
-  }, [loadOfficeSchedule])
+  }, [loadOfficeSchedule, officeStaffByDateProp])
+
+  const officeStaffByDate = officeStaffByDateProp ?? officeStaffByDateFetched
 
   const calendarDays = useMemo(() => buildScheduleDisplayThreeWeekDays(weekStart), [weekStart])
   const todayStr = dayjs().format('YYYY-MM-DD')

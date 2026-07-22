@@ -1,21 +1,9 @@
 'use client'
 
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { useLocale } from 'next-intl'
-
-const ScheduleView = dynamic(() => import('@/components/ScheduleView'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full min-h-[50vh] items-center justify-center bg-slate-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">스케줄 디스플레이를 불러오는 중...</p>
-      </div>
-    </div>
-  ),
-})
+import ScheduleDisplayView from '@/components/schedule/ScheduleDisplayView'
 
 export default function ScheduleDisplayPage() {
   const locale = useLocale()
@@ -40,7 +28,7 @@ export default function ScheduleDisplayPage() {
         </div>
       </header>
       <div className="min-h-0 flex-1">
-        <ScheduleView variant="display" displayDayCount={15} />
+        <ScheduleDisplayView displayDayCount={15} />
       </div>
     </div>
   )

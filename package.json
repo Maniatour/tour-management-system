@@ -44,6 +44,7 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.75.0",
     "@tailwindcss/line-clamp": "^0.4.4",
+    "@tanstack/react-virtual": "^3.14.7",
     "@tiptap/extension-link": "^2.27.2",
     "@tiptap/extension-placeholder": "^2.27.2",
     "@tiptap/extension-underline": "^2.27.2",

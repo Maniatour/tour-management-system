@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import { supabase } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   inferSaleStatus,
@@ -13,6 +13,29 @@ import {
 } from '@/lib/scheduleTourCapacity'
 
 export const SCHEDULE_DISPLAY_CALENDAR_WEEKS = 3
+
+/** display 모드 초기 fetch — 달력 주 이동 시 refetch 없이 커버할 과거·미래 주 수 */
+export const SCHEDULE_DISPLAY_FETCH_WEEKS_BACK = 4
+export const SCHEDULE_DISPLAY_FETCH_WEEKS_FORWARD = 10
+
+/** 스케줄 디스플레이 전용 데이터 fetch 날짜 범위 (주 이동과 무관하게 고정) */
+export function getScheduleDisplayFetchDateRange(displayDayCount: number): {
+  start: string
+  end: string
+} {
+  const today = dayjs().startOf('day')
+  const start = today
+    .subtract(SCHEDULE_DISPLAY_FETCH_WEEKS_BACK, 'week')
+    .subtract(3, 'day')
+    .format('YYYY-MM-DD')
+  const gridEnd = today.add(Math.max(displayDayCount, 1) - 1, 'day')
+  const prefetchEnd = today.add(SCHEDULE_DISPLAY_FETCH_WEEKS_FORWARD, 'week')
+  const latest = gridEnd.isAfter(prefetchEnd, 'day') ? gridEnd : prefetchEnd
+  return {
+    start,
+    end: latest.add(1, 'day').format('YYYY-MM-DD'),
+  }
+}
 
 /** 오늘이 포함된 주의 일요일 (0=일요일) */
 export function getScheduleDisplayCalendarWeekStart(date: Date = new Date()): Date {
@@ -110,33 +133,50 @@ function pickInventoryRow(
   })
 }
 
-/** 상품·일별 Price & Inventory 와 동일한 판매 상태 (판매중 / 잔여 적음 / 매진 / 판매 안함) */
-export async function buildDisplayOtaSaleStatusByProductDate(input: {
-  weekStart: Date
-  tours: ScheduleTourCapacityInput[]
-  reservations: ScheduleReservationCapacityInput[]
-  productIds: string[]
-}): Promise<Record<string, OtaSaleStatus>> {
-  const { weekStart, tours, reservations, productIds } = input
+function enumerateYmdDatesInclusive(startYmd: string, endYmdInclusive: string): string[] {
+  const dates: string[] = []
+  let cur = dayjs(startYmd).startOf('day')
+  const end = dayjs(endYmdInclusive).startOf('day')
+  while (!cur.isAfter(end, 'day')) {
+    dates.push(cur.format('YYYY-MM-DD'))
+    cur = cur.add(1, 'day')
+  }
+  return dates
+}
+
+/** 서버·클라이언트 공통 — YMD 구간 전체 OTA 판매 상태 (주 이동 시 클라이언트 필터만) */
+export async function buildDisplayOtaSaleStatusForYmdRange(
+  supabase: SupabaseClient,
+  input: {
+    rangeStart: string
+    rangeEndInclusive: string
+    calendarDates?: string[]
+    tours: ScheduleTourCapacityInput[]
+    reservations: ScheduleReservationCapacityInput[]
+    productIds: string[]
+  },
+): Promise<Record<string, OtaSaleStatus>> {
+  const { rangeStart, rangeEndInclusive, tours, reservations, productIds } = input
   const uniqueProductIds = [...new Set(productIds.map((id) => String(id || '').trim()).filter(Boolean))]
   if (uniqueProductIds.length === 0) return {}
 
-  const { start, end } = getScheduleDisplayThreeWeekDateRange(weekStart)
-  const calendarDates = buildScheduleDisplayThreeWeekDays(weekStart).map((cell) => cell.date)
+  const calendarDates =
+    input.calendarDates ?? enumerateYmdDatesInclusive(rangeStart, rangeEndInclusive)
+
   const [inventoryRes, pricingRes] = await Promise.all([
     fromUntypedTable(supabase, 'ota_channel_inventory')
       .select(
-        'product_id, inventory_date, antelope_x_seats, antelope_l_seats, vehicle_seats, sale_status, updated_at'
+        'product_id, inventory_date, antelope_x_seats, antelope_l_seats, vehicle_seats, sale_status, updated_at',
       )
       .in('product_id', uniqueProductIds)
-      .gte('inventory_date', start)
-      .lte('inventory_date', end),
+      .gte('inventory_date', rangeStart)
+      .lte('inventory_date', rangeEndInclusive),
     supabase
       .from('dynamic_pricing')
       .select('product_id, date, is_sale_available')
       .in('product_id', uniqueProductIds)
-      .gte('date', start)
-      .lte('date', end),
+      .gte('date', rangeStart)
+      .lte('date', rangeEndInclusive),
   ])
 
   const inventoryRowsByKey = new Map<string, OtaChannelInventoryRow[]>()
@@ -162,7 +202,8 @@ export async function buildDisplayOtaSaleStatusByProductDate(input: {
 
   const result: Record<string, OtaSaleStatus> = {}
   for (const productId of uniqueProductIds) {
-    for (const date of calendarDates) {      const key = scheduleDisplayProductDateKey(productId, date)
+    for (const date of calendarDates) {
+      const key = scheduleDisplayProductDateKey(productId, date)
       const inventory = pickInventoryRow(inventoryRowsByKey.get(key) || [])
       const isSaleAvailable = pricingAvailableByKey.get(key) ?? true
       const capacity = computeDayTourCapacityTotals(tours, reservations, date, productId)
@@ -171,6 +212,45 @@ export async function buildDisplayOtaSaleStatusByProductDate(input: {
   }
 
   return result
+}
+
+/** 상품·일별 Price & Inventory 와 동일한 판매 상태 (판매중 / 잔여 적음 / 매진 / 판매 안함) */
+export async function buildDisplayOtaSaleStatusByProductDate(input: {
+  weekStart: Date
+  tours: ScheduleTourCapacityInput[]
+  reservations: ScheduleReservationCapacityInput[]
+  productIds: string[]
+  supabaseClient?: SupabaseClient
+}): Promise<Record<string, OtaSaleStatus>> {
+  const { weekStart, tours, reservations, productIds } = input
+  const { start, end } = getScheduleDisplayThreeWeekDateRange(weekStart)
+  const calendarDates = buildScheduleDisplayThreeWeekDays(weekStart).map((cell) => cell.date)
+
+  const { supabase } = await import('@/lib/supabase')
+  const client = input.supabaseClient ?? supabase
+
+  return buildDisplayOtaSaleStatusForYmdRange(client, {
+    rangeStart: start,
+    rangeEndInclusive: end,
+    calendarDates,
+    tours,
+    reservations,
+    productIds,
+  })
+}
+
+export function filterOtaSaleStatusByYmdRange(
+  statusByKey: Record<string, OtaSaleStatus>,
+  rangeStart: string,
+  rangeEndInclusive: string,
+): Record<string, OtaSaleStatus> {
+  const filtered: Record<string, OtaSaleStatus> = {}
+  for (const [key, status] of Object.entries(statusByKey)) {
+    const date = key.split('|')[1]
+    if (!date || date < rangeStart || date > rangeEndInclusive) continue
+    filtered[key] = status
+  }
+  return filtered
 }
 
 export function resolveDisplayOtaSaleStatus(

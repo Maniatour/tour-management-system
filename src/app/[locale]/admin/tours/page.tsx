@@ -11,6 +11,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
+import { prefetchScheduleDisplayData } from '@/lib/prefetchScheduleDisplay'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
 import {
@@ -124,6 +125,15 @@ export default function AdminTours() {
   const activeOperatorId = resolveOperatorId(operatorId)
   const { userRole, authUser, simulatedUser, isSimulating, user, hasPermission, userPosition: authUserPosition } = useAuth()
   const adminUserEmail = (isSimulating && simulatedUser?.email) || authUser?.email || user?.email || null
+
+  useEffect(() => {
+    router.prefetch(`/${locale}/admin/schedule-display`)
+    void prefetchScheduleDisplayData(activeOperatorId, 15)
+  }, [router, locale, activeOperatorId])
+
+  const prefetchScheduleDisplay = useCallback(() => {
+    void prefetchScheduleDisplayData(activeOperatorId, 15)
+  }, [activeOperatorId])
 
   const awayNotifier = useAwayOtherUserChangesNotifier({
     supabase,
@@ -1174,6 +1184,8 @@ export default function AdminTours() {
             <button
               type="button"
               onClick={() => router.push(`/${locale}/admin/schedule-display`)}
+              onMouseEnter={prefetchScheduleDisplay}
+              onFocus={prefetchScheduleDisplay}
               title="스케줄 디스플레이"
               aria-label="스케줄 디스플레이"
               className="px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium bg-slate-800 text-white hover:bg-slate-900"

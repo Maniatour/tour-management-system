@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, ListFilter } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -18,6 +18,7 @@ import {
   isReservationCancelledStatus,
   normalizeReservationIds,
   canonicalReservationIdKey,
+  normalizeTourDateKey,
 } from '@/utils/tourUtils'
 import {
   getCustomerName,
@@ -37,18 +38,12 @@ import {
   tourStatusOptions,
 } from '@/utils/tourStatusUtils'
 import {
-  buildVehicleOilTooltipLines,
   computeVehicleOilMaintenanceSummary,
-  pickLatestEngineOilByVehicle,
   type ScheduleTourForOil,
   type ScheduleVehicleOilMeta,
-  type VehicleMaintenanceOilRecord,
   type VehicleOilMaintenanceSummary,
 } from '@/lib/scheduleVehicleOilMaintenance'
-import ReservationForm from '@/components/reservation/ReservationForm'
-import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import ReactCountryFlag from 'react-country-flag'
-import DateNoteModal from './DateNoteModal'
 import dynamic from 'next/dynamic'
 import {
   Dialog,
@@ -105,7 +100,6 @@ import {
   applyMiscTourToSelectedProducts,
   buildMiscTourDayProductBreakdown,
   expandScheduleRowProductIdsWithMisc,
-  getMiscTourStoredItemLabel,
   getScheduleMiscTourDisplayName,
   getScheduleRowMemberIdSet,
   isScheduleAggregatedRowKey,
@@ -113,14 +107,12 @@ import {
   isMiscTourSelectableProduct,
   normalizeMiscTourProductIds,
 } from '@/lib/scheduleMiscTourGroup'
-import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
 import {
   TicketBookingBookingStatusIcon,
   TicketBookingVendorStatusIcon,
 } from '@/components/booking/ticketBookingAxisStatusIcons'
 import { formatTicketBookingAxisLabel } from '@/lib/ticketBookingAxisLabels'
 import {
-  filterTicketBookingsExcludedFromMainUi,
   canShowTicketBookingSoftDeleteUi,
 } from '@/lib/ticketBookingSoftDelete'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
@@ -128,29 +120,28 @@ import {
   buildTourCanyonDisplayBadges,
   formatTourCanyonChoiceCardLine,
 } from '@/lib/ticketBookingDateView'
-import type { OtaSaleStatus } from '@/lib/otaPriceInventory'
 import {
-  buildDisplayOtaSaleStatusByProductDate,
   resolveDisplayOtaSaleStatus,
   resolveScheduleDisplayInternalProductNameForTour,
-  getScheduleDisplayCalendarWeekStart,
-  getScheduleDisplayThreeWeekDateRange,
 } from '@/lib/scheduleDisplayCalendarMeta'
-import ScheduleDisplayCalendar, {
-  ScheduleDisplayCalendarNav,
-  type ScheduleDisplayCalendarTourSummary,
-} from '@/components/schedule/ScheduleDisplayCalendar'
-import ScheduleDisplayStatusFilterModal from '@/components/schedule/ScheduleDisplayStatusFilterModal'
-import {
-  DEFAULT_SCHEDULE_DISPLAY_STATUS_FILTER,
-  tourMatchesScheduleDisplayStatusFilter,
-  type ScheduleDisplayStatusFilterId,
-} from '@/lib/scheduleDisplayStatusFilter'
+import type { ScheduleDisplayDataPayload } from '@/lib/scheduleDisplayData'
+import type { ScheduleDisplayCalendarTourSummary } from '@/components/schedule/ScheduleDisplayCalendar'
+import ScheduleDisplayAsidePanel from '@/components/schedule/ScheduleDisplayAsidePanel'
+import ScheduleDisplayToolbar from '@/components/schedule/ScheduleDisplayToolbar'
+import ScheduleProductGrid from '@/components/schedule/ScheduleProductGrid'
+import ScheduleGuideGrid from '@/components/schedule/ScheduleGuideGrid'
+import ScheduleVehicleGrid from '@/components/schedule/ScheduleVehicleGrid'
+import { useScheduleDisplayCalendar } from '@/hooks/useScheduleDisplayCalendar'
+import { useScheduleViewDialogs } from '@/hooks/useScheduleViewDialogs'
+import { useScheduleViewDateNotes } from '@/hooks/useScheduleViewDateNotes'
+import { useScheduleViewTicketBookings } from '@/hooks/useScheduleViewTicketBookings'
+import { useScheduleViewData } from '@/hooks/useScheduleViewData'
+import ScheduleMessageConfirmModals from '@/components/schedule/ScheduleMessageConfirmModals'
+import { aggregateScheduleBreakdownFromDailyData } from '@/lib/scheduleProductGridHelpers'
+import type { ScheduleGuideDailyData, ScheduleGuideScheduleRow } from '@/lib/scheduleGuideGridTypes'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
-import GuideAssignmentEmailModal from '@/components/GuideAssignmentEmailModal'
 import {
-  buildToursAssignmentBaseline,
   computeGuideAssignmentChanges,
   guideAssignmentChangeTypeLabel,
   guideAssignmentRoleLabel,
@@ -196,6 +187,36 @@ const PriceInventoryModal = dynamic(() => import('@/components/schedule/PriceInv
   ssr: false,
   loading: () => null,
 })
+
+const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const CancellationReasonModal = dynamic(
+  () => import('@/components/reservation/CancellationReasonModal'),
+  { ssr: false, loading: () => null },
+)
+
+const DateNoteModal = dynamic(() => import('./DateNoteModal'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const GuideAssignmentEmailModal = dynamic(() => import('@/components/GuideAssignmentEmailModal'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const ScheduleTicketBookingAxisInline = dynamic(
+  () => import('@/components/booking/ScheduleTicketBookingAxisInline'),
+  {
+    ssr: false,
+    loading: () => (
+      <span className="inline-block h-3 w-8 animate-pulse rounded bg-muted" aria-hidden />
+    ),
+  },
+)
 
 const SCHEDULE_VEHICLE_EDIT_SELECT = `
   id,
@@ -448,101 +469,9 @@ function formatConnectedTourLabelForTicketBookingTooltip(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ReservationFormAny = ReservationForm as any
+const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
-const PRODUCT_SCHEDULE_KEYCAP_DIGITS = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'] as const
-
-/** 단독 투어 인원만 키캡 이모지로 표시. 동행모집(비단독) 인원이 같이 있으면 `4️⃣ 5` 형태 */
-function formatProductScheduleCellPeopleWithPrivateSplit(
-  privateTourPeople: number,
-  companionTourPeople: number,
-  waiting: number,
-  canceled: number
-): string {
-  const toKeycap = (n: number) =>
-    String(Math.max(0, Math.floor(n)))
-      .split('')
-      .map((ch) => {
-        const d = ch.charCodeAt(0) - 48
-        return d >= 0 && d <= 9 ? PRODUCT_SCHEDULE_KEYCAP_DIGITS[d] : ch
-      })
-      .join('')
-
-  let out: string
-  if (privateTourPeople > 0 && companionTourPeople > 0) {
-    out = `${toKeycap(privateTourPeople)} ${companionTourPeople}`
-  } else if (privateTourPeople > 0) {
-    out = toKeycap(privateTourPeople)
-  } else {
-    out = String(companionTourPeople)
-  }
-  if (waiting > 0) out += ` +${waiting}`
-  if (canceled > 0) out += ` (${canceled})`
-  return out
-}
-
-type ScheduleDailyBreakdownSlice = {
-  koPeople?: number
-  enPeople?: number
-  koWaitingPeople?: number
-  enWaitingPeople?: number
-  choiceCounts?: Record<string, number>
-}
-
-function aggregateScheduleBreakdownFromDailyData(
-  dailyData: Record<string, ScheduleDailyBreakdownSlice | undefined>,
-  dateStrings: string[],
-) {
-  let ko = 0
-  let en = 0
-  const choiceCounts: Record<string, number> = {}
-  for (const dateString of dateStrings) {
-    const dd = dailyData[dateString]
-    if (!dd) continue
-    ko += (dd.koPeople || 0) + (dd.koWaitingPeople || 0)
-    en += (dd.enPeople || 0) + (dd.enWaitingPeople || 0)
-    if (dd.choiceCounts) {
-      for (const [k, v] of Object.entries(dd.choiceCounts)) {
-        if (v > 0) choiceCounts[k] = (choiceCounts[k] || 0) + v
-      }
-    }
-  }
-  return { ko, en, choiceCounts }
-}
-
-function ScheduleTotalColumnWithTooltip({
-  total,
-  valueClassName,
-  breakdown,
-}: {
-  total: number
-  valueClassName: string
-  breakdown: { ko: number; en: number; choiceCounts: Record<string, number> }
-}) {
-  const x = breakdown.choiceCounts.X || 0
-  const l = breakdown.choiceCounts.L || 0
-  return (
-    <div className="group relative overflow-visible cursor-default">
-      <div className={valueClassName}>{total}</div>
-      <div className="absolute z-[1020] right-0 top-full mt-1 min-w-[200px] w-max max-w-[min(90vw,320px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block">
-        <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-            <span>한국인 {breakdown.ko}명</span>
-          </span>
-          <span className="text-gray-400 shrink-0">/</span>
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-            <span>미국인 {breakdown.en}명</span>
-          </span>
-        </div>
-        <div className="whitespace-nowrap break-keep leading-tight">
-          엑스 {x}명 / 로어 {l}명
-        </div>
-      </div>
-    </div>
-  )
-}
+type DailyData = ScheduleGuideDailyData
 
 function scheduleReservationPrivateBucket(res: Reservation, dayTours: Tour[]): 'private' | 'companion' {
   const tourPrivate = (t: Tour) => t.is_private_tour === 'TRUE' || t.is_private_tour === true
@@ -557,30 +486,6 @@ function scheduleReservationPrivateBucket(res: Reservation, dayTours: Tour[]): '
   const r = res.is_private_tour === true || res.is_private_tour === 'TRUE' || res.is_private_tour === 1
   return r ? 'private' : 'companion'
 }
-
-interface DailyData {
-  totalPeople: number
-  assignedPeople: number
-  tours: number
-  productColors: { [productId: string]: string }
-  role: string | null
-  guideInitials: string | null
-  isMultiDay: boolean
-  multiDayDays: number
-  extendsToNextMonth?: boolean
-}
-
-// interface ScheduleData {
-//   product_id: string
-//   product_name: string
-//   team_member_id: string
-//   team_member_name: string
-//   position: string
-//   dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number } }
-//   totalPeople: number
-//   totalAssignedPeople: number
-//   totalTours: number
-// }
 
 /** 스케줄 부킹 행: 시간 표시용 (HH:mm) */
 function normalizeBookingTimeForSchedule(time: string): { display: string; sort: string } {
@@ -698,7 +603,6 @@ function resolveMergedTicketBookingAxisDisplay(
 
 /** 드롭 존·행 재정렬 하이라이트는 classList만 갱신해 dragover마다 전체 트리 리렌더를 피함 */
 const SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT = ['bg-blue-200', 'border-2', 'border-blue-400'] as const
-const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-primary/5'] as const
 const SCHEDULE_ROW_REORDER_HIGHLIGHT = ['border-t-2', 'border-primary'] as const
 
 function addScheduleLocalDaysYmd(daysFromToday: number): string {
@@ -743,6 +647,10 @@ type ScheduleViewProps = {
   /** 예약 저장 후 잔여 적음·매진 시 Price & Inventory 모달 자동 오픈 */
   priceInventoryLaunch?: { productId: string; date: string } | null
   onPriceInventoryLaunchConsumed?: () => void
+  /** ScheduleDisplayView API에서 미리 로드한 데이터 (display 모드 전용) */
+  prefetchedScheduleData?: ScheduleDisplayDataPayload | null
+  /** display 모드에서 API 데이터 재조회 */
+  onScheduleDisplayRefetch?: () => Promise<void>
 }
 
 export default function ScheduleView(props: ScheduleViewProps = {}) {
@@ -752,37 +660,126 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     displayDayCount = 15,
     priceInventoryLaunch,
     onPriceInventoryLaunchConsumed,
+    prefetchedScheduleData = null,
+    onScheduleDisplayRefetch,
   } = props
   const isDisplayMode = variant === 'display'
-  const [displayCalendarWeekStart, setDisplayCalendarWeekStart] = useState(() =>
-    getScheduleDisplayCalendarWeekStart()
-  )
-  const [displayOtaSaleStatusByKey, setDisplayOtaSaleStatusByKey] = useState<
-    Record<string, OtaSaleStatus>
-  >({})
-  const [displayCalendarStatusFilter, setDisplayCalendarStatusFilter] = useState(
-    () => new Set<ScheduleDisplayStatusFilterId>(DEFAULT_SCHEDULE_DISPLAY_STATUS_FILTER)
-  )
-  const [displayStatusFilterModalOpen, setDisplayStatusFilterModalOpen] = useState(false)
+  const usesPrefetchedScheduleData = isDisplayMode && prefetchedScheduleData != null
+  const [displayRefreshing, setDisplayRefreshing] = useState(false)
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
   const tResCard = useTranslations('reservations.card')
-  const tTourCal = useTranslations('tours.calendar')
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
   const { user, userRole, userPosition, hasPermission } = useAuth()
   const { operatorId } = useOperatorOptional()
   const activeOperatorId = resolveOperatorId(operatorId)
   const tourHandlers = useTourHandlers()
+  const toursAssignmentBaselineRef = useRef<Record<string, { tour_guide_id: string | null; assistant_id: string | null }>>({})
+  const loadUserSettingsRef = useRef<() => Promise<void>>(async () => {})
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [products, setProducts] = useState<Product[]>([])
-  const [teamMembers, setTeamMembers] = useState<Team[]>([])
-  const [inactiveTeamMembers, setInactiveTeamMembers] = useState<Team[]>([])
-  const [tours, setTours] = useState<Tour[]>([])
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
+
+  const {
+    firstDayOfMonth,
+    lastDayOfMonth,
+    loading,
+    products,
+    teamMembers,
+    setTeamMembers,
+    inactiveTeamMembers,
+    setInactiveTeamMembers,
+    tours,
+    setTours,
+    reservations,
+    setReservations,
+    customers,
+    reservationChoices,
+    ticketBookings,
+    setTicketBookings,
+    tourHotelBookings,
+    offSchedules,
+    dateNotes,
+    setDateNotes,
+    scheduleVehicles,
+    vehicleOilCalcTours,
+    unassignedTours,
+    setUnassignedTours,
+    fetchData,
+    fetchUnassignedTours,
+    refreshScheduleData,
+  } = useScheduleViewData({
+    isDisplayMode,
+    displayDayCount,
+    currentDate,
+    activeOperatorId,
+    usesPrefetchedScheduleData,
+    prefetchedScheduleData,
+    onScheduleDisplayRefetch,
+    loadUserSettingsRef,
+    toursAssignmentBaselineRef,
+    initialLoading: !usesPrefetchedScheduleData,
+  })
+
+  const {
+    showMessageModal,
+    setShowMessageModal,
+    messageModalContent,
+    showConfirmModal,
+    setShowConfirmModal,
+    confirmModalContent,
+    showMessage,
+    showConfirm,
+  } = useScheduleViewDialogs()
+
+  const {
+    showDateNoteModal,
+    selectedDateForNote,
+    openDateNoteModal,
+    closeDateNoteModal,
+    saveDateNote,
+    deleteDateNote,
+  } = useScheduleViewDateNotes({
+    dateNotes,
+    setDateNotes,
+    userEmail: user?.email ?? null,
+    showMessage,
+  })
+
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<string[]>([])
+  const {
+    scheduleTicketBookingFormOpen,
+    scheduleTicketBookingEdit,
+    pickScheduleTicketBookingIds,
+    setPickScheduleTicketBookingIds,
+    closeScheduleTicketBookingForm,
+    loadFullTicketBookingAndOpen,
+    onScheduleTicketBookingRowClick,
+    handleScheduleTicketBookingSaved,
+    handleRequestScheduleTicketBookingDelete,
+  } = useScheduleViewTicketBookings({
+    locale,
+    userEmail: user?.email ?? null,
+    refreshScheduleData,
+  })
+  const {
+    displayCalendarWeekStart,
+    setDisplayCalendarWeekStart,
+    displayOtaSaleStatusByKey,
+    displayCalendarStatusFilter,
+    setDisplayCalendarStatusFilter,
+    displayStatusFilterModalOpen,
+    setDisplayStatusFilterModalOpen,
+    displayToursByDate,
+    displayCalendarVisibleTourCount,
+    displayCalendarStatusFilterActiveCount,
+  } = useScheduleDisplayCalendar({
+    isDisplayMode,
+    tours,
+    reservations,
+    usesPrefetchedScheduleData,
+    prefetchedScheduleData,
+  })
   
   // 관리자 권한 확인 (super 또는 admin)
   const isSuperAdmin = useMemo(() => {
@@ -840,7 +837,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       userRole === 'manager',
     [hasPermission, userRole]
   )
-  const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showMiscTourModal, setShowMiscTourModal] = useState(false)
   const [miscTourProductIds, setMiscTourProductIds] = useState<string[]>([])
@@ -852,21 +848,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
   // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
-  const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
   /** 미배정 투어 카드: 예정(기본) · 전체 · 취소 · 삭제 */
   const [unassignedTourViewFilter, setUnassignedTourViewFilter] = useState<
     'scheduled' | 'all' | 'cancelled' | 'deleted'
   >('scheduled')
-  const [ticketBookings, setTicketBookings] = useState<ScheduleTicketBookingRow[]>([])
-  const [tourHotelBookings, setTourHotelBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; rooms: number | null; hotel?: string; check_in_date?: string }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
   const [hoveredBookingDate, setHoveredBookingDate] = useState<string | null>(null)
   const [bookingRowExpanded, setBookingRowExpanded] = useState(false)
-  const [scheduleTicketBookingFormOpen, setScheduleTicketBookingFormOpen] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [scheduleTicketBookingEdit, setScheduleTicketBookingEdit] = useState<any>(null)
-  const [pickScheduleTicketBookingIds, setPickScheduleTicketBookingIds] = useState<string[] | null>(null)
-  const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
   /** 미배정 투어 드래그 중: 화면 상·하단 근처에서 페이지 자동 스크롤 */
   const unassignedDragAutoScrollCleanupRef = useRef<(() => void) | null>(null)
@@ -884,10 +872,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   /** 미배정 카드: 버튼으로 차량 배정 */
   const [unassignedVehicleAssignModalTourId, setUnassignedVehicleAssignModalTourId] = useState<string | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
-  const [showMessageModal, setShowMessageModal] = useState(false)
-  const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
   /** 오늘~6일 후 구간: 투어 건수 vs 차량 배정 건수 불일치 안내 모달 */
   /** 통합 알림: 원격 주간 스냅샷(차량·미배정·입장권) */
   const [scheduleHealthFetched, setScheduleHealthFetched] = useState<{
@@ -998,27 +982,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [])
 
-  
-  // 날짜별 노트 상태
-  const [dateNotes, setDateNotes] = useState<{ [date: string]: { note: string; created_by?: string } }>({})
-  const [showDateNoteModal, setShowDateNoteModal] = useState(false)
-  const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
 
-  // 해당 월 사용 가능 차량 목록 (취소·비활성 제외, 렌터카는 렌트 시작~종료가 해당 월과 겹치는 것만)
-  const [scheduleVehicles, setScheduleVehicles] = useState<Array<{
-    id: string
-    label: string
-    vehicle_category?: string | null
-    rental_start_date?: string | null
-    rental_end_date?: string | null
-    engine_oil_change_cycle?: number | null
-    recent_engine_oil_change_mileage?: number | null
-    recent_engine_oil_change_date?: string | null
-    current_mileage?: number | null
-  }>>([])
-  /** 회사 차량 엔진오일 추정용 — fetchData 시 6개월치 투어 (당월 tours 와 id 기준 병합) */
-  const [vehicleOilCalcTours, setVehicleOilCalcTours] = useState<ScheduleTourForOil[]>([])
   // 차량·날짜 셀 클릭 시 투어 배정 모달
   const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
   const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
@@ -1033,20 +998,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
   const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
 
-  // 예약별 초이스 (상품별 스케줄 툴팁·투어 상세 모달용, 인원(quantity) 합산)
-  const [reservationChoices, setReservationChoices] = useState<Array<{
-    reservation_id: string
-    choiceKey: string
-    quantity: number
-  }>>([])
-
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
   const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' | 'reject' } }>({})
   const pendingCount = useMemo(() => Object.keys(pendingChanges).length + Object.keys(pendingOffScheduleChanges).length, [pendingChanges, pendingOffScheduleChanges])
 
   /** fetchData 직후 서버 기준 가이드·어시스턴트 배정 (미저장 변경 diff용) */
-  const toursAssignmentBaselineRef = useRef<Record<string, { tour_guide_id: string | null; assistant_id: string | null }>>({})
   /** 저장 직후 가이드 배정 안내 이메일 모달 */
   const [guideAssignmentEmailModalOpen, setGuideAssignmentEmailModalOpen] = useState(false)
   const [guideAssignmentEmailChanges, setGuideAssignmentEmailChanges] = useState<GuideAssignmentChangeItem[]>([])
@@ -1193,123 +1150,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
-  // 메시지 모달 표시 함수
-  const showMessage = useCallback((title: string, message: string, type: 'success' | 'error' = 'success') => {
-    setMessageModalContent({ title, message, type })
-    setShowMessageModal(true)
-  }, [])
-
-  // 확인 모달 표시 함수
-  const showConfirm = (title: string, message: string, onConfirm: () => void, buttonText: string = '확인', buttonColor: string = 'bg-red-500 hover:bg-red-600') => {
-    setConfirmModalContent({ title, message, onConfirm, buttonText, buttonColor })
-    setShowConfirmModal(true)
-  }
-
   // 가이드 모달 표시 함수
   const showGuideModalContent = (title: string, content: string, tourId: string = '') => {
     setGuideModalContent({ title, content, tourId })
     setShowGuideModal(true)
   }
-
-  // 날짜 노트 모달 열기
-  const openDateNoteModal = useCallback((dateString: string) => {
-    setSelectedDateForNote(dateString)
-    setShowDateNoteModal(true)
-  }, [])
-
-  // 날짜 노트 저장
-  const saveDateNote = useCallback(async (noteText: string) => {
-    if (!selectedDateForNote) return
-
-    try {
-      const noteData = {
-        note_date: selectedDateForNote,
-        note: noteText.trim() || null,
-        created_by: user?.email || null
-      }
-
-      // 노트가 비어있으면 삭제, 있으면 upsert
-      if (!noteText.trim()) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('date_notes' as any)
-          .delete()
-          .eq('note_date', selectedDateForNote)
-
-        if (error) throw error
-
-        // 상태 업데이트
-        setDateNotes(prev => {
-          const newNotes = { ...prev }
-          delete newNotes[selectedDateForNote]
-          return newNotes
-        })
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('date_notes' as any)
-          .upsert(noteData, { onConflict: 'note_date' })
-
-        if (error) throw error
-
-        // 상태 업데이트
-        setDateNotes(prev => ({
-          ...prev,
-          [selectedDateForNote]: {
-            note: noteText.trim(),
-            ...(user?.email ? { created_by: user.email } : {})
-          }
-        }))
-      }
-
-      setShowDateNoteModal(false)
-      setSelectedDateForNote(null)
-      showMessage('저장 완료', '날짜 노트가 저장되었습니다.', 'success')
-    } catch (error) {
-      console.error('Error saving date note:', error)
-      showMessage('저장 실패', '날짜 노트 저장 중 오류가 발생했습니다.', 'error')
-      throw error
-    }
-  }, [selectedDateForNote, user?.email, showMessage])
-
-  // 날짜 노트 삭제
-  const deleteDateNote = useCallback(async () => {
-    if (!selectedDateForNote) return
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('date_notes' as any)
-        .delete()
-        .eq('note_date', selectedDateForNote)
-
-      if (error) throw error
-
-      // 상태 업데이트
-      setDateNotes(prev => {
-        const newNotes = { ...prev }
-        delete newNotes[selectedDateForNote]
-        return newNotes
-      })
-
-      setShowDateNoteModal(false)
-      setSelectedDateForNote(null)
-      showMessage('삭제 완료', '날짜 노트가 삭제되었습니다.', 'success')
-    } catch (error) {
-      console.error('Error deleting date note:', error)
-      showMessage('삭제 실패', '날짜 노트 삭제 중 오류가 발생했습니다.', 'error')
-      throw error
-    }
-  }, [selectedDateForNote, showMessage])
-
-  // 날짜 노트 모달 닫기
-  const closeDateNoteModal = useCallback(() => {
-    setShowDateNoteModal(false)
-    setSelectedDateForNote(null)
-  }, [])
 
   // 공유 설정 저장 (관리자만, 데이터베이스에 저장)
   const saveSharedSetting = async (
@@ -1571,6 +1416,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       }
     }
   }, [currentDate])
+
+  useEffect(() => {
+    loadUserSettingsRef.current = loadUserSettings
+  }, [loadUserSettings])
 
   // 캐시 비우고 새로고침: localStorage 의 스케줄 관련 캐시(특히 공유 설정 캐시)를 모두 지우고
   // DB 에서 최신 정보를 다시 불러오도록 페이지를 새로고침한다.
@@ -1942,16 +1791,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [tours])
 
-  // 현재 월의 첫 번째 날과 마지막 날 계산 (dayjs) — display 모드는 오늘부터 N일
-  const firstDayOfMonth = useMemo(() => {
-    if (isDisplayMode) return dayjs().startOf('day')
-    return dayjs(currentDate).startOf('month')
-  }, [currentDate, isDisplayMode])
-  const lastDayOfMonth = useMemo(() => {
-    if (isDisplayMode) return dayjs().startOf('day').add(Math.max(displayDayCount, 1) - 1, 'day')
-    return dayjs(currentDate).endOf('month')
-  }, [currentDate, isDisplayMode, displayDayCount])
-  
   // 오늘 날짜 확인 함수
   const isToday = (dateString: string) => {
     const todayString = dayjs().format('YYYY-MM-DD')
@@ -2022,10 +1861,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   /** 차량 스케줄·일별 투어 건수 공통: 해당 일이 투어 진행일(시작~N일째)에 포함되는지 */
   const tourCoversScheduleDate = useCallback(
     (tour: Tour, dateString: string): boolean => {
-      if (tour.tour_date === dateString) return true
+      const startKey = normalizeTourDateKey(tour.tour_date)
+      if (!startKey) return false
+      if (startKey === dateString) return true
       const days = getMultiDayTourDays(tour.product_id)
       if (days <= 1) return false
-      const start = dayjs(tour.tour_date)
+      const start = dayjs(startKey)
       const end = start.add(days - 1, 'day')
       const d = dayjs(dateString)
       return !d.isBefore(start, 'day') && !d.isAfter(end, 'day')
@@ -2074,6 +1915,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [])
 
   useEffect(() => {
+    if (isDisplayMode) return
     let cancelled = false
     void (async () => {
       try {
@@ -2188,7 +2030,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return () => {
       cancelled = true
     }
-  }, [tourCoversScheduleDate, activeOperatorId])
+  }, [tourCoversScheduleDate, activeOperatorId, isDisplayMode])
 
   // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
   // display 모드: 오늘부터 displayDayCount일 (패딩 없음)
@@ -2296,620 +2138,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     if (headerEl && bodyEl) bodyEl.scrollLeft = headerEl.scrollLeft
   }, [dynamicMinTableWidthPx, monthDays.length])
 
-  // 미 배정된 투어: 달력에 선택된 월의 tour_date만 (그리드 투어 조회는 ±3일 버퍼 사용, 미배정 카드는 이전 달이 섞이지 않게)
-  const fetchUnassignedTours = useCallback(async () => {
+  const handleDisplayRefresh = useCallback(async () => {
+    if (displayRefreshing) return
+    setDisplayRefreshing(true)
     try {
-      const startDate = firstDayOfMonth.format('YYYY-MM-DD')
-      const endDate = lastDayOfMonth.format('YYYY-MM-DD')
-      
-      // 가이드 또는 어시스턴트가 배정되지 않은 투어 (상태 필터는 카드 UI에서 적용)
-      /** PostgREST max-rows(1000) 회피 */
-      const UNASSIGNED_PAGE = 1000
-      let unassignedToursData: Tour[] = []
-      for (let from = 0; ; from += UNASSIGNED_PAGE) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: batch, error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('tours' as any)
-          .select(`
-          *,
-          products!inner(name)
-        `)
-          .eq('operator_id', activeOperatorId)
-          .gte('tour_date', startDate)
-          .lte('tour_date', endDate)
-          .or('tour_guide_id.is.null,tour_guide_id.eq.,assistant_id.is.null,assistant_id.eq.')
-          .order('tour_date', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + UNASSIGNED_PAGE - 1)
-
-        if (error) {
-          console.error('Error fetching unassigned tours:', error)
-          return
-        }
-        const b = (batch || []) as Tour[]
-        unassignedToursData = unassignedToursData.concat(b)
-        if (b.length < UNASSIGNED_PAGE) break
-      }
-
-      setUnassignedTours(unassignedToursData || [])
-    } catch (error) {
-      console.error('Error fetching unassigned tours:', error)
-    }
-  }, [firstDayOfMonth, lastDayOfMonth, activeOperatorId])
-
-  const loadFullTicketBookingAndOpen = useCallback(
-    async (id: string) => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase as any).from('ticket_bookings').select('*').eq('id', id).maybeSingle()
-        if (error) throw error
-        if (!data) {
-          alert(locale === 'ko' ? '부킹을 불러오지 못했습니다.' : 'Failed to load booking.')
-          return
-        }
-        if ((data as { deletion_requested_at?: string | null }).deletion_requested_at) {
-          alert(
-            locale === 'ko'
-              ? '삭제 요청된 부킹은 목록에 표시되지 않습니다. SUPER 관리자가 입장권 부킹 메뉴에서 처리합니다.'
-              : 'This booking is pending deletion and is hidden from the schedule. A super admin can process it from ticket bookings.'
-          )
-          return
-        }
-        setScheduleTicketBookingEdit(data)
-        setScheduleTicketBookingFormOpen(true)
-      } catch (e) {
-        console.error(e)
-        alert(locale === 'ko' ? '부킹을 불러오지 못했습니다.' : 'Failed to load booking.')
-      }
-    },
-    [locale]
-  )
-
-  const onScheduleTicketBookingRowClick = useCallback(
-    (bookingIds: string[]) => {
-      const unique = [...new Set(bookingIds)].filter(Boolean)
-      if (unique.length === 0) return
-      if (unique.length === 1) {
-        void loadFullTicketBookingAndOpen(unique[0])
-        return
-      }
-      setPickScheduleTicketBookingIds(unique)
-    },
-    [loadFullTicketBookingAndOpen]
-  )
-
-  const closeScheduleTicketBookingForm = useCallback(() => {
-    setScheduleTicketBookingFormOpen(false)
-    setScheduleTicketBookingEdit(null)
-  }, [])
-
-  // 데이터 가져오기
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true)
-      
-      // 상품 데이터 가져오기 (Mania Tour, Mania Service만)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: productsData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('products' as any)
-        .select('*')
-        .eq('operator_id', activeOperatorId)
-        .in('sub_category', ['Mania Tour', 'Mania Service'])
-        .order('name')
-
-      // 팀 멤버 데이터 가져오기
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: teamData } = await (supabase as any)
-        .from('team')
-        .select('*')
-        .eq('is_active', true)
-        .order('name_ko')
-
-      // 비활성 팀원은 선택 모달에서 재활성화할 때만 사용합니다.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: inactiveTeamData } = await (supabase as any)
-        .from('team')
-        .select('*')
-        .eq('is_active', false)
-        .order('name_ko')
-
-      // 투어·예약: 멀티데이 이전 달 꼬리(최대 3일) + 그리드 끝(익월 1일 컬럼)까지
-      // display 모드: 좌측 그리드(오늘~N일) + 우측 달력(선택 월 전체·지난 투어 포함) 합집합
-      const startDate = (() => {
-        if (!isDisplayMode) return firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
-        const gridStart = dayjs().startOf('day')
-        const { start: calStartStr } = getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
-        const calStart = dayjs(calStartStr)
-        const earliest = gridStart.isBefore(calStart, 'day') ? gridStart : calStart
-        return earliest.subtract(3, 'day').format('YYYY-MM-DD')
-      })()
-      const endDate = (() => {
-        if (!isDisplayMode) return lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
-        const gridEnd = dayjs().startOf('day').add(Math.max(displayDayCount, 1) - 1, 'day')
-        const { end: calEndStr } = getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
-        const calEnd = dayjs(calEndStr)
-        const latest = gridEnd.isAfter(calEnd, 'day') ? gridEnd : calEnd
-        return latest.add(1, 'day').format('YYYY-MM-DD')
-      })()
-      
-      /** PostgREST max-rows(1000) 회피 — 한 달·버퍼 구간에 투어가 매우 많을 때 누락 방지 */
-      const TOURS_PAGE = 1000
-      let toursData: Tour[] = []
-      for (let from = 0; ; from += TOURS_PAGE) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: batch, error: toursFetchErr } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('tours' as any)
-          .select('*, products(name)')
-          .eq('operator_id', activeOperatorId)
-          .gte('tour_date', startDate)
-          .lte('tour_date', endDate)
-          .order('tour_date', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + TOURS_PAGE - 1)
-        if (toursFetchErr) {
-          console.error('Error fetching tours:', toursFetchErr)
-          break
-        }
-        const b = (batch || []) as Tour[]
-        toursData = toursData.concat(b)
-        if (b.length < TOURS_PAGE) break
-      }
-
-      // 해당 월 투어에서 사용하는 차량 ID로 차량 정보 조회 (라벨/범례용)
-      const rawVehicleIds = (toursData || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id: string | null | undefined): id is string => id != null && String(id).trim().length > 0)
-      const vehicleIds: string[] = Array.from(new Set(rawVehicleIds))
-      let vehicleMap = new Map<string, string | null>()
-      if (vehicleIds.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: vehiclesData } = await (supabase as any)
-          .from('vehicles')
-          .select('id, vehicle_number, nick')
-          .in('id', vehicleIds)
-        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null; nick?: string | null }) => [v.id, (v.nick && v.nick.trim()) || v.vehicle_number || null]))
-      }
-      const toursWithVehicles = (toursData || []).map((t: Tour) => ({
-        ...t,
-        vehicle_number: t.tour_car_id ? (vehicleMap.get(String(t.tour_car_id).trim()) ?? null) : null
-      }))
-
-      // 해당 월 사용 가능 차량 목록 (취소·비활성 제외, 렌터카는 렌트 시작~종료가 해당 월과 겹치는 예약만)
-      const monthStart = firstDayOfMonth.format('YYYY-MM-DD')
-      const monthEnd = lastDayOfMonth.format('YYYY-MM-DD')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: allVehiclesData } = await (supabase as any)
-        .from('vehicles')
-        .select(
-          'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage, current_mileage',
-        )
-        .eq('operator_id', activeOperatorId)
-      const isCancelled = (s: string | null | undefined) => {
-        if (!s) return false
-        const lower = String(s).toLowerCase().trim()
-        return lower === 'cancelled' || lower === '취소됨' || lower.includes('취소') || lower.includes('cancel')
-      }
-      const isInactiveStatus = (s: string | null | undefined) => {
-        if (!s) return false
-        const lower = String(s).toLowerCase().trim()
-        return lower === 'inactive' || lower.includes('inactive') || lower.includes('비활성')
-      }
-      const availableInMonth = (allVehiclesData || []).filter((v: { vehicle_category?: string | null; status?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => {
-        if (isCancelled(v.status)) return false
-        if (isInactiveStatus(v.status)) return false
-        const isRental = (v.vehicle_category || '').toString().toLowerCase() === 'rental'
-        if (!isRental) return true
-        const start = (v.rental_start_date || '').toString().trim().substring(0, 10)
-        const end = (v.rental_end_date || '').toString().trim().substring(0, 10)
-        if (!start || !end) return false
-        return start <= monthEnd && end >= monthStart
-      })
-      const sorted = availableInMonth.sort((a: { vehicle_category?: string | null; vehicle_number?: string | null; nick?: string | null; id: string }, b: typeof a) => {
-        const aRental = (a.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
-        const bRental = (b.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
-        if (aRental !== bRental) return aRental - bRental
-        const aLabel = (a.nick && a.nick.trim()) || a.vehicle_number || a.id
-        const bLabel = (b.nick && b.nick.trim()) || b.vehicle_number || b.id
-        return String(aLabel).localeCompare(String(bLabel))
-      })
-      const companyVehicleIds = sorted
-        .filter(
-          (v: { vehicle_category?: string | null }) =>
-            (v.vehicle_category || 'company').toString().toLowerCase() !== 'rental',
-        )
-        .map((v: { id: string }) => v.id)
-
-      const oilChangeByVehicleId = new Map<string, { date: string; mileage: number | null }>()
-      if (companyVehicleIds.length > 0) {
-        const MAINT_PAGE = 1000
-        let maintenanceRows: VehicleMaintenanceOilRecord[] = []
-        for (let from = 0; ; from += MAINT_PAGE) {
-          const { data: batch, error: maintErr } = await supabase
-            .from('vehicle_maintenance')
-            .select('vehicle_id, maintenance_date, mileage, subcategory')
-            .eq('operator_id', activeOperatorId)
-            .in('vehicle_id', companyVehicleIds)
-            .order('maintenance_date', { ascending: false })
-            .order('mileage', { ascending: false })
-            .range(from, from + MAINT_PAGE - 1)
-          if (maintErr) {
-            console.error('Error fetching vehicle maintenance for oil change:', maintErr)
-            break
-          }
-          const b = (batch || []) as VehicleMaintenanceOilRecord[]
-          maintenanceRows = maintenanceRows.concat(b)
-          if (b.length < MAINT_PAGE) break
-        }
-        for (const [vehicleId, latest] of pickLatestEngineOilByVehicle(maintenanceRows)) {
-          oilChangeByVehicleId.set(vehicleId, latest)
-        }
-      }
-
-      setScheduleVehicles(
-        sorted.map(
-          (v: {
-            id: string
-            vehicle_number?: string | null
-            nick?: string | null
-            vehicle_category?: string | null
-            rental_start_date?: string | null
-            rental_end_date?: string | null
-            engine_oil_change_cycle?: number | null
-            recent_engine_oil_change_mileage?: number | null
-            current_mileage?: number | null
-          }) => {
-            const fromMaintenance = oilChangeByVehicleId.get(v.id)
-            const fallbackMileage =
-              v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
-                ? v.recent_engine_oil_change_mileage
-                : null
-            return {
-              id: v.id,
-              label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
-              vehicle_category: v.vehicle_category ?? null,
-              rental_start_date: v.rental_start_date ?? null,
-              rental_end_date: v.rental_end_date ?? null,
-              engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
-              recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
-              recent_engine_oil_change_date: fromMaintenance?.date ?? null,
-              current_mileage:
-                v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
-            }
-          },
-        ),
-      )
-
-      if (companyVehicleIds.length > 0) {
-        const oilHistStart = firstDayOfMonth.subtract(6, 'month').format('YYYY-MM-DD')
-        const oilHistEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
-        let oilHistTours: ScheduleTourForOil[] = []
-        for (let from = 0; ; from += TOURS_PAGE) {
-          const { data: batch, error: oilToursErr } = await supabase
-            .from('tours')
-            .select('id, tour_date, tour_status, tour_car_id, product_id, products(name)')
-            .eq('operator_id', activeOperatorId)
-            .gte('tour_date', oilHistStart)
-            .lte('tour_date', oilHistEnd)
-            .in('tour_car_id', companyVehicleIds)
-            .order('tour_date', { ascending: true })
-            .order('id', { ascending: true })
-            .range(from, from + TOURS_PAGE - 1)
-          if (oilToursErr) {
-            console.error('Error fetching vehicle oil calc tours:', oilToursErr)
-            break
-          }
-          const b = (batch || []) as ScheduleTourForOil[]
-          oilHistTours = oilHistTours.concat(b)
-          if (b.length < TOURS_PAGE) break
-        }
-        setVehicleOilCalcTours(oilHistTours)
-      } else {
-        setVehicleOilCalcTours([])
-      }
-
-      // 예약 데이터 가져오기 (현재 월)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: reservationsData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('reservations' as any)
-        .select('*')
-        .eq('operator_id', activeOperatorId)
-        .gte('tour_date', startDate)
-        .lte('tour_date', endDate)
-
-      // 상품별 스케줄 툴팁: 카드와 동일 — 1) reservation_choices 2) 없으면 reservation.choices JSON 폴백 → 예약별 X/L/U 뽑은 뒤 합산
-      const isUuid = (s: string | null | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim())
-      // ReservationCard.simplifyChoiceLabel와 동일: option_name_ko || option_name || option_key → X / L / U / 기타
-      const choiceLabelToKey = (nameKo: string | null | undefined, nameEn: string | null | undefined, optionKey: string | null | undefined): string => {
-        const label = (nameKo || nameEn || (optionKey && !isUuid(optionKey) ? optionKey : '') || '').toString().trim()
-        const labelLower = label.toLowerCase()
-        const labelKo = label
-        if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) return 'X'
-        if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) return 'L'
-        if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)) return 'U'
-        if (labelLower.includes('antelope x') || labelLower.includes(' x ')) return 'X'
-        if (labelLower.includes('lower')) return 'L'
-        if (labelLower.includes('upper')) return 'U'
-        return '_other'
-      }
-      const safeJsonParse = (val: string | object | null | undefined, fallback: unknown = null) => {
-        if (val == null) return fallback
-        if (typeof val === 'object') return val
-        try { return JSON.parse(String(val)) } catch { return fallback }
-      }
-      const reservationIds = (reservationsData || []).map((r: { id?: string }) => r.id).filter(Boolean)
-      let choicesFlat: Array<{ reservation_id: string; choiceKey: string; quantity: number }> = []
-      if (reservationIds.length > 0) {
-        const BATCH = 100
-        for (let i = 0; i < reservationIds.length; i += BATCH) {
-          const batchIds = reservationIds.slice(i, i + BATCH)
-          const { data: rcData } = await supabase
-            .from('reservation_choices')
-            .select('reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)')
-            .in('reservation_id', batchIds)
-          if (rcData?.length) {
-            choicesFlat = choicesFlat.concat(
-              (rcData as Array<{
-                reservation_id: string | null
-                quantity?: number | null
-                choice_options?: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null } | null
-              }>)
-                .filter((row) => Boolean(row.reservation_id))
-                .map((row) => {
-                  const opt = row.choice_options
-                  const choiceKey = choiceLabelToKey(opt?.option_name_ko ?? null, opt?.option_name ?? null, opt?.option_key ?? null)
-                  return { reservation_id: row.reservation_id as string, choiceKey, quantity: Number(row.quantity) || 1 }
-                })
-            )
-          }
-        }
-      }
-      const hasTableChoices = new Set(choicesFlat.map(c => c.reservation_id))
-      ;(reservationsData || []).forEach((r: { id: string; choices?: string | null }) => {
-        if (hasTableChoices.has(r.id) || !r.choices) return
-        try {
-          const choicesObj = safeJsonParse(r.choices) as Record<string, unknown> | null
-          if (!choicesObj || !Array.isArray(choicesObj.required)) return
-          ;(choicesObj.required as Array<Record<string, unknown>>).forEach((item) => {
-            const qty = Number((item as { quantity?: number }).quantity) || 1
-            if (item.option_id && item.choice_id) {
-              const key = choiceLabelToKey(
-                item.option_name_ko as string | null,
-                item.option_name as string | null,
-                item.option_key as string | null
-              )
-              choicesFlat.push({ reservation_id: r.id, choiceKey: key, quantity: qty })
-            } else if (Array.isArray(item.options)) {
-              (item.options as Array<Record<string, unknown>>).forEach((opt) => {
-                if (opt.selected || opt.is_default) {
-                  const key = choiceLabelToKey(opt.name_ko as string | null, opt.name as string | null, null)
-                  choicesFlat.push({ reservation_id: r.id, choiceKey: key, quantity: qty })
-                }
-              })
-            }
-          })
-        } catch (_) { /* ignore */ }
-      })
-      setReservationChoices(choicesFlat)
-
-      // 고객 데이터 가져오기 (해당 예약의 고객만)
-      let customersData: Pick<Customer, 'id' | 'language' | 'name'>[] | null = []
-      const customerIds: string[] = Array.from(new Set((reservationsData || []).map((r: { customer_id?: string | null }) => r.customer_id).filter((id: string | null | undefined): id is string => Boolean(id))))
-      if (customerIds.length > 0) {
-        const { data: customersFetched } = await supabase
-          .from('customers')
-          .select('id, language, name')
-          .in('id', customerIds)
-        customersData = customersFetched as Pick<Customer, 'id' | 'language' | 'name'>[] | null
-      }
-
-      // 부킹(입장권) 데이터 가져오기: hover summary용 confirmed EA 합계 계산
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ticketBookingsData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('ticket_bookings' as any)
-        .select(
-          'id, tour_id, status, ea, company, category, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status, deletion_requested_at'
-        )
-        .gte('check_in_date', startDate)
-        .lte('check_in_date', endDate)
-
-      // 투어 호텔 부킹 데이터 가져오기
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: tourHotelBookingsData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tour_hotel_bookings' as any)
-        .select('id, tour_id, status, rooms, hotel, check_in_date')
-        .gte('check_in_date', startDate)
-        .lte('check_in_date', endDate)
-
-      // Off 스케줄 (그리드에 보이는 전월 말일·익월 1일 포함)
-      const gridNoteStart = firstDayOfMonth.subtract(1, 'day').format('YYYY-MM-DD')
-      const gridNoteEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: offSchedulesData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('off_schedules' as any)
-        .select('team_email, off_date, reason, status')
-        .in('status', ['pending', 'approved'])
-        .gte('off_date', gridNoteStart)
-        .lte('off_date', gridNoteEnd)
-
-      // 날짜별 노트 (전월 말·익월 1일 컬럼 포함)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: dateNotesData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('date_notes' as any)
-        .select('note_date, note, created_by')
-        .gte('note_date', gridNoteStart)
-        .lte('note_date', gridNoteEnd)
-
-      // 날짜별 노트를 객체로 변환
-      const notesMap: { [date: string]: { note: string; created_by?: string } } = {}
-      if (dateNotesData) {
-        dateNotesData.forEach((item: { note_date: string; note: string | null; created_by?: string | null }) => {
-          notesMap[item.note_date] = {
-            note: item.note || '',
-            ...(item.created_by ? { created_by: item.created_by } : {})
-          }
-        })
-      }
-
-      const baseProducts = (productsData || []) as Product[]
-      const reservationRows = (reservationsData || []) as Array<{ product_id?: string | null }>
-      const tourRows = (toursData || []) as Array<{ product_id?: string | null }>
-      const baseProductIdSet = new Set(baseProducts.map((p) => String(p.id)))
-      const missingReferencedProductIds = [
-        ...new Set(
-          [...reservationRows, ...tourRows]
-            .map((r) => String(r.product_id || '').trim())
-            .filter((id) => id && !baseProductIdSet.has(id)),
-        ),
-      ]
-      let mergedProducts = baseProducts
-      if (missingReferencedProductIds.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: extraProductsData } = await (supabase as any)
-          .from('products' as any)
-          .select('*')
-          .eq('operator_id', activeOperatorId)
-          .in('id', missingReferencedProductIds)
-        const extraProducts = (extraProductsData || []) as Product[]
-        if (extraProducts.length > 0) {
-          mergedProducts = baseProducts.concat(
-            extraProducts.filter((p) => !baseProductIdSet.has(String(p.id))),
-          )
-        }
-      }
-
-      console.log('=== ScheduleView 데이터 로딩 결과 ===')
-      console.log('Loaded products:', mergedProducts.length, mergedProducts)
-      console.log('Loaded team members:', teamData?.length || 0, teamData)
-      console.log('Loaded inactive team members:', inactiveTeamData?.length || 0, inactiveTeamData)
-      console.log('Loaded tours:', toursData?.length || 0, toursData)
-      console.log('Loaded reservations:', reservationsData?.length || 0, reservationsData)
-      console.log('=====================================')
-
-      setProducts(mergedProducts)
-      setTeamMembers(teamData || [])
-      setInactiveTeamMembers(inactiveTeamData || [])
-      setTours(toursWithVehicles)
-      toursAssignmentBaselineRef.current = buildToursAssignmentBaseline(toursWithVehicles)
-      setReservations(reservationsData || [])
-      setCustomers((customersData || []) as Customer[])
-      setTicketBookings(
-        filterTicketBookingsExcludedFromMainUi((ticketBookingsData || []) as ScheduleTicketBookingRow[])
-      )
-      setTourHotelBookings(tourHotelBookingsData || [])
-      setOffSchedules(offSchedulesData || [])
-      setDateNotes(notesMap)
-
-      // 저장된 사용자 설정 불러오기 (오류가 발생해도 계속 진행)
-      try {
-        await loadUserSettings()
-      } catch (settingsError) {
-        console.warn('Failed to load user settings, continuing with default values:', settingsError)
-      }
-
-      // 미 배정된 투어 가져오기
-      await fetchUnassignedTours()
-
-    } catch (error) {
-      console.error('Error fetching data:', error)
+      await refreshScheduleData()
     } finally {
-      setLoading(false)
+      setDisplayRefreshing(false)
     }
-  }, [
-    firstDayOfMonth,
-    lastDayOfMonth,
-    loadUserSettings,
-    fetchUnassignedTours,
-    activeOperatorId,
-    isDisplayMode,
-    displayDayCount,
-    displayCalendarWeekStart,
-  ])
-
-  const handleScheduleTicketBookingSaved = useCallback(async () => {
-    closeScheduleTicketBookingForm()
-    await fetchData()
-  }, [closeScheduleTicketBookingForm, fetchData])
-
-  const handleRequestScheduleTicketBookingDelete = useCallback(
-    async (id: string) => {
-      const email = user?.email || ''
-      try {
-        const { error } = await supabase
-          .from('ticket_bookings')
-          .update({
-            deletion_requested_at: new Date().toISOString(),
-            deletion_requested_by: email || null,
-          })
-          .eq('id', id)
-        if (error) throw error
-        alert(
-          locale === 'ko'
-            ? '삭제 요청되었습니다. SUPER 관리자가 확인 후 영구 삭제합니다.'
-            : 'Deletion requested. A super admin will permanently delete after review.'
-        )
-        await handleScheduleTicketBookingSaved()
-      } catch (e) {
-        console.error(e)
-        alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.')
-      }
-    },
-    [user?.email, locale, handleScheduleTicketBookingSaved]
-  )
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  useEffect(() => {
-    if (!isDisplayMode) return
-    let cancelled = false
-    const { start: windowStart, end: windowEnd } =
-      getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
-    const productIds = [
-      ...new Set(
-        tours
-          .filter((tour) => {
-            const date = String(tour.tour_date || '').slice(0, 10)
-            if (date < windowStart || date > windowEnd) return false
-            return tourMatchesScheduleDisplayStatusFilter(
-              tour.tour_status,
-              displayCalendarStatusFilter
-            )
-          })
-          .map((tour) => String(tour.product_id || ''))
-          .filter(Boolean)
-      ),
-    ]
-    if (productIds.length === 0) {
-      setDisplayOtaSaleStatusByKey({})
-      return () => {
-        cancelled = true
-      }
-    }
-    void (async () => {
-      try {
-        const statusMap = await buildDisplayOtaSaleStatusByProductDate({
-          weekStart: displayCalendarWeekStart,
-          tours,
-          reservations,
-          productIds,
-        })
-        if (!cancelled) setDisplayOtaSaleStatusByKey(statusMap)
-      } catch (error) {
-        console.error('Display calendar OTA status load failed:', error)
-        if (!cancelled) setDisplayOtaSaleStatusByKey({})
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [isDisplayMode, displayCalendarWeekStart, tours, reservations, displayCalendarStatusFilter])
+  }, [displayRefreshing, refreshScheduleData])
 
   const convertScheduleReservationToFormType = useCallback((reservation: Record<string, unknown>) => {
     return {
@@ -4010,7 +3247,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
       // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
       monthDays.forEach(({ dateString, isEdgePadding }) => {
-        const dayTours = productTours.filter(tour => tour.tour_date === dateString)
+        const dayTours = productTours.filter(tour => normalizeTourDateKey(tour.tour_date) === dateString)
         /** 멀티데이 포함: 해당 날짜가 투어 진행일이면 1건 (인원·용량 계산은 아래 dayTours 기준 유지) */
         const toursCoveringThisDate = productTours.filter(
           (t) => tourCoversScheduleDate(t, dateString) && !isTourCancelled(t.tour_status)
@@ -4228,21 +3465,52 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     miscTourProductIds,
   ])
 
+  /** 디스플레이: 공유 설정에 팀원이 없으면 표시 기간 투어의 가이드/어시스턴트로 자동 채움 */
+  const effectiveSelectedTeamMembers = useMemo(() => {
+    if (selectedTeamMembers.length > 0) return selectedTeamMembers
+    if (!isDisplayMode) return selectedTeamMembers
+
+    const visibleDates = new Set(monthDaysCoreDateStrings)
+    const emailSet = new Set<string>()
+    for (const tour of tours) {
+      const date = String(tour.tour_date || '').slice(0, 10)
+      if (!visibleDates.has(date)) continue
+      if (isTourCancelled(tour.tour_status)) continue
+      const guideId = String(tour.tour_guide_id || '').trim()
+      const assistantId = String(tour.assistant_id || '').trim()
+      if (guideId) emailSet.add(guideId)
+      if (assistantId) emailSet.add(assistantId)
+    }
+    if (emailSet.size === 0) return selectedTeamMembers
+
+    const teamOrder = teamMembers.map((m) => m.email)
+    const ordered = teamOrder.filter((email) => emailSet.has(email))
+    for (const email of emailSet) {
+      if (!ordered.includes(email)) ordered.push(email)
+    }
+    return ordered
+  }, [selectedTeamMembers, isDisplayMode, tours, monthDaysCoreDateStrings, teamMembers])
+
   // 가이드별 스케줄 데이터 계산
-  const guideScheduleData = useMemo(() => {
-    if (!tours.length || !reservations.length) return []
+  const guideScheduleData = useMemo((): Record<string, ScheduleGuideScheduleRow> => {
+    if (!tours.length && !reservations.length) return {}
+
+    const tourDateYmd = (tour: Tour) => normalizeTourDateKey(tour.tour_date)
+    const reservationDateYmd = (res: Reservation) => normalizeTourDateKey(res.tour_date)
 
     const data: { [teamMemberId: string]: { team_member_name: string; position: string; dailyData: { [date: string]: DailyData }; totalPeople: number; totalAssignedPeople: number; totalTours: number } } = {}
     const teamMap = new Map(teamMembers.map(t => [t.email, t]))
 
     // 선택된 팀 멤버별로 데이터 생성
-    selectedTeamMembers.forEach(teamMemberId => {
+    effectiveSelectedTeamMembers.forEach(teamMemberId => {
       const teamMember = teamMap.get(teamMemberId)
       if (!teamMember) return
 
-      const memberTours = tours.filter(tour => 
-        tour.tour_guide_id === teamMemberId || tour.assistant_id === teamMemberId
-      )
+      const memberTours = tours.filter(tour => {
+        const guideId = String(tour.tour_guide_id || '').trim()
+        const assistantId = String(tour.assistant_id || '').trim()
+        return guideId === teamMemberId || assistantId === teamMemberId
+      })
 
       const dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string }; role: string | null; guideInitials: string | null; isMultiDay: boolean; multiDayDays: number } } = {}
       let totalPeople = 0
@@ -4251,25 +3519,32 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
       // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
       monthDays.forEach(({ dateString, isEdgePadding }) => {
-        const dayTours = memberTours.filter(tour => tour.tour_date === dateString)
+        const dayTours = memberTours.filter(tour => tourDateYmd(tour) === dateString)
         const dayReservations = reservations.filter(res => 
-          res.tour_date === dateString &&
+          reservationDateYmd(res) === dateString &&
           (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
         )
 
         const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
         
         const dayAssignedPeople = dayTours.reduce((sum, tour) => {
-          if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids)) return sum
-          const assignedReservations = dayReservations.filter(res => 
-            tour.reservation_ids.includes(res.id)
-          )
-          return sum + assignedReservations.reduce((s, res) => s + (res.total_people || 0), 0)
+          const tourReservationIds = normalizeReservationIds(tour.reservation_ids)
+          let people = 0
+          if (tourReservationIds.length > 0) {
+            const assignedReservations = dayReservations.filter((res) =>
+              tourReservationIds.includes(String(res.id)),
+            )
+            people = assignedReservations.reduce((s, res) => s + (res.total_people || 0), 0)
+          }
+          if (people === 0) {
+            people = computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
+          }
+          return sum + people
         }, 0)
 
         // 역할과 가이드 초성 정보 추가
-        const isGuide = dayTours.some(tour => tour.tour_guide_id === teamMemberId)
-        const isAssistant = dayTours.some(tour => tour.assistant_id === teamMemberId)
+        const isGuide = dayTours.some(tour => String(tour.tour_guide_id || '').trim() === teamMemberId)
+        const isAssistant = dayTours.some(tour => String(tour.assistant_id || '').trim() === teamMemberId)
         const role = isGuide ? 'guide' : isAssistant ? 'assistant' : null
 
         // 가이드 초성 추출 (어시스턴트인 경우)
@@ -4407,7 +3682,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     })
 
     return data
-  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds, scheduleGridLastDay, airportPickupMemberIdSet,
+  }, [tours, reservations, teamMembers, selectedProducts, effectiveSelectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds, scheduleGridLastDay, airportPickupMemberIdSet,
     airportSendingMemberIdSet, products])
 
   // 월 이동
@@ -5376,39 +4651,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     ]
     return lines.join('\n')
   }
-
-  const displayToursByDate = useMemo(() => {
-    const map = new Map<string, Tour[]>()
-    if (!isDisplayMode) return map
-    const { start: windowStart, end: windowEnd } =
-      getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
-    for (const tour of tours) {
-      const date = String(tour.tour_date || '').slice(0, 10)
-      if (!date || date < windowStart || date > windowEnd) continue
-      if (!tourMatchesScheduleDisplayStatusFilter(tour.tour_status, displayCalendarStatusFilter)) {
-        continue
-      }
-      const list = map.get(date) || []
-      list.push(tour)
-      map.set(date, list)
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => {
-        const na = a.products?.name || a.product_id || ''
-        const nb = b.products?.name || b.product_id || ''
-        return na.localeCompare(nb, 'ko')
-      })
-    }
-    return map
-  }, [isDisplayMode, tours, displayCalendarWeekStart, displayCalendarStatusFilter])
-
-  const displayCalendarVisibleTourCount = useMemo(() => {
-    let count = 0
-    for (const list of displayToursByDate.values()) count += list.length
-    return count
-  }, [displayToursByDate])
-
-  const displayCalendarStatusFilterActiveCount = displayCalendarStatusFilter.size
 
   const isStatusExcludedFromUnassignedList = useCallback((status: string) => {
     const s = (status || '').toLowerCase()
@@ -6691,8 +5933,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return (
       <>
         {scheduleHealthFabEl}
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg">Loading...</div>
+        <div className="flex h-64 items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p className="text-sm text-muted-foreground">
+              {isDisplayMode
+                ? locale === 'ko'
+                  ? '스케줄 디스플레이를 불러오는 중...'
+                  : 'Loading schedule display...'
+                : 'Loading...'}
+            </p>
+          </div>
         </div>
       </>
     )
@@ -6702,6 +5953,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     <div className={`bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2 ${isDisplayMode ? 'min-w-0 flex-1 overflow-auto' : ''}`}>
       {/* 헤더 */}
       <div className="mb-2">
+        {isDisplayMode ? (
+          <ScheduleDisplayToolbar
+            locale={locale}
+            dateRangeLabel={`${firstDayOfMonth.format('YYYY-MM-DD')} ~ ${lastDayOfMonth.format('MM-DD')}`}
+            displayDayCount={displayDayCount}
+            selectedProductCount={selectedProducts.length}
+            selectedTeamCount={selectedTeamMembers.length}
+            isRefreshing={displayRefreshing}
+            onRefresh={() => void handleDisplayRefresh()}
+          />
+        ) : (
+        <>
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
         <div className="relative flex flex-wrap items-center gap-y-2 min-h-10 sm:min-h-11 mb-2">
           {/* 왼쪽: 선택 버튼들 */}
@@ -6814,16 +6077,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           {/* 가운데: 모바일은 한 줄 전체(겹침 방지), sm+ 는 절대배치로 화면 중앙 */}
           <div className="order-last flex w-full basis-full justify-center px-2 sm:pointer-events-none sm:absolute sm:inset-0 sm:order-none sm:w-auto sm:basis-auto sm:items-center sm:justify-center sm:px-24 md:px-32">
             <div className="flex items-center gap-1 sm:gap-2 sm:pointer-events-auto">
-              {isDisplayMode ? (
-                <h3 className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">
-                  {firstDayOfMonth.format('YYYY-MM-DD')} ~ {lastDayOfMonth.format('MM-DD')}
-                  <span className="ml-1.5 font-normal text-muted-foreground">
-                    ({displayDayCount}
-                    {locale === 'ko' ? '일' : ' days'})
-                  </span>
-                </h3>
-              ) : (
-                <>
               <div className="flex items-center space-x-1 sm:space-x-4">
                 <button
                   type="button"
@@ -6850,8 +6103,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               >
                 오늘
               </button>
-                </>
-              )}
             </div>
           </div>
 
@@ -6980,6 +6231,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           )}
         </div>
         )}
+      </>
+        )}
       </div>
 
       {/* 통합 스케줄 테이블 컨테이너 */}
@@ -7008,1396 +6261,122 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </div>
             </div>
           </h3>
-          {/* 날짜 행: 페이지 세로 스크롤에 붙는 sticky는 이 래퍼에 적용 (내부는 가로 스크롤만) */}
-          <div
-            ref={productScheduleHeaderScrollRef}
-            onScroll={onProductScheduleHeaderScroll}
-            className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-primary/5"
-            style={{
-              top: productScheduleStickyTopPx,
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            <table className="w-full border-separate border-spacing-0" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
-              <thead className="bg-primary/5">
-                <tr className="align-top">
-                  <th
-                    className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-primary/5 border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
-                    style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
-                  >
-                    상품명
-                  </th>
-                  {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => {
-                    const hasNote = dateNotes[dateString]?.note
-                    const healthHeaderAlert =
-                      !isEdgePadding && scheduleHealthHighlightDateSet.has(dateString)
-                    return (
-                      <th
-                        key={dateString}
-                        className={`p-0 text-center text-xs font-medium align-top border-b border-gray-200 ${
-                          isEdgePadding
-                            ? 'bg-slate-100/90 text-gray-700'
-                            : healthHeaderAlert
-                              ? 'bg-red-600 text-[#ffff00]'
-                              : 'bg-primary/5 text-gray-700'
-                        }`}
-                        style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                      >
-                      <div 
-                        className={`
-                          px-1 py-0.5 cursor-pointer transition-colors relative
-                          ${healthHeaderAlert
-                            ? 'bg-red-600 hover:bg-red-700'
-                            : isToday(dateString) 
-                            ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                            : hasNote 
-                              ? 'bg-yellow-50 border-2 border-yellow-400 rounded' 
-                              : ''
-                          }
-                          ${!healthHeaderAlert && hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : !healthHeaderAlert ? 'hover:bg-muted' : ''}
-                        `}
-                        onClick={() => openDateNoteModal(dateString)}
-                        onMouseEnter={() => {
-                          if (scheduleInteractionDragging) return
-                          setHoveredDate(dateString)
-                        }}
-                        onMouseLeave={() => {
-                          if (scheduleInteractionDragging) return
-                          setHoveredDate(null)
-                        }}
-                        title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
-                      >
-                        <div
-                          className={`flex items-center justify-center ${
-                            healthHeaderAlert
-                              ? 'font-bold text-[#ffff00]'
-                              : isToday(dateString)
-                                ? 'font-bold text-red-700'
-                                : hasNote
-                                  ? 'font-semibold text-yellow-800'
-                                  : isEdgePadding
-                                    ? 'text-slate-700'
-                                    : ''
-                          }`}
-                        >
-                          <span>{isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}</span>
-                        </div>
-                        <div
-                          className={`text-xs flex items-center justify-center gap-1 ${
-                            healthHeaderAlert
-                              ? 'font-semibold text-[#ffff00]'
-                              : isToday(dateString)
-                                ? 'text-red-600'
-                                : hasNote
-                                  ? 'text-yellow-700 font-medium'
-                                  : 'text-gray-500'
-                          }`}
-                        >
-                          {dayOfWeek}
-                          {hasNote && (
-                            <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-                          )}
-                        </div>
-                        {/* 마우스 오버 시 노트 표시 */}
-                        {hoveredDate === dateString && hasNote && (
-                          <div className="absolute z-50 top-full left-1/2 transform -translate-x-1/2 mt-1 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
-                            <div className="font-semibold mb-1">{dateString}</div>
-                            <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
-                            <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
-                          </div>
-                        )}
-                      </div>
-                    </th>
-                  )
-                })}
-                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-primary/5 border-b border-gray-200" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
-                  합계
-                </th>
-              </tr>
-            </thead>
-            </table>
-          </div>
-          <div
-            ref={productScheduleBodyScrollRef}
-            onScroll={onProductScheduleBodyScroll}
-            className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-clip"
-            style={{
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            <table className="w-full border-separate border-spacing-0" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
-            <tbody className="divide-y divide-gray-200">
-              {/* 각 상품별 데이터 */}
-              {Object.entries(productScheduleData).map(([productId, product], index) => {
-                const colorValue = getScheduleProductColor(
-                  productId,
-                  productColors,
-                  defaultPresetIds[index % defaultPresetIds.length],
-                )
-                const displayProps = getProductDisplayProps(colorValue)
-                const selectedIndex = selectedProducts.indexOf(productId)
-                const canMoveUp = selectedIndex > 0
-                const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedProducts.length - 1
-                
-                return (
-                  <tr 
-                    key={productId} 
-                    className={`hover:bg-gray-50 transition-colors ${
-                      draggedProductRow === productId ? 'opacity-50 bg-primary/5' : ''
-                    }`}
-                    onDragOver={(e) => handleProductRowDragOver(e, productId)}
-                    onDragLeave={handleProductRowDragLeave}
-                    onDrop={(e) => handleProductRowDrop(e, productId)}
-                  >
-                    <td 
-                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none border border-gray-300 sticky left-0 z-40 shadow-[1px_0_0_0_rgb(209,213,219)] ${displayProps.className ?? ''}`.trim()}
-                      style={{ width: '96px', minWidth: '96px', maxWidth: '96px', ...displayProps.style }}
-                      draggable
-                      onDragStart={(e) => handleProductRowDragStart(e, productId)}
-                      onDragEnd={handleProductRowDragEnd}
-                    >
-                      <div className="flex items-center gap-1">
-                        <div className="flex flex-col items-center -my-0.5">
-                          <button
-                            type="button"
-                            draggable={false}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (canMoveUp) void moveProduct(selectedIndex, selectedIndex - 1)
-                            }}
-                            disabled={!canMoveUp}
-                            className="text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="위로 이동"
-                          >
-                            <ChevronUp className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            draggable={false}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (canMoveDown) void moveProduct(selectedIndex, selectedIndex + 1)
-                            }}
-                            disabled={!canMoveDown}
-                            className="text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="아래로 이동"
-                          >
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {product.product_name}
-                        {isScheduleMiscTourRowKey(productId) && (
-                          <button
-                            type="button"
-                            draggable={false}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setMiscTourModalDraft([...miscTourProductIds])
-                              setShowMiscTourModal(true)
-                            }}
-                            className="shrink-0 p-0.5 text-violet-700 hover:text-violet-900 rounded hover:bg-violet-100/80"
-                            title={locale === 'ko' ? '포함 상품 설정' : 'Configure grouped products'}
-                          >
-                            <Layers className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    {monthDays.map(({ dateString }) => {
-                      const dayData = product.dailyData[dateString]
-                      return (
-                        <td 
-                          key={dateString} 
-                          className="p-0 text-center text-xs overflow-visible"
-                          style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                        >
-                          {(() => {
-                            const isHealthAlertCell = scheduleHealthProductCellAlertSet.has(
-                              `${productId}|${dateString}`,
-                            )
-                            const langBgClass = dayData
-                              ? (() => {
-                                  const koAll = (dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)
-                                  const enAll = (dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)
-                                  if (koAll > 0 && enAll > 0) return 'bg-orange-100'
-                                  if (koAll > 0) return 'bg-yellow-100'
-                                  if (enAll > 0) return 'bg-red-100'
-                                  return 'bg-white'
-                                })()
-                              : 'bg-white'
-                            const todayBorderClass = isToday(dateString)
-                              ? 'border-l-2 border-r-2 border-red-500'
-                              : ''
-                            const todayWrapClass = isHealthAlertCell
-                              ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink ${todayBorderClass}`
-                              : isToday(dateString)
-                                ? `${langBgClass} ${todayBorderClass}`
-                                : langBgClass
-                            const displayOrder = ['X', 'L', 'U', '_other']
-                            const keyToLabel: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: '기타' }
-                            const choiceLine = dayData?.choiceCounts && Object.keys(dayData.choiceCounts).length > 0
-                              ? (() => {
-                                  const sortedEntries = Object.entries(dayData.choiceCounts)
-                                    .filter(([, n]) => n > 0)
-                                    .sort(([a], [b]) => displayOrder.indexOf(a) - displayOrder.indexOf(b))
-                                  return sortedEntries
-                                    .map(([key, count]) => `🏜️ ${keyToLabel[key] || key} : ${count}`)
-                                    .join(' / ')
-                                })()
-                              : null
-                            /** 항상 셀 아래에 표시 — 위쪽(bottom-full)은 sticky 날짜 헤더에 가려짐 */
-                            return (
-                              <div
-                                role="button"
-                                tabIndex={0}
-                                className={`group ${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  openProductCellReservationsModal(productId, dateString, product.product_name)
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    openProductCellReservationsModal(productId, dateString, product.product_name)
-                                  }
-                                }}
-                              >
-                                {dayData ? (
-                                  <div
-                                    className={(() => {
-                                      if (isHealthAlertCell) {
-                                        return 'font-bold leading-tight whitespace-nowrap text-yellow-300 [&_span]:text-yellow-300'
-                                      }
-                                      const br = dayData.tourCapacityBreakdown
-                                      const isCapacityOverfull =
-                                        br != null && br.totalAssigned > br.totalMax
-                                      const confirmed = dayData.totalPeople
-                                      const waiting = dayData.waitingPeople ?? 0
-                                      const onlyWaiting = confirmed === 0 && waiting > 0
-                                      const ap = dayData.assignmentPendingReservationCount ?? 0
-                                      const assignedSum = br?.totalAssigned ?? 0
-                                      const hasAssignmentPeopleGap =
-                                        (confirmed ?? 0) > assignedSum && (confirmed ?? 0) > 0
-                                      if (isCapacityOverfull) {
-                                        return `font-bold leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-red-700' : 'text-red-600'
-                                        }`
-                                      }
-                                      if (ap > 0 || hasAssignmentPeopleGap) {
-                                        return `font-bold leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-red-700' : 'text-red-600'
-                                        }`
-                                      }
-                                      if (onlyWaiting) {
-                                        return `font-medium leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-primary' : 'text-primary'
-                                        }`
-                                      }
-                                      if (confirmed === 0) {
-                                        return 'font-medium leading-tight whitespace-nowrap text-gray-300'
-                                      }
-                                      if (confirmed < 4) {
-                                        return `font-medium leading-tight whitespace-nowrap ${
-                                          isToday(dateString) ? 'text-primary' : 'text-primary'
-                                        }`
-                                      }
-                                      return 'font-medium leading-tight whitespace-nowrap text-gray-900'
-                                    })()}
-                                  >
-                                    {(() => {
-                                      const ap = dayData.assignmentPendingReservationCount ?? 0
-                                      const canceledP = dayData.canceledPeople ?? 0
-                                      const core = formatProductScheduleCellPeopleWithPrivateSplit(
-                                        dayData.privateTourPeople ?? 0,
-                                        dayData.companionTourPeople ?? 0,
-                                        dayData.waitingPeople ?? 0,
-                                        0
-                                      )
-                                      return (
-                                        <>
-                                          {core}
-                                          {ap > 0 && (
-                                            <span className="font-bold text-red-600 tabular-nums">({ap})</span>
-                                          )}
-                                          {canceledP > 0 ? (
-                                            <span className="tabular-nums">{` (${canceledP})`}</span>
-                                          ) : null}
-                                        </>
-                                      )
-                                    })()}
-                                  </div>
-                                ) : (
-                                  <div
-                                    className={isHealthAlertCell ? 'font-bold text-yellow-300' : 'text-gray-300'}
-                                  >
-                                    -
-                                  </div>
-                                )}
-                                {dayData && (
-                                  <div
-                                    className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block group-focus-within:block"
-                                  >
-                                    {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
-                                      <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
-                                        <div className="text-sm font-bold text-violet-200 tracking-tight">
-                                          {locale === 'ko' ? '포함 상품' : 'Grouped products'}
-                                        </div>
-                                        {(() => {
-                                          const dayBreakdown = miscTourDayProductBreakdown[dateString]
-                                          const activeEntries = dayBreakdown
-                                            ? Object.entries(dayBreakdown).filter(
-                                                ([, v]) => v.total > 0 || v.waiting > 0,
-                                              )
-                                            : []
-                                          if (activeEntries.length > 0) {
-                                            return activeEntries.map(([canon, v]) => (
-                                              <div
-                                                key={canon}
-                                                className="text-sm font-semibold leading-snug"
-                                              >
-                                                <span className="text-yellow-300">{v.name}</span>
-                                                <span className="tabular-nums font-bold text-white">
-                                                  {': '}
-                                                  {v.total}
-                                                  {v.waiting > 0 ? ` (+${v.waiting})` : ''}
-                                                </span>
-                                              </div>
-                                            ))
-                                          }
-                                          return miscTourProductIds.map((pid) => (
-                                            <div
-                                              key={pid}
-                                              className="text-sm font-semibold text-yellow-300 leading-snug"
-                                            >
-                                              {getMiscTourStoredItemLabel(pid, products)}
-                                            </div>
-                                          ))
-                                        })()}
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-                                      <span className="inline-flex items-center gap-1 shrink-0">
-                                        <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-                                        <span>{(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}</span>
-                                      </span>
-                                      <span className="text-gray-400 shrink-0">/</span>
-                                      <span className="inline-flex items-center gap-1 shrink-0">
-                                        <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-                                        <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
-                                      </span>
-                                    </div>
-                                    {choiceLine && (
-                                      <div className="whitespace-nowrap break-keep leading-tight">
-                                        {choiceLine}
-                                      </div>
-                                    )}
-                                    {dayData.tourCapacityBreakdown && dayData.tourCapacityBreakdown.rows.length > 0 && (
-                                      <div className="mt-2 pt-2 border-t border-gray-600 space-y-1.5">
-                                        {dayData.tourCapacityBreakdown.rows.map((row) => (
-                                          <div key={row.tourId} className="space-y-0.5">
-                                            <div className="text-[11px] text-gray-200 leading-snug">
-                                              {tTourCal('scheduleCellCapacityTeam', {
-                                                n: row.teamIndex,
-                                                guide: row.guideName,
-                                                assistant: row.assistantName
-                                              })}
-                                            </div>
-                                            <div className="text-[11px] text-gray-100 font-medium tabular-nums">
-                                              {tTourCal('scheduleCellCapacityPerTour', {
-                                                assigned: row.assigned,
-                                                max: row.max,
-                                                spots: row.spotsLeft
-                                              })}
-                                            </div>
-                                          </div>
-                                        ))}
-                                        <div className="text-[11px] text-amber-200 font-semibold pt-0.5 tabular-nums border-t border-gray-700 mt-1.5">
-                                          {tTourCal('scheduleCellCapacityTotal', {
-                                            assigned: dayData.tourCapacityBreakdown.totalAssigned,
-                                            max: dayData.tourCapacityBreakdown.totalMax,
-                                            spots: dayData.tourCapacityBreakdown.totalSpotsLeft
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })()}
-                        </td>
-                      )
-                    })}
-                <td className="px-2 py-0.5 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <ScheduleTotalColumnWithTooltip
-                    total={product.totalPeople}
-                    breakdown={aggregateScheduleBreakdownFromDailyData(
-                      product.dailyData,
-                      monthDaysCoreDateStrings,
-                    )}
-                    valueClassName={(() => {
-                      const rowWaiting = monthDaysCore.reduce(
-                        (s, d) => s + (product.dailyData[d.dateString]?.waitingPeople ?? 0),
-                        0
-                      )
-                      const rowOverflow = monthDaysCore.some((d) => {
-                        const br = product.dailyData[d.dateString]?.tourCapacityBreakdown
-                        return br != null && br.totalAssigned > br.totalMax
-                      })
-                      const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
-                      if (rowOverflow) return 'font-bold text-red-600'
-                      if (onlyWaitingTotal) return 'font-medium text-primary'
-                      return `font-medium ${
-                        product.totalPeople === 0
-                          ? 'text-gray-300'
-                          : product.totalPeople < 4
-                            ? 'text-primary'
-                            : 'text-gray-900'
-                      }`
-                    })()}
-                  />
-                </td>
-                  </tr>
-                )
-              })}
-
-              {/* 상품별 총계 행 - 가장 아래로 이동 */}
-              <tr className="bg-primary/10 font-semibold">
-                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-primary/10 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
-                  일별 합계
-                </td>
-                {monthDays.map(({ dateString }) => {
-                  const dayTotal = productTotals[dateString]
-                  const dayColOverflow = Object.values(productScheduleData).some((p) => {
-                    const br = p.dailyData[dateString]?.tourCapacityBreakdown
-                    return br != null && br.totalAssigned > br.totalMax
-                  })
-                  return (
-                    <td 
-                      key={dateString} 
-                      className="p-0 text-center text-xs"
-                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                    >
-                      <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
-                        <div className={(() => {
-                          const confirmed = dayTotal.totalPeople
-                          const waiting = dayTotal.waitingPeople ?? 0
-                          const onlyWaiting = confirmed === 0 && waiting > 0
-                          if (dayColOverflow) {
-                            return `font-bold ${isToday(dateString) ? 'text-red-700' : 'text-red-600'}`
-                          }
-                          if (onlyWaiting) {
-                            return `font-medium ${isToday(dateString) ? 'text-primary' : 'text-primary'}`
-                          }
-                          return `font-medium ${
-                            confirmed === 0
-                              ? 'text-gray-300'
-                              : confirmed < 4
-                                ? 'text-primary'
-                                : 'text-gray-900'
-                          }`
-                        })()}>{dayTotal.totalPeople}</div>
-                      </div>
-                    </td>
-                  )
-                })}
-                <td className="px-2 py-0.5 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <ScheduleTotalColumnWithTooltip
-                    total={Object.values(productScheduleData).reduce(
-                      (sum, product) => sum + product.totalPeople,
-                      0,
-                    )}
-                    breakdown={productScheduleGrandBreakdown}
-                    valueClassName="font-medium text-gray-900"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          {/* 가이드별 스케줄 테이블 */}
-          <div>
-            <div className="overflow-visible">
-          <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
-            <thead className="bg-green-50 hidden">
-              <tr>
-                <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
-                  가이드명
-                </th>
-                {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => (
-                  <th 
-                    key={dateString} 
-                    className="p-0 text-center text-xs font-medium text-gray-700"
-                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                  >
-                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isEdgePadding ? 'bg-slate-100/80' : ''} px-1 py-0.5`}>
-                      <div className={isToday(dateString) ? 'font-bold text-red-700' : isEdgePadding ? 'text-slate-700' : ''}>
-                        {isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}
-                      </div>
-                      <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
-                    </div>
-                  </th>
-                ))}
-                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  합계
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {/* 가이드별 총계 행 */}
-              <tr className="bg-green-100 font-semibold">
-                <td className="px-1 py-0 text-xs text-gray-900 sticky left-0 z-40 bg-green-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
-                  일별 합계
-                </td>
-                {monthDays.map(({ dateString }) => {
-                  const dayTotal = guideTotals[dateString]
-                  const isMismatch = guideVsProductDailyTotalMismatch.byDate[dateString]
-                  const todayBorderClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500' : ''
-                  const cellWrapClass = isMismatch
-                    ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
-                    : isToday(dateString)
-                      ? `bg-red-50 ${todayBorderClass}`
-                      : ''
-                  const valueClass = isMismatch
-                    ? ''
-                    : `font-medium ${
-                        dayTotal.assignedPeople === 0
-                          ? 'text-gray-300'
-                          : dayTotal.assignedPeople < 4
-                            ? 'text-primary'
-                            : 'text-red-600'
-                      } ${isToday(dateString) ? 'text-red-700' : ''}`
-                  return (
-                    <td
-                      key={dateString}
-                      className="px-0 py-0 text-center text-xs"
-                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                    >
-                      <div className={`px-1 py-0.5 ${cellWrapClass} ${valueClass}`}>
-                        {dayTotal.assignedPeople}
-                      </div>
-                    </td>
-                  )
-                })}
-                <td className="px-1 py-0 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <div
-                    className={
-                      guideVsProductDailyTotalMismatch.month
-                        ? 'bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold rounded px-1'
-                        : ''
-                    }
-                  >
-                    {Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)
-                  </div>
-                </td>
-              </tr>
-
-              {/* 각 가이드별 데이터 */}
-              {Object.entries(guideScheduleData).map(([teamMemberId, guide]) => {
-                const selectedIndex = selectedTeamMembers.indexOf(teamMemberId)
-                const canMoveUp = selectedIndex > 0
-                const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
-                const isCdlDriver = cdlDriverEmailSet.has(teamMemberId)
-                const isCdlKoreanDriver = cdlKoreanDriverEmailSet.has(teamMemberId)
-                // 멀티데이 투어 정보를 미리 계산
-                const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: DailyData } } = {}
-                
-                monthDays.forEach(({ dateString }) => {
-                  const dayData = guide.dailyData[dateString]
-                  if (dayData?.isMultiDay && dayData.multiDayDays >= 1) {
-                    const start = dayjs(dateString)
-                    const end = start.add(dayData.multiDayDays - 1, 'day')
-                    const extendsToNextMonth = end.isAfter(scheduleGridLastDay, 'day')
-                    
-                    multiDayTours[dateString] = {
-                      startDate: dateString,
-                      endDate: end.format('YYYY-MM-DD'),
-                      days: dayData.multiDayDays,
-                      extendsToNextMonth,
-                      dayData
-                    }
-                  }
-                })
-
-                // 이전 달 말일에 시작하여 이번 달로 이어지는 멀티데이 투어 포함 (최대 3박4일 → 3일 이전까지 조회)
-                const windowStart = dayjs(firstDayOfMonth).subtract(3, 'day')
-                tours.filter(t => t.tour_guide_id === teamMemberId || t.assistant_id === teamMemberId).forEach(tour => {
-                  const mdays = getMultiDayTourDays(tour.product_id)
-                  if (mdays <= 1) return
-                  // tour_date를 그대로 사용 (변환하지 않음)
-                  const start = dayjs(tour.tour_date)
-                  if (start.isBefore(firstDayOfMonth, 'day') && !start.isBefore(windowStart, 'day')) {
-                    const end = start.add(mdays - 1, 'day')
-                    // 이번 달에 걸쳐 있는 경우만 추가
-                    if (!end.isBefore(firstDayOfMonth, 'day')) {
-                      // 역할/인원/색상 계산 (Recruiting/Confirmed 상태만)
-                      const dayReservations = reservations.filter(res => 
-                        res.tour_date === tour.tour_date &&
-                        (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
-                      )
-                      const assignedPeople = (() => {
-                        if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids)) return 0
-                        const assigned = dayReservations.filter(res => tour.reservation_ids.includes(res.id))
-                        return assigned.reduce((s, r) => s + (r.total_people || 0), 0)
-                      })()
-                      const role = tour.tour_guide_id === teamMemberId ? 'guide' : tour.assistant_id === teamMemberId ? 'assistant' : null
-                      let guideInitials = null as string | null
-                      if (role === 'assistant' && tour.tour_guide_id) {
-                        const guideInfo = teamMembers.find(member => member.email === tour.tour_guide_id)
-                        if (guideInfo) {
-                          const gInfoName = (guideInfo as any).nick_name || guideInfo.name_ko
-                          guideInitials = gInfoName.split('').map((ch: string) => ch.charAt(0)).join('').substring(0, 2)
-                        }
-                      }
-                      const extendsToNextMonth = end.isAfter(scheduleGridLastDay, 'day')
-                      const startKey = start.format('YYYY-MM-DD')
-                      if (!multiDayTours[startKey]) {
-                        multiDayTours[startKey] = {
-                          startDate: startKey,
-                          endDate: end.format('YYYY-MM-DD'),
-                          days: mdays,
-                          extendsToNextMonth,
-                          dayData: {
-                            totalPeople: 0,
-                            assignedPeople,
-                            tours: 1,
-                            productColors: {
-                              [getScheduleColorRowKeyForProductId(
-                                tour.product_id,
-                                airportPickupMemberIdSet,
-                                airportSendingMemberIdSet,
-                              )]: getScheduleProductColorForProductId(
-                                tour.product_id,
-                                productColors,
-                                products,
-                                defaultPresetIds,
-                                airportPickupMemberIdSet,
-                                airportSendingMemberIdSet,
-                              ),
-                            },
-                            role,
-                            guideInitials,
-                            isMultiDay: true,
-                            multiDayDays: mdays
-                          }
-                        }
-                        
-                        // 이전 달에서 시작한 멀티데이 투어의 경우 이번 달에 해당하는 일수만큼 합계에 추가
-                        const daysInCurrentMonth = Math.min(
-                          mdays,
-                          dayjs(currentDate).endOf('month').diff(firstDayOfMonth, 'day') + 1
-                        )
-                        if (daysInCurrentMonth > 0) {
-                        // 이전 달에서 시작한 투어는 totalPeople이 0이므로 assignedPeople만 계산
-                        // totalAssignedPeople += assignedPeople * daysInCurrentMonth
-                        // totalTours += daysInCurrentMonth
-                        }
-                      }
-                    }
-                  }
-                })
-                
-                const isGuideDayOff = (dateString: string) => {
-                  if (!isOffDate(teamMemberId, dateString)) return false
-                  const teamMember = teamMembers.find((member) => member.email === teamMemberId)
-                  const key = `${teamMember?.email}_${dateString}`
-                  const pendingChange = pendingOffScheduleChanges[key]
-                  return pendingChange?.action !== 'delete'
-                }
-
-                const getGuideScheduleCellBgClass = (dateString: string, hasAssignment: boolean) => {
-                  if (isToday(dateString)) {
-                    return 'border-l-2 border-r-2 border-red-500 bg-red-50'
-                  }
-                  if (dateNotes[dateString]?.note) return 'bg-yellow-100'
-                  if (highlightedDate === dateString) return 'bg-yellow-200'
-                  if (isCdlKoreanDriver && !hasAssignment && !isGuideDayOff(dateString)) {
-                    return 'bg-yellow-100'
-                  }
-                  if (isCdlDriver && !hasAssignment && !isGuideDayOff(dateString)) {
-                    return 'bg-sky-100'
-                  }
-                  return 'bg-white'
-                }
-
-                return (
-                  <tr 
-                    key={teamMemberId} 
-                    className="group hover:bg-gray-50 transition-colors"
-                    onMouseEnter={() => {
-                      if (scheduleInteractionDragging) return
-                      setHoveredGuideRow(teamMemberId)
-                    }}
-                    onMouseLeave={() => {
-                      if (scheduleInteractionDragging) return
-                      setHoveredGuideRow(null)
-                    }}
-                  >
-                    <td 
-                      className="px-1 py-0 text-xs leading-tight sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] bg-white group-hover:bg-gray-50"
-                      style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
-                    >
-                      <div className={`font-medium flex items-center gap-0.5 ${
-                        hoveredGuideRow === teamMemberId 
-                          ? 'text-primary animate-pulse' 
-                          : 'text-gray-900'
-                      }`}>
-                        <div className="flex flex-col items-center -my-0.5">
-                          <button
-                            type="button"
-                            draggable={false}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (canMoveUp) void moveTeamMember(selectedIndex, selectedIndex - 1)
-                            }}
-                            disabled={!canMoveUp}
-                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="위로 이동"
-                          >
-                            <ChevronUp className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            draggable={false}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (canMoveDown) void moveTeamMember(selectedIndex, selectedIndex + 1)
-                            }}
-                            disabled={!canMoveDown}
-                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="아래로 이동"
-                          >
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          className={`min-w-0 flex-1 truncate text-left ${
-                            canEditTeamFromSchedule
-                              ? 'cursor-pointer hover:text-primary hover:underline'
-                              : ''
-                          }`}
-                          title={
-                            canEditTeamFromSchedule
-                              ? locale === 'ko'
-                                ? '클릭하여 팀원 정보 수정'
-                                : 'Click to edit team member'
-                              : guide.team_member_name
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openTeamEditFromSchedule(teamMemberId)
-                          }}
-                        >
-                          {guide.team_member_name}
-                        </button>
-                      </div>
-                    </td>
-                    <td className="p-0" colSpan={monthDays.length}>
-                      <div className="relative">
-                        <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, minmax(40px, 1fr))`, width: '100%', minWidth: `calc(${monthDays.length} * 40px)`}}>
-                          {monthDays.map(({ dateString }) => {
-                          const dayData = guide.dailyData[dateString]
-                          
-                          // 멀티데이 투어의 연속된 날짜인지 확인하고 해당 투어 정보 가져오기
-                          let continuationTour = null
-                          for (const tour of Object.values(multiDayTours)) {
-                            const tourStart = dayjs(tour.startDate)
-                            const tourEnd = dayjs(tour.endDate)
-                            const cur = dayjs(dateString)
-                            if (cur.isAfter(tourStart, 'day') && (cur.isSame(tourEnd, 'day') || cur.isBefore(tourEnd, 'day'))) {
-                              continuationTour = tour
-                              break
-                            }
-                          }
-                          
-                          // 멀티데이 투어의 연속된 날짜인 경우: 셀 내용은 비워두고(드롭존만 유지), 상단 오버레이에서 하나의 박스로 표시
-                          if (continuationTour && !dayData) {
-                            return (
-                              <div 
-                                key={dateString} 
-                                className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, true)}`}
-                                style={{ minWidth: '40px', boxSizing: 'border-box' }}
-                              >
-                                <div
-                                  className="relative h-[22px]"
-                                  style={{ pointerEvents: 'auto' }}
-                                  onDragOver={(e) => { 
-                                    if (draggedTour && draggedTour.tour_date === dateString) {
-                                      handleGuideScheduleDropZoneDragOver(e)
-                                    } else if (draggedUnassignedTour) {
-                                      handleGuideScheduleDropZoneDragOver(e)
-                                    }
-                                  }}
-                                  onDragLeave={handleGuideScheduleDropZoneDragLeave}
-                                onDrop={(e) => {
-                                  try {
-                                    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
-                                    
-                                    if (draggedUnassignedTour) {
-                                      // 미 배정 투어 배정
-                                      const role = dragData.role || 'guide'
-                                      handleGuideCellDrop(e, teamMemberId, dateString, role)
-                                    } else {
-                                      // 기존 투어 재배정
-                                      handleDrop(e, teamMemberId, dateString, 'guide')
-                                    }
-                                  } catch {
-                                    if (draggedUnassignedTour) {
-                                      handleGuideCellDrop(e, teamMemberId, dateString, 'guide')
-                                    } else {
-                                      handleDrop(e, teamMemberId, dateString, 'guide')
-                                    }
-                                  }
-                                }}
-                                >
-                                  {/* Off 날짜 표시 */}
-                                  {isOffDate(teamMemberId, dateString) && !(() => {
-                                    const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                    const key = `${teamMember?.email}_${dateString}`
-                                    const pendingChange = pendingOffScheduleChanges[key]
-                                    return pendingChange?.action === 'delete'
-                                  })() ? (
-                                    (() => {
-                                      const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                      const offSchedule = teamMember ? offSchedules.find(off => 
-                                        off.team_email === teamMember.email && off.off_date === dateString
-                                      ) : null
-                                      
-                                      return (
-                                        <div 
-                                          className={offScheduleAssignmentCellClass(offSchedule?.status)}
-                                          onClick={() => {
-                                            if (offSchedule) {
-                                              openOffScheduleActionModal(offSchedule)
-                                            }
-                                          }}
-                                          title={
-                                            offSchedule
-                                              ? `${offSchedule.reason || ''} (${offSchedule.status})`
-                                              : guide.team_member_name
-                                          }
-                                          >
-                                            OFF
-                                          </div>
-                                      )
-                                    })()
-                                  ) : (
-                                    /* 이어지는 날짜는 오버레이에서 하나의 박스로 렌더링 */
-                                    <div></div>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          }
-                          
-                          // 일반 셀 렌더링 (1일 투어 또는 멀티데이 투어 시작일)
-                          return (
-                            <div 
-                              key={dateString} 
-                              className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, Boolean(dayData))}`}
-                              style={{ minWidth: '40px', boxSizing: 'border-box' }}
-                            >
-                              <div
-                                className="relative h-[22px]"
-                                style={{ 
-                                  pointerEvents: 'auto',
-                                  overflow: 'visible',
-                                  position: 'relative'
-                                }}
-                                onDragOver={(e) => { 
-                                  if (draggedTour && draggedTour.tour_date === dateString) {
-                                    handleGuideScheduleDropZoneDragOver(e)
-                                  } else if (draggedUnassignedTour) {
-                                    handleGuideScheduleDropZoneDragOver(e)
-                                  }
-                                }}
-                                onDragLeave={handleGuideScheduleDropZoneDragLeave}
-                                onDrop={(e) => {
-                                  try {
-                                    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
-                                    
-                                    if (draggedUnassignedTour) {
-                                      // 미 배정 투어 배정
-                                      const role = dragData.role || 'guide'
-                                      handleGuideCellDrop(e, teamMemberId, dateString, role)
-                                    } else {
-                                      // 기존 투어 재배정
-                                      handleDrop(e, teamMemberId, dateString, 'guide')
-                                    }
-                                  } catch {
-                                    if (draggedUnassignedTour) {
-                                      handleGuideCellDrop(e, teamMemberId, dateString, 'guide')
-                                    } else {
-                                      handleDrop(e, teamMemberId, dateString, 'guide')
-                                    }
-                                  }
-                                }}
-                              >
-                                {dayData ? (
-                                  <div className="relative h-full">
-                                    {/* 상품별 배경색 표시 (텍스트 아래) - 멀티데이 시작일은 오버레이에서만 표시 */}
-                                    {Object.keys(dayData.productColors).length > 0 && !dayData.isMultiDay && (
-                                      <div className="absolute inset-0 pointer-events-none rounded" 
-                                           style={{
-                                             background: Object.values(dayData.productColors).length === 1 
-                                               ? `linear-gradient(135deg, ${getColorFromClass(Object.values(dayData.productColors)[0])} 0%, ${getColorFromClass(Object.values(dayData.productColors)[0])} 100%)`
-                                               : `linear-gradient(135deg, ${Object.values(dayData.productColors).map(color => getColorFromClass(color)).join(', ')})`
-                                           }}>
-                                      </div>
-                                    )}
-                                    
-                                    {/* 가이드로 배정된 경우 - 인원 표시 */}
-                                    {dayData.role === 'guide' && !dayData.isMultiDay && (() => {
-                                      // 해당 날짜의 가이드 투어들 중 단독투어 여부 확인
-                                      const guideTours = tours.filter(tour => 
-                                        tour.tour_date === dateString && 
-                                        tour.tour_guide_id === teamMemberId
-                                      )
-                                      const hasPrivateTour = guideTours.some(tour => 
-                                        tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
-                                      )
-                                      
-                                      // 차량 배차 여부 및 배정된 차량 색상
-                                      const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                                      const assignedCarId = guideTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-                                      const vehicleColorClass = assignedCarId ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarId).trim()) : null
-                                      
-                                      // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
-                                      if (guideTours.length > 0 && guideTours[0].product_id && guideTours[0].id) {
-                                        // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
-                                        const sameDateProductTours = tours.filter(t => 
-                                          t.tour_date === dateString && 
-                                          t.product_id === guideTours[0].product_id &&
-                                          t.tour_guide_id // 가이드가 배정된 투어만
-                                        )
-                                        
-                                        // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
-                                        const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
-                                        const hasMultipleTeams = uniqueGuides.size > 1
-                                        
-                                        const borderColor = hasMultipleTeams
-                                          ? getTourBorderColor(
-                                              guideTours[0].id,
-                                              dateString,
-                                              guideTours[0].product_id,
-                                              teamMemberId
-                                            )
-                                          : ''
-                                        
-                                        return (
-                                          <div 
-                                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                              dayData.assignedPeople === 0 
-                                                ? 'bg-gray-400' 
-                                                : 'bg-transparent'
-                                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
-                                            style={{
-                                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                                ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                                : undefined,
-                                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                                : undefined,
-                                              boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
-                                            }}
-                                            title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
-                                            draggable
-                                            onDragStart={(e) => {
-                                              if (guideTours.length > 0) {
-                                                setDraggedRole('guide')
-                                                handleDragStart(e, guideTours[0])
-                                              }
-                                            }}
-                                            onDragEnd={handleAssignedTourDragEnd}
-                                            onDoubleClick={() => {
-                                              if (guideTours.length > 0) {
-                                                openTourDetailModal(guideTours[0].id)
-                                              }
-                                            }}
-                                            onClick={() => {
-                                              if (guideTours.length > 0) {
-                                                showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
-                                              }
-                                            }}
-                                          >
-                                            {hasUnassignedVehicle && (
-                                              <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                                            )}
-                                            {!hasUnassignedVehicle && vehicleColorClass && (
-                                              <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
-                                            )}
-                                            {hasPrivateTour && <span>🔒</span>}
-                                            <span>{dayData.assignedPeople}</span>
-                                            {dayData.extendsToNextMonth && (
-                                              <span className="text-xs opacity-75">→</span>
-                                            )}
-                                          </div>
-                                        )
-                                      }
-                                      
-                                      // 기본 렌더링 (product_id가 없는 경우)
-                                      return (
-                                        <div 
-                                          className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                            dayData.assignedPeople === 0 
-                                              ? 'bg-gray-400' 
-                                              : 'bg-transparent'
-                                          } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                                          style={{
-                                            backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                              ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                              : undefined,
-                                            color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                              ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                              : undefined
-                                          }}
-                                          title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
-                                          draggable
-                                          onDragStart={(e) => {
-                                            if (guideTours.length > 0) {
-                                              setDraggedRole('guide')
-                                              handleDragStart(e, guideTours[0])
-                                            }
-                                          }}
-                                          onDragEnd={handleAssignedTourDragEnd}
-                                          onDoubleClick={() => {
-                                            if (guideTours.length > 0) {
-                                              openTourDetailModal(guideTours[0].id)
-                                            }
-                                          }}
-                                          onClick={() => {
-                                            if (guideTours.length > 0) {
-                                              showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
-                                            }
-                                          }}
-                                        >
-                                          {hasUnassignedVehicle && (
-                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                                          )}
-                                          {!hasUnassignedVehicle && vehicleColorClass && (
-                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
-                                          )}
-                                          {hasPrivateTour && <span>🔒</span>}
-                                          <span>{dayData.assignedPeople}</span>
-                                          {dayData.extendsToNextMonth && (
-                                            <span className="text-xs opacity-75">→</span>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
-                                    
-                                    {/* 어시스턴트로 배정된 경우 - 가이드 이름 초성 표시 */}
-                                    {dayData.role === 'assistant' && !dayData.isMultiDay && (() => {
-                                      // 해당 날짜의 어시스턴트 투어들 중 단독투어 여부 확인
-                                      const assistantTours = tours.filter(tour => 
-                                        tour.tour_date === dateString && 
-                                        tour.assistant_id === teamMemberId
-                                      )
-                                      const hasPrivateTour = assistantTours.some(tour => 
-                                        tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
-                                      )
-                                      
-                                      // 차량 배차 여부 및 배정된 차량 색상
-                                      const hasUnassignedVehicle = assistantTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                                      const assignedCarIdAsst = assistantTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-                                      const vehicleColorClassAsst = assignedCarIdAsst ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdAsst).trim()) : null
-                                      
-                                      // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
-                                      if (assistantTours.length > 0 && assistantTours[0].product_id && assistantTours[0].id && assistantTours[0].tour_guide_id) {
-                                        // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
-                                        const sameDateProductTours = tours.filter(t => 
-                                          t.tour_date === dateString && 
-                                          t.product_id === assistantTours[0].product_id &&
-                                          t.tour_guide_id // 가이드가 배정된 투어만
-                                        )
-                                        
-                                        // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
-                                        const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
-                                        const hasMultipleTeams = uniqueGuides.size > 1
-                                        
-                                        const borderColor = hasMultipleTeams
-                                          ? getTourBorderColor(
-                                              assistantTours[0].id,
-                                              dateString,
-                                              assistantTours[0].product_id,
-                                              assistantTours[0].tour_guide_id
-                                            )
-                                          : ''
-                                        
-                                        return (
-                                          <div 
-                                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                              dayData.assignedPeople === 0 
-                                                ? 'bg-gray-400' 
-                                                : 'bg-transparent'
-                                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
-                                            style={{
-                                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                                ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                                : undefined,
-                                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                                : undefined,
-                                              boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
-                                            }}
-                                          title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
-                                          draggable
-                                          onDragStart={(e) => {
-                                            if (assistantTours.length > 0) {
-                                              setDraggedRole('assistant')
-                                              handleDragStart(e, assistantTours[0])
-                                            }
-                                          }}
-                                          onDragEnd={handleAssignedTourDragEnd}
-                                          onDoubleClick={() => {
-                                            if (assistantTours.length > 0) {
-                                              openTourDetailModal(assistantTours[0].id)
-                                            }
-                                          }}
-                                          onClick={() => {
-                                            if (assistantTours.length > 0) {
-                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
-                                            }
-                                          }}
-                                        >
-                                          {hasUnassignedVehicle && (
-                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                                          )}
-                                          {!hasUnassignedVehicle && vehicleColorClassAsst && (
-                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
-                                          )}
-                                          {hasPrivateTour && <span>🔒</span>}
-                                          <span>{dayData.guideInitials || 'A'}</span>
-                                          {dayData.extendsToNextMonth && (
-                                            <span className="text-xs opacity-75">→</span>
-                                          )}
-                                        </div>
-                                      )
-                                      }
-                                      
-                                      // 기본 렌더링 (product_id가 없거나 tour_guide_id가 없는 경우)
-                                      return (
-                                        <div 
-                                          className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                            dayData.assignedPeople === 0 
-                                              ? 'bg-gray-400' 
-                                              : 'bg-transparent'
-                                          } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                                          style={{
-                                            backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                              ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                              : undefined,
-                                            color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                              ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                              : undefined
-                                          }}
-                                          title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
-                                          draggable
-                                          onDragStart={(e) => {
-                                            if (assistantTours.length > 0) {
-                                              setDraggedRole('assistant')
-                                              handleDragStart(e, assistantTours[0])
-                                            }
-                                          }}
-                                          onDragEnd={handleAssignedTourDragEnd}
-                                          onDoubleClick={() => {
-                                            if (assistantTours.length > 0) {
-                                              openTourDetailModal(assistantTours[0].id)
-                                            }
-                                          }}
-                                          onClick={() => {
-                                            if (assistantTours.length > 0) {
-                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
-                                            }
-                                          }}
-                                        >
-                                          {hasUnassignedVehicle && (
-                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                                          )}
-                                          {!hasUnassignedVehicle && vehicleColorClassAsst && (
-                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
-                                          )}
-                                          {hasPrivateTour && <span>🔒</span>}
-                                          <span>{dayData.guideInitials || 'A'}</span>
-                                          {dayData.extendsToNextMonth && (
-                                            <span className="text-xs opacity-75">→</span>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
-                                  </div>
-                                ) : (
-                                  <div className="text-gray-300 text-center py-0 text-[10px]">
-                                    {/* Off 날짜 표시 */}
-                                    {isOffDate(teamMemberId, dateString) && !(() => {
-                                      const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                      const key = `${teamMember?.email}_${dateString}`
-                                      const pendingChange = pendingOffScheduleChanges[key]
-                                      return pendingChange?.action === 'delete'
-                                    })() ? (
-                                      (() => {
-                                        const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                        const offSchedule = teamMember ? offSchedules.find(off => 
-                                          off.team_email === teamMember.email && off.off_date === dateString
-                                        ) : null
-                                        
-                                        return (
-                                          <div 
-                                            className={offScheduleAssignmentCellClass(offSchedule?.status)}
-                                            onClick={() => {
-                                              if (offSchedule) {
-                                                openOffScheduleActionModal(offSchedule)
-                                              }
-                                            }}
-                                            title={
-                                              offSchedule
-                                                ? `${offSchedule.reason || ''} (${offSchedule.status})`
-                                                : guide.team_member_name
-                                            }
-                                          >
-                                            OFF
-                                          </div>
-                                        )
-                                      })()
-                                    ) : (
-                                      /* 드롭 영역 */
-                                      <div 
-                                        className={`h-full flex items-center justify-center cursor-pointer transition-colors ${
-                                          isCdlKoreanDriver
-                                            ? 'hover:bg-yellow-200'
-                                            : isCdlDriver
-                                              ? 'hover:bg-sky-200'
-                                              : 'hover:bg-gray-100'
-                                        }`}
-                                        onClick={() => openOffScheduleActionModal(null, teamMemberId, dateString)}
-                                        onDoubleClick={(e) => {
-                                          e.stopPropagation()
-                                          handleCreateOffSchedule(teamMemberId, dateString)
-                                        }}
-                                        title={guide.team_member_name}
-                                      >
-                                        <div className="text-gray-300 text-xs">+</div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )
-                          })}
-                        </div>
-                        {Object.values(multiDayTours).map((tour, idx) => {
-                          const start = dayjs(tour.startDate)
-                          const monthStart = dayjs(firstDayOfMonth)
-                          // 시작일이 이번 달 이전인 경우 보이는 시작 인덱스를 0으로 클램프
-                          const diffFromMonthStart = start.diff(monthStart, 'day')
-                          // 그리드 컬럼 인덱스는 monthDays 기준(월간 뷰는 [0]이 전월 말 패딩, display는 오늘부터 패딩 없음)
-                          const startColIdx = monthDays.findIndex((d) => d.dateString === tour.startDate)
-                          const visibleStartIdx = startColIdx >= 0 ? startColIdx : 0
-                          // 이전 달·기간 이전에 시작했다면 그 만큼을 잘라내고 남은 일수만 표시
-                          const cutDays =
-                            startColIdx < 0 && diffFromMonthStart < 0
-                              ? Math.min(tour.days, Math.abs(diffFromMonthStart))
-                              : 0
-                          const remainingDays = tour.days - cutDays
-                          const spanDays = Math.min(remainingDays, monthDays.length - visibleStartIdx)
-                          if (spanDays <= 0) return null
-                          const hasColors = Object.keys(tour.dayData.productColors).length > 0
-                          const colorValues = Object.values(tour.dayData.productColors)
-                          const gradient = hasColors
-                            ? (colorValues.length === 1
-                              ? `linear-gradient(135deg, ${getColorFromClass(colorValues[0])} 0%, ${getColorFromClass(colorValues[0])} 100%)`
-                              : `linear-gradient(135deg, ${colorValues.map(color => getColorFromClass(color)).join(', ')})`)
-                            : undefined
-                          const mdRowTours = tours.filter(tourItem =>
-                            tourItem.tour_date === tour.startDate &&
-                            (tour.dayData.role === 'guide'
-                              ? tourItem.tour_guide_id === teamMemberId
-                              : tourItem.assistant_id === teamMemberId)
-                          )
-                          const hasUnassignedVehicleMd = mdRowTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                          const assignedCarIdMd = mdRowTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-                          const vehicleColorClassMd = assignedCarIdMd
-                            ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdMd).trim())
-                            : null
-                          return (
-                            <div
-                              key={`md-overlay-${idx}-${tour.startDate}`}
-                              className="absolute z-10 top-0 h-[22px] flex items-center"
-                              style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
-                            >
-                              <div
-                                className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
-                                style={{ 
-                                  background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined,
-                                  color:
-                                    tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
-                                      ? getProductDisplayProps(colorValues[0]).style?.color
-                                      : undefined
-                                }}
-                                draggable
-                                onDragStart={(e) => {
-                                  if (mdRowTours.length > 0) {
-                                    handleDragStart(e, mdRowTours[0])
-                                  }
-                                }}
-                                onDragEnd={handleAssignedTourDragEnd}
-                                onClick={() => {
-                                  if (mdRowTours.length > 0) {
-                                    showGuideModalContent('투어 상세 정보', getTourSummary(mdRowTours[0]), mdRowTours[0].id)
-                                  }
-                                }}
-                                onDoubleClick={() => {
-                                  if (mdRowTours.length > 0) {
-                                    openTourDetailModal(mdRowTours[0].id)
-                                  }
-                                }}
-                                title={mdRowTours.length > 0 ? getGuideScheduleTourHoverText(mdRowTours[0]) : guide.team_member_name}
-                              >
-                                {hasUnassignedVehicleMd && (
-                                  <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                                )}
-                                {!hasUnassignedVehicleMd && vehicleColorClassMd && (
-                                  <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassMd}`} />
-                                )}
-                                {mdRowTours.some(tourItem => tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true) && (
-                                  <span>🔒</span>
-                                )}
-                                <span>
-                                  {tour.dayData.role === 'assistant'
-                                    ? (tour.dayData.guideInitials || 'A')
-                                    : (tour.dayData.assignedPeople || '')}
-                                </span>
-                                {tour.extendsToNextMonth && (
-                                  <span className="text-xs opacity-75">→</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-1 py-0 text-center text-[10px] font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                      <div className={`font-medium ${
-                        guide.totalAssignedPeople === 0 
-                          ? 'text-gray-300' 
-                          : guide.totalAssignedPeople < 4 
-                            ? 'text-primary' 
-                            : 'text-red-600'
-                      }`}>{guide.totalAssignedPeople} ({guide.totalTours}일)</div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-            </div>
-          </div>
+          <ScheduleProductGrid
+            isDisplayMode={isDisplayMode}
+            locale={locale}
+            monthDays={monthDays}
+            monthDaysCore={monthDaysCore}
+            monthDaysCoreDateStrings={monthDaysCoreDateStrings}
+            dynamicMinTableWidthPx={dynamicMinTableWidthPx}
+            dayColumnWidthCalc={dayColumnWidthCalc}
+            productScheduleStickyTopPx={productScheduleStickyTopPx}
+            productScheduleHeaderScrollRef={productScheduleHeaderScrollRef}
+            productScheduleBodyScrollRef={productScheduleBodyScrollRef}
+            onProductScheduleHeaderScroll={onProductScheduleHeaderScroll}
+            onProductScheduleBodyScroll={onProductScheduleBodyScroll}
+            dateNotes={dateNotes}
+            scheduleHealthHighlightDateSet={scheduleHealthHighlightDateSet}
+            scheduleHealthProductCellAlertSet={scheduleHealthProductCellAlertSet}
+            scheduleInteractionDragging={scheduleInteractionDragging}
+            hoveredDate={hoveredDate}
+            setHoveredDate={setHoveredDate}
+            isToday={isToday}
+            openDateNoteModal={openDateNoteModal}
+            productScheduleData={productScheduleData}
+            productTotals={productTotals}
+            productScheduleGrandBreakdown={productScheduleGrandBreakdown}
+            productColors={productColors}
+            defaultPresetIds={defaultPresetIds}
+            selectedProducts={selectedProducts}
+            draggedProductRow={draggedProductRow}
+            miscTourProductIds={miscTourProductIds}
+            miscTourDayProductBreakdown={miscTourDayProductBreakdown}
+            products={products as import('@/lib/scheduleAirportPickDropGroup').ScheduleProductRef[]}
+            handleProductRowDragOver={(e, productId) =>
+              handleProductRowDragOver(e as React.DragEvent<HTMLTableRowElement>, productId)
+            }
+            handleProductRowDragLeave={(e) =>
+              handleProductRowDragLeave(e as React.DragEvent<HTMLTableRowElement>)
+            }
+            handleProductRowDrop={(e, productId) =>
+              handleProductRowDrop(e as React.DragEvent<HTMLTableRowElement>, productId)
+            }
+            handleProductRowDragStart={(e, productId) =>
+              handleProductRowDragStart(e as React.DragEvent<HTMLTableRowElement>, productId)
+            }
+            handleProductRowDragEnd={handleProductRowDragEnd}
+            moveProduct={moveProduct}
+            setMiscTourModalDraft={setMiscTourModalDraft}
+            setShowMiscTourModal={setShowMiscTourModal}
+            openProductCellReservationsModal={openProductCellReservationsModal}
+          />
+          <ScheduleGuideGrid
+            locale={locale}
+            monthDays={monthDays}
+            dayColumnWidthCalc={dayColumnWidthCalc}
+            dynamicMinTableWidthPx={dynamicMinTableWidthPx}
+            isToday={isToday}
+            guideTotals={guideTotals}
+            guideVsProductDailyTotalMismatch={guideVsProductDailyTotalMismatch}
+            guideScheduleData={guideScheduleData}
+            selectedTeamMembers={effectiveSelectedTeamMembers}
+            cdlDriverEmailSet={cdlDriverEmailSet}
+            cdlKoreanDriverEmailSet={cdlKoreanDriverEmailSet}
+            scheduleGridLastDay={scheduleGridLastDay}
+            firstDayOfMonth={firstDayOfMonth}
+            currentDate={currentDate}
+            tours={tours}
+            reservations={reservations}
+            teamMembers={teamMembers}
+            productColors={productColors}
+            defaultPresetIds={defaultPresetIds}
+            products={products}
+            airportPickupMemberIdSet={airportPickupMemberIdSet}
+            airportSendingMemberIdSet={airportSendingMemberIdSet}
+            getMultiDayTourDays={getMultiDayTourDays}
+            scheduleInteractionDragging={scheduleInteractionDragging}
+            hoveredGuideRow={hoveredGuideRow}
+            setHoveredGuideRow={setHoveredGuideRow}
+            moveTeamMember={moveTeamMember}
+            canEditTeamFromSchedule={canEditTeamFromSchedule}
+            openTeamEditFromSchedule={openTeamEditFromSchedule}
+            isOffDate={isOffDate}
+            dateNotes={dateNotes}
+            highlightedDate={highlightedDate}
+            pendingOffScheduleChanges={pendingOffScheduleChanges}
+            offSchedules={offSchedules}
+            offScheduleAssignmentCellClass={offScheduleAssignmentCellClass}
+            openOffScheduleActionModal={openOffScheduleActionModal}
+            handleCreateOffSchedule={handleCreateOffSchedule}
+            draggedTour={draggedTour}
+            draggedUnassignedTour={draggedUnassignedTour}
+            monthVehiclesWithColors={monthVehiclesWithColors}
+            getColorFromClass={getColorFromClass}
+            getBorderColorValue={getBorderColorValue}
+            getTourBorderColor={getTourBorderColor}
+            setDraggedRole={setDraggedRole}
+            handleDrop={handleDrop}
+            handleGuideScheduleDropZoneDragOver={(e) =>
+              handleGuideScheduleDropZoneDragOver(e as React.DragEvent<HTMLElement>)
+            }
+            handleGuideScheduleDropZoneDragLeave={(e) =>
+              handleGuideScheduleDropZoneDragLeave(e as React.DragEvent<HTMLElement>)
+            }
+            handleGuideCellDrop={(e, teamMemberId, dateString, role) =>
+              void handleGuideCellDrop(
+                e as React.DragEvent,
+                teamMemberId,
+                dateString,
+                role,
+              )
+            }
+            handleDragStart={(e, tour) => handleDragStart(e as React.DragEvent, tour)}
+            handleAssignedTourDragEnd={handleAssignedTourDragEnd}
+            openTourDetailModal={openTourDetailModal}
+            showGuideModalContent={showGuideModalContent}
+            getTourSummary={getTourSummary}
+            getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
+          />
 
           {/* 부킹 테이블 */}
           <div>
@@ -8711,343 +6690,45 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 </tbody>
               </table>
             </div>
-            {/* 차량별 스케줄 테이블 (부킹 아래 — 해당 월 배차 있는 차량만, 행 드래그로 순서 변경) */}
-            {orderedVehiclesForScheduleTable.length > 0 && (
-              <div className="mt-1 overflow-visible">
-                <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
-                  <tbody className="divide-y divide-gray-200">
-                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date, vehicle_category }, index) => {
-                      const canMoveUp = index > 0
-                      const canMoveDown = index < orderedVehiclesForScheduleTable.length - 1
-                      const data = vehicleScheduleData[id]
-                      if (!data) return null
-                      const isCompanyVehicleRow =
-                        (vehicle_category || 'company').toString().toLowerCase() !== 'rental'
-                      const oilSummary = vehicleOilMaintenanceByVehicleId.get(id)
-                      const allNames = new Set<string>()
-                      monthDays.forEach(({ dateString }) => {
-                        const dayInfo = data.daily[dateString]
-                        if (dayInfo) {
-                          dayInfo.guideNames.forEach(n => allNames.add(n))
-                          dayInfo.assistantNames.forEach(n => allNames.add(n))
-                          dayInfo.driverNames.forEach(n => allNames.add(n))
-                        }
-                      })
-                      const sortedNames = [...allNames].filter(Boolean).sort()
-                      const crewTooltipLines =
-                        sortedNames.length > 0
-                          ? [`${sortedNames.join(', ')}`, `총 ${sortedNames.length}명`]
-                          : []
-                      const vehicleNameTooltip =
-                        isCompanyVehicleRow && oilSummary
-                          ? buildVehicleOilTooltipLines(oilSummary, crewTooltipLines)
-                          : crewTooltipLines.length > 0
-                            ? crewTooltipLines.join('\n')
-                            : label
-                      /** 렌트 구간 ∩ (표시 중인 달 ~ 그 다음 달 말일) 안의 배정일. 다음 달 배차도 툴팁에 포함 */
-                      const rentalAssignedDaysCompactList = (() => {
-                        const rs = (rental_start_date || '').toString().substring(0, 10)
-                        const re = (rental_end_date || '').toString().substring(0, 10)
-                        if (!rs || !re) return ''
-                        const rentalStart = dayjs(rs)
-                        const rentalEnd = dayjs(re)
-                        if (!rentalStart.isValid() || !rentalEnd.isValid()) return ''
-
-                        const viewStart = dayjs(currentDate).startOf('month')
-                        const viewEnd = dayjs(currentDate).add(1, 'month').endOf('month')
-                        const rangeStart = rentalStart.isAfter(viewStart, 'day') ? rentalStart : viewStart
-                        const rangeEnd = rentalEnd.isBefore(viewEnd, 'day') ? rentalEnd : viewEnd
-                        if (rangeStart.isAfter(rangeEnd, 'day')) return ''
-
-                        const dateStrings: string[] = []
-                        for (let cur = rangeStart; !cur.isAfter(rangeEnd, 'day'); cur = cur.add(1, 'day')) {
-                          const dateString = cur.format('YYYY-MM-DD')
-                          const covered = tours.some(
-                            (t) =>
-                              t.tour_car_id &&
-                              String(t.tour_car_id).trim() === id &&
-                              tourCoversScheduleDate(t, dateString),
-                          )
-                          if (covered) dateStrings.push(dateString)
-                        }
-                        if (dateStrings.length === 0) return ''
-
-                        const viewYm = dayjs(currentDate).format('YYYY-MM')
-                        const allInViewMonth =
-                          dateStrings.length > 0 && dateStrings.every((s) => s.slice(0, 7) === viewYm)
-                        if (allInViewMonth) {
-                          return dateStrings.map((s) => String(Number(s.slice(8, 10)))).join(',')
-                        }
-                        return dateStrings
-                          .map((s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`)
-                          .join(',')
-                      })()
-                      const rentalPeriodTooltipLine = `렌트 기간: ${(rental_start_date || '').toString().substring(0, 10)} ~ ${(rental_end_date || '').toString().substring(0, 10)}`
-                      const rentalEmptyCellTooltip = rentalAssignedDaysCompactList
-                        ? `${rentalPeriodTooltipLine}\n${rentalAssignedDaysCompactList}`
-                        : rentalPeriodTooltipLine
-                      return (
-                        <tr
-                          key={id}
-                          className={`group hover:bg-gray-50/50 ${
-                            draggedVehicleRowId === id ? 'opacity-50 bg-primary/5/80' : ''
-                          }`}
-                        >
-                          <td
-                            className={`px-1 py-0.5 text-xs leading-tight text-gray-900 select-none sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${
-                              draggedVehicleRowId === id ? 'bg-primary/5/80' : 'bg-white group-hover:bg-gray-50/50'
-                            }`}
-                            style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
-                            onDragOver={(e) => {
-                              if (draggedVehicleRowId) {
-                                handleVehicleRowDragOver(e, id)
-                              }
-                            }}
-                            onDrop={(e) => {
-                              if (e.dataTransfer.getData('text/vehicle-row')) {
-                                e.preventDefault()
-                                handleVehicleRowDrop(e, id)
-                              }
-                            }}
-                          >
-                            <div className="flex items-center gap-0.5">
-                              <div
-                                className="flex shrink-0 items-center gap-0.5 cursor-grab active:cursor-grabbing"
-                                draggable
-                                onDragStart={(e) => handleVehicleRowDragStart(e, id)}
-                                onDragEnd={handleVehicleRowDragEnd}
-                                title="행 순서: 이 영역을 드래그하여 이동"
-                              >
-                                <div className="flex flex-col items-center -my-0.5">
-                                  <button
-                                    type="button"
-                                    draggable={false}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (canMoveUp) moveVehicleRow(index, index - 1)
-                                    }}
-                                    disabled={!canMoveUp}
-                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                    title="위로 이동"
-                                  >
-                                    <ChevronUp className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    draggable={false}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (canMoveDown) moveVehicleRow(index, index + 1)
-                                    }}
-                                    disabled={!canMoveDown}
-                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                    title="아래로 이동"
-                                  >
-                                    <ChevronDown className="w-3 h-3" />
-                                  </button>
-                                </div>
-                                <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
-                              </div>
-                              <div
-                                className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-primary' : 'cursor-help'}`}
-                                title={
-                                  canEditVehicleFromSchedule
-                                    ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
-                                    : vehicleNameTooltip
-                                }
-                                role={canEditVehicleFromSchedule ? 'button' : undefined}
-                                tabIndex={canEditVehicleFromSchedule ? 0 : undefined}
-                                onClick={
-                                  canEditVehicleFromSchedule
-                                    ? (e) => {
-                                        e.stopPropagation()
-                                        void openVehicleEditFromSchedule(id)
-                                      }
-                                    : undefined
-                                }
-                                onKeyDown={
-                                  canEditVehicleFromSchedule
-                                    ? (e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.preventDefault()
-                                          e.stopPropagation()
-                                          void openVehicleEditFromSchedule(id)
-                                        }
-                                      }
-                                    : undefined
-                                }
-                              >
-                                {label}
-                              </div>
-                            </div>
-                          </td>
-                          {monthDays.map(({ dateString }) => {
-                            const dayInfo = data.daily[dateString]
-                            const count = dayInfo?.count ?? 0
-                            const guideNames = dayInfo?.guideNames ?? []
-                            const assistantNames = dayInfo?.assistantNames ?? []
-                            const driverNames = dayInfo?.driverNames ?? []
-                            const hoverLines: string[] = []
-                            if (guideNames.length > 0) hoverLines.push(`가이드: ${guideNames.join(', ')}`)
-                            const asstOrDriverNames = [...new Set([...assistantNames, ...driverNames])].filter(Boolean)
-                            if (asstOrDriverNames.length > 0) hoverLines.push(`어시스턴트/드라이버: ${asstOrDriverNames.join(', ')}`)
-                            hoverLines.push('드래그하여 다른 차량으로 이동')
-                            const cellTooltip = hoverLines.join('\n')
-                            const dayTours = tours.filter(t => t.tour_car_id && String(t.tour_car_id).trim() === id && t.tour_date === dateString)
-                            const isInRentalPeriod = rental_start_date && rental_end_date &&
-                              dateString >= (rental_start_date || '').toString().substring(0, 10) &&
-                              dateString <= (rental_end_date || '').toString().substring(0, 10)
-                            const needsMaintenanceGap =
-                              isCompanyVehicleRow &&
-                              count === 0 &&
-                              (oilSummary?.maintenanceGapDates.has(dateString) ?? false)
-                            const maintenanceGapTooltip =
-                              locale === 'ko'
-                                ? '엔진오일 교체 필요 — 투어 배정 전 정비 권장'
-                                : 'Engine oil change needed before next tour assignment'
-                            const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
-                            const rentalBgClass = isInRentalPeriod ? 'bg-amber-200' : ''
-                            const maintenanceGapBgClass = needsMaintenanceGap ? 'bg-orange-50 ring-1 ring-orange-400 ring-inset' : ''
-                            return (
-                              <td
-                                key={dateString}
-                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass} ${maintenanceGapBgClass}`}
-                                style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
-                                title={
-                                  needsMaintenanceGap
-                                    ? maintenanceGapTooltip
-                                    : count > 0
-                                      ? cellTooltip
-                                      : isInRentalPeriod
-                                        ? rentalEmptyCellTooltip
-                                        : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동'
-                                }
-                                onClick={(e) => {
-                                  if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
-                                  setVehicleAssignTarget({ vehicleId: id, dateString })
-                                  setShowVehicleAssignModal(true)
-                                }}
-                                onDragOver={(e) => {
-                                  if (draggedVehicleRowId) {
-                                    handleVehicleRowDragOver(e, id)
-                                    return
-                                  }
-                                  e.preventDefault()
-                                  e.dataTransfer.dropEffect = 'move'
-                                  applyScheduleDragHighlight(e.currentTarget, SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT)
-                                }}
-                                onDragLeave={handleGuideScheduleDropZoneDragLeave}
-                                onDrop={(e) => {
-                                  if (e.dataTransfer.getData('text/vehicle-row')) {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    handleVehicleRowDrop(e, id)
-                                    return
-                                  }
-                                  handleVehicleCellDrop(e, id, dateString)
-                                }}
-                              >
-                                <div className="relative h-[22px]" style={{ overflow: 'hidden' }}>
-                                  {count > 0 ? (
-                                    <div
-                                      data-drag-handle
-                                      className="absolute inset-0 flex items-center justify-center rounded text-white px-0.5 py-0 text-[10px] font-medium leading-tight cursor-grab active:cursor-grabbing"
-                                      style={{ backgroundColor: getColorFromClass(dayInfo?.productColorClass || defaultPresetIds[0]) }}
-                                      title={cellTooltip}
-                                      draggable
-                                      onDragStart={(e) => {
-                                        if (dayTours.length > 0) {
-                                          setDraggedRole(null)
-                                          handleDragStart(e, dayTours[0])
-                                        }
-                                      }}
-                                      onDragEnd={() => {
-                                        setDraggedTour(null)
-                                        setHighlightedDate(null)
-                                        clearScheduleDragHighlight()
-                                      }}
-                                    >
-                                      <span className="truncate w-full text-center">
-                                        {guideNames.length > 0 ? guideNames.join(', ') : count}
-                                      </span>
-                                    </div>
-                                  ) : needsMaintenanceGap ? (
-                                    <span
-                                      className="absolute inset-0 flex items-center justify-center rounded bg-orange-500 px-0.5 text-[8px] font-bold leading-none text-white animate-pulse shadow-sm ring-2 ring-orange-300 ring-inset"
-                                      title={maintenanceGapTooltip}
-                                    >
-                                      정비 필요
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-300 text-[10px]">-</span>
-                                  )}
-                                </div>
-                              </td>
-                            )
-                          })}
-                          <td
-                            className="px-1 py-0.5 text-center text-xs font-medium"
-                            style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}
-                            onDragOver={(e) => {
-                              if (draggedVehicleRowId) {
-                                handleVehicleRowDragOver(e, id)
-                              }
-                            }}
-                            onDrop={(e) => {
-                              if (e.dataTransfer.getData('text/vehicle-row')) {
-                                e.preventDefault()
-                                handleVehicleRowDrop(e, id)
-                              }
-                            }}
-                          >
-                            {data.totalDays > 0 ? data.totalDays : '-'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {/* 일별 합계 행 */}
-                    <tr className="bg-gray-100 font-semibold">
-                      <td className="px-1 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-gray-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}>
-                        일별 합계
-                      </td>
-                      {monthDays.map(({ dateString }) => {
-                        const dayTotal = vehicleDailyTotals[dateString] ?? 0
-                        const tourCount = tourCountPerDate[dateString] ?? 0
-                        const isMismatch = tourCount !== dayTotal
-                        const mismatchTitle =
-                          locale === 'ko'
-                            ? `투어 ${tourCount}건 · 차량 배정 ${dayTotal}건 (불일치)`
-                            : `Tours ${tourCount} · vehicle assignments ${dayTotal} (mismatch)`
-                        return (
-                          <td
-                            key={dateString}
-                            className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}
-                            style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                          >
-                            {isMismatch ? (
-                              <span
-                                className="inline-flex min-h-[1.25rem] min-w-[1.25rem] cursor-default items-center justify-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-bold text-yellow-300 tabular-nums shadow-sm"
-                                title={mismatchTitle}
-                              >
-                                {tourCount}
-                              </span>
-                            ) : dayTotal > 0 ? (
-                              dayTotal
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                        )
-                      })}
-                      <td className="px-1 py-0.5 text-center text-xs font-medium" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
-                        {Object.values(vehicleScheduleData).reduce((sum, d) => sum + (d?.totalDays ?? 0), 0)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+            <ScheduleVehicleGrid
+              locale={locale}
+              currentDate={currentDate}
+              monthDays={monthDays}
+              dynamicMinTableWidthPx={dynamicMinTableWidthPx}
+              dayColumnWidthCalc={dayColumnWidthCalc}
+              orderedVehiclesForScheduleTable={orderedVehiclesForScheduleTable}
+              vehicleScheduleData={vehicleScheduleData}
+              vehicleOilMaintenanceByVehicleId={vehicleOilMaintenanceByVehicleId}
+              vehicleDailyTotals={vehicleDailyTotals}
+              tourCountPerDate={tourCountPerDate}
+              tours={tours}
+              tourCoversScheduleDate={tourCoversScheduleDate}
+              isToday={isToday}
+              draggedVehicleRowId={draggedVehicleRowId}
+              canEditVehicleFromSchedule={canEditVehicleFromSchedule}
+              defaultPresetIds={defaultPresetIds}
+              getColorFromClass={getColorFromClass}
+              handleVehicleRowDragStart={handleVehicleRowDragStart}
+              handleVehicleRowDragEnd={handleVehicleRowDragEnd}
+              handleVehicleRowDragOver={handleVehicleRowDragOver}
+              handleVehicleRowDrop={handleVehicleRowDrop}
+              moveVehicleRow={moveVehicleRow}
+              openVehicleEditFromSchedule={openVehicleEditFromSchedule}
+              setVehicleAssignTarget={setVehicleAssignTarget}
+              setShowVehicleAssignModal={setShowVehicleAssignModal}
+              applyScheduleDragHighlight={applyScheduleDragHighlight}
+              onVehicleCellDragLeave={(e) =>
+                handleGuideScheduleDropZoneDragLeave(e as React.DragEvent<HTMLElement>)
+              }
+              handleVehicleCellDrop={(e, vehicleId, dateString) =>
+                handleVehicleCellDrop(e as React.DragEvent, vehicleId, dateString)
+              }
+              handleDragStart={(e, tour) => handleDragStart(e as React.DragEvent, tour)}
+              setDraggedRole={setDraggedRole}
+              setDraggedTour={setDraggedTour}
+              setHighlightedDate={setHighlightedDate}
+              clearScheduleDragHighlight={clearScheduleDragHighlight}
+            />
           </div>
         </div>
       </div>
@@ -10091,62 +7772,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         </div>
       )}
 
-      {/* 메시지 모달 */}
-      {showMessageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                  messageModalContent.type === 'success' 
-                    ? 'bg-green-100 text-green-600' 
-                    : 'bg-red-100 text-red-600'
-                }`}>
-                  {messageModalContent.type === 'success' ? (
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </div>
-                <h3 className={`text-lg font-semibold ${
-                  messageModalContent.type === 'success' ? 'text-green-900' : 'text-red-900'
-                }`}>
-                  {messageModalContent.title}
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowMessageModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
-            <p className={`text-sm ${
-              messageModalContent.type === 'success' ? 'text-green-700' : 'text-red-700'
-            }`}>
-              {messageModalContent.message}
-            </p>
-            
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={() => setShowMessageModal(false)}
-                className={`px-4 py-2 rounded-lg text-white transition-colors ${
-                  messageModalContent.type === 'success' 
-                    ? 'bg-green-500 hover:bg-green-600' 
-                    : 'bg-red-500 hover:bg-red-600'
-                }`}
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ScheduleMessageConfirmModals
+        showMessageModal={showMessageModal}
+        messageModalContent={messageModalContent}
+        onCloseMessage={() => setShowMessageModal(false)}
+        showConfirmModal={showConfirmModal}
+        confirmModalContent={confirmModalContent}
+        onCloseConfirm={() => setShowConfirmModal(false)}
+        onConfirm={() => {
+          confirmModalContent.onConfirm()
+          setShowConfirmModal(false)
+        }}
+      />
 
       {/* 날짜 노트 모달 */}
       {/* 스케줄 종합 알림: 정원 초과 · 차량-투어 건수 · 미배정 · 입장권-인원 */}
@@ -11154,54 +8791,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         </div>
       )}
 
-      {/* 확인 모달 — 액션 모달(z-[1100])보다 위에 표시 */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center bg-yellow-100 text-yellow-600">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-yellow-900">
-                  {confirmModalContent.title}
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
-            <p className="text-sm text-yellow-700 mb-6">
-              {confirmModalContent.message}
-            </p>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={() => {
-                  confirmModalContent.onConfirm()
-                  setShowConfirmModal(false)
-                }}
-                className={`px-4 py-2 text-white rounded-lg transition-colors ${confirmModalContent.buttonColor}`}
-              >
-                {confirmModalContent.buttonText}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 가이드 모달 */}
       {showGuideModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
@@ -12053,100 +9642,43 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-0 bg-slate-50 lg:flex-row">
-      <div className="min-h-0 min-w-0 w-full flex-1 overflow-auto p-2 sm:p-3 lg:w-1/2 lg:flex-none lg:shrink-0">
-        {scheduleMainPanel}
-      </div>
-      <aside className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-t border-border bg-white lg:h-full lg:max-h-full lg:border-l lg:border-t-0">
-        {(() => {
-          const { start: calRangeStart, end: calRangeEnd } =
-            getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
-          const statusFilterButton = (
-            <button
-              type="button"
-              onClick={() => setDisplayStatusFilterModalOpen(true)}
-              className="relative inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-medium hover:bg-muted"
-              aria-label={locale === 'ko' ? '투어 상태 필터' : 'Tour status filter'}
-              title={locale === 'ko' ? '투어 상태 필터' : 'Tour status filter'}
-            >
-              <ListFilter className="h-3.5 w-3.5" aria-hidden />
-              <span>{locale === 'ko' ? '상태' : 'Status'}</span>
-              <span className="tabular-nums text-muted-foreground">({displayCalendarStatusFilterActiveCount})</span>
-            </button>
-          )
-          return (
-            <>
-              <div className="shrink-0 border-b border-border bg-white px-4 py-3">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 lg:flex-nowrap lg:whitespace-nowrap">
-                    <h2 className="shrink-0 text-sm font-semibold text-foreground">
-                      {locale === 'ko' ? '다가오는 투어' : 'Upcoming tours'}
-                    </h2>
-                    <p className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {calRangeStart} ~ {calRangeEnd}
-                      <span className="ml-1">({displayCalendarVisibleTourCount})</span>
-                    </p>
-                  </div>
-                  <div className="hidden items-center gap-2 lg:flex">
-                    {statusFilterButton}
-                    <ScheduleDisplayCalendarNav
-                      locale={locale}
-                      weekStart={displayCalendarWeekStart}
-                      onWeekStartChange={setDisplayCalendarWeekStart}
-                    />
-                  </div>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2 lg:hidden">
-                  {statusFilterButton}
-                  <ScheduleDisplayCalendarNav
-                    locale={locale}
-                    weekStart={displayCalendarWeekStart}
-                    onWeekStartChange={setDisplayCalendarWeekStart}
-                  />
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                <ScheduleDisplayCalendar
-                  toursByDate={displayToursByDate}
-                  getTourSummary={getTourDisplayCalendarSummary}
-                  locale={locale}
-                  weekStart={displayCalendarWeekStart}
-                  onWeekStartChange={setDisplayCalendarWeekStart}
-                  hideNavigation
-                  onTourClick={(tour) => {
-                    showGuideModalContent(
-                      locale === 'ko' ? '투어 상세 정보' : 'Tour details',
-                      getTourSummary(tour),
-                      tour.id,
-                    )
-                  }}
-                  onAssignStaff={(tour) => {
-                    const c = getTourSummaryCore(tour)
-                    const role: 'guide' | 'assistant' =
-                      !c.guideAssigned
-                        ? 'guide'
-                        : c.requiresAssistant && !c.assistantAssigned
-                          ? 'assistant'
-                          : 'guide'
-                    setUnassignedPersonAssignModal({ tour, role })
-                  }}
-                  onAssignVehicle={(tour) => {
-                    setUnassignedVehicleAssignModalTourId(tour.id)
-                  }}
-                />
-              </div>
-            </>
-          )
-        })()}
-      </aside>
-      <ScheduleDisplayStatusFilterModal
-        open={displayStatusFilterModalOpen}
-        onOpenChange={setDisplayStatusFilterModalOpen}
-        locale={locale}
-        selected={displayCalendarStatusFilter}
-        onApply={setDisplayCalendarStatusFilter}
-      />
-      {scheduleHealthFabEl}
-    </div>
+    <ScheduleDisplayAsidePanel
+      locale={locale}
+      gridPanel={scheduleMainPanel}
+      displayCalendarWeekStart={displayCalendarWeekStart}
+      onDisplayCalendarWeekStartChange={setDisplayCalendarWeekStart}
+      displayCalendarStatusFilter={displayCalendarStatusFilter}
+      onDisplayCalendarStatusFilterChange={setDisplayCalendarStatusFilter}
+      displayStatusFilterModalOpen={displayStatusFilterModalOpen}
+      onDisplayStatusFilterModalOpenChange={setDisplayStatusFilterModalOpen}
+      displayToursByDate={displayToursByDate}
+      displayCalendarVisibleTourCount={displayCalendarVisibleTourCount}
+      displayCalendarStatusFilterActiveCount={displayCalendarStatusFilterActiveCount}
+      getTourDisplayCalendarSummary={getTourDisplayCalendarSummary}
+      {...(prefetchedScheduleData?.officeStaffByDate
+        ? { officeStaffByDate: prefetchedScheduleData.officeStaffByDate }
+        : {})}
+      onTourClick={(tour) => {
+        showGuideModalContent(
+          locale === 'ko' ? '투어 상세 정보' : 'Tour details',
+          getTourSummary(tour),
+          tour.id,
+        )
+      }}
+      onAssignStaff={(tour) => {
+        const c = getTourSummaryCore(tour)
+        const role: 'guide' | 'assistant' =
+          !c.guideAssigned
+            ? 'guide'
+            : c.requiresAssistant && !c.assistantAssigned
+              ? 'assistant'
+              : 'guide'
+        setUnassignedPersonAssignModal({ tour, role })
+      }}
+      onAssignVehicle={(tour) => {
+        setUnassignedVehicleAssignModalTourId(tour.id)
+      }}
+      footerSlot={scheduleHealthFabEl}
+    />
   )
 }
