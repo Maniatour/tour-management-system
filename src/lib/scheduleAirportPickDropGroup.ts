@@ -53,6 +53,7 @@ export type ScheduleProductRef = {
   name_ko?: string | null
   name_en?: string | null
   product_code?: string | null
+  sub_category?: string | null
 }
 
 function normalizeProductNameForMatch(name: string): string {

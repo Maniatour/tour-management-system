@@ -44,6 +44,15 @@ export function getScheduleMiscTourDisplayName(): string {
   return SCHEDULE_MISC_TOUR_DISPLAY_NAME
 }
 
+function findScheduleProductByStoredId(
+  storedId: string,
+  products: ScheduleProductRef[],
+): ScheduleProductRef | undefined {
+  const canon = canonicalScheduleProductId(storedId)
+  if (!canon) return undefined
+  return products.find((p) => canonicalScheduleProductId(p.id) === canon)
+}
+
 export function getMiscTourStoredItemLabel(
   storedId: string,
   products: ScheduleProductRef[],
@@ -54,47 +63,71 @@ export function getMiscTourStoredItemLabel(
   if (isScheduleAirportPickupRowKey(storedId)) {
     return getScheduleAirportPickupDisplayName()
   }
-  const product = products.find((p) => p.id === storedId)
+  const product = findScheduleProductByStoredId(storedId, products)
   return product ? getScheduleProductLabel(product) || product.name : storedId
 }
 
+/** 기타 행·예약 필터에 쓸 실제 product_id 목록 (모달에 저장된 항목만) */
 export function expandMiscTourStoredProductIds(
   storedIds: string[],
   products: ScheduleProductRef[],
 ): string[] {
   const result: string[] = []
-  const seen = new Set<string>()
+  const seenCanon = new Set<string>()
   const add = (id: string) => {
-    if (!id || seen.has(id)) return
-    seen.add(id)
+    const canon = canonicalScheduleProductId(id)
+    if (!canon || seenCanon.has(canon)) return
+    seenCanon.add(canon)
     result.push(id)
   }
   for (const id of storedIds) {
     if (isScheduleAirportSendingRowKey(id)) {
-      for (const memberId of getScheduleAirportSendingMemberProductIds(products)) add(memberId)
+      for (const memberId of getScheduleAirportSendingMemberProductIds(products)) {
+        const product = findScheduleProductByStoredId(memberId, products)
+        if (product && isMiscTourSelectableProduct(product)) add(product.id)
+      }
     } else if (isScheduleAirportPickupRowKey(id)) {
-      for (const memberId of getScheduleAirportPickupMemberProductIds(products)) add(memberId)
-    } else if (products.some((p) => p.id === id)) {
-      add(id)
+      for (const memberId of getScheduleAirportPickupMemberProductIds(products)) {
+        const product = findScheduleProductByStoredId(memberId, products)
+        if (product && isMiscTourSelectableProduct(product)) add(product.id)
+      }
+    } else {
+      const product = findScheduleProductByStoredId(id, products)
+      if (product && isMiscTourSelectableProduct(product)) add(product.id)
     }
   }
   return result
+}
+
+export function getMiscTourExpandedMemberCanonIdSet(
+  miscTourProductIds: string[],
+  products: ScheduleProductRef[],
+): Set<string> {
+  return new Set(
+    expandMiscTourStoredProductIds(miscTourProductIds, products).map((id) =>
+      canonicalScheduleProductId(id),
+    ),
+  )
 }
 
 export function normalizeMiscTourProductIds(
   productIds: string[],
   products: ScheduleProductRef[],
 ): string[] {
-  const validProduct = new Set(products.map((p) => p.id))
-  const sendingMembers = new Set(getScheduleAirportSendingMemberProductIds(products))
-  const pickupMembers = new Set(getScheduleAirportPickupMemberProductIds(products))
+  const validProductCanon = new Set(products.map((p) => canonicalScheduleProductId(p.id)))
+  const sendingMembers = new Set(
+    getScheduleAirportSendingMemberProductIds(products).map((id) => canonicalScheduleProductId(id)),
+  )
+  const pickupMembers = new Set(
+    getScheduleAirportPickupMemberProductIds(products).map((id) => canonicalScheduleProductId(id)),
+  )
   const sendingKey = getScheduleAirportSendingRowKey(products)
   const pickupKey = getScheduleAirportPickupRowKey(products)
 
-  const hadSendingGroup = productIds.includes(sendingKey)
-  const hadPickupGroup = productIds.includes(pickupKey)
-  const hadSendingMember = productIds.some((id) => sendingMembers.has(id))
-  const hadPickupMember = productIds.some((id) => pickupMembers.has(id))
+  const hadSendingGroup = productIds.some((id) => isScheduleAirportSendingRowKey(id))
+  const hadPickupGroup = productIds.some((id) => isScheduleAirportPickupRowKey(id))
+  const hadSendingMember = productIds.some((id) => sendingMembers.has(canonicalScheduleProductId(id)))
+  const hadPickupMember = productIds.some((id) => pickupMembers.has(canonicalScheduleProductId(id)))
 
   const result: string[] = []
   const seen = new Set<string>()
@@ -106,15 +139,31 @@ export function normalizeMiscTourProductIds(
   }
 
   for (const id of productIds) {
-    if (sendingMembers.has(id) || pickupMembers.has(id)) continue
-    if (id === sendingKey || id === pickupKey) continue
-    if (validProduct.has(id)) push(id)
+    const canon = canonicalScheduleProductId(id)
+    if (sendingMembers.has(canon) || pickupMembers.has(canon)) continue
+    if (isScheduleAirportSendingRowKey(id) || isScheduleAirportPickupRowKey(id)) continue
+    const product = findScheduleProductByStoredId(id, products)
+    if (product && isMiscTourSelectableProduct(product) && validProductCanon.has(canon)) push(product.id)
   }
 
-  if ((hadSendingGroup || hadSendingMember) && sendingMembers.size > 0) push(sendingKey)
-  if ((hadPickupGroup || hadPickupMember) && pickupMembers.size > 0) push(pickupKey)
+  const hasSelectableSending = products.some(
+    (p) => sendingMembers.has(canonicalScheduleProductId(p.id)) && isMiscTourSelectableProduct(p),
+  )
+  const hasSelectablePickup = products.some(
+    (p) => pickupMembers.has(canonicalScheduleProductId(p.id)) && isMiscTourSelectableProduct(p),
+  )
+
+  if ((hadSendingGroup || hadSendingMember) && hasSelectableSending) push(sendingKey)
+  if ((hadPickupGroup || hadPickupMember) && hasSelectablePickup) push(pickupKey)
 
   return result
+}
+
+function isMiscTourStoredRowKey(id: string, miscTourProductIds: string[]): boolean {
+  if (isScheduleMiscTourRowKey(id)) return true
+  return miscTourProductIds.some(
+    (storedId) => canonicalScheduleProductId(storedId) === canonicalScheduleProductId(id),
+  )
 }
 
 /** 기타 투어 멤버 상품은 개별 행 대신 통합 행 키로 치환 */
@@ -123,23 +172,27 @@ export function applyMiscTourToSelectedProducts(
   miscTourProductIds: string[],
   products: ScheduleProductRef[],
 ): string[] {
-  const miscStored = new Set(miscTourProductIds)
-  const expandedMisc = new Set(expandMiscTourStoredProductIds(miscTourProductIds, products))
+  const expandedMiscCanon = getMiscTourExpandedMemberCanonIdSet(miscTourProductIds, products)
 
   const result: string[] = []
   const seen = new Set<string>()
 
   for (const id of productIds) {
-    if (expandedMisc.has(id)) continue
-    if (miscStored.has(id)) continue
     if (id === SCHEDULE_MISC_TOUR_ROW_ID) continue
+    if (isMiscTourStoredRowKey(id, miscTourProductIds)) continue
+
+    const rowCanonIds = expandScheduleRowProductIds(id, products).map((memberId) =>
+      canonicalScheduleProductId(memberId),
+    )
+    if (rowCanonIds.some((canon) => expandedMiscCanon.has(canon))) continue
+
     if (!seen.has(id)) {
       result.push(id)
       seen.add(id)
     }
   }
 
-  if (miscTourProductIds.length > 0) {
+  if (expandMiscTourStoredProductIds(miscTourProductIds, products).length > 0) {
     if (!seen.has(SCHEDULE_MISC_TOUR_ROW_ID)) {
       result.push(SCHEDULE_MISC_TOUR_ROW_ID)
       seen.add(SCHEDULE_MISC_TOUR_ROW_ID)
@@ -175,11 +228,7 @@ export function getScheduleRowMemberIdSet(
   miscTourProductIds: string[],
 ): Set<string> {
   if (isScheduleMiscTourRowKey(rowKey)) {
-    return new Set(
-      expandMiscTourStoredProductIds(miscTourProductIds, products).map((id) =>
-        canonicalScheduleProductId(id),
-      ),
-    )
+    return getMiscTourExpandedMemberCanonIdSet(miscTourProductIds, products)
   }
   if (isScheduleAirportGroupedRowKey(rowKey)) {
     return getScheduleAirportMemberIdSetForRowKey(

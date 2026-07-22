@@ -101,6 +101,7 @@ import {
   SCHEDULE_MISC_TOUR_DISPLAY_NAME,
   SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY,
   expandMiscTourStoredProductIds,
+  getMiscTourExpandedMemberCanonIdSet,
   applyMiscTourToSelectedProducts,
   buildMiscTourDayProductBreakdown,
   expandScheduleRowProductIdsWithMisc,
@@ -1616,8 +1617,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const defaultPresetIds = useMemo(() => SCHEDULE_COLOR_PRESETS.map(p => p.id), [])
 
   const scheduleProductPickerItems = useMemo(() => {
-    const miscSet = new Set(miscTourProductIds)
-    return buildScheduleProductPickerItems(products).filter((item) => !miscSet.has(item.id))
+    const miscMemberCanonSet = getMiscTourExpandedMemberCanonIdSet(miscTourProductIds, products)
+    const miscStoredCanonSet = new Set(
+      miscTourProductIds.map((id) => canonicalScheduleProductId(id)),
+    )
+    return buildScheduleProductPickerItems(products).filter((item) => {
+      if (miscStoredCanonSet.has(canonicalScheduleProductId(item.id))) return false
+      if (item.kind === 'group') {
+        return !item.memberIds.every((memberId) =>
+          miscMemberCanonSet.has(canonicalScheduleProductId(memberId)),
+        )
+      }
+      return !miscMemberCanonSet.has(canonicalScheduleProductId(item.id))
+    })
   }, [products, miscTourProductIds])
 
   const miscTourSelectableProducts = useMemo(() => {
@@ -1682,8 +1694,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   useEffect(() => {
     if (!products.length) return
+    const normalizedMisc = normalizeMiscTourProductIds(miscTourProductIds, products)
+    const miscChanged =
+      normalizedMisc.length !== miscTourProductIds.length ||
+      normalizedMisc.some((id, index) => id !== miscTourProductIds[index])
+    if (miscChanged) {
+      setMiscTourProductIds(normalizedMisc)
+    }
     setSelectedProducts((prev) => {
-      const withMisc = applyMiscTourToSelectedProducts(prev, miscTourProductIds, products)
+      const withMisc = applyMiscTourToSelectedProducts(prev, normalizedMisc, products)
       const normalized = normalizeScheduleSelectedProducts(withMisc, products)
       if (
         normalized.length === prev.length &&
