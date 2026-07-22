@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -168,6 +168,11 @@ const TourDetailModalContent = dynamic(
     ),
   }
 )
+
+const PriceInventoryModal = dynamic(() => import('@/components/schedule/PriceInventoryModal'), {
+  ssr: false,
+  loading: () => null,
+})
 
 const SCHEDULE_VEHICLE_EDIT_SELECT = `
   id,
@@ -1048,6 +1053,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
+  const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
   const [batchOffGuides, setBatchOffGuides] = useState<string[]>([])
   const [batchOffPeriods, setBatchOffPeriods] = useState<Array<{ id: string; startDate: string; endDate: string }>>(() => [
     { id: crypto.randomUUID(), startDate: '', endDate: '' },
@@ -6716,6 +6722,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
+              {/* Price & Inventory (OTA 가격·재고 추적) */}
+              <button
+                type="button"
+                onClick={() => setShowPriceInventoryModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+                title="Price & Inventory"
+                aria-label="Price & Inventory"
+              >
+                <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               {isSuperAdmin ? (
                 <button
                   type="button"
@@ -10928,6 +10945,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         onClose={closeDateNoteModal}
         onSave={saveDateNote}
         onDelete={deleteDateNote}
+      />
+
+      <PriceInventoryModal
+        isOpen={showPriceInventoryModal}
+        onClose={() => setShowPriceInventoryModal(false)}
+        products={products}
+        userEmail={user?.email ?? null}
+        teamMembers={teamMembers}
       />
 
       {scheduleLeavePromptOpen && (

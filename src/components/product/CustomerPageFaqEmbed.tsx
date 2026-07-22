@@ -124,6 +124,37 @@ function buildEditorSnapshot(
     faqs: faqsSnapshot(items),
   })
 }
+function buildLibraryPayload(
+  merged: ReturnType<typeof mergeFormLocale>,
+  nameFallback?: string
+) {
+  const name =
+    merged.question.trim().slice(0, 120) || nameFallback || 'FAQ'
+  return {
+    name,
+    question: merged.question,
+    answer: merged.answer,
+    question_en: merged.question_en.trim() || null,
+    answer_en: merged.answer_en.trim() || null,
+    content_i18n: merged.content_i18n || {},
+    is_active: merged.is_active,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function applyMergedFormToFaq(item: FaqItem, merged: ReturnType<typeof mergeFormLocale>): FaqItem {
+  return {
+    ...item,
+    name: merged.question.trim().slice(0, 120) || item.name || 'FAQ',
+    question: merged.question,
+    answer: merged.answer,
+    question_en: merged.question_en,
+    answer_en: merged.answer_en,
+    content_i18n: merged.content_i18n,
+    is_active: merged.is_active,
+  }
+}
+
 function mergeFormLocale(
   form: FaqForm,
   locale: AdminEditLocale
@@ -310,107 +341,27 @@ export default function CustomerPageFaqEmbed({
     const hasA =
       !!getFaqLocalizedText(merged, 'answer', 'ko') ||
       !!getFaqLocalizedText(merged, 'answer', 'en')
-    if (!hasQ || !hasA) {
-      setMessage({ text: tf('validationError'), type: 'error' })
+    const hasPendingLinks = faqs.some((item) => item.id && !item.link_id)
+
+    if (isNewDraft) {
+      if (!hasQ || !hasA) {
+        setMessage({ text: tf('validationError'), type: 'error' })
+        return
+      }
+    } else if (activeFaqId) {
+      if (!hasQ || !hasA) {
+        setMessage({ text: tf('validationError'), type: 'error' })
+        return
+      }
+    } else if (!hasPendingLinks) {
       return
     }
 
     setSaving(true)
     setMessage(null)
     try {
-      const name =
-        merged.question.trim().slice(0, 120) ||
-        activeFaq?.name ||
-        'FAQ'
-      const libraryPayload = {
-        name,
-        question: merged.question,
-        answer: merged.answer,
-        question_en: merged.question_en.trim() || null,
-        answer_en: merged.answer_en.trim() || null,
-        content_i18n: merged.content_i18n || {},
-        is_active: merged.is_active,
-        updated_at: new Date().toISOString(),
-      }
-
-      if (activeFaqId && activeFaq?.link_id && !isNewDraft) {
-        const { error } = await supabase
-          .from('faq_library')
-          .update(libraryPayload as never)
-          .eq('id', activeFaqId)
-        if (error) throw error
-
-        await supabase
-          .from('product_faq_links')
-          .update({
-            is_active: merged.is_active,
-            updated_at: new Date().toISOString(),
-          } as never)
-          .eq('id', activeFaq.link_id)
-
-        const updatedItem: FaqItem = {
-          id: activeFaqId,
-          link_id: activeFaq.link_id,
-          product_id: productId,
-          name,
-          question: merged.question,
-          answer: merged.answer,
-          question_en: merged.question_en,
-          answer_en: merged.answer_en,
-          content_i18n: merged.content_i18n,
-          order_index: activeFaq.order_index,
-          is_active: merged.is_active,
-        }
-        const nextFaqs = faqs.map((item) => (item.id === activeFaqId ? updatedItem : item))
-        setFaqs(nextFaqs)
-        const nextForm = faqToForm(updatedItem, editLocale)
-        setForm(nextForm)
-        setInitialSnapshot(
-          buildEditorSnapshot(activeFaqId, nextForm, editLocale, false, nextFaqs)
-        )
-      } else if (activeFaqId && !activeFaq?.link_id && !isNewDraft) {
-        const { error } = await supabase
-          .from('faq_library')
-          .update(libraryPayload as never)
-          .eq('id', activeFaqId)
-        if (error) throw error
-
-        const orderIndex = activeFaq?.order_index ?? faqs.length
-        const { data: link, error: linkError } = await supabase
-          .from('product_faq_links')
-          .insert([
-            {
-              product_id: productId,
-              faq_id: activeFaqId,
-              order_index: orderIndex,
-              is_active: merged.is_active,
-            },
-          ] as never)
-          .select('*')
-          .single()
-        if (linkError) throw linkError
-
-        const linkedItem: FaqItem = {
-          id: activeFaqId,
-          link_id: String((link as Record<string, unknown>).id),
-          product_id: productId,
-          name,
-          question: merged.question,
-          answer: merged.answer,
-          question_en: merged.question_en,
-          answer_en: merged.answer_en,
-          content_i18n: merged.content_i18n,
-          order_index: orderIndex,
-          is_active: merged.is_active,
-        }
-        const nextFaqs = faqs.map((item) => (item.id === activeFaqId ? linkedItem : item))
-        setFaqs(nextFaqs)
-        const nextForm = faqToForm(linkedItem, editLocale)
-        setForm(nextForm)
-        setInitialSnapshot(
-          buildEditorSnapshot(activeFaqId, nextForm, editLocale, false, nextFaqs)
-        )
-      } else {
+      if (isNewDraft) {
+        const libraryPayload = buildLibraryPayload(merged, activeFaq?.name)
         const orderIndex = faqs.length
         const { data, error } = await supabase
           .from('faq_library')
@@ -438,7 +389,7 @@ export default function CustomerPageFaqEmbed({
           id: String(created.id),
           link_id: String((link as Record<string, unknown>).id),
           product_id: productId,
-          name,
+          name: libraryPayload.name,
           question: merged.question,
           answer: merged.answer,
           question_en: merged.question_en,
@@ -456,9 +407,111 @@ export default function CustomerPageFaqEmbed({
         setInitialSnapshot(
           buildEditorSnapshot(newItem.id ?? null, nextForm, editLocale, false, nextFaqs)
         )
+        setMessage({ text: tf('saved'), type: 'success' })
+        onSaved?.()
+        return
       }
 
-      setMessage({ text: tf('saved'), type: 'success' })
+      let nextFaqs = [...faqs]
+      if (activeFaqId) {
+        nextFaqs = nextFaqs.map((item) =>
+          item.id === activeFaqId ? applyMergedFormToFaq(item, merged) : item
+        )
+      }
+
+      const libraryPayload = buildLibraryPayload(merged, activeFaq?.name)
+      const activeInList = activeFaqId
+        ? nextFaqs.find((item) => item.id === activeFaqId) ?? null
+        : null
+
+      if (activeFaqId && activeInList?.link_id) {
+        const savedLinkId = activeInList.link_id
+        const { error } = await supabase
+          .from('faq_library')
+          .update(libraryPayload as never)
+          .eq('id', activeFaqId)
+        if (error) throw error
+
+        await supabase
+          .from('product_faq_links')
+          .update({
+            is_active: merged.is_active,
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq('id', savedLinkId)
+
+        nextFaqs = nextFaqs.map((item) =>
+          item.id === activeFaqId
+            ? {
+                ...applyMergedFormToFaq(item, merged),
+                link_id: savedLinkId,
+                order_index: activeInList.order_index,
+              }
+            : item
+        )
+      }
+
+      const pendingItems = nextFaqs.filter((item) => item.id && !item.link_id)
+      if (pendingItems.length > 0) {
+        if (activeFaqId && pendingItems.some((item) => item.id === activeFaqId)) {
+          const { error } = await supabase
+            .from('faq_library')
+            .update(libraryPayload as never)
+            .eq('id', activeFaqId)
+          if (error) throw error
+        }
+
+        const { data: links, error: linkError } = await supabase
+          .from('product_faq_links')
+          .insert(
+            pendingItems.map((item) => ({
+              product_id: productId,
+              faq_id: item.id!,
+              order_index: item.order_index,
+              is_active: item.is_active,
+            })) as never
+          )
+          .select('*')
+        if (linkError) throw linkError
+
+        const linkByFaqId = new Map(
+          ((links || []) as Record<string, unknown>[]).map((link) => [
+            String(link.faq_id),
+            String(link.id),
+          ])
+        )
+
+        nextFaqs = nextFaqs.map((item) => {
+          if (!item.id || item.link_id) return item
+          const linkId = linkByFaqId.get(item.id)
+          return linkId ? { ...item, link_id: linkId } : item
+        })
+      }
+
+      setFaqs(nextFaqs)
+      const resolvedActive =
+        (activeFaqId ? nextFaqs.find((item) => item.id === activeFaqId) : null) ??
+        nextFaqs[0] ??
+        null
+      if (resolvedActive) {
+        const nextForm = faqToForm(resolvedActive, editLocale)
+        setForm(nextForm)
+        setActiveFaqId(resolvedActive.id ?? null)
+        setIsNewDraft(false)
+        setInitialSnapshot(
+          buildEditorSnapshot(resolvedActive.id ?? null, nextForm, editLocale, false, nextFaqs)
+        )
+      } else {
+        setInitialSnapshot(buildEditorSnapshot(null, form, editLocale, false, nextFaqs))
+      }
+
+      setMessage({
+        text:
+          pendingItems.length > 1
+            ? tf('savedBatch', { count: String(pendingItems.length) })
+            : tf('saved'),
+        type: 'success',
+      })
       onSaved?.()
     } catch (error) {
       console.error('FAQ 저장 오류:', error)
@@ -808,7 +861,12 @@ export default function CustomerPageFaqEmbed({
       <button
         type="button"
         onClick={() => void handleSave()}
-        disabled={saving || (!activeFaqId && !isNewDraft)}
+        disabled={
+          saving ||
+          (!isNewDraft &&
+            !activeFaqId &&
+            !faqs.some((item) => item.id && !item.link_id))
+        }
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

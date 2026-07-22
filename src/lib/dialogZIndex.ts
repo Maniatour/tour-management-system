@@ -15,6 +15,9 @@ export const DIALOG_Z_INDEX: Record<DialogStackLevel, number> = {
  */
 export const DROPDOWN_Z_INDEX = 14050
 
+/** CustomerReceiptModal — nested 예약 폼(10200)·투어 상세 Dialog(10050) 위 */
+export const RECEIPT_MODAL_Z_INDEX = 12000
+
 export function dialogZIndexStyle(level: DialogStackLevel = 'default'): { zIndex: number } {
   return { zIndex: DIALOG_Z_INDEX[level] }
 }

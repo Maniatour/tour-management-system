@@ -1,11 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocale } from 'next-intl'
 import { X, Printer, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { RECEIPT_MODAL_Z_INDEX } from '@/lib/dialogZIndex'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
+
+/** Radix Dialog body pointer-events:none 환경에서도 상호작용 유지 */
+const RECEIPT_MODAL_PORTAL_CLASS =
+  'fixed inset-0 pointer-events-auto overscroll-contain bg-black/50 flex items-center justify-center p-4'
 
 type ReceiptData = {
   reservation: {
@@ -478,6 +484,8 @@ interface CustomerReceiptModalProps {
   reservationId: string
   /** 여러 예약 ID면 일괄 모드 (투어 상세에서 사용) */
   reservationIds?: string[]
+  /** 중첩 모달 위에 표시할 때 z-index (기본: RECEIPT_MODAL_Z_INDEX) */
+  forceZIndex?: number
 }
 
 export default function CustomerReceiptModal({
@@ -485,7 +493,9 @@ export default function CustomerReceiptModal({
   onClose,
   reservationId,
   reservationIds,
+  forceZIndex,
 }: CustomerReceiptModalProps) {
+  const [portalReady, setPortalReady] = useState(false)
   const [data, setData] = useState<ReceiptData | null>(null)
   const [batchData, setBatchData] = useState<ReceiptData[]>([])
   const [loading, setLoading] = useState(false)
@@ -503,6 +513,11 @@ export default function CustomerReceiptModal({
   /** 모달 UI(제목·버튼·인쇄 형식 등)는 앱 언어(한/영)로만 표시. 인쇄되는 영수증 내용만 고객 언어(한/영/일 등) 사용 */
   const locale = useLocale()
   const modalLabels = locale === 'ko' ? labels.ko : labels.en
+  const resolvedZIndex = forceZIndex ?? RECEIPT_MODAL_Z_INDEX
+
+  useEffect(() => {
+    setPortalReady(true)
+  }, [])
 
   const refreshExchangeRate = async (withLoading = true) => {
     if (withLoading) setRateRefreshing(true)
@@ -922,6 +937,7 @@ export default function CustomerReceiptModal({
   }
 
   if (!isOpen) return null
+  if (!portalReady) return null
 
   const list = isBatch ? batchData : data ? [data] : []
   const listToShow = isBatch && list.length > 0
@@ -929,8 +945,8 @@ export default function CustomerReceiptModal({
     : list
   const headerLabel = modalLabels
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+  const modalContent = (
+    <div className={RECEIPT_MODAL_PORTAL_CLASS} style={{ zIndex: resolvedZIndex }}>
       {/* Letter(216mm) 수용을 위해 모달 폭 확보, 가로 스크롤 없음 */}
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,216mm)] max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
@@ -1362,4 +1378,6 @@ export default function CustomerReceiptModal({
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }
