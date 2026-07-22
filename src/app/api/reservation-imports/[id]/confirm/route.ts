@@ -5,6 +5,8 @@ import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
+import { computeDayTourCapacityTotals } from '@/lib/scheduleTourCapacity'
+import { shouldOpenPriceInventoryForRemaining } from '@/lib/otaPriceInventory'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
@@ -420,5 +422,41 @@ export async function POST(
     )
   }
 
-  return NextResponse.json({ reservation_id: reservationId, status: 'confirmed' })
+  const tourDateYmd = String(body.tour_date).slice(0, 10)
+  const [{ data: dayTours }, { data: dayReservations }] = await Promise.all([
+    client
+      .from('tours')
+      .select('id, tour_date, max_participants, tour_status, reservation_ids, product_id')
+      .eq('product_id', body.product_id)
+      .eq('tour_date', tourDateYmd),
+    client
+      .from('reservations')
+      .select('id, tour_date, product_id, total_people, status')
+      .eq('product_id', body.product_id)
+      .eq('tour_date', tourDateYmd)
+      .in('status', ['confirmed', 'recruiting']),
+  ])
+
+  const capacityAfter = computeDayTourCapacityTotals(
+    dayTours || [],
+    dayReservations || [],
+    tourDateYmd,
+    body.product_id
+  )
+  const spotsLeftAfter = capacityAfter?.totalSpotsLeft ?? null
+  const spotsLeftBefore =
+    spotsLeftAfter != null ? spotsLeftAfter + totalPeople : null
+  const openPriceInventory = shouldOpenPriceInventoryForRemaining(
+    spotsLeftAfter,
+    spotsLeftBefore
+  )
+
+  return NextResponse.json({
+    reservation_id: reservationId,
+    status: 'confirmed',
+    open_price_inventory: openPriceInventory,
+    product_id: body.product_id,
+    tour_date: tourDateYmd,
+    spots_left_after: spotsLeftAfter,
+  })
 }

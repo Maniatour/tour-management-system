@@ -4,7 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import {
-  AlertTriangle,
   Calendar,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +20,17 @@ import {
   buildCapacityTotalsByDate,
   type DayTourCapacityTotals,
 } from '@/lib/scheduleTourCapacity'
+import {
+  buildDayCanyonReconByDate,
+  formatCanyonReconBadges,
+  type DayCanyonReconTotals,
+} from '@/lib/ticketBookingDateView'
+import {
+  choiceLabelToTourCountKey,
+  type ReservationChoiceRow,
+  type TourChoiceCountKey,
+} from '@/lib/tourChoiceCounts'
+import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { useChoiceManagement } from '@/hooks/useChoiceManagement'
@@ -90,18 +100,11 @@ export interface PriceInventoryModalProps {
   products: ProductOption[]
   userEmail?: string | null
   teamMembers?: TeamMemberLite[]
+  initialProductId?: string
+  initialSelectedDate?: string | null
 }
 
-type StatusFilterKey = OtaSaleStatus | 'watch' | 'stale'
-
-const STATUS_FILTERS: Array<{ key: StatusFilterKey; label: string }> = [
-  { key: 'on_sale', label: '판매중' },
-  { key: 'low', label: '잔여 적음' },
-  { key: 'sold_out', label: '매진' },
-  { key: 'not_for_sale', label: '판매 안함' },
-  { key: 'watch', label: '주시 날짜' },
-  { key: 'stale', label: '24h+ 미업데이트' },
-]
+const weekDays = ['일', '월', '화', '수', '목', '금', '토']
 
 function buildInventoryByListingAndDate(
   rows: OtaChannelInventoryRow[]
@@ -280,6 +283,8 @@ export default function PriceInventoryModal({
   products,
   userEmail,
   teamMembers = [],
+  initialProductId,
+  initialSelectedDate,
 }: PriceInventoryModalProps) {
   const { operatorId } = useOperatorOptional()
   const activeOperatorId = resolveOperatorId(operatorId)
@@ -303,10 +308,12 @@ export default function PriceInventoryModal({
   const [internalCapacityByDate, setInternalCapacityByDate] = useState<
     Record<string, DayTourCapacityTotals>
   >({})
+  const [canyonReconByDate, setCanyonReconByDate] = useState<
+    Record<string, DayCanyonReconTotals>
+  >({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [statusFilters, setStatusFilters] = useState<Set<StatusFilterKey>>(new Set())
   const [otaTablesReady, setOtaTablesReady] = useState(true)
   const [statusMenuDate, setStatusMenuDate] = useState<string | null>(null)
   const [savingStatusDate, setSavingStatusDate] = useState<string | null>(null)
@@ -527,6 +534,17 @@ export default function PriceInventoryModal({
 
   useEffect(() => {
     if (!isOpen) return
+    if (initialProductId) {
+      setSelectedProductId(initialProductId)
+    }
+    if (initialSelectedDate) {
+      setSelectedDate(initialSelectedDate)
+      setCurrentMonth(dayjs(initialSelectedDate).startOf('month').toDate())
+    }
+  }, [isOpen, initialProductId, initialSelectedDate])
+
+  useEffect(() => {
+    if (!isOpen) return
     let cancelled = false
     ;(async () => {
       const { data } = await supabase
@@ -731,26 +749,116 @@ export default function PriceInventoryModal({
         .filter((cell): cell is { day: number; date: string; isCurrentMonth: boolean } => !!cell)
         .map((cell) => cell.date)
 
+      const tourRows = (toursRes.data || []) as Array<{
+        id: string
+        tour_date: string
+        max_participants?: number | null
+        tour_status?: string | null
+        reservation_ids?: string[] | null
+        product_id?: string | null
+      }>
+      const reservationRows = (reservationsRes.data || []) as Array<{
+        id: string
+        tour_date: string
+        product_id?: string | null
+        total_people?: number | null
+        status?: string | null
+      }>
+
       setInternalCapacityByDate(
-        buildCapacityTotalsByDate(
-          (toursRes.data || []) as Array<{
-            id: string
-            tour_date: string
-            max_participants?: number | null
-            tour_status?: string | null
-            reservation_ids?: string[] | null
-            product_id?: string | null
-          }>,
-          (reservationsRes.data || []) as Array<{
-            id: string
-            tour_date: string
-            product_id?: string | null
-            total_people?: number | null
-            status?: string | null
-          }>,
-          selectedProductId,
-          monthDates
-        )
+        buildCapacityTotalsByDate(tourRows, reservationRows, selectedProductId, monthDates)
+      )
+
+      const reservationIds = reservationRows.map((row) => row.id).filter(Boolean)
+      const choiceRowsFlat: Array<{
+        reservation_id: string
+        choiceKey: TourChoiceCountKey
+        quantity: number
+      }> = []
+
+      if (reservationIds.length > 0) {
+        const BATCH = 100
+        for (let i = 0; i < reservationIds.length; i += BATCH) {
+          const batchIds = reservationIds.slice(i, i + BATCH)
+          const { data: rcData, error: rcError } = await supabase
+            .from('reservation_choices')
+            .select(
+              'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
+            )
+            .in('reservation_id', batchIds)
+
+          if (rcError) {
+            console.error('Price & Inventory reservation_choices load failed:', rcError)
+            continue
+          }
+
+          for (const row of (rcData || []) as Array<{
+            reservation_id: string | null
+            quantity?: number | null
+            choice_options?: {
+              option_key?: string | null
+              option_name_ko?: string | null
+              option_name?: string | null
+            } | null
+          }>) {
+            if (!row.reservation_id) continue
+            const opt = row.choice_options
+            choiceRowsFlat.push({
+              reservation_id: row.reservation_id,
+              choiceKey: choiceLabelToTourCountKey(
+                opt?.option_name_ko ?? null,
+                opt?.option_name ?? null,
+                opt?.option_key ?? null
+              ),
+              quantity: Number(row.quantity) || 1,
+            })
+          }
+        }
+      }
+
+      const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
+      for (const row of choiceRowsFlat) {
+        const list = choiceRowsByResId.get(row.reservation_id) || []
+        list.push({ choiceKey: row.choiceKey, quantity: row.quantity })
+        choiceRowsByResId.set(row.reservation_id, list)
+      }
+
+      const tourIds = tourRows.map((tour) => tour.id).filter(Boolean)
+      const ticketBookingsRaw: Array<{
+        tour_id?: string | null
+        ea?: number | null
+        company?: string | null
+        category?: string | null
+        status?: string | null
+        deletion_requested_at?: string | null
+      }> = []
+
+      if (tourIds.length > 0) {
+        const BATCH = 100
+        for (let i = 0; i < tourIds.length; i += BATCH) {
+          const batchIds = tourIds.slice(i, i + BATCH)
+          const { data: tbData, error: tbError } = await supabase
+            .from('ticket_bookings')
+            .select('tour_id, ea, company, category, status, deletion_requested_at')
+            .in('tour_id', batchIds)
+
+          if (tbError) {
+            console.error('Price & Inventory ticket_bookings load failed:', tbError)
+            continue
+          }
+          ticketBookingsRaw.push(...((tbData || []) as typeof ticketBookingsRaw))
+        }
+      }
+
+      setCanyonReconByDate(
+        buildDayCanyonReconByDate({
+          tours: tourRows,
+          reservations: reservationRows,
+          choiceRowsByResId,
+          ticketBookings: filterTicketBookingsExcludedFromMainUi(ticketBookingsRaw),
+          productId: selectedProductId,
+          dates: monthDates,
+        })
       )
     } catch (error) {
       console.error('Price & Inventory load failed:', error)
@@ -1211,37 +1319,14 @@ export default function PriceInventoryModal({
         vehicleRemaining,
         isLowVehicleRemaining,
         hasMismatch,
+        canyonRecon: canyonReconByDate[date],
+        canyonReconBadges: formatCanyonReconBadges(canyonReconByDate[date]),
       }
     },
-    [choiceCombinations, inventoryByDate, internalCapacityByDate, pricingByDate, watchDates]
+    [choiceCombinations, canyonReconByDate, inventoryByDate, internalCapacityByDate, pricingByDate, watchDates]
   )
-
-  const isDayVisible = useCallback(
-    (date: string) => {
-      if (statusFilters.size === 0) return true
-      const meta = getDayMeta(date)
-      const checks: boolean[] = []
-      if (statusFilters.has('watch')) checks.push(meta.isWatched)
-      if (statusFilters.has('stale')) checks.push(meta.isStale)
-      ;(['on_sale', 'low', 'sold_out', 'not_for_sale'] as OtaSaleStatus[]).forEach((key) => {
-        if (statusFilters.has(key)) checks.push(meta.status === key)
-      })
-      return checks.some(Boolean)
-    },
-    [getDayMeta, statusFilters]
-  )
-
-  const toggleStatusFilter = (key: StatusFilterKey) => {
-    setStatusFilters((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
 
   const selectedMeta = selectedDate ? getDayMeta(selectedDate) : null
-  const weekDays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -1305,48 +1390,7 @@ export default function PriceInventoryModal({
           </div>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <aside className="shrink-0 border-b bg-slate-50/80 p-4 lg:w-56 lg:border-b-0 lg:border-r">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              필터
-            </p>
-            <div className="space-y-1.5">
-              {STATUS_FILTERS.map(({ key, label }) => {
-                const meta = key in OTA_STATUS_META ? OTA_STATUS_META[key as OtaSaleStatus] : null
-                return (
-                  <label
-                    key={key}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-white"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.has(key)}
-                      onChange={() => toggleStatusFilter(key)}
-                      className="rounded border-border"
-                    />
-                    {meta ? (
-                      <span className={`h-2 w-2 rounded-full ${meta.dotClass}`} aria-hidden />
-                    ) : key === 'watch' ? (
-                      <Star className="h-3.5 w-3.5 text-amber-500" aria-hidden />
-                    ) : (
-                      <AlertTriangle className="h-3.5 w-3.5 text-orange-500" aria-hidden />
-                    )}
-                    {label}
-                  </label>
-                )
-              })}
-            </div>
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
-              <p className="font-semibold">💡 추천 기능</p>
-              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-amber-900/90">
-                <li>내부 차량 정원과 OTA 차량 잔여 불일치 시 ⚠️ 표시</li>
-                <li>24시간 이상 미업데이트 날짜 필터</li>
-                <li>메모로 OTA 반영 내역 기록</li>
-              </ul>
-            </div>
-          </aside>
-
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b px-4 py-2">
               <div className="flex items-center gap-2">
                 <button
@@ -1408,14 +1452,6 @@ export default function PriceInventoryModal({
                   if (!cell) return <div key={`empty-${idx}`} className="min-h-[130px]" />
 
                   const meta = getDayMeta(cell.date)
-                  if (!isDayVisible(cell.date)) {
-                    return (
-                      <div
-                        key={cell.date}
-                        className="min-h-[130px] rounded-xl border border-dashed border-border/40 bg-muted/20 opacity-40"
-                      />
-                    )
-                  }
 
                   const statusMeta = OTA_STATUS_META[meta.status]
                   const updater = getUpdaterDisplayName(meta.inventory, teamMembers)
@@ -1605,16 +1641,25 @@ export default function PriceInventoryModal({
                             {meta.hasMismatch ? ' ⚠️' : ''}
                           </span>
                         ) : null}
-                        {meta.inventory?.antelope_x_seats != null ? (
-                          <span className="inline-flex rounded bg-orange-50 px-1 py-0.5 text-[9px] font-medium text-orange-900">
-                            🏜️ X {meta.inventory.antelope_x_seats}
+                        {meta.canyonReconBadges.map((badge) => (
+                          <span
+                            key={badge.key}
+                            title={
+                              badge.mismatch
+                                ? '예약 초이스와 입장권 부킹 수가 다릅니다'
+                                : '예약 초이스 / 입장권 부킹'
+                            }
+                            className={[
+                              'inline-flex rounded px-1 py-0.5 text-[9px] font-medium tabular-nums',
+                              badge.mismatch
+                                ? 'border border-amber-300 bg-amber-50 text-amber-950'
+                                : 'bg-orange-50 text-orange-900',
+                            ].join(' ')}
+                          >
+                            {badge.text}
+                            {badge.mismatch ? ' ⚠️' : ''}
                           </span>
-                        ) : null}
-                        {meta.inventory?.antelope_l_seats != null ? (
-                          <span className="inline-flex rounded bg-orange-50 px-1 py-0.5 text-[9px] font-medium text-orange-900">
-                            🏜️ L {meta.inventory.antelope_l_seats}
-                          </span>
-                        ) : null}
+                        ))}
                       </div>
 
                       {closureListings.length > 0 ? (
@@ -1688,6 +1733,24 @@ export default function PriceInventoryModal({
                       )}
                       {selectedMeta.hasMismatch ? (
                         <span className="ml-2 text-orange-600">⚠️ OTA 차량 잔여와 차이 있음</span>
+                      ) : null}
+                      {selectedMeta.canyonReconBadges.length > 0 ? (
+                        <span className="ml-2">
+                          {selectedMeta.canyonReconBadges.map((badge) => (
+                            <span
+                              key={badge.key}
+                              className={[
+                                'mr-1 inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
+                                badge.mismatch
+                                  ? 'border border-amber-300 bg-amber-50 text-amber-950'
+                                  : 'bg-orange-50 text-orange-900',
+                              ].join(' ')}
+                            >
+                              {badge.text}
+                              {badge.mismatch ? ' ⚠️' : ''}
+                            </span>
+                          ))}
+                        </span>
                       ) : null}
                     </p>
                   </div>
@@ -1835,7 +1898,6 @@ export default function PriceInventoryModal({
               </div>
             ) : null}
           </div>
-        </div>
       </DialogContent>
     </Dialog>
   )

@@ -131,6 +131,24 @@ export function requiresOtaPlatformClosure(status: OtaSaleStatus): boolean {
   return status === 'sold_out' || status === 'low'
 }
 
+/** 예약 저장 후 Price & Inventory 모달을 열어야 하는 잔여 좌석 조건 */
+export function shouldOpenPriceInventoryForRemaining(
+  spotsLeftAfter: number | null | undefined,
+  spotsLeftBefore?: number | null
+): boolean {
+  if (spotsLeftAfter == null || !Number.isFinite(spotsLeftAfter)) return false
+  if (spotsLeftAfter <= AUTO_LOW_REMAINING_THRESHOLD) return true
+  if (
+    spotsLeftBefore != null &&
+    Number.isFinite(spotsLeftBefore) &&
+    spotsLeftBefore > AUTO_LOW_REMAINING_THRESHOLD &&
+    spotsLeftAfter <= AUTO_LOW_REMAINING_THRESHOLD
+  ) {
+    return true
+  }
+  return false
+}
+
 /** OTA 사이트에 현재 잔여 좌석을 아직 반영하지 않았는지 */
 export function needsOtaRemainingSiteUpdate(
   row: OtaChannelInventoryRow | null | undefined,

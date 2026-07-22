@@ -5,9 +5,13 @@ import {
   isCanyonTourChoiceKey,
   choiceLabelToTourCountKey,
   tourChoiceCountsDisplayKeys,
+  aggregateTourChoiceCounts,
   type TourChoiceCounts,
   type TourChoiceCountKey,
+  type ReservationChoiceRow,
 } from '@/lib/tourChoiceCounts'
+import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 export type { TourChoiceCounts }
 
@@ -79,6 +83,135 @@ export function canyonLxCountsMismatch(
   ticketCounts: TourChoiceCounts
 ): boolean {
   return (tourCounts.X || 0) !== (ticketCounts.X || 0) || (tourCounts.L || 0) !== (ticketCounts.L || 0)
+}
+
+export type DayCanyonReconTotals = {
+  reservation: TourChoiceCounts
+  ticket: TourChoiceCounts
+  /** 해당 캐년 유형의 입장권 부킹 행이 1건이라도 있으면 true (0장이어도) */
+  ticketHasEntry: Partial<Record<'L' | 'X', boolean>>
+}
+
+function isActiveReservationStatusForCanyon(status: string | null | undefined): boolean {
+  const s = (status || '').toLowerCase()
+  return s === 'confirmed' || s === 'recruiting'
+}
+
+/** Price & Inventory · 스케줄 — 상품·일별 배정 예약 초이스 vs 입장권 EA */
+export function buildDayCanyonReconByDate(input: {
+  tours: Array<{
+    id: string
+    tour_date: string
+    tour_status?: string | null
+    reservation_ids?: string[] | null
+    product_id?: string | null
+  }>
+  reservations: Array<{
+    id: string
+    tour_date: string
+    product_id?: string | null
+    total_people?: number | null
+    status?: string | null
+  }>
+  choiceRowsByResId: Map<string, ReservationChoiceRow[]>
+  ticketBookings: Array<{
+    tour_id?: string | null
+    ea?: number | null
+    company?: string | null
+    category?: string | null
+    status?: string | null
+  }>
+  productId: string
+  dates: string[]
+}): Record<string, DayCanyonReconTotals> {
+  const { tours, reservations, choiceRowsByResId, ticketBookings, productId, dates } = input
+  const result: Record<string, DayCanyonReconTotals> = {}
+
+  for (const date of dates) {
+    const dateYmd = date.slice(0, 10)
+    const dayTours = tours
+      .filter((tour) => String(tour.tour_date).slice(0, 10) === dateYmd)
+      .filter((tour) => !isTourCancelled(tour.tour_status))
+      .filter((tour) => !productId || String(tour.product_id || '') === productId)
+
+    if (dayTours.length === 0) continue
+
+    const dayReservations = reservations.filter(
+      (reservation) =>
+        String(reservation.tour_date).slice(0, 10) === dateYmd &&
+        (!productId || String(reservation.product_id || '') === productId) &&
+        isActiveReservationStatusForCanyon(reservation.status)
+    )
+
+    const assignedCanon = new Set<string>()
+    const tourIds = new Set<string>()
+    for (const tour of dayTours) {
+      tourIds.add(tour.id)
+      for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+        if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+      }
+    }
+
+    const assignedResList = dayReservations
+      .filter((reservation) => assignedCanon.has(canonicalReservationIdKey(String(reservation.id))))
+      .map((reservation) => ({
+        id: reservation.id,
+        total_people: reservation.total_people ?? null,
+      }))
+
+    const reservation = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId)
+
+    const dayTickets = ticketBookings.filter(
+      (booking) => booking.tour_id && tourIds.has(booking.tour_id)
+    )
+    const ticket = aggregateTicketEaByCanyon(dayTickets)
+    const ticketHasEntry: Partial<Record<'L' | 'X', boolean>> = {}
+    for (const booking of dayTickets) {
+      if (!isTicketBookingEaCountingStatus(booking.status)) continue
+      const key = ticketBookingCanyonKeyFromBooking(booking)
+      if (key === 'L' || key === 'X') ticketHasEntry[key] = true
+    }
+
+    const hasDisplayable =
+      (reservation.L || 0) > 0 ||
+      (reservation.X || 0) > 0 ||
+      (ticket.L || 0) > 0 ||
+      (ticket.X || 0) > 0 ||
+      ticketHasEntry.L ||
+      ticketHasEntry.X
+
+    if (hasDisplayable) {
+      result[dateYmd] = { reservation, ticket, ticketHasEntry }
+    }
+  }
+
+  return result
+}
+
+export function formatCanyonReconBadges(
+  recon: DayCanyonReconTotals | undefined
+): Array<{ key: 'L' | 'X'; text: string; mismatch: boolean }> {
+  if (!recon) return []
+  const keys: Array<'L' | 'X'> = ['L', 'X']
+  return keys
+    .filter(
+      (key) =>
+        (recon.reservation[key] || 0) > 0 ||
+        (recon.ticket[key] || 0) > 0 ||
+        recon.ticketHasEntry[key]
+    )
+    .map((key) => {
+      const resCount = recon.reservation[key] || 0
+      const ticketCount = recon.ticket[key] || 0
+      const hasTicketEntry = Boolean(recon.ticketHasEntry[key])
+      const ticketLabel = hasTicketEntry ? String(ticketCount) : '?'
+      const mismatch = hasTicketEntry && resCount !== ticketCount
+      return {
+        key,
+        text: `🏜️ ${key} ${resCount} / ${ticketLabel}`,
+        mismatch,
+      }
+    })
 }
 
 export function formatCanyonCountsInline(counts: TourChoiceCounts): string {

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt, CalendarOff, ExternalLink } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -118,6 +118,7 @@ export default function AdminTours() {
   const t = useTranslations('tours')
   const locale = useLocale()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClientSupabase()
   const { operatorId } = useOperatorOptional()
   const activeOperatorId = resolveOperatorId(operatorId)
@@ -247,6 +248,10 @@ export default function AdminTours() {
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [tourUi, setTourUi, tourUiHydrated] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
   const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
+  const [priceInventoryLaunch, setPriceInventoryLaunch] = useState<{
+    productId: string
+    date: string
+  } | null>(null)
 
   useEffect(() => {
     if (!tourUiHydrated || !viewerCanApproveOffSchedules) return
@@ -296,6 +301,17 @@ export default function AdminTours() {
     []
   )
   const setViewMode = (m: 'list' | 'calendar' | 'schedule') => setTourUi((u) => ({ ...u, viewMode: m }))
+
+  useEffect(() => {
+    if (!tourUiHydrated) return
+    const open = searchParams.get('priceInventory')
+    const productId = searchParams.get('productId')
+    const date = searchParams.get('date')
+    if (open !== '1' || !productId || !date) return
+    setViewMode('schedule')
+    setPriceInventoryLaunch({ productId, date })
+    router.replace(`/${locale}/admin/tours`, { scroll: false })
+  }, [tourUiHydrated, searchParams, locale, router])
   const setListViewDateFilter = (f: 'month' | 'all' | 'scheduled') => setTourUi((u) => ({ ...u, listViewDateFilter: f }))
   const setSearchTerm = (v: SetStateAction<string>) =>
     setTourUi((u) => ({
@@ -1376,7 +1392,11 @@ export default function AdminTours() {
 
       {/* 스케줄 뷰 */}
       {viewMode === 'schedule' && (
-        <ScheduleView onTourStatusChanged={handleScheduleTourStatusChanged} />
+        <ScheduleView
+          onTourStatusChanged={handleScheduleTourStatusChanged}
+          priceInventoryLaunch={priceInventoryLaunch}
+          onPriceInventoryLaunchConsumed={() => setPriceInventoryLaunch(null)}
+        />
       )}
 
       {/* 리스트(카드) 뷰 */}

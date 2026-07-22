@@ -431,6 +431,15 @@ export default function ReservationImportDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || res.statusText)
+      if (data.open_price_inventory && data.product_id && data.tour_date) {
+        const qs = new URLSearchParams({
+          priceInventory: '1',
+          productId: String(data.product_id),
+          date: String(data.tour_date),
+        })
+        router.push(`/${locale}/admin/tours?${qs.toString()}`)
+        return
+      }
       // 저장 후에는 예약 상세가 아니라 이메일 목록(예약 가져오기)으로 이동
       router.push(`/${locale}/admin/reservation-imports`)
     },

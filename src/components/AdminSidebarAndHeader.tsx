@@ -17,7 +17,6 @@ import {
   MessageCircle,
   User,
   UserCheck,
-  Plus,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
@@ -28,9 +27,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useOperator } from '@/contexts/OperatorContext'
 import type { UserRole } from '@/lib/roles'
 import {
+  ADMIN_HEADER_ADD_RESERVATION_LABEL,
   ADMIN_HEADER_QUICK_BUTTON_CLASS,
   buildAdminSidebarGroups,
   buildAdminSidebarNavigation,
+  resolveAdminHeaderQuickLabel,
   visibleAdminHeaderQuickEntries,
   type BuiltAdminNavGroup,
   type BuiltAdminNavItem,
@@ -67,6 +68,10 @@ const AdminTourChatNotificationListener = dynamic(
 )
 const AdminWeatherReminderModal = dynamic(
   () => import('./admin/AdminWeatherReminderModal'),
+  { ssr: false, loading: () => null }
+)
+const PriceInventoryHeaderButton = dynamic(
+  () => import('./schedule/PriceInventoryHeaderButton'),
   { ssr: false, loading: () => null }
 )
 
@@ -654,6 +659,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   }
 
   const showHeaderAddReservation = siteAccessHeaderReadAllowed('hq-reservations')
+  const showHeaderPriceInventory = siteAccessHeaderReadAllowed('hq-tours')
 
   return (
     <>
@@ -688,7 +694,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   const btnClass =
                     ADMIN_HEADER_QUICK_BUTTON_CLASS[e.id] ??
                     'px-3 py-1.5 text-sm border rounded-md text-gray-600 border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer relative z-10'
-                  const label = t(e.labelKey as Parameters<typeof t>[0])
+                  const label = resolveAdminHeaderQuickLabel(e, locale, t, tAdmin)
                   if (e.id === 'hq-chat-management') {
                     return (
                       <div key={e.id} className="relative inline-block">
@@ -735,9 +741,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     }}
                     className="relative z-10 flex cursor-pointer items-center space-x-1 rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
                   >
-                    <Plus size={14} />
-                    <span>{tAdmin('addReservation')}</span>
+                    <span>
+                      {locale.startsWith('ko')
+                        ? ADMIN_HEADER_ADD_RESERVATION_LABEL.ko
+                        : ADMIN_HEADER_ADD_RESERVATION_LABEL.en}
+                    </span>
                   </button>
+                )}
+                {showHeaderPriceInventory && (
+                  <PriceInventoryHeaderButton className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-sky-600 text-sky-700 transition-colors hover:bg-sky-600 hover:text-white disabled:cursor-wait disabled:opacity-60" />
                 )}
               </div>
               

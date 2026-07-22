@@ -716,10 +716,19 @@ type ScheduleViewProps = {
   variant?: 'default' | 'display'
   /** display 모드에서 표시할 일수 (기본 15) */
   displayDayCount?: number
+  /** 예약 저장 후 잔여 적음·매진 시 Price & Inventory 모달 자동 오픈 */
+  priceInventoryLaunch?: { productId: string; date: string } | null
+  onPriceInventoryLaunchConsumed?: () => void
 }
 
 export default function ScheduleView(props: ScheduleViewProps = {}) {
-  const { onTourStatusChanged, variant = 'default', displayDayCount = 15 } = props
+  const {
+    onTourStatusChanged,
+    variant = 'default',
+    displayDayCount = 15,
+    priceInventoryLaunch,
+    onPriceInventoryLaunchConsumed,
+  } = props
   const isDisplayMode = variant === 'display'
   const router = useRouter()
   const locale = useLocale()
@@ -1054,11 +1063,22 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
+  const [priceInventoryInitial, setPriceInventoryInitial] = useState<{
+    productId: string
+    date: string
+  } | null>(null)
   const [batchOffGuides, setBatchOffGuides] = useState<string[]>([])
   const [batchOffPeriods, setBatchOffPeriods] = useState<Array<{ id: string; startDate: string; endDate: string }>>(() => [
     { id: crypto.randomUUID(), startDate: '', endDate: '' },
   ])
   const [batchOffReason, setBatchOffReason] = useState('')
+
+  useEffect(() => {
+    if (!priceInventoryLaunch?.productId || !priceInventoryLaunch?.date) return
+    setPriceInventoryInitial(priceInventoryLaunch)
+    setShowPriceInventoryModal(true)
+    onPriceInventoryLaunchConsumed?.()
+  }, [priceInventoryLaunch, onPriceInventoryLaunchConsumed])
   const [batchOffSaving, setBatchOffSaving] = useState(false)
 
   /** 드래그 배정 후: 서버에 바로 저장할지 묻는 모달 */
@@ -8245,10 +8265,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           const monthStart = dayjs(firstDayOfMonth)
                           // 시작일이 이번 달 이전인 경우 보이는 시작 인덱스를 0으로 클램프
                           const diffFromMonthStart = start.diff(monthStart, 'day')
-                          // monthDays[0]은 전월 말일 패딩이므로, 당월 1일은 인덱스 1 — diff만 쓰면 바가 하루 왼쪽으로 밀림
-                          const visibleStartIdx = diffFromMonthStart < 0 ? 0 : diffFromMonthStart + 1
-                          // 이전 달에서 시작했다면 그 만큼을 잘라내고 남은 일수만 표시
-                          const cutDays = diffFromMonthStart < 0 ? Math.min(tour.days, Math.abs(diffFromMonthStart)) : 0
+                          // 그리드 컬럼 인덱스는 monthDays 기준(월간 뷰는 [0]이 전월 말 패딩, display는 오늘부터 패딩 없음)
+                          const startColIdx = monthDays.findIndex((d) => d.dateString === tour.startDate)
+                          const visibleStartIdx = startColIdx >= 0 ? startColIdx : 0
+                          // 이전 달·기간 이전에 시작했다면 그 만큼을 잘라내고 남은 일수만 표시
+                          const cutDays =
+                            startColIdx < 0 && diffFromMonthStart < 0
+                              ? Math.min(tour.days, Math.abs(diffFromMonthStart))
+                              : 0
                           const remainingDays = tour.days - cutDays
                           const spanDays = Math.min(remainingDays, monthDays.length - visibleStartIdx)
                           if (spanDays <= 0) return null
@@ -10949,10 +10973,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
       <PriceInventoryModal
         isOpen={showPriceInventoryModal}
-        onClose={() => setShowPriceInventoryModal(false)}
+        onClose={() => {
+          setShowPriceInventoryModal(false)
+          setPriceInventoryInitial(null)
+        }}
         products={products}
         userEmail={user?.email ?? null}
         teamMembers={teamMembers}
+        {...(priceInventoryInitial
+          ? {
+              initialProductId: priceInventoryInitial.productId,
+              initialSelectedDate: priceInventoryInitial.date,
+            }
+          : {})}
       />
 
       {scheduleLeavePromptOpen && (

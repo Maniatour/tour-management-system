@@ -1,6 +1,7 @@
 import {
   ADMIN_HEADER_QUICK_REGISTRY,
   ADMIN_SIDEBAR_REGISTRY,
+  adminHeaderQuickSiteLabel,
   type AdminNavVisibility,
 } from '@/lib/admin-site-registry'
 import { ROLE_PERMISSIONS, type UserPermissions, type UserRole } from '@/lib/roles'
@@ -485,7 +486,7 @@ export function buildSiteAccessTree(): SiteAccessNode {
   const headerPages: SiteAccessNode[] = ADMIN_HEADER_QUICK_REGISTRY.map((h) => ({
     id: h.id,
     kind: 'page',
-    label: { type: 'common', key: h.labelKey },
+    label: adminHeaderQuickSiteLabel(h),
     adminPath: h.path,
     registryHeaderId: h.id,
     menuVisibility: h.visibility,

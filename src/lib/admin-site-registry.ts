@@ -369,21 +369,67 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
 export type AdminHeaderQuickEntry = {
   id: string
   path: string
-  labelNamespace: 'common'
-  labelKey: string
+  /** i18n 대신 고정 라벨(헤더 축약 텍스트) */
+  label?: { ko: string; en: string }
+  labelNamespace?: 'common' | 'admin'
+  labelKey?: string
   visibility: AdminNavVisibility
 }
 
-/** 헤더 데스크톱 빠른 이동 — 레이블은 `useTranslations('common')` */
+/** 헤더 데스크톱 빠른 이동 — 축약 라벨은 `label`, 그 외는 i18n */
 export const ADMIN_HEADER_QUICK_REGISTRY: readonly AdminHeaderQuickEntry[] = [
   // team-board: 우측 아이콘 바로가기만 유지 (텍스트 버튼 중복 제거)
   { id: 'hq-consultation', path: 'consultation', labelNamespace: 'common', labelKey: 'consultation', visibility: { type: 'always' } },
   { id: 'hq-customers', path: 'customers', labelNamespace: 'common', labelKey: 'customers', visibility: { type: 'always' } },
-  { id: 'hq-reservations', path: 'reservations', labelNamespace: 'common', labelKey: 'reservations', visibility: { type: 'always' } },
+  { id: 'hq-reservations', path: 'reservations', label: { ko: '예약', en: 'Reservations' }, visibility: { type: 'always' } },
   { id: 'hq-booking', path: 'booking', labelNamespace: 'common', labelKey: 'booking', visibility: { type: 'always' } },
-  { id: 'hq-tours', path: 'tours', labelNamespace: 'common', labelKey: 'tours', visibility: { type: 'always' } },
-  { id: 'hq-chat-management', path: 'chat-management', labelNamespace: 'common', labelKey: 'chatManagement', visibility: { type: 'always' } },
+  { id: 'hq-tours', path: 'tours', label: { ko: '투어', en: 'Tours' }, visibility: { type: 'always' } },
+  { id: 'hq-chat-management', path: 'chat-management', label: { ko: '채팅', en: 'Chat' }, visibility: { type: 'always' } },
 ]
+
+export const ADMIN_HEADER_ADD_RESERVATION_LABEL = { ko: '+새 예약', en: '+New' } as const
+
+export function resolveAdminHeaderQuickLabel(
+  entry: AdminHeaderQuickEntry,
+  locale: string,
+  tCommon: (key: string) => string,
+  tAdmin: (key: string) => string
+): string {
+  if (entry.label) {
+    return locale.startsWith('ko') ? entry.label.ko : entry.label.en
+  }
+  const key = entry.labelKey ?? ''
+  if (entry.labelNamespace === 'admin') return tAdmin(key)
+  return tCommon(key)
+}
+
+/** 브라우저 탭·사이트 접근 트리용 — 고정 라벨 항목은 가장 가까운 i18n 키로 매핑 */
+export function adminHeaderQuickTitleSpec(entry: AdminHeaderQuickEntry): {
+  namespace: 'common' | 'admin'
+  key: string
+} {
+  if (entry.labelNamespace && entry.labelKey) {
+    return { namespace: entry.labelNamespace, key: entry.labelKey }
+  }
+  switch (entry.id) {
+    case 'hq-reservations':
+      return { namespace: 'common', key: 'reservation' }
+    case 'hq-tours':
+      return { namespace: 'common', key: 'tour' }
+    case 'hq-chat-management':
+      return { namespace: 'common', key: 'chatManagement' }
+    default:
+      return { namespace: 'common', key: entry.labelKey ?? 'dashboard' }
+  }
+}
+
+export function adminHeaderQuickSiteLabel(entry: AdminHeaderQuickEntry): {
+  type: 'common'
+  key: string
+} {
+  const spec = adminHeaderQuickTitleSpec(entry)
+  return { type: 'common', key: spec.key }
+}
 
 /** 데스크톱 헤더 빠른 이동 버튼 스타일 — `ADMIN_HEADER_QUICK_REGISTRY` id와 동일 키 */
 export const ADMIN_HEADER_QUICK_BUTTON_CLASS: Record<string, string> = {

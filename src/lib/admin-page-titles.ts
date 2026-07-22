@@ -1,6 +1,7 @@
 import {
   ADMIN_HEADER_QUICK_REGISTRY,
   ADMIN_SIDEBAR_REGISTRY,
+  adminHeaderQuickTitleSpec,
 } from '@/lib/admin-site-registry'
 
 /**
@@ -57,7 +58,7 @@ function getResolverEntries(): ReadonlyArray<ResolverEntry> {
   }))
   const headerEntries: ResolverEntry[] = ADMIN_HEADER_QUICK_REGISTRY.map((entry) => ({
     path: entry.path,
-    spec: { namespace: entry.labelNamespace, key: entry.labelKey },
+    spec: adminHeaderQuickTitleSpec(entry),
   }))
   const extraEntries: ResolverEntry[] = EXTRA_ADMIN_PATH_TITLES.map((entry) => ({
     path: entry.path,
