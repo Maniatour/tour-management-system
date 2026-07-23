@@ -3421,7 +3421,7 @@ export default function PricingSection({
 
           {/* 환불 입력 */}
           <div className="bg-white p-3 rounded border border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">환불</h4>
+            <h4 className="text-sm font-medium text-gray-900 mb-2">채널 환불</h4>
             <div className="space-y-2">
               <div>
                 <label className="block text-xs text-gray-600 mb-0.5">

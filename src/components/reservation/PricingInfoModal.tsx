@@ -1328,7 +1328,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 </div>
 
                 <div className="bg-white p-3 rounded border border-gray-200">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">환불</h4>
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">채널 환불</h4>
                   <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mb-2 leading-snug">
                     예약 옵션 취소·환불은 예약 옵션 화면에서 처리하세요. 여기는 투어·상품 환불(reservation_pricing.refund_*)만
                     저장됩니다.

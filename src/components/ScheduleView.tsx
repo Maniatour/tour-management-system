@@ -2103,39 +2103,53 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const dayColumnWidthCalc = useMemo(() => `calc((100% - ${fixedSideColumnsPx}px) / ${monthDays.length})`, [monthDays.length])
   const dynamicMinTableWidthPx = useMemo(() => fixedSideColumnsPx + monthDays.length * 40, [monthDays.length])
 
-  /** 상품 날짜 헤더 / 본문 가로 스크롤 동기화 (thead를 별도 sticky 래퍼에 두어 뷰포트 기준 sticky 유지) */
+  /** 상품 날짜 헤더 / 본문 / 가이드·부킹·배차 가로 스크롤 동기화 */
   const productScheduleHeaderScrollRef = useRef<HTMLDivElement>(null)
   const productScheduleBodyScrollRef = useRef<HTMLDivElement>(null)
-  const productScheduleScrollSyncRef = useRef<'header' | 'body' | null>(null)
+  const scheduleLowerSectionsScrollRef = useRef<HTMLDivElement>(null)
+  const scheduleHorizontalScrollSyncRef = useRef<'header' | 'body' | 'lower' | null>(null)
 
-  const syncProductScheduleHorizontalScroll = useCallback((source: 'header' | 'body', scrollLeft: number) => {
-    if (productScheduleScrollSyncRef.current) return
-    productScheduleScrollSyncRef.current = source
-    const headerEl = productScheduleHeaderScrollRef.current
-    const bodyEl = productScheduleBodyScrollRef.current
-    if (headerEl && bodyEl) {
-      if (source === 'header') bodyEl.scrollLeft = scrollLeft
-      else headerEl.scrollLeft = scrollLeft
-    }
-    requestAnimationFrame(() => {
-      productScheduleScrollSyncRef.current = null
-    })
-  }, [])
+  const syncUnifiedScheduleHorizontalScroll = useCallback(
+    (source: 'header' | 'body' | 'lower', scrollLeft: number) => {
+      if (scheduleHorizontalScrollSyncRef.current) return
+      scheduleHorizontalScrollSyncRef.current = source
+      const sections: Array<{ key: 'header' | 'body' | 'lower'; el: HTMLDivElement | null }> = [
+        { key: 'header', el: productScheduleHeaderScrollRef.current },
+        { key: 'body', el: productScheduleBodyScrollRef.current },
+        { key: 'lower', el: scheduleLowerSectionsScrollRef.current },
+      ]
+      for (const { key, el } of sections) {
+        if (key !== source && el) el.scrollLeft = scrollLeft
+      }
+      requestAnimationFrame(() => {
+        scheduleHorizontalScrollSyncRef.current = null
+      })
+    },
+    [],
+  )
 
   const onProductScheduleHeaderScroll = useCallback(() => {
     const el = productScheduleHeaderScrollRef.current
-    if (el) syncProductScheduleHorizontalScroll('header', el.scrollLeft)
-  }, [syncProductScheduleHorizontalScroll])
+    if (el) syncUnifiedScheduleHorizontalScroll('header', el.scrollLeft)
+  }, [syncUnifiedScheduleHorizontalScroll])
 
   const onProductScheduleBodyScroll = useCallback(() => {
     const el = productScheduleBodyScrollRef.current
-    if (el) syncProductScheduleHorizontalScroll('body', el.scrollLeft)
-  }, [syncProductScheduleHorizontalScroll])
+    if (el) syncUnifiedScheduleHorizontalScroll('body', el.scrollLeft)
+  }, [syncUnifiedScheduleHorizontalScroll])
+
+  const onScheduleLowerSectionsScroll = useCallback(() => {
+    const el = scheduleLowerSectionsScrollRef.current
+    if (el) syncUnifiedScheduleHorizontalScroll('lower', el.scrollLeft)
+  }, [syncUnifiedScheduleHorizontalScroll])
 
   useLayoutEffect(() => {
     const headerEl = productScheduleHeaderScrollRef.current
     const bodyEl = productScheduleBodyScrollRef.current
-    if (headerEl && bodyEl) bodyEl.scrollLeft = headerEl.scrollLeft
+    const lowerEl = scheduleLowerSectionsScrollRef.current
+    const scrollLeft = headerEl?.scrollLeft ?? 0
+    if (bodyEl) bodyEl.scrollLeft = scrollLeft
+    if (lowerEl) lowerEl.scrollLeft = scrollLeft
   }, [dynamicMinTableWidthPx, monthDays.length])
 
   const handleDisplayRefresh = useCallback(async () => {
@@ -5950,7 +5964,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }
 
   const scheduleMainPanel = (
-    <div className={`bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2 ${isDisplayMode ? 'min-w-0 flex-1 overflow-auto' : ''}`}>
+    <div className={`bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2 ${isDisplayMode ? 'min-w-0 lg:flex-1 lg:overflow-auto' : ''}`}>
       {/* 헤더 */}
       <div className="mb-2">
         {isDisplayMode ? (
@@ -6310,6 +6324,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             setShowMiscTourModal={setShowMiscTourModal}
             openProductCellReservationsModal={openProductCellReservationsModal}
           />
+          <div
+            ref={scheduleLowerSectionsScrollRef}
+            onScroll={onScheduleLowerSectionsScroll}
+            className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible"
+            style={{
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
           <ScheduleGuideGrid
             locale={locale}
             monthDays={monthDays}
@@ -6730,10 +6754,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               clearScheduleDragHighlight={clearScheduleDragHighlight}
             />
           </div>
+          </div>
         </div>
       </div>
 
-      {/* 미 배정된 투어 카드뷰 */}
+      {/* 미 배정된 투어 카드뷰 — 스케줄 디스플레이 페이지에서는 숨김 */}
+      {!isDisplayMode ? (
       <div className="mt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -6929,6 +6955,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </div>
         )}
       </div>
+      ) : null}
 
       <Dialog
         open={!!unassignedTourStatusModalTourId}

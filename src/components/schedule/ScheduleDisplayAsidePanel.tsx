@@ -2,10 +2,8 @@
 
 import type { ReactNode } from 'react'
 import { ListFilter } from 'lucide-react'
-import ScheduleDisplayCalendar, {
-  ScheduleDisplayCalendarNav,
-  type ScheduleDisplayCalendarTourSummary,
-} from '@/components/schedule/ScheduleDisplayCalendar'
+import ScheduleDisplayTourList from '@/components/schedule/ScheduleDisplayTourList'
+import { ScheduleDisplayCalendarNav, type ScheduleDisplayCalendarTourSummary } from '@/components/schedule/ScheduleDisplayCalendar'
 import ScheduleDisplayStatusFilterModal from '@/components/schedule/ScheduleDisplayStatusFilterModal'
 import { getScheduleDisplayThreeWeekDateRange } from '@/lib/scheduleDisplayCalendarMeta'
 import type { OfficeScheduleDayStaffChip } from '@/lib/officeScheduleDayStaff'
@@ -72,11 +70,11 @@ export default function ScheduleDisplayAsidePanel<T extends TourLike>({
   )
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-0 bg-slate-50 lg:flex-row">
-      <div className="min-h-0 min-w-0 w-full flex-1 overflow-auto p-2 sm:p-3 lg:w-1/2 lg:flex-none lg:shrink-0">
+    <div className="flex w-full flex-col gap-0 bg-slate-50 lg:h-full lg:min-h-0 lg:flex-row">
+      <div className="min-w-0 w-full p-2 sm:p-3 lg:min-h-0 lg:w-1/2 lg:flex-none lg:shrink-0 lg:overflow-auto">
         {gridPanel}
       </div>
-      <aside className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-t border-border bg-white lg:h-full lg:max-h-full lg:border-l lg:border-t-0">
+      <aside className="flex w-full min-w-0 flex-col border-t border-border bg-white lg:h-full lg:min-h-0 lg:max-h-full lg:flex-1 lg:overflow-hidden lg:border-l lg:border-t-0">
         <div className="shrink-0 border-b border-border bg-white px-4 py-3">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 lg:flex-nowrap lg:whitespace-nowrap">
@@ -106,14 +104,12 @@ export default function ScheduleDisplayAsidePanel<T extends TourLike>({
             />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <ScheduleDisplayCalendar
+        <div className="p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <ScheduleDisplayTourList
             toursByDate={displayToursByDate}
             getTourSummary={getTourDisplayCalendarSummary}
             locale={locale}
             weekStart={displayCalendarWeekStart}
-            onWeekStartChange={onDisplayCalendarWeekStartChange}
-            hideNavigation
             {...(officeStaffByDate ? { officeStaffByDate } : {})}
             onTourClick={onTourClick}
             onAssignStaff={onAssignStaff}

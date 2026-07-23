@@ -9,7 +9,7 @@ export default function ScheduleDisplayPage() {
   const locale = useLocale()
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col bg-slate-50">
+    <div className="flex min-h-[100dvh] flex-col bg-slate-50 lg:h-[100dvh] lg:min-h-0 lg:overflow-hidden">
       <header className="flex shrink-0 items-center gap-3 border-b border-border bg-white px-3 py-2.5 sm:px-4">
         <Link
           href={`/${locale}/admin/tours`}
@@ -23,11 +23,11 @@ export default function ScheduleDisplayPage() {
             스케줄 디스플레이
           </h1>
           <p className="truncate text-xs text-muted-foreground">
-            오늘부터 15일 · 스케줄 테이블 + 투어 달력
+            오늘부터 15일 · 스케줄 테이블 + 다가오는 투어
           </p>
         </div>
       </header>
-      <div className="min-h-0 flex-1">
+      <div className="lg:min-h-0 lg:flex-1">
         <ScheduleDisplayView displayDayCount={15} />
       </div>
     </div>

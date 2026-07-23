@@ -57,7 +57,7 @@ export default function ScheduleDisplayView({ displayDayCount = 15 }: ScheduleDi
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div className="relative flex flex-col lg:h-full lg:min-h-0">
       {isRefreshing ? (
         <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full border border-border/60 bg-white/95 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
           <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
