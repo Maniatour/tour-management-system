@@ -136,49 +136,126 @@ export function getProductOverviewDescription(
   return fallback
 }
 
+function parseProductDurationTotalHours(duration: string): number | null {
+  const trimmed = duration.trim()
+  const timeMatch = trimmed.match(/^(\d+):(\d+)(?::(\d+))?$/)
+  if (timeMatch) {
+    return (
+      parseInt(timeMatch[1]!, 10) +
+      parseInt(timeMatch[2]!, 10) / 60 +
+      (timeMatch[3] ? parseInt(timeMatch[3], 10) / 3600 : 0)
+    )
+  }
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return parseFloat(trimmed)
+  }
+  return null
+}
+
+function formatProductOvernightLabel(days: number, isEnglish: boolean): string {
+  const nights = days - 1
+  if (days === 2) return isEnglish ? '1 night 2 days' : '1박2일'
+  if (days === 3) return isEnglish ? '2 nights 3 days' : '2박3일'
+  if (days === 4) return isEnglish ? '3 nights 4 days' : '3박4일'
+  if (days === 5) return isEnglish ? '4 nights 5 days' : '4박5일'
+  if (days === 6) return isEnglish ? '5 nights 6 days' : '5박6일'
+  if (days === 7) return isEnglish ? '6 nights 7 days' : '6박7일'
+
+  return isEnglish
+    ? `${nights} night${nights === 1 ? '' : 's'} ${days} day${days === 1 ? '' : 's'}`
+    : `${nights}박${days}일`
+}
+
+function formatProductHoursLabel(totalHours: number, isEnglish: boolean): string {
+  const rounded = Math.round(totalHours * 10) / 10
+  const display = Number.isInteger(rounded) ? String(rounded) : String(rounded)
+  return isEnglish ? `${display}hrs` : `${display}시간`
+}
+
 export function formatProductDuration(duration: string | null, isEnglish: boolean): string {
   if (!duration) return isEnglish ? 'Not specified' : '미정'
 
-  const timeMatch = duration.match(/^(\d+):(\d+):(\d+)$/)
+  const trimmed = duration.trim()
+  const timeMatch = trimmed.match(/^(\d+):(\d+)(?::(\d+))?$/)
   if (timeMatch) {
-    const hours = parseInt(timeMatch[1], 10)
-    const minutes = parseInt(timeMatch[2], 10)
-    const seconds = parseInt(timeMatch[3], 10)
+    const hours = parseInt(timeMatch[1]!, 10)
+    const minutes = parseInt(timeMatch[2]!, 10)
+    const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0
     const totalHours = hours + minutes / 60 + seconds / 3600
-    const days = Math.ceil(totalHours / 24)
 
-    if (days === 1) {
-      if (hours === 0 && minutes > 0) {
-        return isEnglish ? `${minutes} minute${minutes === 1 ? '' : 's'}` : `${minutes}분`
-      }
-      if (hours > 0 && minutes === 0) {
-        return isEnglish ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : `${hours}시간`
-      }
-      if (hours > 0 && minutes > 0) {
-        const hourLabel = isEnglish ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : `${hours}시간`
-        const minuteLabel = isEnglish
-          ? `${minutes} minute${minutes === 1 ? '' : 's'}`
-          : `${minutes}분`
-        return `${hourLabel} ${minuteLabel}`
-      }
-      const formattedHours = Math.round(totalHours * 10) / 10
-      return isEnglish ? `${formattedHours} hours` : `${formattedHours}시간`
+    if (totalHours >= 24) {
+      return formatProductOvernightLabel(Math.ceil(totalHours / 24), isEnglish)
     }
 
-    if (days === 2) return isEnglish ? '1 night 2 days' : '1박 2일'
-    if (days === 3) return isEnglish ? '2 nights 3 days' : '2박 3일'
-    if (days === 4) return isEnglish ? '3 nights 4 days' : '3박 4일'
-    if (days === 5) return isEnglish ? '4 nights 5 days' : '4박 5일'
-    if (days === 6) return isEnglish ? '5 nights 6 days' : '5박 6일'
-    if (days === 7) return isEnglish ? '6 nights 7 days' : '6박 7일'
+    if (minutes > 0 || seconds > 0) {
+      if (hours === 0 && minutes > 0) {
+        return isEnglish ? `${minutes} min${minutes === 1 ? '' : 's'}` : `${minutes}분`
+      }
+      if (hours > 0 && minutes > 0) {
+        const hourLabel = isEnglish ? `${hours}hrs` : `${hours}시간`
+        const minuteLabel = isEnglish ? `${minutes} min${minutes === 1 ? '' : 's'}` : `${minutes}분`
+        return `${hourLabel} ${minuteLabel}`
+      }
+    }
 
-    const nights = days - 1
-    return isEnglish
-      ? `${nights} night${nights === 1 ? '' : 's'} ${days} day${days === 1 ? '' : 's'}`
-      : `${nights}박 ${days}일`
+    return formatProductHoursLabel(totalHours, isEnglish)
   }
 
-  return duration
+  const totalHours = parseProductDurationTotalHours(trimmed)
+  if (totalHours == null || Number.isNaN(totalHours) || totalHours <= 0) {
+    return duration
+  }
+
+  if (totalHours >= 24) {
+    return formatProductOvernightLabel(Math.ceil(totalHours / 24), isEnglish)
+  }
+
+  return formatProductHoursLabel(totalHours, isEnglish)
+}
+
+const GROUP_SIZE_LABELS_EN: Record<string, string> = {
+  small: 'Small Group',
+  private: 'Private Tour Available',
+  big: 'Big Group',
+}
+
+const GROUP_SIZE_LABELS_KO: Record<string, string> = {
+  small: '소규모 그룹',
+  private: '단독 투어 가능',
+  big: '대규모 그룹',
+}
+
+const GROUP_SIZE_DISPLAY_ORDER = ['small', 'private', 'big'] as const
+
+/** 고객 화면용 그룹 규모 — private,small → "Small Group · Private Tour Available" */
+export function formatProductGroupSize(
+  groupSize: string | null | undefined,
+  isEnglish: boolean
+): string | null {
+  if (!groupSize?.trim()) return null
+
+  const labels = isEnglish ? GROUP_SIZE_LABELS_EN : GROUP_SIZE_LABELS_KO
+  const selected = new Set(
+    groupSize
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  )
+
+  const formatted = GROUP_SIZE_DISPLAY_ORDER.filter((key) => selected.has(key)).map(
+    (key) => labels[key]
+  )
+
+  if (formatted.length === 0) {
+    return groupSize
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => value.charAt(0).toUpperCase() + value.slice(1))
+      .join(' · ')
+  }
+
+  return formatted.join(' · ')
 }
 
 /**

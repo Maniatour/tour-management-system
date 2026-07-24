@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, Smartphone } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -31,7 +31,7 @@ import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } fro
 import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
-import { ReservationCardSimpleSmsButton } from '@/components/reservation/ReservationCardSimpleSmsButton'
+import PreTourContactSmsPreviewModal from '@/components/reservation/PreTourContactSmsPreviewModal'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -347,6 +347,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
   const [simpleMoreMenuOpen, setSimpleMoreMenuOpen] = useState(false)
+  const [preTourSmsModalOpen, setPreTourSmsModalOpen] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
   const [tourChatRoomPreviewOpen, setTourChatRoomPreviewOpen] = useState(false)
@@ -354,6 +355,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [cancelReasonFetchIx, setCancelReasonFetchIx] = useState(0)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
   const simpleMoreMenuRef = useRef<HTMLDivElement>(null)
+  const simpleMoreMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const simpleMoreMenuPanelRef = useRef<HTMLDivElement>(null)
+  const [simpleMoreMenuPos, setSimpleMoreMenuPos] = useState<{ top: number; left: number } | null>(null)
 
   useEffect(() => {
     if (!reshowPickupSummaryRequest) return
@@ -380,12 +384,63 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   useEffect(() => {
     if (!simpleMoreMenuOpen) return
     const handleClickOutside = (e: MouseEvent) => {
-      if (simpleMoreMenuRef.current && !simpleMoreMenuRef.current.contains(e.target as Node)) {
-        setSimpleMoreMenuOpen(false)
+      const target = e.target as Node
+      if (
+        simpleMoreMenuRef.current?.contains(target) ||
+        simpleMoreMenuPanelRef.current?.contains(target)
+      ) {
+        return
       }
+      setSimpleMoreMenuOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [simpleMoreMenuOpen])
+
+  useLayoutEffect(() => {
+    if (!simpleMoreMenuOpen) {
+      setSimpleMoreMenuPos(null)
+      return
+    }
+
+    const positionMenu = () => {
+      const btn = simpleMoreMenuButtonRef.current
+      const panel = simpleMoreMenuPanelRef.current
+      if (!btn) return
+
+      const rect = btn.getBoundingClientRect()
+      const menuWidth = 208
+      const menuHeight = panel?.offsetHeight ?? 320
+      const pad = 8
+      const headerBottom = 64
+
+      const left = Math.min(
+        Math.max(pad, rect.right - menuWidth),
+        window.innerWidth - menuWidth - pad
+      )
+
+      const spaceAbove = rect.top - headerBottom - pad
+      const spaceBelow = window.innerHeight - rect.bottom - pad
+      const openAbove = spaceAbove >= menuHeight || spaceAbove >= spaceBelow
+
+      let top = openAbove ? rect.top - menuHeight - 4 : rect.bottom + 4
+      top = Math.max(headerBottom + pad, top)
+      top = Math.min(top, window.innerHeight - menuHeight - pad)
+
+      setSimpleMoreMenuPos({ top, left })
+    }
+
+    positionMenu()
+    const raf = requestAnimationFrame(positionMenu)
+    window.addEventListener('resize', positionMenu)
+    const closeOnScroll = () => setSimpleMoreMenuOpen(false)
+    window.addEventListener('scroll', closeOnScroll, true)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', positionMenu)
+      window.removeEventListener('scroll', closeOnScroll, true)
+    }
   }, [simpleMoreMenuOpen])
 
   useEffect(() => {
@@ -744,6 +799,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             </div>
             <div className="relative shrink-0" ref={simpleMoreMenuRef}>
               <button
+                ref={simpleMoreMenuButtonRef}
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
@@ -757,153 +813,175 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
-              <div
-                role="menu"
-                hidden={!simpleMoreMenuOpen}
-                className={`absolute right-0 bottom-full z-50 mb-1 w-52 rounded-md border border-gray-200 bg-white py-1 shadow-lg ${
-                  simpleMoreMenuOpen ? '' : 'invisible pointer-events-none'
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                  {(() => {
-                    const closeMenu = () => setSimpleMoreMenuOpen(false)
-                    const menuBtnClass =
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50'
-                    const product = products?.find((p) => p.id === reservation.productId)
-                    const isManiaTour =
-                      product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
-                    const showCreateTour = Boolean(isManiaTour && !reservation.hasExistingTour)
-                    return (
-                      <>
-                        {onCommunicationChannelChange ? (
-                          <ReservationCardSimpleSmsButton
-                            variant="menuItem"
-                            reservationId={reservation.id}
-                            customer={customers.find((c) => c.id === reservation.customerId)}
-                            sentBy={sentBy}
-                            uiLocale={locale === 'en' ? 'en' : 'ko'}
-                            onSendSuccess={() => onPreTourSmsSendSuccess?.(reservation.id)}
-                            onBeforeOpen={closeMenu}
-                          />
-                        ) : null}
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            onPricingInfoClick(reservation)
-                          }}
-                        >
-                          <Receipt className="h-3.5 w-3.5 shrink-0 text-primary" />
-                          {t('actions.price')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            setPickupSummaryModalOpen(true)
-                          }}
-                        >
-                          <Hotel className="h-3.5 w-3.5 shrink-0 text-teal-700" />
-                          {t('card.pickupHotelIconTitle')}
-                        </button>
-                        {showCreateTour ? (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className={menuBtnClass}
-                            onClick={() => {
-                              closeMenu()
-                              onCreateTour(reservation)
-                            }}
-                          >
-                            <Plus className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                            {t('card.createTourTitle')}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            onPaymentClick(reservation)
-                          }}
-                        >
-                          <DollarSign className="h-3.5 w-3.5 shrink-0 text-primary" />
-                          {t('card.paymentHistoryTitle')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            onDetailClick(reservation)
-                          }}
-                        >
-                          <Eye className="h-3.5 w-3.5 shrink-0 text-purple-600" />
-                          {t('card.viewCustomerTitle')}
-                        </button>
-                        {onReceiptClick ? (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className={menuBtnClass}
-                            onClick={() => {
-                              closeMenu()
-                              onReceiptClick(reservation)
-                            }}
-                          >
-                            <Printer className="h-3.5 w-3.5 shrink-0 text-slate-600" />
-                            {t('print')}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            setFollowUpModalOpen(true)
-                          }}
-                        >
-                          <FileText className="h-3.5 w-3.5 shrink-0 text-amber-700" />
-                          Follow up
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            onReviewClick(reservation)
-                          }}
-                        >
-                          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-pink-600" />
-                          {t('card.reviewManagementTitle')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            closeMenu()
-                            onEditClick(reservation.id)
-                          }}
-                        >
-                          <Edit className="h-3.5 w-3.5 shrink-0 text-orange-600" />
-                          {t('card.editReservationTitle')}
-                        </button>
-                      </>
-                    )
-                  })()}
-              </div>
             </div>
           </div>
+
+          {simpleMoreMenuOpen &&
+            pickupSummaryPortalReady &&
+            createPortal(
+              <div
+                ref={simpleMoreMenuPanelRef}
+                role="menu"
+                className="fixed z-[10000] w-52 max-h-[min(70vh,calc(100vh-5rem))] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+                style={
+                  simpleMoreMenuPos
+                    ? { top: simpleMoreMenuPos.top, left: simpleMoreMenuPos.left }
+                    : { visibility: 'hidden', top: 0, left: 0 }
+                }
+                onClick={(e) => e.stopPropagation()}
+              >
+                {(() => {
+                  const closeMenu = () => setSimpleMoreMenuOpen(false)
+                  const menuBtnClass =
+                    'flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50'
+                  const product = products?.find((p) => p.id === reservation.productId)
+                  const isManiaTour =
+                    product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
+                  const showCreateTour = Boolean(isManiaTour && !reservation.hasExistingTour)
+                  return (
+                    <>
+                      {onCommunicationChannelChange ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            const customer = customers.find((c) => c.id === reservation.customerId)
+                            closeMenu()
+                            if (!customer) {
+                              alert(locale === 'en' ? 'Customer not found.' : '고객 정보를 찾을 수 없습니다.')
+                              return
+                            }
+                            const hasPhone = !!(customer.phone?.trim() || customer.emergency_contact?.trim())
+                            if (!hasPhone) {
+                              alert(locale === 'en' ? 'No phone number.' : '고객 전화번호가 없습니다.')
+                              return
+                            }
+                            setPreTourSmsModalOpen(true)
+                          }}
+                        >
+                          <Smartphone className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
+                          {t('card.preTourSmsButtonTitle')}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onPricingInfoClick(reservation)
+                        }}
+                      >
+                        <Receipt className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        {t('actions.price')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          setPickupSummaryModalOpen(true)
+                        }}
+                      >
+                        <Hotel className="h-3.5 w-3.5 shrink-0 text-teal-700" />
+                        {t('card.pickupHotelIconTitle')}
+                      </button>
+                      {showCreateTour ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onCreateTour(reservation)
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                          {t('card.createTourTitle')}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onPaymentClick(reservation)
+                        }}
+                      >
+                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        {t('card.paymentHistoryTitle')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onDetailClick(reservation)
+                        }}
+                      >
+                        <Eye className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+                        {t('card.viewCustomerTitle')}
+                      </button>
+                      {onReceiptClick ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuBtnClass}
+                          onClick={() => {
+                            closeMenu()
+                            onReceiptClick(reservation)
+                          }}
+                        >
+                          <Printer className="h-3.5 w-3.5 shrink-0 text-slate-600" />
+                          {t('print')}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          setFollowUpModalOpen(true)
+                        }}
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                        Follow up
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onReviewClick(reservation)
+                        }}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-pink-600" />
+                        {t('card.reviewManagementTitle')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onEditClick(reservation.id)
+                        }}
+                      >
+                        <Edit className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+                        {t('card.editReservationTitle')}
+                      </button>
+                    </>
+                  )
+                })()}
+              </div>,
+              document.body
+            )}
 
           {statusModalOpen && onStatusChange && (
             <div
@@ -1676,6 +1754,24 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
       )}
+
+      {preTourSmsModalOpen && (() => {
+        const customer = customers.find((c) => c.id === reservation.customerId)
+        if (!customer) return null
+        return (
+          <PreTourContactSmsPreviewModal
+            isOpen
+            onClose={() => setPreTourSmsModalOpen(false)}
+            reservationId={reservation.id}
+            customerLanguage={customer.language ?? null}
+            sentBy={sentBy ?? null}
+            uiLocale={locale === 'en' ? 'en' : 'ko'}
+            {...(onPreTourSmsSendSuccess
+              ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+              : {})}
+          />
+        )
+      })()}
 
       <TourChatRoomEmailPreviewModal
         isOpen={tourChatRoomPreviewOpen}

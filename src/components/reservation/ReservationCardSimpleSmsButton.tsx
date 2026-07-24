@@ -14,7 +14,7 @@ type Props = {
   onSendSuccess?: () => void
   /** icon: 상단 컴팩트 버튼 / menuItem: 더보기 메뉴 행 */
   variant?: 'icon' | 'menuItem'
-  /** 메뉴에서 열기 직전(부모 더보기 닫기 등) */
+  /** 메뉴에서 열기 직전(부모 더보기 닫기 등). 포털·언마운트되는 메뉴 안에서는 사용하지 말 것 — 모달 상태를 부모에서 관리하세요. */
   onBeforeOpen?: () => void
 }
 

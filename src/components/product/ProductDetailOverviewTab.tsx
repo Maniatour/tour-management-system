@@ -12,7 +12,7 @@ import CustomerPageZone from '@/components/product/CustomerPageZone'
 
 import ProductDetailSectionCard from '@/components/product/ui/ProductDetailSectionCard'
 
-import { getProductOverviewDescription } from '@/lib/productDetailDisplay'
+import { getProductOverviewDescription, formatProductGroupSize } from '@/lib/productDetailDisplay'
 import {
   getPreviewDetailFieldHtml,
   getPreviewOverviewDescription,
@@ -111,6 +111,10 @@ export default function ProductDetailOverviewTab({
 
   const t = useTranslations('productDetail')
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
+  const isEnglish = locale === 'en'
+  const groupSizeLabel = product.group_size
+    ? formatProductGroupSize(product.group_size, isEnglish)
+    : null
 
   const tags = productDetails?.tags || product.tags || []
 
@@ -349,7 +353,7 @@ export default function ProductDetailOverviewTab({
 
             </div>
 
-            {product.group_size && (
+            {product.group_size && groupSizeLabel && (
 
               <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 sm:gap-4 sm:rounded-2xl sm:border sm:border-slate-100 sm:p-4">
 
@@ -363,7 +367,7 @@ export default function ProductDetailOverviewTab({
 
                   <span className="mb-0.5 block text-xs font-medium text-slate-500 sm:mb-1 sm:text-sm">{t('groupSize')}</span>
 
-                  <p className="text-sm font-semibold text-slate-900 sm:text-lg">{product.group_size}</p>
+                  <p className="text-sm font-semibold text-slate-900 sm:text-lg">{groupSizeLabel}</p>
 
                 </div>
 

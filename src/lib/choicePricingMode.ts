@@ -179,8 +179,14 @@ export function normalizeChoicesPricingForMode(
       data.child = child;
       data.infant = infant;
     } else if (isSinglePrice) {
-      // absolute + 단일가: ota_sale_price가 최종 판매가
+      // absolute + 단일가: ota_sale_price만 저장 (성인/아동/유아 필드 제거)
       const ota = Number(data.ota_sale_price ?? data.adult_price ?? data.adult ?? 0);
+      delete data.adult_price;
+      delete data.child_price;
+      delete data.infant_price;
+      delete data.adult;
+      delete data.child;
+      delete data.infant;
       if (ota > 0) data.ota_sale_price = ota;
     } else {
       // absolute + 분리가: adult/child/infant가 최종 판매가

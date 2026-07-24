@@ -106,7 +106,24 @@ export default function PricingHistoryModal({
       }
 
       // 같은 updated_at을 가진 레코드가 여러 개 있으면 하나로 합치기
-      const groupedHistory = (data || []).reduce((acc: PricingHistoryItem[], item: any) => {
+      // base/dynamic 중복 레코드가 있으면 최신(dynamic 우선)만 사용
+      const uniqueByUpdatedAt = new Map<string, PricingHistoryItem>();
+      for (const item of data || []) {
+        const historyItem = item as PricingHistoryItem;
+        const key = historyItem.updated_at ?? historyItem.created_at ?? historyItem.id;
+        const existing = uniqueByUpdatedAt.get(key);
+        if (!existing) {
+          uniqueByUpdatedAt.set(key, historyItem);
+          continue;
+        }
+        const existingIsDynamic = (existing as { price_type?: string }).price_type === 'dynamic';
+        const nextIsDynamic = (historyItem as { price_type?: string }).price_type === 'dynamic';
+        if (nextIsDynamic && !existingIsDynamic) {
+          uniqueByUpdatedAt.set(key, historyItem);
+        }
+      }
+
+      const groupedHistory = Array.from(uniqueByUpdatedAt.values()).reduce((acc: PricingHistoryItem[], item: any) => {
         // 같은 updated_at을 가진 레코드 찾기
         const existingIndex = acc.findIndex(h => h.updated_at === item.updated_at)
         

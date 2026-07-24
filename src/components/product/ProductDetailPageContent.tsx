@@ -22,6 +22,7 @@ import type {
 import { fetchProductPageData } from '@/lib/fetchProductDetail'
 import {
   formatProductDuration,
+  formatProductGroupSize,
   getProductCategoryLabel,
   getProductCustomerDisplayName,
   resolveDisplayBasePrice,
@@ -225,6 +226,7 @@ function ProductDetailPageContentInner({
   })()
   const categoryLabel = getProductCategoryLabel(product.category || '', isEnglish)
   const durationLabel = formatProductDuration(product.duration, isEnglish)
+  const groupSizeLabel = formatProductGroupSize(product.group_size, isEnglish)
   const primaryTag = product.tags?.[0]
     ? resolveTagLabel(product.tags[0], locale, tagLabelMap)
     : null
@@ -274,7 +276,7 @@ function ProductDetailPageContentInner({
     choicesDisplayMode: normalizeChoicesDisplayMode(product.choices_display_mode),
     maxParticipants: product.max_participants,
     durationLabel,
-    groupSize: product.group_size,
+    groupSize: groupSizeLabel,
     totalPrice,
     groupedChoices,
     selectedOptions,
@@ -304,7 +306,7 @@ function ProductDetailPageContentInner({
           categoryLabel={categoryLabel}
           durationLabel={durationLabel}
           primaryTag={primaryTag}
-          groupSize={product.group_size}
+          groupSize={groupSizeLabel}
           productId={productId}
           product={product}
           productDetails={productDetails}

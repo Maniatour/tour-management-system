@@ -1,9 +1,14 @@
 'use client'
 
+import { useMemo } from 'react'
+import dayjs from 'dayjs'
 import type { ReactNode } from 'react'
 import { ListFilter } from 'lucide-react'
 import ScheduleDisplayTourList from '@/components/schedule/ScheduleDisplayTourList'
-import { ScheduleDisplayCalendarNav, type ScheduleDisplayCalendarTourSummary } from '@/components/schedule/ScheduleDisplayCalendar'
+import ScheduleDisplayCalendar, {
+  ScheduleDisplayCalendarNav,
+  type ScheduleDisplayCalendarTourSummary,
+} from '@/components/schedule/ScheduleDisplayCalendar'
 import ScheduleDisplayStatusFilterModal from '@/components/schedule/ScheduleDisplayStatusFilterModal'
 import { getScheduleDisplayThreeWeekDateRange } from '@/lib/scheduleDisplayCalendarMeta'
 import type { OfficeScheduleDayStaffChip } from '@/lib/officeScheduleDayStaff'
@@ -52,6 +57,15 @@ export default function ScheduleDisplayAsidePanel<T extends TourLike>({
 }: ScheduleDisplayAsidePanelProps<T>) {
   const { start: calRangeStart, end: calRangeEnd } =
     getScheduleDisplayThreeWeekDateRange(displayCalendarWeekStart)
+  const todayStr = dayjs().format('YYYY-MM-DD')
+
+  const mobileVisibleTourCount = useMemo(() => {
+    let count = 0
+    for (const [date, tours] of displayToursByDate) {
+      if (date >= todayStr) count += tours.length
+    }
+    return count
+  }, [displayToursByDate, todayStr])
 
   const statusFilterButton = (
     <button
@@ -81,7 +95,11 @@ export default function ScheduleDisplayAsidePanel<T extends TourLike>({
               <h2 className="shrink-0 text-sm font-semibold text-foreground">
                 {locale === 'ko' ? '다가오는 투어' : 'Upcoming tours'}
               </h2>
-              <p className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              <p className="shrink-0 text-xs text-muted-foreground tabular-nums lg:hidden">
+                {todayStr} ~ {calRangeEnd}
+                <span className="ml-1">({mobileVisibleTourCount})</span>
+              </p>
+              <p className="hidden shrink-0 text-xs text-muted-foreground tabular-nums lg:inline">
                 {calRangeStart} ~ {calRangeEnd}
                 <span className="ml-1">({displayCalendarVisibleTourCount})</span>
               </p>
@@ -105,16 +123,33 @@ export default function ScheduleDisplayAsidePanel<T extends TourLike>({
           </div>
         </div>
         <div className="p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <ScheduleDisplayTourList
-            toursByDate={displayToursByDate}
-            getTourSummary={getTourDisplayCalendarSummary}
-            locale={locale}
-            weekStart={displayCalendarWeekStart}
-            {...(officeStaffByDate ? { officeStaffByDate } : {})}
-            onTourClick={onTourClick}
-            onAssignStaff={onAssignStaff}
-            onAssignVehicle={onAssignVehicle}
-          />
+          <div className="lg:hidden">
+            <ScheduleDisplayTourList
+              toursByDate={displayToursByDate}
+              getTourSummary={getTourDisplayCalendarSummary}
+              locale={locale}
+              weekStart={displayCalendarWeekStart}
+              minDate={todayStr}
+              {...(officeStaffByDate ? { officeStaffByDate } : {})}
+              onTourClick={onTourClick}
+              onAssignStaff={onAssignStaff}
+              onAssignVehicle={onAssignVehicle}
+            />
+          </div>
+          <div className="hidden lg:block">
+            <ScheduleDisplayCalendar
+              toursByDate={displayToursByDate}
+              getTourSummary={getTourDisplayCalendarSummary}
+              locale={locale}
+              weekStart={displayCalendarWeekStart}
+              onWeekStartChange={onDisplayCalendarWeekStartChange}
+              hideNavigation
+              {...(officeStaffByDate ? { officeStaffByDate } : {})}
+              onTourClick={onTourClick}
+              onAssignStaff={onAssignStaff}
+              onAssignVehicle={onAssignVehicle}
+            />
+          </div>
         </div>
       </aside>
       <ScheduleDisplayStatusFilterModal

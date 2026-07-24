@@ -23,7 +23,7 @@ export default function ScheduleDisplayPage() {
             스케줄 디스플레이
           </h1>
           <p className="truncate text-xs text-muted-foreground">
-            오늘부터 15일 · 스케줄 테이블 + 다가오는 투어
+            오늘부터 15일 · 스케줄 테이블 + 다가오는 투어 (모바일 카드 / 데스크톱 달력)
           </p>
         </div>
       </header>

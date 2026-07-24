@@ -220,7 +220,9 @@ export default function CustomerPageDetailHighlightsEmbed({
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             placeholder="예: 18"
           />
-          <p className="mt-1 text-[11px] text-muted-foreground">고객 화면: 18시간 / 18 hours</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            고객 화면: 18시간 / 18hrs · 48시간 이상 1박2일 / 1 night 2 days
+          </p>
         </div>
 
         <div>
@@ -239,7 +241,7 @@ export default function CustomerPageDetailHighlightsEmbed({
             ))}
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            고객 화면: private,small,big 형태로 표시
+            고객 화면: Small Group · Private Tour Available
           </p>
         </div>
 

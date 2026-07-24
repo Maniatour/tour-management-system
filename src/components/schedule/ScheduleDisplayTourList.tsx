@@ -30,6 +30,8 @@ export type ScheduleDisplayTourListProps<T extends TourLike = TourLike> = {
   getTourSummary: (tour: T) => ScheduleDisplayCalendarTourSummary
   locale: string
   weekStart: Date
+  /** 카드뷰: 이 날짜(YYYY-MM-DD) 이전은 숨김 (모바일 — 오늘부터) */
+  minDate?: string
   onTourClick?: (tour: T) => void
   onAssignStaff?: (tour: T) => void
   onAssignVehicle?: (tour: T) => void
@@ -50,6 +52,7 @@ export default function ScheduleDisplayTourList<T extends TourLike>({
   getTourSummary,
   locale,
   weekStart,
+  minDate,
   onTourClick,
   onAssignStaff,
   onAssignVehicle,
@@ -114,9 +117,9 @@ export default function ScheduleDisplayTourList<T extends TourLike>({
 
   const sortedDateGroups = useMemo(() => {
     return [...toursByDate.entries()]
-      .filter(([, tours]) => tours.length > 0)
+      .filter(([date, tours]) => tours.length > 0 && (!minDate || date >= minDate))
       .sort(([a], [b]) => a.localeCompare(b))
-  }, [toursByDate])
+  }, [toursByDate, minDate])
 
   if (sortedDateGroups.length === 0) {
     return (
@@ -182,7 +185,7 @@ export default function ScheduleDisplayTourList<T extends TourLike>({
               ) : null}
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2">
               {dayTours.map((tour) => (
                 <ScheduleDisplayTourCard
                   key={tour.id}

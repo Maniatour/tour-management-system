@@ -267,7 +267,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
   }, [showDetailedPrices]);
 
   useEffect(() => {
-    if (productId) {
+    if (productId && (selectedChannelId || selectedChannelType)) {
       loadPriceHistory();
     }
   }, [productId, selectedChannelId, selectedChannelType, loadPriceHistory]);

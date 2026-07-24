@@ -1596,40 +1596,41 @@ export default function DynamicPricingManager({
         try {
           const { data: existingRules } = await supabase
             .from('dynamic_pricing')
-            .select('choices_pricing')
+            .select('choices_pricing, price_type, updated_at')
             .eq('product_id', productId)
             .eq('channel_id', channelId)
             .eq('date', date)
-            .eq('variant_key', selectedVariant || 'default');
+            .eq('variant_key', selectedVariant || 'default')
+            .order('updated_at', { ascending: false })
+            .limit(1);
           
           if (existingRules && existingRules.length > 0) {
-            existingRules.forEach((existingRule: any) => {
-              let existingChoicesPricing: Record<string, any> = {};
-              if (existingRule.choices_pricing) {
-                try {
-                  existingChoicesPricing = typeof existingRule.choices_pricing === 'string'
-                    ? JSON.parse(existingRule.choices_pricing)
-                    : existingRule.choices_pricing;
-                } catch (e) {
-                  console.warn('기존 choices_pricing 파싱 오류:', e);
-                }
+            const existingRule = existingRules[0];
+            let existingChoicesPricing: Record<string, any> = {};
+            if (existingRule.choices_pricing) {
+              try {
+                existingChoicesPricing = typeof existingRule.choices_pricing === 'string'
+                  ? JSON.parse(existingRule.choices_pricing)
+                  : existingRule.choices_pricing;
+              } catch (e) {
+                console.warn('기존 choices_pricing 파싱 오류:', e);
               }
-              
-              // 초이스별 필드 유지 (판매가·불포함 단일/성인·아동·유아)
-              Object.entries(existingChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
-                const cleanedData: Record<string, number> = {};
-                if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) cleanedData.ota_sale_price = choiceData.ota_sale_price;
-                if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) cleanedData.not_included_price = choiceData.not_included_price;
-                if (choiceData.adult_price !== undefined && choiceData.adult_price !== null) cleanedData.adult_price = choiceData.adult_price;
-                if (choiceData.child_price !== undefined && choiceData.child_price !== null) cleanedData.child_price = choiceData.child_price;
-                if (choiceData.infant_price !== undefined && choiceData.infant_price !== null) cleanedData.infant_price = choiceData.infant_price;
-                if (choiceData.not_included_price_adult !== undefined && choiceData.not_included_price_adult !== null) cleanedData.not_included_price_adult = choiceData.not_included_price_adult;
-                if (choiceData.not_included_price_child !== undefined && choiceData.not_included_price_child !== null) cleanedData.not_included_price_child = choiceData.not_included_price_child;
-                if (choiceData.not_included_price_infant !== undefined && choiceData.not_included_price_infant !== null) cleanedData.not_included_price_infant = choiceData.not_included_price_infant;
-                if (Object.keys(cleanedData).length > 0) {
-                  existingChoices[choiceId] = cleanedData;
-                }
-              });
+            }
+            
+            // 최신 레코드의 초이스별 필드만 유지 (판매가·불포함 단일/성인·아동·유아)
+            Object.entries(existingChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
+              const cleanedData: Record<string, number> = {};
+              if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) cleanedData.ota_sale_price = choiceData.ota_sale_price;
+              if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) cleanedData.not_included_price = choiceData.not_included_price;
+              if (choiceData.adult_price !== undefined && choiceData.adult_price !== null) cleanedData.adult_price = choiceData.adult_price;
+              if (choiceData.child_price !== undefined && choiceData.child_price !== null) cleanedData.child_price = choiceData.child_price;
+              if (choiceData.infant_price !== undefined && choiceData.infant_price !== null) cleanedData.infant_price = choiceData.infant_price;
+              if (choiceData.not_included_price_adult !== undefined && choiceData.not_included_price_adult !== null) cleanedData.not_included_price_adult = choiceData.not_included_price_adult;
+              if (choiceData.not_included_price_child !== undefined && choiceData.not_included_price_child !== null) cleanedData.not_included_price_child = choiceData.not_included_price_child;
+              if (choiceData.not_included_price_infant !== undefined && choiceData.not_included_price_infant !== null) cleanedData.not_included_price_infant = choiceData.not_included_price_infant;
+              if (Object.keys(cleanedData).length > 0) {
+                existingChoices[choiceId] = cleanedData;
+              }
             });
           }
         } catch (e) {
@@ -1691,8 +1692,11 @@ export default function DynamicPricingManager({
         const foundChannelForSave = channelGroups
           .flatMap((group) => group.channels)
           .find((ch) => ch.id === channelId);
+        const isHomepageChannelForSave =
+          channelId === 'M00001' || channelId?.toLowerCase() === 'm00001';
         const isSinglePriceForSave =
-          ((foundChannelForSave as { pricing_type?: string } | undefined)?.pricing_type || 'separate') === 'single';
+          ((foundChannelForSave as { pricing_type?: string } | undefined)?.pricing_type || 'separate') === 'single' ||
+          (isHomepageChannelForSave && homepagePricingType === 'single');
         const channelBaseForSave = {
           adult: productBasePrice.adult + priceAdjustmentAdult,
           child: productBasePrice.child + priceAdjustmentChild,
@@ -1860,15 +1864,9 @@ export default function DynamicPricingManager({
             }))
           });
           
-          // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
-          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
+          // 저장 완료 후 데이터 새로고침
           await loadDynamicPricingData();
           await loadChannelPricingStats();
-          
-          // 추가로 한 번 더 로드하여 확실하게 반영
-          setTimeout(async () => {
-            await loadDynamicPricingData();
-          }, 500);
         } catch (error) {
           console.error('배치 저장 실패:', error);
           setBatchProgress(null);
@@ -1891,18 +1889,10 @@ export default function DynamicPricingManager({
           if (savedCount === rulesData.length) {
             setSavePhase(null);
             setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
-            // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
-            await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
             await loadDynamicPricingData();
-            // 추가로 한 번 더 로드하여 확실하게 반영
-            setTimeout(async () => {
-              await loadDynamicPricingData();
-            }, 500);
           } else {
             setSavePhase(null);
             setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
-            // 일부 저장 완료 후에도 데이터 새로고침
-            await new Promise(resolve => setTimeout(resolve, 300));
             await loadDynamicPricingData();
           }
           await loadChannelPricingStats();
@@ -1926,19 +1916,11 @@ export default function DynamicPricingManager({
         if (savedCount === rulesData.length) {
           setSavePhase(null);
           setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
-          // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
-          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
           await loadDynamicPricingData();
           await loadChannelPricingStats();
-          // 추가로 한 번 더 로드하여 확실하게 반영
-          setTimeout(async () => {
-            await loadDynamicPricingData();
-          }, 500);
         } else if (savedCount > 0) {
           setSavePhase(null);
           setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
-          // 일부 저장 완료 후에도 데이터 새로고침
-          await new Promise(resolve => setTimeout(resolve, 300));
           await loadDynamicPricingData();
           await loadChannelPricingStats();
         } else {
@@ -1952,7 +1934,7 @@ export default function DynamicPricingManager({
       setBatchProgress(null);
       setMessage(`❌ ${t('saveFailed')}: ${error instanceof Error ? error.message : ''}`);
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData, choicePricingMode, selectedVariant, productBasePrice, t, optionsPricing, choiceCombinations]);
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData, choicePricingMode, selectedVariant, productBasePrice, homepagePricingType, t, optionsPricing, choiceCombinations]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
@@ -2830,7 +2812,6 @@ export default function DynamicPricingManager({
             
             // 선택된 채널이 단일 판매가(성인/아동/유아 구분 없음)인지
             const selectedChannelPricingType = (foundChannel as any)?.pricing_type || 'separate';
-            const isTableChannelSinglePrice = selectedChannelPricingType === 'single';
             
             // 홈페이지 채널 찾기
             const homepageChannel = channelGroups
@@ -2847,8 +2828,17 @@ export default function DynamicPricingManager({
               });
             
             // 홈페이지 채널이고 단일 가격 타입인지 확인
-            const isHomepageChannelSelected = homepageChannel && selectedChannel === homepageChannel.id;
+            const isHomepageChannelSelected = Boolean(homepageChannel && selectedChannel === homepageChannel.id);
             const isHomepageSinglePrice = isHomepageChannelSelected && homepagePricingType === 'single';
+            const isTableChannelSinglePrice =
+              selectedChannelPricingType === 'single' || isHomepageSinglePrice;
+
+            const priceColWidth = 'w-[4.75rem] max-w-[4.75rem] px-0.5';
+            const calcColWidth = 'w-[4.25rem] max-w-[4.25rem] px-0.5';
+            const headerTight = 'whitespace-normal leading-tight text-[10px]';
+            const choiceColWidth = (wide: boolean) => (wide ? 'w-[4.75rem] max-w-[4.75rem]' : 'w-[3.25rem] max-w-[3.25rem]');
+            const tableInputCls =
+              'w-full min-w-[4rem] max-w-[4.5rem] px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-ring focus:border-ring';
             
             return (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -2901,46 +2891,45 @@ export default function DynamicPricingManager({
                 />
               ) : choicePricingViewMode === 'table' ? (
                 <div className="overflow-x-auto rounded-lg border border-gray-200 text-xs">
-                  <table className="w-full min-w-[800px] text-xs">
+                  <table className="w-full table-fixed text-xs">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-200">
                         {choiceGroupColumns.length > 0 ? (
                           choiceGroupColumns.map((group) => (
                             <th
                               key={group.id}
-                              className={`text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px] ${
-                                group.wide ? 'min-w-[8.5rem]' : 'min-w-[5.5rem]'
-                              }`}
+                              title={group.name}
+                              className={`text-left py-1 px-1 font-semibold text-gray-700 truncate ${choiceColWidth(group.wide)} ${headerTight}`}
                             >
                               {group.name}
                             </th>
                           ))
                         ) : (
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('choice')}</th>
+                          <th className="text-left py-1 px-1 font-semibold text-gray-700 text-[10px] w-[5rem]">{t('choice')}</th>
                         )}
                         {isTableChannelSinglePrice ? (
                           <>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePrice')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAmount')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('salePrice')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('notIncludedAmount')}</th>
                           </>
                         ) : (
                           <>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceAdult')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceChild')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceInfant')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAdult')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedChild')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedInfant')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('salePriceAdult')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('salePriceChild')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('salePriceInfant')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('notIncludedAdult')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('notIncludedChild')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${priceColWidth} ${headerTight}`}>{t('notIncludedInfant')}</th>
                           </>
                         )}
                         {!isHomepageChannelSelected && (
                           <>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('commissionLabel')} / {t('couponLabel')}</th>
-                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('netPriceLabel')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${calcColWidth} ${headerTight}`}>{t('commissionLabel')} {t('couponLabel')}</th>
+                            <th className={`text-center py-1 font-semibold text-gray-700 ${calcColWidth} ${headerTight}`}>{t('netPriceLabel')}</th>
                             {homepageChannel && (
                               <>
-                                <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('homepageLabel')}</th>
-                                <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('differenceLabel')}</th>
+                                <th className={`text-center py-1 font-semibold text-gray-700 ${calcColWidth} ${headerTight}`}>{t('homepageLabel')}</th>
+                                <th className={`text-center py-1 font-semibold text-gray-700 ${calcColWidth} ${headerTight}`}>{t('differenceLabel')}</th>
                               </>
                             )}
                           </>
@@ -3053,7 +3042,7 @@ export default function DynamicPricingManager({
                           });
                         };
 
-                        const inputCls = 'w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-ring focus:border-ring';
+                        const inputCls = tableInputCls;
 
                         const details = combination.combination_details || [];
                         const namePartsKo = (combination.combination_name_ko || '').split(/\s*\+\s*/).filter(Boolean);
@@ -3081,17 +3070,16 @@ export default function DynamicPricingManager({
                                 return (
                                   <td
                                     key={`${combination.id}-${group.id}`}
-                                    className={`py-1.5 px-2 align-top ${
-                                      group.wide ? 'min-w-[8.5rem]' : 'min-w-[5.5rem]'
-                                    }`}
+                                    title={label}
+                                    className={`py-1 px-1 align-top ${choiceColWidth(group.wide)}`}
                                   >
-                                    <div className="font-medium text-gray-900 text-xs">{label}</div>
+                                    <div className="font-medium text-gray-900 text-[11px] truncate">{label}</div>
                                   </td>
                                 );
                               })
                             ) : (
-                              <td className="py-1.5 px-2 align-top">
-                                <div className="font-medium text-gray-900 text-xs">
+                              <td className="py-1 px-1 align-top w-[5rem] max-w-[5rem]">
+                                <div className="font-medium text-gray-900 text-[11px] truncate">
                                   {isKoUi
                                     ? combination.combination_name_ko || combination.combination_name
                                     : combination.combination_name || combination.combination_name_ko}
@@ -3100,7 +3088,7 @@ export default function DynamicPricingManager({
                             )}
                             {isTableChannelSinglePrice ? (
                               <>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input
                                     type="number"
                                     value={otaSalePrice === 0 ? '' : otaSalePrice}
@@ -3131,7 +3119,7 @@ export default function DynamicPricingManager({
                                     placeholder="0"
                                   />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input
                                     type="number"
                                     value={notIncludedPrice === undefined || notIncludedPrice === null || notIncludedPrice === 0 ? '' : notIncludedPrice}
@@ -3156,40 +3144,40 @@ export default function DynamicPricingManager({
                               </>
                             ) : (
                               <>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={adultPrice === 0 ? '' : adultPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('adult_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('adult_price', n); }} className={inputCls} placeholder="0" />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={childPrice === 0 ? '' : childPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('child_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('child_price', n); }} className={inputCls} placeholder="0" />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={infantPrice === 0 ? '' : infantPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('infant_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('infant_price', n); }} className={inputCls} placeholder="0" />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={notIncludedAdult === 0 ? '' : notIncludedAdult} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_adult', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_adult', n); }} className={inputCls} placeholder="0" />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={notIncludedChild === 0 ? '' : notIncludedChild} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_child', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_child', n); }} className={inputCls} placeholder="0" />
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center">
+                                <td className={`py-1 align-top text-center ${priceColWidth}`}>
                                   <input type="number" value={notIncludedInfant === 0 ? '' : notIncludedInfant} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_infant', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_infant', n); }} className={inputCls} placeholder="0" />
                                 </td>
                               </>
                             )}
                             {!isHomepageChannelSelected && (
                               <>
-                                <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-[11px]">
+                                <td className={`py-1 align-top text-center text-gray-600 text-[10px] leading-tight ${calcColWidth}`}>
                                   {commissionPercent}% / {couponPercent}%
                                 </td>
-                                <td className="py-1.5 px-1.5 align-top text-center font-medium text-xs">
+                                <td className={`py-1 align-top text-center font-medium text-[11px] ${calcColWidth}`}>
                                   {netPrice > 0 ? `$${netPrice.toFixed(2)}` : '-'}
                                 </td>
                                 {homepageChannel && (
                                   <>
-                                    <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-xs">
+                                    <td className={`py-1 align-top text-center text-gray-600 text-[11px] ${calcColWidth}`}>
                                       {homepageNetPrice > 0 ? `$${homepageNetPrice.toFixed(2)}` : '-'}
                                     </td>
-                                    <td className={`py-1.5 px-1.5 align-top text-center font-medium text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    <td className={`py-1 align-top text-center font-medium text-[11px] ${calcColWidth} ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                       {homepageNetPrice > 0 ? `${priceDifference >= 0 ? '+' : ''}$${priceDifference.toFixed(2)}` : '-'}
                                     </td>
                                   </>

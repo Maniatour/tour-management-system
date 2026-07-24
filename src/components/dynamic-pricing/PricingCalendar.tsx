@@ -3,6 +3,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { ChevronLeft, ChevronRight, Calendar, DollarSign, ChevronDown } from 'lucide-react';
 import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
 import { findChoicePricingData } from '@/utils/choicePricingMatcher';
+import { pickLatestPricingRule } from '@/lib/pricingRuleResolver';
 
 const DATE_CAPTURE_REGEX = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/;
 const YYYYMMDD_REGEX = /^\d{8}$/;
@@ -235,48 +236,11 @@ export const PricingCalendar = memo(function PricingCalendar({
   }, [dynamicPricingData, normalizedPricingMap]);
 
   const pickRuleForChannel = useCallback((rules: SimplePricingRule[]): SimplePricingRule | undefined => {
-    if (!rules || rules.length === 0) return undefined;
-
-    // 먼저 채널로 필터링
-    let filteredRules = rules;
-    
-    if (selectedChannelId) {
-      const mappedChannelId = mapChannelId(selectedChannelId);
-      filteredRules = rules.filter(r => r.channel_id === mappedChannelId);
-      // 특정 채널이 선택된 경우, 필터링 결과가 없으면 undefined 반환
-      if (filteredRules.length === 0) {
-        // 디버깅: 필터링 결과가 없는 경우
-        console.log(`채널 ${selectedChannelId} (매핑: ${mappedChannelId})에 대한 규칙을 찾을 수 없음:`, {
-          totalRules: rules.length,
-          availableChannels: [...new Set(rules.map(r => r.channel_id))],
-          rules: rules.map(r => ({ id: r.id, channel_id: r.channel_id, date: r.date }))
-        });
-        return undefined;
-      }
-    } else if (selectedChannelType === 'SELF') {
-      filteredRules = rules.filter(r => r.channel_id?.startsWith('B'));
-      if (filteredRules.length === 0) {
-        return undefined;
-      }
-    } else if (selectedChannelType === 'OTA') {
-      filteredRules = rules.filter(r => !r.channel_id?.startsWith('B'));
-      if (filteredRules.length === 0) {
-        return undefined;
-      }
-    }
-
-    // variant_key로 필터링 (null/빈 문자열은 'default'로 정규화하여 비교)
-    const normSelected = (selectedVariant ?? '').toString().trim() || 'default';
-    filteredRules = filteredRules.filter(r => {
-      const normRuleKey = (r.variant_key ?? '').toString().trim() || 'default';
-      return normRuleKey === normSelected;
+    return pickLatestPricingRule(rules, {
+      ...(selectedChannelId ? { channelId: selectedChannelId } : {}),
+      ...(selectedChannelType ? { channelType: selectedChannelType } : {}),
+      variantKey: selectedVariant,
     });
-    if (filteredRules.length === 0) {
-      return undefined;
-    }
-
-    // 항상 첫 번째 규칙 반환 (필터링 없음)
-    return filteredRules[0];
   }, [selectedChannelId, selectedChannelType, selectedVariant]);
 
   // 쿠폰 선택 시 적용할 할인 % (percentage 타입만 반영, 없으면 rule 값 사용)

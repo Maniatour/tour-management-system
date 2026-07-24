@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 import { dualWriteDynamicPricingToV2 } from '@/lib/commerce/dualWritePricing';
 import { toDbChoicePricingMode } from '@/lib/choicePricingMode';
+import { dedupePricingRules } from '@/lib/pricingRuleResolver';
 import { useOperatorOptional } from '@/contexts/OperatorContext';
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery';
 
@@ -236,7 +237,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
 
       const formattedData = Object.entries(groupedData).map(([date, rules]) => ({
         date, // 이미 정규화된 날짜
-        rules
+        rules: dedupePricingRules(rules),
       }));
       
       setDynamicPricingData(formattedData);
@@ -259,20 +260,24 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
       // variant_key 기본값 설정
       const variantKey = ruleData.variant_key || 'default';
       
-      // 먼저 기존 레코드가 있는지 확인 (variant_key만으로 확인, price_type 구분 없음)
-      const { data: existingData, error: selectError } = await supabase
+      // 먼저 기존 레코드가 있는지 확인 (variant_key 기준, price_type 무관 — 최신 1건)
+      const { data: existingRows, error: selectError } = await supabase
         .from('dynamic_pricing')
-        .select('id, choices_pricing')
+        .select('id, choices_pricing, price_type, updated_at')
         .eq('product_id', ruleData.product_id)
         .eq('channel_id', ruleData.channel_id)
         .eq('date', ruleData.date)
         .eq('variant_key', variantKey)
-        .maybeSingle();
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (selectError) throw selectError;
+
+      const existingData = existingRows?.[0] ?? null;
 
       let result;
       
-      // maybeSingle()은 레코드가 없으면 null을 반환하고 에러가 아님
-      if (existingData && !selectError) {
+      if (existingData) {
         // 기존 레코드가 있으면 부분 업데이트 수행
         // 전달되지 않은 필드는 기존 값을 유지
         
@@ -466,18 +471,18 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           try {
             // 기존 레코드 확인 (choices_pricing 포함)
             const variantKey = ruleData.variant_key || 'default';
-            const { data: existingData, error: selectError } = await supabase
+            const { data: existingRows, error: selectError } = await supabase
               .from('dynamic_pricing')
-              .select('id, choices_pricing, price_type')
+              .select('id, choices_pricing, price_type, updated_at')
               .eq('product_id', ruleData.product_id)
               .eq('channel_id', ruleData.channel_id)
               .eq('date', ruleData.date)
-              .eq('price_type', ruleData.price_type || 'dynamic') // price_type으로도 필터링
-              .eq('variant_key', variantKey) // variant_key로도 필터링
-              .maybeSingle();
+              .eq('variant_key', variantKey)
+              .order('updated_at', { ascending: false });
 
-            // select 실패 시 insert로 떨어지면 unique 충돌(23505)이 난다
             if (selectError) throw selectError;
+
+            const existingData = existingRows?.[0] ?? null;
 
             if (existingData) {
               // 기존 레코드가 있으면 부분 업데이트 수행 (savePricingRule과 동일한 로직)
@@ -734,10 +739,11 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
   }, [productId, loadDynamicPricingData]);
 
   useEffect(() => {
-    if (productId) {
+    // 채널이 정해지기 전 전체 데이터를 먼저 로드하면 이후 필터 로드 시 캘린더가 깜빡임
+    if (productId && (selectedChannelId || selectedChannelType)) {
       loadDynamicPricingData();
     }
-  }, [productId, loadDynamicPricingData]);
+  }, [productId, selectedChannelId, selectedChannelType, loadDynamicPricingData]);
 
   const setMessage = useCallback((message: string) => {
     setSaveMessage(message);

@@ -26,6 +26,7 @@ import {
   getProductArrivalCountry,
   getProductDepartureCity,
   getProductDepartureCountry,
+  formatProductGroupSize,
 } from '@/lib/productDetailDisplay'
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
@@ -114,6 +115,10 @@ export default function ProductDetailDetailsTab({
   variant = 'default',
 }: ProductDetailDetailsTabProps) {
   const t = useTranslations('productDetail')
+  const isEnglish = locale === 'en'
+  const groupSizeLabel = product.group_size
+    ? formatProductGroupSize(product.group_size, isEnglish)
+    : null
 
   const InfoBlock = (
     props: Omit<ComponentProps<typeof DetailInfoBlock>, 'variant'>
@@ -188,10 +193,10 @@ export default function ProductDetailDetailsTab({
                                 <dt className="text-gray-600">{t('status')}</dt>
                                 <dd className="text-gray-900">{product.status || t('notSpecified')}</dd>
                               </div>
-                              {product.group_size && (
+                              {product.group_size && groupSizeLabel && (
                                 <div className="flex justify-between">
                                   <dt className="text-gray-600">{t('groupSize')}</dt>
-                                  <dd className="text-gray-900">{product.group_size}</dd>
+                                  <dd className="text-gray-900">{groupSizeLabel}</dd>
                                 </div>
                               )}
                             </dl>
