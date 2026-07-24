@@ -18,6 +18,8 @@ export type AdminProductCloneResult = {
     media: number
     details: number
     faqs: number
+    whyChoose: number
+    tourAudience: number
     schedules: number
     productOptions: number
     tourCourses: number
@@ -162,6 +164,8 @@ async function cloneAdminProductChildren(
     media: 0,
     details: 0,
     faqs: 0,
+    whyChoose: 0,
+    tourAudience: 0,
     schedules: 0,
     productOptions: 0,
     tourCourses: 0,
@@ -299,6 +303,50 @@ async function cloneAdminProductChildren(
     const { error } = await db.from('product_faq_links').insert(faqInserts as never)
     if (error) throw error
     counts.faqs = faqInserts.length
+  }
+
+  // --- why choose links ---
+  const { data: whyChooseLinks, error: whyChooseErr } = await db
+    .from('product_why_choose_links')
+    .select('*')
+    .eq('product_id', sourceProductId)
+
+  if (whyChooseErr) throw whyChooseErr
+  if (whyChooseLinks && whyChooseLinks.length > 0) {
+    const whyChooseInserts = whyChooseLinks.map((row) => ({
+      ...omitKeys(row as Record<string, unknown>, [
+        'id',
+        'created_at',
+        'updated_at',
+      ]),
+      product_id: newProductId,
+    }))
+    const { error } = await db.from('product_why_choose_links').insert(whyChooseInserts as never)
+    if (error) throw error
+    counts.whyChoose = whyChooseInserts.length
+  }
+
+  // --- tour audience links ---
+  const { data: tourAudienceLinks, error: tourAudienceErr } = await db
+    .from('product_tour_audience_links')
+    .select('*')
+    .eq('product_id', sourceProductId)
+
+  if (tourAudienceErr) throw tourAudienceErr
+  if (tourAudienceLinks && tourAudienceLinks.length > 0) {
+    const tourAudienceInserts = tourAudienceLinks.map((row) => ({
+      ...omitKeys(row as Record<string, unknown>, [
+        'id',
+        'created_at',
+        'updated_at',
+      ]),
+      product_id: newProductId,
+    }))
+    const { error } = await db
+      .from('product_tour_audience_links')
+      .insert(tourAudienceInserts as never)
+    if (error) throw error
+    counts.tourAudience = tourAudienceInserts.length
   }
 
   // --- detail content library links ---

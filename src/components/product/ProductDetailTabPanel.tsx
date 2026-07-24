@@ -1,16 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import {
   BookOpen,
   Map,
   CalendarDays,
-  Info,
-  CheckCircle2,
-  Settings,
-  Shield,
   type LucideIcon,
 } from 'lucide-react'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
@@ -22,6 +18,11 @@ import ProductDetailDetailsTab, {
 import ProductDetailMobileTabSheet from '@/components/product/ProductDetailMobileTabSheet'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import { fetchTagLabelMap, type TagLabelMap } from '@/lib/productTagDisplay'
+import {
+  THINGS_TO_KNOW_OPERATION_FIELD_IDS,
+  THINGS_TO_KNOW_SECTION_CONFIGS,
+  getThingsToKnowSectionVisibility,
+} from '@/lib/thingsToKnowSections'
 import type {
   ProductDetailsFields,
   ProductDetailsTabProduct,
@@ -45,14 +46,14 @@ type TabPanelProductDetails = ProductDetailsFields & {
   greeting?: string | null
 }
 
+const DETAIL_TAB_IDS = ['basic', 'included', ...THINGS_TO_KNOW_OPERATION_FIELD_IDS, 'policy'] as const
+type DetailTabId = (typeof DETAIL_TAB_IDS)[number]
+
 type ProductDetailTabId =
   | 'overview'
   | 'itinerary'
   | 'tour-schedule'
-  | 'basic'
-  | 'included'
-  | 'logistics'
-  | 'policy'
+  | DetailTabId
 
 type ProductDetailTabPanelProps = {
   productId: string
@@ -72,15 +73,13 @@ const VALID_TABS: ProductDetailTabId[] = [
   'overview',
   'itinerary',
   'tour-schedule',
-  'basic',
-  'included',
-  'logistics',
-  'policy',
+  ...DETAIL_TAB_IDS,
 ]
 
 const LEGACY_TAB_MAP: Record<string, ProductDetailTabId> = {
   details: 'basic',
   faq: 'overview',
+  logistics: 'pickup_drop_info',
 }
 
 function normalizeTabId(tab: string | null): ProductDetailTabId | null {
@@ -93,14 +92,7 @@ function normalizeTabId(tab: string | null): ProductDetailTabId | null {
 
 type TabConfig = {
   id: ProductDetailTabId
-  labelKey:
-    | 'tabOverview'
-    | 'tabItinerary'
-    | 'tabTourSchedule'
-    | 'detailTabBasic'
-    | 'detailTabIncluded'
-    | 'detailTabLogistics'
-    | 'detailTabPolicy'
+  labelKey: string
   icon: LucideIcon
   iconBg: string
   iconColor: string
@@ -112,7 +104,7 @@ type TabConfig = {
     | 'detail-tab-details'
 }
 
-const TAB_CONFIG: TabConfig[] = [
+const TOP_TAB_CONFIG: TabConfig[] = [
   {
     id: 'overview',
     labelKey: 'tabOverview',
@@ -140,43 +132,21 @@ const TAB_CONFIG: TabConfig[] = [
     activeLabel: 'text-orange-700',
     zone: 'detail-tab-schedule',
   },
-  {
-    id: 'basic',
-    labelKey: 'detailTabBasic',
-    icon: Info,
-    iconBg: 'bg-indigo-100',
-    iconColor: 'text-indigo-600',
-    activeLabel: 'text-indigo-700',
-    zone: 'detail-tab-details',
-  },
-  {
-    id: 'included',
-    labelKey: 'detailTabIncluded',
-    icon: CheckCircle2,
-    iconBg: 'bg-green-100',
-    iconColor: 'text-green-600',
-    activeLabel: 'text-green-700',
-    zone: 'detail-tab-details',
-  },
-  {
-    id: 'logistics',
-    labelKey: 'detailTabLogistics',
-    icon: Settings,
-    iconBg: 'bg-purple-100',
-    iconColor: 'text-purple-600',
-    activeLabel: 'text-purple-700',
-    zone: 'detail-tab-details',
-  },
-  {
-    id: 'policy',
-    labelKey: 'detailTabPolicy',
-    icon: Shield,
-    iconBg: 'bg-rose-100',
-    iconColor: 'text-rose-600',
-    activeLabel: 'text-rose-700',
-    zone: 'detail-tab-details',
-  },
 ]
+
+const DETAIL_TAB_CONFIG: TabConfig[] = THINGS_TO_KNOW_SECTION_CONFIGS.filter((section) =>
+  (DETAIL_TAB_IDS as readonly string[]).includes(section.id)
+).map((section) => ({
+  id: section.id as DetailTabId,
+  labelKey: section.labelKey,
+  icon: section.icon,
+  iconBg: section.iconBgClassName,
+  iconColor: section.iconClassName,
+  activeLabel: section.iconClassName,
+  zone: 'detail-tab-details' as const,
+}))
+
+const TAB_CONFIG: TabConfig[] = [...TOP_TAB_CONFIG, ...DETAIL_TAB_CONFIG]
 
 export default function ProductDetailTabPanel({
   productId,
@@ -217,10 +187,24 @@ export default function ProductDetailTabPanel({
     void fetchTagLabelMap(unique).then(setTagLabelMap)
   }, [product.tags, productDetails?.tags])
 
-  const tabs = TAB_CONFIG.map((tab) => ({
-    ...tab,
-    label: t(tab.labelKey),
-  }))
+  const sectionVisibility = useMemo(
+    () => getThingsToKnowSectionVisibility(productDetails),
+    [productDetails]
+  )
+
+  const tabs = useMemo(
+    () =>
+      TAB_CONFIG.filter((tab) => {
+        if (tab.id === 'overview' || tab.id === 'itinerary' || tab.id === 'tour-schedule') {
+          return true
+        }
+        return sectionVisibility[tab.id as keyof typeof sectionVisibility]
+      }).map((tab) => ({
+        ...tab,
+        label: t(tab.labelKey),
+      })),
+    [sectionVisibility, t]
+  )
 
   const activeTabConfig = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
 
@@ -274,25 +258,23 @@ export default function ProductDetailTabPanel({
           </CustomerPageZone>
         )
 
-      case 'basic':
-      case 'included':
-      case 'logistics':
-      case 'policy':
-        return (
-          <CustomerPageZone zone="detail-tab-details">
-            <ProductDetailDetailsTab
-              product={product}
-              productDetails={productDetails}
-              categoryLabel={categoryLabel}
-              durationLabel={durationLabel}
-              locale={locale}
-              tagLabelMap={tagLabelMap}
-              section={activeTab as ProductDetailSection}
-            />
-          </CustomerPageZone>
-        )
-
       default:
+        if ((DETAIL_TAB_IDS as readonly string[]).includes(activeTab)) {
+          return (
+            <CustomerPageZone zone="detail-tab-details">
+              <ProductDetailDetailsTab
+                productId={productId}
+                product={product}
+                productDetails={productDetails}
+                categoryLabel={categoryLabel}
+                durationLabel={durationLabel}
+                locale={locale}
+                tagLabelMap={tagLabelMap}
+                section={activeTab as ProductDetailSection}
+              />
+            </CustomerPageZone>
+          )
+        }
         return null
     }
   }

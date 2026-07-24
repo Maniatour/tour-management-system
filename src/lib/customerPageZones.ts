@@ -27,6 +27,8 @@ export type CustomerPageZone =
   | 'detail-recommendations-bought-together'
   | 'detail-tabs'
   | 'detail-tab-overview'
+  | 'detail-why-choose-mania'
+  | 'detail-things-to-know-audience'
   | 'detail-tab-itinerary'
   | 'detail-tab-schedule'
   | 'detail-tab-details'

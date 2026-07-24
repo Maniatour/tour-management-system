@@ -72,14 +72,15 @@ export default function CustomerPageSloganEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const { row, values } = await fetchProductDetailsForAdminEdit(productId, editLocale)
+      const { row } = await fetchProductDetailsForAdminEdit(productId, editLocale)
+      const formSource = row ?? {}
       const nextForm: TopSloganForm = {
-        slogan1: stripHtmlToPlainText(String(values.slogan1 ?? '')),
-        slogan2: stripHtmlToPlainText(String(values.slogan2 ?? '')),
+        slogan1: stripHtmlToPlainText(String(formSource.slogan1 ?? '')),
+        slogan2: stripHtmlToPlainText(String(formSource.slogan2 ?? '')),
       }
       const nextVisibility: TopSloganVisibility = {
-        slogan1: readVisibility(values, 'slogan1'),
-        slogan2: readVisibility(values, 'slogan2'),
+        slogan1: readVisibility(formSource, 'slogan1'),
+        slogan2: readVisibility(formSource, 'slogan2'),
       }
       setRowId(row?.id ? String(row.id) : null)
       setForm(nextForm)

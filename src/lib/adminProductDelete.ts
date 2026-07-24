@@ -172,6 +172,8 @@ export async function deleteAdminProductCascade(
     'product_details_multilingual',
     'product_details',
     'product_faq_links',
+    'product_why_choose_links',
+    'product_tour_audience_links',
     'product_detail_content_links',
     'product_faqs',
     'product_schedules',

@@ -63,6 +63,7 @@ export type ProductDetails = {
   greeting: string | null
   companion_recruitment_info: string | null
   notice_info: string | null
+  vehicle_info: string | null
   important_notes: string | null
   private_tour_info: string | null
   cancellation_policy: string | null
@@ -219,6 +220,7 @@ export type ProductDetailsFields = {
   small_group_info?: string | null
   companion_recruitment_info?: string | null
   notice_info?: string | null
+  vehicle_info?: string | null
   important_notes?: string | null
   private_tour_info?: string | null
   cancellation_policy?: string | null

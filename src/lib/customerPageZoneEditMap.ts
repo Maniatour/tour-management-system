@@ -1,5 +1,10 @@
 import type { CustomerPageZone } from '@/lib/customerPageZones'
 import type { TranslationFieldDef } from '@/lib/customerPageTranslations'
+import {
+  THINGS_TO_KNOW_SECTION_CONFIGS,
+  type ThingsToKnowCoreSectionId,
+  type ThingsToKnowSectionId,
+} from '@/lib/thingsToKnowSections'
 
 export type DetailFieldKey =
   | 'slogan1'
@@ -18,6 +23,7 @@ export type DetailFieldKey =
   | 'small_group_info'
   | 'companion_recruitment_info'
   | 'notice_info'
+  | 'vehicle_info'
   | 'important_notes'
   | 'private_tour_info'
   | 'cancellation_policy'
@@ -74,6 +80,8 @@ export type ZoneEditConfig = {
   editType: ZoneEditType
   homeSettingsKind?: HomeSettingsKind
   adminTab?: string
+  /** detail-things-to-know 탭에서 열 하위 섹션 */
+  thingsToKnowSection?: string
   detailFields?: DetailFieldKey[]
   basicFields?: BasicFieldKey[]
   translationNamespace?: string
@@ -102,6 +110,7 @@ export const DETAIL_FIELD_LABELS: Record<DetailFieldKey, string> = {
   small_group_info: '소그룹 안내',
   companion_recruitment_info: '동행 모집 안내',
   notice_info: '유의사항',
+  vehicle_info: '차량 정보',
   important_notes: '중요 안내',
   private_tour_info: '단독 투어 안내',
   cancellation_policy: '취소·환불 정책',
@@ -163,6 +172,8 @@ export const ADMIN_TAB_LABELS: Record<string, string> = {
   coupons: '쿠폰 관리',
   'detail-highlights': '투어 하이라이트',
   'detail-slogan': '상단 슬로건',
+  'detail-why-choose': 'Why choose Mania Tour',
+  'detail-tour-audience': '추천 대상',
   'detail-overview': '투어 소개',
   'detail-tour-courses': '투어 코스 내용',
   'detail-schedule': '여행 일정',
@@ -402,6 +413,20 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     adminTab: 'detail-overview',
     requiresProduct: true,
     note: '인사말·투어 설명은 상세정보 DB에서 직접 편집합니다. description이 비어 있으면 products 요약이 표시됩니다.',
+  },
+  'detail-why-choose-mania': {
+    label: 'Why choose Mania Tour',
+    editType: 'admin-tab',
+    adminTab: 'detail-why-choose',
+    requiresProduct: true,
+    note: '라이브러리에서 항목을 선택해 이 투어에 연결합니다. 항목 내용은 콘텐츠 라이브러리에서 공유·수정할 수 있습니다.',
+  },
+  'detail-things-to-know-audience': {
+    label: '추천 대상',
+    editType: 'admin-tab',
+    adminTab: 'detail-tour-audience',
+    requiresProduct: true,
+    note: '추천/비추천 대상 항목을 라이브러리에서 연결합니다. 기본 정보 아래 2열로 표시됩니다.',
   },
   'detail-tab-itinerary': {
     label: '일정(코스)',
@@ -832,6 +857,49 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   },
 }
 
+const THINGS_TO_KNOW_SECTION_ZONE_PREFIX = 'detail-things-to-know-'
+
+const THINGS_TO_KNOW_CORE_SECTION_LABELS: Record<ThingsToKnowCoreSectionId, string> = {
+  basic: '기본 정보',
+  audience: '추천 대상',
+  included: '포함 / 불포함',
+  policy: '정책',
+}
+
+/** 알아두실 사항 아코디언 항목별 zone id (data-customer-zone) */
+export function thingsToKnowSectionZoneId(sectionId: ThingsToKnowSectionId): string {
+  return `${THINGS_TO_KNOW_SECTION_ZONE_PREFIX}${sectionId}`
+}
+
+export function parseThingsToKnowSectionFromZone(zone: string): ThingsToKnowSectionId | null {
+  if (!zone.startsWith(THINGS_TO_KNOW_SECTION_ZONE_PREFIX)) return null
+  const sectionId = zone.slice(THINGS_TO_KNOW_SECTION_ZONE_PREFIX.length)
+  if ((THINGS_TO_KNOW_SECTION_CONFIGS as { id: string }[]).some((s) => s.id === sectionId)) {
+    return sectionId as ThingsToKnowSectionId
+  }
+  return null
+}
+
+function buildThingsToKnowSectionZoneConfig(sectionId: ThingsToKnowSectionId): ZoneEditConfig {
+  if (sectionId === 'audience') {
+    return CUSTOMER_PAGE_ZONE_EDIT_MAP['detail-things-to-know-audience']!
+  }
+
+  const section = THINGS_TO_KNOW_SECTION_CONFIGS.find((item) => item.id === sectionId)
+  const label =
+    section?.detailField != null
+      ? DETAIL_FIELD_LABELS[section.detailField]
+      : THINGS_TO_KNOW_CORE_SECTION_LABELS[sectionId as ThingsToKnowCoreSectionId]
+
+  return {
+    label,
+    editType: 'admin-tab',
+    adminTab: 'detail-things-to-know',
+    thingsToKnowSection: sectionId,
+    requiresProduct: true,
+  }
+}
+
 const DYNAMIC_HOME_SECTION_KINDS = [
   'reviews',
   'faq',
@@ -863,5 +931,14 @@ export function resolveCustomerPageZone(zone: string): CustomerPageZone {
 }
 
 export function getZoneEditConfig(zone: string): ZoneEditConfig | undefined {
-  return CUSTOMER_PAGE_ZONE_EDIT_MAP[resolveCustomerPageZone(zone)]
+  const resolved = resolveCustomerPageZone(zone)
+  if (resolved in CUSTOMER_PAGE_ZONE_EDIT_MAP) {
+    return CUSTOMER_PAGE_ZONE_EDIT_MAP[resolved]
+  }
+  const thingsSection =
+    parseThingsToKnowSectionFromZone(zone) ?? parseThingsToKnowSectionFromZone(resolved)
+  if (thingsSection) {
+    return buildThingsToKnowSectionZoneConfig(thingsSection)
+  }
+  return undefined
 }

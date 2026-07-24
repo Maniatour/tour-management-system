@@ -11,7 +11,7 @@ import type {
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { readPublicOperatorIdBrowser } from '@/lib/operators/readPublicOperatorIdBrowser'
 import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
-import { fetchDefaultProductDetailsRowForAdmin } from '@/lib/productDetailsMultilingualAdmin'
+import { fetchDefaultProductDetailsRowForAdmin, mergeSameLocaleDetailRows, DEFAULT_PRODUCT_DETAILS_VARIANT_KEY } from '@/lib/productDetailsMultilingualAdmin'
 import { contentFallbackOrder, normalizeSiteLocale } from '@/lib/siteLocales'
 import {
   applyDetailContentLibraryOverlay,
@@ -42,7 +42,19 @@ async function loadDetailsRowForLanguage(
   productId: string,
   languageCode: string
 ): Promise<ProductDetails | null> {
-  const { data: commonDetails, error: commonError } = await supabase
+  const { data: defaultRows, error: defaultError } = await supabase
+    .from('product_details_multilingual')
+    .select('*')
+    .eq('product_id', productId)
+    .eq('language_code', languageCode)
+    .eq('variant_key', DEFAULT_PRODUCT_DETAILS_VARIANT_KEY)
+
+  if (!defaultError && defaultRows && defaultRows.length > 0) {
+    const merged = mergeSameLocaleDetailRows(defaultRows as Array<Record<string, unknown>>)
+    if (merged) return merged as unknown as ProductDetails
+  }
+
+  const { data: sharedRows, error: sharedError } = await supabase
     .from('product_details_multilingual')
     .select('*')
     .eq('product_id', productId)
@@ -50,19 +62,19 @@ async function loadDetailsRowForLanguage(
     .is('channel_id', null)
     .limit(1)
 
-  if (!commonError && commonDetails && commonDetails.length > 0) {
-    return commonDetails[0] as unknown as ProductDetails
+  if (!sharedError && sharedRows && sharedRows.length > 0) {
+    return sharedRows[0] as unknown as ProductDetails
   }
 
-  const { data: channelDetails, error: channelError } = await supabase
+  const { data: channelRows, error: channelError } = await supabase
     .from('product_details_multilingual')
     .select('*')
     .eq('product_id', productId)
     .eq('language_code', languageCode)
     .limit(1)
 
-  if (!channelError && channelDetails && channelDetails.length > 0) {
-    return channelDetails[0] as unknown as ProductDetails
+  if (!channelError && channelRows && channelRows.length > 0) {
+    return channelRows[0] as unknown as ProductDetails
   }
 
   return null

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Save } from 'lucide-react'
 import LightRichEditor from '@/components/LightRichEditor'
 import ReusableDetailFieldPicker from '@/components/product/ReusableDetailFieldPicker'
 import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
@@ -25,6 +25,16 @@ import {
 } from '@/lib/productDetailsMultilingualAdmin'
 import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
+import CustomerPageTourAudienceEmbed from '@/components/product/CustomerPageTourAudienceEmbed'
+import {
+  THINGS_TO_KNOW_ADMIN_SECTION_IDS,
+  THINGS_TO_KNOW_DETAIL_FIELDS_BY_GROUP,
+  THINGS_TO_KNOW_OPERATION_FIELD_IDS,
+  THINGS_TO_KNOW_SECTION_CONFIGS,
+  getThingsToKnowCustomerPageVisibilityKey,
+  isThingsToKnowOperationField,
+  type ThingsToKnowSectionId,
+} from '@/lib/thingsToKnowSections'
 import {
   detailContentLegacyColumns,
   fetchProductDetailContentLinks,
@@ -36,27 +46,20 @@ import {
   type ReusableDetailKind,
 } from '@/lib/reusableContentLibrary'
 
-type SectionId = 'basic' | 'included' | 'logistics' | 'policy'
+type SectionId = ThingsToKnowSectionId
 
-const SECTION_IDS: SectionId[] = ['basic', 'included', 'logistics', 'policy']
+const SECTION_IDS: SectionId[] = THINGS_TO_KNOW_ADMIN_SECTION_IDS
 
-const DETAIL_FIELDS_BY_SECTION: Record<Exclude<SectionId, 'basic'>, DetailFieldKey[]> = {
-  included: ['included', 'not_included'],
-  logistics: [
-    'pickup_drop_info',
-    'luggage_info',
-    'tour_operation_info',
-    'preparation_info',
-    'small_group_info',
-    'companion_recruitment_info',
-    'notice_info',
-  ],
-  policy: [
-    'important_notes',
-    'private_tour_info',
-    'cancellation_policy',
-    'chat_announcement',
-  ],
+const ALL_DETAIL_FIELD_KEYS: DetailFieldKey[] = [
+  ...THINGS_TO_KNOW_DETAIL_FIELDS_BY_GROUP.included,
+  ...THINGS_TO_KNOW_OPERATION_FIELD_IDS,
+  ...THINGS_TO_KNOW_DETAIL_FIELDS_BY_GROUP.policy,
+]
+
+function getSectionDetailFields(section: SectionId): DetailFieldKey[] {
+  if (section === 'basic' || section === 'audience') return []
+  if (isThingsToKnowOperationField(section)) return [section]
+  return THINGS_TO_KNOW_DETAIL_FIELDS_BY_GROUP[section]
 }
 
 const GROUP_SIZE_OPTIONS = [
@@ -84,14 +87,12 @@ type BasicForm = {
 type CustomerPageThingsToKnowEmbedProps = {
   productId: string
   locale?: string
+  initialSection?: SectionId
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
 }
 
-function readVisibility(
-  row: Record<string, unknown> | null,
-  key: DetailFieldKey
-): boolean {
+function readVisibility(row: Record<string, unknown> | null, key: string): boolean {
   const raw = row?.customer_page_visibility
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return true
   return (raw as Record<string, unknown>)[key] !== false
@@ -106,6 +107,7 @@ function emptyDetailForm(keys: DetailFieldKey[]): Partial<Record<DetailFieldKey,
 export default function CustomerPageThingsToKnowEmbed({
   productId,
   locale: localeProp,
+  initialSection,
   onSaved,
   onDirtyChange,
 }: CustomerPageThingsToKnowEmbedProps) {
@@ -119,13 +121,16 @@ export default function CustomerPageThingsToKnowEmbed({
   } = useCustomerPageEditLabels()
   const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(120)
   const sectionLabel = (id: SectionId) => {
+    if (isThingsToKnowOperationField(id)) {
+      return detailFieldLabel(id)
+    }
     switch (id) {
       case 'basic':
         return t('thingsToKnow.sectionBasic')
+      case 'audience':
+        return t('thingsToKnow.sectionAudience')
       case 'included':
         return t('thingsToKnow.sectionIncluded')
-      case 'logistics':
-        return t('thingsToKnow.sectionLogistics')
       case 'policy':
         return t('thingsToKnow.sectionPolicy')
     }
@@ -137,7 +142,16 @@ export default function CustomerPageThingsToKnowEmbed({
   useEffect(() => {
     setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
   }, [localeProp])
-  const [activeSection, setActiveSection] = useState<SectionId>('basic')
+
+  useEffect(() => {
+    if (initialSection) {
+      setActiveSection(initialSection)
+    }
+  }, [initialSection])
+  const [activeSection, setActiveSection] = useState<SectionId>(
+    () => initialSection ?? 'basic'
+  )
+  const [visibilityPanelOpen, setVisibilityPanelOpen] = useState(false)
   const [activeDetailField, setActiveDetailField] = useState<DetailFieldKey>('included')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -159,19 +173,23 @@ export default function CustomerPageThingsToKnowEmbed({
     tags: '',
   })
   const [detailForm, setDetailForm] = useState<Partial<Record<DetailFieldKey, string>>>({})
-  const [visibility, setVisibility] = useState<Partial<Record<DetailFieldKey, boolean>>>({})
+  const [visibility, setVisibility] = useState<Partial<Record<string, boolean>>>({})
   const [detailLibraryIds, setDetailLibraryIds] = useState<
     Partial<Record<ReusableDetailKind, string | null>>
   >({})
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
-  const sectionDetailFields = useMemo(() => {
-    if (activeSection === 'basic') return []
-    return DETAIL_FIELDS_BY_SECTION[activeSection]
-  }, [activeSection])
+  const sectionDetailFields = useMemo(
+    () => getSectionDetailFields(activeSection),
+    [activeSection]
+  )
 
   useEffect(() => {
-    if (activeSection !== 'basic' && sectionDetailFields.length > 0) {
+    if (
+      activeSection !== 'basic' &&
+      activeSection !== 'audience' &&
+      sectionDetailFields.length > 0
+    ) {
       setActiveDetailField(sectionDetailFields[0])
     }
   }, [activeSection, sectionDetailFields])
@@ -194,17 +212,17 @@ export default function CustomerPageThingsToKnowEmbed({
       setDetailLibraryIds(libraryMap)
       const productRow = (productResult.data ?? {}) as Record<string, unknown>
       const locationMap = buildProductTranslationMap(productRow, translationRows)
-      const allDetailKeys = [
-        ...DETAIL_FIELDS_BY_SECTION.included,
-        ...DETAIL_FIELDS_BY_SECTION.logistics,
-        ...DETAIL_FIELDS_BY_SECTION.policy,
-      ]
+      const allDetailKeys = ALL_DETAIL_FIELD_KEYS
 
       const nextDetailForm = emptyDetailForm(allDetailKeys)
-      const nextVisibility: Partial<Record<DetailFieldKey, boolean>> = {}
+      const nextVisibility: Partial<Record<string, boolean>> = {}
       allDetailKeys.forEach((key) => {
         nextDetailForm[key] = String(values[key] ?? '')
         nextVisibility[key] = readVisibility(values, key)
+      })
+      THINGS_TO_KNOW_SECTION_CONFIGS.forEach((section) => {
+        const visibilityKey = getThingsToKnowCustomerPageVisibilityKey(section.id)
+        nextVisibility[visibilityKey] = readVisibility(values, visibilityKey)
       })
 
       const tags = Array.isArray(values.tags)
@@ -293,11 +311,7 @@ export default function CustomerPageThingsToKnowEmbed({
         ...visibility,
       }
 
-      const allDetailKeys = [
-        ...DETAIL_FIELDS_BY_SECTION.included,
-        ...DETAIL_FIELDS_BY_SECTION.logistics,
-        ...DETAIL_FIELDS_BY_SECTION.policy,
-      ]
+      const allDetailKeys = ALL_DETAIL_FIELD_KEYS
 
       const detailPayload: Record<string, unknown> = {
         customer_page_visibility: mergedVisibility,
@@ -420,6 +434,28 @@ export default function CustomerPageThingsToKnowEmbed({
     }
   }
 
+  const setSectionVisible = (sectionId: SectionId, visible: boolean) => {
+    const key = getThingsToKnowCustomerPageVisibilityKey(sectionId)
+    setVisibility((prev) => ({ ...prev, [key]: visible }))
+  }
+
+  const isSectionVisible = (sectionId: SectionId) => {
+    const key = getThingsToKnowCustomerPageVisibilityKey(sectionId)
+    return visibility[key] !== false
+  }
+
+  const renderSectionVisibilityToggle = (sectionId: SectionId) => (
+    <label className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+      <input
+        type="checkbox"
+        checked={isSectionVisible(sectionId)}
+        onChange={(e) => setSectionVisible(sectionId, e.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
+      />
+      {showOnCustomerPage}
+    </label>
+  )
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -453,9 +489,57 @@ export default function CustomerPageThingsToKnowEmbed({
         ))}
       </div>
 
+      <div className="rounded-xl border border-border/60 bg-card shadow-sm">
+        <button
+          type="button"
+          onClick={() => setVisibilityPanelOpen((open) => !open)}
+          aria-expanded={visibilityPanelOpen}
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted/30"
+        >
+          <div className="min-w-0 space-y-0.5">
+            <h4 className="text-sm font-semibold text-foreground">
+              {t('thingsToKnow.visibilityTitle')}
+            </h4>
+            {!visibilityPanelOpen ? (
+              <p className="text-[11px] text-muted-foreground">{t('thingsToKnow.visibilityHint')}</p>
+            ) : null}
+          </div>
+          {visibilityPanelOpen ? (
+            <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          )}
+        </button>
+
+        {visibilityPanelOpen ? (
+          <div className="space-y-3 border-t border-border/60 px-4 pb-4 pt-3">
+            <p className="text-[11px] text-muted-foreground">{t('thingsToKnow.visibilityHint')}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {THINGS_TO_KNOW_SECTION_CONFIGS.map((section) => (
+                <label
+                  key={section.id}
+                  className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSectionVisible(section.id)}
+                    onChange={(e) => setSectionVisible(section.id, e.target.checked)}
+                    className="h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-ring"
+                  />
+                  <span className="font-medium text-foreground">{sectionLabel(section.id)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       {activeSection === 'basic' ? (
         <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
-          <h4 className="text-sm font-semibold text-foreground">기본 정보 (products)</h4>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-foreground">기본 정보 (products)</h4>
+            {renderSectionVisibilityToggle('basic')}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-1 sm:col-span-2">
               <span className="text-xs font-medium">서브 카테고리 (sub_category)</span>
@@ -619,8 +703,26 @@ export default function CustomerPageThingsToKnowEmbed({
             {t('thingsToKnow.highlightsHint')}
           </p>
         </div>
+      ) : activeSection === 'audience' ? (
+        <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <h4 className="text-sm font-semibold text-foreground">{sectionLabel('audience')}</h4>
+            {renderSectionVisibilityToggle('audience')}
+          </div>
+          <CustomerPageTourAudienceEmbed
+            productId={productId}
+            locale={editLocale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        </div>
       ) : (
         <div className="space-y-3">
+          {!isThingsToKnowOperationField(activeSection) ? (
+            <div className="flex flex-wrap items-center justify-end">
+              {renderSectionVisibilityToggle(activeSection)}
+            </div>
+          ) : null}
+          {sectionDetailFields.length > 1 ? (
           <div className="flex flex-wrap gap-1.5">
             {sectionDetailFields.map((field) => (
               <button
@@ -637,6 +739,7 @@ export default function CustomerPageThingsToKnowEmbed({
               </button>
             ))}
           </div>
+          ) : null}
 
           <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">

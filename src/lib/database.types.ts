@@ -5529,6 +5529,174 @@ export type Database = {
         }
         Relationships: []
       }
+      why_choose_library: {
+        Row: {
+          content_i18n: Json
+          created_at: string | null
+          description: string
+          description_en: string | null
+          icon_key: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          title: string
+          title_en: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          content_i18n?: Json
+          created_at?: string | null
+          description?: string
+          description_en?: string | null
+          icon_key?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          title?: string
+          title_en?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          content_i18n?: Json
+          created_at?: string | null
+          description?: string
+          description_en?: string | null
+          icon_key?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          title?: string
+          title_en?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      product_why_choose_links: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          library_id: string
+          order_index: number | null
+          product_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          library_id: string
+          order_index?: number | null
+          product_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          library_id?: string
+          order_index?: number | null
+          product_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_why_choose_links_library_id_fkey"
+            columns: ["library_id"]
+            isOneToOne: false
+            referencedRelation: "why_choose_library"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_why_choose_links_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tour_audience_library: {
+        Row: {
+          audience_kind: string
+          content_i18n: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          title: string
+          title_en: string | null
+          updated_at: string
+        }
+        Insert: {
+          audience_kind: string
+          content_i18n?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          title?: string
+          title_en?: string | null
+          updated_at?: string
+        }
+        Update: {
+          audience_kind?: string
+          content_i18n?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          title?: string
+          title_en?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      product_tour_audience_links: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          library_id: string
+          order_index: number
+          product_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          library_id: string
+          order_index?: number
+          product_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          library_id?: string
+          order_index?: number
+          product_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_tour_audience_links_library_id_fkey"
+            columns: ["library_id"]
+            isOneToOne: false
+            referencedRelation: "tour_audience_library"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_tour_audience_links_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       detail_content_library: {
         Row: {
           body: string

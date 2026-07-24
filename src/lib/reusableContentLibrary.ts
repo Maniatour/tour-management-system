@@ -17,6 +17,7 @@ export const REUSABLE_DETAIL_KINDS = [
   'small_group_info',
   'companion_recruitment_info',
   'notice_info',
+  'vehicle_info',
   // 정책
   'important_notes',
   'cancellation_policy',
@@ -38,6 +39,7 @@ export const REUSABLE_OPERATION_KINDS = [
   'small_group_info',
   'companion_recruitment_info',
   'notice_info',
+  'vehicle_info',
 ] as const satisfies readonly ReusableDetailKind[]
 
 export const REUSABLE_POLICY_KINDS = [
@@ -55,6 +57,7 @@ export const REUSABLE_DETAIL_KIND_LABELS: Record<ReusableDetailKind, string> = {
   small_group_info: '소그룹 안내',
   companion_recruitment_info: '동행 모집 안내',
   notice_info: '유의사항',
+  vehicle_info: '차량 정보',
   important_notes: 'IMPORTANT NOTES',
   cancellation_policy: '취소·환불 정책',
   private_tour_info: '단독투어 안내',

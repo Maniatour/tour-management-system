@@ -44,6 +44,7 @@ interface ProductDetailsFields {
   small_group_info: string
   companion_recruitment_info: string
   notice_info: string
+  vehicle_info?: string
   important_notes: string
   private_tour_info: string
   cancellation_policy: string
@@ -76,6 +77,7 @@ interface ProductDetailsFormData {
       small_group_info: boolean
       companion_recruitment_info: boolean
       notice_info: boolean
+      vehicle_info?: boolean
       important_notes: boolean
       private_tour_info: boolean
       cancellation_policy: boolean
@@ -718,6 +720,7 @@ export default function ProductDetailsTab({
     small_group_info: '👥 Small Group Info',
     companion_recruitment_info: '🤝 동행모집 안내',
     notice_info: '💵 Payment Notice',
+    vehicle_info: '🚌 Vehicle Information',
     important_notes: '⚠️ IMPORTANT NOTES',
     private_tour_info: '🔒 Private Tour Info',
     cancellation_policy: '📋 Cancellation Policy',

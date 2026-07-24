@@ -1,24 +1,27 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  Settings,
-  Shield,
-  type LucideIcon,
-} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
 import ProductDetailDetailsTab, {
   type ProductDetailSection,
 } from '@/components/product/ProductDetailDetailsTab'
-import { getProductDetailSectionVisibility } from '@/lib/productDetailSectionVisibility'
+import ProductDetailMobileTabSheet from '@/components/product/ProductDetailMobileTabSheet'
+import CustomerPageZone from '@/components/product/CustomerPageZone'
+import { thingsToKnowSectionZoneId } from '@/lib/customerPageZoneEditMap'
+import {
+  getThingsToKnowSectionVisibility,
+  isThingsToKnowSectionEnabledOnCustomerPage,
+  THINGS_TO_KNOW_SECTION_CONFIGS,
+} from '@/lib/thingsToKnowSections'
+import { fetchProductAttachedTourAudienceItems } from '@/lib/tourAudienceLibrary'
+import { supabase } from '@/lib/supabase'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
 import type { TagLabelMap } from '@/lib/productTagDisplay'
 
 type ProductDetailThingsToKnowAccordionProps = {
+  productId: string
   product: ProductDetailsTabProduct
   productDetails: ProductDetailsFields | null
   categoryLabel: string
@@ -27,46 +30,8 @@ type ProductDetailThingsToKnowAccordionProps = {
   tagLabelMap: TagLabelMap
 }
 
-type AccordionItem = {
-  id: ProductDetailSection
-  labelKey: 'detailTabIncluded' | 'detailTabBasic' | 'detailTabLogistics' | 'detailTabPolicy'
-  icon: LucideIcon
-  iconClassName: string
-  iconBgClassName: string
-}
-
-const ACCORDION_ITEMS: AccordionItem[] = [
-  {
-    id: 'basic',
-    labelKey: 'detailTabBasic',
-    icon: Info,
-    iconClassName: 'text-indigo-600',
-    iconBgClassName: 'bg-indigo-50',
-  },
-  {
-    id: 'included',
-    labelKey: 'detailTabIncluded',
-    icon: CheckCircle2,
-    iconClassName: 'text-emerald-600',
-    iconBgClassName: 'bg-emerald-50',
-  },
-  {
-    id: 'logistics',
-    labelKey: 'detailTabLogistics',
-    icon: Settings,
-    iconClassName: 'text-purple-600',
-    iconBgClassName: 'bg-purple-50',
-  },
-  {
-    id: 'policy',
-    labelKey: 'detailTabPolicy',
-    icon: Shield,
-    iconClassName: 'text-rose-600',
-    iconBgClassName: 'bg-rose-50',
-  },
-]
-
 export default function ProductDetailThingsToKnowAccordion({
+  productId,
   product,
   productDetails,
   categoryLabel,
@@ -75,14 +40,40 @@ export default function ProductDetailThingsToKnowAccordion({
   tagLabelMap,
 }: ProductDetailThingsToKnowAccordionProps) {
   const t = useTranslations('productDetail')
-  const [expandedId, setExpandedId] = useState<ProductDetailSection | null>(null)
-
-  const visibility = useMemo(
-    () => getProductDetailSectionVisibility(productDetails),
-    [productDetails]
+  const { isEditMode } = useCustomerPageEditMode()
+  const [expandedId, setExpandedId] = useState<ProductDetailSection | null>(() =>
+    isEditMode ? 'basic' : null
   )
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
+  const [mobileSection, setMobileSection] = useState<ProductDetailSection | null>(null)
+  const [hasAudienceItems, setHasAudienceItems] = useState(false)
 
-  const visibleItems = ACCORDION_ITEMS.filter((item) => visibility[item.id])
+  useEffect(() => {
+    let cancelled = false
+    void fetchProductAttachedTourAudienceItems(supabase as never, productId).then((items) => {
+      if (!cancelled) setHasAudienceItems(items.length > 0)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [productId])
+
+  const visibility = useMemo(() => {
+    const base = getThingsToKnowSectionVisibility(productDetails, {
+      includeEmptyInEditMode: isEditMode,
+    })
+    const audienceEnabled = isThingsToKnowSectionEnabledOnCustomerPage(productDetails, 'audience')
+    return {
+      ...base,
+      audience:
+        base.audience || (audienceEnabled && hasAudienceItems),
+    }
+  }, [hasAudienceItems, isEditMode, productDetails])
+
+  const visibleItems = useMemo(
+    () => THINGS_TO_KNOW_SECTION_CONFIGS.filter((item) => visibility[item.id]),
+    [visibility]
+  )
 
   if (visibleItems.length === 0) return null
 
@@ -90,14 +81,94 @@ export default function ProductDetailThingsToKnowAccordion({
     setExpandedId((current) => (current === id ? null : id))
   }
 
+  const openMobileSection = (id: ProductDetailSection) => {
+    setMobileSection(id)
+    setMobileSheetOpen(true)
+  }
+
+  const activeMobileConfig = visibleItems.find((item) => item.id === mobileSection)
+
+  const renderSectionContent = (sectionId: ProductDetailSection) => {
+    const content = (
+      <ProductDetailDetailsTab
+        productId={productId}
+        product={product}
+        productDetails={productDetails}
+        categoryLabel={categoryLabel}
+        durationLabel={durationLabel}
+        locale={locale}
+        tagLabelMap={tagLabelMap}
+        section={sectionId}
+        variant="airbnb"
+      />
+    )
+
+    if (sectionId === 'audience') {
+      return content
+    }
+
+    return (
+      <CustomerPageZone zone={thingsToKnowSectionZoneId(sectionId)} productId={productId}>
+        {content}
+      </CustomerPageZone>
+    )
+  }
+
   return (
     <section className="airbnb-things-to-know">
-      <h2 className="airbnb-detail-section-title">
-        {t('thingsToKnow')}
-      </h2>
+      <h2 className="airbnb-detail-section-title">{t('thingsToKnow')}</h2>
       <p className="airbnb-things-to-know-subtitle">{t('thingsToKnowSubtitle')}</p>
 
-      <div className="airbnb-things-accordion">
+      <nav
+        className="airbnb-things-to-know-icons sm:hidden"
+        aria-label={t('thingsToKnow')}
+      >
+        {visibleItems.map((item) => {
+          const Icon = item.icon
+          const isActive = mobileSection === item.id && mobileSheetOpen
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => openMobileSection(item.id)}
+              aria-selected={isActive}
+              aria-haspopup="dialog"
+              aria-expanded={isActive}
+              className="airbnb-things-to-know-icon-button"
+            >
+              <span
+                className={`airbnb-things-to-know-icon-wrap ${item.iconBgClassName} ${
+                  isActive ? 'is-active' : ''
+                }`}
+              >
+                <Icon className={`h-5 w-5 ${item.iconClassName}`} aria-hidden />
+              </span>
+              <span
+                className={`airbnb-things-to-know-icon-label ${
+                  isActive ? 'is-active' : ''
+                }`}
+              >
+                {t(item.labelKey)}
+              </span>
+            </button>
+          )
+        })}
+      </nav>
+
+      {activeMobileConfig ? (
+        <ProductDetailMobileTabSheet
+          open={mobileSheetOpen}
+          onOpenChange={setMobileSheetOpen}
+          title={t(activeMobileConfig.labelKey)}
+          icon={activeMobileConfig.icon}
+          iconBg={activeMobileConfig.iconBgClassName}
+          iconColor={activeMobileConfig.iconClassName}
+        >
+          {mobileSection ? renderSectionContent(mobileSection) : null}
+        </ProductDetailMobileTabSheet>
+      ) : null}
+
+      <div className="airbnb-things-accordion hidden sm:block">
         {visibleItems.map((item, index) => {
           const isExpanded = expandedId === item.id
           const isLast = index === visibleItems.length - 1
@@ -132,16 +203,7 @@ export default function ProductDetailThingsToKnowAccordion({
 
               {isExpanded ? (
                 <div className="airbnb-things-accordion-panel">
-                  <ProductDetailDetailsTab
-                    product={product}
-                    productDetails={productDetails}
-                    categoryLabel={categoryLabel}
-                    durationLabel={durationLabel}
-                    locale={locale}
-                    tagLabelMap={tagLabelMap}
-                    section={item.id}
-                    variant="airbnb"
-                  />
+                  {renderSectionContent(item.id)}
                 </div>
               ) : null}
             </div>

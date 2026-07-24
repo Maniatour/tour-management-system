@@ -38,6 +38,7 @@ export const LOCALE_READINESS_DETAIL_FIELDS = [
   'preparation_info',
   'small_group_info',
   'notice_info',
+  'vehicle_info',
   'cancellation_policy',
 ] as const
 

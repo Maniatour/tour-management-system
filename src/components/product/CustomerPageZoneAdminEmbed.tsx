@@ -12,10 +12,13 @@ import CustomerPageProductBasicEmbed from '@/components/product/CustomerPageProd
 import CustomerPageProductDetailsEmbed from '@/components/product/CustomerPageProductDetailsEmbed'
 import CustomerPageDetailHighlightsEmbed from '@/components/product/CustomerPageDetailHighlightsEmbed'
 import CustomerPageSloganEmbed from '@/components/product/CustomerPageSloganEmbed'
+import CustomerPageWhyChooseEmbed from '@/components/product/CustomerPageWhyChooseEmbed'
+import CustomerPageTourAudienceEmbed from '@/components/product/CustomerPageTourAudienceEmbed'
 import CustomerPageOverviewEmbed from '@/components/product/CustomerPageOverviewEmbed'
 import CustomerPageTourCoursesEmbed from '@/components/product/CustomerPageTourCoursesEmbed'
 import CustomerPageScheduleEmbed from '@/components/product/CustomerPageScheduleEmbed'
 import CustomerPageThingsToKnowEmbed from '@/components/product/CustomerPageThingsToKnowEmbed'
+import type { ThingsToKnowSectionId } from '@/lib/thingsToKnowSections'
 import CustomerPageFaqEmbed from '@/components/product/CustomerPageFaqEmbed'
 import CustomerPageProductRecommendationsEmbed, {
   sectionKeyFromRecommendationTab,
@@ -63,6 +66,7 @@ function NeedProductMessage() {
 }
 
 export default function CustomerPageZoneAdminEmbed({
+  config,
   zone,
   adminTab,
   productId,
@@ -84,7 +88,7 @@ export default function CustomerPageZoneAdminEmbed({
     zone === 'detail-sidebar-options' || zone === 'booking-options'
   const activeTab = zone === 'detail-tabs' || isBookingOptionsZone ? subTab : adminTab
   const tabLabel = ADMIN_TAB_LABELS[activeTab] ?? activeTab
-  const needsProduct = ['basic', 'media', 'details', 'schedule', 'tour-courses', 'faq', 'choices', 'options', 'dynamic-pricing', 'detail-highlights', 'detail-slogan', 'detail-overview', 'detail-tour-courses', 'detail-schedule', 'detail-things-to-know', 'detail-faq', 'detail-recommendations-viewed', 'detail-recommendations-for-you', 'detail-recommendations-bought-together'].includes(
+  const needsProduct = ['basic', 'media', 'details', 'schedule', 'tour-courses', 'faq', 'choices', 'options', 'dynamic-pricing', 'detail-highlights', 'detail-slogan', 'detail-overview', 'detail-why-choose', 'detail-tour-audience', 'detail-tour-courses', 'detail-schedule', 'detail-things-to-know', 'detail-faq', 'detail-recommendations-viewed', 'detail-recommendations-for-you', 'detail-recommendations-bought-together'].includes(
     activeTab
   )
 
@@ -187,6 +191,24 @@ export default function CustomerPageZoneAdminEmbed({
           />
         )
 
+      case 'detail-why-choose':
+        return (
+          <CustomerPageWhyChooseEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
+      case 'detail-tour-audience':
+        return (
+          <CustomerPageTourAudienceEmbed
+            productId={productId!}
+            locale={locale}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        )
+
       case 'detail-tour-courses':
         return (
           <CustomerPageTourCoursesEmbed
@@ -212,6 +234,9 @@ export default function CustomerPageZoneAdminEmbed({
           <CustomerPageThingsToKnowEmbed
             productId={productId!}
             locale={locale}
+            {...(config.thingsToKnowSection
+              ? { initialSection: config.thingsToKnowSection as ThingsToKnowSectionId }
+              : {})}
             {...(onSaved ? { onSaved } : {})}
           />
         )

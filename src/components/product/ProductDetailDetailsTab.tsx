@@ -6,16 +6,10 @@ import {
   Users,
   CheckCircle2,
   XCircle,
-  Car,
-  Luggage,
-  Settings,
-  Lightbulb,
-  Users2,
   AlertTriangle,
   Shield,
   Megaphone,
   ClipboardList,
-  Bus,
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -31,8 +25,14 @@ import {
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import ProductTourAudienceDisplay from '@/components/product/ProductTourAudienceDisplay'
+import {
+  isThingsToKnowOperationField,
+  THINGS_TO_KNOW_SECTION_CONFIGS,
+  type ThingsToKnowSectionId,
+} from '@/lib/thingsToKnowSections'
 
-export type ProductDetailSection = 'basic' | 'included' | 'logistics' | 'policy'
+export type ProductDetailSection = ThingsToKnowSectionId
 
 function DetailInfoBlock({
   icon: Icon,
@@ -40,12 +40,14 @@ function DetailInfoBlock({
   title,
   html,
   variant = 'default',
+  hideHeader = false,
 }: {
   icon: LucideIcon
   iconClassName: string
   title: string
   html: string
   variant?: 'default' | 'airbnb'
+  hideHeader?: boolean
 }) {
   return (
     <div
@@ -55,6 +57,7 @@ function DetailInfoBlock({
           : 'rounded-xl bg-slate-50 p-4 sm:border sm:border-slate-200 sm:bg-white sm:p-6 sm:shadow-sm'
       }
     >
+      {!hideHeader ? (
       <div
         className={
           variant === 'airbnb'
@@ -76,6 +79,7 @@ function DetailInfoBlock({
           {title}
         </h4>
       </div>
+      ) : null}
       <div
         className="prose prose-sm max-w-none text-xs leading-relaxed text-gray-700 sm:text-sm"
         dangerouslySetInnerHTML={{ __html: markdownToHtml(html) }}
@@ -95,6 +99,7 @@ function DetailEmptyState({ icon: Icon, message }: { icon: LucideIcon; message: 
 
 type ProductDetailDetailsTabProps = {
   product: ProductDetailsTabProduct
+  productId: string
   productDetails: ProductDetailsFields | null
   categoryLabel: string
   durationLabel: string
@@ -106,6 +111,7 @@ type ProductDetailDetailsTabProps = {
 
 export default function ProductDetailDetailsTab({
   product,
+  productId,
   productDetails,
   categoryLabel,
   durationLabel,
@@ -136,19 +142,10 @@ export default function ProductDetailDetailsTab({
     )
   }, [productDetails])
 
-  const hasVisibleLogisticsCards = useMemo(() => {
-    if (!productDetails) return false
-    const s = showDetailOnCustomerPage
-    return !!(
-      (productDetails.pickup_drop_info && s('pickup_drop_info')) ||
-      (productDetails.luggage_info && s('luggage_info')) ||
-      (productDetails.tour_operation_info && s('tour_operation_info')) ||
-      (productDetails.preparation_info && s('preparation_info')) ||
-      (productDetails.small_group_info && s('small_group_info')) ||
-      (productDetails.companion_recruitment_info && s('companion_recruitment_info')) ||
-      (productDetails.notice_info && s('notice_info'))
-    )
-  }, [productDetails])
+  const operationSectionConfig = useMemo(
+    () => THINGS_TO_KNOW_SECTION_CONFIGS.find((item) => item.id === section),
+    [section]
+  )
 
   const hasVisiblePolicyCards = useMemo(() => {
     if (!productDetails) return false
@@ -161,8 +158,8 @@ export default function ProductDetailDetailsTab({
     )
   }, [productDetails])
 
-  return (
-    <CustomerPageZone zone="detail-details-body" className="space-y-4 sm:space-y-6">
+  const body = (
+    <>
                     {/* 기본정보 */}
                     {section === 'basic' && (
                       <div className="space-y-4 sm:space-y-6">
@@ -309,6 +306,10 @@ export default function ProductDetailDetailsTab({
                       </div>
                     )}
 
+                    {section === 'audience' && (
+                      <ProductTourAudienceDisplay productId={productId} variant={variant} />
+                    )}
+
                     {/* 포함/불포함 */}
                     {section === 'included' && (
                       <div className="space-y-4">
@@ -337,80 +338,24 @@ export default function ProductDetailDetailsTab({
                       </div>
                     )}
 
-                    {/* 운영정보 */}
-                    {section === 'logistics' && (
-                      <div className="space-y-4">
-                        <div
-                          className={
-                            variant === 'airbnb'
-                              ? 'airbnb-detail-section-stack'
-                              : 'grid grid-cols-1 gap-4'
-                          }
-                        >
-                          {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
-<InfoBlock
-                              icon={Car}
-                              iconClassName="text-booking"
-                              title={t('pickupDropInfo')}
-                              html={productDetails.pickup_drop_info}
-                            />
+                    {isThingsToKnowOperationField(section) &&
+                      operationSectionConfig?.detailField &&
+                      productDetails?.[
+                        operationSectionConfig.detailField as keyof ProductDetailsFields
+                      ] &&
+                      showDetailOnCustomerPage(operationSectionConfig.detailField) && (
+                        <InfoBlock
+                          icon={operationSectionConfig.icon}
+                          iconClassName={operationSectionConfig.iconClassName}
+                          title={t(operationSectionConfig.labelKey)}
+                          hideHeader={variant === 'airbnb'}
+                          html={String(
+                            productDetails[
+                              operationSectionConfig.detailField as keyof ProductDetailsFields
+                            ] ?? ''
                           )}
-                          {productDetails?.luggage_info && showDetailOnCustomerPage('luggage_info') && (
-<InfoBlock
-                              icon={Luggage}
-                              iconClassName="text-yellow-600"
-                              title={t('luggageInfo')}
-                              html={productDetails.luggage_info}
-                            />
-                          )}
-                          {productDetails?.tour_operation_info && showDetailOnCustomerPage('tour_operation_info') && (
-<InfoBlock
-                              icon={Settings}
-                              iconClassName="text-purple-600"
-                              title={t('tourOperations')}
-                              html={productDetails.tour_operation_info}
-                            />
-                          )}
-                          {productDetails?.preparation_info && showDetailOnCustomerPage('preparation_info') && (
-<InfoBlock
-                              icon={Lightbulb}
-                              iconClassName="text-orange-600"
-                              title={t('preparationTips')}
-                              html={productDetails.preparation_info}
-                            />
-                          )}
-                          {productDetails?.small_group_info && showDetailOnCustomerPage('small_group_info') && (
-<InfoBlock
-                              icon={Users2}
-                              iconClassName="text-indigo-600"
-                              title={t('smallGroupInfo')}
-                              html={productDetails.small_group_info}
-                            />
-                          )}
-                          {productDetails?.companion_recruitment_info &&
-                            showDetailOnCustomerPage('companion_recruitment_info') && (
-  <InfoBlock
-                                icon={Users2}
-                                iconClassName="text-teal-600"
-                                title={t('companionRecruitment')}
-                                html={productDetails.companion_recruitment_info}
-                              />
-                            )}
-                          {productDetails?.notice_info && showDetailOnCustomerPage('notice_info') && (
-<InfoBlock
-                              icon={AlertTriangle}
-                              iconClassName="text-red-600"
-                              title={t('importantNotes')}
-                              html={productDetails.notice_info}
-                            />
-                          )}
-                        </div>
-
-                        {!hasVisibleLogisticsCards && (
-                          <DetailEmptyState icon={Bus} message={t('noLogisticsInfo')} />
-                        )}
-                      </div>
-                    )}
+                        />
+                      )}
 
                     {/* 정책 */}
                     {section === 'policy' && (
@@ -455,6 +400,16 @@ export default function ProductDetailDetailsTab({
                         )}
                       </div>
                     )}
+    </>
+  )
+
+  if (variant === 'airbnb') {
+    return <div className="space-y-4 sm:space-y-6">{body}</div>
+  }
+
+  return (
+    <CustomerPageZone zone="detail-details-body" className="space-y-4 sm:space-y-6">
+      {body}
     </CustomerPageZone>
   )
 }

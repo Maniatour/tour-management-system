@@ -12,6 +12,7 @@ import {
 import { useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
+import ProductDetailWhyChooseSection from '@/components/product/ProductDetailWhyChooseSection'
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
 import ProductDetailReviewsSection, {
   type ProductReviewItem,
@@ -202,6 +203,8 @@ export default function ProductDetailAirbnbBody({
         </section>
       </CustomerPageZone>
 
+      <ProductDetailWhyChooseSection productId={productId} variant="airbnb" />
+
       {tourCourses.length > 0 ? (
         <>
           <AirbnbSectionDivider />
@@ -274,6 +277,7 @@ export default function ProductDetailAirbnbBody({
       <CustomerPageZone zone="detail-tab-details" productId={productId}>
         <section className="airbnb-detail-section">
           <ProductDetailThingsToKnowAccordion
+            productId={productId}
             product={product}
             productDetails={productDetails}
             categoryLabel={categoryLabel}
