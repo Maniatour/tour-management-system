@@ -361,3 +361,16 @@ export function formatProductDepartureLine(
   if (!city) return ''
   return country ? `${city}, ${country}` : city
 }
+
+/** 투어 하이라이트 아이콘 줄 — 출발 → 도착 한 줄 표기 */
+export function formatProductDepartureArrivalHighlight(
+  product: ProductLocationSource,
+  locale: string,
+  translationRows: ProductFieldTranslationRow[] = []
+): string | null {
+  const departure = getProductDepartureCity(product, locale, translationRows)
+  const arrival = getProductArrivalCity(product, locale, translationRows)
+  if (!departure && !arrival) return null
+  if (departure && arrival) return `${departure} → ${arrival}`
+  return departure || arrival || null
+}

@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
 
 type ProductDetailMobileTabSheetProps = {
   open: boolean
@@ -30,13 +31,16 @@ export default function ProductDetailMobileTabSheet({
   children,
 }: ProductDetailMobileTabSheetProps) {
   const tCommon = useTranslations('common')
+  const { isCompactLayout } = useCustomerPageLayoutMode()
+
+  if (!isCompactLayout) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideCloseButton
-        overlayClassName="bg-black/50 sm:hidden"
-        className="fixed inset-x-0 bottom-0 top-auto z-[10050] flex h-[min(88dvh,720px)] max-h-[88dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-t-2xl rounded-b-none border-0 p-0 shadow-[0_-8px_40px_rgba(15,23,42,0.18)] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100 sm:hidden"
+        overlayClassName="bg-black/50"
+        className="fixed inset-x-0 bottom-0 top-auto z-[10050] flex h-[min(88dvh,720px)] max-h-[88dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-t-2xl rounded-b-none border-0 p-0 shadow-[0_-8px_40px_rgba(15,23,42,0.18)] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100"
       >
         <div className="flex shrink-0 flex-col border-b border-slate-100 bg-white px-4 pb-3 pt-2">
           <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200" aria-hidden />

@@ -23,8 +23,8 @@ export const PRODUCT_RECOMMENDATION_SECTIONS = [
   {
     key: 'recommended_for_you',
     zone: 'detail-recommendations-for-you',
-    titleKo: '여행자님을 위한 추천 상품',
-    titleEn: 'Recommended Tours for You',
+    titleKo: '함께 구매하면 할인',
+    titleEn: 'Bundle & Save',
   },
   {
     key: 'bought_together',
@@ -40,6 +40,8 @@ export type ProductRecommendationSectionKey =
 export type ProductRecommendationZone =
   (typeof PRODUCT_RECOMMENDATION_SECTIONS)[number]['zone']
 
+export type BundleDiscountType = 'percentage' | 'fixed'
+
 export type ProductRecommendationView = {
   id: string
   category: string | null
@@ -52,11 +54,19 @@ export type ProductRecommendationView = {
   price: number | null
   title: string
   locationLine: string | null
+  discountType: BundleDiscountType | null
+  discountValue: number | null
   [key: string]: unknown
 }
 
 export type ProductRecommendationEditorProduct = ProductRecommendationView & {
   status: string | null
+}
+
+export type ProductRecommendationSaveItem = {
+  recommendedProductId: string
+  discountType?: BundleDiscountType | null
+  discountValue?: number | null
 }
 
 const PRODUCT_RECOMMENDATIONS_TABLE = 'product_recommendations'
@@ -110,7 +120,14 @@ function mapProductRow(
     price,
     title,
     locationLine: locationLine || null,
+    discountType: null,
+    discountValue: null,
   }
+}
+
+function parseDiscountType(value: unknown): BundleDiscountType | null {
+  if (value === 'percentage' || value === 'fixed') return value
+  return null
 }
 
 async function hydrateProductRows(
@@ -139,7 +156,7 @@ export async function fetchProductRecommendations(
     supabase,
     'product_recommendations'
   )
-    .select('recommended_product_id')
+    .select('recommended_product_id, discount_type, discount_value')
     .eq('source_product_id', sourceProductId)
     .eq('section_key', sectionKey)
     .eq('is_active', true)
@@ -150,10 +167,22 @@ export async function fetchProductRecommendations(
     throw error
   }
 
-  const productIds = ((recommendationRows ?? []) as Array<{ recommended_product_id: string }>)
-    .map((row) => row.recommended_product_id)
-    .filter(Boolean)
+  const recommendationMeta = ((recommendationRows ?? []) as Array<{
+    recommended_product_id: string
+    discount_type?: string | null
+    discount_value?: number | null
+  }>)
+    .map((row) => ({
+      productId: row.recommended_product_id,
+      discountType: parseDiscountType(row.discount_type),
+      discountValue:
+        row.discount_value != null && Number.isFinite(Number(row.discount_value))
+          ? Number(row.discount_value)
+          : null,
+    }))
+    .filter((row) => Boolean(row.productId))
 
+  const productIds = recommendationMeta.map((row) => row.productId)
   if (productIds.length === 0) return []
 
   const { data: products, error: productError } = await supabase
@@ -173,7 +202,19 @@ export async function fetchProductRecommendations(
     .map((id) => productMap.get(id))
     .filter((product): product is Record<string, unknown> => product != null)
 
-  return hydrateProductRows(sortedRows, locale)
+  const hydrated = await hydrateProductRows(sortedRows, locale)
+  const discountByProductId = new Map(
+    recommendationMeta.map((row) => [row.productId, row])
+  )
+
+  return hydrated.map((product) => {
+    const meta = discountByProductId.get(product.id)
+    return {
+      ...product,
+      discountType: meta?.discountType ?? null,
+      discountValue: meta?.discountValue ?? null,
+    }
+  })
 }
 
 export async function fetchRecommendationEditorProducts(
@@ -197,8 +238,16 @@ export async function fetchSelectedRecommendationIds(
   sourceProductId: string,
   sectionKey: ProductRecommendationSectionKey
 ): Promise<string[]> {
+  const items = await fetchSelectedRecommendationItems(sourceProductId, sectionKey)
+  return items.map((item) => item.recommendedProductId)
+}
+
+export async function fetchSelectedRecommendationItems(
+  sourceProductId: string,
+  sectionKey: ProductRecommendationSectionKey
+): Promise<ProductRecommendationSaveItem[]> {
   const { data, error } = await fromUntypedTable(supabase, 'product_recommendations')
-    .select('recommended_product_id')
+    .select('recommended_product_id, discount_type, discount_value')
     .eq('source_product_id', sourceProductId)
     .eq('section_key', sectionKey)
     .eq('is_active', true)
@@ -208,15 +257,38 @@ export async function fetchSelectedRecommendationIds(
     if (isProductRecommendationsTableUnavailable(error)) return []
     throw error
   }
-  return ((data ?? []) as Array<{ recommended_product_id: string }>)
-    .map((row) => row.recommended_product_id)
-    .filter(Boolean)
+  return ((data ?? []) as Array<{
+    recommended_product_id: string
+    discount_type?: string | null
+    discount_value?: number | null
+  }>)
+    .map((row) => ({
+      recommendedProductId: row.recommended_product_id,
+      discountType: parseDiscountType(row.discount_type),
+      discountValue:
+        row.discount_value != null && Number.isFinite(Number(row.discount_value))
+          ? Number(row.discount_value)
+          : null,
+    }))
+    .filter((row) => Boolean(row.recommendedProductId))
 }
 
 export async function saveProductRecommendationIds(
   sourceProductId: string,
   sectionKey: ProductRecommendationSectionKey,
   recommendedProductIds: string[]
+) {
+  await saveProductRecommendations(
+    sourceProductId,
+    sectionKey,
+    recommendedProductIds.map((recommendedProductId) => ({ recommendedProductId }))
+  )
+}
+
+export async function saveProductRecommendations(
+  sourceProductId: string,
+  sectionKey: ProductRecommendationSectionKey,
+  items: ProductRecommendationSaveItem[]
 ) {
   const { error: deleteError } = await fromUntypedTable(supabase, 'product_recommendations')
     .delete()
@@ -228,14 +300,23 @@ export async function saveProductRecommendationIds(
     throw deleteError
   }
 
-  if (recommendedProductIds.length === 0) return
+  if (items.length === 0) return
 
-  const rows = recommendedProductIds.map((recommendedProductId, orderIndex) => ({
+  const rows = items.map((item, orderIndex) => ({
     source_product_id: sourceProductId,
     section_key: sectionKey,
-    recommended_product_id: recommendedProductId,
+    recommended_product_id: item.recommendedProductId,
     order_index: orderIndex,
     is_active: true,
+    ...(sectionKey === 'recommended_for_you' && item.discountType && item.discountValue
+      ? {
+          discount_type: item.discountType,
+          discount_value: item.discountValue,
+        }
+      : {
+          discount_type: null,
+          discount_value: null,
+        }),
   }))
 
   const { error } = await fromUntypedTable(supabase, 'product_recommendations').insert(rows)

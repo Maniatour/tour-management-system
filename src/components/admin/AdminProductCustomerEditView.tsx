@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { ArrowLeft, ExternalLink, Monitor, Smartphone } from 'lucide-react'
 import LocaleDropdown from '@/components/LocaleDropdown'
-import ProductDetailPageContent from '@/components/product/ProductDetailPageContent'
+import AdminProductCustomerPreviewPanel from '@/components/admin/AdminProductCustomerPreviewPanel'
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider'
 import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider'
 import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell'
@@ -114,6 +114,28 @@ export default function AdminProductCustomerEditView({
             </Link>
           </div>
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/80 pt-3 md:hidden">
+          <span className="text-xs font-medium text-slate-700">{t('preview')}</span>
+          {([
+            { id: 'desktop' as const, label: t('desktop'), icon: Monitor },
+            { id: 'mobile' as const, label: t('mobile'), icon: Smartphone },
+          ]).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setPreviewViewport(id)}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                previewViewport === id
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-white text-gray-600 border border-slate-200'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <CustomerPageFieldBindingsProvider>
@@ -125,26 +147,11 @@ export default function AdminProductCustomerEditView({
               onPreviewLocaleChange={handlePreviewLocaleChange}
               onNavigateToTab={handleNavigateToTab}
             >
-              <div
-                className={`min-h-0 flex-1 overflow-y-auto ${
-                  previewViewport === 'mobile' ? 'bg-slate-200 px-4 py-6' : 'bg-background'
-                }`}
-              >
-                <div
-                  className={
-                    previewViewport === 'mobile'
-                      ? 'mx-auto w-full max-w-[390px] overflow-hidden rounded-[2rem] border-[10px] border-gray-900 bg-white shadow-2xl'
-                      : 'w-full'
-                  }
-                >
-                  <ProductDetailPageContent
-                    productId={productId}
-                    contentLocale={previewLocale}
-                    enableCheckout={false}
-                    forceShowOptions
-                  />
-                </div>
-              </div>
+              <AdminProductCustomerPreviewPanel
+                productId={productId}
+                previewLocale={previewLocale}
+                previewViewport={previewViewport}
+              />
             </CustomerPageZoneEditProvider>
           </CustomerPageEditModeProvider>
         </CustomerPageGlobalThemeShell>

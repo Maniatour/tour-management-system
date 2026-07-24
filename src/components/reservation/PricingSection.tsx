@@ -3295,7 +3295,14 @@ export default function PricingSection({
               {/* 추가 할인 및 비용 */}
               <div className="grid grid-cols-2 gap-1">
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">추가할인</label>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    추가할인
+                    {(formData.additionalDiscount || 0) > 0 ? (
+                      <span className="ml-1 font-normal text-primary">
+                        {isKorean ? '(함께 구매 할인 포함 가능)' : '(may include bundle discount)'}
+                      </span>
+                    ) : null}
+                  </label>
                   <div className="relative">
                     <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                     <input
@@ -3568,7 +3575,9 @@ export default function PricingSection({
               {/* 추가 할인 */}
               {(formData.additionalDiscount || 0) > 0 && (
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[10px] text-gray-600">{isKorean ? '- 추가 할인' : '- Additional Discount'}</span>
+                  <span className="text-[10px] text-gray-600">
+                    {isKorean ? '- 추가 할인 (번들 할인 포함)' : '- Additional discount (incl. bundle)'}
+                  </span>
                   <span className={`text-[10px] text-red-600 ${priceTextClass('additionalDiscount')}`}>-${(formData.additionalDiscount || 0).toFixed(2)}</span>
                 </div>
               )}

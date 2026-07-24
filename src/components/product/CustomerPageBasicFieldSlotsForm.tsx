@@ -1,6 +1,7 @@
 'use client'
 
 import type { BasicFieldKey } from '@/lib/customerPageZoneEditMap'
+import CommaSeparatedTextInput from '@/components/product/CommaSeparatedTextInput'
 import {
   bindingLabel,
   type BasicFieldSlotDef,
@@ -49,18 +50,9 @@ export default function BasicFieldSlotsForm({
                 hasAlternatives={hasAlternatives}
                 onBindingChange={onBindingChange}
               />
-              <input
-                type="text"
-                value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
-                onChange={(e) =>
-                  onValueChange(
-                    slot.slotId,
-                    e.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  )
-                }
+              <CommaSeparatedTextInput
+                value={Array.isArray(value) ? value : []}
+                onChange={(next) => onValueChange(slot.slotId, next)}
                 placeholder={boundField === 'languages' ? '한국어, English' : 'van, bus'}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />

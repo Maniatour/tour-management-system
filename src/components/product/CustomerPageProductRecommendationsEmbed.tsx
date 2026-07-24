@@ -5,10 +5,12 @@ import { ArrowDown, ArrowUp, Loader2, Plus, Save, Search, Trash2 } from 'lucide-
 import {
   PRODUCT_RECOMMENDATION_SECTIONS,
   fetchRecommendationEditorProducts,
-  fetchSelectedRecommendationIds,
+  fetchSelectedRecommendationItems,
   getProductRecommendationTitle,
-  saveProductRecommendationIds,
+  saveProductRecommendations,
+  type BundleDiscountType,
   type ProductRecommendationEditorProduct,
+  type ProductRecommendationSaveItem,
   type ProductRecommendationSectionKey,
 } from '@/lib/productRecommendations'
 
@@ -19,6 +21,8 @@ type CustomerPageProductRecommendationsEmbedProps = {
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
 }
+
+type SelectedBundleItem = ProductRecommendationSaveItem
 
 function isRecommendationSectionKey(value: string): value is ProductRecommendationSectionKey {
   return PRODUCT_RECOMMENDATION_SECTIONS.some((section) => section.key === value)
@@ -33,6 +37,10 @@ export function sectionKeyFromRecommendationTab(tab: string): ProductRecommendat
   return 'traveler_viewed'
 }
 
+function snapshotItems(items: SelectedBundleItem[]) {
+  return JSON.stringify(items)
+}
+
 export default function CustomerPageProductRecommendationsEmbed({
   productId,
   sectionKey,
@@ -40,11 +48,12 @@ export default function CustomerPageProductRecommendationsEmbed({
   onSaved,
   onDirtyChange,
 }: CustomerPageProductRecommendationsEmbedProps) {
+  const isBundleSection = sectionKey === 'recommended_for_you'
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [products, setProducts] = useState<ProductRecommendationEditorProduct[]>([])
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedItems, setSelectedItems] = useState<SelectedBundleItem[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
@@ -56,19 +65,26 @@ export default function CustomerPageProductRecommendationsEmbed({
     try {
       const [allProducts, selected] = await Promise.all([
         fetchRecommendationEditorProducts(locale),
-        fetchSelectedRecommendationIds(productId, sectionKey),
+        fetchSelectedRecommendationItems(productId, sectionKey),
       ])
       const filteredProducts = allProducts.filter((product) => product.id !== productId)
+      const normalized = selected
+        .filter((item) => item.recommendedProductId !== productId)
+        .map((item) => ({
+          recommendedProductId: item.recommendedProductId,
+          discountType: item.discountType ?? (isBundleSection ? 'percentage' : null),
+          discountValue: item.discountValue ?? (isBundleSection ? 10 : null),
+        }))
       setProducts(filteredProducts)
-      setSelectedIds(selected.filter((id) => id !== productId))
-      setInitialSnapshot(JSON.stringify(selected.filter((id) => id !== productId)))
+      setSelectedItems(normalized)
+      setInitialSnapshot(snapshotItems(normalized))
     } catch (error) {
       console.error('추천 상품 편집 데이터 로드 오류:', error)
-      setMessage('추천 상품 데이터를 불러오지 못했습니다.')
+      setMessage('상품 데이터를 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
-  }, [locale, productId, sectionKey])
+  }, [isBundleSection, locale, productId, sectionKey])
 
   useEffect(() => {
     void loadData()
@@ -76,20 +92,23 @@ export default function CustomerPageProductRecommendationsEmbed({
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot) return
-    onDirtyChange(JSON.stringify(selectedIds) !== initialSnapshot)
-  }, [initialSnapshot, onDirtyChange, selectedIds])
+    onDirtyChange(snapshotItems(selectedItems) !== initialSnapshot)
+  }, [initialSnapshot, onDirtyChange, selectedItems])
 
   const productMap = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
     [products]
   )
 
-  const selectedProducts = selectedIds
-    .map((id) => productMap.get(id))
-    .filter((product): product is ProductRecommendationEditorProduct => product != null)
+  const selectedProducts = selectedItems
+    .map((item) => {
+      const product = productMap.get(item.recommendedProductId)
+      return product ? { product, item } : null
+    })
+    .filter((row): row is { product: ProductRecommendationEditorProduct; item: SelectedBundleItem } => row != null)
 
   const filteredProducts = products.filter((product) => {
-    if (selectedIds.includes(product.id)) return false
+    if (selectedItems.some((item) => item.recommendedProductId === product.id)) return false
     const needle = searchTerm.trim().toLowerCase()
     if (!needle) return product.status === 'active'
     return [product.title, product.locationLine, product.category]
@@ -98,16 +117,27 @@ export default function CustomerPageProductRecommendationsEmbed({
   })
 
   const addProduct = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+    setSelectedItems((prev) =>
+      prev.some((item) => item.recommendedProductId === id)
+        ? prev
+        : [
+            ...prev,
+            {
+              recommendedProductId: id,
+              discountType: isBundleSection ? 'percentage' : null,
+              discountValue: isBundleSection ? 10 : null,
+            },
+          ]
+    )
   }
 
   const removeProduct = (id: string) => {
-    setSelectedIds((prev) => prev.filter((selectedId) => selectedId !== id))
+    setSelectedItems((prev) => prev.filter((item) => item.recommendedProductId !== id))
   }
 
   const moveProduct = (id: string, direction: 'up' | 'down') => {
-    setSelectedIds((prev) => {
-      const index = prev.indexOf(id)
+    setSelectedItems((prev) => {
+      const index = prev.findIndex((item) => item.recommendedProductId === id)
       if (index < 0) return prev
       const nextIndex = direction === 'up' ? index - 1 : index + 1
       if (nextIndex < 0 || nextIndex >= prev.length) return prev
@@ -118,16 +148,41 @@ export default function CustomerPageProductRecommendationsEmbed({
     })
   }
 
+  const updateDiscount = (
+    id: string,
+    patch: Partial<Pick<SelectedBundleItem, 'discountType' | 'discountValue'>>
+  ) => {
+    setSelectedItems((prev) =>
+      prev.map((item) =>
+        item.recommendedProductId === id ? { ...item, ...patch } : item
+      )
+    )
+  }
+
   const handleSave = async () => {
+    if (isBundleSection) {
+      const invalid = selectedItems.find(
+        (item) =>
+          !item.discountType ||
+          !item.discountValue ||
+          item.discountValue <= 0 ||
+          (item.discountType === 'percentage' && item.discountValue > 100)
+      )
+      if (invalid) {
+        setMessage('함께 구매 할인 상품마다 유효한 할인 유형과 금액을 입력해 주세요.')
+        return
+      }
+    }
+
     setSaving(true)
     setMessage(null)
     try {
-      await saveProductRecommendationIds(productId, sectionKey, selectedIds)
-      setInitialSnapshot(JSON.stringify(selectedIds))
+      await saveProductRecommendations(productId, sectionKey, selectedItems)
+      setInitialSnapshot(snapshotItems(selectedItems))
       setMessage('저장되었습니다.')
       onSaved?.()
     } catch (error) {
-      console.error('추천 상품 저장 오류:', error)
+      console.error('상품 저장 오류:', error)
       setMessage('저장 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)
@@ -138,7 +193,7 @@ export default function CustomerPageProductRecommendationsEmbed({
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        추천 상품 불러오는 중…
+        불러오는 중…
       </div>
     )
   }
@@ -151,7 +206,9 @@ export default function CustomerPageProductRecommendationsEmbed({
         </p>
         <h4 className="mt-1 text-sm font-semibold text-foreground">{title}</h4>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          선택한 순서대로 고객 상세 페이지 하단 카드 레일에 표시됩니다.
+          {isBundleSection
+            ? '함께 구매 시 할인되는 상품과 할인율/금액을 설정합니다. 고객이 두 상품을 모두 장바구니에 담으면 결제 시 자동 적용됩니다.'
+            : '선택한 순서대로 고객 상세 페이지 하단 카드 레일에 표시됩니다.'}
         </p>
       </div>
 
@@ -163,7 +220,7 @@ export default function CustomerPageProductRecommendationsEmbed({
           {selectedProducts.length > 0 ? (
             <button
               type="button"
-              onClick={() => setSelectedIds([])}
+              onClick={() => setSelectedItems([])}
               className="text-xs font-medium text-red-600 hover:text-red-700"
             >
               모두 비우기
@@ -177,46 +234,84 @@ export default function CustomerPageProductRecommendationsEmbed({
           </div>
         ) : (
           <div className="space-y-2">
-            {selectedProducts.map((product, index) => (
+            {selectedProducts.map(({ product, item }, index) => (
               <div
                 key={product.id}
-                className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2"
+                className="rounded-lg border border-border/60 bg-background px-3 py-3"
               >
-                <span className="w-6 text-xs font-semibold text-muted-foreground">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {product.locationLine || product.category || '위치 정보 없음'}
-                  </p>
+                <div className="flex items-center gap-3">
+                  <span className="w-6 text-xs font-semibold text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {product.locationLine || product.category || '위치 정보 없음'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => moveProduct(product.id, 'up')}
+                    disabled={index === 0}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                    aria-label="위로 이동"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveProduct(product.id, 'down')}
+                    disabled={index === selectedProducts.length - 1}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                    aria-label="아래로 이동"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeProduct(product.id)}
+                    className="rounded-md p-1 text-red-600 hover:bg-red-50"
+                    aria-label="삭제"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => moveProduct(product.id, 'up')}
-                  disabled={index === 0}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
-                  aria-label="위로 이동"
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveProduct(product.id, 'down')}
-                  disabled={index === selectedProducts.length - 1}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
-                  aria-label="아래로 이동"
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeProduct(product.id)}
-                  className="rounded-md p-1 text-red-600 hover:bg-red-50"
-                  aria-label="삭제"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+
+                {isBundleSection ? (
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <label className="block text-xs text-muted-foreground">
+                      할인 유형
+                      <select
+                        value={item.discountType ?? 'percentage'}
+                        onChange={(event) =>
+                          updateDiscount(product.id, {
+                            discountType: event.target.value as BundleDiscountType,
+                          })
+                        }
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                      >
+                        <option value="percentage">퍼센트 (%)</option>
+                        <option value="fixed">고정 금액 (USD)</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs text-muted-foreground">
+                      할인 값
+                      <input
+                        type="number"
+                        min={0}
+                        max={item.discountType === 'percentage' ? 100 : undefined}
+                        step={item.discountType === 'percentage' ? 1 : 0.01}
+                        value={item.discountValue ?? ''}
+                        onChange={(event) =>
+                          updateDiscount(product.id, {
+                            discountValue: Number(event.target.value) || 0,
+                          })
+                        }
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -267,7 +362,7 @@ export default function CustomerPageProductRecommendationsEmbed({
       </div>
 
       {message ? (
-        <p className={`text-sm ${message.includes('오류') ? 'text-red-600' : 'text-green-600'}`}>
+        <p className={`text-sm ${message.includes('오류') || message.includes('입력') ? 'text-red-600' : 'text-green-600'}`}>
           {message}
         </p>
       ) : null}

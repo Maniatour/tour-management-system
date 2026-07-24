@@ -75,6 +75,7 @@ export type CustomerBookingPriceResult = {
   choicesPrice: number
   additionalOptionsPrice: number
   subtotal: number
+  bundleDiscount: number
   couponCode: string | null
   couponDiscount: number
   totalPrice: number
@@ -669,6 +670,7 @@ export async function calculateServerBookingPrice(
     choicesPrice: roundMoney(choicesPrice),
     additionalOptionsPrice: roundMoney(additionalOptionsPrice),
     subtotal,
+    bundleDiscount: 0,
     couponCode: appliedCouponCode,
     couponDiscount,
     totalPrice,
@@ -677,6 +679,51 @@ export async function calculateServerBookingPrice(
     commerceOfferId,
     commerceOfferCode,
   }
+}
+
+/** 장바구니 각 라인에 쿠폰을 개별 적용 (예약별 독립 할인) */
+export async function resolveCartLineCouponDiscounts(
+  admin: AdminClient,
+  couponCode: string,
+  lines: Array<{ productId: string; subtotal: number }>
+): Promise<{ lineDiscounts: number[]; totalDiscount: number; couponCode: string | null }> {
+  if (!couponCode.trim() || lines.length === 0) {
+    return { lineDiscounts: lines.map(() => 0), totalDiscount: 0, couponCode: null }
+  }
+
+  const lineDiscounts: number[] = []
+  let appliedCouponCode: string | null = null
+  let hadCouponError: string | null = null
+
+  for (const line of lines) {
+    try {
+      const result = await resolveCouponDiscount(
+        admin,
+        couponCode.trim(),
+        line.subtotal,
+        [line.productId]
+      )
+      lineDiscounts.push(result.discountAmount)
+      if (result.discountAmount > 0) {
+        appliedCouponCode = result.couponCode
+      }
+    } catch (error) {
+      lineDiscounts.push(0)
+      if (error instanceof Error) {
+        hadCouponError = error.message
+      }
+    }
+  }
+
+  const totalDiscount = roundMoney(lineDiscounts.reduce((sum, value) => sum + value, 0))
+  if (totalDiscount <= 0 && hadCouponError) {
+    throw new Error(hadCouponError)
+  }
+  if (totalDiscount <= 0) {
+    throw new Error('유효하지 않은 쿠폰 코드이거나 적용 가능한 상품이 없습니다.')
+  }
+
+  return { lineDiscounts, totalDiscount, couponCode: appliedCouponCode }
 }
 
 /** 장바구니 합계 할인액을 라인 소계 비율로 배분 (센트 단위 largest remainder) */
@@ -897,6 +944,7 @@ async function upsertReservationPricing(
     subtotal: price.subtotal,
     coupon_code: price.couponCode,
     coupon_discount: price.couponDiscount,
+    additional_discount: price.bundleDiscount > 0 ? price.bundleDiscount : 0,
     total_price: price.totalPrice,
     deposit_amount: price.totalPrice,
     balance_amount: 0,

@@ -1609,7 +1609,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       )}
                       {(editData?.additional_discount || 0) > 0 && (
                         <div className="flex justify-between text-red-600">
-                          <span>- 추가 할인</span>
+                          <span>- 추가 할인 (번들 할인 포함)</span>
                           <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
                         </div>
                       )}

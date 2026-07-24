@@ -117,7 +117,6 @@ export default function ProductDetailThingsToKnowAccordion({
   return (
     <section className="airbnb-things-to-know">
       <h2 className="airbnb-detail-section-title">{t('thingsToKnow')}</h2>
-      <p className="airbnb-things-to-know-subtitle">{t('thingsToKnowSubtitle')}</p>
 
       <nav
         className="airbnb-things-to-know-icons sm:hidden"

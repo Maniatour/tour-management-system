@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
-  allocateCartCouponDiscount,
   calculateServerBookingPrice,
   createPendingCustomerBooking,
   createStripePaymentIntentForReservation,
   parseCustomerBookingCustomer,
   parseCustomerBookingLine,
   recordPendingStripePayment,
-  resolveCouponDiscount,
+  resolveCartLineCouponDiscounts,
   type CreatePendingBookingResult,
   type CustomerBookingLineInput,
   type CustomerBookingPriceResult,
 } from '@/lib/customerBookingCheckout'
+import { resolveBundleDiscountsForCart } from '@/lib/productBundleDiscounts'
 import { parseBookingLocale } from '@/lib/customerBookingEmail'
 import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
 import { resolvePublicDirectChannel } from '@/lib/operators/resolvePublicDirectChannel'
@@ -80,32 +80,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const cartSubtotal = basePrices.reduce((sum, p) => sum + p.subtotal, 0)
+    const bundleResult = await resolveBundleDiscountsForCart(
+      supabaseAdmin,
+      lines.map((line, index) => ({
+        productId: line.productId,
+        subtotal: basePrices[index]!.subtotal,
+      }))
+    )
+
+    let lineCouponDiscounts = lines.map(() => 0)
     let couponDiscountTotal = 0
     let appliedCouponCode: string | null = null
 
     if (couponCode) {
-      const productIds = lines.map((line) => line.productId)
-      const discount = await resolveCouponDiscount(
+      const couponResult = await resolveCartLineCouponDiscounts(
         supabaseAdmin,
         couponCode,
-        cartSubtotal,
-        productIds
+        lines.map((line, index) => ({
+          productId: line.productId,
+          subtotal: basePrices[index]!.subtotal,
+        }))
       )
-      couponDiscountTotal = discount.discountAmount
-      appliedCouponCode = discount.couponCode
+      lineCouponDiscounts = couponResult.lineDiscounts
+      couponDiscountTotal = couponResult.totalDiscount
+      appliedCouponCode = couponResult.couponCode
     }
 
-    const allocatedDiscounts = allocateCartCouponDiscount(
-      basePrices.map((p) => p.subtotal),
-      couponDiscountTotal
-    )
-
     const pricedLines: CustomerBookingPriceResult[] = basePrices.map((base, i) => {
-      const couponDiscount = allocatedDiscounts[i] || 0
-      const totalPrice = Math.round(Math.max(0, base.subtotal - couponDiscount) * 100) / 100
+      const bundleDiscount = bundleResult.lineDiscounts[i] || 0
+      const couponDiscount = lineCouponDiscounts[i] || 0
+      const totalPrice =
+        Math.round(Math.max(0, base.subtotal - couponDiscount - bundleDiscount) * 100) / 100
       return {
         ...base,
+        bundleDiscount,
         couponCode: couponDiscount > 0 ? appliedCouponCode : null,
         couponDiscount,
         totalPrice,
@@ -186,6 +194,7 @@ export async function POST(request: NextRequest) {
       amount: totalCents,
       amountUsd: Math.round(totalUsd * 100) / 100,
       couponDiscount: couponDiscountTotal,
+      bundleDiscount: bundleResult.totalDiscount,
       couponCode: appliedCouponCode,
       currency: 'usd',
       price: primary.price,

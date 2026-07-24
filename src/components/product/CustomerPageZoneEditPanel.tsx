@@ -6,6 +6,7 @@ import LightRichEditor from '@/components/LightRichEditor'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
 import CustomerPageZoneAdminEmbed from '@/components/product/CustomerPageZoneAdminEmbed'
+import CommaSeparatedTextInput from '@/components/product/CommaSeparatedTextInput'
 import ProductTagsBilingualEditor, {
   saveProductTagsWithTranslations,
   type TagTranslationState,
@@ -1122,15 +1123,9 @@ function BasicFieldsForm({
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 {basicFieldLabel(field)}
               </label>
-              <input
-                type="text"
-                value={Array.isArray(form.languages) ? form.languages.join(', ') : ''}
-                onChange={(e) =>
-                  setField(
-                    'languages',
-                    e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                  )
-                }
+              <CommaSeparatedTextInput
+                value={Array.isArray(form.languages) ? form.languages : []}
+                onChange={(next) => setField('languages', next)}
                 placeholder="한국어, English"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
@@ -1145,19 +1140,11 @@ function BasicFieldsForm({
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 {basicFieldLabel(field)}
               </label>
-              <input
-                type="text"
+              <CommaSeparatedTextInput
                 value={
-                  Array.isArray(form.transportationMethods)
-                    ? form.transportationMethods.join(', ')
-                    : ''
+                  Array.isArray(form.transportationMethods) ? form.transportationMethods : []
                 }
-                onChange={(e) =>
-                  setField(
-                    'transportationMethods',
-                    e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                  )
-                }
+                onChange={(next) => setField('transportationMethods', next)}
                 placeholder="van, bus"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />

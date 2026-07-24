@@ -43,6 +43,8 @@ import {
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
+import { cn } from '@/lib/utils'
 
 export type ProductDetailPageContentProps = {
   productId: string
@@ -69,6 +71,7 @@ function ProductDetailPageContentInner({
   const isEnglish = locale === 'en'
   const { active: bindingsActive, revision: bindingRevision } = useCustomerPageDisplayBindings()
   const { isPreview, isEditMode } = useCustomerPageEditMode()
+  const { isMobileLayout } = useCustomerPageLayoutMode()
   const contentEditMode = isPreview && isEditMode
   /** 관리자 미리보기/편집 — inactive·draft 상품도 로드 */
   const isPreviewMode = isPreview || searchParams.get('preview') === '1'
@@ -290,7 +293,13 @@ function ProductDetailPageContentInner({
 
   return (
     <CustomerPageShell locale={locale}>
-      <div className={contentEditMode ? 'min-h-screen bg-muted/30 pb-20 lg:pb-12' : ''}>
+      <div
+        className={
+          contentEditMode
+            ? cn('min-h-screen pb-20', !isMobileLayout && 'lg:bg-muted/30 lg:pb-12')
+            : ''
+        }
+      >
         <CustomerPagePreviewHighlightEffect />
         <ProductDetailAirbnbView
           locale={locale}

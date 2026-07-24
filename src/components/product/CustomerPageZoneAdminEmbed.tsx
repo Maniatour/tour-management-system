@@ -169,6 +169,7 @@ export default function CustomerPageZoneAdminEmbed({
           <CustomerPageDetailHighlightsEmbed
             productId={productId!}
             locale={locale}
+            mode={zone === 'detail-tour-highlight-bullet' ? 'checklist' : 'icon-grid'}
             {...(onSaved ? { onSaved } : {})}
           />
         )

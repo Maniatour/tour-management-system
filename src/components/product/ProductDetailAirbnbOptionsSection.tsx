@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
 import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
 
 type ProductDetailAirbnbOptionsSectionProps = {
   groupedChoices: Record<string, ProductDetailChoiceGroup>
@@ -87,6 +88,7 @@ function ChoiceOptionCard({
   isEnglish: boolean
   onSelect: () => void
 }) {
+  const { isCompactLayout } = useCustomerPageLayoutMode()
   const imageUrl = option.option_thumbnail_url || option.option_image_url || null
   const description = (
     isEnglish
@@ -128,7 +130,8 @@ function ChoiceOptionCard({
       }`}
     >
       {/* 모바일: 상단 제목·가격 + 전체 너비 사진 + 설명 */}
-      <div className="flex flex-col sm:hidden">
+      {isCompactLayout ? (
+      <div className="flex flex-col">
         <div className="flex items-start gap-3 px-3.5 pt-3.5">
           <span className="mt-0.5">{selectionDot}</span>
           <div className="min-w-0 flex-1">
@@ -169,9 +172,11 @@ function ChoiceOptionCard({
           <div className="pb-3.5" />
         )}
       </div>
+      ) : null}
 
       {/* 데스크톱: 선택 · 사진 · 텍스트 가로형 */}
-      <div className="hidden items-stretch sm:flex">
+      {!isCompactLayout ? (
+      <div className="flex items-stretch">
         <span className="flex shrink-0 items-center pl-4">{selectionDot}</span>
 
         <span className="relative ml-4 my-3 h-[104px] w-[140px] shrink-0 self-center overflow-hidden rounded-xl bg-[#f3f4f6]">
@@ -202,6 +207,7 @@ function ChoiceOptionCard({
           ) : null}
         </span>
       </div>
+      ) : null}
     </div>
   )
 }

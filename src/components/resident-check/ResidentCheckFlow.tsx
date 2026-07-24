@@ -412,7 +412,7 @@ export default function ResidentCheckFlow() {
   }
 
   const shell = (content: React.ReactNode) => (
-    <CustomerPageShell locale={locale} hideFooter={false}>
+    <CustomerPageShell locale={locale}>
       <div className="min-h-screen bg-muted/30 py-10 md:py-16">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">{content}</div>
       </div>

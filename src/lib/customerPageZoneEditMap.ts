@@ -180,7 +180,7 @@ export const ADMIN_TAB_LABELS: Record<string, string> = {
   'detail-things-to-know': '알아두실 사항',
   'detail-faq': 'FAQ',
   'detail-recommendations-viewed': '함께 본 상품',
-  'detail-recommendations-for-you': '추천 상품',
+  'detail-recommendations-for-you': '함께 구매 할인',
   'detail-recommendations-bought-together': '같이 구매한 상품',
 }
 
@@ -335,7 +335,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-highlights',
     requiresProduct: true,
-    note: '소요 시간·그룹 규모·카테고리·출발 도시는 상품 DB에 저장됩니다. 체크리스트 하이라이트 문구(slogan3~5)도 이 영역에서 편집합니다.',
+    note: '상단 아이콘 줄에 표시되는 항목(소요 시간·그룹 규모·카테고리·신뢰 배지)과 아이콘을 편집합니다.',
   },
   'detail-mobile-booking': {
     label: '모바일 예약 카드',
@@ -374,11 +374,11 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     note: '고객 상세 페이지 하단 추천 카드 목록을 직접 선택하고 순서를 저장합니다.',
   },
   'detail-recommendations-for-you': {
-    label: '여행자님을 위한 추천 상품',
+    label: '함께 구매하면 할인',
     editType: 'admin-tab',
     adminTab: 'detail-recommendations-for-you',
     requiresProduct: true,
-    note: '고객 상세 페이지 하단 추천 카드 목록을 직접 선택하고 순서를 저장합니다.',
+    note: '함께 구매 시 할인되는 상품을 선택하고 할인율 또는 고정 할인액을 설정합니다.',
   },
   'detail-recommendations-bought-together': {
     label: '다른 여행자가 같이 구매한 상품',
@@ -468,7 +468,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-highlights',
     requiresProduct: true,
-    note: '체크리스트에 표시되는 하이라이트 문구(slogan3~5, 최대 3개)를 편집합니다.',
+    note: '체크리스트에 표시되는 하이라이트 문구(slogan3~5, 최대 3개)를 편집합니다. 상단 아이콘 줄은 「투어 하이라이트」 영역에서 편집하세요.',
   },
   'detail-overview-greeting': {
     label: '인사말',

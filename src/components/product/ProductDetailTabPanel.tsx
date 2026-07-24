@@ -17,6 +17,7 @@ import ProductDetailDetailsTab, {
 } from '@/components/product/ProductDetailDetailsTab'
 import ProductDetailMobileTabSheet from '@/components/product/ProductDetailMobileTabSheet'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
 import { fetchTagLabelMap, type TagLabelMap } from '@/lib/productTagDisplay'
 import {
   THINGS_TO_KNOW_OPERATION_FIELD_IDS,
@@ -163,19 +164,20 @@ export default function ProductDetailTabPanel({
 }: ProductDetailTabPanelProps) {
   const t = useTranslations('productDetail')
   const searchParams = useSearchParams()
+  const { isCompactLayout } = useCustomerPageLayoutMode()
   const [activeTab, setActiveTab] = useState<ProductDetailTabId>('overview')
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
   const [tagLabelMap, setTagLabelMap] = useState<TagLabelMap>({})
 
   useEffect(() => {
     const normalized = normalizeTabId(searchParams.get('tab'))
-    if (normalized) {
+      if (normalized) {
       setActiveTab(normalized)
-      if (typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches) {
+      if (isCompactLayout) {
         setMobileSheetOpen(true)
       }
     }
-  }, [searchParams])
+  }, [searchParams, isCompactLayout])
 
   useEffect(() => {
     const allTags = [...(product.tags ?? []), ...(productDetails?.tags ?? [])]
@@ -286,8 +288,9 @@ export default function ProductDetailTabPanel({
       className="overflow-hidden rounded-xl cp-ui-panel-surface sm:rounded-2xl sm:shadow-sm"
     >
       {/* Mobile: app icon grid */}
+      {isCompactLayout ? (
       <nav
-        className="grid grid-cols-4 gap-x-1 gap-y-2.5 px-1.5 py-3 sm:hidden"
+        className="grid grid-cols-4 gap-x-1 gap-y-2.5 px-1.5 py-3"
         aria-label="Product detail tabs"
       >
         {tabs.map((tab) => {
@@ -322,9 +325,11 @@ export default function ProductDetailTabPanel({
           )
         })}
       </nav>
+      ) : null}
 
       {/* Desktop: horizontal icon tabs */}
-      <div className="hidden border-b border-gray-100 sm:block">
+      {!isCompactLayout ? (
+      <div className="border-b border-gray-100">
         <nav
           className="-mb-px flex overflow-x-auto px-4 scrollbar-hide sm:px-6"
           aria-label="Product detail tabs"
@@ -354,6 +359,7 @@ export default function ProductDetailTabPanel({
           </div>
         </nav>
       </div>
+      ) : null}
 
       <ProductDetailMobileTabSheet
         open={mobileSheetOpen}
@@ -367,7 +373,9 @@ export default function ProductDetailTabPanel({
       </ProductDetailMobileTabSheet>
 
       {/* Desktop: inline tab content */}
-      <div className="hidden p-3 sm:block sm:p-6 lg:p-8">{renderTabContent()}</div>
+      {!isCompactLayout ? (
+      <div className="p-3 sm:p-6 lg:p-8">{renderTabContent()}</div>
+      ) : null}
     </CustomerPageZone>
   )
 }

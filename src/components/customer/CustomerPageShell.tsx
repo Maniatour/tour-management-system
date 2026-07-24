@@ -1,10 +1,8 @@
 'use client'
 
 import { useEffect, type ReactNode } from 'react'
-import { usePathname } from 'next/navigation'
 import CustomerSiteManiaTourFooter from '@/components/customer/CustomerSiteManiaTourFooter'
 import { postCustomerPagePreviewHeight } from '@/lib/customerPageEditMessaging'
-import { siteLocalePathTest } from '@/lib/siteLocales'
 
 type CustomerPageShellProps = {
   locale: string
@@ -18,25 +16,14 @@ function measurePreviewHeight() {
   return Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)
 }
 
-function isFullWidthCustomerFooterPath(pathname: string): boolean {
-  return (
-    siteLocalePathTest(pathname, '/?$') ||
-    siteLocalePathTest(pathname, '/products(/|$)') ||
-    siteLocalePathTest(pathname, '/travel-guide(/|$)')
-  )
-}
-
 /** 고객-facing 페이지 공통 래퍼 — 본문 + 사이트 푸터 */
 export default function CustomerPageShell({
   locale,
   children,
   className = '',
-  hideFooter = false,
+  hideFooter = true,
 }: CustomerPageShellProps) {
-  const pathname = usePathname()
-  const footerBleedClass = isFullWidthCustomerFooterPath(pathname)
-    ? 'w-full'
-    : '-mx-4 w-auto sm:-mx-6 lg:-mx-8'
+  const footerBleedClass = 'customer-site-footer-bleed w-full'
 
   useEffect(() => {
     if (window.parent === window) return

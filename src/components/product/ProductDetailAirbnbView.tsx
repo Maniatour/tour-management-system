@@ -17,6 +17,8 @@ import ReviewSummary from '@/components/customer/ui/ReviewSummary'
 import { useProductDetailAppliedPromo } from '@/hooks/useProductDetailAppliedPromo'
 import TrustBadgeRow from '@/components/product/ui/TrustBadgeRow'
 import { useProductDetailTrustBadges } from '@/components/product/useProductDetailTrustBadges'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
+import { cn } from '@/lib/utils'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import {
   DEFAULT_TRAVELER_AGE_LIMITS,
@@ -131,6 +133,7 @@ export default function ProductDetailAirbnbView({
 }: ProductDetailAirbnbViewProps) {
   const t = useTranslations('productDetail')
   const trustBadges = useProductDetailTrustBadges()
+  const { isMobileLayout } = useCustomerPageLayoutMode()
   const optionsAnchorRef = useRef<HTMLDivElement>(null)
   const previousDateRef = useRef('')
   const locationLine = product.departure_city || 'Las Vegas'
@@ -164,7 +167,12 @@ export default function ProductDetailAirbnbView({
   }, [selectedDate])
 
   return (
-    <div className="airbnb-detail min-h-screen bg-white pb-24 lg:pb-12">
+    <div
+      className={cn(
+        'airbnb-detail min-h-screen bg-white',
+        isMobileLayout ? 'pb-24' : 'pb-12'
+      )}
+    >
       <div className="airbnb-detail-container">
         <CustomerPageZone zone="detail-header" productId={productId}>
           <div className="airbnb-detail-title-row">
@@ -180,11 +188,11 @@ export default function ProductDetailAirbnbView({
                   rating={reviewRating}
                   reviewCount={reviewCount}
                   reviewsLabel={t('reviewCount', { count: reviewCount })}
-                  className="mt-2"
+                  className="mt-1.5 sm:mt-2"
                 />
               ) : (
-                <div className="mt-2 flex items-center gap-1 text-sm text-[#1a2b49]">
-                  <Star className="h-4 w-4 fill-[#1a2b49]" aria-hidden />
+                <div className="mt-1.5 flex items-center gap-1 text-xs text-[#1a2b49] sm:mt-2 sm:text-sm">
+                  <Star className="h-3.5 w-3.5 fill-[#1a2b49] sm:h-4 sm:w-4" aria-hidden />
                   <span className="font-semibold">{categoryLabel}</span>
                 </div>
               )}
@@ -214,7 +222,8 @@ export default function ProductDetailAirbnbView({
 
         <div className="airbnb-detail-layout">
           <div className="airbnb-detail-main">
-            <div className="airbnb-detail-mobile-booking lg:hidden">
+            {isMobileLayout ? (
+            <div className="airbnb-detail-mobile-booking">
               <ProductDetailDateTravelersPickers
                 productId={productId}
                 product={product}
@@ -226,6 +235,7 @@ export default function ProductDetailAirbnbView({
                 ageLimits={ageLimits}
               />
             </div>
+            ) : null}
 
             {selectedDate || forceShowOptions ? (
               <div ref={optionsAnchorRef} className="airbnb-detail-options-anchor">
@@ -274,9 +284,11 @@ export default function ProductDetailAirbnbView({
                   )}
                 </CustomerPageZone>
                 <CustomerPageZone zone="detail-promo-codes" productId={productId}>
-                  <div className="mt-4 lg:hidden">
+                  {isMobileLayout ? (
+                  <div className="mt-4">
                     <ProductDetailPromoCodesBox productId={productId} promo={promo} />
                   </div>
+                  ) : null}
                 </CustomerPageZone>
                 <hr className="airbnb-detail-divider" />
               </div>
@@ -302,7 +314,8 @@ export default function ProductDetailAirbnbView({
             />
           </div>
 
-          <aside className="airbnb-detail-aside hidden lg:block">
+          {isMobileLayout ? null : (
+          <aside className="airbnb-detail-aside">
             <div className="airbnb-detail-sticky">
               <CustomerPageZone zone="detail-sidebar" productId={productId}>
                 <ProductDetailAirbnbBookingCard
@@ -337,11 +350,13 @@ export default function ProductDetailAirbnbView({
               <TrustBadgeRow items={trustBadges} className="mt-4 justify-center" compact />
             </div>
           </aside>
+          )}
         </div>
 
         <ProductDetailRecommendations productId={productId} locale={locale} />
 
-        <div className="mt-8 lg:hidden">
+        {isMobileLayout ? (
+        <div className="airbnb-detail-mobile-inset mt-8">
           <Link
             href={`/${locale}/products`}
             className="text-sm font-semibold text-[#1a2b49] underline underline-offset-4"
@@ -349,13 +364,16 @@ export default function ProductDetailAirbnbView({
             {t('backToProductList')}
           </Link>
         </div>
+        ) : null}
       </div>
 
+      {isMobileLayout ? (
       <ProductDetailMobileStickyCta
         totalPrice={promo.displayTotalPrice}
         {...(promo.hasPromoApplied ? { originalTotalPrice: totalPrice } : {})}
         onBookNow={bookingPanelProps.onBookNow}
       />
+      ) : null}
     </div>
   )
 }

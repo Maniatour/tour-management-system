@@ -6,6 +6,7 @@ import { Grid2x2, Heart, Mountain, Share2, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { ProductMedia, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import { buildProductGalleryImages } from '@/lib/productDetailGalleryImages'
+import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
 
 type ProductDetailAirbnbGalleryProps = {
   productMedia: ProductMedia[]
@@ -21,6 +22,7 @@ export default function ProductDetailAirbnbGallery({
   isEnglish,
 }: ProductDetailAirbnbGalleryProps) {
   const t = useTranslations('productDetail')
+  const { isMdDownLayout } = useCustomerPageLayoutMode()
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
 
@@ -47,7 +49,8 @@ export default function ProductDetailAirbnbGallery({
   return (
     <>
       <div className="airbnb-detail-gallery">
-        <div className="airbnb-detail-gallery-mobile md:hidden">
+        {isMdDownLayout ? (
+        <div className="airbnb-detail-gallery-mobile">
           <button type="button" className="airbnb-detail-gallery-main" onClick={() => openLightbox(0)}>
             <Image
               src={images[0].file_url}
@@ -69,8 +72,10 @@ export default function ProductDetailAirbnbGallery({
             </button>
           ) : null}
         </div>
+        ) : null}
 
-        <div className="airbnb-detail-gallery-desktop hidden md:grid">
+        {!isMdDownLayout ? (
+        <div className="airbnb-detail-gallery-desktop grid">
           <button
             type="button"
             className="airbnb-detail-gallery-hero"
@@ -114,6 +119,7 @@ export default function ProductDetailAirbnbGallery({
             </button>
           ) : null}
         </div>
+        ) : null}
       </div>
 
       {lightboxOpen ? (

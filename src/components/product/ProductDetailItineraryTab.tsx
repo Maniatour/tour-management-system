@@ -1,9 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { MapPin } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
-import type { ProductTourCourse, TourCoursePhoto } from '@/components/product/productDetailTypes'
+import type { ProductTourCourse, TourCourse, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import {
   getCourseDescription,
   getFullCoursePath,
@@ -19,6 +20,90 @@ type ProductDetailItineraryTabProps = {
   isEnglish?: boolean
 }
 
+type TourCourseItemProps = {
+  course: TourCourse
+  tourCourses: ProductTourCourse[]
+  tourCoursePhotos: TourCoursePhoto[]
+  displayLocale: string
+}
+
+function TourCourseItem({
+  course,
+  tourCourses,
+  tourCoursePhotos,
+  displayLocale,
+}: TourCourseItemProps) {
+  const t = useTranslations('productDetail')
+  const tCommon = useTranslations('common')
+  const [mobileExpanded, setMobileExpanded] = useState(false)
+
+  const fullCourseName = getFullCoursePath(course, tourCourses, displayLocale)
+  const courseDescription = getCourseDescription(course, displayLocale)
+  const hasDescription = Boolean(courseDescription?.trim())
+
+  const coursePhotos = (
+    course.photos ||
+    tourCoursePhotos.filter((photo) => photo.course_id === course.id)
+  ).sort((a, b) => {
+      if (a.is_primary && !b.is_primary) return -1
+      if (!a.is_primary && b.is_primary) return 1
+    return (a.sort_order || 0) - (b.sort_order || 0)
+  })
+
+  const primaryPhoto = coursePhotos.find((photo) => photo.is_primary) || coursePhotos[0]
+  const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+
+  let fullPhotoUrl = photoUrl
+  if (photoUrl && !photoUrl.startsWith('http')) {
+    fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+  }
+
+  return (
+    <div className="border-b border-slate-100 py-4 last:border-b-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+        {fullPhotoUrl ? (
+          <div className="w-full shrink-0 sm:w-40 lg:w-48">
+            <img
+              src={fullPhotoUrl}
+              alt={fullCourseName || t('courseImageAlt')}
+              className="h-40 w-full rounded-lg object-cover sm:h-32"
+            />
+          </div>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          {fullCourseName.trim() !== '' ? (
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 text-sm font-semibold text-gray-900 sm:mb-2 sm:text-base">
+                {fullCourseName}
+              </div>
+              {hasDescription ? (
+                <button
+                  type="button"
+                  className="shrink-0 text-xs font-semibold text-booking underline underline-offset-2 sm:hidden"
+                  onClick={() => setMobileExpanded((current) => !current)}
+                  aria-expanded={mobileExpanded}
+                >
+                  {mobileExpanded ? tCommon('less') : tCommon('more')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {hasDescription ? (
+            <div
+              className={`text-xs leading-relaxed text-gray-700 sm:mt-0 sm:block sm:text-sm ${
+                mobileExpanded ? 'mt-1.5 block' : 'hidden'
+              }`}
+              dangerouslySetInnerHTML={{
+                __html: markdownToHtml(courseDescription),
+              }}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProductDetailItineraryTab({
   tourCourses,
   tourCoursePhotos,
@@ -29,58 +114,6 @@ export default function ProductDetailItineraryTab({
   const displayLocale = locale ?? (isEnglish ? 'en' : 'ko')
 
   const validCourses = getValidTourCourses(tourCourses, displayLocale)
-
-  const courseElements: JSX.Element[] = []
-  validCourses.forEach((course) => {
-    const fullCourseName = getFullCoursePath(course, tourCourses, displayLocale)
-      const courseDescription = getCourseDescription(course, displayLocale)
-
-      const coursePhotos = (course.photos || tourCoursePhotos.filter((p) => p.course_id === course.id))
-        .sort((a, b) => {
-          if (a.is_primary && !b.is_primary) return -1
-          if (!a.is_primary && b.is_primary) return 1
-          return (a.sort_order || 0) - (b.sort_order || 0)
-        })
-
-      const primaryPhoto = coursePhotos.find((p) => p.is_primary) || coursePhotos[0]
-      const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
-
-      let fullPhotoUrl = photoUrl
-      if (photoUrl && !photoUrl.startsWith('http')) {
-        fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
-      }
-
-      courseElements.push(
-        <div key={course.id} className="border-b border-slate-100 py-4 last:border-b-0">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-            {fullPhotoUrl && (
-              <div className="w-full shrink-0 sm:w-40 lg:w-48">
-                <img
-                  src={fullPhotoUrl}
-                  alt={fullCourseName || t('courseImageAlt')}
-                  className="h-40 w-full rounded-lg object-cover sm:h-32"
-                />
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              {fullCourseName.trim() !== '' && (
-                <div className="mb-1.5 text-sm font-semibold text-gray-900 sm:mb-2 sm:text-base">
-                  {fullCourseName}
-                </div>
-              )}
-              {courseDescription && courseDescription.trim() !== '' && (
-                <div
-                  className="text-xs leading-relaxed text-gray-700 sm:text-sm"
-                  dangerouslySetInnerHTML={{
-                    __html: markdownToHtml(courseDescription),
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )
-  })
 
   return (
     <div>
@@ -95,7 +128,15 @@ export default function ProductDetailItineraryTab({
               {t('noTourCourseInfo')}
             </p>
           ) : (
-            courseElements
+            validCourses.map((course) => (
+              <TourCourseItem
+                key={course.id}
+                course={course}
+                tourCourses={tourCourses}
+                tourCoursePhotos={tourCoursePhotos}
+                displayLocale={displayLocale}
+              />
+            ))
           )
         ) : (
           <p className="py-6 text-center text-xs text-gray-500 sm:text-sm">

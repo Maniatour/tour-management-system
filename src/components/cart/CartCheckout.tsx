@@ -222,6 +222,8 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
   const [couponCode, setCouponCode] = useState<string>('')
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null)
   const [discountAmount, setDiscountAmount] = useState<number>(0)
+  const [bundleDiscountAmount, setBundleDiscountAmount] = useState<number>(0)
+  const [bundleDiscountLoading, setBundleDiscountLoading] = useState(false)
   const [couponError, setCouponError] = useState<string>('')
   const [validatingCoupon, setValidatingCoupon] = useState(false)
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
@@ -293,8 +295,48 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
     }
   }, [isOpen, items, getTotalPrice, onClose])
 
+  useEffect(() => {
+    if (!isOpen || items.length === 0) {
+      setBundleDiscountAmount(0)
+      return
+    }
+
+    let cancelled = false
+    const loadBundleDiscount = async () => {
+      setBundleDiscountLoading(true)
+      try {
+        const response = await fetch('/api/booking/bundle-discounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: items.map((item) => ({
+              productId: item.productId,
+              subtotal: item.totalPrice,
+            })),
+          }),
+        })
+        if (!response.ok) throw new Error('bundle discount failed')
+        const data = await response.json()
+        if (!cancelled) {
+          setBundleDiscountAmount(Number(data.totalDiscount) || 0)
+        }
+      } catch (error) {
+        console.error('번들 할인 계산 오류:', error)
+        if (!cancelled) setBundleDiscountAmount(0)
+      } finally {
+        if (!cancelled) setBundleDiscountLoading(false)
+      }
+    }
+
+    void loadBundleDiscount()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, items])
+
   const totalPrice = getTotalPrice()
-  const finalAmount = Math.max(0, totalPrice - discountAmount)
+  const totalDiscountAmount = discountAmount + bundleDiscountAmount
+  const finalAmount = Math.max(0, totalPrice - totalDiscountAmount)
 
   // 장바구니가 비어있으면 아무것도 렌더링하지 않음
   if (!isOpen || items.length === 0) {
@@ -326,46 +368,46 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
     setCouponError('')
 
     try {
-      const productIds = items.map(item => item.productId).filter(id => id) // null/undefined 제거
-      const requestBody = {
-        couponCode: couponCode.trim(),
-        totalAmount: totalPrice,
-        productIds
+      let totalCouponDiscount = 0
+      let matchedCoupon: {
+        code?: string
+        description?: string
+      } | null = null
+
+      for (const item of items) {
+        const response = await fetch('/api/coupons/validate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            couponCode: couponCode.trim(),
+            totalAmount: item.totalPrice,
+            productIds: [item.productId],
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          console.error('쿠폰 검증 API 오류:', errorData)
+          continue
+        }
+
+        const data = await response.json()
+        if (data.valid && Number(data.discountAmount) > 0) {
+          totalCouponDiscount += Number(data.discountAmount) || 0
+          matchedCoupon = data.coupon ?? matchedCoupon
+        }
       }
 
-      console.log('쿠폰 검증 요청 전송:', requestBody)
-      console.log('장바구니 아이템:', items)
-      console.log('총 금액:', totalPrice)
-
-      const response = await fetch('/api/coupons/validate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      console.log('쿠폰 검증 응답 상태:', response.status)
-
-      if (!response.ok) {
-        // 400 오류인 경우 응답 본문 읽기
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('쿠폰 검증 API 오류:', errorData)
-        setCouponError(errorData.error || translate('쿠폰 검증 중 오류가 발생했습니다.', 'An error occurred while validating the coupon.'))
-        return
-      }
-
-      const data = await response.json()
-      console.log('쿠폰 검증 응답 데이터:', data)
-
-      if (data.valid) {
-        setAppliedCoupon(data.coupon)
-        setDiscountAmount(data.discountAmount)
+      if (totalCouponDiscount > 0 && matchedCoupon) {
+        setAppliedCoupon(matchedCoupon)
+        setDiscountAmount(Math.round(totalCouponDiscount * 100) / 100)
         setCouponError('')
       } else {
         setAppliedCoupon(null)
         setDiscountAmount(0)
-        setCouponError(data.error || translate('유효하지 않은 쿠폰 코드입니다.', 'Invalid coupon code.'))
+        setCouponError(translate('유효하지 않은 쿠폰 코드이거나 적용 가능한 상품이 없습니다.', 'Invalid coupon code or no eligible products in cart.'))
       }
     } catch (error) {
       console.error('쿠폰 검증 오류:', error)
@@ -634,12 +676,25 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                 <span className="text-gray-600">{translate('소계', 'Subtotal')}</span>
                 <span className="text-gray-900">${totalPrice.toFixed(2)}</span>
               </div>
+              {bundleDiscountAmount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    {translate('함께 구매 할인', 'Bundle discount')}
+                  </span>
+                  <span className="text-green-600">-${bundleDiscountAmount.toFixed(2)}</span>
+                </div>
+              )}
               {discountAmount > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{translate('할인', 'Discount')}</span>
+                  <span className="text-gray-600">{translate('쿠폰 할인', 'Coupon discount')}</span>
                   <span className="text-green-600">-${discountAmount.toFixed(2)}</span>
                 </div>
               )}
+              {bundleDiscountLoading ? (
+                <p className="text-xs text-muted-foreground">
+                  {translate('함께 구매 할인 확인 중...', 'Checking bundle discounts...')}
+                </p>
+              ) : null}
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
                 <span className="text-gray-900">{translate('총 결제 금액', 'Total')}</span>
                 <span className="text-primary">${finalAmount.toFixed(2)}</span>
@@ -683,7 +738,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
             >
               <CheckoutPaymentForm
                 totalAmount={totalPrice}
-                discountAmount={discountAmount}
+                discountAmount={totalDiscountAmount}
                 finalAmount={finalAmount}
                 customerInfo={customerInfo}
                 checkoutPayload={buildCartCheckoutPayload()}

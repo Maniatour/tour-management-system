@@ -31,6 +31,8 @@ export type Product = {
   arrival_country_en?: string | null
   languages: string[] | null
   group_size: string | null
+  tour_highlight_icons?: Record<string, string> | null
+  tour_highlight_labels?: Record<string, Record<string, string>> | null
   adult_age: number | null
   child_age_min: number | null
   child_age_max: number | null

@@ -1,14 +1,6 @@
 'use client'
 
-import {
-  BadgeCheck,
-  Bus,
-  Check,
-  Clock,
-  MapPin,
-  Shield,
-  Users2,
-} from 'lucide-react'
+import { Check, MapPin } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
@@ -23,6 +15,16 @@ import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { resolveProductDetailSectionTitle } from '@/lib/productDetailSectionTitles'
 import { collectVisibleTourHighlightSlogans } from '@/lib/tourHighlightSlogans'
+import TourHighlightItemLabel from '@/components/product/TourHighlightItemLabel'
+import { formatProductDepartureArrivalHighlight } from '@/lib/productDetailDisplay'
+import { buildTourLanguageHighlightChips } from '@/lib/tourHighlightLanguages'
+import {
+  buildTourHighlightItems,
+  parseTourHighlightIcons,
+  parseTourHighlightLabels,
+  resolveTourHighlightIconComponent,
+  resolveTourHighlightLabel,
+} from '@/lib/tourHighlightIcons'
 import type {
   ProductDetailsFields,
   ProductDetailsTabProduct,
@@ -97,17 +99,43 @@ export default function ProductDetailAirbnbBody({
     showDetail
   )
   const locationLine = product.departure_city || 'Las Vegas'
+  const highlightIcons = parseTourHighlightIcons(
+    (product as { tour_highlight_icons?: unknown }).tour_highlight_icons
+  )
+  const highlightLabels = parseTourHighlightLabels(
+    (product as { tour_highlight_labels?: unknown }).tour_highlight_labels
+  )
 
-  const highlightItems = [
-    durationLabel ? { icon: Clock, label: durationLabel } : null,
-    groupSize ? { icon: Users2, label: groupSize } : null,
-    categoryLabel
-      ? { icon: MapPin, label: `${categoryLabel} · ${locationLine}` }
-      : null,
-    { icon: BadgeCheck, label: t('trustLicensedOperator') },
-    { icon: Bus, label: t('trustSmallGroup') },
-    { icon: Shield, label: t('trustFreeCancellation') },
-  ].filter(Boolean) as Array<{ icon: typeof Clock; label: string }>
+  const languageChips = buildTourLanguageHighlightChips(product.languages, locale)
+  const departureArrivalLabel = formatProductDepartureArrivalHighlight(product, locale)
+
+  const highlightItems = buildTourHighlightItems({
+    durationLabel,
+    groupSize: groupSize ?? null,
+    categoryLabel,
+    locationLine,
+    languageChips,
+    departureArrivalLabel,
+    trustLicensedOperator: resolveTourHighlightLabel(
+      highlightLabels,
+      'trustLicensedOperator',
+      locale,
+      t('trustLicensedOperator')
+    ),
+    trustSmallGroup: resolveTourHighlightLabel(
+      highlightLabels,
+      'trustSmallGroup',
+      locale,
+      t('trustSmallGroup')
+    ),
+    trustFreeCancellation: resolveTourHighlightLabel(
+      highlightLabels,
+      'trustFreeCancellation',
+      locale,
+      t('trustFreeCancellation')
+    ),
+    icons: highlightIcons,
+  })
 
   const tourHighlightsTitle = resolveProductDetailSectionTitle(
     'slogan3',
@@ -124,11 +152,11 @@ export default function ProductDetailAirbnbBody({
             <section>
               <ul className="airbnb-detail-highlights">
                 {highlightItems.map((item) => {
-                  const Icon = item.icon
+                  const Icon = resolveTourHighlightIconComponent(item.iconKey)
                   return (
-                    <li key={item.label} className="airbnb-detail-highlight-item">
-                      <Icon className="h-6 w-6 shrink-0 text-[#1a2b49]" strokeWidth={1.5} aria-hidden />
-                      <span>{item.label}</span>
+                    <li key={item.id} className="airbnb-detail-highlight-item">
+                      <Icon className="airbnb-detail-highlight-icon shrink-0 text-[#1a2b49]" strokeWidth={1.5} aria-hidden />
+                      <TourHighlightItemLabel item={item} />
                     </li>
                   )
                 })}
