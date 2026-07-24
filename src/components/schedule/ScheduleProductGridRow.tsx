@@ -11,6 +11,7 @@ import {
   isScheduleMiscTourRowKey,
   getMiscTourStoredItemLabel,
 } from '@/lib/scheduleMiscTourGroup'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import {
   aggregateScheduleBreakdownFromDailyData,
   formatProductScheduleCellPeopleWithPrivateSplit,
@@ -206,22 +207,106 @@ export default function ScheduleProductGridRow({
                   : null
 
               return (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className={`group ${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openProductCellReservationsModal(productId, dateString, product.product_name)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
+                <ScheduleHoverTooltip
+                  disabled={!dayData}
+                  maxWidth={420}
+                  contentClassName="min-w-[260px]"
+                  content={
+                    dayData ? (
+                      <>
+                        {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
+                          <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
+                            <div className="text-sm font-bold text-violet-200 tracking-tight">
+                              {locale === 'ko' ? '포함 상품' : 'Grouped products'}
+                            </div>
+                            {(() => {
+                              const dayBreakdown = miscTourDayProductBreakdown[dateString]
+                              const activeEntries = dayBreakdown
+                                ? Object.entries(dayBreakdown).filter(([, v]) => v.total > 0 || v.waiting > 0)
+                                : []
+                              if (activeEntries.length > 0) {
+                                return activeEntries.map(([canon, v]) => (
+                                  <div key={canon} className="text-sm font-semibold leading-snug">
+                                    <span className="text-yellow-300">{v.name}</span>
+                                    <span className="tabular-nums font-bold text-white">
+                                      {': '}
+                                      {v.total}
+                                      {v.waiting > 0 ? ` (+${v.waiting})` : ''}
+                                    </span>
+                                  </div>
+                                ))
+                              }
+                              return miscTourProductIds.map((pid) => (
+                                <div key={pid} className="text-sm font-semibold text-yellow-300 leading-snug">
+                                  {getMiscTourStoredItemLabel(pid, products)}
+                                </div>
+                              ))
+                            })()}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
+                          <span className="inline-flex items-center gap-1 shrink-0">
+                            <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
+                            <span>{(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}</span>
+                          </span>
+                          <span className="text-gray-400 shrink-0">/</span>
+                          <span className="inline-flex items-center gap-1 shrink-0">
+                            <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
+                            <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
+                          </span>
+                        </div>
+                        {choiceLine && (
+                          <div className="whitespace-nowrap break-keep leading-tight">{choiceLine}</div>
+                        )}
+                        {dayData.tourCapacityBreakdown && dayData.tourCapacityBreakdown.rows.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-600 space-y-1.5">
+                            {dayData.tourCapacityBreakdown.rows.map((row) => (
+                              <div key={row.tourId} className="space-y-0.5">
+                                <div className="text-[11px] text-gray-200 leading-snug">
+                                  {tTourCal('scheduleCellCapacityTeam', {
+                                    n: row.teamIndex,
+                                    guide: row.guideName,
+                                    assistant: row.assistantName,
+                                  })}
+                                </div>
+                                <div className="text-[11px] text-gray-100 font-medium tabular-nums">
+                                  {tTourCal('scheduleCellCapacityPerTour', {
+                                    assigned: row.assigned,
+                                    max: row.max,
+                                    spots: row.spotsLeft,
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="text-[11px] text-amber-200 font-semibold pt-0.5 tabular-nums border-t border-gray-700 mt-1.5">
+                              {tTourCal('scheduleCellCapacityTotal', {
+                                assigned: dayData.tourCapacityBreakdown.totalAssigned,
+                                max: dayData.tourCapacityBreakdown.totalMax,
+                                spots: dayData.tourCapacityBreakdown.totalSpotsLeft,
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : null
+                  }
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
+                    onClick={(e) => {
                       e.stopPropagation()
                       openProductCellReservationsModal(productId, dateString, product.product_name)
-                    }
-                  }}
-                >
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openProductCellReservationsModal(productId, dateString, product.product_name)
+                      }
+                    }}
+                  >
                   {dayData ? (
                     <div
                       className={(() => {
@@ -285,84 +370,8 @@ export default function ScheduleProductGridRow({
                   ) : (
                     <div className={isHealthAlertCell ? 'font-bold text-yellow-300' : 'text-gray-300'}>-</div>
                   )}
-                  {dayData && (
-                    <div className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block group-focus-within:block">
-                      {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
-                        <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
-                          <div className="text-sm font-bold text-violet-200 tracking-tight">
-                            {locale === 'ko' ? '포함 상품' : 'Grouped products'}
-                          </div>
-                          {(() => {
-                            const dayBreakdown = miscTourDayProductBreakdown[dateString]
-                            const activeEntries = dayBreakdown
-                              ? Object.entries(dayBreakdown).filter(([, v]) => v.total > 0 || v.waiting > 0)
-                              : []
-                            if (activeEntries.length > 0) {
-                              return activeEntries.map(([canon, v]) => (
-                                <div key={canon} className="text-sm font-semibold leading-snug">
-                                  <span className="text-yellow-300">{v.name}</span>
-                                  <span className="tabular-nums font-bold text-white">
-                                    {': '}
-                                    {v.total}
-                                    {v.waiting > 0 ? ` (+${v.waiting})` : ''}
-                                  </span>
-                                </div>
-                              ))
-                            }
-                            return miscTourProductIds.map((pid) => (
-                              <div key={pid} className="text-sm font-semibold text-yellow-300 leading-snug">
-                                {getMiscTourStoredItemLabel(pid, products)}
-                              </div>
-                            ))
-                          })()}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-                        <span className="inline-flex items-center gap-1 shrink-0">
-                          <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-                          <span>{(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}</span>
-                        </span>
-                        <span className="text-gray-400 shrink-0">/</span>
-                        <span className="inline-flex items-center gap-1 shrink-0">
-                          <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-                          <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
-                        </span>
-                      </div>
-                      {choiceLine && (
-                        <div className="whitespace-nowrap break-keep leading-tight">{choiceLine}</div>
-                      )}
-                      {dayData.tourCapacityBreakdown && dayData.tourCapacityBreakdown.rows.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-gray-600 space-y-1.5">
-                          {dayData.tourCapacityBreakdown.rows.map((row) => (
-                            <div key={row.tourId} className="space-y-0.5">
-                              <div className="text-[11px] text-gray-200 leading-snug">
-                                {tTourCal('scheduleCellCapacityTeam', {
-                                  n: row.teamIndex,
-                                  guide: row.guideName,
-                                  assistant: row.assistantName,
-                                })}
-                              </div>
-                              <div className="text-[11px] text-gray-100 font-medium tabular-nums">
-                                {tTourCal('scheduleCellCapacityPerTour', {
-                                  assigned: row.assigned,
-                                  max: row.max,
-                                  spots: row.spotsLeft,
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                          <div className="text-[11px] text-amber-200 font-semibold pt-0.5 tabular-nums border-t border-gray-700 mt-1.5">
-                            {tTourCal('scheduleCellCapacityTotal', {
-                              assigned: dayData.tourCapacityBreakdown.totalAssigned,
-                              max: dayData.tourCapacityBreakdown.totalMax,
-                              spots: dayData.tourCapacityBreakdown.totalSpotsLeft,
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                  </div>
+                </ScheduleHoverTooltip>
               )
             })()}
           </td>

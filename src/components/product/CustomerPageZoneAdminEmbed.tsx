@@ -164,6 +164,7 @@ export default function CustomerPageZoneAdminEmbed({
         return (
           <CustomerPageDetailHighlightsEmbed
             productId={productId!}
+            locale={locale}
             {...(onSaved ? { onSaved } : {})}
           />
         )

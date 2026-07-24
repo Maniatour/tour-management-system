@@ -231,13 +231,6 @@ function ProductDetailPageContentInner({
     ? resolveTagLabel(product.tags[0], locale, tagLabelMap)
     : null
 
-  const slogans = [
-    productDetails?.slogan1,
-    productDetails?.slogan2,
-    productDetails?.slogan3,
-  ]
-  const showSlogans = Boolean(productDetails?.slogan1 && showDetailOnCustomerPage('slogan1'))
-
   const includedHtml = (() => {
     void bindingRevision
     if (bindingsActive) {
@@ -313,8 +306,6 @@ function ProductDetailPageContentInner({
           productMedia={productMedia}
           tourCourses={tourCourses}
           tourCoursePhotos={tourCoursePhotos}
-          slogans={slogans}
-          showSlogans={showSlogans}
           tagLabelMap={tagLabelMap}
           showDetail={showDetailOnCustomerPage}
           reviews={productReviews}

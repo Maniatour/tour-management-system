@@ -5143,6 +5143,8 @@ export type Database = {
           slogan1: string | null
           slogan2: string | null
           slogan3: string | null
+          slogan4: string | null
+          slogan5: string | null
           small_group_info: string | null
           tour_operation_info: string | null
           updated_at: string | null
@@ -5223,6 +5225,8 @@ export type Database = {
           slogan1: string | null
           slogan2: string | null
           slogan3: string | null
+          slogan4: string | null
+          slogan5: string | null
           small_group_info: string | null
           sub_category: string
           tour_operation_info: string | null
@@ -5290,6 +5294,8 @@ export type Database = {
           slogan1: string | null
           slogan2: string | null
           slogan3: string | null
+          slogan4: string | null
+          slogan5: string | null
           small_group_info: string | null
           sub_category: string
           tags: string[] | null
@@ -5364,6 +5370,8 @@ export type Database = {
           slogan1: string | null
           slogan2: string | null
           slogan3: string | null
+          slogan4: string | null
+          slogan5: string | null
           small_group_info: string | null
           tags: string[] | null
           tour_operation_info: string | null

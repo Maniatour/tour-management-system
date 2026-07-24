@@ -59,8 +59,6 @@ type ProductDetailAirbnbViewProps = {
   productMedia: ProductMedia[]
   tourCourses: ProductTourCourse[]
   tourCoursePhotos: TourCoursePhoto[]
-  slogans: Array<string | null | undefined>
-  showSlogans: boolean
   tagLabelMap: TagLabelMap
   showDetail: (field: string) => boolean
   reviews: ProductReviewItem[]
@@ -117,8 +115,6 @@ export default function ProductDetailAirbnbView({
   productMedia,
   tourCourses,
   tourCoursePhotos,
-  slogans,
-  showSlogans,
   tagLabelMap,
   showDetail,
   reviews,
@@ -298,8 +294,6 @@ export default function ProductDetailAirbnbView({
               categoryLabel={categoryLabel}
               durationLabel={durationLabel}
               {...(groupSize ? { groupSize } : {})}
-              slogans={slogans}
-              showSlogans={showSlogans}
               tagLabelMap={tagLabelMap}
               showDetail={showDetail}
               reviews={reviews}

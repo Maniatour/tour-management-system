@@ -4,6 +4,7 @@ import type { DragEvent } from 'react'
 import dayjs from 'dayjs'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import { buildVehicleOilTooltipLines } from '@/lib/scheduleVehicleOilMaintenance'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type {
   ScheduleVehicleRow,
   ScheduleVehicleScheduleRow,
@@ -227,13 +228,15 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                         </div>
                         <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
                       </div>
-                      <div
-                        className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-primary' : 'cursor-help'}`}
-                        title={
+                      <ScheduleHoverTooltip
+                        content={
                           canEditVehicleFromSchedule
                             ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
                             : vehicleNameTooltip
                         }
+                      >
+                      <div
+                        className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-primary' : 'cursor-help'}`}
                         role={canEditVehicleFromSchedule ? 'button' : undefined}
                         tabIndex={canEditVehicleFromSchedule ? 0 : undefined}
                         onClick={
@@ -258,6 +261,7 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                       >
                         {label}
                       </div>
+                      </ScheduleHoverTooltip>
                     </div>
                   </td>
                   {monthDays.map(({ dateString }) => {
@@ -287,20 +291,18 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                     const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
                     const rentalBgClass = isInRentalPeriod ? 'bg-amber-200' : ''
                     const maintenanceGapBgClass = needsMaintenanceGap ? 'bg-orange-50 ring-1 ring-orange-400 ring-inset' : ''
+                    const cellHoverContent = needsMaintenanceGap
+                      ? maintenanceGapTooltip
+                      : count > 0
+                        ? cellTooltip
+                        : isInRentalPeriod
+                          ? rentalEmptyCellTooltip
+                          : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동'
                     return (
                       <td
                         key={dateString}
                         className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass} ${maintenanceGapBgClass}`}
                         style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
-                        title={
-                          needsMaintenanceGap
-                            ? maintenanceGapTooltip
-                            : count > 0
-                              ? cellTooltip
-                              : isInRentalPeriod
-                                ? rentalEmptyCellTooltip
-                                : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동'
-                        }
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
                           setVehicleAssignTarget({ vehicleId: id, dateString })
@@ -329,13 +331,13 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                           handleVehicleCellDrop(e, id, dateString)
                         }}
                       >
-                        <div className="relative h-[22px]" style={{ overflow: 'hidden' }}>
+                        <ScheduleHoverTooltip content={cellHoverContent}>
+                        <div className="relative h-[22px] w-full">
                           {count > 0 ? (
                             <div
                               data-drag-handle
                               className="absolute inset-0 flex items-center justify-center rounded text-white px-0.5 py-0 text-[10px] font-medium leading-tight cursor-grab active:cursor-grabbing"
                               style={{ backgroundColor: getColorFromClass(dayInfo?.productColorClass || defaultPresetIds[0]) }}
-                              title={cellTooltip}
                               draggable
                               onDragStart={(e) => {
                                 if (dayTours.length > 0) {
@@ -356,7 +358,6 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                           ) : needsMaintenanceGap ? (
                             <span
                               className="absolute inset-0 flex items-center justify-center rounded bg-orange-500 px-0.5 text-[8px] font-bold leading-none text-white animate-pulse shadow-sm ring-2 ring-orange-300 ring-inset"
-                              title={maintenanceGapTooltip}
                             >
                               정비 필요
                             </span>
@@ -364,6 +365,7 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                             <span className="text-gray-300 text-[10px]">-</span>
                           )}
                         </div>
+                        </ScheduleHoverTooltip>
                       </td>
                     )
                   })}
@@ -407,12 +409,13 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
                     {isMismatch ? (
-                      <span
-                        className="inline-flex min-h-[1.25rem] min-w-[1.25rem] cursor-default items-center justify-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-bold text-yellow-300 tabular-nums shadow-sm"
-                        title={mismatchTitle}
-                      >
-                        {tourCount}
-                      </span>
+                      <ScheduleHoverTooltip content={mismatchTitle}>
+                        <span
+                          className="inline-flex min-h-[1.25rem] min-w-[1.25rem] cursor-default items-center justify-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-bold text-yellow-300 tabular-nums shadow-sm"
+                        >
+                          {tourCount}
+                        </span>
+                      </ScheduleHoverTooltip>
                     ) : dayTotal > 0 ? (
                       dayTotal
                     ) : (

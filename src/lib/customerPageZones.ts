@@ -32,6 +32,7 @@ export type CustomerPageZone =
   | 'detail-tab-details'
   | 'detail-tab-faq'
   | 'detail-overview-slogan'
+  | 'detail-tour-highlight-bullet'
   | 'detail-overview-greeting'
   | 'detail-overview-description'
   | 'detail-overview-keyinfo'

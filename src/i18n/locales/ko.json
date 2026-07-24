@@ -1322,6 +1322,10 @@
         "placeholder": "{label} 내용을 입력하세요",
         "preview": "미리보기",
         "save": "저장",
+        "topBlockTitle": "상단 슬로건 블록",
+        "topBlockHint": "고객 페이지 상단에 표시되는 대제목과 부제입니다. 투어 하이라이트 체크리스트 문구는 「투어 하이라이트」 영역에서 편집하세요.",
+        "topBlockCombinedPreview": "상단 슬로건 미리보기",
+        "topBlockEmptyPreview": "입력한 슬로건이 없습니다.",
         "slots": {
           "slogan1": {
             "label": "슬로건 1",
@@ -1335,8 +1339,18 @@
           },
           "slogan3": {
             "label": "슬로건 3",
-            "sublabel": "설명",
-            "hint": "투어 하이라이트 목록 bullet 항목으로도 사용"
+            "sublabel": "하이라이트 1",
+            "hint": "투어 하이라이트 체크리스트 1번째 항목"
+          },
+          "slogan4": {
+            "label": "슬로건 4",
+            "sublabel": "하이라이트 2",
+            "hint": "투어 하이라이트 체크리스트 2번째 항목"
+          },
+          "slogan5": {
+            "label": "슬로건 5",
+            "sublabel": "하이라이트 3",
+            "hint": "투어 하이라이트 체크리스트 3번째 항목"
           }
         }
       }

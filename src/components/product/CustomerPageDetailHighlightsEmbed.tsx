@@ -1,9 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
+import { Check, Loader2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
+import {
+  fetchDefaultProductDetailsCustomerPageVisibility,
+  formatSupabaseError,
+  upsertDefaultProductDetailsMultilingual,
+} from '@/lib/productDetailsMultilingualAdmin'
+import {
+  getAdminEditLocaleLabel,
+  normalizeAdminEditLocale,
+  type AdminEditLocale,
+} from '@/lib/adminEditLocales'
 import CustomerPageTranslationEditor from '@/components/product/CustomerPageTranslationEditor'
+import {
+  readTourHighlightSloganVisibility,
+  TOUR_HIGHLIGHT_SLOGAN_KEYS,
+  type TourHighlightSloganKey,
+} from '@/lib/tourHighlightSlogans'
 import {
   buildEmptyTranslationForm,
   invalidateTranslationCache,
@@ -38,8 +54,30 @@ type HighlightsForm = {
 
 type CustomerPageDetailHighlightsEmbedProps = {
   productId: string
+  locale?: string
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
+}
+
+function stripHtmlToPlainText(html: string): string {
+  return html.replace(/<[^>]*>/g, '').trim()
+}
+
+const HIGHLIGHT_SLOT_LABELS: Record<TourHighlightSloganKey, string> = {
+  slogan3: '하이라이트 1',
+  slogan4: '하이라이트 2',
+  slogan5: '하이라이트 3',
+}
+
+type HighlightSloganForm = Record<TourHighlightSloganKey, string>
+type HighlightSloganVisibility = Record<TourHighlightSloganKey, boolean>
+
+function emptyHighlightSloganForm(): HighlightSloganForm {
+  return { slogan3: '', slogan4: '', slogan5: '' }
+}
+
+function emptyHighlightSloganVisibility(): HighlightSloganVisibility {
+  return { slogan3: true, slogan4: true, slogan5: true }
 }
 
 function parseDurationHours(raw: unknown): string {
@@ -50,12 +88,27 @@ function parseDurationHours(raw: unknown): string {
 
 export default function CustomerPageDetailHighlightsEmbed({
   productId,
+  locale: localeProp,
   onSaved,
   onDirtyChange,
 }: CustomerPageDetailHighlightsEmbedProps) {
+  const [editLocale, setEditLocale] = useState<AdminEditLocale>(() =>
+    normalizeAdminEditLocale(localeProp ?? 'ko')
+  )
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [detailRowId, setDetailRowId] = useState<string | null>(null)
+  const [highlightSlogans, setHighlightSlogans] = useState<HighlightSloganForm>(emptyHighlightSloganForm)
+  const [highlightVisibility, setHighlightVisibility] = useState<HighlightSloganVisibility>(
+    emptyHighlightSloganVisibility
+  )
+  const [initialHighlightSnapshot, setInitialHighlightSnapshot] = useState<string | null>(null)
+
+  useEffect(() => {
+    setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
+  }, [localeProp])
+
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [subCategories, setSubCategories] = useState<SubCategoryOption[]>([])
   const [form, setForm] = useState<HighlightsForm>({
@@ -83,7 +136,8 @@ export default function CustomerPageDetailHighlightsEmbed({
     setLoading(true)
     setMessage(null)
     try {
-      const [productRes, categoriesRes, subCategoriesRes, translations] = await Promise.all([
+      const [productRes, categoriesRes, subCategoriesRes, translations, details] =
+        await Promise.all([
         supabase.from('products').select('*').eq('id', productId).single(),
         supabase.from('product_categories').select('id, name').eq('is_active', true).order('sort_order'),
         supabase
@@ -92,6 +146,7 @@ export default function CustomerPageDetailHighlightsEmbed({
           .eq('is_active', true)
           .order('sort_order'),
         loadCustomerPageTranslations('productDetail', [...TRUST_BADGE_FIELDS]),
+        fetchProductDetailsForAdminEdit(productId, editLocale),
       ])
 
       if (productRes.error) throw productRes.error
@@ -128,25 +183,52 @@ export default function CustomerPageDetailHighlightsEmbed({
       setInitialForm(nextForm)
       setTranslationForm(translations)
       setInitialTranslationForm(translations)
+
+      const nextHighlightSlogans = emptyHighlightSloganForm()
+      const nextHighlightVisibility = emptyHighlightSloganVisibility()
+      TOUR_HIGHLIGHT_SLOGAN_KEYS.forEach((key) => {
+        nextHighlightSlogans[key] = stripHtmlToPlainText(String(details.values[key] ?? ''))
+        nextHighlightVisibility[key] = readTourHighlightSloganVisibility(details.values, key)
+      })
+      setDetailRowId(details.row?.id ? String(details.row.id) : null)
+      setHighlightSlogans(nextHighlightSlogans)
+      setHighlightVisibility(nextHighlightVisibility)
+      setInitialHighlightSnapshot(
+        JSON.stringify({
+          highlightSlogans: nextHighlightSlogans,
+          highlightVisibility: nextHighlightVisibility,
+        })
+      )
     } catch (error) {
       console.error('하이라이트 로드 오류:', error)
       setMessage('데이터를 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
-  }, [productId])
+  }, [editLocale, productId])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
   useEffect(() => {
-    if (!onDirtyChange || !initialForm || !initialTranslationForm) return
+    if (!onDirtyChange || !initialForm || !initialTranslationForm || !initialHighlightSnapshot) return
     const formDirty = JSON.stringify(form) !== JSON.stringify(initialForm)
     const translationDirty =
       JSON.stringify(translationForm) !== JSON.stringify(initialTranslationForm)
-    onDirtyChange(formDirty || translationDirty)
-  }, [form, initialForm, initialTranslationForm, onDirtyChange, translationForm])
+    const highlightDirty =
+      JSON.stringify({ highlightSlogans, highlightVisibility }) !== initialHighlightSnapshot
+    onDirtyChange(formDirty || translationDirty || highlightDirty)
+  }, [
+    form,
+    highlightSlogans,
+    highlightVisibility,
+    initialForm,
+    initialHighlightSnapshot,
+    initialTranslationForm,
+    onDirtyChange,
+    translationForm,
+  ])
 
   const toggleGroupSize = (size: string, checked: boolean) => {
     setForm((prev) => ({
@@ -177,16 +259,46 @@ export default function CustomerPageDetailHighlightsEmbed({
       const { error } = await supabase.from('products').update(update as never).eq('id', productId)
       if (error) throw error
 
+      const existingVisibility = await fetchDefaultProductDetailsCustomerPageVisibility(
+        supabase,
+        productId,
+        editLocale,
+        detailRowId
+      )
+      const highlightPatch: Record<string, string | null> = {}
+      const visibilityPatch: Record<string, boolean> = {}
+      TOUR_HIGHLIGHT_SLOGAN_KEYS.forEach((key) => {
+        highlightPatch[key] = highlightSlogans[key].trim() || null
+        visibilityPatch[key] = highlightVisibility[key]
+      })
+
+      const { id: savedRowId } = await upsertDefaultProductDetailsMultilingual(supabase, {
+        productId,
+        languageCode: editLocale,
+        existingRowId: detailRowId,
+        patch: {
+          ...highlightPatch,
+          customer_page_visibility: {
+            ...existingVisibility,
+            ...visibilityPatch,
+          },
+        },
+      })
+      setDetailRowId(savedRowId)
+
       await saveCustomerPageTranslations('productDetail', translationForm)
       await invalidateTranslationCache()
 
       setInitialForm(form)
       setInitialTranslationForm(translationForm)
+      setInitialHighlightSnapshot(
+        JSON.stringify({ highlightSlogans, highlightVisibility })
+      )
       setMessage('저장되었습니다.')
       onSaved?.()
     } catch (error) {
       console.error('하이라이트 저장 오류:', error)
-      setMessage('저장 중 오류가 발생했습니다.')
+      setMessage(`저장 중 오류가 발생했습니다. ${formatSupabaseError(error)}`)
     } finally {
       setSaving(false)
     }
@@ -204,8 +316,78 @@ export default function CustomerPageDetailHighlightsEmbed({
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground">
-        고객 페이지 상단 아이콘 줄에 표시되는 상품 DB 값과 신뢰 배지 문구를 편집합니다.
+        고객 페이지 상단 아이콘 줄·하이라이트 체크리스트·신뢰 배지 문구를 편집합니다.
       </p>
+
+      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+        <div>
+          <h4 className="text-sm font-semibold text-foreground">투어 하이라이트 문구</h4>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            slogan3~5 · 체크리스트에 최대 3개 표시 · {getAdminEditLocaleLabel(editLocale)}
+          </p>
+        </div>
+
+        {TOUR_HIGHLIGHT_SLOGAN_KEYS.map((slotId) => (
+          <div
+            key={slotId}
+            className="space-y-3 rounded-lg border border-border/60 bg-muted/10 p-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h5 className="text-sm font-medium text-foreground">
+                  {HIGHLIGHT_SLOT_LABELS[slotId]}
+                </h5>
+                <p className="text-[11px] text-muted-foreground">컬럼: {slotId}</p>
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={highlightVisibility[slotId]}
+                  onChange={(e) =>
+                    setHighlightVisibility((prev) => ({ ...prev, [slotId]: e.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
+                />
+                고객 페이지 표시
+              </label>
+            </div>
+
+            <textarea
+              value={highlightSlogans[slotId]}
+              onChange={(e) =>
+                setHighlightSlogans((prev) => ({ ...prev, [slotId]: e.target.value }))
+              }
+              rows={3}
+              className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder={`${HIGHLIGHT_SLOT_LABELS[slotId]} 문구를 입력하세요`}
+            />
+          </div>
+        ))}
+
+        {TOUR_HIGHLIGHT_SLOGAN_KEYS.some(
+          (key) => highlightSlogans[key].trim() && highlightVisibility[key]
+        ) ? (
+          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              미리보기
+            </p>
+            <ul className="airbnb-detail-highlight-list mt-2 space-y-2">
+              {TOUR_HIGHLIGHT_SLOGAN_KEYS.map((key) => {
+                const text = highlightSlogans[key].trim()
+                if (!text || !highlightVisibility[key]) return null
+                return (
+                  <li key={key} className="airbnb-detail-highlight-row flex items-start gap-2">
+                    <span className="airbnb-detail-highlight-check" aria-hidden>
+                      <Check className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
+                    <span className="airbnb-detail-highlight-text text-sm">{text}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
+      </div>
 
       <div className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
         <h4 className="text-sm font-semibold text-foreground">상품 정보 (DB)</h4>

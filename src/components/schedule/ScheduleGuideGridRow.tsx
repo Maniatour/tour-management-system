@@ -12,6 +12,7 @@ import type {
   ScheduleGuideScheduleRow,
 } from '@/lib/scheduleGuideGridTypes'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleGuideGridProps } from '@/components/schedule/ScheduleGuideGrid'
 
 function tourMatchesScheduleDate(tour: Tour, dateString: string): boolean {
@@ -325,27 +326,30 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
               <ChevronDown className="w-3 h-3" />
             </button>
           </div>
-          <button
-            type="button"
-            className={`min-w-0 flex-1 truncate text-left ${
-              canEditTeamFromSchedule
-                ? 'cursor-pointer hover:text-primary hover:underline'
-                : ''
-            }`}
-            title={
+          <ScheduleHoverTooltip
+            content={
               canEditTeamFromSchedule
                 ? locale === 'ko'
                   ? '클릭하여 팀원 정보 수정'
                   : 'Click to edit team member'
                 : guide.team_member_name
             }
-            onClick={(e) => {
-              e.stopPropagation()
-              openTeamEditFromSchedule(teamMemberId)
-            }}
           >
-            {guide.team_member_name}
-          </button>
+            <button
+              type="button"
+              className={`min-w-0 flex-1 truncate text-left ${
+                canEditTeamFromSchedule
+                  ? 'cursor-pointer hover:text-primary hover:underline'
+                  : ''
+              }`}
+              onClick={(e) => {
+                e.stopPropagation()
+                openTeamEditFromSchedule(teamMemberId)
+              }}
+            >
+              {guide.team_member_name}
+            </button>
+          </ScheduleHoverTooltip>
         </div>
       </td>
       <td className="p-0" colSpan={monthDays.length}>
@@ -420,6 +424,13 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                         ) : null
                         
                         return (
+                          <ScheduleHoverTooltip
+                            content={
+                              offSchedule
+                                ? `${offSchedule.reason || ''} (${offSchedule.status})`
+                                : guide.team_member_name
+                            }
+                          >
                           <div 
                             className={offScheduleAssignmentCellClass(offSchedule?.status)}
                             onClick={() => {
@@ -427,14 +438,10 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                 openOffScheduleActionModal(offSchedule)
                               }
                             }}
-                            title={
-                              offSchedule
-                                ? `${offSchedule.reason || ''} (${offSchedule.status})`
-                                : guide.team_member_name
-                            }
                             >
                               OFF
                             </div>
+                          </ScheduleHoverTooltip>
                         )
                       })()
                     ) : (
@@ -541,6 +548,13 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             : ''
                           
                           return (
+                            <ScheduleHoverTooltip
+                              content={
+                                guideTours.length > 0
+                                  ? getGuideScheduleTourHoverText(guideTours[0])
+                                  : guide.team_member_name
+                              }
+                            >
                             <div 
                               className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                 dayData.assignedPeople === 0 
@@ -556,7 +570,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                   : undefined,
                                 boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                               }}
-                              title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
                               draggable
                               onDragStart={(e) => {
                                 if (guideTours.length > 0) {
@@ -588,11 +601,19 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                 <span className="text-xs opacity-75">→</span>
                               )}
                             </div>
+                            </ScheduleHoverTooltip>
                           )
                         }
                         
                         // 기본 렌더링 (product_id가 없는 경우)
                         return (
+                          <ScheduleHoverTooltip
+                            content={
+                              guideTours.length > 0
+                                ? getGuideScheduleTourHoverText(guideTours[0])
+                                : guide.team_member_name
+                            }
+                          >
                           <div 
                             className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                               dayData.assignedPeople === 0 
@@ -607,7 +628,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                 ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                 : undefined
                             }}
-                            title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
                             draggable
                             onDragStart={(e) => {
                               if (guideTours.length > 0) {
@@ -639,6 +659,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                               <span className="text-xs opacity-75">→</span>
                             )}
                           </div>
+                          </ScheduleHoverTooltip>
                         )
                       })()}
                       
@@ -681,6 +702,13 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             : ''
                           
                           return (
+                            <ScheduleHoverTooltip
+                              content={
+                                assistantTours.length > 0
+                                  ? getGuideScheduleTourHoverText(assistantTours[0])
+                                  : guide.team_member_name
+                              }
+                            >
                             <div 
                               className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                 dayData.assignedPeople === 0 
@@ -696,7 +724,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                   : undefined,
                                 boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                               }}
-                            title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
                             draggable
                             onDragStart={(e) => {
                               if (assistantTours.length > 0) {
@@ -728,11 +755,19 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                               <span className="text-xs opacity-75">→</span>
                             )}
                           </div>
+                            </ScheduleHoverTooltip>
                         )
                         }
                         
                         // 기본 렌더링 (product_id가 없거나 tour_guide_id가 없는 경우)
                         return (
+                          <ScheduleHoverTooltip
+                            content={
+                              assistantTours.length > 0
+                                ? getGuideScheduleTourHoverText(assistantTours[0])
+                                : guide.team_member_name
+                            }
+                          >
                           <div 
                             className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                               dayData.assignedPeople === 0 
@@ -747,7 +782,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                 ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                 : undefined
                             }}
-                            title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
                             draggable
                             onDragStart={(e) => {
                               if (assistantTours.length > 0) {
@@ -779,6 +813,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                               <span className="text-xs opacity-75">→</span>
                             )}
                           </div>
+                          </ScheduleHoverTooltip>
                         )
                       })()}
                     </div>
@@ -798,6 +833,13 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                           ) : null
                           
                           return (
+                            <ScheduleHoverTooltip
+                              content={
+                                offSchedule
+                                  ? `${offSchedule.reason || ''} (${offSchedule.status})`
+                                  : guide.team_member_name
+                              }
+                            >
                             <div 
                               className={offScheduleAssignmentCellClass(offSchedule?.status)}
                               onClick={() => {
@@ -805,18 +847,15 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                                   openOffScheduleActionModal(offSchedule)
                                 }
                               }}
-                              title={
-                                offSchedule
-                                  ? `${offSchedule.reason || ''} (${offSchedule.status})`
-                                  : guide.team_member_name
-                              }
                             >
                               OFF
                             </div>
+                            </ScheduleHoverTooltip>
                           )
                         })()
                       ) : (
                         /* 드롭 영역 */
+                        <ScheduleHoverTooltip content={guide.team_member_name}>
                         <div 
                           className={`h-full flex items-center justify-center cursor-pointer transition-colors ${
                             isCdlKoreanDriver
@@ -830,10 +869,10 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             e.stopPropagation()
                             handleCreateOffSchedule(teamMemberId, dateString)
                           }}
-                          title={guide.team_member_name}
                         >
                           <div className="text-gray-300 text-xs">+</div>
                         </div>
+                        </ScheduleHoverTooltip>
                       )}
                     </div>
                   )}
@@ -882,6 +921,13 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                 className="absolute z-10 top-0 h-[22px] flex items-center"
                 style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
               >
+                <ScheduleHoverTooltip
+                  content={
+                    mdRowTours.length > 0
+                      ? getGuideScheduleTourHoverText(mdRowTours[0])
+                      : guide.team_member_name
+                  }
+                >
                 <div
                   className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
                   style={{ 
@@ -908,7 +954,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                       openTourDetailModal(mdRowTours[0].id)
                     }
                   }}
-                  title={mdRowTours.length > 0 ? getGuideScheduleTourHoverText(mdRowTours[0]) : guide.team_member_name}
                 >
                   {hasUnassignedVehicleMd && (
                     <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
@@ -928,6 +973,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                     <span className="text-xs opacity-75">→</span>
                   )}
                 </div>
+                </ScheduleHoverTooltip>
               </div>
             )
           })}

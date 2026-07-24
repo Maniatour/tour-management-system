@@ -245,7 +245,6 @@ export default function CategoryManagementModal({
         .from('products')
         .update({
           category: trimmedName,
-          updated_at: new Date().toISOString()
         } as never)
         .eq('category', editingCategory)
 
@@ -329,7 +328,6 @@ export default function CategoryManagementModal({
         .from('products')
         .update({
           sub_category: trimmedName,
-          updated_at: new Date().toISOString()
         } as never)
         .eq('sub_category', editingSubCategory ?? '')
 

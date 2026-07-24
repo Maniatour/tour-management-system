@@ -50,6 +50,8 @@ export type ProductDetails = {
   slogan1: string | null
   slogan2: string | null
   slogan3: string | null
+  slogan4: string | null
+  slogan5: string | null
   description: string | null
   included: string | null
   not_included: string | null

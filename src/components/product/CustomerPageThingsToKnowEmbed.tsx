@@ -381,7 +381,6 @@ export default function CustomerPageThingsToKnowEmbed({
         child_age_max: basicForm.child_age_max ? Number(basicForm.child_age_max) : null,
         infant_age: basicForm.infant_age ? Number(basicForm.infant_age) : null,
         tags: tagList,
-        updated_at: new Date().toISOString(),
       }
       if (isLegacyColumnLocale(editLocale)) {
         if (editLocale === 'ko') {

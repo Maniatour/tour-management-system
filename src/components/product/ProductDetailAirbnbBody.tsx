@@ -21,6 +21,7 @@ import ProductDetailThingsToKnowAccordion from '@/components/product/ProductDeta
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
 import { resolveProductDetailSectionTitle } from '@/lib/productDetailSectionTitles'
+import { collectVisibleTourHighlightSlogans } from '@/lib/tourHighlightSlogans'
 import type {
   ProductDetailsFields,
   ProductDetailsTabProduct,
@@ -45,6 +46,8 @@ type ProductDetailAirbnbBodyProps = {
     slogan1?: string | null
     slogan2?: string | null
     slogan3?: string | null
+    slogan4?: string | null
+    slogan5?: string | null
     greeting?: string | null
     section_titles?: unknown
   } | null
@@ -54,8 +57,6 @@ type ProductDetailAirbnbBodyProps = {
   categoryLabel: string
   durationLabel: string
   groupSize?: string | null
-  slogans: Array<string | null | undefined>
-  showSlogans: boolean
   tagLabelMap: TagLabelMap
   showDetail: (field: string) => boolean
   reviews: ProductReviewItem[]
@@ -79,8 +80,6 @@ export default function ProductDetailAirbnbBody({
   categoryLabel,
   durationLabel,
   groupSize,
-  slogans,
-  showSlogans,
   tagLabelMap,
   showDetail,
   reviews,
@@ -90,9 +89,12 @@ export default function ProductDetailAirbnbBody({
   const t = useTranslations('productDetail')
   const sectionTitles = productDetails?.section_titles
   const tags = productDetails?.tags || product.tags || []
-  const sloganItems = slogans.filter((s): s is string => Boolean(s?.trim()))
-  const mainSlogan = productDetails?.slogan1?.trim() ?? ''
-  const subSlogan = productDetails?.slogan2?.trim() ?? ''
+  const mainSlogan = showDetail('slogan1') ? (productDetails?.slogan1?.trim() ?? '') : ''
+  const subSlogan = showDetail('slogan2') ? (productDetails?.slogan2?.trim() ?? '') : ''
+  const highlightSlogans = collectVisibleTourHighlightSlogans(
+    productDetails as Record<string, unknown> | null | undefined,
+    showDetail
+  )
   const locationLine = product.departure_city || 'Las Vegas'
 
   const highlightItems = [
@@ -107,7 +109,7 @@ export default function ProductDetailAirbnbBody({
   ].filter(Boolean) as Array<{ icon: typeof Clock; label: string }>
 
   const tourHighlightsTitle = resolveProductDetailSectionTitle(
-    'slogan1',
+    'slogan3',
     sectionTitles,
     t,
     'tourHighlights'
@@ -136,7 +138,7 @@ export default function ProductDetailAirbnbBody({
         </>
       ) : null}
 
-      {showSlogans && (mainSlogan || subSlogan) ? (
+      {(mainSlogan || subSlogan) ? (
         <>
           <CustomerPageZone zone="detail-overview-slogan" productId={productId}>
             <section className="airbnb-detail-slogan-block">
@@ -148,14 +150,14 @@ export default function ProductDetailAirbnbBody({
         </>
       ) : null}
 
-      {showSlogans && sloganItems.length > 0 ? (
+      {highlightSlogans.length > 0 ? (
         <>
-          <CustomerPageZone zone="detail-overview-slogan" productId={productId}>
+          <CustomerPageZone zone="detail-tour-highlight-bullet" productId={productId}>
             <section className="airbnb-detail-section">
               <h2 className="airbnb-detail-section-title">{tourHighlightsTitle}</h2>
               <p className="airbnb-detail-highlights-desc">{t('tourHighlightsSubtitle')}</p>
               <ul className="airbnb-detail-highlight-list">
-                {sloganItems.map((text, index) => (
+                {highlightSlogans.map((text, index) => (
                   <li key={`highlight-${index}`} className="airbnb-detail-highlight-row">
                     <span className="airbnb-detail-highlight-check" aria-hidden>
                       <Check className="h-4 w-4" strokeWidth={2.5} />
@@ -181,6 +183,8 @@ export default function ProductDetailAirbnbBody({
                   slogan1: string | null
                   slogan2: string | null
                   slogan3: string | null
+                  slogan4: string | null
+                  slogan5: string | null
                   greeting: string | null
                   description: string | null
                   tags: string[] | null

@@ -11,6 +11,7 @@ import {
 } from '@/lib/scheduleProductGridHelpers'
 import { useScheduleGridWindowVirtualizer } from '@/hooks/useScheduleGridWindowVirtualizer'
 import ScheduleProductGridRow from '@/components/schedule/ScheduleProductGridRow'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
 
 export type ScheduleProductGridProps = {
@@ -30,8 +31,6 @@ export type ScheduleProductGridProps = {
   scheduleHealthHighlightDateSet: Set<string>
   scheduleHealthProductCellAlertSet: Set<string>
   scheduleInteractionDragging: boolean
-  hoveredDate: string | null
-  setHoveredDate: (date: string | null) => void
   isToday: (dateString: string) => boolean
   openDateNoteModal: (dateString: string) => void
   productScheduleData: Record<string, ScheduleProductGridProductRow>
@@ -73,8 +72,6 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     scheduleHealthHighlightDateSet,
     scheduleHealthProductCellAlertSet,
     scheduleInteractionDragging,
-    hoveredDate,
-    setHoveredDate,
     isToday,
     openDateNoteModal,
     productScheduleData,
@@ -240,8 +237,22 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                     }`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
-                    <div
-                      className={`
+                    <ScheduleHoverTooltip
+                      disabled={scheduleInteractionDragging}
+                      maxWidth={320}
+                      content={
+                        hasNote ? (
+                          <>
+                            <div className="font-semibold mb-1">{dateString}</div>
+                            <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
+                          </>
+                        ) : (
+                          '클릭하여 날짜 노트 작성'
+                        )
+                      }
+                    >
+                      <div
+                        className={`
                           px-1 py-0.5 cursor-pointer transition-colors relative
                           ${healthHeaderAlert
                             ? 'bg-red-600 hover:bg-red-700'
@@ -253,54 +264,39 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                           }
                           ${!healthHeaderAlert && hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : !healthHeaderAlert ? 'hover:bg-muted' : ''}
                         `}
-                      onClick={() => openDateNoteModal(dateString)}
-                      onMouseEnter={() => {
-                        if (scheduleInteractionDragging) return
-                        setHoveredDate(dateString)
-                      }}
-                      onMouseLeave={() => {
-                        if (scheduleInteractionDragging) return
-                        setHoveredDate(null)
-                      }}
-                      title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
-                    >
-                      <div
-                        className={`flex items-center justify-center ${
-                          healthHeaderAlert
-                            ? 'font-bold text-[#ffff00]'
-                            : isToday(dateString)
-                              ? 'font-bold text-red-700'
-                              : hasNote
-                                ? 'font-semibold text-yellow-800'
-                                : isEdgePadding
-                                  ? 'text-slate-700'
-                                  : ''
-                        }`}
+                        onClick={() => openDateNoteModal(dateString)}
                       >
-                        <span>{isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}</span>
-                      </div>
-                      <div
-                        className={`text-xs flex items-center justify-center gap-1 ${
-                          healthHeaderAlert
-                            ? 'font-semibold text-[#ffff00]'
-                            : isToday(dateString)
-                              ? 'text-red-600'
-                              : hasNote
-                                ? 'text-yellow-700 font-medium'
-                                : 'text-gray-500'
-                        }`}
-                      >
-                        {dayOfWeek}
-                        {hasNote && <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full" />}
-                      </div>
-                      {hoveredDate === dateString && hasNote && (
-                        <div className="absolute z-50 top-full left-1/2 transform -translate-x-1/2 mt-1 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
-                          <div className="font-semibold mb-1">{dateString}</div>
-                          <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
-                          <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+                        <div
+                          className={`flex items-center justify-center ${
+                            healthHeaderAlert
+                              ? 'font-bold text-[#ffff00]'
+                              : isToday(dateString)
+                                ? 'font-bold text-red-700'
+                                : hasNote
+                                  ? 'font-semibold text-yellow-800'
+                                  : isEdgePadding
+                                    ? 'text-slate-700'
+                                    : ''
+                          }`}
+                        >
+                          <span>{isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}</span>
                         </div>
-                      )}
-                    </div>
+                        <div
+                          className={`text-xs flex items-center justify-center gap-1 ${
+                            healthHeaderAlert
+                              ? 'font-semibold text-[#ffff00]'
+                              : isToday(dateString)
+                                ? 'text-red-600'
+                                : hasNote
+                                  ? 'text-yellow-700 font-medium'
+                                  : 'text-gray-500'
+                          }`}
+                        >
+                          {dayOfWeek}
+                          {hasNote && <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full" />}
+                        </div>
+                      </div>
+                    </ScheduleHoverTooltip>
                   </th>
                 )
               })}
@@ -317,7 +313,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       <div
         ref={productScheduleBodyScrollRef}
         onScroll={onProductScheduleBodyScroll}
-        className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-clip"
+        className="scrollbar-hide min-w-0 overflow-x-auto"
         style={{
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',

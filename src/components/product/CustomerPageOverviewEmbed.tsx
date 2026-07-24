@@ -200,7 +200,6 @@ export default function CustomerPageOverviewEmbed({
         values: { summary: summaryForm.summary },
       })
       const productUpdate: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
         ...legacyPatch,
       }
       if (isLegacyColumnLocale(editLocale)) {

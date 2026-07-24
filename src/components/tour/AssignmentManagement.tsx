@@ -237,7 +237,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               reservationStatus: res.status ?? null,
             }
           )
-          if (b > 0) total += b
+          total += b
         }
 
         setAssignedBalanceTotal(total)
@@ -251,8 +251,10 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   }, [assignedReservations])
 
   const formatBalanceBadge = (amount: number) => {
-    if (!Number.isFinite(amount) || amount <= 0) return '$0.00'
-    return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return '$0.00'
+    const abs = Math.abs(amount)
+    const formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return amount < 0 ? `-$${formatted}` : `$${formatted}`
   }
 
   const peerIdsKey = React.useMemo(
@@ -558,7 +560,11 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
               headerBadges={
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    assignedBalanceTotal < -0.005
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-purple-100 text-purple-800'
+                  }`}
                   title={tResCard('balanceDueBadgeTitle')}
                   aria-label={`${tResCard('balanceDueBadgeTitle')}: ${formatBalanceBadge(assignedBalanceTotal)}`}
                 >

@@ -1313,6 +1313,10 @@
         "placeholder": "Enter {label}",
         "preview": "Preview",
         "save": "Save",
+        "topBlockTitle": "Top slogan block",
+        "topBlockHint": "Headline and subtitle shown at the top of the customer page. Edit tour highlight checklist copy in the Tour Highlights zone.",
+        "topBlockCombinedPreview": "Top slogan preview",
+        "topBlockEmptyPreview": "No slogan text entered yet.",
         "slots": {
           "slogan1": {
             "label": "Slogan 1",
@@ -1326,8 +1330,18 @@
           },
           "slogan3": {
             "label": "Slogan 3",
-            "sublabel": "Description",
-            "hint": "Also used as bullet items in tour highlights"
+            "sublabel": "Highlight 1",
+            "hint": "First tour highlight checklist item"
+          },
+          "slogan4": {
+            "label": "Slogan 4",
+            "sublabel": "Highlight 2",
+            "hint": "Second tour highlight checklist item"
+          },
+          "slogan5": {
+            "label": "Slogan 5",
+            "sublabel": "Highlight 3",
+            "hint": "Third tour highlight checklist item"
           }
         }
       }

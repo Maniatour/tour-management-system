@@ -982,8 +982,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [])
 
-  const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-
   // 차량·날짜 셀 클릭 시 투어 배정 모달
   const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
   const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
@@ -6292,8 +6290,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             scheduleHealthHighlightDateSet={scheduleHealthHighlightDateSet}
             scheduleHealthProductCellAlertSet={scheduleHealthProductCellAlertSet}
             scheduleInteractionDragging={scheduleInteractionDragging}
-            hoveredDate={hoveredDate}
-            setHoveredDate={setHoveredDate}
             isToday={isToday}
             openDateNoteModal={openDateNoteModal}
             productScheduleData={productScheduleData}

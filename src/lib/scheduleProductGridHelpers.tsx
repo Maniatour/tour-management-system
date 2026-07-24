@@ -1,6 +1,7 @@
 'use client'
 
 import ReactCountryFlag from 'react-country-flag'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 
 const PRODUCT_SCHEDULE_KEYCAP_DIGITS = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'] as const
 
@@ -121,24 +122,30 @@ export function ScheduleTotalColumnWithTooltip({
   const x = breakdown.choiceCounts.X || 0
   const l = breakdown.choiceCounts.L || 0
   return (
-    <div className="group relative overflow-visible cursor-default">
-      <div className={valueClassName}>{total}</div>
-      <div className="absolute z-[1020] right-0 top-full mt-1 min-w-[200px] w-max max-w-[min(90vw,320px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left hidden group-hover:block">
-        <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-            <span>한국인 {breakdown.ko}명</span>
-          </span>
-          <span className="text-gray-400 shrink-0">/</span>
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-            <span>미국인 {breakdown.en}명</span>
-          </span>
-        </div>
-        <div className="whitespace-nowrap break-keep leading-tight">
-          엑스 {x}명 / 로어 {l}명
-        </div>
-      </div>
-    </div>
+    <ScheduleHoverTooltip
+      align="end"
+      maxWidth={320}
+      contentClassName="min-w-[200px]"
+      content={
+        <>
+          <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
+              <span>한국인 {breakdown.ko}명</span>
+            </span>
+            <span className="text-gray-400 shrink-0">/</span>
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
+              <span>미국인 {breakdown.en}명</span>
+            </span>
+          </div>
+          <div className="whitespace-nowrap break-keep leading-tight">
+            엑스 {x}명 / 로어 {l}명
+          </div>
+        </>
+      }
+    >
+      <div className={`${valueClassName} cursor-default`}>{total}</div>
+    </ScheduleHoverTooltip>
   )
 }

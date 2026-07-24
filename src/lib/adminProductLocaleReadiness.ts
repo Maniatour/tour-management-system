@@ -27,6 +27,8 @@ export const LOCALE_READINESS_DETAIL_FIELDS = [
   'slogan1',
   'slogan2',
   'slogan3',
+  'slogan4',
+  'slogan5',
   'description',
   'included',
   'not_included',
@@ -88,6 +90,8 @@ export type ProductDetailsMultilingualRow = {
   slogan1?: string | null
   slogan2?: string | null
   slogan3?: string | null
+  slogan4?: string | null
+  slogan5?: string | null
   description?: string | null
   included?: string | null
   not_included?: string | null

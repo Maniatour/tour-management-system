@@ -5,6 +5,8 @@ export type DetailFieldKey =
   | 'slogan1'
   | 'slogan2'
   | 'slogan3'
+  | 'slogan4'
+  | 'slogan5'
   | 'greeting'
   | 'description'
   | 'included'
@@ -86,7 +88,9 @@ export type ZoneEditConfig = {
 export const DETAIL_FIELD_LABELS: Record<DetailFieldKey, string> = {
   slogan1: '슬로건 (대제목)',
   slogan2: '슬로건 (부제)',
-  slogan3: '슬로건 (설명)',
+  slogan3: '투어 하이라이트 1',
+  slogan4: '투어 하이라이트 2',
+  slogan5: '투어 하이라이트 3',
   greeting: '인사말',
   description: '상품 설명',
   included: '포함 사항',
@@ -158,7 +162,7 @@ export const ADMIN_TAB_LABELS: Record<string, string> = {
   reservations: '예약 관리',
   coupons: '쿠폰 관리',
   'detail-highlights': '투어 하이라이트',
-  'detail-slogan': '슬로건',
+  'detail-slogan': '상단 슬로건',
   'detail-overview': '투어 소개',
   'detail-tour-courses': '투어 코스 내용',
   'detail-schedule': '여행 일정',
@@ -320,7 +324,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-highlights',
     requiresProduct: true,
-    note: '소요 시간·그룹 규모·카테고리·출발 도시는 상품 DB에 저장됩니다. 슬로건 목록은 「슬로건」 영역에서 편집하세요.',
+    note: '소요 시간·그룹 규모·카테고리·출발 도시는 상품 DB에 저장됩니다. 체크리스트 하이라이트 문구(slogan3~5)도 이 영역에서 편집합니다.',
   },
   'detail-mobile-booking': {
     label: '모바일 예약 카드',
@@ -428,11 +432,18 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     note: '질문·답변은 faq_library 재사용 라이브러리에서 관리하고, 상품에는 product_faq_links로 연결합니다.',
   },
   'detail-overview-slogan': {
-    label: '슬로건',
+    label: '상단 슬로건',
     editType: 'admin-tab',
     adminTab: 'detail-slogan',
     requiresProduct: true,
-    note: '상세정보 테이블의 slogan1·2·3 컬럼 값을 직접 편집합니다.',
+    note: '고객 페이지 상단 대제목(slogan1)과 부제(slogan2)를 편집합니다. 투어 하이라이트 문구는 「투어 하이라이트」 영역에서 편집하세요.',
+  },
+  'detail-tour-highlight-bullet': {
+    label: '투어 하이라이트 문구',
+    editType: 'admin-tab',
+    adminTab: 'detail-highlights',
+    requiresProduct: true,
+    note: '체크리스트에 표시되는 하이라이트 문구(slogan3~5, 최대 3개)를 편집합니다.',
   },
   'detail-overview-greeting': {
     label: '인사말',
@@ -480,7 +491,7 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
   'detail-details-body': {
     label: '상세정보 본문',
     editType: 'field-picker',
-    detailFields: ALL_DETAIL_FIELDS.filter((f) => !['slogan1', 'slogan2', 'slogan3', 'greeting'].includes(f)),
+    detailFields: ALL_DETAIL_FIELDS.filter((f) => !['slogan1', 'slogan2', 'slogan3', 'slogan4', 'slogan5', 'greeting'].includes(f)),
   },
   'detail-sidebar': {
     label: '예약 패널',

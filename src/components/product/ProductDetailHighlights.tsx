@@ -30,7 +30,9 @@ export default function ProductDetailHighlights({
 }: ProductDetailHighlightsProps) {
   const t = useTranslations('productDetail')
 
-  const sloganItems = slogans.filter((s): s is string => Boolean(s?.trim()))
+  const sloganItems = slogans
+    .slice(2, 5)
+    .filter((s): s is string => Boolean(s?.trim()))
   const tagItems = tags.slice(0, 6).map((tag) => resolveTagLabel(tag, locale, tagLabelMap))
 
   if (sloganItems.length === 0 && tagItems.length === 0 && !categoryLabel && !durationLabel) {
@@ -63,7 +65,7 @@ export default function ProductDetailHighlights({
           )}
 
           {showSlogans && sloganItems.length > 0 && (
-            <CustomerPageZone zone="detail-overview-slogan" className="mb-5">
+            <CustomerPageZone zone="detail-tour-highlight-bullet" className="mb-5">
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {sloganItems.map((text, index) => (
                   <li
