@@ -74,6 +74,10 @@ const PriceInventoryHeaderButton = dynamic(
   () => import('./schedule/PriceInventoryHeaderButton'),
   { ssr: false, loading: () => null }
 )
+const ScheduleDisplayHeaderButton = dynamic(
+  () => import('./schedule/ScheduleDisplayHeaderButton'),
+  { ssr: false, loading: () => null }
+)
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -750,7 +754,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   </button>
                 )}
                 {showHeaderPriceInventory && (
-                  <PriceInventoryHeaderButton className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-sky-600 text-sky-700 transition-colors hover:bg-sky-600 hover:text-white disabled:cursor-wait disabled:opacity-60" />
+                  <>
+                    <PriceInventoryHeaderButton className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-sky-600 text-sky-700 transition-colors hover:bg-sky-600 hover:text-white disabled:cursor-wait disabled:opacity-60" />
+                    {isAdminToursPage && (
+                      <ScheduleDisplayHeaderButton
+                        locale={locale}
+                        className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-slate-700 text-slate-800 transition-colors hover:bg-slate-800 hover:text-white"
+                      />
+                    )}
+                  </>
                 )}
               </div>
               

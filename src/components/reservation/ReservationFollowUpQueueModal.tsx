@@ -46,16 +46,19 @@ export interface ReservationFollowUpQueueModalProps {
     kind: CancelFollowUpManualKind,
     action: 'mark' | 'clear'
   ) => void | Promise<void>
+  /** 취소 사유 — 재예약 건은 취소 Follow-up 탭에서 제외 */
+  cancellationReasonByReservationId?: ReadonlyMap<string, string>
 }
 
 function tabFilter(
   tab: FollowUpQueueTabId,
   reservation: Reservation,
   status: string | undefined,
-  snap: ReservationFollowUpPipelineSnapshot | undefined
+  snap: ReservationFollowUpPipelineSnapshot | undefined,
+  cancellationReason?: string | null
 ): boolean {
   if (tab === 'cancel') {
-    return reservationEligibleForCancelFollowUpQueue(status, reservation.tourDate)
+    return reservationEligibleForCancelFollowUpQueue(status, reservation.tourDate, cancellationReason)
   }
   if (!snap) return false
   switch (tab) {
@@ -154,6 +157,7 @@ export default function ReservationFollowUpQueueModal({
   loadingSnapshots,
   renderSimpleReservationCard,
   onCancelFollowUpManualChange,
+  cancellationReasonByReservationId,
 }: ReservationFollowUpQueueModalProps) {
   const tp = useTranslations('reservations.followUpPipeline')
   const uiLocale = useLocale()
@@ -182,7 +186,8 @@ export default function ReservationFollowUpQueueModal({
     }
     for (const r of reservations) {
       const st = r.status as string | undefined
-      if (reservationEligibleForCancelFollowUpQueue(st, r.tourDate)) {
+      const cancelReason = cancellationReasonByReservationId?.get(String(r.id)) ?? null
+      if (reservationEligibleForCancelFollowUpQueue(st, r.tourDate, cancelReason)) {
         counts.cancel += 1
       }
       if (isReservationTourDatePastLocal(r.tourDate)) continue
@@ -196,9 +201,14 @@ export default function ReservationFollowUpQueueModal({
     }
 
     if (tab === 'cancel') {
-      const filtered = reservations.filter((r) =>
-        reservationEligibleForCancelFollowUpQueue(r.status as string | undefined, r.tourDate)
-      )
+      const filtered = reservations.filter((r) => {
+        const cancelReason = cancellationReasonByReservationId?.get(String(r.id)) ?? null
+        return reservationEligibleForCancelFollowUpQueue(
+          r.status as string | undefined,
+          r.tourDate,
+          cancelReason
+        )
+      })
       const byDate = new Map<string, Reservation[]>()
       for (const r of filtered) {
         const key = reservationCancellationGroupingDateKey(r)
@@ -240,7 +250,8 @@ export default function ReservationFollowUpQueueModal({
       if (reservationExcludedFromFollowUpPipeline(st)) return false
       const snap = snapshotsByReservationId.get(r.id)
       if (!snap) return false
-      return tabFilter(tab, r, st, snap)
+      const cancelReason = cancellationReasonByReservationId?.get(String(r.id)) ?? null
+      return tabFilter(tab, r, st, snap, cancelReason)
     })
     filtered.sort((a, b) => {
       const da = String(a.tourDate ?? '')
@@ -249,15 +260,21 @@ export default function ReservationFollowUpQueueModal({
       return getCustomerName(a.customerId, customers).localeCompare(getCustomerName(b.customerId, customers))
     })
     return { rows: filtered, counts, cancelGrouped: null as null }
-  }, [reservations, snapshotsByReservationId, tab, customers])
+  }, [reservations, snapshotsByReservationId, tab, customers, cancellationReasonByReservationId])
 
   const activeNeedUnion = useMemo(() => {
     let n = 0
     for (const r of reservations) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
       const snap = snapshotsByReservationId.get(r.id)
+      const cancelReason = cancellationReasonByReservationId?.get(String(r.id)) ?? null
       if (
-        reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)
+        reservationNeedsCancelFollowUpQueueAttention(
+          r.status as string | undefined,
+          r.tourDate,
+          snap,
+          cancelReason
+        )
       ) {
         n += 1
         continue
@@ -265,7 +282,7 @@ export default function ReservationFollowUpQueueModal({
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
-  }, [reservations, snapshotsByReservationId])
+  }, [reservations, snapshotsByReservationId, cancellationReasonByReservationId])
 
   const handleCancelToggle = async (reservationId: string, kind: CancelFollowUpManualKind, action: 'mark' | 'clear') => {
     if (!onCancelFollowUpManualChange) return

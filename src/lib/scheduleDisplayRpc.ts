@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import type { ScheduleDisplayTicketBookingRow } from '@/lib/scheduleDisplayData'
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+import { mapScheduleDateNoteRow } from '@/lib/scheduleDateNotes'
 
 export type ScheduleDisplayRpcChoiceRow = {
   reservation_id: string
@@ -46,6 +48,7 @@ export type ScheduleDisplayRpcPayload = {
     note_date: string
     note: string | null
     created_by?: string | null
+    highlight_guide_schedule?: boolean | null
   }>
   reservationChoices: ScheduleDisplayRpcChoiceRow[]
   customers: Pick<Database['public']['Tables']['customers']['Row'], 'id' | 'language' | 'name'>[]
@@ -109,13 +112,11 @@ export async function fetchScheduleDisplayViaRpc(
 
 export function mapRpcDateNotesToRecord(
   rows: ScheduleDisplayRpcPayload['dateNotes'],
-): Record<string, { note: string; created_by?: string }> {
-  const notesMap: Record<string, { note: string; created_by?: string }> = {}
+): Record<string, ScheduleDateNoteEntry> {
+  const notesMap: Record<string, ScheduleDateNoteEntry> = {}
   for (const item of rows) {
-    notesMap[item.note_date] = {
-      note: item.note || '',
-      ...(item.created_by ? { created_by: item.created_by } : {}),
-    }
+    const [noteDate, entry] = mapScheduleDateNoteRow(item)
+    notesMap[noteDate] = entry
   }
   return notesMap
 }

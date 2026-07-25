@@ -5,9 +5,10 @@ import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetai
 import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
 
 type ProductDetailAirbnbBookingSummaryProps = {
-  basePrice: number | null
+  totalBasePrice: number
   totalPrice: number
   displayTotalPrice: number
+  perPersonPrice: number
   promoDiscountAmount: number
   appliedPromoCode?: string | null
   groupedChoices: Record<string, ProductDetailChoiceGroup>
@@ -18,10 +19,15 @@ type ProductDetailAirbnbBookingSummaryProps = {
   bookDisabled?: boolean
 }
 
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`
+}
+
 export default function ProductDetailAirbnbBookingSummary({
-  basePrice,
+  totalBasePrice,
   totalPrice,
   displayTotalPrice,
+  perPersonPrice,
   promoDiscountAmount,
   appliedPromoCode,
   groupedChoices,
@@ -78,17 +84,22 @@ export default function ProductDetailAirbnbBookingSummary({
       <div className="airbnb-detail-booking-summary-lines">
         <div className="airbnb-detail-booking-summary-row">
           <span className="airbnb-detail-booking-summary-label">{t('basePrice')}</span>
-          <span className="airbnb-detail-booking-summary-value">${basePrice ?? 0}</span>
+          <span className="airbnb-detail-booking-summary-value">{formatUsd(totalBasePrice)}</span>
         </div>
 
         {selectedLines.map((line) => (
           <div key={line.id} className="airbnb-detail-booking-summary-row">
             <span className="airbnb-detail-booking-summary-label">{line.label}</span>
             <span className="airbnb-detail-booking-summary-value">
-              {line.price && line.price > 0 ? `+$${line.price}` : ''}
+              {line.price && line.price > 0 ? `+${formatUsd(line.price)}` : ''}
             </span>
           </div>
         ))}
+
+        <div className="airbnb-detail-booking-summary-row airbnb-detail-booking-summary-row-subtotal">
+          <span className="airbnb-detail-booking-summary-label">{t('priceSubtotal')}</span>
+          <span className="airbnb-detail-booking-summary-value">{formatUsd(totalPrice)}</span>
+        </div>
 
         {hasPromo ? (
           <div className="airbnb-detail-booking-summary-row airbnb-detail-booking-summary-row-promo">
@@ -99,18 +110,17 @@ export default function ProductDetailAirbnbBookingSummary({
               ) : null}
             </span>
             <span className="airbnb-detail-booking-summary-value airbnb-detail-booking-summary-discount">
-              -${promoDiscountAmount.toFixed(2)}
+              -{formatUsd(promoDiscountAmount)}
             </span>
           </div>
         ) : null}
       </div>
 
       <div className="airbnb-detail-booking-summary-total">
-        {hasPromo && displayTotalPrice !== totalPrice ? (
-          <p className="airbnb-detail-booking-summary-original">${totalPrice}</p>
-        ) : null}
-        <p className="airbnb-detail-booking-summary-price">
-          ${hasPromo ? displayTotalPrice.toFixed(2) : totalPrice}
+        <p className="airbnb-detail-booking-summary-total-label">{t('priceTotal')}</p>
+        <p className="airbnb-detail-booking-summary-price">{formatUsd(displayTotalPrice)}</p>
+        <p className="airbnb-detail-booking-summary-per-person">
+          {formatUsd(perPersonPrice)}
           <span className="airbnb-detail-booking-summary-per">{t('perPerson')}</span>
         </p>
       </div>

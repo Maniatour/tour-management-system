@@ -734,6 +734,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const {
     showDateNoteModal,
     selectedDateForNote,
+    selectedHighlightGuideSchedule,
     openDateNoteModal,
     closeDateNoteModal,
     saveDateNote,
@@ -4637,11 +4638,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const getGuideScheduleTourHoverText = (tour: Tour) => {
     const c = getTourSummaryCore(tour)
     const lines = [
+      `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
       `가이드: ${c.guideName}`,
       `어시스턴트: ${c.assistantName}`,
       `차량: ${c.vehicleNumber}`,
       `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
-      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`
+      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`,
     ]
     if (c.choiceLine) lines.push(c.choiceLine)
     return lines.join('\n')
@@ -8657,6 +8659,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         isOpen={showDateNoteModal}
         dateString={selectedDateForNote}
         initialNote={selectedDateForNote ? (dateNotes[selectedDateForNote]?.note || '') : ''}
+        initialHighlightGuideSchedule={selectedHighlightGuideSchedule}
         onClose={closeDateNoteModal}
         onSave={saveDateNote}
         onDelete={deleteDateNote}

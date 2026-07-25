@@ -3,12 +3,17 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { X } from 'lucide-react'
 
+export type DateNoteSaveOptions = {
+  highlightGuideSchedule: boolean
+}
+
 interface DateNoteModalProps {
   isOpen: boolean
   dateString: string | null
   initialNote: string
+  initialHighlightGuideSchedule?: boolean
   onClose: () => void
-  onSave: (note: string) => Promise<void>
+  onSave: (note: string, options: DateNoteSaveOptions) => Promise<void>
   onDelete?: () => Promise<void>
 }
 
@@ -16,51 +21,51 @@ export default function DateNoteModal({
   isOpen,
   dateString,
   initialNote,
+  initialHighlightGuideSchedule = true,
   onClose,
   onSave,
-  onDelete
+  onDelete,
 }: DateNoteModalProps) {
   const [noteText, setNoteText] = useState('')
+  const [highlightGuideSchedule, setHighlightGuideSchedule] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const hasExistingNote = initialNote.trim().length > 0
 
-  // 모달이 열릴 때 초기값 설정
   useEffect(() => {
     if (isOpen) {
       setNoteText(initialNote)
+      setHighlightGuideSchedule(initialHighlightGuideSchedule)
     }
-  }, [isOpen, initialNote])
+  }, [isOpen, initialNote, initialHighlightGuideSchedule])
 
-  // onChange 핸들러 최적화
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNoteText(e.target.value)
   }, [])
 
-  // 저장 핸들러
   const handleSave = useCallback(async () => {
     if (saving) return
     setSaving(true)
     try {
-      await onSave(noteText)
+      await onSave(noteText, { highlightGuideSchedule })
       setNoteText('')
+      setHighlightGuideSchedule(true)
     } catch (error) {
       console.error('Error saving note:', error)
     } finally {
       setSaving(false)
     }
-  }, [noteText, onSave, saving])
+  }, [noteText, highlightGuideSchedule, onSave, saving])
 
-  // 취소 핸들러
   const handleCancel = useCallback(() => {
     setNoteText('')
+    setHighlightGuideSchedule(true)
     onClose()
   }, [onClose])
 
-  // 삭제 핸들러
   const handleDelete = useCallback(async () => {
     if (!onDelete || deleting || !hasExistingNote) return
-    
+
     if (!confirm('정말로 이 날짜의 노트를 삭제하시겠습니까?')) {
       return
     }
@@ -69,6 +74,7 @@ export default function DateNoteModal({
     try {
       await onDelete()
       setNoteText('')
+      setHighlightGuideSchedule(true)
     } catch (error) {
       console.error('Error deleting note:', error)
     } finally {
@@ -85,12 +91,14 @@ export default function DateNoteModal({
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center bg-primary/10 text-primary">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                <path
+                  fillRule="evenodd"
+                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              날짜 노트 - {dateString}
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900">날짜 노트 - {dateString}</h3>
           </div>
           <button
             onClick={handleCancel}
@@ -99,11 +107,9 @@ export default function DateNoteModal({
             <X className="w-6 h-6" />
           </button>
         </div>
-        
+
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            노트 내용
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">노트 내용</label>
           <textarea
             value={noteText}
             onChange={handleChange}
@@ -114,8 +120,22 @@ export default function DateNoteModal({
           />
         </div>
 
+        <label className="mb-6 flex cursor-pointer items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-400 text-primary focus:ring-primary"
+            checked={highlightGuideSchedule}
+            onChange={(e) => setHighlightGuideSchedule(e.target.checked)}
+          />
+          <span className="text-sm text-gray-700">
+            <span className="font-medium text-gray-900">가이드 스케줄 영역 노란색 강조</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              체크 해제 시 노트는 유지되지만, 아래 가이드 스케줄 표의 해당 날짜 칸은 노란색으로 표시되지 않습니다.
+            </span>
+          </span>
+        </label>
+
         <div className="flex justify-between items-center">
-          {/* 왼쪽: 삭제 버튼 (기존 노트가 있을 때만 표시) */}
           <div>
             {hasExistingNote && onDelete && (
               <button
@@ -124,14 +144,18 @@ export default function DateNoteModal({
                 className="px-4 py-2 text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
                 </svg>
                 {deleting ? '삭제 중...' : '삭제'}
               </button>
             )}
           </div>
 
-          {/* 오른쪽: 취소 및 저장 버튼 */}
           <div className="flex space-x-3">
             <button
               onClick={handleCancel}
@@ -153,4 +177,3 @@ export default function DateNoteModal({
     </div>
   )
 }
-

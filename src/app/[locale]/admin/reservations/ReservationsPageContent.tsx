@@ -22,6 +22,8 @@ import {
   mergeAdminListHydratedSnapshots,
 } from '@/hooks/useReservationData'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
+import { useOperationalQueueBadgeSnapshot } from '@/hooks/useOperationalQueueBadgeSnapshot'
+import { useCancellationReasonByReservationId } from '@/hooks/useCancellationReasonByReservationId'
 import { useImagePrefetch } from '@/hooks/useImagePrefetch'
 import ReservationsHeader from '@/components/reservation/ReservationsHeader'
 import ReservationsFilters from '@/components/reservation/ReservationsFilters'
@@ -34,7 +36,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert } from '@/lib/operators/scopeQuery'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
+import { upsertReservationCancellationReason, isRebookingReservationByReasonMap } from '@/lib/reservationCancellationReason'
+import {
+  fetchCancelledMissingReasonQueueMeta,
+  isCancelledMissingReasonAutoOpenDismissedToday,
+} from '@/lib/cancelledMissingReasonQueue'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import {
   resolveReservationEmailIsEnglish,
@@ -86,6 +92,7 @@ import {
   operationalQueueHasReservations,
   pickReservationsForOperationalQueue,
 } from '@/lib/operationalQueueFetch'
+import { computeStatisticsActivityIsoRange } from '@/lib/adminReservationStatsRange'
 import {
   browserLocalInclusiveDateKeys,
   browserLocalTodayYmd,
@@ -150,16 +157,23 @@ const ReservationCardItem = dynamic(
   () => import('@/components/reservation/ReservationCardItem').then((mod) => mod.ReservationCardItem),
   { ssr: false, loading: () => null }
 )
+const AdminReservationCardVirtualGrid = dynamic(
+  () =>
+    import('@/components/reservation/AdminReservationCardVirtualGrid').then(
+      (mod) => mod.AdminReservationCardVirtualGrid
+    ),
+  { ssr: false, loading: () => null }
+)
 const ReservationFollowUpQueueModal = dynamic(
   () => import('@/components/reservation/ReservationFollowUpQueueModal'),
   { ssr: false, loading: () => null }
 )
-const ReservationActionRequiredModal = dynamic(
-  () => import('@/components/reservation/ReservationActionRequiredModal'),
+const CancelledMissingReasonModal = dynamic(
+  () => import('@/components/reservation/CancelledMissingReasonModal'),
   { ssr: false, loading: () => null }
 )
-const CancellationReasonModal = dynamic(
-  () => import('@/components/reservation/CancellationReasonModal'),
+const ReservationActionRequiredModal = dynamic(
+  () => import('@/components/reservation/ReservationActionRequiredModal'),
   { ssr: false, loading: () => null }
 )
 const CustomerReceiptModal = dynamic(() => import('@/components/receipt/CustomerReceiptModal'), { ssr: false, loading: () => null })
@@ -327,7 +341,8 @@ function computeYtdNetPeopleAvgByWeekdayForLocalYear(
   year: number,
   throughYmd: string,
   useAuditCancel: boolean,
-  auditByRecordId: Record<string, ReservationStatusAuditRow[]>
+  auditByRecordId: Record<string, ReservationStatusAuditRow[]>,
+  cancellationReasonById: ReadonlyMap<string, string>
 ): number[] {
   const throughYear = parseInt(throughYmd.slice(0, 4), 10)
   if (!Number.isFinite(year)) return Array.from({ length: 7 }, () => 0)
@@ -359,6 +374,7 @@ function computeYtdNetPeopleAvgByWeekdayForLocalYear(
   for (const r of reservations) {
     const p = getReservationPartySize(r as unknown as Record<string, unknown>)
     const id = String(r.id ?? '').trim()
+    if (isRebookingReservationByReasonMap(id, cancellationReasonById)) continue
     if (useAuditCancel && id) {
       const ymds = localYmdSetWhereBecameCancelledFromAuditRows(auditByRecordId[id])
       for (const ymd of ymds) {
@@ -689,6 +705,10 @@ export default function AdminReservations() {
   mergeMoreReservationsFromQueryResultRef.current = mergeMoreReservationsFromQueryResult
   /** 주간 카드 점진 로드: 필터 바꾸면 이전 백그라운드 병합 무시 */
   const adminCardWeekFetchGenRef = useRef(0)
+  /** 통계 패널 전용 예약(확장 활동 구간) — 카드 주간 7일 목록과 분리 로드 */
+  const [statisticsReservations, setStatisticsReservations] = useState<Reservation[]>([])
+  const [, setStatisticsReservationsLoading] = useState(false)
+  const statisticsFetchGenRef = useRef(0)
 
   const refreshReservationPricingForIdsRef = useRef(refreshReservationPricingForIds)
   const refreshReservationOptionsPresenceForIdsRef = useRef(refreshReservationOptionsPresenceForIds)
@@ -708,36 +728,6 @@ export default function AdminReservations() {
     },
     [refreshReservationPricingForIds]
   )
-
-  /**
-   * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
-   * 동일 예약이 여러 투어에 남아 있으면 tour_status가 deleted인 투어는 뒤로 두고,
-   * 그중 첫 번째(비삭제 우선)를 대표 투어로 사용.
-   */
-  const tourIdByReservationId = useMemo(() => {
-    const mergedTours = new Map(hookToursMap)
-    operationalQueueSnapshot?.toursMap.forEach((v, k) => mergedTours.set(k, v))
-    const byRes = new Map<string, { tourId: string; deletedRank: number }[]>()
-    mergedTours.forEach((tour, tourId) => {
-      const deletedRank = isTourDeletedStatus(tour.tour_status) ? 1 : 0
-      for (const rid of tour.reservation_ids || []) {
-        const id = String(rid ?? '').trim()
-        if (!id) continue
-        const arr = byRes.get(id) ?? []
-        arr.push({ tourId, deletedRank })
-        byRes.set(id, arr)
-      }
-    })
-    const m = new Map<string, string>()
-    byRes.forEach((candidates, reservationId) => {
-      const sorted = [...candidates].sort((a, b) => {
-        if (a.deletedRank !== b.deletedRank) return a.deletedRank - b.deletedRank
-        return a.tourId.localeCompare(b.tourId)
-      })
-      if (sorted[0]) m.set(reservationId, sorted[0].tourId)
-    })
-    return m
-  }, [hookToursMap, operationalQueueSnapshot])
 
   const handleReservationOptionsMutated = useCallback(
     (reservationId: string) => {
@@ -926,6 +916,45 @@ export default function AdminReservations() {
     reservationSearchHydratedRef.current = true
     setDebouncedSearchTerm(searchTerm)
   }, [reservationListUiHydrated, searchTerm])
+
+  const operationalListReadyForBadge =
+    reservationListUiHydrated && !serverListLoading && !adminListChunkProgress
+
+  const productMapForCancelReasonQueue = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of (products as Array<{ id: string; sub_category?: string }>) || []) {
+      if (p.id) m.set(p.id, p.sub_category ?? '')
+    }
+    return m
+  }, [products])
+  const tourMapForCancelReasonQueue = useMemo(() => new Map<string, boolean>(), [])
+
+  const refreshCancelReasonQueueStats = useCallback(async () => {
+    const meta = await fetchCancelledMissingReasonQueueMeta(supabase)
+    setCancelReasonQueueStats({
+      union: meta.unionCount,
+      needsFollowUp: meta.needsFollowUpCount,
+      awaitingReason: meta.awaitingReasonCount,
+    })
+    return meta
+  }, [])
+
+  const {
+    badgeSnapshot: operationalBadgeSnapshot,
+    clearBadgeSnapshot: clearOperationalBadgeSnapshot,
+  } = useOperationalQueueBadgeSnapshot({
+    enabled: true,
+    customerIdFromUrl,
+    operatorId,
+    hydrateAdminListRawRows,
+    listReady: operationalListReadyForBadge,
+  })
+
+  const operationalMetricsSnapshot = useMemo(
+    () => operationalQueueSnapshot ?? operationalBadgeSnapshot,
+    [operationalQueueSnapshot, operationalBadgeSnapshot]
+  )
+
   const [showAddForm, setShowAddForm] = useState(false)
   
   // URL ????? add=true?????? ??? ???
@@ -952,7 +981,13 @@ export default function AdminReservations() {
   const [showReviewModal, setShowReviewModal] = useState(false)
 
   const [isInitialLoad, setIsInitialLoad] = useState(true) // ?? ?? ???? ??
-  
+
+  const [cancelReasonQueueOpen, setCancelReasonQueueOpen] = useState(false)
+  const [cancelReasonQueueStats, setCancelReasonQueueStats] = useState({
+    union: 0,
+    needsFollowUp: 0,
+    awaitingReason: 0,
+  })
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [simpleCardStatusTransitionMap, setSimpleCardStatusTransitionMap] = useState<
     Record<string, { from: string; to: string }>
@@ -1044,6 +1079,21 @@ export default function AdminReservations() {
   useEffect(() => {
     followUpQueueModalOpenRef.current = followUpQueueModalOpen
   }, [followUpQueueModalOpen])
+
+  useEffect(() => {
+    if (!operationalListReadyForBadge) return
+    void refreshCancelReasonQueueStats()
+  }, [operationalListReadyForBadge, refreshCancelReasonQueueStats])
+
+  useEffect(() => {
+    if (!operationalListReadyForBadge) return
+    if (isCancelledMissingReasonAutoOpenDismissedToday()) return
+    void refreshCancelReasonQueueStats().then((meta) => {
+      if (meta.unionCount > 0) {
+        setCancelReasonQueueOpen(true)
+      }
+    })
+  }, [operationalListReadyForBadge, refreshCancelReasonQueueStats])
 
   /** 운영 큐 모달이 열려 있고 전역 스냅샷이 있으면 투어 요약 맵을 전 예약 기준으로 계산 */
   const reservationsForTourInfo = useMemo(() => {
@@ -1542,8 +1592,8 @@ export default function AdminReservations() {
   useEffect(() => {
     const idSet = new Set<string>()
     for (const r of reservations) idSet.add(r.id)
-    if (operationalQueueSnapshot) {
-      for (const r of operationalQueueSnapshot.reservations) idSet.add(r.id)
+    if (operationalMetricsSnapshot) {
+      for (const r of operationalMetricsSnapshot.reservations) idSet.add(r.id)
     }
     const ids = [...idSet]
     if (!ids.length) {
@@ -1579,19 +1629,47 @@ export default function AdminReservations() {
       setPaymentRecordsByReservationIdForActionBadge(byRes)
     }
     load()
-  }, [reservations, operationalQueueSnapshot])
+  }, [reservations, operationalMetricsSnapshot])
+
+  /**
+   * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
+   */
+  const tourIdByReservationId = useMemo(() => {
+    const mergedTours = new Map(hookToursMap)
+    operationalMetricsSnapshot?.toursMap.forEach((v, k) => mergedTours.set(k, v))
+    const byRes = new Map<string, { tourId: string; deletedRank: number }[]>()
+    mergedTours.forEach((tour, tourId) => {
+      const deletedRank = isTourDeletedStatus(tour.tour_status) ? 1 : 0
+      for (const rid of tour.reservation_ids || []) {
+        const id = String(rid ?? '').trim()
+        if (!id) continue
+        const arr = byRes.get(id) ?? []
+        arr.push({ tourId, deletedRank })
+        byRes.set(id, arr)
+      }
+    })
+    const m = new Map<string, string>()
+    byRes.forEach((candidates, reservationId) => {
+      const sorted = [...candidates].sort((a, b) => {
+        if (a.deletedRank !== b.deletedRank) return a.deletedRank - b.deletedRank
+        return a.tourId.localeCompare(b.tourId)
+      })
+      if (sorted[0]) m.set(reservationId, sorted[0].tourId)
+    })
+    return m
+  }, [hookToursMap, operationalMetricsSnapshot])
 
   const reservationsForOperationalMetrics = pickReservationsForOperationalQueue(
-    operationalQueueSnapshot,
+    operationalMetricsSnapshot,
     reservations
   )
 
-  /** 운영 큐 스냅샷 기본 + 훅 맵이 최신 부분 갱신(저장·인라인 반영)을 덮어씀 */
+  /** 운영 큐·배지 스냅샷 pricing + 훅 맵 최신 갱신 병합 */
   const pricingForOperationalMetrics = useMemo(() => {
-    const m = new Map(operationalQueueSnapshot?.pricingMap ?? [])
+    const m = new Map(operationalMetricsSnapshot?.pricingMap ?? [])
     reservationPricingMap.forEach((v, k) => m.set(k, v))
     return m
-  }, [reservationPricingMap, operationalQueueSnapshot])
+  }, [reservationPricingMap, operationalMetricsSnapshot])
 
   // ??? ?? ??? ?? (??? ?????
   const actionRequiredCount = useMemo(() => {
@@ -1707,9 +1785,33 @@ export default function AdminReservations() {
   
   const filteredReservations = filteredAndSortedReservations
 
+  /** 날짜 그룹 카드뷰: 통계·차트는 확장 구간 데이터, 카드 목록은 `filteredReservations`(7일) */
+  const reservationsForStatistics = useMemo(() => {
+    if (!groupByDate || viewMode === 'list') return filteredReservations
+    return statisticsReservations
+  }, [groupByDate, viewMode, filteredReservations, statisticsReservations])
+
+  const cancelledReservationIdsForReasons = useMemo(() => {
+    const byId = new Map<string, Reservation>()
+    for (const r of filteredReservations) byId.set(r.id, r)
+    if (groupByDate && viewMode !== 'list') {
+      for (const r of statisticsReservations) byId.set(r.id, r)
+    }
+    return [...byId.values()]
+      .filter(
+        (r) => isReservationCancelledStatus(r.status) || isReservationDeletedStatus(r.status)
+      )
+      .map((r) => String(r.id ?? '').trim())
+      .filter(Boolean)
+  }, [filteredReservations, statisticsReservations, groupByDate, viewMode])
+
+  const { reasonById: cancellationReasonByReservationId } = useCancellationReasonByReservationId(
+    cancelledReservationIdsForReasons
+  )
+
   const regCancelChartAuditIdsSignature = useMemo(
-    () => reservationIdsSignature(filteredReservations.map((r) => r.id)),
-    [filteredReservations]
+    () => reservationIdsSignature(reservationsForStatistics.map((r) => r.id)),
+    [reservationsForStatistics]
   )
   const regCancelChartAuditReady =
     regCancelChartAuditLoaded &&
@@ -1718,10 +1820,10 @@ export default function AdminReservations() {
     ? regCancelChartAuditRowsByRecordId
     : undefined
 
-  /** Follow-up 큐 모달·배지: 운영 큐(실제 데이터)가 있으면 그 범위, 없으면 필터된 목록 */
+  /** Follow-up 큐 모달·배지: 운영 큐/배지 스냅샷이 있으면 그 범위, 없으면 필터된 목록 */
   const reservationsForFollowUpPipeline = useMemo(
-    () => pickReservationsForOperationalQueue(operationalQueueSnapshot, filteredReservations),
-    [operationalQueueSnapshot, filteredReservations]
+    () => pickReservationsForOperationalQueue(operationalMetricsSnapshot, filteredReservations),
+    [operationalMetricsSnapshot, filteredReservations]
   )
 
   /**
@@ -1749,6 +1851,13 @@ export default function AdminReservations() {
     }
     const modalOpen = showActionRequiredModal || followUpQueueModalOpen
     if (
+      !modalOpen &&
+      operationalMetricsSnapshot?.reservations.length
+    ) {
+      for (const r of operationalMetricsSnapshot.reservations) {
+        addLite(r)
+      }
+    } else if (
       modalOpen &&
       !operationalQueueLoading &&
       operationalQueueHasReservations(operationalQueueSnapshot)
@@ -1764,8 +1873,38 @@ export default function AdminReservations() {
     followUpQueueModalOpen,
     operationalQueueLoading,
     operationalQueueSnapshot,
+    operationalMetricsSnapshot,
     tourIdByReservationId,
     tourInfoMap,
+  ])
+
+  const followUpRenderedIdsRef = useRef<string[]>([])
+  const [followUpPriorityReservationIds, setFollowUpPriorityReservationIds] = useState<string[]>([])
+  const followUpVisibleBucketsRef = useRef<Map<string, string[]>>(new Map())
+  const handleFollowUpRenderedReservationIds = useCallback((bucketKey: string, ids: string[]) => {
+    followUpVisibleBucketsRef.current.set(bucketKey, ids)
+    const merged = [...new Set([...followUpVisibleBucketsRef.current.values()].flat())]
+    const prev = followUpRenderedIdsRef.current
+    if (prev.length === merged.length && prev.every((id, i) => id === merged[i])) return
+    followUpRenderedIdsRef.current = merged
+    setFollowUpPriorityReservationIds(merged)
+  }, [])
+
+  useEffect(() => {
+    followUpVisibleBucketsRef.current.clear()
+    followUpRenderedIdsRef.current = []
+    setFollowUpPriorityReservationIds([])
+  }, [
+    cardsWeekPage,
+    viewMode,
+    groupByDate,
+    debouncedSearchTerm,
+    currentPage,
+    itemsPerPage,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
   ])
 
   const {
@@ -1775,7 +1914,8 @@ export default function AdminReservations() {
   } = useReservationFollowUpSnapshots(
     reservationsLiteForFollowUp,
     (products as Array<{ id: string; product_code?: string | null }>) || [],
-    followUpPipelineManualRefresh
+    followUpPipelineManualRefresh,
+    { priorityReservationIds: followUpPriorityReservationIds }
   )
 
   const handleFollowUpPipelineManualChange = useCallback(
@@ -1915,8 +2055,9 @@ export default function AdminReservations() {
         base.cancel_rebooking_outreach_manual
       )
       setFollowUpPipelineManualRefresh((n) => n + 1)
+      void refreshCancelReasonQueueStats()
     },
-    [locale, patchCancelManualFlags]
+    [locale, patchCancelManualFlags, refreshCancelReasonQueueStats]
   )
 
   const followUpQueueUnionCount = useMemo(() => {
@@ -1924,14 +2065,22 @@ export default function AdminReservations() {
     for (const r of reservationsForFollowUpPipeline) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
-      if (reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)) {
+      const cancelReason = cancellationReasonByReservationId.get(String(r.id)) ?? null
+      if (
+        reservationNeedsCancelFollowUpQueueAttention(
+          r.status as string | undefined,
+          r.tourDate,
+          snap,
+          cancelReason
+        )
+      ) {
         n += 1
         continue
       }
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
-  }, [reservationsForFollowUpPipeline, followUpSnapshotsByReservationId])
+  }, [reservationsForFollowUpPipeline, followUpSnapshotsByReservationId, cancellationReasonByReservationId])
   
   // 최근 7일: 브라우저 로컬 달력 기준 오늘을 말일로 한 7일 — 등록일 그룹 키·조회 구간과 동일.
   const formatWeekRange = useCallback(
@@ -2015,27 +2164,9 @@ export default function AdminReservations() {
     setAdminListChunkProgress(null)
     try {
       const cardsWR = browserLocalWeekRangeFromOffset(cardsWeekPage)
-      const statsWR = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
-      let rangeStartIso = cardsWR.rangeStartIso
-      let rangeEndIso = cardsWR.rangeEndIso
-      if (statsWR.rangeStartIso < rangeStartIso) rangeStartIso = statsWR.rangeStartIso
-      if (statsWR.rangeEndIso > rangeEndIso) rangeEndIso = statsWR.rangeEndIso
-      if (groupByDate) {
-        if (regCancelGranularity === 'month') {
-          const m = browserLocalCalendarMonthWindow(regCancelMonthOffset)
-          if (m.rangeStartIso < rangeStartIso) rangeStartIso = m.rangeStartIso
-          if (m.rangeEndIso > rangeEndIso) rangeEndIso = m.rangeEndIso
-        } else if (regCancelGranularity === 'year') {
-          const y = browserLocalCalendarYearWindow(regCancelYearOffset)
-          if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
-          if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
-        }
-        /** 7일 차트 YTD 요일 평균선: 올해 1/1 이후 등록·취소가 반영되도록 조회 시작 확장 */
-        const jan1Local = new Date()
-        jan1Local.setHours(0, 0, 0, 0)
-        const jan1Iso = new Date(jan1Local.getFullYear(), 0, 1, 0, 0, 0, 0).toISOString()
-        if (jan1Iso < rangeStartIso) rangeStartIso = jan1Iso
-      }
+      /** 카드 주간(7일)만 — 통계·YTD 구간은 `loadStatisticsReservations`에서 별도 로드 */
+      const rangeStartIso = cardsWR.rangeStartIso
+      const rangeEndIso = cardsWR.rangeEndIso
 
       if (viewMode === 'calendar') {
         const calWindow = browserLocalCalendarViewWindow(calendarMonthOffset)
@@ -2265,7 +2396,6 @@ export default function AdminReservations() {
     }
   }, [
     cardsWeekPage,
-    statisticsWeekOffset,
     viewMode,
     groupByDate,
     currentPage,
@@ -2277,13 +2407,106 @@ export default function AdminReservations() {
     debouncedSearchTerm,
     sortBy,
     sortOrder,
-    regCancelGranularity,
-    regCancelMonthOffset,
-    regCancelYearOffset,
     calendarMonthOffset,
     operatorId,
     applyReservationListSideDataPrefetch,
     mergeReservationListSideDataPrefetch,
+  ])
+
+  const loadStatisticsReservations = useCallback(async () => {
+    if (!groupByDate || viewMode === 'list' || viewMode === 'calendar') {
+      setStatisticsReservations([])
+      setStatisticsReservationsLoading(false)
+      return
+    }
+
+    statisticsFetchGenRef.current += 1
+    const fetchGen = statisticsFetchGenRef.current
+    setStatisticsReservationsLoading(true)
+
+    try {
+      const { rangeStartIso, rangeEndIso } = isWeeklyStatsCollapsed
+        ? browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+        : computeStatisticsActivityIsoRange({
+            statisticsWeekOffset,
+            regCancelMonthOffset,
+            regCancelYearOffset,
+          })
+
+      const statsArgs = {
+        mode: 'card-week' as const,
+        page: 1,
+        pageSize: 20,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+        sortBy,
+        sortOrder,
+        operatorId,
+        activityRangeStartIso: rangeStartIso,
+        activityRangeEndIso: rangeEndIso,
+      }
+
+      let merged: Reservation[] = []
+
+      const applyStatsChunk = async (rows: Record<string, unknown>[]) => {
+        if (fetchGen !== statisticsFetchGenRef.current) return false
+        if (rows.length === 0) return true
+        const hydrated = await hydrateAdminListRawRows(rows)
+        if (fetchGen !== statisticsFetchGenRef.current) return false
+        const byId = new Map(merged.map((r) => [r.id, r]))
+        for (const r of hydrated.reservations) byId.set(r.id, r)
+        merged = [...byId.values()]
+        setStatisticsReservations(merged)
+        return true
+      }
+
+      const { error } = await fetchAdminReservationListCardWeekProgressive(supabase, statsArgs, {
+        onFirstChunk: async ({ rows }) => {
+          if (fetchGen !== statisticsFetchGenRef.current) return false
+          merged = []
+          return applyStatsChunk(rows)
+        },
+        onAdditionalChunk: async ({ rows }) => applyStatsChunk(rows),
+      })
+
+      if (error) throw error
+      if (fetchGen !== statisticsFetchGenRef.current) return
+      if (merged.length === 0) setStatisticsReservations([])
+    } catch (e) {
+      if (isAbortLikeError(e)) return
+      const msg =
+        e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)
+      if (msg.includes('AbortError') || msg.includes('aborted')) return
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] statistics reservations load failed:', e)
+      }
+      if (fetchGen === statisticsFetchGenRef.current) {
+        setStatisticsReservations([])
+      }
+    } finally {
+      if (fetchGen === statisticsFetchGenRef.current) {
+        setStatisticsReservationsLoading(false)
+      }
+    }
+  }, [
+    groupByDate,
+    viewMode,
+    statisticsWeekOffset,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+    selectedStatus,
+    selectedChannel,
+    dateRange,
+    customerIdFromUrl,
+    debouncedSearchTerm,
+    sortBy,
+    sortOrder,
+    operatorId,
+    hydrateAdminListRawRows,
+    isWeeklyStatsCollapsed,
   ])
 
   const loadOperationalQueueSnapshot = useCallback(async () => {
@@ -2367,6 +2590,22 @@ export default function AdminReservations() {
     void loadOperationalQueueSnapshot()
   }, [loadOperationalQueueSnapshot])
 
+  /** 헤더 버튼 hover/focus 시 모달 오픈 전 운영 큐 선로드 */
+  const prefetchOperationalQueueSnapshot = useCallback(() => {
+    if (!reservationListUiHydrated || serverListLoading || adminListChunkProgress) return
+    if (operationalQueueInFlightRef.current) return
+    if (operationalQueueLoading) return
+    if (operationalQueueHasReservations(operationalQueueSnapshot)) return
+    ensureOperationalQueueSnapshot()
+  }, [
+    reservationListUiHydrated,
+    serverListLoading,
+    adminListChunkProgress,
+    operationalQueueLoading,
+    operationalQueueSnapshot,
+    ensureOperationalQueueSnapshot,
+  ])
+
   /** 예약 처리 필요 모달 — 탭·테이블 목록만 DB에서 다시 불러옴(주간 예약 목록은 건드리지 않음) */
   const refreshActionRequiredTableList = useCallback(async () => {
     operationalQueueFetchGenRef.current += 1
@@ -2375,22 +2614,7 @@ export default function AdminReservations() {
     await loadOperationalQueueSnapshot()
   }, [loadOperationalQueueSnapshot])
 
-  /** 목록 첫 페인트 후 백그라운드 프리페치 — 모달 오픈 시 대기 단축 */
-  useEffect(() => {
-    if (!reservationListUiHydrated || serverListLoading || adminListChunkProgress) return
-    if (operationalQueueHasReservations(operationalQueueSnapshot) || operationalQueueInFlightRef.current)
-      return
-    const timer = window.setTimeout(() => ensureOperationalQueueSnapshot(), 300)
-    return () => window.clearTimeout(timer)
-  }, [
-    reservationListUiHydrated,
-    serverListLoading,
-    adminListChunkProgress,
-    operationalQueueSnapshot,
-    customerIdFromUrl,
-    ensureOperationalQueueSnapshot,
-  ])
-
+  /** 예약 처리 필요 / Follow-up 모달 열릴 때만 운영 큐 전량 로드(목록 첫 페인트 백그라운드 프리페치 제거) */
   useEffect(() => {
     if (!showActionRequiredModal && !followUpQueueModalOpen) return
     if (operationalQueueHasReservations(operationalQueueSnapshot) && !operationalQueueLoading) return
@@ -2411,13 +2635,19 @@ export default function AdminReservations() {
 
   const refreshReservations = useCallback(async () => {
     setOperationalQueueSnapshot(null)
+    clearOperationalBadgeSnapshot()
     operationalQueueFetchGenRef.current += 1
     operationalQueueInFlightRef.current = false
-    await loadAdminReservationList()
+    await Promise.all([loadAdminReservationList(), loadStatisticsReservations()])
     if (showActionRequiredModalRef.current || followUpQueueModalOpenRef.current) {
       ensureOperationalQueueSnapshot()
     }
-  }, [loadAdminReservationList, ensureOperationalQueueSnapshot])
+  }, [
+    loadAdminReservationList,
+    loadStatisticsReservations,
+    ensureOperationalQueueSnapshot,
+    clearOperationalBadgeSnapshot,
+  ])
 
   useLayoutEffect(() => {
     if (!reservationListUiHydrated) return
@@ -2445,6 +2675,11 @@ export default function AdminReservations() {
     if (!reservationListUiHydrated) return
     void loadAdminReservationList()
   }, [loadAdminReservationList, currentPage, reservationListUiHydrated])
+
+  useEffect(() => {
+    if (!reservationListUiHydrated) return
+    void loadStatisticsReservations()
+  }, [loadStatisticsReservations, reservationListUiHydrated])
 
   // ??????????? (created_at ???) - ?? ????????????
   const groupedReservations = useMemo(() => {
@@ -2493,18 +2728,11 @@ export default function AdminReservations() {
   /** 목록 조회와 동일하게 주·월·연 차트 구간을 합친 ISO 범위 — 감사(취소 전환) 조회에 사용 */
   const regCancelChartAuditIsoRange = useMemo(() => {
     if (!groupByDate) return null
-    const weekR = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
-    let rangeStartIso = weekR.rangeStartIso
-    let rangeEndIso = weekR.rangeEndIso
-    const m = browserLocalCalendarMonthWindow(regCancelMonthOffset)
-    if (m.rangeStartIso < rangeStartIso) rangeStartIso = m.rangeStartIso
-    if (m.rangeEndIso > rangeEndIso) rangeEndIso = m.rangeEndIso
-    const y = browserLocalCalendarYearWindow(regCancelYearOffset)
-    if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
-    if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
-    const jan1Iso = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0).toISOString()
-    if (jan1Iso < rangeStartIso) rangeStartIso = jan1Iso
-    return { rangeStartIso, rangeEndIso }
+    return computeStatisticsActivityIsoRange({
+      statisticsWeekOffset,
+      regCancelMonthOffset,
+      regCancelYearOffset,
+    })
   }, [groupByDate, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
   /** 심플 카드 주(카드 주간)가 등록·취소 차트 감사 ISO 구간에 포함되면 차트 조회 결과를 재사용할 수 있다 */
@@ -2534,9 +2762,15 @@ export default function AdminReservations() {
       setRegCancelChartAuditLoadedSignature(null)
       return
     }
+    if (isWeeklyStatsCollapsed) {
+      setRegCancelChartAuditRowsByRecordId({})
+      setRegCancelChartAuditLoaded(false)
+      setRegCancelChartAuditLoadedSignature(null)
+      return
+    }
     const range = regCancelChartAuditIsoRange
     if (!range) return
-    const uniqueIds = [...new Set(filteredReservations.map((r) => r.id).filter(Boolean))]
+    const uniqueIds = [...new Set(reservationsForStatistics.map((r) => r.id).filter(Boolean))]
     const idsSignature = regCancelChartAuditIdsSignature
     setRegCancelChartAuditLoaded(false)
     if (uniqueIds.length === 0) {
@@ -2589,10 +2823,11 @@ export default function AdminReservations() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [groupByDate, regCancelChartAuditIsoRange, filteredReservations, regCancelChartAuditIdsSignature])
+  }, [groupByDate, isWeeklyStatsCollapsed, regCancelChartAuditIsoRange, reservationsForStatistics, regCancelChartAuditIdsSignature])
 
   /** 일별·월별·연별 등록/취소 차트 행 — WeeklyStatsPanel */
   const regCancelChartRows = useMemo(() => {
+    if (isWeeklyStatsCollapsed) return []
     type Row = {
       dateKey: string
       registeredPeople: number
@@ -2608,7 +2843,7 @@ export default function AdminReservations() {
     const useAuditCancel = groupByDate && regCancelChartAuditReady
     const cancelYmdByResId = new Map<string, Set<string>>()
     if (useAuditCancel) {
-      for (const r of filteredReservations) {
+      for (const r of reservationsForStatistics) {
         const id = String(r.id ?? '').trim()
         if (!id) continue
         cancelYmdByResId.set(
@@ -2633,9 +2868,10 @@ export default function AdminReservations() {
         rows.push(row)
         rowByKey.set(k, row)
       }
-      for (const r of filteredReservations) {
+      for (const r of reservationsForStatistics) {
         const p = getReservationPartySize(r as unknown as Record<string, unknown>)
         const id = String(r.id ?? '').trim()
+        const isRebookingCancel = isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)
         const createdKey = isoToLocalCalendarDateKey(r.addedTime)
         if (createdKey) {
           const bk = keyFromCreated(createdKey)
@@ -2647,6 +2883,7 @@ export default function AdminReservations() {
             }
           }
         }
+        if (isRebookingCancel) continue
         if (useAuditCancel && id) {
           const ymds = cancelYmdByResId.get(id)
           if (ymds && ymds.size > 0) {
@@ -2704,23 +2941,24 @@ export default function AdminReservations() {
       const yesterdayYmd = browserLocalYesterdayYmd()
       const chartYear = parseInt(todayYmd.slice(0, 4), 10)
       wdAvg = computeYtdNetPeopleAvgByWeekdayForLocalYear(
-        filteredReservations,
+        reservationsForStatistics,
         chartYear,
         yesterdayYmd,
         useAuditCancel,
-        regCancelChartAuditRowsByRecordId
+        regCancelChartAuditRowsByRecordId,
+        cancellationReasonByReservationId
       )
     } else if (regCancelGranularity === 'month') {
       const { startYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
       const y = parseInt(startYmd.slice(0, 4), 10)
-      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(filteredReservations, new Set([y]))
+      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(reservationsForStatistics, new Set([y]))
     } else {
       const chartYear = parseInt(
         browserLocalCalendarYearWindow(regCancelYearOffset).startYmd.slice(0, 4),
         10
       )
       monthDailyAvgSameYear = computeAvgDailyRegisteredByMonthForCalendarYear(
-        filteredReservations,
+        reservationsForStatistics,
         chartYear
       )
     }
@@ -2738,7 +2976,8 @@ export default function AdminReservations() {
       return { ...row, avgLineRegistered: avgLine }
     })
   }, [
-    filteredReservations,
+    isWeeklyStatsCollapsed,
+    reservationsForStatistics,
     regCancelGranularity,
     statisticsWeekOffset,
     regCancelMonthOffset,
@@ -2746,6 +2985,7 @@ export default function AdminReservations() {
     groupByDate,
     regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
+    cancellationReasonByReservationId,
   ])
 
   const regCancelChartRangeSubtitle = useMemo(() => {
@@ -3005,7 +3245,7 @@ export default function AdminReservations() {
     const { startYmd, endYmd } = statisticsWeekBoundary
     const seen = new Set<string>()
     const out: Reservation[] = []
-    for (const r of filteredReservations) {
+    for (const r of reservationsForStatistics) {
       const c = isoToLocalCalendarDateKey(r.addedTime)
       const u = isoToLocalCalendarDateKey(r.updated_at ?? null)
       const inB = (k: string | null) => !!k && k >= startYmd && k <= endYmd
@@ -3016,7 +3256,7 @@ export default function AdminReservations() {
       out.push(r)
     }
     return out
-  }, [filteredReservations, statisticsWeekBoundary])
+  }, [reservationsForStatistics, statisticsWeekBoundary])
 
   /** 통계 패널 상단: 선택 주(달력 N일) 기준 등록·취소(감사)·순 건수·인원 및 일평균 */
   const statisticsWeekHeaderSummary = useMemo(() => {
@@ -3027,7 +3267,7 @@ export default function AdminReservations() {
 
     let regBookings = 0
     let regPeople = 0
-    for (const r of filteredReservations) {
+    for (const r of reservationsForStatistics) {
       const ck = isoToLocalCalendarDateKey(r.addedTime)
       if (ck && ck >= startYmd && ck <= endYmd) {
         regBookings += 1
@@ -3039,9 +3279,10 @@ export default function AdminReservations() {
     let cancelPeople = 0
     const useAuditCancel = groupByDate && regCancelChartAuditReady
     if (useAuditCancel) {
-      for (const r of filteredReservations) {
+      for (const r of reservationsForStatistics) {
         const id = String(r.id ?? '').trim()
         if (!id) continue
+        if (isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)) continue
         const ymds = localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
         const p = getReservationPartySize(r as unknown as Record<string, unknown>)
         for (const ymd of ymds) {
@@ -3052,7 +3293,9 @@ export default function AdminReservations() {
         }
       }
     } else {
-      for (const r of filteredReservations) {
+      for (const r of reservationsForStatistics) {
+        const id = String(r.id ?? '').trim()
+        if (isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)) continue
         const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
         if (!uk || uk < startYmd || uk > endYmd) continue
         if (!isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)) continue
@@ -3080,15 +3323,25 @@ export default function AdminReservations() {
       avgNetPeoplePerDay: round1(netPeople / dayDen),
     }
   }, [
-    filteredReservations,
+    reservationsForStatistics,
     statisticsWeekBoundary,
     groupByDate,
     regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
+    cancellationReasonByReservationId,
   ])
 
   /** 통계 주(차트·상단 요약과 동일 구간): 상품·채널·상태별 등록/취소/순 인원 */
   const weeklyStats = useMemo(() => {
+    if (isWeeklyStatsCollapsed) {
+      return {
+        productStats: [],
+        channelStats: [],
+        statusStats: [],
+        totalReservations: statisticsWeekReservations.length,
+        totalPeople: statisticsWeekReservations.reduce((total, r) => total + r.totalPeople, 0),
+      }
+    }
     const allReservations = statisticsWeekReservations
     const { startYmd, endYmd } = statisticsWeekBoundary
     const useAuditCancel = groupByDate && regCancelChartAuditReady
@@ -3147,7 +3400,7 @@ export default function AdminReservations() {
       return row
     }
 
-    for (const r of filteredReservations) {
+    for (const r of reservationsForStatistics) {
       const p = party(r)
       const productName = getProductName(r.productId, products || [])
       const channelName = getChannelName(r.channelId, channels || [])
@@ -3163,6 +3416,7 @@ export default function AdminReservations() {
       }
 
       if (useAuditCancel && id) {
+        if (isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)) continue
         const ymds = localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
         for (const ymd of ymds) {
           if (ymd < startYmd || ymd > endYmd) continue
@@ -3170,6 +3424,7 @@ export default function AdminReservations() {
           bumpCancel(chRow, p)
         }
       } else {
+        if (isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)) continue
         const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
         if (!uk || uk < startYmd || uk > endYmd) continue
         if (!isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)) continue
@@ -3181,7 +3436,7 @@ export default function AdminReservations() {
 
     const statusTransitionByTarget = useAuditCancel
       ? aggregateStatusTransitionBucketsForReservationWindow({
-          reservations: filteredReservations,
+          reservations: reservationsForStatistics,
           party: (res: unknown) => party(res as Reservation),
           auditRowsByReservationId: regCancelChartAuditRowsByRecordId,
           dayKeys: browserLocalInclusiveDateKeys(startYmd, endYmd),
@@ -3229,14 +3484,16 @@ export default function AdminReservations() {
       ...(statusTransitionByTarget !== undefined ? { statusTransitionByTarget } : {}),
     }
   }, [
+    isWeeklyStatsCollapsed,
     statisticsWeekReservations,
     statisticsWeekBoundary,
-    filteredReservations,
+    reservationsForStatistics,
     products,
     channels,
     groupByDate,
     regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
+    cancellationReasonByReservationId,
   ])
   
   // ??????????? (?????? ???? ?????)
@@ -4241,55 +4498,16 @@ export default function AdminReservations() {
     setEditingCustomer(customer)
   }, [])
 
-  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
-  const [cancellationReasonValue, setCancellationReasonValue] = useState('')
-  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
-  const cancellationReasonTargetReservationIdRef = useRef<string | null>(null)
-  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
-
-  const requestCancellationReason = useCallback((reservationId: string) => {
-    cancellationReasonTargetReservationIdRef.current = reservationId
-    setCancellationReasonValue('')
-    setCancellationReasonModalOpen(true)
-    return new Promise<string | null>((resolve) => {
-      cancellationReasonResolveRef.current = resolve
-    })
-  }, [])
-
-  const closeCancellationReasonModal = useCallback(() => {
-    setCancellationReasonModalOpen(false)
-    cancellationReasonTargetReservationIdRef.current = null
-    cancellationReasonResolveRef.current?.(null)
-    cancellationReasonResolveRef.current = null
-  }, [])
-
-  const submitCancellationReasonModal = useCallback(async (reason: string) => {
-    const trimmed = reason.trim()
-    if (!trimmed) return
-    setCancellationReasonSaving(true)
-    try {
-      setCancellationReasonModalOpen(false)
-      cancellationReasonResolveRef.current?.(trimmed)
-      cancellationReasonResolveRef.current = null
-      cancellationReasonTargetReservationIdRef.current = null
-      setCancellationReasonValue(trimmed)
-    } finally {
-      setCancellationReasonSaving(false)
-    }
-  }, [])
-
   const handleStatusChange = useCallback(async (reservationId: string, newStatus: string) => {
     const normalized = (newStatus || '').toLowerCase()
     if (normalized === 'cancelled' || normalized === 'canceled') {
-      const reason = await requestCancellationReason(reservationId)
-      if (!reason) return
       const { error } = await supabase
         .from('reservations')
         .update({ status: newStatus })
         .eq('id', reservationId)
       if (error) throw error
-      await upsertReservationCancellationReason(reservationId, reason, user?.email ?? null)
       await refreshReservations()
+      void refreshCancelReasonQueueStats()
       return
     }
     if (normalized === 'no_show') {
@@ -4309,7 +4527,7 @@ export default function AdminReservations() {
       .eq('id', reservationId)
     if (error) throw error
     await refreshReservations()
-  }, [refreshReservations, requestCancellationReason, user?.email])
+  }, [refreshReservations, refreshCancelReasonQueueStats])
 
   const patchOperationalQueueReservation = useCallback(
     (reservationId: string, patch: Partial<Reservation>) => {
@@ -4570,6 +4788,121 @@ export default function AdminReservations() {
     setReservationListUi,
   ])
 
+  const renderReservationCard = useCallback(
+    (reservation: Reservation, layoutOverride?: 'simple' | 'standard') => {
+      const gridCardLayout = layoutOverride ?? (viewMode === 'list' ? 'simple' : cardLayout)
+      return (
+        <ReservationCardItem
+          key={reservation.id}
+          reservation={reservation}
+          customers={(customers as Customer[]) || []}
+          products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+          channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+          pickupHotels={
+            (pickupHotels as Array<{
+              id: string
+              hotel?: string | null
+              name?: string | null
+              name_ko?: string | null
+              pick_up_location?: string | null
+            }>) || []
+          }
+          productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+          optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+          tourInfoMap={tourInfoMap}
+          reservationPricingMap={reservationPricingMap}
+          locale={locale}
+          emailDropdownOpen={emailDropdownOpen}
+          sendingEmail={sendingEmail}
+          onPricingInfoClick={handlePricingInfoClick}
+          onCreateTour={handleCreateTour}
+          onPickupTimeClick={handlePickupTimeClick}
+          onPickupHotelClick={handlePickupHotelClick}
+          onPaymentClick={handlePaymentClick}
+          onDetailClick={handleDetailClick}
+          onReceiptClick={handleReceiptClick}
+          onReviewClick={handleReviewClick}
+          onEmailPreview={handleOpenEmailPreview}
+          onEmailLogsClick={handleEmailLogsClick}
+          onEmailDropdownToggle={handleEmailDropdownToggle}
+          onEditClick={handleEditClick}
+          onCustomerClick={handleCustomerClick}
+          onRefreshReservations={refreshReservations}
+          onStatusChange={handleStatusChange}
+          generatePriceCalculation={generatePriceCalculation}
+          getGroupColorClasses={getGroupColorClasses}
+          getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+          choicesCacheRef={choicesCacheRef}
+          residentCustomerBatchMap={residentCustomerBatchMap}
+          linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+          cardLayout={gridCardLayout}
+          onOpenTourDetailModal={handleOpenTourDetailModal}
+          reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+          onReservationOptionsMutated={handleReservationOptionsMutated}
+          reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+          onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+          followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+          {...(gridCardLayout === 'simple'
+            ? {
+                onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
+                onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
+                onCommunicationChannelChange: handleCommunicationChannelChange,
+                sentBy: user?.email ?? null,
+                onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
+              }
+            : {})}
+        />
+      )
+    },
+    [
+      viewMode,
+      cardLayout,
+      customers,
+      products,
+      channels,
+      pickupHotels,
+      productOptions,
+      optionChoices,
+      tourInfoMap,
+      reservationPricingMap,
+      locale,
+      emailDropdownOpen,
+      sendingEmail,
+      handlePricingInfoClick,
+      handleCreateTour,
+      handlePickupTimeClick,
+      handlePickupHotelClick,
+      handlePaymentClick,
+      handleDetailClick,
+      handleReceiptClick,
+      handleReviewClick,
+      handleOpenEmailPreview,
+      handleEmailLogsClick,
+      handleEmailDropdownToggle,
+      handleEditClick,
+      handleCustomerClick,
+      refreshReservations,
+      handleStatusChange,
+      generatePriceCalculation,
+      getGroupColorClasses,
+      getSelectedChoicesNormalized,
+      choicesCacheRef,
+      residentCustomerBatchMap,
+      tourIdByReservationId,
+      handleOpenTourDetailModal,
+      hookReservationOptionsPresenceByReservationId,
+      handleReservationOptionsMutated,
+      pickupSummaryReshowRequest,
+      consumePickupSummaryReshowRequest,
+      followUpSnapshotsByReservationId,
+      handleFollowUpPipelineManualChange,
+      handleCancelFollowUpManualChange,
+      handleCommunicationChannelChange,
+      user?.email,
+      handlePreTourSmsSendSuccess,
+    ]
+  )
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* ??? - ????????*/}
@@ -4588,6 +4921,9 @@ export default function AdminReservations() {
         onOpenDeletedReservations={handleOpenDeletedReservations}
         onOpenFollowUpQueue={handleOpenFollowUpQueue}
         followUpQueueCount={followUpQueueUnionCount}
+        onOpenCancelReasonQueue={() => setCancelReasonQueueOpen(true)}
+        cancelReasonQueueCount={cancelReasonQueueStats.union}
+        onPrefetchOperationalQueue={prefetchOperationalQueueSnapshot}
         cardLayout={cardLayout}
         onCardLayoutChange={setCardLayout}
       />
@@ -4882,69 +5218,7 @@ export default function AdminReservations() {
                   cardLayout === 'simple'
                     ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
                     : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
-
-                const renderReservationCard = (reservation: Reservation) => (
-                  <ReservationCardItem
-                    key={reservation.id}
-                    reservation={reservation}
-                    customers={(customers as Customer[]) || []}
-                    products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
-                    channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
-                    pickupHotels={
-                      (pickupHotels as Array<{
-                        id: string
-                        hotel?: string | null
-                        name?: string | null
-                        name_ko?: string | null
-                        pick_up_location?: string | null
-                      }>) || []
-                    }
-                    productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
-                    optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
-                    tourInfoMap={tourInfoMap}
-                    reservationPricingMap={reservationPricingMap}
-                    locale={locale}
-                    emailDropdownOpen={emailDropdownOpen}
-                    sendingEmail={sendingEmail}
-                    onPricingInfoClick={handlePricingInfoClick}
-                    onCreateTour={handleCreateTour}
-                    onPickupTimeClick={handlePickupTimeClick}
-                    onPickupHotelClick={handlePickupHotelClick}
-                    onPaymentClick={handlePaymentClick}
-                    onDetailClick={handleDetailClick}
-                    onReceiptClick={handleReceiptClick}
-                    onReviewClick={handleReviewClick}
-                    onEmailPreview={handleOpenEmailPreview}
-                    onEmailLogsClick={handleEmailLogsClick}
-                    onEmailDropdownToggle={handleEmailDropdownToggle}
-                    onEditClick={handleEditClick}
-                    onCustomerClick={handleCustomerClick}
-                    onRefreshReservations={refreshReservations}
-                    onStatusChange={handleStatusChange}
-                    generatePriceCalculation={generatePriceCalculation}
-                    getGroupColorClasses={getGroupColorClasses}
-                    getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
-                    choicesCacheRef={choicesCacheRef}
-                    residentCustomerBatchMap={residentCustomerBatchMap}
-                    linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-                    cardLayout={cardLayout}
-                    onOpenTourDetailModal={handleOpenTourDetailModal}
-                    reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
-                    onReservationOptionsMutated={handleReservationOptionsMutated}
-                    reshowPickupSummaryRequest={pickupSummaryReshowRequest}
-                    onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-                    followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
-                    {...(cardLayout === 'simple'
-                      ? {
-                          onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
-                          onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
-                          onCommunicationChannelChange: handleCommunicationChannelChange,
-                          sentBy: user?.email ?? null,
-                          onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
-                        }
-                      : {})}
-                  />
-                )
+                const cardGridVariant = cardLayout === 'simple' ? 'simple' : 'standard'
 
                 const simpleCardStatusSubgroups =
                   statusListForSimple.length > 0 && !simpleCardStatusTransitionLoadingEffective
@@ -5018,6 +5292,7 @@ export default function AdminReservations() {
                         ? { auditRowsByReservationId: regCancelChartAuditRowsByRecordId }
                         : {})}
                       {...(groupByDate ? { statusAuditLoading: !regCancelChartAuditReady } : {})}
+                      cancellationReasonByReservationId={cancellationReasonByReservationId}
                     />
 
                     {cardLayout === 'simple' ? (
@@ -5061,7 +5336,15 @@ export default function AdminReservations() {
                                 {regOpen && (
                                   <div className="border-t border-gray-100 pl-3 pr-2 pb-3 pt-2">
                                     {regList.length > 0 ? (
-                                      <div className={gridClass}>{regList.map(renderReservationCard)}</div>
+                                      <AdminReservationCardVirtualGrid
+                                        reservations={regList}
+                                        variant={cardGridVariant}
+                                        gridClassName={gridClass}
+                                        renderCard={(r) => renderReservationCard(r, cardLayout)}
+                                        onRenderedReservationIds={(ids) =>
+                                          handleFollowUpRenderedReservationIds(`${date}-reg`, ids)
+                                        }
+                                      />
                                     ) : (
                                       <p className="text-xs text-gray-400 px-1 py-1">
                                         {t('groupingLabels.simpleCardGroupEmpty')}
@@ -5148,7 +5431,18 @@ export default function AdminReservations() {
                                               </button>
                                               {subOpen && (
                                                 <div className="border-t border-gray-100 bg-white pl-3 pr-2 pb-2 pt-2">
-                                                  <div className={gridClass}>{g.items.map(renderReservationCard)}</div>
+                                                  <AdminReservationCardVirtualGrid
+                                                    reservations={g.items}
+                                                    variant={cardGridVariant}
+                                                    gridClassName={gridClass}
+                                                    renderCard={(r) => renderReservationCard(r, cardLayout)}
+                                                    onRenderedReservationIds={(ids) =>
+                                                      handleFollowUpRenderedReservationIds(
+                                                        `${date}-status-${g.bucketKey}`,
+                                                        ids
+                                                      )
+                                                    }
+                                                  />
                                                 </div>
                                               )}
                                             </div>
@@ -5168,7 +5462,15 @@ export default function AdminReservations() {
                         })()}
                       </div>
                     ) : (
-                      <div className={gridClass}>{dayReservations.map(renderReservationCard)}</div>
+                      <AdminReservationCardVirtualGrid
+                        reservations={dayReservations}
+                        variant={cardGridVariant}
+                        gridClassName={gridClass}
+                        renderCard={(r) => renderReservationCard(r, cardLayout)}
+                        onRenderedReservationIds={(ids) =>
+                          handleFollowUpRenderedReservationIds(`${date}-day`, ids)
+                        }
+                      />
                     )}
                   </div>
                 )
@@ -5194,71 +5496,17 @@ export default function AdminReservations() {
             />
           ) : (
             <div className="space-y-4">
-              <div
-                className={
+              <AdminReservationCardVirtualGrid
+                reservations={paginatedReservations}
+                variant={viewMode === 'list' || cardLayout === 'simple' ? 'simple' : 'standard'}
+                gridClassName={
                   viewMode === 'list' || cardLayout === 'simple'
                     ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
                     : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
                 }
-              >
-                {paginatedReservations.map((reservation) => {
-                  const gridCardLayout = viewMode === 'list' ? 'simple' : cardLayout
-                  return (
-                  <ReservationCardItem
-                    key={reservation.id}
-                    reservation={reservation}
-                    customers={(customers as Customer[]) || []}
-                    products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
-                    channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
-                    pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
-                    productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
-                    optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
-                    tourInfoMap={tourInfoMap}
-                    reservationPricingMap={reservationPricingMap}
-                    locale={locale}
-                    emailDropdownOpen={emailDropdownOpen}
-                    sendingEmail={sendingEmail}
-                    onPricingInfoClick={handlePricingInfoClick}
-                    onCreateTour={handleCreateTour}
-                    onPickupTimeClick={handlePickupTimeClick}
-                    onPickupHotelClick={handlePickupHotelClick}
-                    onPaymentClick={handlePaymentClick}
-                    onDetailClick={handleDetailClick}
-                    onReceiptClick={handleReceiptClick}
-                    onReviewClick={handleReviewClick}
-                    onEmailPreview={handleOpenEmailPreview}
-                    onEmailLogsClick={handleEmailLogsClick}
-                    onEmailDropdownToggle={handleEmailDropdownToggle}
-                    onEditClick={handleEditClick}
-                    onCustomerClick={handleCustomerClick}
-                    onRefreshReservations={refreshReservations}
-                    onStatusChange={handleStatusChange}
-                    generatePriceCalculation={generatePriceCalculation}
-                    getGroupColorClasses={getGroupColorClasses}
-                        getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
-                        choicesCacheRef={choicesCacheRef}
-                        residentCustomerBatchMap={residentCustomerBatchMap}
-                        linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-                        cardLayout={gridCardLayout}
-                        onOpenTourDetailModal={handleOpenTourDetailModal}
-                        reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
-                        onReservationOptionsMutated={handleReservationOptionsMutated}
-                        reshowPickupSummaryRequest={pickupSummaryReshowRequest}
-                        onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-                    followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
-                    {...(gridCardLayout === 'simple'
-                      ? {
-                          onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
-                          onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
-                          onCommunicationChannelChange: handleCommunicationChannelChange,
-                          sentBy: user?.email ?? null,
-                          onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
-                        }
-                      : {})}
-                  />
-                  )
-                })}
-              </div>
+                renderCard={(r) => renderReservationCard(r)}
+                onRenderedReservationIds={(ids) => handleFollowUpRenderedReservationIds('flat-list', ids)}
+              />
             </div>
           )
         )
@@ -5505,6 +5753,85 @@ export default function AdminReservations() {
         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
       />
 
+      <CancelledMissingReasonModal
+        isOpen={cancelReasonQueueOpen}
+        onClose={() => setCancelReasonQueueOpen(false)}
+        locale={locale}
+        productMap={productMapForCancelReasonQueue}
+        tourMap={tourMapForCancelReasonQueue}
+        onDataLoaded={(payload) => {
+          setCancelReasonQueueStats({
+            union: payload.unionCount,
+            needsFollowUp: payload.needsFollowUpCount,
+            awaitingReason: payload.awaitingReasonCount,
+          })
+        }}
+        onQueueChanged={() => {
+          void refreshCancelReasonQueueStats()
+        }}
+        renderSimpleReservationCard={(reservation, { onReasonSaved }) => (
+          <ReservationCardItem
+            reservation={reservation}
+            customers={(customers as Customer[]) || []}
+            products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+            channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+            pickupHotels={
+              (pickupHotels as Array<{
+                id: string
+                hotel?: string | null
+                name?: string | null
+                name_ko?: string | null
+                pick_up_location?: string | null
+              }>) || []
+            }
+            productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+            optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+            tourInfoMap={tourInfoMap}
+            reservationPricingMap={reservationPricingMap}
+            locale={locale}
+            emailDropdownOpen={emailDropdownOpen}
+            sendingEmail={sendingEmail}
+            onPricingInfoClick={handlePricingInfoClick}
+            onCreateTour={handleCreateTour}
+            onPickupTimeClick={handlePickupTimeClick}
+            onPickupHotelClick={handlePickupHotelClick}
+            onPaymentClick={handlePaymentClick}
+            onDetailClick={handleDetailClick}
+            onReceiptClick={handleReceiptClick}
+            onReviewClick={handleReviewClick}
+            onEmailPreview={handleOpenEmailPreview}
+            onEmailLogsClick={handleEmailLogsClick}
+            onEmailDropdownToggle={handleEmailDropdownToggle}
+            onEditClick={(id) => {
+              handleEditClick(id)
+              setCancelReasonQueueOpen(false)
+            }}
+            onCustomerClick={handleCustomerClick}
+            onRefreshReservations={refreshReservations}
+            onStatusChange={handleStatusChange}
+            generatePriceCalculation={generatePriceCalculation}
+            getGroupColorClasses={getGroupColorClasses}
+            getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+            choicesCacheRef={choicesCacheRef}
+            residentCustomerBatchMap={residentCustomerBatchMap}
+            linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+            cardLayout="simple"
+            onOpenTourDetailModal={handleOpenTourDetailModal}
+            reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+            onReservationOptionsMutated={handleReservationOptionsMutated}
+            reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+            onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
+            onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+            onCommunicationChannelChange={handleCommunicationChannelChange}
+            sentBy={user?.email ?? null}
+            onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+            onCancellationReasonSaved={onReasonSaved}
+          />
+        )}
+      />
+
       <ReservationFollowUpQueueModal
         isOpen={followUpQueueModalOpen}
         onClose={() => setFollowUpQueueModalOpen(false)}
@@ -5515,6 +5842,7 @@ export default function AdminReservations() {
         snapshotsByReservationId={followUpSnapshotsByReservationId}
         loadingSnapshots={followUpSnapshotsLoading}
         onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+        cancellationReasonByReservationId={cancellationReasonByReservationId}
         renderSimpleReservationCard={(reservation) => (
           <ReservationCardItem
             reservation={reservation}
@@ -5853,15 +6181,6 @@ export default function AdminReservations() {
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
           />
         )}
-      />
-
-      <CancellationReasonModal
-        isOpen={cancellationReasonModalOpen}
-        locale={locale}
-        initialValue={cancellationReasonValue}
-        saving={cancellationReasonSaving}
-        onClose={closeCancellationReasonModal}
-        onSubmit={submitCancellationReasonModal}
       />
 
       <AwayOtherUserChangesModal

@@ -111,7 +111,6 @@ import ReservationOptionsSection from '@/components/reservation/ReservationOptio
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import ReservationLocalScratchList from '@/components/reservation/ReservationLocalScratchList'
-import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
@@ -6058,24 +6057,10 @@ export default function ReservationForm({
       try {
         const prevStatus = (reservation?.status || '').toLowerCase()
         const nextStatus = (reservationPayload.status || '').toLowerCase()
-        const isMovingToCancelled =
-          !!reservation?.id &&
-          (nextStatus === 'cancelled' || nextStatus === 'canceled') &&
-          !(prevStatus === 'cancelled' || prevStatus === 'canceled')
         const isMovingToNoShow =
           !!reservation?.id &&
           isNoShowReservationStatus(nextStatus) &&
           !isNoShowReservationStatus(prevStatus)
-        let cancellationReasonForSave: string | null = null
-
-        if (isMovingToCancelled && reservation?.id) {
-          const reason = await requestCancellationReason()
-          if (!reason) {
-            setIsSubmitting(false)
-            return
-          }
-          cancellationReasonForSave = reason
-        }
 
         if (pricingAudit.audited && !isSuperPricingAdmin) {
           ;(reservationPayload as { pricingInfo?: unknown }).pricingInfo = undefined
@@ -6100,9 +6085,6 @@ export default function ReservationForm({
             `Audited 가격 정보가 포함된 예약 정보가 super 관리자에 의해 저장되었습니다.\n\n수정자: ${actorName || authUser?.email || ''}`
           )
         }
-        if (isMovingToCancelled && reservation?.id && cancellationReasonForSave) {
-          await upsertReservationCancellationReason(reservation.id, cancellationReasonForSave, authUser?.email ?? null)
-        }
         if (isMovingToNoShow && reservation?.id) {
           await upsertReservationCancellationReason(reservation.id, 'No Show', authUser?.email ?? null)
           await applyNoShowReservationSideEffects(reservation.id)
@@ -6120,36 +6102,6 @@ export default function ReservationForm({
       setIsSubmitting(false)
     }
   }
-
-  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
-  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
-  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
-
-  const requestCancellationReason = useCallback(() => {
-    setCancellationReasonModalOpen(true)
-    return new Promise<string | null>((resolve) => {
-      cancellationReasonResolveRef.current = resolve
-    })
-  }, [])
-
-  const closeCancellationReasonModal = useCallback(() => {
-    setCancellationReasonModalOpen(false)
-    cancellationReasonResolveRef.current?.(null)
-    cancellationReasonResolveRef.current = null
-  }, [])
-
-  const submitCancellationReasonModal = useCallback(async (reason: string) => {
-    const trimmed = reason.trim()
-    if (!trimmed) return
-    setCancellationReasonSaving(true)
-    try {
-      setCancellationReasonModalOpen(false)
-      cancellationReasonResolveRef.current?.(trimmed)
-      cancellationReasonResolveRef.current = null
-    } finally {
-      setCancellationReasonSaving(false)
-    }
-  }, [])
 
   // 고객 추가 함수
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
@@ -7301,13 +7253,7 @@ export default function ReservationForm({
           </div>
         </div>
       )}
-      <CancellationReasonModal
-        isOpen={cancellationReasonModalOpen}
-        locale={locale}
-        saving={cancellationReasonSaving}
-        onClose={closeCancellationReasonModal}
-        onSubmit={submitCancellationReasonModal}
-      />
+
     </div>
   )
 

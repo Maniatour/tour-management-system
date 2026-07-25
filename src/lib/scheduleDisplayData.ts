@@ -16,6 +16,8 @@ import {
   type OfficeScheduleSlotRow,
   type OfficeScheduleStaffMember,
 } from '@/lib/officeScheduleDayStaff'
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+import { mapScheduleDateNoteRow } from '@/lib/scheduleDateNotes'
 import {
   fetchScheduleDisplayViaRpc,
   mapRpcDateNotesToRecord,
@@ -127,7 +129,7 @@ export type ScheduleDisplayDataPayload = {
     reason: string
     status: string
   }>
-  dateNotes: Record<string, { note: string; created_by?: string }>
+  dateNotes: Record<string, ScheduleDateNoteEntry>
   scheduleVehicles: ScheduleDisplayScheduleVehicle[]
   /** prefetch 구간 전체 OTA 판매 상태 — 달력 주 이동 시 클라이언트 필터 */
   otaSaleStatusByKey: Record<string, OtaSaleStatus>
@@ -170,7 +172,7 @@ export type ScheduleGridCorePayload = {
   ticketBookings: ScheduleDisplayTicketBookingRow[]
   tourHotelBookings: ScheduleDisplayDataPayload['tourHotelBookings']
   offSchedules: ScheduleDisplayDataPayload['offSchedules']
-  dateNotes: Record<string, { note: string; created_by?: string }>
+  dateNotes: Record<string, ScheduleDateNoteEntry>
   vehiclesRaw: ScheduleGridVehicleRow[]
   sortedVehiclesForMonth: ScheduleGridVehicleRow[]
 }
@@ -295,7 +297,7 @@ export async function fetchScheduleGridCoreData(
   let rpcCustomers:
     | Pick<Database['public']['Tables']['customers']['Row'], 'id' | 'language' | 'name'>[]
     | null = null
-  let rpcDateNotesMap: Record<string, { note: string; created_by?: string }> | null = null
+  let rpcDateNotesMap: Record<string, ScheduleDateNoteEntry> | null = null
 
   if (rpcPayload) {
     productsData = rpcPayload.products
@@ -351,7 +353,7 @@ export async function fetchScheduleGridCoreData(
         .gte('off_date', gridNoteStart)
         .lte('off_date', gridNoteEnd),
       fromUntypedTable(supabase, 'date_notes')
-        .select('note_date, note, created_by')
+        .select('note_date, note, created_by, highlight_guide_schedule')
         .gte('note_date', gridNoteStart)
         .lte('note_date', gridNoteEnd),
     ])
@@ -369,6 +371,7 @@ export async function fetchScheduleGridCoreData(
       note_date: string
       note: string | null
       created_by?: string | null
+      highlight_guide_schedule?: boolean | null
     }> | null
   }
 
@@ -418,13 +421,11 @@ export async function fetchScheduleGridCoreData(
   const notesMap =
     rpcDateNotesMap ??
     (() => {
-      const map: Record<string, { note: string; created_by?: string }> = {}
+      const map: Record<string, ScheduleDateNoteEntry> = {}
       if (dateNotesData) {
         for (const item of dateNotesData) {
-          map[item.note_date] = {
-            note: item.note || '',
-            ...(item.created_by ? { created_by: item.created_by } : {}),
-          }
+          const [noteDate, entry] = mapScheduleDateNoteRow(item)
+          map[noteDate] = entry
         }
       }
       return map

@@ -140,7 +140,8 @@ export default function ProductDetailAirbnbView({
   const promo = useProductDetailAppliedPromo(
     productId,
     bookingPanelProps.basePrice,
-    totalPrice
+    totalPrice,
+    bookingPanelProps.partySize ?? 1
   )
 
   const ageLimits = {
@@ -262,6 +263,7 @@ export default function ProductDetailAirbnbView({
                       onBookNow={bookingPanelProps.onBookNow}
                       totalPrice={totalPrice}
                       displayTotalPrice={promo.displayTotalPrice}
+                      perPersonPrice={promo.perPersonPrice}
                       promoDiscountAmount={promo.discountAmount}
                       appliedPromoCode={promo.appliedCoupon?.code ?? null}
                       selectedDate={selectedDate || 'admin-preview'}
@@ -369,8 +371,8 @@ export default function ProductDetailAirbnbView({
 
       {isMobileLayout ? (
       <ProductDetailMobileStickyCta
-        totalPrice={promo.displayTotalPrice}
-        {...(promo.hasPromoApplied ? { originalTotalPrice: totalPrice } : {})}
+        totalPrice={promo.perPersonPrice}
+        {...(promo.hasPromoApplied ? { originalTotalPrice: promo.subtotal / (bookingPanelProps.partySize ?? 1) } : {})}
         onBookNow={bookingPanelProps.onBookNow}
       />
       ) : null}

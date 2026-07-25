@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   ChevronUp,
@@ -291,16 +292,12 @@ export default function CustomerPageFaqEmbed({
     } finally {
       setLoading(false)
     }
-  }, [editLocale, productId, t])
+  }, [editLocale, productId])
 
   useEffect(() => {
     void loadData()
-  }, [loadData])
-
-  useEffect(() => {
-    if (isNewDraft || !activeFaq) return
-    setForm(faqToForm(activeFaq, editLocale))
-  }, [activeFaq?.id, editLocale, activeFaq, isNewDraft])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when product/locale changes
+  }, [productId, editLocale])
 
   useEffect(() => {
     if (!onDirtyChange || !initialSnapshot) return
@@ -827,12 +824,13 @@ export default function CustomerPageFaqEmbed({
             />
           </label>
 
-          <label className="block space-y-1">
+          <div className="block space-y-1">
             <span className="text-xs font-medium">
               {tf('answer', { locale: localeLabel })}
             </span>
             <div ref={editorMeasureRef}>
               <LightRichEditor
+                key={`${activeFaqId ?? 'new'}-${editLocale}-${isNewDraft ? 'draft' : 'saved'}`}
                 value={form.answerDraft}
                 onChange={(value) =>
                   setForm((prev) => ({ ...prev, answerDraft: value ?? '' }))
@@ -844,7 +842,7 @@ export default function CustomerPageFaqEmbed({
                 maxHeight={1200}
               />
             </div>
-          </label>
+          </div>
         </div>
       )}
 
@@ -873,8 +871,9 @@ export default function CustomerPageFaqEmbed({
         {tf('save')}
       </button>
 
-      {showLibraryPicker ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      {showLibraryPicker
+        ? createPortal(
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
           <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-card shadow-lg">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">{tf('libraryPickerTitle')}</h3>
@@ -991,11 +990,14 @@ export default function CustomerPageFaqEmbed({
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body
+          )
+        : null}
 
-      {showLibraryManager ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 sm:p-6">
+      {showLibraryManager
+        ? createPortal(
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-3 sm:p-6">
           <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-card shadow-xl">
             <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">{tf('manageLibraryTitle')}</h3>
@@ -1018,8 +1020,10 @@ export default function CustomerPageFaqEmbed({
               />
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }

@@ -44,6 +44,19 @@ export function calculatePriceWithPromoDiscount(
   return Math.max(0, basePrice - discountAmount) + choicesAddonTotal
 }
 
+/** 상품 상세: 소계(기본가×인원 + 초이스) 기준 쿠폰 적용 후 총액 */
+export function calculateSubtotalAfterPromoDiscount(
+  subtotal: number,
+  discountAmount: number
+): number {
+  return Math.max(0, subtotal - discountAmount)
+}
+
+export function calculatePerPersonPrice(total: number, partySize: number): number {
+  const effectivePartySize = Math.max(1, partySize)
+  return total / effectivePartySize
+}
+
 export function mapValidatedCoupon(
   coupon: {
     coupon_code?: string | null

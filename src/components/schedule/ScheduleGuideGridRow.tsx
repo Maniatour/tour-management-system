@@ -12,6 +12,7 @@ import type {
   ScheduleGuideScheduleRow,
 } from '@/lib/scheduleGuideGridTypes'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
+import { shouldHighlightGuideScheduleDateNote } from '@/lib/scheduleDateNotes'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleGuideGridProps } from '@/components/schedule/ScheduleGuideGrid'
 
@@ -260,7 +261,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     if (isToday(dateString)) {
       return 'border-l-2 border-r-2 border-red-500 bg-red-50'
     }
-    if (dateNotes[dateString]?.note) return 'bg-yellow-100'
+    if (shouldHighlightGuideScheduleDateNote(dateNotes[dateString])) return 'bg-yellow-100'
     if (highlightedDate === dateString) return 'bg-yellow-200'
     if (isCdlKoreanDriver && !hasAssignment && !isGuideDayOff(dateString)) {
       return 'bg-yellow-100'

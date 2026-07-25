@@ -31,6 +31,31 @@ export function parseCouponProductIds(productId: string | null | undefined): str
     .filter(Boolean)
 }
 
+/** DB 저장용: 빈 값은 null, 다중 상품은 콤마 구분 문자열 */
+export function normalizeCouponProductIdForStorage(
+  productId: string | null | undefined
+): string | null {
+  const ids = parseCouponProductIds(productId)
+  if (ids.length === 0) return null
+  return ids.join(',')
+}
+
+export function formatCouponSaveError(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const pgError = error as { code?: string; message?: string }
+    if (pgError.code === '23503') {
+      if (pgError.message?.includes('coupons_product_id_fkey')) {
+        return '선택한 상품이 유효하지 않습니다. 상품을 다시 선택하거나, 다중 상품 쿠폰은 최신 DB 마이그레이션 적용 후 사용할 수 있습니다.'
+      }
+      return '연결된 채널 또는 상품이 유효하지 않습니다.'
+    }
+    if (pgError.code === '23505') {
+      return '이미 사용 중인 쿠폰 코드입니다.'
+    }
+  }
+  return '쿠폰 저장 중 오류가 발생했습니다.'
+}
+
 export function couponMatchesProduct(
   couponProductId: string | null | undefined,
   productId: string

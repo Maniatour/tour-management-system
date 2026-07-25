@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from 'react'
 import dayjs from 'dayjs'
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
 import { supabase } from '@/lib/supabase'
 import { getScheduleDisplayFetchDateRange } from '@/lib/scheduleDisplayCalendarMeta'
 import {
@@ -118,7 +119,7 @@ export function useScheduleViewData({
   const [offSchedules, setOffSchedules] = useState<
     Array<{ team_email: string; off_date: string; reason: string; status: string }>
   >([])
-  const [dateNotes, setDateNotes] = useState<Record<string, { note: string; created_by?: string }>>(
+  const [dateNotes, setDateNotes] = useState<Record<string, ScheduleDateNoteEntry>>(
     {},
   )
   const [scheduleVehicles, setScheduleVehicles] = useState<ScheduleViewScheduleVehicle[]>([])

@@ -22,6 +22,7 @@ type ProductDetailAirbnbOptionsSectionProps = {
   onBookNow: () => void
   totalPrice: number
   displayTotalPrice: number
+  perPersonPrice: number
   promoDiscountAmount: number
   appliedPromoCode?: string | null
   selectedDate: string
@@ -224,6 +225,7 @@ export default function ProductDetailAirbnbOptionsSection({
   onBookNow,
   totalPrice,
   displayTotalPrice,
+  perPersonPrice,
   promoDiscountAmount,
   appliedPromoCode,
   selectedDate,
@@ -342,16 +344,22 @@ export default function ProductDetailAirbnbOptionsSection({
       <div className="airbnb-detail-options-summary">
         <div>
           {hasPromo ? (
-            <p className="text-sm text-[#9ca3af] line-through">${totalPrice}</p>
+            <p className="text-sm text-[#9ca3af] line-through">
+              ${(totalPrice / Math.max(1, partySize)).toFixed(2)}
+            </p>
           ) : null}
           <p className="text-2xl font-bold text-[#1a2b49]">
-            ${hasPromo ? displayTotalPrice.toFixed(2) : totalPrice}
+            ${perPersonPrice.toFixed(2)}
             <span className="text-sm font-normal text-[#6b7280]"> {t('perPerson')}</span>
           </p>
           {hasPromo ? (
             <p className="mt-0.5 text-xs font-medium text-[#059669]">
-              {t('promoDiscountLabel')}
+              {t('priceTotal')}: ${displayTotalPrice.toFixed(2)} · {t('promoDiscountLabel')}
               {appliedPromoCode ? ` (${appliedPromoCode})` : ''}: -${promoDiscountAmount.toFixed(2)}
+            </p>
+          ) : partySize > 1 ? (
+            <p className="mt-0.5 text-xs text-[#6b7280]">
+              {t('priceTotal')}: ${totalPrice.toFixed(2)}
             </p>
           ) : (
             <p className="mt-0.5 text-xs text-[#6b7280]">{t('freeCancellationNote')}</p>

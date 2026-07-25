@@ -2,7 +2,7 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks, LayoutList } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks, LayoutList, ClipboardList } from 'lucide-react'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
 import {
   reservationAdminManualDocument,
@@ -34,6 +34,11 @@ interface ReservationsHeaderProps {
   /** Follow-up 단계별 대기 예약 모달 */
   onOpenFollowUpQueue?: () => void
   followUpQueueCount?: number
+  /** 취소 사유 미기록 Follow-up 큐 */
+  onOpenCancelReasonQueue?: () => void
+  cancelReasonQueueCount?: number
+  /** 처리 필요·Follow-up 버튼 hover/focus 시 운영 큐 선로드 */
+  onPrefetchOperationalQueue?: () => void
 }
 
 function ReservationsHeader({
@@ -53,14 +58,23 @@ function ReservationsHeader({
   onOpenDeletedReservations,
   onOpenFollowUpQueue,
   followUpQueueCount = 0,
+  onOpenCancelReasonQueue,
+  cancelReasonQueueCount = 0,
+  onPrefetchOperationalQueue,
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
+
+  const handleOperationalQueuePrefetch = () => {
+    onPrefetchOperationalQueue?.()
+  }
 
   const renderActionRequired = () =>
     typeof onActionRequired === 'function' ? (
       <button
         type="button"
         onClick={onActionRequired}
+        onMouseEnter={handleOperationalQueuePrefetch}
+        onFocus={handleOperationalQueuePrefetch}
         className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
           actionRequiredCount > 0
             ? 'bg-amber-500 text-white hover:bg-amber-600'
@@ -83,6 +97,8 @@ function ReservationsHeader({
       <button
         type="button"
         onClick={onOpenFollowUpQueue}
+        onMouseEnter={handleOperationalQueuePrefetch}
+        onFocus={handleOperationalQueuePrefetch}
         className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
           followUpQueueCount > 0
             ? 'bg-teal-600 text-white hover:bg-teal-700'
@@ -95,6 +111,28 @@ function ReservationsHeader({
         {followUpQueueCount > 0 && (
           <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 py-0.5 text-xs tabular-nums">
             {followUpQueueCount}
+          </span>
+        )}
+      </button>
+    ) : null
+
+  const renderCancelReasonQueue = () =>
+    typeof onOpenCancelReasonQueue === 'function' ? (
+      <button
+        type="button"
+        onClick={onOpenCancelReasonQueue}
+        className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+          cancelReasonQueueCount > 0
+            ? 'bg-rose-600 text-white hover:bg-rose-700'
+            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+        }`}
+        title={t('cancelReasonQueue.headerButton')}
+      >
+        <ClipboardList size={16} />
+        <span className="hidden sm:inline">{t('cancelReasonQueue.headerButton')}</span>
+        {cancelReasonQueueCount > 0 && (
+          <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 py-0.5 text-xs tabular-nums">
+            {cancelReasonQueueCount}
           </span>
         )}
       </button>
@@ -219,8 +257,8 @@ function ReservationsHeader({
         </div>
 
         {/* 데스크톱: 검색 · 예약 처리 필요 · Follow-up · 필터 · 삭제 · 새 예약 */}
-        <div className="hidden max-w-6xl flex-1 items-center justify-end gap-2 md:flex">
-          <div className="relative flex min-w-[24rem] max-w-4xl flex-1 items-center gap-1.5">
+        <div className="hidden min-w-0 flex-1 items-center justify-end gap-2 md:flex">
+          <div className="relative flex w-44 shrink-0 items-center gap-1.5 sm:w-48 lg:w-52">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2 top-1/2 size-[14px] -translate-y-1/2 text-gray-400" />
               <input
@@ -252,6 +290,7 @@ function ReservationsHeader({
             )}
           </div>
           {renderActionRequired()}
+          {renderCancelReasonQueue()}
           {renderFollowUp()}
           {typeof onOpenFilter === 'function' && (
             <button
@@ -271,6 +310,7 @@ function ReservationsHeader({
       {/* 모바일 2줄: 예약 처리 필요 · Follow-up 단계 · 삭제된 예약 */}
       <div className="flex flex-wrap items-center gap-2 md:hidden">
         {renderActionRequired()}
+        {renderCancelReasonQueue()}
         {renderFollowUp()}
         {renderDeleted()}
       </div>

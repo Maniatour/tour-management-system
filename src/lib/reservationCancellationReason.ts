@@ -3,6 +3,26 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 export type CancellationFollowUpMeta = { reason: string; firstRecordedAt: string | null }
 
+/** 취소 사유 프리셋 `재예약` / `Rebooking` — 순예약·취소 Follow-up 집계에서 제외 */
+export function isRebookingCancellationReason(reason: string | null | undefined): boolean {
+  const s = String(reason ?? '').trim().toLowerCase()
+  if (!s) return false
+  return s === '재예약' || s === 'rebooking'
+}
+
+export function isRebookingReservationByReasonMap(
+  reservationId: string | null | undefined,
+  reasonById: ReadonlyMap<string, string> | Record<string, string | null | undefined> | null | undefined
+): boolean {
+  const id = String(reservationId ?? '').trim()
+  if (!id || !reasonById) return false
+  const reason =
+    reasonById instanceof Map
+      ? reasonById.get(id)
+      : (reasonById as Record<string, string | null | undefined>)[id]
+  return isRebookingCancellationReason(reason)
+}
+
 export async function fetchCancellationFollowUpMeta(
   reservationIds: string[]
 ): Promise<Map<string, CancellationFollowUpMeta>> {

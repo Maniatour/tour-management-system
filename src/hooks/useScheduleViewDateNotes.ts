@@ -1,14 +1,19 @@
 'use client'
 
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
 import { supabase } from '@/lib/supabase'
 import type { ScheduleMessageModalType } from '@/hooks/useScheduleViewDialogs'
 
 type ShowMessageFn = (title: string, message: string, type?: ScheduleMessageModalType) => void
 
+export type SaveDateNoteOptions = {
+  highlightGuideSchedule: boolean
+}
+
 type UseScheduleViewDateNotesParams = {
-  dateNotes: Record<string, { note: string; created_by?: string }>
-  setDateNotes: Dispatch<SetStateAction<Record<string, { note: string; created_by?: string }>>>
+  dateNotes: Record<string, ScheduleDateNoteEntry>
+  setDateNotes: Dispatch<SetStateAction<Record<string, ScheduleDateNoteEntry>>>
   userEmail?: string | null | undefined
   showMessage: ShowMessageFn
 }
@@ -33,16 +38,10 @@ export function useScheduleViewDateNotes({
   }, [])
 
   const saveDateNote = useCallback(
-    async (noteText: string) => {
+    async (noteText: string, options: SaveDateNoteOptions) => {
       if (!selectedDateForNote) return
 
       try {
-        const noteData = {
-          note_date: selectedDateForNote,
-          note: noteText.trim() || null,
-          created_by: userEmail || null,
-        }
-
         if (!noteText.trim()) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error } = await (supabase as any)
@@ -59,6 +58,13 @@ export function useScheduleViewDateNotes({
             return newNotes
           })
         } else {
+          const noteData = {
+            note_date: selectedDateForNote,
+            note: noteText.trim(),
+            created_by: userEmail || null,
+            highlight_guide_schedule: options.highlightGuideSchedule,
+          }
+
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error } = await (supabase as any)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -71,6 +77,7 @@ export function useScheduleViewDateNotes({
             ...prev,
             [selectedDateForNote]: {
               note: noteText.trim(),
+              highlight_guide_schedule: options.highlightGuideSchedule,
               ...(userEmail ? { created_by: userEmail } : {}),
             },
           }))
@@ -116,11 +123,15 @@ export function useScheduleViewDateNotes({
   }, [selectedDateForNote, setDateNotes, closeDateNoteModal, showMessage])
 
   const selectedDateNote = selectedDateForNote ? dateNotes[selectedDateForNote]?.note ?? '' : ''
+  const selectedHighlightGuideSchedule = selectedDateForNote
+    ? dateNotes[selectedDateForNote]?.highlight_guide_schedule !== false
+    : true
 
   return {
     showDateNoteModal,
     selectedDateForNote,
     selectedDateNote,
+    selectedHighlightGuideSchedule,
     openDateNoteModal,
     closeDateNoteModal,
     saveDateNote,

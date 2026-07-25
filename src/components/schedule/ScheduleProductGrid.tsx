@@ -14,6 +14,8 @@ import ScheduleProductGridRow from '@/components/schedule/ScheduleProductGridRow
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
 
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+
 export type ScheduleProductGridProps = {
   isDisplayMode: boolean
   locale: string
@@ -27,7 +29,7 @@ export type ScheduleProductGridProps = {
   productScheduleBodyScrollRef: RefObject<HTMLDivElement>
   onProductScheduleHeaderScroll: (e: UIEvent<HTMLDivElement>) => void
   onProductScheduleBodyScroll: (e: UIEvent<HTMLDivElement>) => void
-  dateNotes: Record<string, { note: string; created_by?: string }>
+  dateNotes: Record<string, ScheduleDateNoteEntry>
   scheduleHealthHighlightDateSet: Set<string>
   scheduleHealthProductCellAlertSet: Set<string>
   scheduleInteractionDragging: boolean

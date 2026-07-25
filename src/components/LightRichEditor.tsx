@@ -740,6 +740,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isInitializedRef = useRef(false)
+  const lastExternalValueRef = useRef(value)
   const savedSelectionRef = useRef<Range | null>(null)
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
   const [imageToolbarPos, setImageToolbarPos] = useState<{ top: number; left: number } | null>(null)
@@ -822,20 +823,23 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       } catch {
         /* ignore */
       }
-      if (!isInitializedRef.current) {
-        // 초기화: value가 있으면 설정, 없으면 빈 문자열로 초기화
+
+      const externalValueChanged = lastExternalValueRef.current !== value
+      const isFocused = editorRef.current.matches(':focus-within')
+
+      if (!isInitializedRef.current || (externalValueChanged && !isFocused)) {
         const htmlContent = value ? markdownToHtml(value, htmlOptions) : ''
         editorRef.current.innerHTML = htmlContent
         syncOrderedListStarts(editorRef.current)
         isInitializedRef.current = true
-      } else {
-        // 이미 초기화된 경우, value가 변경되면 에디터 내용도 업데이트
-        // 단, 사용자가 현재 편집 중이 아닐 때만 (커서가 없을 때)
+        lastExternalValueRef.current = value
+      } else if (externalValueChanged && isFocused) {
+        lastExternalValueRef.current = value
+      } else if (!externalValueChanged && !isFocused) {
         const currentContent = editorRef.current.innerHTML
         const expectedContent = value ? markdownToHtml(value, htmlOptions) : ''
         const currentMarkdown = htmlToMarkdown(currentContent)
-        // 현재 내용과 새로운 value가 다를 때만 업데이트 (외부에서 value가 변경된 경우)
-        if (currentMarkdown !== value && !editorRef.current.matches(':focus-within')) {
+        if (currentMarkdown !== value) {
           editorRef.current.innerHTML = expectedContent
           syncOrderedListStarts(editorRef.current)
         }

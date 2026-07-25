@@ -164,9 +164,10 @@ export function useProductDetailChoices(
         groupedChoices,
         selectedOptions,
         basePrice ?? 0,
-        selectedChoiceQuantities
+        selectedChoiceQuantities,
+        partySize
       ),
-    [groupedChoices, selectedOptions, basePrice, selectedChoiceQuantities]
+    [groupedChoices, selectedOptions, basePrice, selectedChoiceQuantities, partySize]
   )
 
   const capacitySelectionComplete = useMemo(() => {

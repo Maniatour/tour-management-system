@@ -94,11 +94,7 @@ function simpleCardTourStatusGlyph(statusRaw: string): React.ReactNode {
   return <HelpCircle className={`${cls} text-gray-400`} aria-hidden />
 }
 
-function formatRegistrationDateForCard(reservation: Reservation, locale: string): string {
-  const raw =
-    reservation.addedTime ||
-    (reservation as { created_at?: string | null }).created_at ||
-    ''
+function formatCardLocaleDate(raw: string | null | undefined, locale: string): string {
   if (!raw?.trim()) return '-'
   const parsed = Date.parse(raw)
   if (!Number.isNaN(parsed)) {
@@ -109,6 +105,23 @@ function formatRegistrationDateForCard(reservation: Reservation, locale: string)
     })
   }
   return raw.trim()
+}
+
+function formatRegistrationDateForCard(reservation: Reservation, locale: string): string {
+  const raw =
+    reservation.addedTime ||
+    (reservation as { created_at?: string | null }).created_at ||
+    ''
+  return formatCardLocaleDate(raw, locale)
+}
+
+function formatCancellationDateForCard(reservation: Reservation, locale: string): string {
+  const ext = reservation as {
+    cancellation_recorded_at?: string | null
+    updated_at?: string | null
+  }
+  const raw = ext.cancellation_recorded_at ?? ext.updated_at ?? null
+  return formatCardLocaleDate(raw, locale)
 }
 
 interface ReservationCardItemProps {
@@ -238,6 +251,8 @@ interface ReservationCardItemProps {
   sentBy?: string | null
   /** 간단 카드: SMS 발송 성공 후 (예: 소통 채널 UI 갱신) */
   onPreTourSmsSendSuccess?: (reservationId: string) => void
+  /** 취소 사유 저장 후 부모 갱신(큐 모달 등) */
+  onCancellationReasonSaved?: () => void
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -253,8 +268,8 @@ function tourDateProximityBorderClasses(tourDate: string | null | undefined): st
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const diffDays = Math.round((tour.getTime() - today.getTime()) / 86400000)
   if (diffDays < 0) return 'border border-gray-200'
-  if (diffDays < 3) return 'border-2 border-red-500'
-  if (diffDays <= 7) return 'border-2 border-primary'
+  if (diffDays < 3) return 'border border-gray-200 ring-2 ring-red-500'
+  if (diffDays <= 7) return 'border border-gray-200 ring-2 ring-primary'
   return 'border border-gray-200'
 }
 
@@ -304,6 +319,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onCommunicationChannelChange,
   sentBy = null,
   onPreTourSmsSendSuccess,
+  onCancellationReasonSaved,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -545,10 +561,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   return (
     <div
       key={reservation.id}
-      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0`}
+      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0 h-full`}
     >
       {cardLayout === 'simple' ? (
-        <div className="p-3 space-y-2">
+        <div className="flex h-full flex-col p-3 space-y-2">
           {/* Row 1 */}
           <div className="flex justify-between items-center gap-2 min-w-0">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -677,19 +693,25 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           {(() => {
             if (hideAssignedTourUi) {
               return (
-                <div className="flex items-center gap-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
-                    <span className="text-xs font-medium text-gray-600 shrink-0">{t('card.registrationDateLabel')}</span>
-                    <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
-                    {cardLayout === 'simple' && isReservationCancelled && cancelReasonBadge ? (
-                      <span
-                        className="max-w-[11rem] truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 ring-1 ring-slate-200/80"
-                        title={cancelReasonBadge}
-                      >
-                        {cancelReasonBadge}
-                      </span>
+                <div className="flex items-start gap-1 min-w-0">
+                  <dl className="m-0 grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-[11px] leading-snug text-gray-800">
+                    <dt className="font-medium text-gray-600">{t('card.registrationDateLabel')}</dt>
+                    <dd className="m-0 tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</dd>
+                    {isReservationCancelled ? (
+                      <>
+                        <dt className="font-medium text-gray-600">{t('card.cancellationDateLabel')}</dt>
+                        <dd className="m-0 tabular-nums">{formatCancellationDateForCard(reservation, locale)}</dd>
+                      </>
                     ) : null}
-                  </div>
+                  </dl>
+                  {cardLayout === 'simple' && isReservationCancelled && cancelReasonBadge ? (
+                    <span
+                      className="max-w-[11rem] shrink-0 truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 ring-1 ring-slate-200/80"
+                      title={cancelReasonBadge}
+                    >
+                      {cancelReasonBadge}
+                    </span>
+                  ) : null}
                 </div>
               )
             }
@@ -755,7 +777,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           })()}
 
           {/* Row 4: Follow-up(취소 포함) 왼쪽 + 더보기(기존 액션) 오른쪽 */}
-          <div className="flex items-center gap-2 min-w-0 border-t border-gray-100 pt-2">
+          <div className="mt-auto flex items-center gap-2 min-w-0 border-t border-gray-100 pt-2">
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-1">
               {isReservationCancelled ? (
                 <CancelledSimpleCardFollowUpStrip
@@ -772,12 +794,31 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     customers.find((c) => c.id === reservation.customerId)?.language ?? null
                   }
                   tourDate={reservation.tourDate ?? null}
-                  productName={getProductName(reservation.productId, products as any || [])}
+                  productId={reservation.productId}
+                  products={(products as Array<{
+                    id: string
+                    name?: string | null
+                    name_ko?: string | null
+                    name_en?: string | null
+                    customer_name_ko?: string | null
+                    customer_name_en?: string | null
+                  }>) || []}
+                  adults={reservation.adults || 0}
+                  children={reservation.child || 0}
+                  infants={reservation.infant || 0}
                   channelRN={reservation.channelRN ?? null}
+                  channelName={
+                    reservation.channelNameSnapshot ??
+                    getChannelName(reservation.channelId, channels || [])
+                  }
                   {...(onCancelFollowUpManualChange !== undefined
                     ? { onCancelFollowUpManualChange }
                     : {})}
-                  onReasonSaved={() => setCancelReasonFetchIx((x) => x + 1)}
+                  onReasonSaved={() => {
+                    setCancelReasonFetchIx((x) => x + 1)
+                    onCancellationReasonSaved?.()
+                  }}
+                  knownCancellationReason={cancelReasonBadge}
                 />
               ) : (
                 <ReservationFollowUpPipelineIcons
@@ -1376,6 +1417,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span className="text-gray-600 font-medium">{t('card.registrationDateLabel')}</span>{' '}
               <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
             </span>
+            {isReservationCancelled ? (
+              <span className="text-sm text-gray-900">
+                <span className="text-gray-600 font-medium">{t('card.cancellationDateLabel')}</span>{' '}
+                <span className="tabular-nums">{formatCancellationDateForCard(reservation, locale)}</span>
+              </span>
+            ) : null}
           </div>
         ) : (
           <>

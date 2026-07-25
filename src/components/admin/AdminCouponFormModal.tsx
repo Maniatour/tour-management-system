@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { parseCouponProductIds } from "@/lib/productDetailPromoCodes"
 
 export type AdminCoupon = {
   id: string
@@ -64,7 +65,9 @@ export default function AdminCouponFormModal({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [selectedChannelType, setSelectedChannelType] = useState<'self' | 'partner' | 'ota'>('self')
   const [selectedProductSubCategory, setSelectedProductSubCategory] = useState<string>('all')
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<string[]>(() =>
+    parseCouponProductIds(coupon?.product_id || defaultProductId)
+  )
 
   // 채널 데이터 로드
   const loadChannels = async (type?: 'self' | 'partner' | 'ota') => {
@@ -131,6 +134,7 @@ export default function AdminCouponFormModal({
 
   // 상품 선택기 열기
   const openProductSelector = () => {
+    setSelectedProducts(parseCouponProductIds(formData.product_id))
     setShowProductSelector(true)
     loadProducts()
   }

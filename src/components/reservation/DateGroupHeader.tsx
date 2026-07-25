@@ -13,6 +13,7 @@ import {
 } from '@/utils/reservationUtils'
 import type { Reservation } from '@/types/reservation'
 import { type ReservationStatusAuditRow } from '@/lib/reservationStatusAudit'
+import { isRebookingReservationByReasonMap } from '@/lib/reservationCancellationReason'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { BreakdownStatBadges } from '@/components/reservation/BreakdownStatBadges'
 import { StatusTransitionByTargetBlock } from '@/components/reservation/StatusTransitionByTargetBlock'
@@ -39,6 +40,8 @@ interface DateGroupHeaderProps {
   auditRowsByReservationId?: Record<string, ReservationStatusAuditRow[]>
   /** 감사 로딩 중이면 상태 열에 대기 표시 */
   statusAuditLoading?: boolean
+  /** 취소 사유 — 재예약 건은 취소·순 집계에서 제외 */
+  cancellationReasonByReservationId?: ReadonlyMap<string, string>
 }
 
 function isCancelledLikeStatus(status: string | undefined) {
@@ -165,6 +168,7 @@ function DateGroupHeaderInner({
   cancellationStats = { mode: 'default' },
   auditRowsByReservationId,
   statusAuditLoading = false,
+  cancellationReasonByReservationId,
 }: DateGroupHeaderProps) {
   const t = useTranslations('reservations')
   const locale = useLocale()
@@ -192,7 +196,7 @@ function DateGroupHeaderInner({
   const cancelStatsPending = cancellationStats.mode === 'audit-loading'
 
   /** default: 당일 updated_at+취소상태(과집계 가능). audit: 부모가 넘긴 목록만(그날 상태→취소/삭제 감사 전환). */
-  const cancelledOnDate =
+  const cancelledOnDateRaw =
     cancellationStats.mode === 'audit'
       ? cancellationStats.reservations
       : cancellationStats.mode === 'audit-loading'
@@ -200,8 +204,17 @@ function DateGroupHeaderInner({
         : reservations.filter(
             (r) => isCancelledLikeStatus(r.status) && isoToLocalCalendarDateKey(r.updated_at ?? null) === date
           )
+
+  const cancelledOnDate = cancelledOnDateRaw.filter(
+    (r) => !isRebookingReservationByReasonMap(String(r.id), cancellationReasonByReservationId)
+  )
+  const rebookingCancelledOnDate = cancelledOnDateRaw.filter((r) =>
+    isRebookingReservationByReasonMap(String(r.id), cancellationReasonByReservationId)
+  )
   const cancelCount = cancelledOnDate.length
   const cancelPeople = cancelledOnDate.reduce((sum, r) => sum + r.totalPeople, 0)
+  const rebookingCancelCount = rebookingCancelledOnDate.length
+  const rebookingCancelPeople = rebookingCancelledOnDate.reduce((sum, r) => sum + r.totalPeople, 0)
 
   /** 요약과 동일: 당일 신규 등록 + 당일 취소 처리된 건만 상세 통계에 포함 (그날 다른 상태만 바뀐 카드 제외) */
   const statsRelevantReservations = (() => {
@@ -226,7 +239,7 @@ function DateGroupHeaderInner({
   const reservationsForActivityBreakdown =
     regCount > 0 || cancelCount > 0 ? statsRelevantReservations : reservations
 
-  const hasActivityBreakdown = regCount > 0 || cancelCount > 0 || cancelStatsPending
+  const hasActivityBreakdown = regCount > 0 || cancelCount > 0 || rebookingCancelCount > 0 || cancelStatsPending
   const dayRegCancelNetPeople = regPeopleTotal - (cancelStatsPending ? 0 : cancelPeople)
 
   const productList = (products || []) as Product[]
@@ -302,8 +315,25 @@ function DateGroupHeaderInner({
   }
   if (cancelStatsPending) {
     summarySegments.push(t('groupingLabels.cancellationLinePending'))
-  } else if (cancelCount > 0) {
-    summarySegments.push(t('groupingLabels.cancellationLine', { count: cancelCount, people: cancelPeople }))
+  } else if (cancelCount > 0 || rebookingCancelCount > 0) {
+    if (cancelCount > 0) {
+      summarySegments.push(t('groupingLabels.cancellationLine', { count: cancelCount, people: cancelPeople }))
+    }
+    if (rebookingCancelCount > 0) {
+      summarySegments.push(
+        t('groupingLabels.rebookingExcludedLine', {
+          count: rebookingCancelCount,
+          people: rebookingCancelPeople,
+        })
+      )
+    }
+    if (cancelCount > 0 || rebookingCancelCount > 0) {
+      summarySegments.push(
+        t('groupingLabels.netRegistrationLine', {
+          people: dayRegCancelNetPeople,
+        })
+      )
+    }
   }
   const activitySummary =
     summarySegments.length > 0
@@ -399,6 +429,7 @@ function DateGroupHeaderInner({
                 </div>
                 <p className="text-xs text-gray-500 leading-snug">
                   {t('stats.dayActivitySummaryOverlapNote')}
+                  {rebookingCancelCount > 0 ? <> {t('stats.dayActivityRebookingExcludedNote')}</> : null}
                   {cancelStatsPending ? <> {t('stats.dayActivityCancelAuditLoading')}</> : null}
                 </p>
               </div>

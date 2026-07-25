@@ -2100,6 +2100,7 @@ export type Database = {
         Row: {
           created_at: string | null
           created_by: string | null
+          highlight_guide_schedule: boolean
           id: string
           note: string | null
           note_date: string
@@ -2108,6 +2109,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           created_by?: string | null
+          highlight_guide_schedule?: boolean
           id?: string
           note?: string | null
           note_date: string
@@ -2116,6 +2118,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           created_by?: string | null
+          highlight_guide_schedule?: boolean
           id?: string
           note?: string | null
           note_date?: string

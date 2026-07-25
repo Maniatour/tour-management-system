@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
 
 function qIdent(s: string): string {
   return String(s).replace(/"/g, '""')
@@ -306,11 +307,11 @@ function buildAdminReservationListQuery(
   /** 검색 시 OR·in(...)이 무거워 `exact` 카운트가 첫 응답을 크게 지연시킴 → 계획 행수로 대체 */
   const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
 
-  let selectFields = args.selectFieldsOverride ?? '*, choices, channels(name)'
+  let selectFields = args.selectFieldsOverride ?? RESERVATION_LIST_SELECT
   if (args.sortBy === 'customer_name') {
-    selectFields = '*, choices, channels(name), customers(name)'
+    selectFields = `${RESERVATION_LIST_SELECT}, customers(name)`
   } else if (args.sortBy === 'product_name') {
-    selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
+    selectFields = `${RESERVATION_LIST_SELECT}, products(name, name_ko, name_en)`
   }
 
   let q = includeExactCount

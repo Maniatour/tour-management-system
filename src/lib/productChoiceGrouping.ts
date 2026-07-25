@@ -188,9 +188,11 @@ export function calculateSelectedChoicePrice(
   groupedChoices: Record<string, ProductChoiceGroup>,
   selectedOptions: Record<string, string>,
   basePrice: number,
-  selectedChoiceQuantities: Record<string, Record<string, number>> = {}
+  selectedChoiceQuantities: Record<string, Record<string, number>> = {},
+  partySize = 1
 ): number {
-  let totalPrice = basePrice
+  const effectivePartySize = Math.max(1, partySize)
+  let totalPrice = basePrice * effectivePartySize
 
   Object.values(groupedChoices).forEach((group) => {
     const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en

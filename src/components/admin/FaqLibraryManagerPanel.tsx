@@ -259,9 +259,10 @@ export default function FaqLibraryManagerPanel({
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
             />
           </label>
-          <label className="block space-y-1">
+          <div className="block space-y-1">
             <span className="text-xs font-medium">{t('answer', { locale: localeLabel })}</span>
             <LightRichEditor
+              key={`${selectedFaqId ?? 'new'}-${editLocale}`}
               value={currentFaqAnswer}
               onChange={(value) =>
                 setFaqDraft((prev) => ({
@@ -275,7 +276,7 @@ export default function FaqLibraryManagerPanel({
               height={220}
               enableResize
             />
-          </label>
+          </div>
           <ContentLibraryLocaleBadges
             locales={getFaqFilledLocales({
               content_i18n: {

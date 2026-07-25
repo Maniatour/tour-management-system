@@ -147,17 +147,41 @@ export const getProductName = (productId: string, products: Product[] | null) =>
   return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
-// 상품 이름 가져오기 (locale에 따라 name_ko / name_en 사용)
+// 상품 이름 가져오기 (locale에 따라 고객용·내부용 이름 우선순위 적용)
 export const getProductNameForLocale = (
   productId: string,
-  products: Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }> | null,
+  products: Array<{
+    id: string
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }> | null,
   locale: string
 ) => {
-  const product = products?.find(p => p.id === productId)
+  const product = products?.find((p) => p.id === productId)
   if (!product) return 'Unknown'
-  if (locale === 'en' && product.name_en) return product.name_en
-  if (product.name_ko) return product.name_ko
-  return product.name || 'Unknown'
+  const pick = (v: string | null | undefined) =>
+    v != null && String(v).trim() !== '' ? String(v).trim() : ''
+  if (locale === 'en') {
+    return (
+      pick(product.customer_name_en) ||
+      pick(product.name_en) ||
+      pick(product.customer_name_ko) ||
+      pick(product.name_ko) ||
+      pick(product.name) ||
+      'Unknown'
+    )
+  }
+  return (
+    pick(product.customer_name_ko) ||
+    pick(product.name_ko) ||
+    pick(product.customer_name_en) ||
+    pick(product.name_en) ||
+    pick(product.name) ||
+    'Unknown'
+  )
 }
 
 /** PostgREST 예약 행에 붙는 `channels(name)` embed 파싱 */

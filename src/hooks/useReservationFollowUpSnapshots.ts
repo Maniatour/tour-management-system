@@ -1,21 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   computeNeedsResidentFlow,
-  emailLogStatusSuccess,
   reservationEligibleForConfirmationInferredFromDeparture,
   type ReservationFollowUpPipelineSnapshot,
 } from '@/lib/reservationFollowUpPipeline'
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
-}
-
-const CHUNK = 100
+import { fetchFollowUpSnapshotDataForReservationIds } from '@/lib/reservationFollowUpSnapshotsFetch'
+import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import { ADMIN_RESERVATION_CARD_VIRTUALIZE_MIN } from '@/components/reservation/AdminReservationCardVirtualGrid'
 
 /** effect 정리·의존성 변경으로 요청이 끊긴 경우 — 실패로 로그하지 않음 */
 function isLikelyAbortError(e: unknown): boolean {
@@ -60,26 +53,95 @@ function parseReservationLiteKey(key: string): ReservationLite[] {
   return out
 }
 
+function buildSnapshotsFromFetch(
+  entries: ReservationLite[],
+  productCodeByReservationId: Map<string, string | null>,
+  reservationStatusById: Map<string, string | null>,
+  tourStatusByReservationId: Map<string, string | null>,
+  fetchResult: Awaited<ReturnType<typeof fetchFollowUpSnapshotDataForReservationIds>>,
+  targetIds: string[]
+): Map<string, ReservationFollowUpPipelineSnapshot> {
+  const next = new Map<string, ReservationFollowUpPipelineSnapshot>()
+  for (const rid of targetIds) {
+    const entry = entries.find((e) => e.id === rid)
+    const code = productCodeByReservationId.get(rid) ?? null
+    const needs = computeNeedsResidentFlow(code)
+    const m = fetchResult.manualByReservationId.get(rid)
+    const mc = m?.confirmation_manual ?? false
+    const mr = m?.resident_manual ?? false
+    const md = m?.departure_manual ?? false
+    const mp = m?.pickup_manual ?? false
+    const cFu = m?.cancel_follow_up_manual ?? false
+    const cRe = m?.cancel_rebooking_outreach_manual ?? false
+    const departureEffective = fetchResult.departureSent.has(rid) || md
+    const confirmationSentDirect = fetchResult.confirmationSent.has(rid) || mc
+    const eligibleForInference = reservationEligibleForConfirmationInferredFromDeparture(
+      reservationStatusById.get(rid) ?? entry?.status ?? null,
+      tourStatusByReservationId.get(rid) ?? entry?.tourStatus ?? null
+    )
+    const confirmationInferredFromDeparture =
+      eligibleForInference && departureEffective && !confirmationSentDirect
+    next.set(rid, {
+      confirmationSent: confirmationSentDirect || confirmationInferredFromDeparture,
+      confirmationSentDirect,
+      confirmationInferredFromDeparture,
+      residentInquirySent: fetchResult.residentInquirySent.has(rid) || mr,
+      guestResidentFlowCompleted: fetchResult.guestDone.has(rid) || mr,
+      departureSent: departureEffective,
+      pickupSent: fetchResult.pickupSent.has(rid) || mp,
+      needsResidentFlow: needs,
+      manualConfirmation: mc,
+      manualResident: mr,
+      manualDeparture: md,
+      manualPickup: mp,
+      cancelFollowUpManual: cFu,
+      cancelRebookingOutreachManual: cRe,
+    })
+  }
+  return next
+}
+
+export type UseReservationFollowUpSnapshotsOptions = {
+  /**
+   * 화면에 렌더된(가상화 overscan 포함) 예약 id — 우선 조회.
+   * 비어 있으면 전체 목록을 한 번에 조회한다.
+   */
+  priorityReservationIds?: string[]
+  /** false면 priority만 조회(나머지 idle 배치 생략) */
+  loadDeferred?: boolean
+}
+
 /**
- * 예약 카드 Follow-up 파이프라인 표시용: email_logs + (해당 시) 거주 확인 토큰/제출 + 수동 완료(다른 채널).
+ * 예약 카드 Follow-up 파이프라인 표시용: email_logs + 거주 확인 + 수동 완료.
  * 스냅샷은 요청 id 범위만 갱신하고 기존 맵과 병합(카드·모달 전환 시 초기화 방지).
  */
 export function useReservationFollowUpSnapshots(
   reservations: ReservationLite[],
   products: Array<{ id: string; product_code?: string | null }>,
   /** 수동 완료 저장 후 스냅샷 재조회 */
-  refreshToken = 0
+  refreshToken = 0,
+  options?: UseReservationFollowUpSnapshotsOptions
 ): {
   snapshotsByReservationId: Map<string, ReservationFollowUpPipelineSnapshot>
   loading: boolean
-  /** 취소 Follow-up 수동 저장 직후 UI 반영(재조회 전·레이스 완화) */
   patchCancelManualFlags: (
     reservationId: string,
     cancelFollowUpManual: boolean,
     cancelRebookingOutreachManual: boolean
   ) => void
 } {
+  const priorityReservationIds = options?.priorityReservationIds
+  const loadDeferred = options?.loadDeferred !== false
+
   const reservationLiteKey = useMemo(() => buildReservationLiteKey(reservations), [reservations])
+
+  const priorityKey = useMemo(
+    () =>
+      [...new Set((priorityReservationIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean))]
+        .sort()
+        .join(','),
+    [priorityReservationIds]
+  )
 
   const productsKey = useMemo(
     () =>
@@ -94,6 +156,8 @@ export function useReservationFollowUpSnapshots(
     Map<string, ReservationFollowUpPipelineSnapshot>
   >(new Map())
   const [loading, setLoading] = useState(false)
+  const loadedIdsRef = useRef<Set<string>>(new Set())
+  const fetchGenRef = useRef(0)
 
   const patchCancelManualFlags = useCallback(
     (reservationId: string, cancelFollowUpManual: boolean, cancelRebookingOutreachManual: boolean) => {
@@ -117,12 +181,31 @@ export function useReservationFollowUpSnapshots(
   )
 
   useEffect(() => {
+    loadedIdsRef.current = new Set()
+    setSnapshotsByReservationId(new Map())
+  }, [refreshToken])
+
+  useEffect(() => {
     const entries = parseReservationLiteKey(reservationLiteKey)
-    const ids = entries.map((e) => e.id)
-    if (ids.length === 0) {
+    const allIds = entries.map((e) => e.id)
+    if (allIds.length === 0) {
       setLoading(false)
       return
     }
+
+    const prioritySet = new Set(
+      (priorityReservationIds ?? [])
+        .map((id) => String(id ?? '').trim())
+        .filter((id) => allIds.includes(id))
+    )
+    if (prioritySet.size === 0 && allIds.length >= ADMIN_RESERVATION_CARD_VIRTUALIZE_MIN) {
+      setLoading(false)
+      return
+    }
+    const priorityIds = prioritySet.size > 0 ? [...prioritySet] : allIds
+    const deferredIds = loadDeferred
+      ? allIds.filter((id) => !priorityIds.includes(id) && !loadedIdsRef.current.has(id))
+      : []
 
     const productCodeById = new Map(products.map((p) => [p.id, p.product_code ?? null]))
     const productCodeByReservationId = new Map<string, string | null>()
@@ -135,156 +218,59 @@ export function useReservationFollowUpSnapshots(
       tourStatusByReservationId.set(e.id, e.tourStatus ?? null)
     }
 
+    const pendingPriority = priorityIds.filter((id) => !loadedIdsRef.current.has(id))
+    if (pendingPriority.length === 0 && deferredIds.length === 0) {
+      setLoading(false)
+      return
+    }
+
+    const gen = ++fetchGenRef.current
     let cancelled = false
+
+    const applyIds = async (ids: string[]) => {
+      if (ids.length === 0) return
+      const fetchResult = await fetchFollowUpSnapshotDataForReservationIds(ids, () => cancelled)
+      if (cancelled || gen !== fetchGenRef.current) return
+      const built = buildSnapshotsFromFetch(
+        entries,
+        productCodeByReservationId,
+        reservationStatusById,
+        tourStatusByReservationId,
+        fetchResult,
+        ids
+      )
+      for (const id of ids) loadedIdsRef.current.add(id)
+      setSnapshotsByReservationId((prev) => {
+        const next = new Map(prev)
+        built.forEach((v, k) => next.set(k, v))
+        return next
+      })
+    }
+
     ;(async () => {
       setLoading(true)
       try {
-        const confirmationSent = new Set<string>()
-        const residentInquirySent = new Set<string>()
-        const departureSent = new Set<string>()
-        const pickupSent = new Set<string>()
+        await applyIds(pendingPriority)
+        if (cancelled || gen !== fetchGenRef.current) return
+        if (deferredIds.length === 0) return
 
-        for (const part of chunk(ids, CHUNK)) {
-          const { data: logs, error } = await supabase
-            .from('email_logs')
-            .select('reservation_id,email_type,status')
-            .in('reservation_id', part)
-
-          if (error) throw error
-          for (const row of logs || []) {
-            const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
-            if (!rid || !emailLogStatusSuccess((row as { status?: string }).status)) continue
-            const t = String((row as { email_type?: string }).email_type ?? '')
-            if (t === 'confirmation') confirmationSent.add(rid)
-            if (t === 'resident_inquiry') residentInquirySent.add(rid)
-            if (t === 'departure') departureSent.add(rid)
-            if (t === 'pickup') pickupSent.add(rid)
-          }
-        }
-
-        const guestDone = new Set<string>()
-        const manualByReservationId = new Map<
-          string,
-          {
-            confirmation_manual: boolean
-            resident_manual: boolean
-            departure_manual: boolean
-            pickup_manual: boolean
-            cancel_follow_up_manual: boolean
-            cancel_rebooking_outreach_manual: boolean
-          }
-        >()
-        for (const part of chunk(ids, CHUNK)) {
-          const { data: manualRows, error: manErr } = await supabase
-            .from('reservation_follow_up_pipeline_manual')
-            .select(
-              'reservation_id, confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
-            )
-            .in('reservation_id', part)
-
-          if (manErr) throw manErr
-          for (const row of manualRows || []) {
-            const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
-            if (!rid) continue
-            manualByReservationId.set(rid, {
-              confirmation_manual: !!(row as { confirmation_manual?: boolean }).confirmation_manual,
-              resident_manual: !!(row as { resident_manual?: boolean }).resident_manual,
-              departure_manual: !!(row as { departure_manual?: boolean }).departure_manual,
-              pickup_manual: !!(row as { pickup_manual?: boolean }).pickup_manual,
-              cancel_follow_up_manual: !!(row as { cancel_follow_up_manual?: boolean }).cancel_follow_up_manual,
-              cancel_rebooking_outreach_manual: !!(row as { cancel_rebooking_outreach_manual?: boolean })
-                .cancel_rebooking_outreach_manual,
-            })
-          }
-        }
-
-        for (const part of chunk(ids, CHUNK)) {
-          const { data: tokens, error: tokErr } = await supabase
-            .from('resident_check_tokens')
-            .select('id,reservation_id,completed_at')
-            .in('reservation_id', part)
-
-          if (tokErr) throw tokErr
-          const tokenRows = (tokens || []) as Array<{
-            id: string
-            reservation_id: string
-            completed_at: string | null
-          }>
-          const tokenIds = tokenRows.map((t) => t.id).filter(Boolean)
-          const agreedTokenIds = new Set<string>()
-          if (tokenIds.length > 0) {
-            for (const tp of chunk(tokenIds, CHUNK)) {
-              const { data: subs, error: subErr } = await supabase
-                .from('resident_check_submissions')
-                .select('token_id, agreed')
-                .in('token_id', tp)
-              if (subErr) throw subErr
-              for (const s of subs || []) {
-                const row = s as { token_id?: string; agreed?: boolean }
-                if (row.agreed && row.token_id) agreedTokenIds.add(row.token_id)
-              }
-            }
-          }
-          for (const t of tokenRows) {
-            const rid = t.reservation_id
-            if (t.completed_at) guestDone.add(rid)
-            else if (agreedTokenIds.has(t.id)) guestDone.add(rid)
-          }
-        }
-
-        if (cancelled) return
-
-        setSnapshotsByReservationId((prev) => {
-          const next = new Map(prev)
-          for (const rid of ids) {
-            const code = productCodeByReservationId.get(rid) ?? null
-            const needs = computeNeedsResidentFlow(code)
-            const m = manualByReservationId.get(rid)
-            const mc = m?.confirmation_manual ?? false
-            const mr = m?.resident_manual ?? false
-            const md = m?.departure_manual ?? false
-            const mp = m?.pickup_manual ?? false
-            const cFu = m?.cancel_follow_up_manual ?? false
-            const cRe = m?.cancel_rebooking_outreach_manual ?? false
-            const departureEffective = departureSent.has(rid) || md
-            const confirmationSentDirect = confirmationSent.has(rid) || mc
-            const eligibleForInference = reservationEligibleForConfirmationInferredFromDeparture(
-              reservationStatusById.get(rid) ?? null,
-              tourStatusByReservationId.get(rid) ?? null
-            )
-            const confirmationInferredFromDeparture =
-              eligibleForInference && departureEffective && !confirmationSentDirect
-            next.set(rid, {
-              confirmationSent: confirmationSentDirect || confirmationInferredFromDeparture,
-              confirmationSentDirect,
-              confirmationInferredFromDeparture,
-              residentInquirySent: residentInquirySent.has(rid) || mr,
-              guestResidentFlowCompleted: guestDone.has(rid) || mr,
-              departureSent: departureEffective,
-              pickupSent: pickupSent.has(rid) || mp,
-              needsResidentFlow: needs,
-              manualConfirmation: mc,
-              manualResident: mr,
-              manualDeparture: md,
-              manualPickup: mp,
-              cancelFollowUpManual: cFu,
-              cancelRebookingOutreachManual: cRe,
-            })
-          }
-          return next
+        await new Promise<void>((resolve) => {
+          scheduleDeferredWork(() => resolve(), 400)
         })
+        if (cancelled || gen !== fetchGenRef.current) return
+        await applyIds(deferredIds)
       } catch (e) {
         if (cancelled || isLikelyAbortError(e)) return
         console.error('useReservationFollowUpSnapshots:', e)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && gen === fetchGenRef.current) setLoading(false)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [reservationLiteKey, productsKey, refreshToken])
+  }, [reservationLiteKey, productsKey, priorityKey, loadDeferred, priorityReservationIds])
 
   return { snapshotsByReservationId, loading, patchCancelManualFlags }
 }

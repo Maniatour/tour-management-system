@@ -92,9 +92,10 @@ export default function ProductDetailAirbnbBookingCard({
       {hasSelectedDate ? (
         <>
           <ProductDetailAirbnbBookingSummary
-            basePrice={basePrice}
+            totalBasePrice={promo.totalBasePrice}
             totalPrice={totalPrice}
             displayTotalPrice={promo.displayTotalPrice}
+            perPersonPrice={promo.perPersonPrice}
             promoDiscountAmount={promo.discountAmount}
             appliedPromoCode={promo.appliedCoupon?.code ?? null}
             groupedChoices={groupedChoices}

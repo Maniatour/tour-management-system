@@ -1,3 +1,4 @@
+import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
   isoToLasVegasCalendarDateKey,
@@ -59,9 +60,11 @@ export function isReservationCancelledOnly(status: string | null | undefined): b
  */
 export function reservationEligibleForCancelFollowUpQueue(
   status: string | null | undefined,
-  tourDate: string | null | undefined
+  tourDate: string | null | undefined,
+  cancellationReason?: string | null
 ): boolean {
   if (!isReservationCancelledOnly(status)) return false
+  if (isRebookingCancellationReason(cancellationReason)) return false
   return !isReservationTourDatePastLocal(tourDate)
 }
 
@@ -69,9 +72,10 @@ export function reservationEligibleForCancelFollowUpQueue(
 export function reservationNeedsCancelFollowUpQueueAttention(
   status: string | null | undefined,
   tourDate: string | null | undefined,
-  s: ReservationFollowUpPipelineSnapshot | undefined
+  s: ReservationFollowUpPipelineSnapshot | undefined,
+  cancellationReason?: string | null
 ): boolean {
-  if (!reservationEligibleForCancelFollowUpQueue(status, tourDate)) return false
+  if (!reservationEligibleForCancelFollowUpQueue(status, tourDate, cancellationReason)) return false
   if (!s) return true
   return !s.cancelFollowUpManual || !s.cancelRebookingOutreachManual
 }

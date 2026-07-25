@@ -5,6 +5,7 @@ import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { getFaqLocalizedText, type FaqContentI18n } from '@/lib/productFaqLocales'
+import { markdownToHtml } from '@/lib/markdownToHtml'
 import { fetchProductAttachedFaqs } from '@/lib/reusableContentLibrary'
 
 interface FaqItem {
@@ -115,9 +116,10 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
               </button>
               {expandedFaqs.has(faq.id) ? (
                 <div className="border-t border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 sm:text-base">
-                    {answer}
-                  </p>
+                  <div
+                    className="prose prose-sm max-w-none text-sm leading-relaxed text-slate-700 sm:prose-base sm:text-base [&_a]:text-primary [&_img]:rounded-lg"
+                    dangerouslySetInnerHTML={{ __html: markdownToHtml(answer) }}
+                  />
                 </div>
               ) : null}
             </div>

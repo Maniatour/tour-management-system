@@ -1038,11 +1038,24 @@ export default function ReservationFollowUpSection({
               ?.language ?? null
           }
           tourDate={followUpPipelineReservation.tourDate ?? null}
-          productName={getProductName(
-            followUpPipelineReservation.productId,
-            (followUpPipelineProducts ?? []) as unknown as import('@/types/reservation').Product[]
-          )}
+          productId={followUpPipelineReservation.productId}
+          products={
+            (followUpPipelineProducts ?? []) as Array<{
+              id: string
+              name?: string | null
+              name_ko?: string | null
+              name_en?: string | null
+              customer_name_ko?: string | null
+              customer_name_en?: string | null
+            }>
+          }
+          adults={followUpPipelineReservation.adults || 0}
+          children={followUpPipelineReservation.child || 0}
+          infants={followUpPipelineReservation.infant || 0}
           channelRN={followUpPipelineReservation.channelRN ?? null}
+          channelName={
+            followUpPipelineReservation.channelNameSnapshot ?? null
+          }
         />
       ) : null}
 

@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Edit, Plus, Search, Ticket, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import AdminCouponFormModal, { type AdminCoupon } from '@/components/admin/AdminCouponFormModal'
+import {
+  formatCouponSaveError,
+  normalizeCouponProductIdForStorage,
+} from '@/lib/productDetailPromoCodes'
 
 type AdminCouponsEmbedProps = {
   productId?: string | null
@@ -118,7 +122,7 @@ export default function AdminCouponsEmbed({
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: couponData.product_id || null,
+        product_id: normalizeCouponProductIdForStorage(couponData.product_id),
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,6 +134,7 @@ export default function AdminCouponsEmbed({
       onMutated?.()
     } catch (error) {
       console.error('쿠폰 추가 오류:', error)
+      alert(formatCouponSaveError(error))
     }
   }
 
@@ -148,7 +153,7 @@ export default function AdminCouponsEmbed({
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: couponData.product_id || null,
+        product_id: normalizeCouponProductIdForStorage(couponData.product_id),
         updated_at: new Date().toISOString(),
       }
 
@@ -164,6 +169,7 @@ export default function AdminCouponsEmbed({
       onMutated?.()
     } catch (error) {
       console.error('쿠폰 수정 오류:', error)
+      alert(formatCouponSaveError(error))
     }
   }
 

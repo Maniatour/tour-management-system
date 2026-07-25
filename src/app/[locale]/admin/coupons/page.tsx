@@ -5,6 +5,10 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import AdminCouponFormModal, { type AdminCoupon } from '@/components/admin/AdminCouponFormModal'
+import {
+  formatCouponSaveError,
+  normalizeCouponProductIdForStorage,
+} from '@/lib/productDetailPromoCodes'
 
 type Coupon = AdminCoupon
 
@@ -27,6 +31,7 @@ export default function CouponsPage() {
   const setViewMode = (v: 'table' | 'card') => setListUi((prev) => ({ ...prev, viewMode: v }))
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
+  const [togglingCouponId, setTogglingCouponId] = useState<string | null>(null)
   const [products, setProducts] = useState<{id: string, name: string}[]>([])
   const [channels, setChannels] = useState<{id: string, name: string}[]>([])
 
@@ -113,10 +118,6 @@ export default function CouponsPage() {
   // 쿠폰 추가
   const handleAddCoupon = async (couponData: Omit<Coupon, 'id' | 'created_at'>) => {
     try {
-      // product_id를 그대로 저장 (다중 상품 ID 지원)
-      const productId = couponData.product_id || null
-
-      // null 값들을 undefined로 변환하여 데이터베이스 스키마와 일치시킴
       const cleanData = {
         coupon_code: couponData.coupon_code || null,
         discount_type: couponData.discount_type || null,
@@ -127,7 +128,7 @@ export default function CouponsPage() {
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: productId
+        product_id: normalizeCouponProductIdForStorage(couponData.product_id),
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,16 +142,13 @@ export default function CouponsPage() {
       fetchCoupons()
     } catch (error) {
       console.error('쿠폰 추가 오류:', error)
+      alert(formatCouponSaveError(error))
     }
   }
 
   // 쿠폰 수정
   const handleEditCoupon = async (id: string, couponData: Partial<Omit<Coupon, 'id' | 'created_at'>>) => {
     try {
-      // product_id를 그대로 저장 (다중 상품 ID 지원)
-      const productId = couponData.product_id || null
-
-      // null 값들을 적절히 처리하여 데이터베이스 스키마와 일치시킴
       const cleanData = {
         coupon_code: couponData.coupon_code || null,
         discount_type: couponData.discount_type || null,
@@ -161,7 +159,7 @@ export default function CouponsPage() {
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: productId
+        product_id: normalizeCouponProductIdForStorage(couponData.product_id),
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -176,6 +174,37 @@ export default function CouponsPage() {
       fetchCoupons()
     } catch (error) {
       console.error('쿠폰 수정 오류:', error)
+      alert(formatCouponSaveError(error))
+    }
+  }
+
+  // 쿠폰 활성/비활성 토글
+  const handleToggleCouponStatus = async (coupon: Coupon) => {
+    if (togglingCouponId) return
+
+    const nextStatus = coupon.status === 'active' ? 'inactive' : 'active'
+
+    try {
+      setTogglingCouponId(coupon.id)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('coupons')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', coupon.id)
+
+      if (error) throw error
+
+      setCoupons((prev) =>
+        prev.map((item) =>
+          item.id === coupon.id ? { ...item, status: nextStatus } : item
+        )
+      )
+    } catch (error) {
+      console.error('쿠폰 상태 변경 오류:', error)
+      alert(formatCouponSaveError(error))
+    } finally {
+      setTogglingCouponId(null)
     }
   }
 
@@ -490,13 +519,23 @@ export default function CouponsPage() {
                           </p>
                         </div>
                       </div>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        coupon.status === 'active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {coupon.status === 'active' ? '활성' : '비활성'}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleCouponStatus(coupon)}
+                        disabled={togglingCouponId === coupon.id}
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full transition-colors ${
+                          coupon.status === 'active'
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-red-100 text-red-800 hover:bg-red-200'
+                        } ${togglingCouponId === coupon.id ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
+                        title={coupon.status === 'active' ? '비활성화하려면 클릭' : '활성화하려면 클릭'}
+                      >
+                        {togglingCouponId === coupon.id
+                          ? '변경 중...'
+                          : coupon.status === 'active'
+                            ? '활성'
+                            : '비활성'}
+                      </button>
                     </div>
 
                     {/* 카드 내용 */}

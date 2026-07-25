@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { createPortal } from 'react-dom'
-import { ClipboardList, PhoneForwarded, Globe, X, Loader2, Send, Mail } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { MessageSquare, PhoneForwarded, Globe, Loader2, Mail } from 'lucide-react'
 import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
+import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import type { CancellationFollowUpMessageKind } from '@/lib/cancellationFollowUpMessage'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -20,8 +20,13 @@ export type CancelledSimpleCardFollowUpStripProps = {
   customerName?: string
   customerLanguage?: string | null
   tourDate?: string | null
-  productName?: string
+  productId: string
+  products: Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; customer_name_ko?: string | null; customer_name_en?: string | null }>
+  adults?: number
+  children?: number
+  infants?: number
   channelRN?: string | null
+  channelName?: string | null
   onCancelFollowUpManualChange?: (
     reservationId: string,
     kind: CancelFollowUpManualKind,
@@ -29,6 +34,8 @@ export type CancelledSimpleCardFollowUpStripProps = {
   ) => void | Promise<void>
   /** 사유 저장 후 부모가 뱃지 등을 다시 불러오도록 */
   onReasonSaved?: () => void
+  /** 부모가 이미 알고 있는 취소 사유(있으면 버튼 강조 생략) */
+  knownCancellationReason?: string | null
 }
 
 export default function CancelledSimpleCardFollowUpStrip({
@@ -39,32 +46,20 @@ export default function CancelledSimpleCardFollowUpStrip({
   customerName = '',
   customerLanguage = null,
   tourDate = null,
-  productName = '',
+  productId,
+  products,
+  adults = 0,
+  children = 0,
+  infants = 0,
   channelRN = null,
+  channelName = null,
   onCancelFollowUpManualChange,
   onReasonSaved,
+  knownCancellationReason,
 }: CancelledSimpleCardFollowUpStripProps) {
   const t = useTranslations('reservations.followUpPipeline')
   const tc = useTranslations('reservations.card')
   const locale = useLocale()
-  const isEn = locale === 'en'
-  const cancellationReasonPresets = useMemo(
-    () =>
-      isEn
-        ? [
-            'No Show',
-            'Canceled by customer',
-            'Rebooking',
-            'Not recruited',
-            'Weather',
-            'Schedule conflict',
-            'Duplicate booking',
-            'Price / Policy',
-            'Other',
-          ]
-        : ['No Show', '고객 취소', '재예약', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타'],
-    [isEn]
-  )
   const { user } = useAuth()
   const userEmail = user?.email?.trim() || null
 
@@ -76,6 +71,7 @@ export default function CancelledSimpleCardFollowUpStrip({
   const [reasonRowId, setReasonRowId] = useState<string | null>(null)
   const [reasonLoading, setReasonLoading] = useState(false)
   const [reasonSaving, setReasonSaving] = useState(false)
+  const [reasonLoaded, setReasonLoaded] = useState(false)
   const [toggleSaving, setToggleSaving] = useState(false)
   const [messagePreviewOpen, setMessagePreviewOpen] = useState(false)
   const [messagePreviewKind, setMessagePreviewKind] =
@@ -97,6 +93,7 @@ export default function CancelledSimpleCardFollowUpStrip({
         console.error('cancellation_reason fetch:', error)
         setReasonRowId(null)
         setReasonDraft('')
+        setReasonLoaded(true)
         return
       }
       const row = data as { id?: string; content?: string | null } | null
@@ -107,24 +104,29 @@ export default function CancelledSimpleCardFollowUpStrip({
         setReasonRowId(null)
         setReasonDraft('')
       }
+      setReasonLoaded(true)
     } finally {
       setReasonLoading(false)
     }
   }, [reservationId])
 
   useEffect(() => {
+    void loadReason()
+  }, [loadReason])
+
+  useEffect(() => {
     if (!reasonOpen) return
     void loadReason()
   }, [reasonOpen, loadReason])
 
-  const saveReason = async () => {
+  const saveReason = async (reason: string) => {
     if (!userEmail) {
       alert(tc('cancellationReasonNeedLogin'))
       return
     }
     setReasonSaving(true)
     try {
-      const trimmed = reasonDraft.trim()
+      const trimmed = reason.trim()
       if (reasonRowId) {
         const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
           .update({ content: trimmed || null })
@@ -149,6 +151,10 @@ export default function CancelledSimpleCardFollowUpStrip({
       setReasonSaving(false)
     }
   }
+
+  const hasCancellationReason =
+    Boolean(String(knownCancellationReason ?? '').trim()) ||
+    Boolean(reasonLoaded && reasonDraft.trim())
 
   const btnClass = (done: boolean) =>
     `inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border text-sm transition-colors disabled:opacity-50 ${
@@ -191,13 +197,17 @@ export default function CancelledSimpleCardFollowUpStrip({
           disabled={reasonLoading}
           title={tc('cancellationReasonButtonTitle')}
           aria-label={tc('cancellationReasonButtonTitle')}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-50 ${
+            hasCancellationReason
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              : 'border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100'
+          }`}
           onClick={(e) => {
             e.stopPropagation()
             setReasonOpen(true)
           }}
         >
-          {reasonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ClipboardList className="h-3 w-3" />}
+          {reasonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageSquare className="h-3 w-3" />}
         </button>
         <button
           type="button"
@@ -238,78 +248,25 @@ export default function CancelledSimpleCardFollowUpStrip({
         customerName={customerName}
         customerLanguage={customerLanguage}
         tourDate={tourDate}
-        productName={productName}
+        productId={productId}
+        products={products}
+        adults={adults}
+        children={children}
+        infants={infants}
         channelRN={channelRN}
+        channelName={channelName}
         initialMessageKind={messagePreviewKind}
       />
 
-      {reasonOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setReasonOpen(false)
-            }}
-          >
-            <div
-              className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-gray-900">{tc('cancellationReasonModalTitle')}</h3>
-                <button
-                  type="button"
-                  className="rounded p-1 text-gray-500 hover:bg-gray-100"
-                  aria-label={t('close')}
-                  onClick={() => setReasonOpen(false)}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  {isEn ? 'Cancellation reason' : '취소 사유'}
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {cancellationReasonPresets.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setReasonDraft(preset)}
-                      disabled={reasonSaving}
-                      className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <textarea
-                    value={reasonDraft}
-                    onChange={(e) => setReasonDraft(e.target.value)}
-                    rows={2}
-                    placeholder={tc('cancellationReasonPlaceholderOptional')}
-                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-ring"
-                  />
-                  <button
-                    type="button"
-                    disabled={reasonSaving || !reasonDraft.trim()}
-                    className="flex shrink-0 items-center gap-1 self-stretch rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
-                    onClick={() => void saveReason()}
-                  >
-                    {reasonSaving ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4 shrink-0" />
-                    )}
-                    {tc('cancellationReasonSave')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <CancellationReasonModal
+        isOpen={reasonOpen}
+        locale={locale}
+        title={tc('cancellationReasonModalTitle')}
+        initialValue={reasonDraft}
+        saving={reasonSaving}
+        onClose={() => setReasonOpen(false)}
+        onSubmit={saveReason}
+      />
     </>
   )
 }

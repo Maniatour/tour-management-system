@@ -245,6 +245,8 @@ interface BookingFlowProps {
   initialSelectedOptions?: Record<string, string>
   /** 상세 페이지에서 선택한 객실/수량 초이스 */
   initialSelectedChoiceQuantities?: Record<string, Record<string, number>>
+  /** URL prefill 등에서 전달된 쿠폰 코드 */
+  initialCouponCode?: string | null
   onClose: () => void
   onComplete: (bookingData: BookingData) => void
 }
@@ -550,6 +552,7 @@ export default function BookingFlow({
   initialParticipants,
   initialSelectedOptions,
   initialSelectedChoiceQuantities,
+  initialCouponCode,
   onClose,
   onComplete,
 }: BookingFlowProps) {
@@ -634,7 +637,7 @@ export default function BookingFlow({
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
 
   // 쿠폰 관련 상태
-  const [couponCode, setCouponCode] = useState<string>('')
+  const [couponCode, setCouponCode] = useState<string>(initialCouponCode?.trim() || '')
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null)
   const [couponError, setCouponError] = useState<string>('')
   const [validatingCoupon, setValidatingCoupon] = useState(false)
@@ -1757,6 +1760,56 @@ export default function BookingFlow({
     setCouponCode('')
     setCouponError('')
   }
+
+  const initialCouponAppliedRef = useRef(false)
+  useEffect(() => {
+    const code = initialCouponCode?.trim()
+    if (!code || initialCouponAppliedRef.current) return
+    if (!bookingData.tourDate || bookingData.participants.adults <= 0) return
+
+    initialCouponAppliedRef.current = true
+    setCouponCode(code)
+
+    const applyPrefillCoupon = async () => {
+      setValidatingCoupon(true)
+      setCouponError('')
+      try {
+        const basePrice = calculateBasePrice()
+        const response = await fetch('/api/coupons/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            couponCode: code,
+            totalAmount: basePrice,
+            productIds: [product.id],
+          }),
+        })
+        const data = await response.json()
+        if (!response.ok || !data.valid) {
+          setCouponError(data.error || data.message || translate('유효하지 않은 쿠폰입니다.', 'Invalid coupon code.'))
+          setAppliedCoupon(null)
+          return
+        }
+        setAppliedCoupon(data.coupon)
+        setCouponError('')
+      } catch (error) {
+        console.error('쿠폰 검증 오류:', error)
+        setCouponError(translate('쿠폰 검증 중 오류가 발생했습니다.', 'An error occurred while validating the coupon.'))
+        setAppliedCoupon(null)
+      } finally {
+        setValidatingCoupon(false)
+      }
+    }
+
+    void applyPrefillCoupon()
+  }, [
+    initialCouponCode,
+    bookingData.tourDate,
+    bookingData.participants.adults,
+    product.id,
+    calculateBasePrice,
+    translate,
+  ])
 
   // 쿠폰 할인이 적용된 최종 가격 계산
   const calculateFinalPrice = () => {

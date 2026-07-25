@@ -8,6 +8,12 @@ export type BuildCancellationFollowUpMessageParams = {
   productName: string
   channelReference: string | null | undefined
   locale: CancellationFollowUpMessageLocale
+  tourDateLong?: string
+  rebookingUrl?: string
+  couponCode?: string
+  couponValidUntil?: string
+  priceComparisonHtml?: string
+  priceComparisonPlain?: string
 }
 
 function escapeHtml(s: string | null | undefined): string {
@@ -73,17 +79,49 @@ const BUILTIN_EMAIL_BODY: Record<
     <p style="margin:28px 0 0;font-size:14px;color:#64748b;">감사합니다.<br/>마니아투어 드림</p>`,
   },
   rebooking: {
-    en: `    <p style="margin:0 0 16px;">Hello {{CUSTOMER_NAME}},</p>
-    <p style="margin:0 0 12px;font-size:14px;color:#475569;">Las Vegas Mania Tour</p>
-    <p style="margin:0 0 16px;">We are sorry your plans for <strong>{{PRODUCT_NAME}}</strong> on <strong>{{TOUR_DATE}}</strong> did not work out (Ref. {{CHANNEL_RN}}).</p>
-    <p style="margin:0 0 16px;">If you would like to visit Las Vegas on another date, we would be happy to help you rebook a similar tour or suggest alternatives that fit your schedule.</p>
-    <p style="margin:0 0 16px;">Reply to this email with your preferred dates and party size, or let us know if you would like a quick call — we will do our best to find a good option for you.</p>
-    <p style="margin:28px 0 0;font-size:14px;color:#64748b;">We hope to see you soon,<br/>Maniatour Team</p>`,
+    en: `    <p style="margin:0 0 16px;">Hi {{CUSTOMER_NAME}},</p>
+    <p style="margin:0 0 16px;">We noticed that your reservation for the <strong>{{PRODUCT_NAME}}</strong> on <strong>{{TOUR_DATE_LONG}}</strong> has been canceled.</p>
+    <p style="margin:0 0 16px;">We're sorry your travel plans didn't work out this time, but we'd love the opportunity to welcome you on a future trip.</p>
+    <p style="margin:0 0 12px;">If you're visiting Las Vegas on another date, we can help you:</p>
+    <ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:14px;line-height:1.6;">
+      <li>Rebook the same tour on a different day</li>
+      <li>Recommend similar tours that fit your schedule</li>
+      <li>Check availability and answer any questions</li>
+    </ul>
+    <div style="margin:0 0 20px;padding:16px 18px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;">
+      <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#9a3412;">🎁 A Small Thank You</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#7c2d12;">As a thank-you for considering us again, here's an exclusive coupon for your next booking on our website.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#0f172a;"><strong>Coupon Code:</strong> <strong>{{COUPON_CODE}}</strong></p>
+      <p style="margin:0 0 6px;font-size:14px;color:#0f172a;"><strong>Discount:</strong> 15% OFF</p>
+      <p style="margin:0;font-size:14px;color:#0f172a;"><strong>Valid Until:</strong> {{COUPON_VALID_UNTIL}}</p>
+    </div>
+    {{PRICE_COMPARISON_HTML}}
+    <p style="margin:0 0 8px;font-size:14px;color:#0f172a;">👉 Book anytime at:</p>
+    <p style="margin:0 0 16px;font-size:14px;word-break:break-all;"><a href="{{REBOOKING_URL}}" style="color:#2563eb;text-decoration:underline;">{{REBOOKING_URL}}</a></p>
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">If you'd like assistance choosing a new date or tour, simply reply to this email with your preferred travel dates and the number of travelers. Our team will be happy to help.</p>
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">We hope to see you in Las Vegas soon!</p>
+    <p style="margin:28px 0 0;font-size:14px;color:#64748b;">Best regards,<br/><strong>Las Vegas Mania Tour Team</strong></p>`,
     ko: `    <p style="margin:0 0 16px;">안녕하세요, {{CUSTOMER_NAME}}님 — 라스베가스 매니아 투어입니다.</p>
-    <p style="margin:0 0 16px;"><strong>{{PRODUCT_NAME}}</strong> ({{TOUR_DATE}}, RN {{CHANNEL_RN}}) 일정이 취소되어 아쉽게 생각합니다.</p>
-    <p style="margin:0 0 16px;">다른 날짜로 라스베가스를 방문하실 계획이 있으시면, 비슷한 투어나 일정에 맞는 상품으로 <strong>재예약</strong>을 도와드리겠습니다.</p>
-    <p style="margin:0 0 16px;">희망 일정·인원을 본 메일로 알려 주시거나 전화 상담을 원하시면 연락 주세요. 가능한 옵션을 안내해 드리겠습니다.</p>
-    <p style="margin:28px 0 0;font-size:14px;color:#64748b;">다시 뵙기를 바랍니다.<br/>마니아투어 드림</p>`,
+    <p style="margin:0 0 16px;"><strong>{{PRODUCT_NAME}}</strong> ({{TOUR_DATE_LONG}}) 예약이 취소되어 안내드립니다.</p>
+    <p style="margin:0 0 16px;">이번 일정이 어긋나 아쉽지만, 다른 날짜에 라스베가스를 방문하실 때 다시 모실 수 있기를 바랍니다.</p>
+    <p style="margin:0 0 12px;">다른 날짜로 방문하실 계획이 있으시면 아래를 도와드릴 수 있습니다.</p>
+    <ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:14px;line-height:1.6;">
+      <li>같은 투어를 다른 날짜로 재예약</li>
+      <li>일정에 맞는 유사 투어 추천</li>
+      <li>잔여석 확인 및 문의 응대</li>
+    </ul>
+    <div style="margin:0 0 20px;padding:16px 18px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;">
+      <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#9a3412;">🎁 재예약 감사 쿠폰</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#7c2d12;">다시 예약해 주시는 분께 홈페이지 전용 할인 쿠폰을 드립니다.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#0f172a;"><strong>쿠폰 코드:</strong> <strong>{{COUPON_CODE}}</strong></p>
+      <p style="margin:0 0 6px;font-size:14px;color:#0f172a;"><strong>할인:</strong> 15% OFF</p>
+      <p style="margin:0;font-size:14px;color:#0f172a;"><strong>유효 기간:</strong> {{COUPON_VALID_UNTIL}}</p>
+    </div>
+    {{PRICE_COMPARISON_HTML}}
+    <p style="margin:0 0 8px;font-size:14px;color:#0f172a;">👉 아래 링크에서 투어일·인원·옵션이 미리 선택된 상태로 예약하실 수 있습니다.</p>
+    <p style="margin:0 0 16px;font-size:14px;word-break:break-all;"><a href="{{REBOOKING_URL}}" style="color:#2563eb;text-decoration:underline;">{{REBOOKING_URL}}</a></p>
+    <p style="margin:0 0 16px;font-size:14px;color:#475569;">희망 일정·인원을 본 메일로 알려 주시면 팀에서 도와드리겠습니다.</p>
+    <p style="margin:28px 0 0;font-size:14px;color:#64748b;">감사합니다.<br/><strong>라스베가스 매니아 투어 팀</strong></p>`,
   },
 }
 
@@ -96,8 +134,8 @@ const BUILTIN_SMS_BODY: Record<
     ko: `[마니아투어] {{CUSTOMER_NAME}}님, {{PRODUCT_NAME}}({{TOUR_DATE}}, RN {{CHANNEL_RN}}) 예약이 취소 처리되었습니다. 환불은 바우처 규정에 따르며 영업일 5~10일 소요될 수 있습니다. 문의는 본 문자 회신 부탁드립니다.`,
   },
   rebooking: {
-    en: `[Maniatour] Hi {{CUSTOMER_NAME}}, sorry your {{TOUR_DATE}} tour was cancelled ({{CHANNEL_RN}}). Want another date? Reply with preferred dates & guests — we will help rebook.`,
-    ko: `[마니아투어] {{CUSTOMER_NAME}}님, {{TOUR_DATE}} {{PRODUCT_NAME}}(RN {{CHANNEL_RN}}) 취소되어 안내드립니다. 다른 일정 재예약 원하시면 희망 날짜·인원을 회신해 주세요.`,
+    en: `[Maniatour] Hi {{CUSTOMER_NAME}}, your {{PRODUCT_NAME}} on {{TOUR_DATE_LONG}} was canceled. Rebook with {{COUPON_CODE}} (15% off until {{COUPON_VALID_UNTIL}}): {{REBOOKING_URL}} {{PRICE_COMPARISON_PLAIN}}`,
+    ko: `[마니아투어] {{CUSTOMER_NAME}}님, {{TOUR_DATE_LONG}} {{PRODUCT_NAME}} 예약이 취소되었습니다. 재예약 쿠폰 {{COUPON_CODE}}(15% 할인, {{COUPON_VALID_UNTIL}}까지): {{REBOOKING_URL}} {{PRICE_COMPARISON_PLAIN}}`,
   },
 }
 
@@ -110,8 +148,8 @@ const BUILTIN_EMAIL_SUBJECT: Record<
     ko: `[취소 안내] {{PRODUCT_NAME}} — {{TOUR_DATE}} — 예약 RN {{CHANNEL_RN}}`,
   },
   rebooking: {
-    en: `[Rebook with us] {{PRODUCT_NAME}} — Ref. {{CHANNEL_RN}}`,
-    ko: `[재예약 안내] 다른 일정으로 모시겠습니다 — RN {{CHANNEL_RN}}`,
+    en: `We'd love to welcome you back — {{PRODUCT_NAME}}`,
+    ko: `다시 모시겠습니다 — {{PRODUCT_NAME}} 재예약 안내`,
   },
 }
 
@@ -209,13 +247,26 @@ export function substituteCancellationFollowUpMessageTemplate(
   const namePlain = params.customerName?.trim() || (locale === 'en' ? 'Guest' : '고객')
   const productPlain = params.productName?.trim() || (locale === 'en' ? 'Tour' : '투어')
   const tourPlain = formatTourLineForCancellationMessage(params.tourDate, locale)
+  const tourLongPlain =
+    params.tourDateLong?.trim() || formatTourLineForCancellationMessage(params.tourDate, locale)
+  const rebookingUrlPlain = params.rebookingUrl?.trim() || (locale === 'en' ? 'https://www.kovegas.com' : 'https://www.kovegas.com')
+  const couponCodePlain = params.couponCode?.trim() || 'REBOOK15'
+  const couponValidPlain = params.couponValidUntil?.trim() || (locale === 'en' ? 'September 30, 2026' : '2026년 9월 30일')
+  const priceComparisonHtml = params.priceComparisonHtml?.trim() || ''
+  const priceComparisonPlain = params.priceComparisonPlain?.trim() || ''
 
   const replacePlain = (tpl: string) =>
     tpl
       .replace(/\{\{CUSTOMER_NAME\}\}/g, namePlain)
       .replace(/\{\{PRODUCT_NAME\}\}/g, productPlain)
       .replace(/\{\{TOUR_DATE\}\}/g, tourPlain)
+      .replace(/\{\{TOUR_DATE_LONG\}\}/g, tourLongPlain)
       .replace(/\{\{CHANNEL_RN\}\}/g, refPlain)
+      .replace(/\{\{REBOOKING_URL\}\}/g, rebookingUrlPlain)
+      .replace(/\{\{COUPON_CODE\}\}/g, couponCodePlain)
+      .replace(/\{\{COUPON_VALID_UNTIL\}\}/g, couponValidPlain)
+      .replace(/\{\{PRICE_COMPARISON_HTML\}\}/g, '')
+      .replace(/\{\{PRICE_COMPARISON_PLAIN\}\}/g, priceComparisonPlain)
 
   const subject = replacePlain(subjectTpl)
   if (channel === 'sms') {
@@ -226,12 +277,22 @@ export function substituteCancellationFollowUpMessageTemplate(
   const name = escapeHtml(namePlain)
   const product = escapeHtml(productPlain)
   const tour = escapeHtml(tourPlain)
+  const tourLong = escapeHtml(tourLongPlain)
   const rnHtml = escapeHtml(refPlain)
+  const rebookingUrlHtml = escapeHtml(rebookingUrlPlain)
+  const couponCodeHtml = escapeHtml(couponCodePlain)
+  const couponValidHtml = escapeHtml(couponValidPlain)
   const body = bodyTpl
     .replace(/\{\{CUSTOMER_NAME\}\}/g, name)
     .replace(/\{\{PRODUCT_NAME\}\}/g, product)
     .replace(/\{\{TOUR_DATE\}\}/g, tour)
+    .replace(/\{\{TOUR_DATE_LONG\}\}/g, tourLong)
     .replace(/\{\{CHANNEL_RN\}\}/g, rnHtml)
+    .replace(/\{\{REBOOKING_URL\}\}/g, rebookingUrlHtml)
+    .replace(/\{\{COUPON_CODE\}\}/g, couponCodeHtml)
+    .replace(/\{\{COUPON_VALID_UNTIL\}\}/g, couponValidHtml)
+    .replace(/\{\{PRICE_COMPARISON_HTML\}\}/g, priceComparisonHtml)
+    .replace(/\{\{PRICE_COMPARISON_PLAIN\}\}/g, escapeHtml(priceComparisonPlain))
 
   return { subject, body, plainText: htmlToPlainTextForCopy(body) }
 }

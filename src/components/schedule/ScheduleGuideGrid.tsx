@@ -30,6 +30,8 @@ type PendingOffChange = {
   action: 'approve' | 'delete' | 'reject'
 }
 
+import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+
 export type ScheduleGuideGridProps = {
   locale: string
   monthDays: ScheduleMonthDayCell[]
@@ -61,7 +63,7 @@ export type ScheduleGuideGridProps = {
   canEditTeamFromSchedule: boolean
   openTeamEditFromSchedule: (teamMemberId: string) => void
   isOffDate: (teamMemberId: string, dateString: string) => boolean
-  dateNotes: Record<string, { note: string; created_by?: string }>
+  dateNotes: Record<string, ScheduleDateNoteEntry>
   highlightedDate: string | null
   pendingOffScheduleChanges: Record<string, PendingOffChange>
   offSchedules: Array<{ team_email: string; off_date: string; reason: string; status: string }>

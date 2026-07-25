@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
@@ -40,6 +40,7 @@ import {
   DEFAULT_TRAVELER_COUNTS,
   type TravelerCounts,
 } from '@/lib/productDetailTravelers'
+import { parseCustomerRebookingPrefillFromSearchParams, type CustomerRebookingPrefill } from '@/lib/customerRebookingUrl'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPagePreviewHighlightEffect from '@/components/product/CustomerPagePreviewHighlightEffect'
 import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
@@ -66,6 +67,15 @@ function ProductDetailPageContentInner({
   forceShowPromo = false,
 }: ProductDetailPageContentProps) {
   const searchParams = useSearchParams()
+  const rebookReservationId = searchParams.get('rebook')?.trim() || ''
+  const urlRebookingPrefill = useMemo(
+    () => parseCustomerRebookingPrefillFromSearchParams(searchParams),
+    [searchParams]
+  )
+  const [remoteRebookingPrefill, setRemoteRebookingPrefill] = useState<CustomerRebookingPrefill | null>(
+    null
+  )
+  const rebookingPrefill = remoteRebookingPrefill ?? urlRebookingPrefill
   const routeLocale = useLocale()
   const locale = contentLocale ?? routeLocale
   const isEnglish = locale === 'en'
@@ -106,6 +116,12 @@ function ProductDetailPageContentInner({
   const [travelerCounts, setTravelerCounts] = useState<TravelerCounts>(
     DEFAULT_TRAVELER_COUNTS
   )
+  const [prefillCouponCode, setPrefillCouponCode] = useState<string | null>(null)
+  const [rebookingPrefillSynced, setRebookingPrefillSynced] = useState(
+    () => !rebookReservationId && !urlRebookingPrefill
+  )
+  const prefillAppliedRef = useRef(false)
+  const prefillChoicesAppliedRef = useRef(false)
   const partySize =
     travelerCounts.adults + travelerCounts.children + travelerCounts.infants
 
@@ -187,6 +203,28 @@ function ProductDetailPageContentInner({
   useCustomerPageSoftReload(() => loadProductData({ silent: true }))
 
   useEffect(() => {
+    if (!rebookReservationId) return
+    let cancelled = false
+    setRebookingPrefillSynced(false)
+    void fetch(`/api/rebooking/prefill?reservation_id=${encodeURIComponent(rebookReservationId)}`)
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const prefill = data?.prefill as CustomerRebookingPrefill | undefined
+        if (prefill) setRemoteRebookingPrefill(prefill)
+      })
+      .catch(() => {
+        /* ignore — fall back to URL params if any */
+      })
+      .finally(() => {
+        if (!cancelled) setRebookingPrefillSynced(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rebookReservationId])
+
+  useEffect(() => {
     if (!product?.tags?.length) {
       setTagLabelMap({})
       return
@@ -195,12 +233,77 @@ function ProductDetailPageContentInner({
   }, [product?.tags])
 
   useEffect(() => {
-    if (!enableCheckout) return
-    if (searchParams.get('preview') !== '1' || searchParams.get('openBooking') !== '1') return
-    if (!product || loading) return
-    const t = window.setTimeout(() => openBookingFlow(), 800)
+    if (!enableCheckout) {
+      setRebookingPrefillSynced(true)
+      return
+    }
+    if (!rebookingPrefill) {
+      setRebookingPrefillSynced(true)
+      return
+    }
+    if (prefillAppliedRef.current) return
+    prefillAppliedRef.current = true
+
+    if (rebookingPrefill.tourDate) setSelectedDate(rebookingPrefill.tourDate)
+    if (
+      rebookingPrefill.adults != null ||
+      rebookingPrefill.children != null ||
+      rebookingPrefill.infants != null
+    ) {
+      const adults = Math.max(0, rebookingPrefill.adults ?? DEFAULT_TRAVELER_COUNTS.adults)
+      const children = Math.max(0, rebookingPrefill.children ?? DEFAULT_TRAVELER_COUNTS.children)
+      const infants = Math.max(0, rebookingPrefill.infants ?? DEFAULT_TRAVELER_COUNTS.infants)
+      const party = adults + children + infants
+      setTravelerCounts({
+        adults: party > 0 ? adults : DEFAULT_TRAVELER_COUNTS.adults,
+        children,
+        infants,
+      })
+    }
+    if (rebookingPrefill.couponCode?.trim()) {
+      setPrefillCouponCode(rebookingPrefill.couponCode.trim())
+    }
+    setRebookingPrefillSynced(true)
+  }, [enableCheckout, rebookingPrefill])
+
+  useEffect(() => {
+    if (!enableCheckout || !product || loading || !rebookingPrefillSynced) return
+    const shouldOpenBooking =
+      searchParams.get('openBooking') === '1' || rebookingPrefill?.openBooking === true
+    if (!shouldOpenBooking) return
+    const t = window.setTimeout(() => openBookingFlow(), 350)
     return () => window.clearTimeout(t)
-  }, [enableCheckout, searchParams, product, loading, openBookingFlow])
+  }, [
+    enableCheckout,
+    loading,
+    product,
+    searchParams,
+    rebookingPrefill,
+    rebookingPrefillSynced,
+    openBookingFlow,
+  ])
+
+  useEffect(() => {
+    if (!enableCheckout || productChoices.length === 0 || prefillChoicesAppliedRef.current) return
+    const prefill = rebookingPrefill
+    if (!prefill?.selectedOptions && !prefill?.selectedChoiceQuantities) return
+    prefillChoicesAppliedRef.current = true
+
+    for (const [choiceId, optionId] of Object.entries(prefill.selectedOptions ?? {})) {
+      if (choiceId && optionId) handleOptionChange(choiceId, optionId)
+    }
+    for (const [choiceId, optionMap] of Object.entries(prefill.selectedChoiceQuantities ?? {})) {
+      for (const [optionId, qty] of Object.entries(optionMap)) {
+        if (choiceId && optionId && qty > 0) handleQuantityChange(choiceId, optionId, qty)
+      }
+    }
+  }, [
+    enableCheckout,
+    productChoices.length,
+    rebookingPrefill,
+    handleOptionChange,
+    handleQuantityChange,
+  ])
 
   const lowestChoicePrice = useMemo(
     () => getLowestChoiceAddonTotal(productChoices),
@@ -340,6 +443,7 @@ function ProductDetailPageContentInner({
             initialParticipants={travelerCounts}
             initialSelectedOptions={selectedOptions}
             initialSelectedChoiceQuantities={selectedChoiceQuantities}
+            initialCouponCode={prefillCouponCode}
             showBookingFlow={showBookingFlow}
             onCloseBookingFlow={() => setShowBookingFlow(false)}
             showChoiceDescriptionModal={showChoiceDescriptionModal}

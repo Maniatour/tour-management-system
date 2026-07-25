@@ -13,7 +13,21 @@ import {
   type CancellationFollowUpMessageKind,
   type CancellationFollowUpMessageLocale,
 } from '@/lib/cancellationFollowUpMessage'
+import {
+  buildCustomerRebookingUrlFromReservation,
+  formatRebookingCouponValidUntil,
+  formatTourDateLongForCancellationMessage,
+  REBOOKING_OUTREACH_COUPON_CODE,
+  type ReservationChoiceRowForRebooking,
+} from '@/lib/customerRebookingUrl'
+import {
+  formatRebookingPriceComparisonHtml,
+  formatRebookingPriceComparisonPlain,
+  type RebookingPriceComparisonResult,
+} from '@/lib/rebookingPriceComparison'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getProductNameForLocale } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
 import LazyResidentInquiryEmailBodyRichEditor from '@/components/reservation/LazyResidentInquiryEmailBodyRichEditor'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
@@ -27,8 +41,13 @@ export interface CancellationFollowUpMessagePreviewModalProps {
   customerName: string
   customerLanguage: string | null | undefined
   tourDate: string | null | undefined
-  productName: string
+  productId: string
+  products: Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; customer_name_ko?: string | null; customer_name_en?: string | null }>
+  adults?: number
+  children?: number
+  infants?: number
   channelRN: string | null | undefined
+  channelName?: string | null
   initialMessageKind?: CancellationFollowUpMessageKind
 }
 
@@ -41,8 +60,13 @@ export default function CancellationFollowUpMessagePreviewModal({
   customerName,
   customerLanguage,
   tourDate,
-  productName,
+  productId,
+  products,
+  adults = 0,
+  children = 0,
+  infants = 0,
   channelRN,
+  channelName = null,
   initialMessageKind = 'follow_up',
 }: CancellationFollowUpMessagePreviewModalProps) {
   const t = useTranslations('reservations.card')
@@ -55,6 +79,11 @@ export default function CancellationFollowUpMessagePreviewModal({
   )
     ? 'en'
     : 'ko'
+
+  const productName = useMemo(
+    () => getProductNameForLocale(productId, products, emailLocale),
+    [productId, products, emailLocale]
+  )
 
   const [channel, setChannel] = useState<CancellationFollowUpMessageChannel>('email')
   const [messageKind, setMessageKind] = useState<CancellationFollowUpMessageKind>(initialMessageKind)
@@ -72,6 +101,101 @@ export default function CancellationFollowUpMessagePreviewModal({
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [resettingTemplate, setResettingTemplate] = useState(false)
   const [templateNotice, setTemplateNotice] = useState<string | null>(null)
+  const [choiceRows, setChoiceRows] = useState<ReservationChoiceRowForRebooking[]>([])
+  const [couponValidUntilIso, setCouponValidUntilIso] = useState<string | null>(null)
+  const [priceComparison, setPriceComparison] = useState<RebookingPriceComparisonResult | null>(null)
+
+  useEffect(() => {
+    if (!isOpen || !reservationId) {
+      setChoiceRows([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const response = await fetchApiWithAuth(
+          `/api/reservations/${encodeURIComponent(reservationId)}/choices`,
+          { cache: 'no-store' }
+        )
+        if (!response.ok || cancelled) return
+        const body = (await response.json()) as { choices?: ReservationChoiceRowForRebooking[] }
+        if (!cancelled) setChoiceRows(body.choices ?? [])
+      } catch {
+        if (!cancelled) setChoiceRows([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, reservationId])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('coupons')
+          .select('end_date, discount_type, percentage_value')
+          .ilike('coupon_code', REBOOKING_OUTREACH_COUPON_CODE)
+          .eq('status', 'active')
+          .order('end_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!cancelled) {
+          const row = data as {
+            end_date?: string | null
+            discount_type?: string | null
+            percentage_value?: number | null
+          } | null
+          setCouponValidUntilIso(row?.end_date ?? null)
+        }
+      } catch {
+        if (!cancelled) {
+          setCouponValidUntilIso(null)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || messageKind !== 'rebooking' || !reservationId) {
+      setPriceComparison(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const qs = new URLSearchParams({
+          reservation_id: reservationId,
+          coupon_code: REBOOKING_OUTREACH_COUPON_CODE,
+        })
+        if (channelName?.trim()) qs.set('channel_name', channelName.trim())
+        const response = await fetchApiWithAuth(
+          `/api/rebooking/price-comparison?${qs.toString()}`,
+          { cache: 'no-store' }
+        )
+        if (!response.ok || cancelled) {
+          if (!cancelled) setPriceComparison(null)
+          return
+        }
+        const body = (await response.json()) as {
+          comparison?: RebookingPriceComparisonResult | null
+        }
+        if (cancelled) return
+        const comparison = body.comparison ?? null
+        setPriceComparison(comparison)
+      } catch {
+        if (!cancelled) setPriceComparison(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, messageKind, reservationId, channelName])
 
   useEffect(() => {
     if (!isOpen) {
@@ -154,6 +278,53 @@ export default function CancellationFollowUpMessagePreviewModal({
 
   const bodyForSubstitute = channel === 'email' ? mergedEmailHtmlTpl : bodyTpl
 
+  const rebookingUrl = useMemo(
+    () =>
+      buildCustomerRebookingUrlFromReservation({
+        locale: emailLocale,
+        reservationId,
+        productId,
+        tourDate: tourDate ?? null,
+        adults,
+        children,
+        infants,
+        choiceRows,
+        couponCode: REBOOKING_OUTREACH_COUPON_CODE,
+        couponValidUntilIso,
+      }),
+    [
+      emailLocale,
+      reservationId,
+      productId,
+      tourDate,
+      adults,
+      children,
+      infants,
+      choiceRows,
+      couponValidUntilIso,
+    ]
+  )
+
+  const couponValidUntilLabel = useMemo(
+    () => formatRebookingCouponValidUntil(emailLocale, couponValidUntilIso),
+    [emailLocale, couponValidUntilIso]
+  )
+
+  const tourDateLong = useMemo(
+    () => formatTourDateLongForCancellationMessage(tourDate, emailLocale),
+    [tourDate, emailLocale]
+  )
+
+  const priceComparisonHtml = useMemo(() => {
+    if (!priceComparison) return ''
+    return formatRebookingPriceComparisonHtml(emailLocale, priceComparison, REBOOKING_OUTREACH_COUPON_CODE)
+  }, [priceComparison, emailLocale])
+
+  const priceComparisonPlain = useMemo(() => {
+    if (!priceComparison) return ''
+    return formatRebookingPriceComparisonPlain(emailLocale, priceComparison, REBOOKING_OUTREACH_COUPON_CODE)
+  }, [priceComparison, emailLocale])
+
   const messageContent = useMemo(() => {
     return substituteCancellationFollowUpMessageTemplate(subjectTpl, bodyForSubstitute, channel, {
       customerName,
@@ -161,6 +332,12 @@ export default function CancellationFollowUpMessagePreviewModal({
       productName,
       channelReference: channelRN ?? null,
       locale: emailLocale,
+      tourDateLong,
+      rebookingUrl,
+      couponCode: REBOOKING_OUTREACH_COUPON_CODE,
+      couponValidUntil: couponValidUntilLabel,
+      priceComparisonHtml,
+      priceComparisonPlain,
     })
   }, [
     subjectTpl,
@@ -171,6 +348,11 @@ export default function CancellationFollowUpMessagePreviewModal({
     productName,
     channelRN,
     emailLocale,
+    tourDateLong,
+    rebookingUrl,
+    couponValidUntilLabel,
+    priceComparisonHtml,
+    priceComparisonPlain,
   ])
 
   const handleCopy = useCallback(async () => {
