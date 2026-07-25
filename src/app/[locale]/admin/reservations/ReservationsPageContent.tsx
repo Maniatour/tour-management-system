@@ -5769,10 +5769,22 @@ export default function AdminReservations() {
         onQueueChanged={() => {
           void refreshCancelReasonQueueStats()
         }}
-        renderSimpleReservationCard={(reservation, { onReasonSaved }) => (
+        onCustomersLoaded={(rows) => {
+          mergeCustomers?.(rows)
+        }}
+        renderSimpleReservationCard={(reservation, { onReasonSaved, queueCustomers }) => {
+          const pageCustomers = (customers as Customer[]) || []
+          const extraQueueCustomers = queueCustomers.filter(
+            (q) => !pageCustomers.some((p) => p.id === q.id)
+          )
+          const cardCustomers = extraQueueCustomers.length
+            ? [...pageCustomers, ...extraQueueCustomers]
+            : pageCustomers
+
+          return (
           <ReservationCardItem
             reservation={reservation}
-            customers={(customers as Customer[]) || []}
+            customers={cardCustomers}
             products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
             channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
             pickupHotels={
@@ -5827,9 +5839,10 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
-            onCancellationReasonSaved={onReasonSaved}
+            onCancellationReasonSaved={() => onReasonSaved(reservation.id)}
           />
-        )}
+          )
+        }}
       />
 
       <ReservationFollowUpQueueModal

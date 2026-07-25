@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { MessageSquare, Send } from 'lucide-react'
+import { MessageSquare, Send, X } from 'lucide-react'
 
 interface CancellationReasonModalProps {
   isOpen: boolean
@@ -44,10 +44,21 @@ export default function CancellationReasonModal({
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-gray-900">
-          <MessageSquare className="h-4 w-4" />
-          {title}
-        </h3>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="flex min-w-0 items-center gap-2 text-base font-semibold text-gray-900">
+            <MessageSquare className="h-4 w-4 shrink-0" />
+            <span className="truncate">{title}</span>
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+            aria-label={isEn ? 'Close' : '닫기'}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">{isEn ? 'Cancellation reason' : '취소 사유'}</label>
@@ -80,6 +91,16 @@ export default function CancellationReasonModal({
             >
               <Send className="h-4 w-4" />
               {isEn ? 'Save' : '저장'}
+            </button>
+          </div>
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {isEn ? 'Close' : '닫기'}
             </button>
           </div>
         </div>

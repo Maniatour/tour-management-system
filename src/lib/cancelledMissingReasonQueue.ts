@@ -3,7 +3,7 @@ import { fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReas
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { fetchReservationsByIdsProgressive } from '@/lib/operationalQueueFetch'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
-import type { Reservation } from '@/types/reservation'
+import type { Customer, Reservation } from '@/types/reservation'
 
 /** 최근 취소 건 중 취소 사유 미기록 조회 기간(일) */
 export const CANCELLED_MISSING_REASON_LOOKBACK_DAYS = 30
@@ -20,6 +20,7 @@ export type CancelledMissingReasonQueueMeta = {
 
 export type CancelledMissingReasonQueueData = CancelledMissingReasonQueueMeta & {
   reservations: Reservation[]
+  customers: Customer[]
 }
 
 function hasCancellationReasonContent(reason: string | null | undefined): boolean {
@@ -55,6 +56,27 @@ async function fetchPipelineManualByReservationId(
     }
   }
   return map
+}
+
+async function fetchCustomersByIds(
+  supabase: SupabaseClient,
+  customerIds: string[]
+): Promise<Customer[]> {
+  const unique = [...new Set(customerIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+  if (unique.length === 0) return []
+
+  const customers: Customer[] = []
+  const chunkSize = 200
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const { data, error } = await supabase.from('customers').select('*').in('id', chunk)
+    if (error) {
+      console.error('cancelledMissingReasonQueue customers:', error)
+      continue
+    }
+    customers.push(...((data || []) as Customer[]))
+  }
+  return customers
 }
 
 export async function fetchCancelledMissingReasonQueueMeta(
@@ -138,7 +160,7 @@ export async function fetchCancelledMissingReasonQueueData(
   const meta = await fetchCancelledMissingReasonQueueMeta(supabase, operatorId)
   const unionIds = [...meta.needsFollowUpIds, ...meta.awaitingReasonIds]
   if (unionIds.length === 0) {
-    return { ...meta, reservations: [] }
+    return { ...meta, reservations: [], customers: [] }
   }
 
   const rawRows: Record<string, unknown>[] = []
@@ -150,14 +172,17 @@ export async function fetchCancelledMissingReasonQueueData(
 
   if (error) {
     console.error('cancelledMissingReasonQueue hydrate:', error)
-    return { ...meta, reservations: [] }
+    return { ...meta, reservations: [], customers: [] }
   }
 
   const reservations = mapDbReservationRowsToReservations(rawRows, productMap, tourMap)
   const order = new Map(unionIds.map((id, i) => [id, i]))
   reservations.sort((a, b) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999))
 
-  return { ...meta, reservations }
+  const customerIds = reservations.map((r) => r.customerId).filter(Boolean)
+  const customers = await fetchCustomersByIds(supabase, customerIds)
+
+  return { ...meta, reservations, customers }
 }
 
 /** sessionStorage: 오늘 자동 모달 닫기 */

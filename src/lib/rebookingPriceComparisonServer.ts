@@ -6,7 +6,7 @@ import {
   type CustomerBookingLineInput,
 } from '@/lib/customerBookingCheckout'
 import { calculateChoiceLineTotal, parseChoicePricingUnit } from '@/lib/choicePricingUnit'
-import { parseChoicePricingMode, resolveChoiceFinalPrices, expandOptionsPricingToChoicesPricing } from '@/lib/choicePricingMode'
+import { parseChoicePricingMode, resolveChoiceFinalPrices } from '@/lib/choicePricingMode'
 import { calculateBookingPriceV2 } from '@/lib/commerce/calculateBookingPriceV2'
 import { findChoicePricingData } from '@/utils/choicePricingMatcher'
 import { REBOOKING_OUTREACH_COUPON_CODE } from '@/lib/customerRebookingUrl'
@@ -341,13 +341,104 @@ function buildOptionsPricingLookupIndex(
       if (aliases.includes(rawKey)) {
         for (const alias of aliases) index.set(alias, unit)
       }
+      const groupKey = choiceGroupKeyByChoiceId.get(option.choice_id) || ''
+      if (groupKey && optionKey && rawKey.endsWith(`+${optionKey}`)) {
+        for (const alias of aliases) index.set(alias, unit)
+      }
     }
   }
 
   return index
 }
 
-function sumPerOptionAdjustments(
+function hasNonZeroUnit(unit: UnitPrice | null | undefined): boolean {
+  if (!unit) return false
+  return unit.adult !== 0 || unit.child !== 0 || unit.infant !== 0
+}
+
+function findChoicesPricingEntry(
+  choicesPricing: Record<string, unknown>,
+  choiceId: string,
+  optionId: string
+): Record<string, unknown> | null {
+  const exact = `${choiceId}+${optionId}`
+  const direct = choicesPricing[exact]
+  if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
+    return direct as Record<string, unknown>
+  }
+  const normalized = exact.replace(/-/g, '')
+  const foundKey = Object.keys(choicesPricing).find((k) => k.replace(/-/g, '') === normalized)
+  if (!foundKey) return null
+  const entry = choicesPricing[foundKey]
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    return entry as Record<string, unknown>
+  }
+  return null
+}
+
+function lookupOptionPricingAmount(
+  optionsPricing: Record<string, unknown>,
+  keys: string[]
+): UnitPrice | null {
+  return lookupOptionsPricing(optionsPricing, keys)
+}
+
+function resolvePerSelectionAdjustment(params: {
+  choicesPricing: Record<string, unknown>
+  optionsPricing: Record<string, unknown>
+  optionsIndex: Map<string, UnitPrice>
+  choiceId: string
+  optionId: string
+  optionKey: string
+  choiceGroupKey: string
+  catalogUnit: UnitPrice
+}): UnitPrice {
+  const {
+    choicesPricing,
+    optionsPricing,
+    optionsIndex,
+    choiceId,
+    optionId,
+    optionKey,
+    choiceGroupKey,
+    catalogUnit,
+  } = params
+
+  const stableKey =
+    choiceGroupKey && optionKey ? buildStablePricingKey(choiceGroupKey, optionKey) : ''
+  const lookupKeys = [optionId, optionKey, stableKey, `${choiceId}+${optionId}`, `${choiceId}+${optionKey}`].filter(
+    Boolean
+  )
+
+  const pairEntry = findChoicesPricingEntry(choicesPricing, choiceId, optionId)
+  const pairUnit = parseUnitPrice(pairEntry)
+  if (hasNonZeroUnit(pairUnit)) return pairUnit!
+
+  if (optionKey) {
+    const choiceOptionKeyUnit = parseUnitPrice(choicesPricing[`${choiceId}+${optionKey}`])
+    if (hasNonZeroUnit(choiceOptionKeyUnit)) return choiceOptionKeyUnit!
+  }
+
+  if (stableKey) {
+    const stableChoicesUnit = parseUnitPrice(choicesPricing[stableKey])
+    if (hasNonZeroUnit(stableChoicesUnit)) return stableChoicesUnit!
+  }
+
+  for (const key of lookupKeys) {
+    const fromIndex = optionsIndex.get(key)
+    if (hasNonZeroUnit(fromIndex)) return fromIndex!
+  }
+
+  const fromOptions = lookupOptionPricingAmount(optionsPricing, lookupKeys)
+  if (hasNonZeroUnit(fromOptions)) return fromOptions!
+
+  const dynamic = parseChoiceOptionDynamicPrice(choicesPricing, choiceId, optionId, stableKey)
+  if (hasNonZeroUnit(dynamic)) return dynamic!
+
+  return catalogUnit
+}
+
+function sumPerSelectionAdjustments(
   selections: ChoiceSelection[],
   optionById: Map<
     string,
@@ -361,6 +452,9 @@ function sumPerOptionAdjustments(
     }
   >,
   pricingUnitByChoiceId: Map<string, string>,
+  choiceGroupKeyByChoiceId: Map<string, string>,
+  choicesPricing: Record<string, unknown>,
+  optionsPricing: Record<string, unknown>,
   optionsIndex: Map<string, UnitPrice>,
   params: { adults: number; children: number; infants: number }
 ): number {
@@ -368,25 +462,25 @@ function sumPerOptionAdjustments(
   for (const sel of selections) {
     const option = optionById.get(sel.option_id)
     if (!option?.choice_id) continue
+    const choiceId = option.choice_id
     const optionKey = String(option.option_key ?? '').trim()
-    const keys = [sel.option_id, optionKey].filter(Boolean)
-    let unit: UnitPrice | null = null
-    for (const key of keys) {
-      const found = optionsIndex.get(key)
-      if (found) {
-        unit = found
-        break
-      }
-    }
-    if (!unit) {
-      unit = {
+    const choiceGroupKey = choiceGroupKeyByChoiceId.get(choiceId) || ''
+    const unit = resolvePerSelectionAdjustment({
+      choicesPricing,
+      optionsPricing,
+      optionsIndex,
+      choiceId,
+      optionId: sel.option_id,
+      optionKey,
+      choiceGroupKey,
+      catalogUnit: {
         adult: Number(option.adult_price) || 0,
         child: Number(option.child_price) || 0,
         infant: Number(option.infant_price) || 0,
-      }
-    }
+      },
+    })
     total += calculateChoiceLineTotal({
-      pricingUnit: pricingUnitByChoiceId.get(option.choice_id) || 'per_person',
+      pricingUnit: pricingUnitByChoiceId.get(choiceId) || 'per_person',
       adultPrice: unit.adult,
       childPrice: unit.child,
       infantPrice: unit.infant,
@@ -397,6 +491,70 @@ function sumPerOptionAdjustments(
     })
   }
   return total
+}
+
+function sumCombinationAdjustmentFromChoicesPricing(
+  combination: ChoiceCombinationLike,
+  choicesPricing: Record<string, unknown>,
+  params: { adults: number; children: number; infants: number }
+): number {
+  const match = findChoicePricingData(combination, choicesPricing)
+  const comboUnit = parseUnitPrice(match.data)
+  if (!hasNonZeroUnit(comboUnit)) return 0
+  return calculateChoiceLineTotal({
+    pricingUnit: 'per_person',
+    adultPrice: comboUnit!.adult,
+    childPrice: comboUnit!.child,
+    infantPrice: comboUnit!.infant,
+    adults: params.adults,
+    children: params.children,
+    infants: params.infants,
+    quantity: 1,
+  })
+}
+
+function sumCombinationAdjustmentFromOptionsPricing(
+  combination: ChoiceCombinationLike,
+  optionsPricing: Record<string, unknown>,
+  choiceGroupKeyByChoiceId: Map<string, string>,
+  optionById: Map<string, { id: string; choice_id: string | null; option_key: string | null }>,
+  params: { adults: number; children: number; infants: number }
+): number {
+  if (Object.keys(optionsPricing).length === 0) return 0
+
+  let adult = 0
+  let child = 0
+  let infant = 0
+  for (const detail of combination.combination_details) {
+    const option = optionById.get(detail.optionId)
+    const choiceGroupKey = option?.choice_id
+      ? choiceGroupKeyByChoiceId.get(option.choice_id) || ''
+      : ''
+    const optionKey = String(option?.option_key ?? detail.optionKey ?? '').trim()
+    const stableKey =
+      choiceGroupKey && optionKey ? buildStablePricingKey(choiceGroupKey, optionKey) : ''
+    const keys = [detail.optionId, optionKey, stableKey].filter(Boolean)
+    const unit = lookupOptionPricingAmount(optionsPricing, keys)
+    if (unit) {
+      adult += unit.adult
+      child += unit.child
+      infant += unit.infant
+    }
+  }
+
+  const totalUnit: UnitPrice = { adult, child, infant }
+  if (!hasNonZeroUnit(totalUnit)) return 0
+
+  return calculateChoiceLineTotal({
+    pricingUnit: 'per_person',
+    adultPrice: totalUnit.adult,
+    childPrice: totalUnit.child,
+    infantPrice: totalUnit.infant,
+    adults: params.adults,
+    children: params.children,
+    infants: params.infants,
+    quantity: 1,
+  })
 }
 
 /** 홈페이지 직판가: 동적 기본가 + 예약 초이스(전체) 날짜별 단가 합산 */
@@ -487,63 +645,51 @@ async function computeExplicitDirectWebsiteSubtotal(
   let choicesTotal = 0
 
   if (pricingMode === 'base_plus' && combination) {
-    const match = findChoicePricingData(combination, choicesPricing)
-    const comboUnit = parseUnitPrice(match.data)
-    if (comboUnit && (comboUnit.adult !== 0 || comboUnit.child !== 0 || comboUnit.infant !== 0)) {
-      choicesTotal = calculateChoiceLineTotal({
-        pricingUnit: 'per_person',
-        adultPrice: comboUnit.adult,
-        childPrice: comboUnit.child,
-        infantPrice: comboUnit.infant,
-        adults: params.adults,
-        children: params.children,
-        infants: params.infants,
-        quantity: 1,
-      })
-      return roundUsd2(base + choicesTotal)
+    const paxParams = {
+      adults: params.adults,
+      children: params.children,
+      infants: params.infants,
     }
-
-    if (Object.keys(optionsPricing).length > 0) {
-      const expanded = expandOptionsPricingToChoicesPricing(
-        optionsPricing as Record<
-          string,
-          { adult_price?: number; child_price?: number; infant_price?: number }
-        >,
-        [
-          {
-            id: combination.id,
-            combination_details: combination.combination_details.map((d) => ({
-              optionId: d.optionId,
-              ...(d.optionKey ? { optionKey: d.optionKey } : {}),
-            })),
-          },
-        ]
-      )
-      const expandedUnit = parseUnitPrice(expanded[combination.id])
-      if (
-        expandedUnit &&
-        (expandedUnit.adult !== 0 || expandedUnit.child !== 0 || expandedUnit.infant !== 0)
-      ) {
-        choicesTotal = calculateChoiceLineTotal({
-          pricingUnit: 'per_person',
-          adultPrice: expandedUnit.adult,
-          childPrice: expandedUnit.child,
-          infantPrice: expandedUnit.infant,
-          adults: params.adults,
-          children: params.children,
-          infants: params.infants,
-          quantity: 1,
-        })
-        return roundUsd2(base + choicesTotal)
-      }
-    }
-
-    choicesTotal = sumPerOptionAdjustments(
+    const perSelectionTotal = sumPerSelectionAdjustments(
       params.selections,
       optionById,
       pricingUnitByChoiceId,
+      choiceGroupKeyByChoiceId,
+      choicesPricing,
+      optionsPricing,
       optionsIndex,
-      params
+      paxParams
+    )
+    const combinationChoicesTotal = sumCombinationAdjustmentFromChoicesPricing(
+      combination,
+      choicesPricing,
+      paxParams
+    )
+    const combinationOptionsTotal = sumCombinationAdjustmentFromOptionsPricing(
+      combination,
+      optionsPricing,
+      choiceGroupKeyByChoiceId,
+      optionById,
+      paxParams
+    )
+    choicesTotal = Math.max(perSelectionTotal, combinationChoicesTotal, combinationOptionsTotal)
+    return roundUsd2(base + choicesTotal)
+  }
+
+  if (pricingMode === 'base_plus') {
+    choicesTotal = sumPerSelectionAdjustments(
+      params.selections,
+      optionById,
+      pricingUnitByChoiceId,
+      choiceGroupKeyByChoiceId,
+      choicesPricing,
+      optionsPricing,
+      optionsIndex,
+      {
+        adults: params.adults,
+        children: params.children,
+        infants: params.infants,
+      }
     )
     return roundUsd2(base + choicesTotal)
   }
@@ -564,40 +710,27 @@ async function computeExplicitDirectWebsiteSubtotal(
     let childPrice = Number(option.child_price) || 0
     let infantPrice = Number(option.infant_price) || 0
 
-    if (pricingMode === 'base_plus') {
-      const optionAdjustment =
-        lookupOptionsPricing(optionsPricing, lookupKeys) ||
-        optionsIndex.get(sel.option_id) ||
-        (optionKey ? optionsIndex.get(optionKey) : null) ||
-        parseChoiceOptionDynamicPrice(dp?.choices_pricing, choiceId, sel.option_id, stableKey)
-      if (optionAdjustment) {
-        adultPrice = optionAdjustment.adult
-        childPrice = optionAdjustment.child
-        infantPrice = optionAdjustment.infant
-      }
-    } else {
-      const dynamic =
-        parseChoiceOptionDynamicPrice(dp?.choices_pricing, choiceId, sel.option_id, stableKey) ||
-        lookupOptionsPricing(optionsPricing, lookupKeys)
-      const resolved = resolveChoiceFinalPrices({
-        mode: pricingMode,
-        base: baseUnit,
-        choiceData: dynamic
-          ? {
-              adult_price: dynamic.adult,
-              child_price: dynamic.child,
-              infant_price: dynamic.infant,
-            }
-          : {
-              adult_price: adultPrice,
-              child_price: childPrice,
-              infant_price: infantPrice,
-            },
-      })
-      adultPrice = resolved.adult
-      childPrice = resolved.child
-      infantPrice = resolved.infant
-    }
+    const dynamic =
+      parseChoiceOptionDynamicPrice(dp?.choices_pricing, choiceId, sel.option_id, stableKey) ||
+      lookupOptionsPricing(optionsPricing, lookupKeys)
+    const resolved = resolveChoiceFinalPrices({
+      mode: pricingMode,
+      base: baseUnit,
+      choiceData: dynamic
+        ? {
+            adult_price: dynamic.adult,
+            child_price: dynamic.child,
+            infant_price: dynamic.infant,
+          }
+        : {
+            adult_price: adultPrice,
+            child_price: childPrice,
+            infant_price: infantPrice,
+          },
+    })
+    adultPrice = resolved.adult
+    childPrice = resolved.child
+    infantPrice = resolved.infant
 
     choicesTotal += calculateChoiceLineTotal({
       pricingUnit,
@@ -611,7 +744,38 @@ async function computeExplicitDirectWebsiteSubtotal(
     })
   }
 
-  return roundUsd2(base + choicesTotal)
+  let result = roundUsd2(base + choicesTotal)
+
+  if (combination && params.selections.length > 0) {
+    const paxParams = {
+      adults: params.adults,
+      children: params.children,
+      infants: params.infants,
+    }
+    const pairStyleChoicesTotal = Math.max(
+      sumPerSelectionAdjustments(
+        params.selections,
+        optionById,
+        pricingUnitByChoiceId,
+        choiceGroupKeyByChoiceId,
+        choicesPricing,
+        optionsPricing,
+        optionsIndex,
+        paxParams
+      ),
+      sumCombinationAdjustmentFromChoicesPricing(combination, choicesPricing, paxParams),
+      sumCombinationAdjustmentFromOptionsPricing(
+        combination,
+        optionsPricing,
+        choiceGroupKeyByChoiceId,
+        optionById,
+        paxParams
+      )
+    )
+    result = Math.max(result, roundUsd2(base + pairStyleChoicesTotal))
+  }
+
+  return result
 }
 
 export async function fetchRebookingPriceComparisonForReservation(

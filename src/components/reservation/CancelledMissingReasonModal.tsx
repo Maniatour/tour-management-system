@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, ClipboardList, PhoneForwarded, MessageSquare, ArrowRight } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
-import type { Reservation } from '@/types/reservation'
+import type { Customer, Reservation } from '@/types/reservation'
 import {
   fetchCancelledMissingReasonQueueData,
   dismissCancelledMissingReasonAutoOpenForToday,
@@ -23,9 +23,10 @@ export type CancelledMissingReasonModalProps = {
     awaitingReasonCount: number
   }) => void
   onQueueChanged?: () => void
+  onCustomersLoaded?: (customers: Customer[]) => void
   renderSimpleReservationCard: (
     reservation: Reservation,
-    helpers: { onReasonSaved: () => void }
+    helpers: { onReasonSaved: (reservationId: string) => void; queueCustomers: Customer[] }
   ) => React.ReactNode
 }
 
@@ -37,6 +38,7 @@ export default function CancelledMissingReasonModal({
   tourMap,
   onDataLoaded,
   onQueueChanged,
+  onCustomersLoaded,
   renderSimpleReservationCard,
 }: CancelledMissingReasonModalProps) {
   const t = useTranslations('reservations.cancelReasonQueue')
@@ -47,8 +49,11 @@ export default function CancelledMissingReasonModal({
   const [needsFollowUpIds, setNeedsFollowUpIds] = useState<string[]>([])
   const [awaitingReasonIds, setAwaitingReasonIds] = useState<string[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [queueCustomers, setQueueCustomers] = useState<Customer[]>([])
   const onDataLoadedRef = useRef(onDataLoaded)
+  const onCustomersLoadedRef = useRef(onCustomersLoaded)
   onDataLoadedRef.current = onDataLoaded
+  onCustomersLoadedRef.current = onCustomersLoaded
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -57,6 +62,8 @@ export default function CancelledMissingReasonModal({
       setNeedsFollowUpIds(data.needsFollowUpIds)
       setAwaitingReasonIds(data.awaitingReasonIds)
       setReservations(data.reservations)
+      setQueueCustomers(data.customers)
+      onCustomersLoadedRef.current?.(data.customers)
       onDataLoadedRef.current?.({
         unionCount: data.unionCount,
         needsFollowUpCount: data.needsFollowUpCount,
@@ -97,7 +104,10 @@ export default function CancelledMissingReasonModal({
     onClose()
   }
 
-  const handleReasonSaved = () => {
+  const handleReasonSaved = (reservationId: string) => {
+    setNeedsFollowUpIds((prev) => prev.filter((id) => id !== reservationId))
+    setAwaitingReasonIds((prev) => prev.filter((id) => id !== reservationId))
+    setReservations((prev) => prev.filter((r) => r.id !== reservationId))
     onQueueChanged?.()
     void load()
   }
@@ -192,7 +202,10 @@ export default function CancelledMissingReasonModal({
             <div className="admin-reservations-card-grid admin-reservations-card-grid--simple">
               {activeReservations.map((reservation) => (
                 <React.Fragment key={reservation.id}>
-                  {renderSimpleReservationCard(reservation, { onReasonSaved: handleReasonSaved })}
+                  {renderSimpleReservationCard(reservation, {
+                    onReasonSaved: handleReasonSaved,
+                    queueCustomers,
+                  })}
                 </React.Fragment>
               ))}
             </div>
