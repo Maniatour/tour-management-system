@@ -12,6 +12,7 @@ import {
   getMiscTourStoredItemLabel,
 } from '@/lib/scheduleMiscTourGroup'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
+import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import {
   aggregateScheduleBreakdownFromDailyData,
   formatProductScheduleCellPeopleWithPrivateSplit,
@@ -195,15 +196,11 @@ export default function ScheduleProductGridRow({
                 : isToday(dateString)
                   ? `${langBgClass} ${todayBorderClass}`
                   : langBgClass
-              const displayOrder = ['X', 'L', 'U', '_other']
-              const keyToLabel: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: '기타' }
               const choiceLine =
-                dayData?.choiceCounts && Object.keys(dayData.choiceCounts).length > 0
-                  ? Object.entries(dayData.choiceCounts)
-                      .filter(([, n]) => n > 0)
-                      .sort(([a], [b]) => displayOrder.indexOf(a) - displayOrder.indexOf(b))
-                      .map(([key, count]) => `🏜️ ${keyToLabel[key] || key} : ${count}`)
-                      .join(' / ')
+                dayData?.choiceCounts
+                  ? tourChoiceCountsDisplayKeys(dayData.choiceCounts)
+                      .map((key) => `🏜️ ${key} : ${dayData.choiceCounts![key]}`)
+                      .join(' / ') || null
                   : null
 
               return (

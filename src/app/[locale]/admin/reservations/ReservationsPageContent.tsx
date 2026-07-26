@@ -4498,6 +4498,17 @@ export default function AdminReservations() {
 
   const handleStatusChange = useCallback(async (reservationId: string, newStatus: string) => {
     const normalized = (newStatus || '').toLowerCase()
+    if (normalized === 'cancelled_rebooking') {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'cancelled' })
+        .eq('id', reservationId)
+      if (error) throw error
+      await upsertReservationCancellationReason(reservationId, '재예약', user?.email ?? null)
+      await refreshReservations()
+      void refreshCancelReasonQueueStats()
+      return
+    }
     if (normalized === 'cancelled' || normalized === 'canceled') {
       const { error } = await supabase
         .from('reservations')
@@ -4525,7 +4536,7 @@ export default function AdminReservations() {
       .eq('id', reservationId)
     if (error) throw error
     await refreshReservations()
-  }, [refreshReservations, refreshCancelReasonQueueStats])
+  }, [refreshReservations, refreshCancelReasonQueueStats, user?.email])
 
   const patchOperationalQueueReservation = useCallback(
     (reservationId: string, patch: Partial<Reservation>) => {

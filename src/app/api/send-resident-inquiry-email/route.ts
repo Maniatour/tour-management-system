@@ -9,8 +9,6 @@ import {
 } from '@/lib/residentInquiryTourKind'
 import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckToken'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
-import { getOperationsCc } from '@/lib/emailConfig'
-
 /**
  * POST /api/send-resident-inquiry-email
  * Body: { reservationId: string, locale?: 'ko' | 'en', sentBy?: string | null }
@@ -134,7 +132,6 @@ export async function POST(request: NextRequest) {
       from: fromEmail,
       replyTo,
       to: toEmail,
-      cc: getOperationsCc(toEmail),
       subject,
       html,
       open_tracking: true,

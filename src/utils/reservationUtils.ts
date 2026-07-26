@@ -263,6 +263,7 @@ export const getStatusColor = (status: string) => {
     case 'Pending': return 'bg-yellow-100 text-yellow-800'
     case 'completed': return 'bg-primary/10 text-primary'
     case 'cancelled': return 'bg-red-100 text-red-800'
+    case 'cancelled_rebooking': return 'bg-red-100 text-red-800'
     case 'Canceled': return 'bg-red-100 text-red-800'
     case 'no_show': return 'bg-orange-100 text-orange-800'
     case 'No Show': return 'bg-orange-100 text-orange-800'

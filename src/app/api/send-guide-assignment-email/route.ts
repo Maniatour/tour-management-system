@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { getOperationsCc } from '@/lib/emailConfig'
 
 /**
  * POST /api/send-guide-assignment-email
@@ -46,12 +45,10 @@ export async function POST(request: NextRequest) {
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
     const replyTo = process.env.RESEND_REPLY_TO || 'info@maniatour.com'
 
-    const opsCc = getOperationsCc(to)
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: fromEmail,
       replyTo,
       to,
-      ...(opsCc ? { cc: opsCc } : {}),
       subject,
       html,
     })

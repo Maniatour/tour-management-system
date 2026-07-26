@@ -4,7 +4,6 @@ import { Resend } from 'resend'
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
-import { getOperationsCc } from '@/lib/emailConfig'
 import { renderTourChatRoomEmailSectionHtml } from '@/lib/tourChatRoomEmailHtml'
 import {
   getEffectivePickupHotelId,
@@ -708,7 +707,6 @@ export async function POST(request: NextRequest) {
         from: fromEmail,
         replyTo,
         to: toEmail,
-        cc: getOperationsCc(toEmail),
         subject: emailContent.subject,
         html: emailContent.html,
         open_tracking: true,

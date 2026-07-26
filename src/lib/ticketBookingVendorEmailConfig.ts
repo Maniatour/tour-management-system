@@ -1,4 +1,4 @@
-import { getOperationsCc, OPERATIONS_CC_EMAIL } from '@/lib/emailConfig'
+import { OPERATIONS_CC_EMAIL } from '@/lib/emailConfig'
 
 /** 티켓 부킹 제휴업체 메일 CC · 회신 주소 */
 export const TICKET_BOOKING_VENDOR_REPLY_TO = OPERATIONS_CC_EMAIL
@@ -33,8 +33,4 @@ export function resolveTicketBookingVendorRecipient(
 
   const db = String(supplierEmailFromDb || '').trim()
   return db || null
-}
-
-export function getTicketBookingVendorCc(to: string): string[] | undefined {
-  return getOperationsCc(to)
 }

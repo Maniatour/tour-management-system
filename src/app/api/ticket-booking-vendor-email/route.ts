@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import {
-  getTicketBookingVendorCc,
   TICKET_BOOKING_VENDOR_FROM_HEADER,
   TICKET_BOOKING_VENDOR_REPLY_TO,
 } from '@/lib/ticketBookingVendorEmailConfig'
@@ -38,12 +37,10 @@ export async function POST(request: NextRequest) {
 
     const resend = new Resend(resendApiKey)
 
-    const vendorCc = getTicketBookingVendorCc(recipient)
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: TICKET_BOOKING_VENDOR_FROM_HEADER,
       replyTo: TICKET_BOOKING_VENDOR_REPLY_TO,
       to: recipient,
-      ...(vendorCc ? { cc: vendorCc } : {}),
       subject: subject.trim(),
       html: html.trim(),
     })

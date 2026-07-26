@@ -17,6 +17,7 @@ import {
   getStatusColor, 
   normalizeTourDateKey
 } from '@/utils/reservationUtils'
+import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
@@ -79,7 +80,9 @@ function reservationStatusIcon(statusRaw: string, className = 'h-4 w-4'): React.
   if (s === 'pending') return <Clock className={`${className} text-amber-700`} aria-hidden />
   if (s === 'confirmed') return <CheckCircle2 className={`${className} text-emerald-700`} aria-hidden />
   if (s === 'completed') return <CircleCheck className={`${className} text-primary`} aria-hidden />
-  if (s === 'cancelled' || s === 'canceled') return <XCircle className={`${className} text-red-700`} aria-hidden />
+  if (s === 'cancelled' || s === 'canceled' || s === 'cancelled_rebooking') {
+    return <XCircle className={`${className} text-red-700`} aria-hidden />
+  }
   if (s === 'no_show' || s === 'noshow') return <UserX className={`${className} text-orange-700`} aria-hidden />
   return <HelpCircle className={`${className} text-gray-500`} aria-hidden />
 }
@@ -519,11 +522,24 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     { value: 'confirmed', labelKey: 'status.confirmed' },
     { value: 'completed', labelKey: 'status.completed' },
     { value: 'cancelled', labelKey: 'status.cancelled' },
+    { value: 'cancelled_rebooking', labelKey: 'status.cancelled_rebooking' },
     { value: 'no_show', labelKey: 'status.no_show' },
   ] as const
 
   const handleStatusSelect = async (newStatus: string) => {
-    if (!onStatusChange || newStatus === (reservation.status as string)?.toLowerCase?.()) {
+    if (!onStatusChange) {
+      setStatusDropdownOpen(false)
+      setStatusModalOpen(false)
+      return
+    }
+    const currentStatus = (reservation.status as string)?.toLowerCase?.() ?? ''
+    if (newStatus === 'cancelled_rebooking') {
+      if (currentStatus === 'cancelled' && isRebookingCancellationReason(cancelReasonBadge)) {
+        setStatusDropdownOpen(false)
+        setStatusModalOpen(false)
+        return
+      }
+    } else if (newStatus === currentStatus) {
       setStatusDropdownOpen(false)
       setStatusModalOpen(false)
       return
@@ -531,6 +547,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     setStatusUpdating(true)
     try {
       await onStatusChange(reservation.id, newStatus)
+      if (newStatus === 'cancelled_rebooking') {
+        setCancelReasonBadge('재예약')
+        setCancelReasonFetchIx((n) => n + 1)
+      }
       setStatusDropdownOpen(false)
       setStatusModalOpen(false)
     } finally {
@@ -1060,7 +1080,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 </div>
                 <div className="max-h-[60vh] space-y-1 overflow-y-auto p-2">
                   {statusOptions.map((opt) => {
-                    const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
+                    const currentStatus = (reservation.status as string)?.toLowerCase?.() ?? ''
+                    const isCurrent =
+                      opt.value === 'cancelled_rebooking'
+                        ? currentStatus === 'cancelled' && isRebookingCancellationReason(cancelReasonBadge)
+                        : opt.value === 'cancelled'
+                          ? currentStatus === 'cancelled' && !isRebookingCancellationReason(cancelReasonBadge)
+                          : currentStatus === opt.value
                     const label = t(opt.labelKey)
                     return (
                       <button

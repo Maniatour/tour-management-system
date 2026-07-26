@@ -121,6 +121,12 @@ import {
   formatTourCanyonChoiceCardLine,
 } from '@/lib/ticketBookingDateView'
 import {
+  aggregateTourChoiceCounts,
+  tourChoiceCountsDisplayKeys,
+  type ReservationChoiceRow,
+  type TourChoiceCountKey,
+} from '@/lib/tourChoiceCounts'
+import {
   resolveDisplayOtaSaleStatus,
   resolveScheduleDisplayInternalProductNameForTour,
 } from '@/lib/scheduleDisplayCalendarMeta'
@@ -3318,26 +3324,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const dayEnPeople = Math.max(dayTotalPeople - dayKoPeople, 0)
 
         const dayReservationIds = new Set(dayReservations.map(r => r.id))
-        // 초이스별 집계: 투어 상세 모달과 동일 — 예약당 초이스 1개면 total_people, 여러 개면 quantity 합 (Lower/X 인원)
-        const choiceRowsByResId = new Map<string, Array<{ choiceKey: string; quantity: number }>>()
+        // 초이스별 집계: 캐년(X/L/U)만 — 거주자·입장료 등 _other 제외 (투어 카드·입장권 목록과 동일)
+        const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
         reservationChoices.forEach(rc => {
           if (!dayReservationIds.has(rc.reservation_id)) return
           const list = choiceRowsByResId.get(rc.reservation_id) || []
-          list.push({ choiceKey: rc.choiceKey || '_other', quantity: rc.quantity ?? 1 })
+          list.push({
+            choiceKey: (rc.choiceKey || '_other') as TourChoiceCountKey,
+            quantity: rc.quantity ?? 1,
+          })
           choiceRowsByResId.set(rc.reservation_id, list)
         })
-        const choiceCountsByKey: Record<string, number> = {}
-        dayReservations.forEach(res => {
-          const rows = choiceRowsByResId.get(res.id) || []
-          const people = res.total_people || 0
-          if (rows.length === 0) return
-          if (rows.length === 1) {
-            const key = rows[0].choiceKey
-            choiceCountsByKey[key] = (choiceCountsByKey[key] || 0) + people
-          } else {
-            rows.forEach(r => { choiceCountsByKey[r.choiceKey] = (choiceCountsByKey[r.choiceKey] || 0) + r.quantity })
-          }
-        })
+        const choiceCountsByKey = aggregateTourChoiceCounts(dayReservations, choiceRowsByResId)
 
         // 투어별 초이스 집계: 위와 동일 식 — 예약당 1개 행이면 total_people, 여러 개면 quantity 합
         const toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }> = []
@@ -3349,18 +3347,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           const assignedResList = dayReservations.filter((r) =>
             assignedCanon.has(canonicalReservationIdKey(String(r.id)))
           )
-          const byKey: Record<string, number> = {}
-          assignedResList.forEach(res => {
-            const rows = choiceRowsByResId.get(res.id) || []
-            const people = res.total_people || 0
-            if (rows.length === 0) return
-            if (rows.length === 1) {
-              const key = rows[0].choiceKey
-              byKey[key] = (byKey[key] || 0) + people
-            } else {
-              rows.forEach(r => { byKey[r.choiceKey] = (byKey[r.choiceKey] || 0) + r.quantity })
-            }
-          })
+          const byKey = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId)
           const label = (tour.tour_time && String(tour.tour_time).trim()) ? String(tour.tour_time).trim() : `투어 ${idx + 1}`
           toursChoiceCounts.push({ tourId: tour.id, label, choiceCounts: byKey })
         })
@@ -4512,32 +4499,20 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     const assignedIds = new Set((tour.reservation_ids && Array.isArray(tour.reservation_ids)) ? (tour.reservation_ids as string[]) : [])
     const assignedResList = dayReservations.filter(r => assignedIds.has(r.id))
-    const choiceRowsByRes = new Map<string, Array<{ choiceKey: string; quantity: number }>>()
+    const choiceRowsByRes = new Map<string, ReservationChoiceRow[]>()
     reservationChoices.forEach(rc => {
       if (!assignedIds.has(rc.reservation_id)) return
       const list = choiceRowsByRes.get(rc.reservation_id) || []
-      list.push({ choiceKey: rc.choiceKey || '_other', quantity: rc.quantity ?? 1 })
+      list.push({
+        choiceKey: (rc.choiceKey || '_other') as TourChoiceCountKey,
+        quantity: rc.quantity ?? 1,
+      })
       choiceRowsByRes.set(rc.reservation_id, list)
     })
-    const choiceCounts: Record<string, number> = {}
-    assignedResList.forEach(res => {
-      const rows = choiceRowsByRes.get(res.id) || []
-      const people = res.total_people || 0
-      if (rows.length === 0) return
-      if (rows.length === 1) {
-        const key = rows[0].choiceKey
-        choiceCounts[key] = (choiceCounts[key] || 0) + people
-      } else {
-        rows.forEach(r => {
-          choiceCounts[r.choiceKey] = (choiceCounts[r.choiceKey] || 0) + r.quantity
-        })
-      }
-    })
-    const displayOrder = ['X', 'L', 'U', '_other']
-    const keyToLabel: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: '기타' }
-    const choiceParts = displayOrder
-      .filter(k => (choiceCounts[k] || 0) > 0)
-      .map(k => `${keyToLabel[k]} : ${choiceCounts[k]}`)
+    const choiceCounts = aggregateTourChoiceCounts(assignedResList, choiceRowsByRes)
+    const choiceParts = tourChoiceCountsDisplayKeys(choiceCounts).map(
+      (k) => `${k} : ${choiceCounts[k]}`,
+    )
     const choiceLine = choiceParts.length > 0 ? `초이스: ${choiceParts.join(' / ')}` : null
     /** 카드용: 캐년 X/L/U만 (거주자·객실·입장료 등 _other 제외) */
     const tourTicketBookings = ticketBookings.filter((tb) => tb.tour_id === tour.id)

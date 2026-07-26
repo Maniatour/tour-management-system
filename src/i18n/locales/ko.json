@@ -3893,6 +3893,7 @@
       "confirmed": "확정됨",
       "completed": "완료됨",
       "cancelled": "취소됨",
+      "cancelled_rebooking": "취소됨 - 재예약",
       "no_show": "노쇼",
       "deleted": "삭제됨"
     },
