@@ -5804,6 +5804,7 @@ export default function AdminReservations() {
             onCustomerClick={handleCustomerClick}
             similarCustomerProductMap={productMapForCancelReasonQueue}
             operatorId={operatorId}
+            showSimilarCustomerReservationsHint={false}
             onRefreshReservations={refreshReservations}
             onStatusChange={handleStatusChange}
             generatePriceCalculation={generatePriceCalculation}

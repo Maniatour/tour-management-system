@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw, Hash } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import ProductCodeManagementModal from '@/components/admin/ProductCodeManagementModal'
 import ProductLocaleReadinessModal from '@/components/admin/ProductLocaleReadinessModal'
 import AdminProductCardPreviewLocaleToggle from '@/components/admin/AdminProductCardPreviewLocaleToggle'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
@@ -119,6 +120,8 @@ export default function AdminProducts() {
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
   const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
+  const [isProductCodeModalOpen, setIsProductCodeModalOpen] = useState(false)
+  const [productCodeModalFocusId, setProductCodeModalFocusId] = useState<string | null>(null)
   const [isLocaleReadinessModalOpen, setIsLocaleReadinessModalOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -853,6 +856,17 @@ export default function AdminProducts() {
             <span>{t('localeReadiness.button')}</span>
           </Link>
           <button
+            type="button"
+            onClick={() => {
+              setProductCodeModalFocusId(null)
+              setIsProductCodeModalOpen(true)
+            }}
+            className="bg-slate-700 text-white px-3 py-1.5 rounded-md hover:bg-slate-800 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <Hash size={16} />
+            <span>{t('productCode.button')}</span>
+          </button>
+          <button
             onClick={() => setIsFavoriteOrderModalOpen(true)}
             className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
           >
@@ -1147,6 +1161,9 @@ export default function AdminProducts() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10" style={{ width: '200px', maxWidth: '200px' }}>
                     {t('columns.name')}
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px' }}>
+                    {t('productCode.codeLabel')}
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('columns.category')}
                   </th>
@@ -1289,6 +1306,18 @@ export default function AdminProducts() {
                               <Edit2 size={14} />
                             </button>
                           </div>
+                        )}
+                      </td>
+                      <td
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {product.product_code ? (
+                          <span className="inline-block rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-800">
+                            {String(product.product_code).toUpperCase()}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-medium text-amber-600">{t('productCode.noCode')}</span>
                         )}
                       </td>
                       <td 
@@ -1693,6 +1722,20 @@ export default function AdminProducts() {
                         <div className="flex items-center space-x-2">
                           {/* 복사 버튼 */}
                           <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setProductCodeModalFocusId(product.id)
+                              setIsProductCodeModalOpen(true)
+                            }}
+                            className="rounded px-2 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 border border-slate-200"
+                            title={t('productCode.editButton')}
+                          >
+                            {t('productCode.editButton')}
+                          </button>
+
+                          <button
                             onClick={(e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -1806,6 +1849,22 @@ export default function AdminProducts() {
         products={filteredProducts}
         homepageChannelId={homepageChannel?.id ?? null}
         locale={locale}
+      />
+
+      <ProductCodeManagementModal
+        isOpen={isProductCodeModalOpen}
+        onClose={() => {
+          setIsProductCodeModalOpen(false)
+          setProductCodeModalFocusId(null)
+        }}
+        products={products}
+        initialProductId={productCodeModalFocusId}
+        locale={locale}
+        onUpdate={(productId, productCode) => {
+          setProducts((prev) =>
+            prev.map((p) => (p.id === productId ? { ...p, product_code: productCode } : p))
+          )
+        }}
       />
 
       {/* 즐겨찾기 순서 조정 모달 */}

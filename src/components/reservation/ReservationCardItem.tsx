@@ -275,6 +275,8 @@ interface ReservationCardItemProps {
   /** 유사 고객 예약 배지·모달 (취소 예약) */
   similarCustomerProductMap?: Map<string, string>
   operatorId?: string | null
+  /** false면 유사 고객 DB 조회 생략 (취소 사유 큐 모달 등) */
+  showSimilarCustomerReservationsHint?: boolean
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -341,6 +343,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onCancellationReasonSaved,
   similarCustomerProductMap,
   operatorId,
+  showSimilarCustomerReservationsHint = true,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -376,7 +379,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     reservationStatusLower === 'cancelled' || reservationStatusLower === 'canceled'
   const linkedCustomer = customers.find((c) => c.id === reservation.customerId)
   const similarReservationsHint =
-    isReservationCancelled && linkedCustomer && similarCustomerProductMap ? (
+    showSimilarCustomerReservationsHint &&
+    isReservationCancelled &&
+    linkedCustomer &&
+    similarCustomerProductMap ? (
       <SimilarCustomerReservationsHintButton
         customer={linkedCustomer}
         allCustomers={customers}

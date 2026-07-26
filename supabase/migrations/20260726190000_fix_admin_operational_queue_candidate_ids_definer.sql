@@ -4,6 +4,7 @@
 BEGIN;
 
 DROP FUNCTION IF EXISTS public.admin_operational_queue_candidate_ids(text);
+DROP FUNCTION IF EXISTS public.admin_operational_queue_candidate_ids(text, uuid);
 
 CREATE OR REPLACE FUNCTION public.admin_operational_queue_candidate_ids(
   p_customer_id text DEFAULT NULL,
@@ -16,7 +17,15 @@ SECURITY DEFINER
 SET search_path = public
 SET row_security = off
 AS $$
-  WITH bounds AS (
+  WITH auth_gate AS (
+    SELECT (
+      public.rls_is_staff_session_ok()
+      OR public.is_team_member(public.current_email())
+      OR public.is_team_member_for_session()
+      OR public.is_team_member(public.session_email_from_auth_users())
+    ) AS allowed
+  ),
+  bounds AS (
     SELECT
       CURRENT_DATE::date AS today,
       (CURRENT_DATE + 7)::date AS day7
@@ -26,19 +35,14 @@ AS $$
     WHERE sub_category IN ('Mania Tour', 'Mania Service')
   )
   SELECT DISTINCT r.id
-  FROM public.reservations r
+  FROM auth_gate g
   CROSS JOIN bounds b
+  INNER JOIN public.reservations r ON g.allowed
   LEFT JOIN public.reservation_pricing rp ON rp.reservation_id = r.id
   LEFT JOIN mania_products mp ON mp.id = r.product_id
   WHERE lower(btrim(coalesce(r.status, ''))) <> 'deleted'
     AND (p_customer_id IS NULL OR r.customer_id = p_customer_id)
     AND (p_operator_id IS NULL OR r.operator_id = p_operator_id)
-    AND (
-      public.rls_is_staff_session_ok()
-      OR public.is_team_member(public.current_email())
-      OR public.is_team_member_for_session()
-      OR public.is_team_member(public.session_email_from_auth_users())
-    )
     AND (
       NOT public.rls_is_staff_session_ok()
       OR public.staff_can_select_operator_row(r.operator_id)

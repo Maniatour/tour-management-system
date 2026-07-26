@@ -7,7 +7,7 @@ import {
 } from '@/lib/customerSimilarity'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
 import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
-import { withOperatorId } from '@/lib/operators/scopeQuery'
+import { resolveOperatorId, withOperatorId } from '@/lib/operators/scopeQuery'
 import type { Customer, Reservation } from '@/types/reservation'
 
 const CUSTOMER_ID_CHUNK = 50
@@ -19,8 +19,37 @@ function digitsOnly(s: string): string {
   return s.replace(/\D/g, '')
 }
 
-function escapeIlikePattern(value: string): string {
-  return value.replace(/[%_\\]/g, '\\$&')
+type SimilarCustomerRpcRow = {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  archive: boolean | null
+}
+
+async function searchCustomersForSimilarMatch(
+  supabase: SupabaseClient,
+  operatorId: string | null | undefined,
+  params: {
+    name?: string
+    namePartial?: boolean
+    email?: string
+    phoneTail?: string
+    limit?: number
+  }
+): Promise<Customer[] | null> {
+  const { data, error } = await supabase.rpc('search_customers_for_similar_match', {
+    p_operator_id: resolveOperatorId(operatorId),
+    p_name: params.name ?? null,
+    p_name_partial: params.namePartial ?? false,
+    p_email: params.email ?? null,
+    p_phone_tail: params.phoneTail ?? null,
+    p_limit: params.limit ?? 25,
+  })
+  if (error) {
+    return null
+  }
+  return (data || []) as Customer[]
 }
 
 /** DB에서 이름·이메일·전화 후보를 조회한 뒤 JS 유사도 규칙으로 필터 */
@@ -48,14 +77,23 @@ export async function fetchSimilarCustomersFromDb(
 
   const hasOtherCandidates = [...candidates.values()].some((c) => c.id !== anchor.id)
 
-  const runQuery = async <T>(label: string, query: PromiseLike<{ data: T | null; error: unknown }>) => {
+  const runRpcSearch = async (
+    label: string,
+    params: {
+      name?: string
+      namePartial?: boolean
+      email?: string
+      phoneTail?: string
+      limit?: number
+    }
+  ) => {
     try {
-      const { data, error } = await query
-      if (error) {
-        console.warn(`fetchSimilarCustomersFromDb ${label}:`, error)
+      const rows = await searchCustomersForSimilarMatch(supabase, operatorId, params)
+      if (rows === null) {
+        console.warn(`fetchSimilarCustomersFromDb ${label}: rpc error`)
         return null
       }
-      return data
+      return rows as SimilarCustomerRpcRow[]
     } catch (e) {
       console.warn(`fetchSimilarCustomersFromDb ${label}:`, e)
       return null
@@ -63,64 +101,23 @@ export async function fetchSimilarCustomersFromDb(
   }
 
   if (name && !hasOtherCandidates) {
-    const exactRows = await runQuery(
-      'name exact',
-      withOperatorId(
-        supabase
-          .from('customers')
-          .select('id,name,email,phone,archive')
-          .ilike('name', escapeIlikePattern(name))
-          .limit(25),
-        operatorId
-      )
-    )
+    const exactRows = await runRpcSearch('name exact', { name, limit: 25 })
     addRows(exactRows as Customer[] | null)
 
     if (name.length >= 2 && candidates.size === 0) {
-      const pattern = `%${escapeIlikePattern(name)}%`
-      const partialRows = await runQuery(
-        'name partial',
-        withOperatorId(
-          supabase
-            .from('customers')
-            .select('id,name,email,phone,archive')
-            .ilike('name', pattern)
-            .limit(50),
-          operatorId
-        )
-      )
+      const partialRows = await runRpcSearch('name partial', { name, namePartial: true, limit: 50 })
       addRows(partialRows as Customer[] | null)
     }
   }
 
   if (email && !isIgnoredSimilarCustomerEmail(email)) {
-    const emailRows = await runQuery(
-      'email',
-      withOperatorId(
-        supabase
-          .from('customers')
-          .select('id,name,email,phone,archive')
-          .ilike('email', escapeIlikePattern(email))
-          .limit(25),
-        operatorId
-      )
-    )
+    const emailRows = await runRpcSearch('email', { email, limit: 25 })
     addRows(emailRows as Customer[] | null)
   }
 
   if (phoneDigits.length >= 8) {
     const tail = phoneDigits.slice(-8)
-    const phoneRows = await runQuery(
-      'phone',
-      withOperatorId(
-        supabase
-          .from('customers')
-          .select('id,name,email,phone,archive')
-          .ilike('phone', `%${tail}%`)
-          .limit(50),
-        operatorId
-      )
-    )
+    const phoneRows = await runRpcSearch('phone', { phoneTail: tail, limit: 50 })
     addRows(phoneRows as Customer[] | null)
   }
 
@@ -313,7 +310,7 @@ async function hasReservationsForAnyCustomerIds(
   return false
 }
 
-/** 다른 유사 고객에게 예약이 1건 이상 있는지 (카드 배지용) */
+/** 다른 유사 고객에게 예약이 1건 이상 있는지 (카드 배지용 — 이미 로드된 고객 목록만 사용) */
 export async function checkHasSimilarCustomerReservations(
   supabase: SupabaseClient,
   anchor: SimilarCustomerMatchRow,
@@ -323,16 +320,7 @@ export async function checkHasSimilarCustomerReservations(
 ): Promise<boolean> {
   const fromList = findSimilarCustomersForAnchor(allCustomers, anchor as Customer)
   const otherFromList = fromList.filter((c) => c.id !== anchor.id).map((c) => c.id)
-  if (otherFromList.length > 0) {
-    if (await hasReservationsForAnyCustomerIds(supabase, otherFromList, operatorId)) {
-      return true
-    }
-  }
+  if (otherFromList.length === 0) return false
 
-  const fromDb = await fetchSimilarCustomersFromDb(supabase, anchor, operatorId, allCustomers)
-  const merged = findSimilarCustomersForAnchor(mergeCustomerLists(allCustomers, fromDb), anchor as Customer)
-  const otherIds = merged.filter((c) => c.id !== anchor.id).map((c) => c.id)
-  if (otherIds.length === 0) return false
-
-  return hasReservationsForAnyCustomerIds(supabase, otherIds, operatorId)
+  return hasReservationsForAnyCustomerIds(supabase, otherFromList, operatorId)
 }
