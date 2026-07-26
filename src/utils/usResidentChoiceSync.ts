@@ -93,6 +93,45 @@ export function findUsResidentClassificationChoice<
   return productChoices.find((c) => isUsResidentClassificationProductChoice(c)) || null
 }
 
+export type ProductChoiceForResidentFlow = {
+  choice_group_ko?: string | null
+  choice_group?: string | null
+  options?: Array<{
+    option_name_ko?: string | null
+    option_name?: string | null
+    option_key?: string | null
+    is_active?: boolean | null
+  }> | null
+}
+
+/** 상품 초이스에 비거주자 관련 옵션이 있으면 거주·패스 follow-up 단계 표시 */
+export function productHasNonResidentChoiceOptions(
+  productChoices: ProductChoiceForResidentFlow[] | undefined | null
+): boolean {
+  if (!productChoices?.length) return false
+  for (const choice of productChoices) {
+    if (!isUsResidentClassificationProductChoice(choice)) continue
+    const groupKo = (choice.choice_group_ko || '').trim()
+    const groupEn = (choice.choice_group || '').toLowerCase()
+    if (groupKo.includes('비거주') || /non[-\s]?resident/.test(groupEn)) {
+      return true
+    }
+    for (const opt of choice.options ?? []) {
+      if (opt.is_active === false) continue
+      const line = classifyResidentOption(opt)
+      if (
+        line === 'non_resident' ||
+        line === 'non_resident_under_16' ||
+        line === 'non_resident_with_pass' ||
+        line === 'non_resident_purchase_pass'
+      ) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 /** 옵션 메타 → 거주 라인 키 (미정은 옵션 행이 없고 UI 전용) */
 export function classifyResidentOption(option: {
   option_name_ko?: string | null

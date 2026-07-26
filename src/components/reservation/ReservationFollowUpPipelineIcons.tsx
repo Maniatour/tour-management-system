@@ -2,83 +2,30 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useTranslations } from 'next-intl'
-import { Mail, ClipboardCheck, Plane, MapPin, Minus, MessageSquare } from 'lucide-react'
+import { useLocale, useTranslations } from 'next-intl'
+import { Mail, ClipboardCheck, Plane, MapPin, MessageSquare } from 'lucide-react'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
 import {
-  prerequisitesMetForDeparture,
   prerequisitesMetForPickup,
   followUpPipelineStepCanMarkManual,
   followUpPipelineStepCanClearManual,
   type FollowUpPipelineStepKey,
 } from '@/lib/reservationFollowUpPipeline'
+import type { FollowUpPipelineEmailType } from '@/lib/emailLogDeliveryState'
+import {
+  resolvePipelineStepPresentation,
+  resolvePipelineSteps,
+  type PipelineStepVisual,
+} from '@/lib/pipelineStepPresentation'
+import { buildPipelineStepStatusSuffix } from '@/lib/followUpPipelineStatusLabels'
 
-export type FollowUpPipelineEmailType =
-  | 'confirmation'
-  | 'resident_inquiry'
-  | 'departure'
-  | 'pickup'
+export type { FollowUpPipelineEmailType }
 
-type StepVisual = 'done' | 'doneInferred' | 'action' | 'upcoming' | 'na'
+type StepVisual = PipelineStepVisual
 
-function stepClasses(v: StepVisual): string {
-  if (v === 'done') return 'text-emerald-700 bg-emerald-50 border-emerald-200'
-  if (v === 'doneInferred') return 'text-sky-800 bg-sky-50 border-sky-300'
-  if (v === 'action') return 'text-amber-800 bg-amber-50 border-amber-300 ring-1 ring-amber-200'
-  if (v === 'na') return 'text-gray-300 bg-gray-50 border-gray-100 opacity-70'
-  return 'text-gray-400 bg-gray-50 border-gray-100'
-}
-
-function resolveSteps(
-  s: ReservationFollowUpPipelineSnapshot,
-  options?: { alwaysShowResidentStep?: boolean }
-): {
-  confirm: StepVisual
-  resident: StepVisual
-  departure: StepVisual
-  pickup: StepVisual
-} {
-  const confirm: StepVisual = s.confirmationSentDirect
-    ? 'done'
-    : s.confirmationInferredFromDeparture
-      ? 'doneInferred'
-      : s.confirmationSent
-        ? 'done'
-        : 'action'
-
-  let resident: StepVisual = 'na'
-  if (s.needsResidentFlow) {
-    if (s.guestResidentFlowCompleted && s.residentInquirySent) resident = 'done'
-    else if (!s.residentInquirySent || !s.guestResidentFlowCompleted) resident = 'action'
-  } else if (options?.alwaysShowResidentStep) {
-    if (s.residentInquirySent && s.guestResidentFlowCompleted) resident = 'done'
-    else if (s.residentInquirySent || s.manualResident) resident = 'done'
-    else resident = 'action'
-  }
-
-  let departure: StepVisual = 'upcoming'
-  if (!prerequisitesMetForDeparture(s)) departure = 'upcoming'
-  else if (s.departureSent) departure = 'done'
-  else departure = 'action'
-
-  let pickup: StepVisual = 'upcoming'
-  if (!prerequisitesMetForPickup(s)) pickup = 'upcoming'
-  else if (s.pickupSent) pickup = 'done'
-  else pickup = 'action'
-
-  return { confirm, resident, departure, pickup }
-}
-
-function emailTypeForStepKey(
-  key: string,
-  residentVisual: StepVisual,
-  alwaysShowResidentStep?: boolean
-): FollowUpPipelineEmailType | null {
+function emailTypeForStepKey(key: string): FollowUpPipelineEmailType | null {
   if (key === 'c') return 'confirmation'
-  if (key === 'r') {
-    if (alwaysShowResidentStep) return 'resident_inquiry'
-    return residentVisual === 'na' ? null : 'resident_inquiry'
-  }
+  if (key === 'r') return 'resident_inquiry'
   if (key === 'd') return 'departure'
   if (key === 'p') return 'pickup'
   return null
@@ -107,6 +54,7 @@ const EMPTY_PIPELINE_SNAPSHOT: ReservationFollowUpPipelineSnapshot = {
   manualPickup: false,
   cancelFollowUpManual: false,
   cancelRebookingOutreachManual: false,
+  emailDelivery: {},
 }
 
 function resolveEffectivePipelineSnapshot(
@@ -118,17 +66,6 @@ function resolveEffectivePipelineSnapshot(
   return { ...EMPTY_PIPELINE_SNAPSHOT, ...snapshot }
 }
 
-function stepManualFlag(
-  snapshot: ReservationFollowUpPipelineSnapshot | null | undefined,
-  step: FollowUpPipelineStepKey
-): boolean {
-  const s = resolveEffectivePipelineSnapshot(snapshot)
-  if (step === 'confirmation') return s.manualConfirmation
-  if (step === 'resident') return s.manualResident
-  if (step === 'departure') return s.manualDeparture
-  return s.manualPickup
-}
-
 type PipelineMenuState = {
   clientX: number
   clientY: number
@@ -138,29 +75,29 @@ type PipelineMenuState = {
 
 export function ReservationFollowUpPipelineIcons({
   snapshot,
+  snapshotLoaded = false,
   disabled,
-  alwaysShowResidentStep = false,
   onEmailPreviewClick,
+  onEmailLogsClick,
   showTourChatRoomPreviewButton,
   onTourChatRoomPreviewClick,
   allowManualCompletion,
   onManualStepChange,
 }: {
   snapshot: ReservationFollowUpPipelineSnapshot | null | undefined
-  /** 취소·삭제 등 파이프라인 비적용 */
+  /** 스냅샷 DB 조회 완료 여부 (미완료 시 로딩 회색) */
+  snapshotLoaded?: boolean
   disabled?: boolean
-  /** 간단 카드: NPS 거주 미해당 상품도 거주 안내 아이콘 표시·미리보기 */
-  alwaysShowResidentStep?: boolean
-  /** 단계별 이메일 미리보기 (거주 미해당 상품은 거주 아이콘 비활성) */
   onEmailPreviewClick?: (emailType: FollowUpPipelineEmailType) => void
-  /** 간단 카드: 픽업 아이콘 옆 Tour Chat Room 섹션 미리보기 */
+  onEmailLogsClick?: () => void
   showTourChatRoomPreviewButton?: boolean
   onTourChatRoomPreviewClick?: () => void
-  /** 간단 카드 등: 우클릭으로 다른 채널 완료 표시 */
   allowManualCompletion?: boolean
   onManualStepChange?: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => void | Promise<void>
 }) {
   const t = useTranslations('reservations')
+  const tPipeline = useTranslations('reservations.followUpPipeline')
+  const locale = useLocale()
   const [menu, setMenu] = useState<PipelineMenuState | null>(null)
   const menuPanelRef = useRef<HTMLDivElement>(null)
 
@@ -181,33 +118,23 @@ export function ReservationFollowUpPipelineIcons({
   }, [menu])
 
   if (disabled) {
-    return (
-      <div className="flex items-center gap-1 text-[10px] text-gray-300" aria-hidden>
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-100 bg-gray-50">
-          <Minus className="h-3 w-3" />
-        </span>
-      </div>
-    )
+    return null
   }
 
-  const hasLoadedSnapshot = snapshot != null && typeof snapshot === 'object'
-  const effectiveSnapshot = hasLoadedSnapshot
-    ? resolveEffectivePipelineSnapshot(snapshot)
-    : EMPTY_PIPELINE_SNAPSHOT
+  const effectiveSnapshot = resolveEffectivePipelineSnapshot(snapshot)
+  const loaded = snapshotLoaded && snapshot != null
 
-  /** 스냅샷 미로드 시 빈 스냅샷으로 '미완료(노란)' 표시하지 않음 */
-  const { confirm, resident, departure, pickup } = hasLoadedSnapshot
-    ? resolveSteps(effectiveSnapshot, { alwaysShowResidentStep })
+  const { confirm, resident, departure, pickup, showResidentStep } = loaded
+    ? resolvePipelineSteps(effectiveSnapshot)
     : {
-        confirm: 'upcoming' as StepVisual,
-        resident: (alwaysShowResidentStep ? 'upcoming' : 'na') as StepVisual,
+        confirm: 'action' as StepVisual,
+        resident: 'na' as StepVisual,
         departure: 'upcoming' as StepVisual,
         pickup: 'upcoming' as StepVisual,
+        showResidentStep: false,
       }
 
-  const residentHidden = resident === 'na' && !alwaysShowResidentStep
-
-  const tourChatVisual: StepVisual = !hasLoadedSnapshot
+  const tourChatVisual: StepVisual = !loaded
     ? 'upcoming'
     : !prerequisitesMetForPickup(effectiveSnapshot)
       ? 'upcoming'
@@ -215,7 +142,7 @@ export function ReservationFollowUpPipelineIcons({
         ? 'done'
         : 'action'
 
-  const items: { key: string; Icon: typeof Mail; visual: StepVisual; label: string }[] = [
+  const allItems: { key: string; Icon: typeof Mail; visual: StepVisual; label: string }[] = [
     {
       key: 'c',
       Icon: Mail,
@@ -226,13 +153,15 @@ export function ReservationFollowUpPipelineIcons({
     },
     {
       key: 'r',
-      Icon: residentHidden ? Minus : ClipboardCheck,
+      Icon: ClipboardCheck,
       visual: resident,
-      label: residentHidden ? t('followUpPipeline.step2SkipTitle') : t('followUpPipeline.step2IconTitle'),
+      label: t('followUpPipeline.step2IconTitle'),
     },
     { key: 'd', Icon: Plane, visual: departure, label: t('followUpPipeline.step3IconTitle') },
     { key: 'p', Icon: MapPin, visual: pickup, label: t('followUpPipeline.step4IconTitle') },
   ]
+
+  const items = showResidentStep ? allItems : allItems.filter((item) => item.key !== 'r')
 
   const manualEnabled = !!allowManualCompletion && !!onManualStepChange
 
@@ -241,10 +170,11 @@ export function ReservationFollowUpPipelineIcons({
     const pad = 8
     const w = 220
     const left = Math.min(menu.clientX, window.innerWidth - w - pad)
-    const top = Math.min(menu.clientY, window.innerHeight - 160 - pad)
+    const top = Math.min(menu.clientY, window.innerHeight - 220 - pad)
     const canMark = followUpPipelineStepCanMarkManual(effectiveSnapshot, menu.step)
     const canClear = followUpPipelineStepCanClearManual(effectiveSnapshot, menu.step)
     const showPreview = !!onEmailPreviewClick && menu.emailType != null
+    const showEmailLogs = !!onEmailLogsClick
 
     return createPortal(
       <div
@@ -268,6 +198,20 @@ export function ReservationFollowUpPipelineIcons({
             {t('followUpPipeline.contextEmailPreview')}
           </button>
         ) : null}
+        {showEmailLogs ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full px-3 py-2 text-left text-primary hover:bg-muted/50"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEmailLogsClick!()
+              setMenu(null)
+            }}
+          >
+            {t('followUpPipeline.contextEmailLogs')}
+          </button>
+        ) : null}
         {manualEnabled && canMark ? (
           <button
             type="button"
@@ -284,7 +228,7 @@ export function ReservationFollowUpPipelineIcons({
               }
             }}
           >
-            {t('followUpPipeline.contextMarkManualOtherChannel')}
+            {t('followUpPipeline.contextMarkManualSend')}
           </button>
         ) : null}
         {manualEnabled && canClear ? (
@@ -306,7 +250,7 @@ export function ReservationFollowUpPipelineIcons({
             {t('followUpPipeline.contextClearManualMark')}
           </button>
         ) : null}
-        {!showPreview && !((manualEnabled && canMark) || (manualEnabled && canClear)) ? (
+        {!showPreview && !showEmailLogs && !((manualEnabled && canMark) || (manualEnabled && canClear)) ? (
           <div className="px-3 py-2 text-gray-400">{t('followUpPipeline.contextNoActions')}</div>
         ) : null}
       </div>,
@@ -320,20 +264,40 @@ export function ReservationFollowUpPipelineIcons({
         className="inline-flex items-center gap-0.5"
         role="group"
         aria-label={t('followUpPipeline.ariaPipelineStatus')}
-        title={manualEnabled ? t('followUpPipeline.pipelineHintManual') : undefined}
+        title={
+          manualEnabled || onEmailLogsClick ? t('followUpPipeline.pipelineHintManualWithLogs') : undefined
+        }
       >
         {items.map(({ key, Icon, visual, label }) => {
-          const emailType = emailTypeForStepKey(key, resident, alwaysShowResidentStep)
+          const emailType = emailTypeForStepKey(key)
           const pipelineStep = pipelineStepFromIconKey(key)
           const interactive = !!onEmailPreviewClick && emailType != null
-          const menuApplicable =
-            manualEnabled && !!pipelineStep && !(key === 'r' && residentHidden)
-          const manualPart = pipelineStep && stepManualFlag(effectiveSnapshot, pipelineStep)
-          const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded border leading-none ${stepClasses(visual)}`
-          const titleSuffix = manualPart ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
+          const menuApplicable = manualEnabled && !!pipelineStep
+          const canOpenContextMenu =
+            (!!interactive || !!onEmailLogsClick || menuApplicable) && !!pipelineStep
+
+          const presentation =
+            pipelineStep != null
+              ? resolvePipelineStepPresentation({
+                  snapshotLoaded: loaded,
+                  visual,
+                  snapshot: effectiveSnapshot,
+                  step: pipelineStep,
+                  emailType,
+                })
+              : {
+                  sendChannel: 'none' as const,
+                  deliveryOutcome: 'not_sent' as const,
+                  isInferred: false,
+                  phase: 'inactive' as const,
+                  boxClassName: 'text-gray-400 bg-gray-50 border-2 border-gray-200',
+                }
+
+          const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded leading-none ${presentation.boxClassName}`
+          const titleSuffix = buildPipelineStepStatusSuffix(presentation, tPipeline, locale)
 
           const openMenu = (clientX: number, clientY: number) => {
-            if (!menuApplicable || !pipelineStep) return
+            if (!canOpenContextMenu || !pipelineStep) return
             setMenu({
               clientX,
               clientY,
@@ -351,10 +315,10 @@ export function ReservationFollowUpPipelineIcons({
               className={`${boxClass} cursor-pointer p-0 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
               onClick={(e) => {
                 e.stopPropagation()
-                onEmailPreviewClick(emailType)
+                onEmailPreviewClick(emailType!)
               }}
               onContextMenu={(e) => {
-                if (!menuApplicable) return
+                if (!canOpenContextMenu) return
                 e.preventDefault()
                 e.stopPropagation()
                 openMenu(e.clientX, e.clientY)
@@ -366,9 +330,9 @@ export function ReservationFollowUpPipelineIcons({
             <span
               key={key}
               title={`${label}${titleSuffix}`}
-              className={boxClass}
+              className={canOpenContextMenu ? `${boxClass} cursor-context-menu` : boxClass}
               onContextMenu={(e) => {
-                if (!menuApplicable) return
+                if (!canOpenContextMenu) return
                 e.preventDefault()
                 e.stopPropagation()
                 openMenu(e.clientX, e.clientY)
@@ -379,19 +343,24 @@ export function ReservationFollowUpPipelineIcons({
           )
 
           if (key === 'p' && showTourChatRoomPreviewButton && onTourChatRoomPreviewClick) {
-            const tourChatManual = stepManualFlag(effectiveSnapshot, 'pickup')
-            const tourChatTitle = `${t('followUpPipeline.tourChatRoomPreviewButtonTitle')}${
-              tourChatManual ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
-            }`
-            const tourChatBoxClass = `inline-flex h-6 w-6 items-center justify-center rounded border leading-none ${stepClasses(tourChatVisual)}`
+            const pickupPresentation = resolvePipelineStepPresentation({
+              snapshotLoaded: loaded,
+              visual: tourChatVisual,
+              snapshot: effectiveSnapshot,
+              step: 'pickup',
+              emailType: 'pickup',
+            })
+            const tourChatTitle = t('followUpPipeline.tourChatRoomPreviewButtonTitle')
+            const tourChatBoxClass = `inline-flex h-6 w-6 items-center justify-center rounded leading-none ${pickupPresentation.boxClassName}`
             const tourChatMenuApplicable = manualEnabled && prerequisitesMetForPickup(effectiveSnapshot)
+            const tourChatCanOpenMenu = tourChatMenuApplicable || !!onEmailLogsClick
             const openTourChatMenu = (clientX: number, clientY: number) => {
-              if (!tourChatMenuApplicable) return
+              if (!tourChatCanOpenMenu) return
               setMenu({
                 clientX,
                 clientY,
                 step: 'pickup',
-                emailType: null,
+                emailType: 'pickup',
               })
             }
             return (
@@ -399,14 +368,15 @@ export function ReservationFollowUpPipelineIcons({
                 {iconButton}
                 <button
                   type="button"
-                  title={tourChatTitle}
-                  aria-label={tourChatTitle}
+                  title={`${tourChatTitle}${buildPipelineStepStatusSuffix(pickupPresentation, tPipeline, locale)}`}
+                  aria-label={`${tourChatTitle}${buildPipelineStepStatusSuffix(pickupPresentation, tPipeline, locale)}`}
                   className={`${tourChatBoxClass} cursor-pointer p-0 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
                   onClick={(e) => {
                     e.stopPropagation()
                     onTourChatRoomPreviewClick()
                   }}
                   onContextMenu={(e) => {
+                    if (!tourChatCanOpenMenu) return
                     e.preventDefault()
                     e.stopPropagation()
                     openTourChatMenu(e.clientX, e.clientY)

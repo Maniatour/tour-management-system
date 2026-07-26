@@ -10,39 +10,66 @@ type CustomerInsert = Database['public']['Tables']['customers']['Insert']
 
 interface CustomerFormProps {
   customer?: Customer | null
-  channels: Array<{id: string, name: string, type: string | null}>
+  channels: Array<{ id: string; name: string; type: string | null }>
   onSubmit: (customerData: CustomerInsert) => void
   onCancel: () => void
   onDelete?: () => void
+  /** 분할 모달 등 외부 레이아웃에 삽입할 때 오버레이 없이 본문만 렌더 */
+  embedded?: boolean
 }
 
-export default function CustomerForm({ 
-  customer, 
-  channels, 
-  onSubmit, 
-  onCancel, 
-  onDelete 
+const INPUT_CLASS =
+  'w-full h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 transition-colors focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/15'
+const LABEL_CLASS = 'mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500'
+const SECTION_TITLE_CLASS = 'text-xs font-semibold text-gray-900'
+
+function normalizeLanguageValue(raw: CustomerInsert['language']): string {
+  if (Array.isArray(raw)) {
+    const firstLang = raw[0]
+    if (firstLang === 'KR' || firstLang === 'ko' || firstLang === '한국어') return 'KR'
+    if (firstLang === 'EN' || firstLang === 'en' || firstLang === '영어') return 'EN'
+    return firstLang || ''
+  }
+  if (typeof raw === 'string') {
+    if (raw === 'KR' || raw === 'ko' || raw === '한국어') return 'KR'
+    if (raw === 'EN' || raw === 'en' || raw === '영어') return 'EN'
+    return raw
+  }
+  return ''
+}
+
+function resolveChannelType(
+  channelId: string | null | undefined,
+  channels: CustomerFormProps['channels']
+): 'ota' | 'self' | 'partner' {
+  const ch = channels.find((c) => c.id === channelId)
+  const t = ch?.type
+  if (t === 'self' || t === 'partner' || t === 'ota') return t
+  return 'ota'
+}
+
+export default function CustomerForm({
+  customer,
+  channels,
+  onSubmit,
+  onCancel,
+  onDelete,
+  embedded = false,
 }: CustomerFormProps) {
-  // useMemo로 기본 formData를 customer prop에 따라 계산
   const defaultFormData = useMemo<CustomerInsert>(() => {
     if (customer) {
-      // 언어 필드 디버깅 및 수정 (text 타입으로 변경됨)
-      let languageValue = '' // 기본값을 빈 문자열로 변경하여 "언어 선택" 옵션에 매핑
-      
+      let languageValue = ''
       if (typeof customer.language === 'string') {
         if (customer.language === 'EN' || customer.language === 'en' || customer.language === '영어') {
           languageValue = 'EN'
         } else if (customer.language === 'KR' || customer.language === 'ko' || customer.language === '한국어') {
           languageValue = 'KR'
         } else {
-          // 새로운 언어 코드들은 그대로 사용
           languageValue = customer.language
         }
-      } else {
-        languageValue = '' // null/undefined 등은 빈 문자열로
       }
-      
-      const newFormData = {
+
+      return {
         id: customer.id,
         name: customer.name,
         phone: stripSpacesFromContactInput(customer.phone || ''),
@@ -53,47 +80,43 @@ export default function CustomerForm({
         special_requests: customer.special_requests,
         booking_count: customer.booking_count || 0,
         channel_id: customer.channel_id,
-        status: customer.status || 'active'
+        status: customer.status || 'active',
       }
-      return newFormData
-    } else {
-      // 새 고객 추가 모드일 때 기본값
-      const defaultFormData = {
-        id: generateCustomerId(),
-        name: '',
-        phone: '',
-        emergency_contact: '',
-        email: '',
-        address: '',
-        language: 'KR',
-        special_requests: '',
-        booking_count: 0,
-        channel_id: '',
-        status: 'active'
-      }
-      return defaultFormData
+    }
+
+    return {
+      id: generateCustomerId(),
+      name: '',
+      phone: '',
+      emergency_contact: '',
+      email: '',
+      address: '',
+      language: 'KR',
+      special_requests: '',
+      booking_count: 0,
+      channel_id: '',
+      status: 'active',
     }
   }, [customer])
 
-  // useState로 formData 상태 관리
   const [formData, setFormData] = useState<CustomerInsert>(defaultFormData)
-  const [selectedChannelType, setSelectedChannelType] = useState<'ota' | 'self' | 'partner'>('ota')
+  const [selectedChannelType, setSelectedChannelType] = useState<'ota' | 'self' | 'partner'>(() =>
+    resolveChannelType(defaultFormData.channel_id, channels)
+  )
 
-  // defaultFormData가 변경될 때 formData 업데이트
   useEffect(() => {
     setFormData(defaultFormData)
-  }, [defaultFormData])
+    setSelectedChannelType(resolveChannelType(defaultFormData.channel_id, channels))
+  }, [defaultFormData, channels])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // 필수 필드 검증
+
     if (!formData.name) {
       alert('이름은 필수 입력 항목입니다.')
       return
     }
 
-    // 이메일 형식 검증 (이메일이 입력된 경우에만)
     if (formData.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(formData.email)) {
@@ -105,268 +128,245 @@ export default function CustomerForm({
     onSubmit(formData)
   }
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-3">
-            <h2 className="text-xl font-bold">
-              {customer ? '고객 정보 수정' : '새 고객 추가'}
-            </h2>
-            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
-              ID: {formData.id}
-            </span>
-          </div>
-          
-          {/* 상태 온오프 스위치 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-gray-700">상태</span>
-            <button
-              type="button"
-              onClick={() => setFormData({
-                ...formData, 
-                status: formData.status === 'active' ? 'inactive' : 'active'
-              })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
-                formData.status === 'active' ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  formData.status === 'active' ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-            <span className={`text-sm font-medium ${
-              formData.status === 'active' ? 'text-primary' : 'text-gray-500'
-            }`}>
-              {formData.status === 'active' ? '활성' : '비활성'}
-            </span>
-          </div>
+  const languageValue = normalizeLanguageValue(formData.language)
+  const filteredChannels = channels.filter((ch) => ch.type === selectedChannelType)
+
+  const header = (
+    <div className={embedded ? 'space-y-2' : 'mb-5 space-y-3'}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight text-gray-900">
+            {customer ? '고객 정보 수정' : '새 고객 추가'}
+          </h2>
+          <p className="mt-0.5 font-mono text-[10px] text-gray-400">{formData.id}</p>
         </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 첫 번째와 두 번째 줄: 3열 그리드로 구성 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* 왼쪽 열: 이름, 전화번호 */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  이름 *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="고객 이름"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  전화번호
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone || ''}
-                  onChange={(e) => setFormData({...formData, phone: stripSpacesFromContactInput(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="전화번호 (선택사항)"
-                />
-              </div>
-            </div>
-            
-            {/* 중간 열: 언어, 비상연락처 */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  언어
-                </label>
-                <select
-                  value={(() => {
-                    // 언어 필드 처리 (배열 형태 방지)
-                    if (Array.isArray(formData.language)) {
-                      // 배열인 경우 첫 번째 값만 사용하고 문자열로 변환
-                      const firstLang = formData.language[0]
-                      // 기존 언어 코드 매핑 (하위 호환성 유지)
-                      if (firstLang === 'KR' || firstLang === 'ko' || firstLang === '한국어') {
-                        return 'KR'
-                      }
-                      if (firstLang === 'EN' || firstLang === 'en' || firstLang === '영어') {
-                        return 'EN'
-                      }
-                      // 새로운 언어 코드들은 그대로 사용
-                      return firstLang || ''
-                    }
-                    if (typeof formData.language === 'string') {
-                      // 기존 언어 코드 매핑 (하위 호환성 유지)
-                      if (formData.language === 'KR' || formData.language === 'ko' || formData.language === '한국어') {
-                        return 'KR'
-                      }
-                      if (formData.language === 'EN' || formData.language === 'en' || formData.language === '영어') {
-                        return 'EN'
-                      }
-                      // 새로운 언어 코드들은 그대로 사용
-                      return formData.language
-                    }
-                    return ''
-                  })()}
-                  onChange={(e) => setFormData({...formData, language: e.target.value})}
-                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                >
-                  <option value="">🌐 언어 선택</option>
-                  <option value="KR">🇰🇷 한국어</option>
-                  <option value="EN">🇺🇸 English</option>
-                  <option value="JA">🇯🇵 日本語</option>
-                  <option value="ZH">🇨🇳 中文</option>
-                  <option value="ES">🇪🇸 Español</option>
-                  <option value="FR">🇫🇷 Français</option>
-                  <option value="DE">🇩🇪 Deutsch</option>
-                  <option value="IT">🇮🇹 Italiano</option>
-                  <option value="PT">🇵🇹 Português</option>
-                  <option value="RU">🇷🇺 Русский</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  비상연락처
-                </label>
-                <input
-                  type="tel"
-                  value={formData.emergency_contact || ''}
-                  onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="비상연락처 (선택사항)"
-                />
-              </div>
-            </div>
-            
-            {/* 오른쪽 열: 채널 (2줄 차지) */}
-            <div className="row-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                채널
-              </label>
-              {/* 채널 타입별 탭과 선택 드롭다운을 하나의 박스로 통합 */}
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                {/* 탭 헤더 */}
-                <div className="flex bg-gray-50">
-                  {['ota', 'self', 'partner'].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setSelectedChannelType(type as 'ota' | 'self' | 'partner')}
-                      className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                        selectedChannelType === type
-                          ? 'bg-white text-primary border-b-2 border-primary'
-                          : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                      }`}
-                    >
-                      {type === 'ota' ? 'OTA' : type === 'self' ? '직접' : '파트너'}
-                    </button>
-                  ))}
-                </div>
-                
-                {/* 탭 내용 - 채널 선택 드롭다운 */}
-                <div className="p-3 bg-white">
-                  <select
-                    value={formData.channel_id || ''}
-                    onChange={(e) => setFormData({...formData, channel_id: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  >
-                    <option value="">채널 선택</option>
-                    {channels
-                      .filter(channel => channel.type === selectedChannelType)
-                      .map((channel) => (
-                        <option key={channel.id} value={channel.id}>
-                          {channel.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1">
+          <span className="text-[11px] font-medium text-gray-600">상태</span>
+          <button
+            type="button"
+            onClick={() =>
+              setFormData({
+                ...formData,
+                status: formData.status === 'active' ? 'inactive' : 'active',
+              })
+            }
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 ${
+              formData.status === 'active' ? 'bg-primary' : 'bg-gray-300'
+            }`}
+            aria-label={formData.status === 'active' ? '활성' : '비활성'}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+                formData.status === 'active' ? 'translate-x-[18px]' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+          <span
+            className={`text-[11px] font-medium ${
+              formData.status === 'active' ? 'text-primary' : 'text-gray-500'
+            }`}
+          >
+            {formData.status === 'active' ? '활성' : '비활성'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 
-          {/* 세 번째 줄: 이메일 | 주소 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                이메일
-              </label>
-              <input
-                type="email"
-                value={formData.email || ''}
-                onChange={(e) => setFormData({...formData, email: stripSpacesFromContactInput(e.target.value)})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="이메일 (선택사항)"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                주소
-              </label>
-              <input
-                type="text"
-                value={formData.address || ''}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                placeholder="주소 (선택사항)"
-              />
-            </div>
-          </div>
-
-          {/* 특별요청 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              특별요청
-            </label>
-            <textarea
-              value={formData.special_requests || ''}
-              onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              placeholder="특별한 요청사항이 있다면 입력해주세요"
+  const fields = (
+    <div className={embedded ? 'space-y-4' : 'space-y-5'}>
+      <section className="space-y-2.5">
+        <h3 className={SECTION_TITLE_CLASS}>기본 정보</h3>
+        <div className={embedded ? 'space-y-2.5' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'}>
+          <div className={embedded ? '' : 'sm:col-span-2'}>
+            <label className={LABEL_CLASS}>이름 *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="고객 이름"
+              required
             />
           </div>
-
-          {/* 버튼 */}
-          <div className="flex justify-between pt-4 border-t">
-            {/* 삭제 버튼 (수정 모드일 때만) */}
-            {customer && onDelete && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
-                    onDelete()
-                  }
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
+          <div>
+            <label className={LABEL_CLASS}>언어</label>
+            <select
+              value={languageValue}
+              onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+              className={INPUT_CLASS}
+            >
+              <option value="">언어 선택</option>
+              <option value="KR">한국어</option>
+              <option value="EN">English</option>
+              <option value="JA">日本語</option>
+              <option value="ZH">中文</option>
+              <option value="ES">Español</option>
+              <option value="FR">Français</option>
+              <option value="DE">Deutsch</option>
+              <option value="IT">Italiano</option>
+              <option value="PT">Português</option>
+              <option value="RU">Русский</option>
+            </select>
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>채널</label>
+            <div className="space-y-1.5">
+              <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                {(['ota', 'self', 'partner'] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setSelectedChannelType(type)}
+                    className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                      selectedChannelType === type
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {type === 'ota' ? 'OTA' : type === 'self' ? '직접' : '파트너'}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={formData.channel_id || ''}
+                onChange={(e) => setFormData({ ...formData, channel_id: e.target.value })}
+                className={INPUT_CLASS}
               >
-                <span>삭제</span>
-              </button>
-            )}
-            
-            {/* 취소/저장 버튼 */}
-            <div className="flex space-x-3 ml-auto">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
-              >
-                {customer ? '수정' : '추가'}
-              </button>
+                <option value="">채널 선택</option>
+                {filteredChannels.map((ch) => (
+                  <option key={ch.id} value={ch.id}>
+                    {ch.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="space-y-2.5">
+        <h3 className={SECTION_TITLE_CLASS}>연락처</h3>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div>
+            <label className={LABEL_CLASS}>전화번호</label>
+            <input
+              type="tel"
+              value={formData.phone || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, phone: stripSpacesFromContactInput(e.target.value) })
+              }
+              className={INPUT_CLASS}
+              placeholder="전화번호"
+            />
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>비상연락처</label>
+            <input
+              type="tel"
+              value={formData.emergency_contact || ''}
+              onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="비상연락처"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={LABEL_CLASS}>이메일</label>
+            <input
+              type="email"
+              value={formData.email || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, email: stripSpacesFromContactInput(e.target.value) })
+              }
+              className={INPUT_CLASS}
+              placeholder="email@example.com"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-2.5">
+        <h3 className={SECTION_TITLE_CLASS}>추가 정보</h3>
+        <div className="space-y-2.5">
+          <div>
+            <label className={LABEL_CLASS}>주소</label>
+            <input
+              type="text"
+              value={formData.address || ''}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="주소"
+            />
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>특별요청</label>
+            <textarea
+              value={formData.special_requests || ''}
+              onChange={(e) => setFormData({ ...formData, special_requests: e.target.value })}
+              rows={embedded ? 2 : 3}
+              className={`${INPUT_CLASS} min-h-0 resize-y py-2`}
+              placeholder="특별 요청사항"
+            />
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+
+  const footer = (
+    <div className="flex items-center justify-between gap-2">
+      {customer && onDelete ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
+              onDelete()
+            }
+          }}
+          className="h-9 rounded-lg px-3 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+        >
+          삭제
+        </button>
+      ) : (
+        <span />
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-9 rounded-lg border border-gray-200 bg-white px-3.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+        >
+          취소
+        </button>
+        <button
+          type="submit"
+          className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          {customer ? '저장' : '추가'}
+        </button>
+      </div>
+    </div>
+  )
+
+  if (embedded) {
+    return (
+      <div className="flex h-full min-h-0 max-h-[45vh] flex-col bg-white lg:max-h-[90vh]">
+        <div className="shrink-0 border-b border-gray-100 px-4 py-3 sm:px-5">{header}</div>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">{fields}</div>
+          <div className="shrink-0 border-t border-gray-100 bg-gray-50/60 px-4 py-3 sm:px-5">{footer}</div>
+        </form>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-6">
+        {header}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {fields}
+          <div className="border-t border-gray-100 pt-4">{footer}</div>
         </form>
       </div>
     </div>

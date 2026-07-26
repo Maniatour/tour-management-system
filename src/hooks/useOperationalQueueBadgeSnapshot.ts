@@ -54,7 +54,8 @@ export function useOperationalQueueBadgeSnapshot({
     try {
       const { ids, error: candidateError, usedRpc } = await fetchOperationalQueueCandidateIds(
         supabase,
-        customerIdFromUrl
+        customerIdFromUrl,
+        operatorId
       )
       if (gen !== fetchGenRef.current) return
       if (candidateError) throw candidateError

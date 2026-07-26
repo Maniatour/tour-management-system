@@ -19,10 +19,11 @@ import { getOperationsCc } from '@/lib/emailConfig'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, locale: localeParam, sentBy } = body as {
+    const { reservationId, locale: localeParam, sentBy, email: emailOverride } = body as {
       reservationId?: string
       locale?: string | null
       sentBy?: string | null
+      email?: string | null
     }
 
     if (!reservationId?.trim()) {
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
       language: string | null
     }
 
-    const toEmail = (cust.email || '').trim()
+    const toEmail = (emailOverride || cust.email || '').trim()
     if (!toEmail) {
       return NextResponse.json({ error: '고객 이메일이 없습니다.' }, { status: 400 })
     }

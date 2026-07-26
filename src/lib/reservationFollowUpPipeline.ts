@@ -1,5 +1,10 @@
 import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
+import type { FollowUpEmailDeliveryByType } from '@/lib/emailLogDeliveryState'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import {
+  productHasNonResidentChoiceOptions,
+  type ProductChoiceForResidentFlow,
+} from '@/utils/usResidentChoiceSync'
 import {
   isoToLasVegasCalendarDateKey,
   isReservationStatusConfirmed,
@@ -35,6 +40,8 @@ export type ReservationFollowUpPipelineSnapshot = {
   cancelFollowUpManual: boolean
   /** 홈페이지 재예약 권유 별도 연락 완료 — 수동 */
   cancelRebookingOutreachManual: boolean
+  /** 유형별 최신 이메일 전달 상태 (Resend webhook) */
+  emailDelivery?: FollowUpEmailDeliveryByType
 }
 
 export type FollowUpPipelineStepKey = 'confirmation' | 'resident' | 'departure' | 'pickup'
@@ -96,7 +103,13 @@ export function reservationCancellationGroupingDateKey(r: {
   return 'unknown'
 }
 
-export function computeNeedsResidentFlow(productCode: string | null | undefined): boolean {
+export function computeNeedsResidentFlow(
+  productCode: string | null | undefined,
+  productChoices?: ProductChoiceForResidentFlow[] | null
+): boolean {
+  if (productChoices != null) {
+    return productHasNonResidentChoiceOptions(productChoices)
+  }
   return productShowsResidentStatusSectionByCode(productCode)
 }
 

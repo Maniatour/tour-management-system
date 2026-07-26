@@ -6,6 +6,23 @@ export type SimilarCustomerMatchRow = {
   phone?: string | null
 }
 
+/** OTA 머천트 공용 이메일 — 유사 고객 매칭·표시에서 제외 */
+const IGNORED_SIMILAR_CUSTOMER_EMAILS = new Set(['merchant@klook.com'])
+
+export function isIgnoredSimilarCustomerEmail(email?: string | null): boolean {
+  const normalized = email?.trim().toLowerCase()
+  return !!normalized && IGNORED_SIMILAR_CUSTOMER_EMAILS.has(normalized)
+}
+
+/** 유사 고객 결과에 포함할지 (머천트 공용 이메일 고객 제외, 편집 중 고객은 유지) */
+export function shouldIncludeInSimilarCustomerResults(
+  customer: SimilarCustomerMatchRow,
+  anchorId?: string
+): boolean {
+  if (anchorId && customer.id === anchorId) return true
+  return !isIgnoredSimilarCustomerEmail(customer.email)
+}
+
 /** 이름 부분 일치 최소 길이 (JS `"x".includes("") === true` 로 인한 전원 매칭 방지) */
 const MIN_NAME_SUBSTR_LEN = 2
 /** 숫자만 비교할 때 최소 자릿수 (너무 짧은 번호 오탐 방지) */
@@ -31,10 +48,12 @@ export function findSimilarCustomersInList<T extends SimilarCustomerMatchRow>(
   const nameLower = name.toLowerCase().trim()
   const similarCustomers: T[] = []
   const emailTrim = email?.trim()
-  const emailLower = emailTrim ? emailTrim.toLowerCase() : ''
+  const emailLower = emailTrim && !isIgnoredSimilarCustomerEmail(emailTrim) ? emailTrim.toLowerCase() : ''
   const inputPhoneDigits = phone ? digitsOnly(phone) : ''
 
   for (const c of customers) {
+    if (!shouldIncludeInSimilarCustomerResults(c)) continue
+
     const customerNameLower = (c.name ?? '').toLowerCase().trim()
 
     if (customerNameLower && customerNameLower === nameLower) {
@@ -53,7 +72,12 @@ export function findSimilarCustomersInList<T extends SimilarCustomerMatchRow>(
       continue
     }
 
-    if (emailLower && c.email?.trim() && c.email.toLowerCase() === emailLower) {
+    if (
+      emailLower &&
+      c.email?.trim() &&
+      !isIgnoredSimilarCustomerEmail(c.email) &&
+      c.email.toLowerCase() === emailLower
+    ) {
       if (!similarCustomers.find((sc) => sc.id === c.id)) {
         similarCustomers.push(c)
       }

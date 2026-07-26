@@ -770,6 +770,7 @@ export default function ReservationFollowUpSection({
             ) : (
               <ReservationFollowUpPipelineIcons
                 snapshot={pipelineSnapshot}
+                snapshotLoaded={!pipelineSnapshotsLoading && pipelineSnapshots.has(reservationId)}
                 disabled={reservationExcludedFromFollowUpPipeline(
                   followUpPipelineReservation?.status ?? status
                 )}

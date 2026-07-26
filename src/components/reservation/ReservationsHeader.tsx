@@ -2,7 +2,7 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks, LayoutList, ClipboardList } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, Trash2, ListChecks, LayoutList, ClipboardList } from 'lucide-react'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
 import {
   reservationAdminManualDocument,
@@ -26,9 +26,6 @@ interface ReservationsHeaderProps {
   actionRequiredCount?: number
   /** 데스크톱 제목줄에 필터 버튼 표시 (클릭 시 호출) */
   onOpenFilter?: () => void
-  /** 카드 뷰일 때만 사용: 상세 / 간단 카드 전환  */
-  cardLayout?: 'standard' | 'simple'
-  onCardLayoutChange?: (layout: 'standard' | 'simple') => void
   /** soft-delete(status=deleted) 예약 목록 모달 */
   onOpenDeletedReservations?: () => void
   /** Follow-up 단계별 대기 예약 모달 */
@@ -53,8 +50,6 @@ function ReservationsHeader({
   onActionRequired,
   actionRequiredCount = 0,
   onOpenFilter,
-  cardLayout = 'standard',
-  onCardLayoutChange,
   onOpenDeletedReservations,
   onOpenFollowUpQueue,
   followUpQueueCount = 0,
@@ -223,34 +218,6 @@ function ReservationsHeader({
               <LayoutList className="h-3 w-3" />
               <span className="hidden sm:inline">{t('viewList')}</span>
             </button>
-            {viewMode === 'card' && typeof onCardLayoutChange === 'function' && (
-              <div className="ml-1 flex items-center space-x-1 border-l border-gray-200 pl-2">
-                <button
-                  type="button"
-                  onClick={() => onCardLayoutChange('simple')}
-                  className={`flex items-center justify-center rounded-md p-1.5 text-xs transition-colors ${
-                    cardLayout === 'simple'
-                      ? 'bg-slate-700 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  title={t('viewCardSimple')}
-                >
-                  <List className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onCardLayoutChange('standard')}
-                  className={`flex items-center justify-center rounded-md p-1.5 text-xs transition-colors ${
-                    cardLayout === 'standard'
-                      ? 'bg-slate-700 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  title={t('viewCardStandard')}
-                >
-                  <LayoutTemplate className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
           </div>
           </div>
           <div className="shrink-0 md:hidden">{renderAdd()}</div>

@@ -23,7 +23,8 @@
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
     "generate-thumbnails:tour": "node scripts/generate-thumbnails.js",
     "cleanup-tour-photos-buckets": "node scripts/cleanup-tour-photos-buckets.js",
-    "backfill:pricing-revenue": "npx tsx --tsconfig tsconfig.json scripts/backfill-reservation-pricing-revenue.ts"
+    "backfill:pricing-revenue": "npx tsx --tsconfig tsconfig.json scripts/backfill-reservation-pricing-revenue.ts",
+    "backfill:email-delivery": "npx tsx --tsconfig tsconfig.json scripts/backfill-email-delivery-status.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

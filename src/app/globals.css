@@ -4869,8 +4869,9 @@ main:has(.maniatour-home) {
    간단 260px: 1920(사이드바 접힘)에서 5~6열, 사이드바 펼침에서도 5열 확보 */
 .admin-reservations-card-grid {
   --admin-reservation-card-width: 280px;
+  --admin-reservation-card-row-gap: 0.75rem;
   display: grid;
-  gap: 0.75rem 0.625rem;
+  gap: var(--admin-reservation-card-row-gap) 0.625rem;
   grid-template-columns: repeat(
     auto-fill,
     minmax(min(100%, var(--admin-reservation-card-width)), var(--admin-reservation-card-width))
@@ -4884,10 +4885,6 @@ main:has(.maniatour-home) {
   --admin-reservation-card-width: 340px;
 }
 
-.admin-reservations-card-grid--standard {
-  --admin-reservation-card-width: 340px;
-}
-
 .admin-reservations-card-grid > * {
   width: 100%;
   max-width: var(--admin-reservation-card-width);
@@ -4895,10 +4892,22 @@ main:has(.maniatour-home) {
   justify-self: start;
 }
 
+.admin-reservations-card-grid--single-column {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: var(--admin-reservation-card-width);
+}
+
 @media (min-width: 1024px) {
   .admin-reservations-card-grid {
-    gap: 1rem 0.75rem;
+    --admin-reservation-card-row-gap: 1rem;
+    gap: var(--admin-reservation-card-row-gap) 0.75rem;
   }
+}
+
+/* 가상 스크롤 행 — 절대 위치 배치 시 grid row-gap이 행 사이에 적용되지 않아 하단 여백으로 보정 */
+.admin-reservations-card-grid--virtual-row {
+  padding-bottom: var(--admin-reservation-card-row-gap);
 }
 
 .gyg-listing-card-edit-btn {

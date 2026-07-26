@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
 
-    const emailId = event.data?.email_id
+    const emailId = event.data?.email_id || event.data?.id
 
     if (!supabaseAdmin) {
       console.error('[webhook/resend] supabaseAdmin 미설정(SUPABASE_SERVICE_ROLE_KEY)')
@@ -134,7 +134,13 @@ export async function POST(request: NextRequest) {
       }
     } else if (event.type === 'email.bounced') {
       // 이메일 반송
-      const bounceReason = event.data?.bounce_type || event.data?.reason || 'Unknown'
+      const bounceData = event.data?.bounce as { message?: string; type?: string } | undefined
+      const bounceReason =
+        bounceData?.message ||
+        bounceData?.type ||
+        event.data?.bounce_type ||
+        event.data?.reason ||
+        'Unknown'
       
       if (!emailLog.bounced_at) {
         const { error: updateError } = await supabaseAdmin

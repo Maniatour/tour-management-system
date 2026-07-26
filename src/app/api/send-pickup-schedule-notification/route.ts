@@ -34,7 +34,15 @@ const PICKUP_HOTEL_EMAIL_SELECT =
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale: localeParam, sentBy, preparationInfo: preparationInfoFromBody } = body
+    const {
+      reservationId,
+      pickupTime,
+      tourDate,
+      locale: localeParam,
+      sentBy,
+      preparationInfo: preparationInfoFromBody,
+      email: emailOverride,
+    } = body
 
     if (!reservationId || !pickupTime || !tourDate) {
       return NextResponse.json(
@@ -143,7 +151,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!customer.email) {
+    const toEmail = String(emailOverride || customer.email || '').trim()
+    if (!toEmail) {
       console.error('[send-pickup-schedule-notification] 고객 이메일 없음:', { 
         reservationId, 
         customerId: reservation.customer_id,
@@ -686,7 +695,7 @@ export async function POST(request: NextRequest) {
     console.log('[send-pickup-schedule-notification] 이메일 발송 준비:', {
       fromEmail,
       replyTo,
-      to: customer.email,
+      to: toEmail,
       hasApiKey: !!resendApiKey,
       apiKeyLength: resendApiKey?.length || 0,
       subject: emailContent.subject,
@@ -698,8 +707,8 @@ export async function POST(request: NextRequest) {
       const { data: emailResult, error: emailError } = await resend.emails.send({
         from: fromEmail,
         replyTo,
-        to: customer.email,
-        cc: getOperationsCc(customer.email),
+        to: toEmail,
+        cc: getOperationsCc(toEmail),
         subject: emailContent.subject,
         html: emailContent.html,
         open_tracking: true,
@@ -714,7 +723,7 @@ export async function POST(request: NextRequest) {
           statusCode: (emailError as any).statusCode,
           response: (emailError as any).response,
           fromEmail,
-          to: customer.email
+          to: toEmail
         })
         
         // 도메인 인증 오류인 경우 더 자세한 안내 제공
@@ -745,11 +754,11 @@ export async function POST(request: NextRequest) {
       
       console.log('[send-pickup-schedule-notification] Resend API 호출 성공:', {
         emailId: emailResult?.id,
-        to: customer.email
+        to: toEmail
       })
 
       console.log('[send-pickup-schedule-notification] 픽업 스케줄 알림 이메일 발송 성공:', {
-        to: customer.email,
+        to: toEmail,
         subject: emailContent.subject,
         reservationId,
         emailId: emailResult?.id
@@ -776,7 +785,7 @@ export async function POST(request: NextRequest) {
             .from('email_logs')
             .insert({
               reservation_id: reservationId,
-              email: customer.email,
+              email: toEmail,
               email_type: 'pickup',
               subject: emailContent.subject,
               status: 'sent',
@@ -811,7 +820,7 @@ export async function POST(request: NextRequest) {
             .from('email_logs')
             .insert({
               reservation_id: reservationId,
-              email: customer.email,
+              email: toEmail,
               email_type: 'pickup',
               subject: emailContent.subject,
               status: 'failed',

@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, Smartphone } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, Smartphone } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -12,11 +12,9 @@ import {
   getPickupHotelDisplay, 
   getCustomerName, 
   getProductName, 
-  getProductNameForLocale, 
   getChannelName, 
   getStatusLabel, 
   getStatusColor, 
-  calculateTotalPrice,
   normalizeTourDateKey
 } from '@/utils/reservationUtils'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
@@ -25,6 +23,7 @@ import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
 import CancelledSimpleCardFollowUpStrip from '@/components/reservation/CancelledSimpleCardFollowUpStrip'
+import { SimilarCustomerReservationsHintButton } from '@/components/reservation/SimilarCustomerReservationsHintButton'
 import TourChatRoomEmailPreviewModal from '@/components/reservation/TourChatRoomEmailPreviewModal'
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
@@ -107,12 +106,31 @@ function formatCardLocaleDate(raw: string | null | undefined, locale: string): s
   return raw.trim()
 }
 
-function formatRegistrationDateForCard(reservation: Reservation, locale: string): string {
+function formatCardLocaleDateTime(raw: string | null | undefined, locale: string): string {
+  if (!raw?.trim()) return '-'
+  const parsed = Date.parse(raw)
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  }
+  return raw.trim()
+}
+
+function formatRegistrationDateForCard(
+  reservation: Reservation,
+  locale: string,
+  includeTime = false
+): string {
   const raw =
     reservation.addedTime ||
     (reservation as { created_at?: string | null }).created_at ||
     ''
-  return formatCardLocaleDate(raw, locale)
+  return includeTime ? formatCardLocaleDateTime(raw, locale) : formatCardLocaleDate(raw, locale)
 }
 
 function formatCancellationDateForCard(reservation: Reservation, locale: string): string {
@@ -121,7 +139,7 @@ function formatCancellationDateForCard(reservation: Reservation, locale: string)
     updated_at?: string | null
   }
   const raw = ext.cancellation_recorded_at ?? ext.updated_at ?? null
-  return formatCardLocaleDate(raw, locale)
+  return formatCardLocaleDateTime(raw, locale)
 }
 
 interface ReservationCardItemProps {
@@ -166,8 +184,6 @@ interface ReservationCardItemProps {
     currency?: string
   }>
   locale: string
-  emailDropdownOpen: string | null
-  sendingEmail: string | null
   onPricingInfoClick: (reservation: Reservation) => void
   onCreateTour: (reservation: Reservation) => void
   onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => void
@@ -181,7 +197,6 @@ interface ReservationCardItemProps {
     emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
   ) => void
   onEmailLogsClick: (reservationId: string) => void
-  onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void
   onCustomerClick: (customer: Customer) => void
   onRefreshReservations: () => void
@@ -219,12 +234,13 @@ interface ReservationCardItemProps {
   /** reservations.tour_id or tours.reservation_ids-derived tour ID */
   linkedTourId?: string | null
   /** Card density: full detail vs compact rows */
-  cardLayout?: 'standard' | 'simple'
   onOpenTourDetailModal?: (tourId: string) => void
   reservationOptionsPresenceByReservationId?: Map<string, boolean>
   onReservationOptionsMutated?: (reservationId: string) => void
   /** 이메일 Follow-up 파이프라인(컨펌·거주·출발·픽업) 표시용 스냅샷 */
   followUpPipelineSnapshot?: ReservationFollowUpPipelineSnapshot | null
+  /** follow-up 스냅샷 로드 완료 여부 */
+  followUpPipelineSnapshotLoaded?: boolean
   /** 간단 카드: 파이프라인 아이콘 우클릭 시 다른 채널 완료 표시 */
   onFollowUpPipelineManualChange?: (
     reservationId: string,
@@ -253,6 +269,9 @@ interface ReservationCardItemProps {
   onPreTourSmsSendSuccess?: (reservationId: string) => void
   /** 취소 사유 저장 후 부모 갱신(큐 모달 등) */
   onCancellationReasonSaved?: () => void
+  /** 유사 고객 예약 배지·모달 (취소 예약) */
+  similarCustomerProductMap?: Map<string, string>
+  operatorId?: string | null
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -268,8 +287,8 @@ function tourDateProximityBorderClasses(tourDate: string | null | undefined): st
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const diffDays = Math.round((tour.getTime() - today.getTime()) / 86400000)
   if (diffDays < 0) return 'border border-gray-200'
-  if (diffDays < 3) return 'border border-gray-200 ring-2 ring-red-500'
-  if (diffDays <= 7) return 'border border-gray-200 ring-2 ring-primary'
+  if (diffDays < 3) return 'border border-gray-200 ring-2 ring-inset ring-red-500'
+  if (diffDays <= 7) return 'border border-gray-200 ring-2 ring-inset ring-primary'
   return 'border border-gray-200'
 }
 
@@ -279,13 +298,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   products,
   channels,
   pickupHotels,
-  productOptions,
-  optionChoices,
+  productOptions: _productOptions,
+  optionChoices: _optionChoices,
   tourInfoMap,
-  reservationPricingMap,
+  reservationPricingMap: _reservationPricingMap,
   locale,
-  emailDropdownOpen,
-  sendingEmail,
   onPricingInfoClick,
   onCreateTour,
   onPickupTimeClick,
@@ -296,23 +313,22 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onReviewClick,
   onEmailPreview,
   onEmailLogsClick,
-  onEmailDropdownToggle,
   onEditClick,
   onCustomerClick,
   onRefreshReservations,
   onStatusChange,
-  generatePriceCalculation,
+  generatePriceCalculation: _generatePriceCalculation,
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
   choicesCacheRef,
   linkedTourId = null,
-  cardLayout = 'standard',
   onOpenTourDetailModal,
   reservationOptionsPresenceByReservationId: _reservationOptionsPresence,
   onReservationOptionsMutated: _onReservationOptionsMutated,
   reshowPickupSummaryRequest = null,
   onReshowPickupSummaryConsumed,
   followUpPipelineSnapshot = null,
+  followUpPipelineSnapshotLoaded = false,
   onFollowUpPipelineManualChange,
   onCancelFollowUpManualChange,
   residentCustomerBatchMap,
@@ -320,14 +336,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   sentBy = null,
   onPreTourSmsSendSuccess,
   onCancellationReasonSaved,
+  similarCustomerProductMap,
+  operatorId,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
 
   const prefetchedResidentCustomerRows = residentCustomerBatchMap?.get(reservation.id)
 
+  const reservationProduct = products.find((p) => p.id === reservation.productId)
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(
-    products.find((p) => p.id === reservation.productId)?.product_code ?? null
+    reservationProduct?.product_code ?? null
   )
 
   const normalizeTourId = (raw: string | null | undefined) => {
@@ -352,6 +371,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const reservationStatusLower = (reservation.status as string)?.toLowerCase?.() || ''
   const isReservationCancelled =
     reservationStatusLower === 'cancelled' || reservationStatusLower === 'canceled'
+  const linkedCustomer = customers.find((c) => c.id === reservation.customerId)
+  const similarReservationsHint =
+    isReservationCancelled && linkedCustomer && similarCustomerProductMap ? (
+      <SimilarCustomerReservationsHintButton
+        customer={linkedCustomer}
+        allCustomers={customers}
+        productMap={similarCustomerProductMap}
+        operatorId={operatorId ?? null}
+        onOpen={onCustomerClick}
+      />
+    ) : null
   /** 삭제만 파이프라인 비활성. 취소 건은 발송 이력(컨펌·거주·출발·픽업) 아이콘을 계속 표시 */
   const followUpPipelineIconsDisabled = reservationStatusLower === 'deleted'
   const hideAssignedTourUi =
@@ -460,7 +490,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   }, [simpleMoreMenuOpen])
 
   useEffect(() => {
-    if (cardLayout !== 'simple' || !isReservationCancelled) {
+    if (!isReservationCancelled) {
       setCancelReasonBadge(null)
       return
     }
@@ -481,7 +511,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     return () => {
       cancelled = true
     }
-  }, [cardLayout, isReservationCancelled, reservation.id, cancelReasonFetchIx])
+  }, [isReservationCancelled, reservation.id, cancelReasonFetchIx])
 
   const statusOptions = [
     { value: 'inquiry', labelKey: 'status.inquiry' },
@@ -510,32 +540,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
 
   const tourDateBorderClass = tourDateProximityBorderClasses(reservation.tourDate)
 
-  const pickupTimeLine = (() => {
-    const pickupTime = reservation.pickUpTime || ''
-    if (!pickupTime) {
-      return <span className="text-sm text-gray-500 italic">{t('card.pickupTbd')}</span>
-    }
-    let pickupDate = reservation.tourDate || ''
-    const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
-    if (timeMatch && reservation.tourDate) {
-      const hour = parseInt(timeMatch[1], 10)
-      if (hour >= 21) {
-        const d = new Date(reservation.tourDate)
-        d.setDate(d.getDate() - 1)
-        pickupDate = d.toISOString().split('T')[0]
-      }
-    }
-    return (
-      <span
-        className="text-sm text-gray-900 hover:text-primary hover:underline cursor-pointer"
-        onClick={(e) => onPickupTimeClick(reservation, e)}
-      >
-        {pickupDate} {pickupTime}
-      </span>
-    )
-  })()
-
-  // Pickup summary (modal): same date/time rules as pickupTimeLine, without click handler.
+  // Pickup summary (modal): pickup date/time display without click handler.
   const pickupSummaryTimeDisplay = (() => {
     const pickupTime = reservation.pickUpTime || ''
     if (!pickupTime) {
@@ -563,7 +568,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       key={reservation.id}
       className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0 h-full`}
     >
-      {cardLayout === 'simple' ? (
+      
         <div className="flex h-full flex-col p-3 space-y-2">
           {/* Row 1 */}
           <div className="flex justify-between items-center gap-2 min-w-0">
@@ -696,15 +701,18 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 <div className="flex items-start gap-1 min-w-0">
                   <dl className="m-0 grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-[11px] leading-snug text-gray-800">
                     <dt className="font-medium text-gray-600">{t('card.registrationDateLabel')}</dt>
-                    <dd className="m-0 tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</dd>
+                    <dd className="m-0 tabular-nums">{formatRegistrationDateForCard(reservation, locale, isReservationCancelled)}</dd>
                     {isReservationCancelled ? (
                       <>
                         <dt className="font-medium text-gray-600">{t('card.cancellationDateLabel')}</dt>
-                        <dd className="m-0 tabular-nums">{formatCancellationDateForCard(reservation, locale)}</dd>
+                        <dd className="m-0 flex flex-wrap items-center gap-1 tabular-nums">
+                          <span>{formatCancellationDateForCard(reservation, locale)}</span>
+                          {similarReservationsHint}
+                        </dd>
                       </>
                     ) : null}
                   </dl>
-                  {cardLayout === 'simple' && isReservationCancelled && cancelReasonBadge ? (
+                  {isReservationCancelled && cancelReasonBadge ? (
                     <span
                       className="max-w-[11rem] shrink-0 truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 ring-1 ring-slate-200/80"
                       title={cancelReasonBadge}
@@ -823,9 +831,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               ) : (
                 <ReservationFollowUpPipelineIcons
                   snapshot={followUpPipelineSnapshot}
+                  snapshotLoaded={followUpPipelineSnapshotLoaded}
                   disabled={followUpPipelineIconsDisabled}
-                  alwaysShowResidentStep
                   onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+                  onEmailLogsClick={() => onEmailLogsClick(reservation.id)}
                   showTourChatRoomPreviewButton
                   onTourChatRoomPreviewClick={() => setTourChatRoomPreviewOpen(true)}
                   {...(onFollowUpPipelineManualChange
@@ -838,22 +847,24 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 />
               )}
             </div>
-            <div className="relative shrink-0" ref={simpleMoreMenuRef}>
-              <button
-                ref={simpleMoreMenuButtonRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setSimpleMoreMenuOpen((open) => !open)
-                }}
-                className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                title={t('card.simpleActionsToggle')}
-                aria-label={t('card.simpleActionsToggle')}
-                aria-expanded={simpleMoreMenuOpen}
-                aria-haspopup="menu"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <div className="relative shrink-0" ref={simpleMoreMenuRef}>
+                <button
+                  ref={simpleMoreMenuButtonRef}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSimpleMoreMenuOpen((open) => !open)
+                  }}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  title={t('card.simpleActionsToggle')}
+                  aria-label={t('card.simpleActionsToggle')}
+                  aria-expanded={simpleMoreMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1156,617 +1167,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             document.body
           )}
         </div>
-      ) : (
-      <>
-      {/* ?? ?? - ?? ?? */}
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex justify-between items-start mb-3">
-          <div className="relative" ref={statusDropdownRef}>
-            {onStatusChange ? (
-              <button
-                type="button"
-                onClick={() => setStatusDropdownOpen((v) => !v)}
-                disabled={statusUpdating}
-                title={getStatusLabel(reservation.status, t)}
-                aria-label={getStatusLabel(reservation.status, t)}
-                className={`inline-flex h-8 items-center gap-0.5 rounded-full px-1.5 cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
-              >
-                {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
-                <ChevronDown className={`w-3 h-3 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-            ) : (
-              <span
-                title={getStatusLabel(reservation.status, t)}
-                aria-label={getStatusLabel(reservation.status, t)}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${getStatusColor(reservation.status)}`}
-              >
-                {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
-              </span>
-            )}
-            {onStatusChange && statusDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1 z-20 py-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[8.5rem]">
-                {statusOptions.map((opt) => {
-                  const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
-                  const label = t(opt.labelKey)
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => handleStatusSelect(opt.value)}
-                      title={label}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-100 ${getStatusColor(opt.value)} ${isCurrent ? 'font-semibold' : ''}`}
-                    >
-                      {reservationStatusIcon(opt.value, 'h-3.5 w-3.5')}
-                      <span>{label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center space-x-2">
-            {(() => {
-              const channel = channels?.find(c => c.id === reservation.channelId)
-              return (
-                <>
-                  {channel?.favicon_url ? (
-                    <img
-                      src={channel.favicon_url}
-                      alt={`${channel.name || 'Channel'} favicon`}
-                      className="h-4 w-4 shrink-0 rounded object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                        const parent = target.parentElement
-                        if (parent) {
-                          const fallback = document.createElement('div')
-                          fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                          fallback.innerHTML = '??'
-                          parent.appendChild(fallback)
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-gray-400 text-xs">??</span>
-                    </div>
-                  )}
-                  <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
-                  <span className="text-xs text-gray-400">RN: {reservation.channelRN}</span>
-                </>
-              )
-            })()}
-          </div>
-        </div>
-
-        {/* 두 번째 줄: 고객 요약 + Follow-up 아이콘(오른쪽) */}
-        <div className="mb-2">
-          <div className="flex items-start justify-between gap-2">
-          <div 
-            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-primary hover:underline flex items-center space-x-2 min-w-0 flex-1"
-            onClick={(e) => {
-              e.stopPropagation()
-              const customer = customers.find(c => c.id === reservation.customerId)
-              if (customer) {
-                onCustomerClick(customer)
-              }
-            }}
-          >
-            {/* ??? ?? ??? */}
-            {(() => {
-              const customer = customers.find(c => c.id === reservation.customerId)
-              if (!customer?.language) return null
-              
-              const getLanguageFlag = (language: string): string => {
-                if (!language) return 'US'
-                const lang = language.toLowerCase().trim()
-                if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === '???' || lang === 'korean') return 'KR'
-                if (lang === 'en' || lang === '??' || lang.startsWith('en-') || lang === 'english') return 'US'
-                if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === '???' || lang === 'japanese') return 'JP'
-                if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === '???' || lang === 'chinese') return 'CN'
-                if (lang === 'es' || lang.startsWith('es-') || lang === '????' || lang === 'spanish') return 'ES'
-                if (lang === 'fr' || lang.startsWith('fr-') || lang === '????' || lang === 'french') return 'FR'
-                if (lang === 'de' || lang.startsWith('de-') || lang === '???' || lang === 'german') return 'DE'
-                if (lang === 'it' || lang.startsWith('it-') || lang === '?????' || lang === 'italian') return 'IT'
-                if (lang === 'pt' || lang.startsWith('pt-') || lang === '?????' || lang === 'portuguese') return 'PT'
-                if (lang === 'ru' || lang.startsWith('ru-') || lang === '????' || lang === 'russian') return 'RU'
-                if (lang === 'th' || lang === '???' || lang === 'thai') return 'TH'
-                if (lang === 'vi' || lang === '????' || lang === 'vietnamese') return 'VN'
-                if (lang === 'id' || lang === '??????' || lang === 'indonesian') return 'ID'
-                if (lang === 'ms' || lang === '????' || lang === 'malay') return 'MY'
-                if (lang === 'ph' || lang === '????' || lang === 'filipino') return 'PH'
-                return 'US'
-              }
-              
-              const flagCode = getLanguageFlag(customer.language)
-              return (
-                <ReactCountryFlag
-                  countryCode={flagCode}
-                  svg
-                  style={{
-                    width: '16px',
-                    height: '12px',
-                    borderRadius: '2px',
-                    marginRight: '6px'
-                  }}
-                />
-              )
-            })()}
-            
-            {/* ?? ?? ??? */}
-            {showResidentStatusUi && (
-              <ResidentStatusIcon
-                reservationId={reservation.id}
-                customerId={reservation.customerId}
-                totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
-                onUpdate={onRefreshReservations}
-                {...(prefetchedResidentCustomerRows !== undefined
-                  ? { prefetchedResidentCustomerRows }
-                  : {})}
-              />
-            )}
-            
-            <span className={isReservationCancelled ? 'text-gray-400' : undefined}>
-              {getCustomerName(reservation.customerId, customers || [])}
-            </span>
-            {/* ?? ?? */}
-            {(() => {
-              const hasChild = reservation.child > 0
-              const hasInfant = reservation.infant > 0
-              const hasAdult = reservation.adults > 0
-              
-              if (!hasAdult) return null
-              
-              return (
-                <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
-                  <Users className="h-3 w-3" />
-                  <span>{reservation.adults}{t('card.peopleShort')}</span>
-                  {hasChild && <span className="text-orange-600">{reservation.child}{t('card.childShort')}</span>}
-                  {hasInfant && <span className="text-primary">{reservation.infant}{t('card.infantShort')}</span>}
-                </span>
-              )
-            })()}
-          </div>
-          <div className="shrink-0 pt-0.5">
-            <ReservationFollowUpPipelineIcons
-              snapshot={followUpPipelineSnapshot}
-              disabled={followUpPipelineIconsDisabled}
-              onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
-              {...(onFollowUpPipelineManualChange
-                ? {
-                    allowManualCompletion: true as const,
-                    onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
-                      onFollowUpPipelineManualChange(reservation.id, step, action),
-                  }
-                : {})}
-            />
-          </div>
-          </div>
-          <a 
-            href={`mailto:${customers.find(c => c.id === reservation.customerId)?.email || ''}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs text-gray-500 hover:text-primary hover:underline cursor-pointer block"
-          >
-            {customers.find(c => c.id === reservation.customerId)?.email}
-          </a>
-          {/* ????? ??? - ?? ?? ?? */}
-          <div className="flex items-center justify-between">
-            <a 
-              href={`tel:${customers.find(c => c.id === reservation.customerId)?.phone || ''}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs text-gray-500 hover:text-primary hover:underline cursor-pointer"
-            >
-              {customers.find(c => c.id === reservation.customerId)?.phone || '-'}
-            </a>
-            {reservation.addedTime ? (
-              <span className="text-xs text-gray-500">
-                {new Date(reservation.addedTime).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* ?? ?? */}
-      <div className="p-4 space-y-3">
-        {/* ?? ?? */}
-        <div>
-          <div className="flex items-center space-x-2 mb-2">
-            <div className="text-sm font-medium text-gray-900">{getProductNameForLocale(reservation.productId, products as any || [], locale)}</div>
-            
-            {/* ??? ??? ??? ?? ?? */}
-            <ChoicesDisplay 
-              reservation={reservation}
-              getGroupColorClasses={getGroupColorClasses}
-              getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
-              choicesCacheRef={choicesCacheRef}
-            />
-          </div>
-          
-          {/* ?? selectedOptions ?? (??? ??) */}
-          {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
-            <div className="mt-1 space-y-1">
-              {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
-                if (!choiceIds || choiceIds.length === 0) return null
-                
-                const option = productOptions?.find(opt => opt.id === optionId)
-                
-                if (!option) return null
-                
-                // ?? ??? ?? (is_required? true? ???)
-                if (!option.is_required) return null
-                
-                return (
-                  <div key={optionId} className="text-xs text-gray-600">
-                    <span className="font-medium">{option.name}</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {hideAssignedTourUi ? (
-          <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-            <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
-            <span className="text-sm text-gray-900">
-              <span className="text-gray-600 font-medium">{t('card.registrationDateLabel')}</span>{' '}
-              <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
-            </span>
-            {isReservationCancelled ? (
-              <span className="text-sm text-gray-900">
-                <span className="text-gray-600 font-medium">{t('card.cancellationDateLabel')}</span>{' '}
-                <span className="tabular-nums">{formatCancellationDateForCard(reservation, locale)}</span>
-              </span>
-            ) : null}
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-              <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm text-gray-900">{reservation.tourDate || '-'}</span>
-              <span className="text-gray-400">·</span>
-              <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-              {pickupTimeLine}
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <MapPin className="h-4 w-4 text-gray-400" />
-              <span
-                className={`text-sm hover:text-primary hover:underline cursor-pointer ${
-                  reservation.pickUpHotel
-                    ? 'text-gray-900'
-                    : 'text-gray-500 italic'
-                }`}
-                onClick={(e) => onPickupHotelClick(reservation, e)}
-              >
-                {reservation.pickUpHotel
-                  ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels as any || [])
-                  : t('card.pickupHotelTbd')}
-              </span>
-            </div>
-          </>
-        )}
-
-        {/* Net Price ??? ?? */}
-        <div className="pt-2 border-t border-gray-100">
-          {(() => {
-            const pricing = reservationPricingMap.get(reservation.id)
-            if (!pricing || !pricing.total_price) {
-              const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(
-                reservation,
-                (products || []) as import('@/types/reservation').Product[],
-                (optionChoices || []) as import('@/types/reservation').ProductOptionChoice[]
-              )
-              return (
-                <div className="text-xs text-gray-700">
-                  <div className="text-gray-600 break-words font-medium">
-                    ${totalPrice.toLocaleString()}
-                  </div>
-                </div>
-              )
-            }
-            
-            const calculationString = generatePriceCalculation(reservation, pricing)
-            const currency = pricing.currency || 'USD'
-            const currencySymbol = currency === 'KRW' ? '?' : '$'
-            
-            return (
-              <div className="text-xs text-gray-700">
-                <div className="text-gray-600 break-words font-medium">
-                  {calculationString || `${currencySymbol}${pricing.total_price.toFixed(2)}`}
-                </div>
-                {pricing.balance_amount > 0 && (
-                  <div className="text-red-600 font-medium mt-1">
-                    Balance: {currencySymbol}{pricing.balance_amount.toFixed(2)}
-                  </div>
-                )}
-              </div>
-            )
-          })()}
-        </div>
-
-        {/* Assigned tour summary (linked tour card) */}
-        {(() => {
-          if (!effectiveTourId || hideAssignedTourUi) {
-            return null
-          }
-
-          const tourInfo = tourInfoMap.get(effectiveTourId)
-
-          const getStatusColor = (status: string) => {
-            const s = status.toLowerCase()
-            if (s === 'confirmed') return 'bg-green-100 text-green-800'
-            if (s === 'completed') return 'bg-primary/10 text-primary'
-            if (s === 'cancelled' || s === 'canceled') return 'bg-red-100 text-red-800'
-            return 'bg-gray-100 text-gray-800'
-          }
-
-          const assignedTourTotalPeople = tourInfo?.totalPeople ?? 0
-          const finalAllDateTotalPeople = tourInfo?.allDateTotalPeople ?? assignedTourTotalPeople
-          const otherStatusPeople = tourInfo?.allDateOtherStatusPeople ?? 0
-          const tourStatusLabel = tourInfo?.status ?? '-'
-
-          const assignedTourTitle = tourInfo
-            ? otherStatusPeople > 0
-              ? t('card.assignedTourWithOther', {
-                  n: assignedTourTotalPeople,
-                  total: finalAllDateTotalPeople,
-                  other: otherStatusPeople
-                })
-              : t('card.assignedTour', { n: assignedTourTotalPeople, total: finalAllDateTotalPeople })
-            : t('card.assignedTourBasic')
-
-          return (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <div
-                onClick={(e) => {
-                  e.stopPropagation()
-                  router.push(`/${locale}/admin/tours/${effectiveTourId}`)
-                }}
-                className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-border transition-colors"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div
-                    className="text-xs font-semibold text-gray-900"
-                    title={otherStatusPeople > 0 ? t('card.assignedTourOtherHint') : undefined}
-                  >
-                    {assignedTourTitle}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                      {t('card.assigned')}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourStatusLabel)}`}>
-                      {tourStatusLabel}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-[10px] text-gray-500 mb-2 font-mono">
-                  ID: {effectiveTourId}
-                </div>
-
-                {tourInfo ? (
-                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                    {tourInfo.guideName !== '-' && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                        {tourInfo.guideName}
-                      </span>
-                    )}
-                    {tourInfo.assistantName !== '-' && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                        {tourInfo.assistantName}
-                      </span>
-                    )}
-                    {tourInfo.vehicleName !== '-' && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                        {tourInfo.vehicleName}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-gray-500 mt-1">{t('card.assignedTourMetaLoading')}</p>
-                )}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* ??? - ?? ??? ?? */}
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="flex items-center flex-wrap gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onPricingInfoClick(reservation)
-              }}
-              className="px-2 py-1 text-xs bg-primary/5 text-primary rounded-md hover:bg-muted transition-colors flex items-center space-x-1 border border-border"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-              </svg>
-              <span>{t('actions.price')}</span>
-            </button>
-            
-            {/* ?? ?? ?? - Mania Tour/Service?? ??? ?? ?? ?? */}
-            {(() => {
-              const product = products?.find(p => p.id === reservation.productId)
-              const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
-              
-              if (isManiaTour && !reservation.hasExistingTour) {
-                return (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onCreateTour(reservation)
-                    }}
-                    className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
-                    title={t('card.createTourTitle')}
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>{t('actions.tour')}</span>
-                  </button>
-                )
-              }
-              return null
-            })()}
-
-            {/* ?? ?? ?? */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onPaymentClick(reservation)
-              }}
-              className="px-2 py-1 text-xs bg-primary/5 text-primary rounded-md hover:bg-muted transition-colors flex items-center space-x-1 border border-border"
-              title={t('card.paymentHistoryTitle')}
-            >
-              <DollarSign className="w-3 h-3" />
-              <span>{t('actions.deposit')}</span>
-            </button>
-            
-            {/* ?? ?? ?? */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDetailClick(reservation)
-              }}
-              className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
-              title={t('card.viewCustomerTitle')}
-            >
-              <Eye className="w-3 h-3" />
-              <span>{t('card.viewCustomer')}</span>
-            </button>
-
-            {/* ??? ?? ?? */}
-            {onReceiptClick && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onReceiptClick(reservation)
-                }}
-                className="px-2 py-1 text-xs bg-slate-50 text-slate-600 rounded-md hover:bg-slate-100 transition-colors flex items-center space-x-1 border border-slate-200"
-                title={t('print')}
-              >
-                <Printer className="w-3 h-3" />
-                <span>{t('print')}</span>
-              </button>
-            )}
-
-            {/* Follow up ?? - ?? ???? ?? */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setFollowUpModalOpen(true)
-              }}
-              className="px-2 py-1 text-xs bg-amber-50 text-amber-700 rounded-md hover:bg-amber-100 transition-colors flex items-center space-x-1 border border-amber-200"
-              title="Follow up"
-            >
-              <FileText className="w-3 h-3" />
-              <span>Follow up</span>
-            </button>
-
-            {/* ?? ?? ?? */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onReviewClick(reservation)
-              }}
-              className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
-              title={t('card.reviewManagementTitle')}
-            >
-              <MessageSquare className="w-3 h-3" />
-              <span>{t('card.reviews')}</span>
-            </button>
-
-            {/* ??? ?? ???? */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEmailDropdownToggle(reservation.id)
-                }}
-                disabled={sendingEmail === reservation.id}
-                className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={t('card.emailTitle')}
-              >
-                <Mail className="w-3 h-3" />
-                <span>{sendingEmail === reservation.id ? t('card.sending') : t('card.email')}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-
-              {emailDropdownOpen === reservation.id && (
-                <div 
-                  className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => onEmailPreview(reservation, 'confirmation')}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>{t('card.emailConfirmation')}</span>
-                  </button>
-                  <button
-                    onClick={() => onEmailPreview(reservation, 'departure')}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>{t('card.emailDeparture')}</span>
-                  </button>
-                  <button
-                    onClick={() => onEmailPreview(reservation, 'pickup')}
-                    disabled={!reservation.pickUpTime || !reservation.tourDate}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Mail className="w-3 h-3" />
-                    <span>{t('card.emailPickup')}</span>
-                  </button>
-                  {showResidentStatusUi && (
-                    <button
-                      type="button"
-                      onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
-                      className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <UserRound className="w-3 h-3 shrink-0" />
-                      <span>{t('card.emailResidentInquiry')}</span>
-                    </button>
-                  )}
-                  <div className="border-t border-gray-200 my-1"></div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEmailLogsClick(reservation.id)
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-muted/50 flex items-center space-x-2"
-                  >
-                    <Clock className="w-3 h-3" />
-                    <span>{t('card.emailLogs')}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* ?? ?? */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onEditClick(reservation.id)
-              }}
-              className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
-              title={t('card.editReservationTitle')}
-            >
-              <Edit className="w-3 h-3" />
-              <span>{t('actions.edit')}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-      </>
-      )}
 
       {/* Follow up ?? */}
       {followUpModalOpen && (
@@ -1849,18 +1249,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       pa.manualDeparture === na.manualDeparture &&
       pa.manualPickup === na.manualPickup &&
       pa.cancelFollowUpManual === na.cancelFollowUpManual &&
-      pa.cancelRebookingOutreachManual === na.cancelRebookingOutreachManual)
+      pa.cancelRebookingOutreachManual === na.cancelRebookingOutreachManual &&
+      JSON.stringify(pa.emailDelivery ?? {}) === JSON.stringify(na.emailDelivery ?? {}))
 
   return (
     prevProps.reservation.id === nextProps.reservation.id &&
-    prevProps.cardLayout === nextProps.cardLayout &&
-    prevProps.emailDropdownOpen === nextProps.emailDropdownOpen &&
-    prevProps.sendingEmail === nextProps.sendingEmail &&
     prevProps.reservation.status === nextProps.reservation.status &&
     prevProps.reservation.tourId === nextProps.reservation.tourId &&
     prevProps.linkedTourId === nextProps.linkedTourId &&
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&
+    prevProps.followUpPipelineSnapshotLoaded === nextProps.followUpPipelineSnapshotLoaded &&
     prevProps.onFollowUpPipelineManualChange === nextProps.onFollowUpPipelineManualChange &&
     prevProps.onCancelFollowUpManualChange === nextProps.onCancelFollowUpManualChange &&
     snapSame

@@ -5,15 +5,12 @@ import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import type { Reservation } from '@/types/reservation'
 
 export const ADMIN_RESERVATION_CARD_VIRTUALIZE_MIN = 16
-const SIMPLE_CARD_WIDTH_PX = 340
-const STANDARD_CARD_WIDTH_PX = 340
+const CARD_WIDTH_PX = 340
 const GRID_GAP_PX = 12
-const SIMPLE_ROW_ESTIMATE_PX = 272
-const STANDARD_ROW_ESTIMATE_PX = 360
+const ROW_ESTIMATE_PX = 272
 
 type AdminReservationCardVirtualGridProps = {
   reservations: Reservation[]
-  variant: 'simple' | 'standard'
   gridClassName: string
   renderCard: (reservation: Reservation) => React.ReactNode
   /** 가상화 행에 실제 마운트된 예약 id (Follow-up 우선 로드용) */
@@ -30,14 +27,13 @@ function chunkRow<T>(items: T[], columnCount: number): T[][] {
 
 export function AdminReservationCardVirtualGrid({
   reservations,
-  variant,
   gridClassName,
   renderCard,
   onRenderedReservationIds,
 }: AdminReservationCardVirtualGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const cardWidth = variant === 'simple' ? SIMPLE_CARD_WIDTH_PX : STANDARD_CARD_WIDTH_PX
-  const rowEstimate = variant === 'simple' ? SIMPLE_ROW_ESTIMATE_PX : STANDARD_ROW_ESTIMATE_PX
+  const cardWidth = CARD_WIDTH_PX
+  const rowEstimate = ROW_ESTIMATE_PX
   const [columnCount, setColumnCount] = useState(1)
   const [scrollMargin, setScrollMargin] = useState(0)
 
@@ -88,7 +84,7 @@ export function AdminReservationCardVirtualGrid({
 
   const virtualizer = useWindowVirtualizer({
     count: active ? rows.length : 0,
-    estimateSize: () => rowEstimate,
+    estimateSize: () => rowEstimate + GRID_GAP_PX,
     overscan: 2,
     scrollMargin,
   })
@@ -137,7 +133,7 @@ export function AdminReservationCardVirtualGrid({
               key={vi.key}
               data-index={vi.index}
               ref={virtualizer.measureElement}
-              className={gridClassName}
+              className={`${gridClassName} admin-reservations-card-grid--virtual-row`}
               style={{
                 position: 'absolute',
                 top: 0,

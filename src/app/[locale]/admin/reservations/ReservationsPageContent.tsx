@@ -135,6 +135,10 @@ import {
 } from '@/lib/reservationFollowUpPipeline'
 
 const CustomerForm = dynamic(() => import('@/components/CustomerForm'), { ssr: false, loading: () => null })
+const CustomerEditSimilarReservationsModal = dynamic(
+  () => import('@/components/reservation/CustomerEditSimilarReservationsModal'),
+  { ssr: false, loading: () => null }
+)
 const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), { ssr: false, loading: () => null })
 const PricingInfoModal = dynamic(() => import('@/components/reservation/PricingInfoModal'), { ssr: false, loading: () => null })
 const ReservationCalendar = dynamic(() => import('@/components/ReservationCalendar'), { ssr: false, loading: () => null })
@@ -210,7 +214,6 @@ const AwayOtherUserChangesModal = dynamic(
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
   viewMode: 'card' as 'card' | 'calendar' | 'list',
-  cardLayout: 'simple' as 'standard' | 'simple',
   selectedStatus: 'all',
   currentPage: 1,
   itemsPerPage: 20,
@@ -311,12 +314,11 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
 /** 심플 카드 상태 감사: effect 의존 키 + 네트워크 조회 필요 여부(첫 프레임부터 로딩 UI로 맞춤) */
 function computeSimpleCardStatusAuditPlan(
   groupByDate: boolean,
-  cardLayout: string,
   filteredReservations: Reservation[],
   cardsWeekPage: number,
   auditRowsByRecordId?: Record<string, ReservationStatusAuditRow[]>
 ): null | { contentKey: string; needsNetworkFetch: boolean } {
-  if (!groupByDate || cardLayout !== 'simple') return null
+  if (!groupByDate) return null
   const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
     filteredReservations,
     cardsWeekPage,
@@ -745,7 +747,6 @@ export default function AdminReservations() {
   const {
     searchTerm,
     viewMode,
-    cardLayout,
     selectedStatus,
     currentPage,
     itemsPerPage,
@@ -787,10 +788,6 @@ export default function AdminReservations() {
   )
   const setCalendarMonthOffset = useCallback(
     (offset: number) => setReservationListUi((u) => ({ ...u, calendarMonthOffset: offset })),
-    [setReservationListUi]
-  )
-  const setCardLayout = useCallback(
-    (l: 'standard' | 'simple') => setReservationListUi((u) => ({ ...u, cardLayout: l })),
     [setReservationListUi]
   )
   const setSelectedStatus = useCallback(
@@ -1911,11 +1908,16 @@ export default function AdminReservations() {
     snapshotsByReservationId: followUpSnapshotsByReservationId,
     loading: followUpSnapshotsLoading,
     patchCancelManualFlags,
+    refreshReservationIds: refreshFollowUpReservationIds,
   } = useReservationFollowUpSnapshots(
     reservationsLiteForFollowUp,
     (products as Array<{ id: string; product_code?: string | null }>) || [],
     followUpPipelineManualRefresh,
-    { priorityReservationIds: followUpPriorityReservationIds }
+    {
+      priorityReservationIds: followUpPriorityReservationIds,
+      /** 화면에 보이는 카드만 먼저 로드 — 나머지는 스크롤 시 priority로 조회 */
+      loadDeferred: false,
+    }
   )
 
   const handleFollowUpPipelineManualChange = useCallback(
@@ -2540,7 +2542,7 @@ export default function AdminReservations() {
 
     try {
       const { ids: candidateIds, error: candidateError, usedRpc } =
-        await fetchOperationalQueueCandidateIds(supabase, customerIdFromUrl)
+        await fetchOperationalQueueCandidateIds(supabase, customerIdFromUrl, operatorId)
       if (candidateError) throw candidateError
 
       if (usedRpc) {
@@ -2737,7 +2739,7 @@ export default function AdminReservations() {
 
   /** 심플 카드 주(카드 주간)가 등록·취소 차트 감사 ISO 구간에 포함되면 차트 조회 결과를 재사용할 수 있다 */
   const chartAuditRangeCoversSimpleCardWeek = useMemo(() => {
-    if (!groupByDate || cardLayout !== 'simple') return false
+    if (!groupByDate) return false
     const range = regCancelChartAuditIsoRange
     if (!range) return false
     const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
@@ -2748,7 +2750,6 @@ export default function AdminReservations() {
     return req.rangeStart >= range.rangeStartIso && req.rangeEnd <= range.rangeEndIso
   }, [
     groupByDate,
-    cardLayout,
     filteredReservations,
     cardsWeekPage,
     regCancelChartAuditIsoRange,
@@ -3041,26 +3042,24 @@ export default function AdminReservations() {
     () =>
       computeSimpleCardStatusAuditPlan(
         groupByDate,
-        cardLayout,
         filteredReservations,
         cardsWeekPage,
         simpleCardStatusAuditRowsForRequest
       ),
-    [groupByDate, cardLayout, filteredReservations, cardsWeekPage, simpleCardStatusAuditRowsForRequest]
+    [groupByDate, filteredReservations, cardsWeekPage, simpleCardStatusAuditRowsForRequest]
   )
   /** 심플 카드 상태 전환 집계 UI 안정용 — contentKey(대상 목록)와 무관하게 «같은 7일 카드 주» */
   const simpleCardStatusScopeKey = useMemo(() => {
-    if (!groupByDate || cardLayout !== 'simple') return null
+    if (!groupByDate) return null
     const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
     return `${cardsWeekPage}\u0001${startYmd}\u0001${endYmd}`
-  }, [groupByDate, cardLayout, cardsWeekPage])
+  }, [groupByDate, cardsWeekPage])
   const simpleCardAuditContentKey = simpleCardStatusAuditPlan?.contentKey ?? null
   /** 필터·주간 페이지 등 «목록 창»이 바뀌면 집계 표시를 리셋 */
   const reservationListWindowSignature = useMemo(
     () =>
       [
         String(groupByDate),
-        cardLayout,
         debouncedSearchTerm,
         selectedStatus,
         selectedChannel,
@@ -3072,7 +3071,6 @@ export default function AdminReservations() {
       ].join('\u001f'),
     [
       groupByDate,
-      cardLayout,
       debouncedSearchTerm,
       selectedStatus,
       selectedChannel,
@@ -4789,8 +4787,7 @@ export default function AdminReservations() {
   ])
 
   const renderReservationCard = useCallback(
-    (reservation: Reservation, layoutOverride?: 'simple' | 'standard') => {
-      const gridCardLayout = layoutOverride ?? (viewMode === 'list' ? 'simple' : cardLayout)
+    (reservation: Reservation) => {
       return (
         <ReservationCardItem
           key={reservation.id}
@@ -4812,8 +4809,6 @@ export default function AdminReservations() {
           tourInfoMap={tourInfoMap}
           reservationPricingMap={reservationPricingMap}
           locale={locale}
-          emailDropdownOpen={emailDropdownOpen}
-          sendingEmail={sendingEmail}
           onPricingInfoClick={handlePricingInfoClick}
           onCreateTour={handleCreateTour}
           onPickupTimeClick={handlePickupTimeClick}
@@ -4824,9 +4819,10 @@ export default function AdminReservations() {
           onReviewClick={handleReviewClick}
           onEmailPreview={handleOpenEmailPreview}
           onEmailLogsClick={handleEmailLogsClick}
-          onEmailDropdownToggle={handleEmailDropdownToggle}
           onEditClick={handleEditClick}
           onCustomerClick={handleCustomerClick}
+          similarCustomerProductMap={productMapForCancelReasonQueue}
+          operatorId={operatorId}
           onRefreshReservations={refreshReservations}
           onStatusChange={handleStatusChange}
           generatePriceCalculation={generatePriceCalculation}
@@ -4835,28 +4831,26 @@ export default function AdminReservations() {
           choicesCacheRef={choicesCacheRef}
           residentCustomerBatchMap={residentCustomerBatchMap}
           linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-          cardLayout={gridCardLayout}
           onOpenTourDetailModal={handleOpenTourDetailModal}
           reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
           onReservationOptionsMutated={handleReservationOptionsMutated}
           reshowPickupSummaryRequest={pickupSummaryReshowRequest}
           onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-          followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
-          {...(gridCardLayout === 'simple'
-            ? {
-                onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
-                onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
-                onCommunicationChannelChange: handleCommunicationChannelChange,
-                sentBy: user?.email ?? null,
-                onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
-              }
-            : {})}
+          followUpPipelineSnapshot={
+            followUpSnapshotsByReservationId.has(reservation.id)
+              ? followUpSnapshotsByReservationId.get(reservation.id)!
+              : null
+          }
+          followUpPipelineSnapshotLoaded={followUpSnapshotsByReservationId.has(reservation.id)}
+          onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
+          onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+          onCommunicationChannelChange={handleCommunicationChannelChange}
+          sentBy={user?.email ?? null}
+          onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
         />
       )
     },
     [
-      viewMode,
-      cardLayout,
       customers,
       products,
       channels,
@@ -4866,8 +4860,6 @@ export default function AdminReservations() {
       tourInfoMap,
       reservationPricingMap,
       locale,
-      emailDropdownOpen,
-      sendingEmail,
       handlePricingInfoClick,
       handleCreateTour,
       handlePickupTimeClick,
@@ -4878,9 +4870,10 @@ export default function AdminReservations() {
       handleReviewClick,
       handleOpenEmailPreview,
       handleEmailLogsClick,
-      handleEmailDropdownToggle,
       handleEditClick,
       handleCustomerClick,
+      productMapForCancelReasonQueue,
+      operatorId,
       refreshReservations,
       handleStatusChange,
       generatePriceCalculation,
@@ -4924,8 +4917,6 @@ export default function AdminReservations() {
         onOpenCancelReasonQueue={() => setCancelReasonQueueOpen(true)}
         cancelReasonQueueCount={cancelReasonQueueStats.union}
         onPrefetchOperationalQueue={prefetchOperationalQueueSnapshot}
-        cardLayout={cardLayout}
-        onCardLayoutChange={setCardLayout}
       />
 
       {/* ???????: ????(???) + ??? ??(??? ??????? ???) */}
@@ -5188,13 +5179,10 @@ export default function AdminReservations() {
                 const handleToggleCollapse = () => toggleGroupCollapse(date)
                 const dayReservations = reservations as Reservation[]
                 const { registration: regList, statusChange: statusListFromUpdated } =
-                  cardLayout === 'simple'
-                    ? splitReservationsByActivityForDate(date, dayReservations)
-                    : { registration: dayReservations, statusChange: [] as Reservation[] }
+                  splitReservationsByActivityForDate(date, dayReservations)
 
                 /** 이벤트(occurred_at) 로컬일 기준 — updated_at 그룹과 달라도 당일 상태 전환이 보이게 */
                 const simpleCardStatusAuditReady =
-                  cardLayout === 'simple' &&
                   !simpleCardStatusTransitionLoadingEffective &&
                   simpleCardStatusScopeKey != null &&
                   simpleCardStatusTransitionDisplayScopeKey === simpleCardStatusScopeKey
@@ -5214,11 +5202,7 @@ export default function AdminReservations() {
 
                 const statusListForSimple = statusList
 
-                const gridClass =
-                  cardLayout === 'simple'
-                    ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
-                    : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
-                const cardGridVariant = cardLayout === 'simple' ? 'simple' : 'standard'
+                const gridClass = 'admin-reservations-card-grid admin-reservations-card-grid--simple'
 
                 const simpleCardStatusSubgroups =
                   statusListForSimple.length > 0 && !simpleCardStatusTransitionLoadingEffective
@@ -5260,22 +5244,19 @@ export default function AdminReservations() {
                       })()
                     : null
 
-                const cancellationStatsForHeader =
-                  cardLayout === 'simple'
-                    ? simpleCardStatusTransitionLoadingEffective
-                      ? ({ mode: 'audit-loading' as const } as const)
-                      : ({
-                          mode: 'audit' as const,
-                          reservations: dayReservations.filter((r) => {
-                            const st = (r.status || '').toLowerCase()
-                            if (st !== 'cancelled' && st !== 'canceled' && st !== 'deleted') return false
-                            /** 당일 등록 건은 등록 집계에만 포함 — 취소 집계에서 중복 제외 */
-                            if (isoToLocalCalendarDateKey(r.addedTime) === date) return false
-                            const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
-                            return isIntoCancelledLikeTransition(tr)
-                          }),
-                        } as const)
-                    : ({ mode: 'default' as const } as const)
+                const cancellationStatsForHeader = simpleCardStatusTransitionLoadingEffective
+                  ? ({ mode: 'audit-loading' as const } as const)
+                  : ({
+                      mode: 'audit' as const,
+                      reservations: dayReservations.filter((r) => {
+                        const st = (r.status || '').toLowerCase()
+                        if (st !== 'cancelled' && st !== 'canceled' && st !== 'deleted') return false
+                        /** 당일 등록 건은 등록 집계에만 포함 — 취소 집계에서 중복 제외 */
+                        if (isoToLocalCalendarDateKey(r.addedTime) === date) return false
+                        const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
+                        return isIntoCancelledLikeTransition(tr)
+                      }),
+                    } as const)
 
                 return (
                   <div key={date} className="space-y-4">
@@ -5295,8 +5276,7 @@ export default function AdminReservations() {
                       cancellationReasonByReservationId={cancellationReasonByReservationId}
                     />
 
-                    {cardLayout === 'simple' ? (
-                      <div className="space-y-4">
+                    <div className="space-y-4">
                         {(() => {
                           const accRegKey = `${date}|simple-acc-reg`
                           const accStatusKey = `${date}|simple-acc-status`
@@ -5338,9 +5318,8 @@ export default function AdminReservations() {
                                     {regList.length > 0 ? (
                                       <AdminReservationCardVirtualGrid
                                         reservations={regList}
-                                        variant={cardGridVariant}
                                         gridClassName={gridClass}
-                                        renderCard={(r) => renderReservationCard(r, cardLayout)}
+                                        renderCard={(r) => renderReservationCard(r)}
                                         onRenderedReservationIds={(ids) =>
                                           handleFollowUpRenderedReservationIds(`${date}-reg`, ids)
                                         }
@@ -5433,9 +5412,8 @@ export default function AdminReservations() {
                                                 <div className="border-t border-gray-100 bg-white pl-3 pr-2 pb-2 pt-2">
                                                   <AdminReservationCardVirtualGrid
                                                     reservations={g.items}
-                                                    variant={cardGridVariant}
                                                     gridClassName={gridClass}
-                                                    renderCard={(r) => renderReservationCard(r, cardLayout)}
+                                                    renderCard={(r) => renderReservationCard(r)}
                                                     onRenderedReservationIds={(ids) =>
                                                       handleFollowUpRenderedReservationIds(
                                                         `${date}-status-${g.bucketKey}`,
@@ -5461,17 +5439,6 @@ export default function AdminReservations() {
                           )
                         })()}
                       </div>
-                    ) : (
-                      <AdminReservationCardVirtualGrid
-                        reservations={dayReservations}
-                        variant={cardGridVariant}
-                        gridClassName={gridClass}
-                        renderCard={(r) => renderReservationCard(r, cardLayout)}
-                        onRenderedReservationIds={(ids) =>
-                          handleFollowUpRenderedReservationIds(`${date}-day`, ids)
-                        }
-                      />
-                    )}
                   </div>
                 )
               })
@@ -5498,12 +5465,7 @@ export default function AdminReservations() {
             <div className="space-y-4">
               <AdminReservationCardVirtualGrid
                 reservations={paginatedReservations}
-                variant={viewMode === 'list' || cardLayout === 'simple' ? 'simple' : 'standard'}
-                gridClassName={
-                  viewMode === 'list' || cardLayout === 'simple'
-                    ? 'admin-reservations-card-grid admin-reservations-card-grid--simple'
-                    : 'admin-reservations-card-grid admin-reservations-card-grid--standard'
-                }
+                gridClassName="admin-reservations-card-grid admin-reservations-card-grid--simple"
                 renderCard={(r) => renderReservationCard(r)}
                 onRenderedReservationIds={(ids) => handleFollowUpRenderedReservationIds('flat-list', ids)}
               />
@@ -5591,14 +5553,29 @@ export default function AdminReservations() {
         />
       )}
 
-      {/* ?? ??? ?? */}
+      {/* 고객 정보 수정 + 유사 고객 예약 카드 */}
       {editingCustomer && (
-        <CustomerForm
+        <CustomerEditSimilarReservationsModal
           customer={editingCustomer}
+          allCustomers={(customers as Customer[]) || []}
           channels={channels || []}
+          productMap={productMapForCancelReasonQueue}
+          operatorId={operatorId}
+          locale={locale}
+          onCustomerClick={handleCustomerClick}
+          onReservationsLoaded={(loaded) => {
+            const ids = loaded.map((r) => r.id)
+            if (ids.length > 0) {
+              void refreshReservationPricingForIds(ids)
+              void refreshReservationOptionsPresenceForIds(ids)
+            }
+          }}
+          onSimilarCustomersLoaded={(loaded) => {
+            mergeCustomers?.(loaded)
+          }}
+          renderReservationCard={(r) => renderReservationCard(r)}
           onSubmit={async (customerData) => {
             try {
-              // Supabase???? ??? ??????
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const { error } = await (supabase as any)
                 .from('customers')
@@ -5612,7 +5589,6 @@ export default function AdminReservations() {
                 return
               }
 
-              // ??? ???? ?? ?????
               await refreshCustomers()
               setEditingCustomer(null)
               alert(t('messages.customerUpdated'))
@@ -5636,7 +5612,6 @@ export default function AdminReservations() {
                   return
                 }
 
-                // ??? ???? ?? ?????
                 await refreshCustomers()
                 setEditingCustomer(null)
                 alert(t('messages.customerDeleted'))
@@ -5801,8 +5776,6 @@ export default function AdminReservations() {
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
             locale={locale}
-            emailDropdownOpen={emailDropdownOpen}
-            sendingEmail={sendingEmail}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}
             onPickupTimeClick={handlePickupTimeClick}
@@ -5813,12 +5786,13 @@ export default function AdminReservations() {
             onReviewClick={handleReviewClick}
             onEmailPreview={handleOpenEmailPreview}
             onEmailLogsClick={handleEmailLogsClick}
-            onEmailDropdownToggle={handleEmailDropdownToggle}
             onEditClick={(id) => {
               handleEditClick(id)
               setCancelReasonQueueOpen(false)
             }}
             onCustomerClick={handleCustomerClick}
+            similarCustomerProductMap={productMapForCancelReasonQueue}
+            operatorId={operatorId}
             onRefreshReservations={refreshReservations}
             onStatusChange={handleStatusChange}
             generatePriceCalculation={generatePriceCalculation}
@@ -5827,13 +5801,17 @@ export default function AdminReservations() {
             choicesCacheRef={choicesCacheRef}
             residentCustomerBatchMap={residentCustomerBatchMap}
             linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-            cardLayout="simple"
             onOpenTourDetailModal={handleOpenTourDetailModal}
             reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
             onReservationOptionsMutated={handleReservationOptionsMutated}
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            followUpPipelineSnapshot={
+            followUpSnapshotsByReservationId.has(reservation.id)
+              ? followUpSnapshotsByReservationId.get(reservation.id)!
+              : null
+          }
+          followUpPipelineSnapshotLoaded={followUpSnapshotsByReservationId.has(reservation.id)}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
             onCommunicationChannelChange={handleCommunicationChannelChange}
@@ -5876,8 +5854,6 @@ export default function AdminReservations() {
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
             locale={locale}
-            emailDropdownOpen={emailDropdownOpen}
-            sendingEmail={sendingEmail}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}
             onPickupTimeClick={handlePickupTimeClick}
@@ -5888,12 +5864,13 @@ export default function AdminReservations() {
             onReviewClick={handleReviewClick}
             onEmailPreview={handleOpenEmailPreview}
             onEmailLogsClick={handleEmailLogsClick}
-            onEmailDropdownToggle={handleEmailDropdownToggle}
             onEditClick={(id) => {
               handleEditClick(id)
               setFollowUpQueueModalOpen(false)
             }}
             onCustomerClick={handleCustomerClick}
+            similarCustomerProductMap={productMapForCancelReasonQueue}
+            operatorId={operatorId}
             onRefreshReservations={refreshReservations}
             onStatusChange={handleStatusChange}
             generatePriceCalculation={generatePriceCalculation}
@@ -5902,13 +5879,17 @@ export default function AdminReservations() {
             choicesCacheRef={choicesCacheRef}
             residentCustomerBatchMap={residentCustomerBatchMap}
             linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-            cardLayout="simple"
             onOpenTourDetailModal={handleOpenTourDetailModal}
             reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
             onReservationOptionsMutated={handleReservationOptionsMutated}
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            followUpPipelineSnapshot={
+            followUpSnapshotsByReservationId.has(reservation.id)
+              ? followUpSnapshotsByReservationId.get(reservation.id)!
+              : null
+          }
+          followUpPipelineSnapshotLoaded={followUpSnapshotsByReservationId.has(reservation.id)}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
             onCommunicationChannelChange={handleCommunicationChannelChange}
@@ -6010,8 +5991,17 @@ export default function AdminReservations() {
         <EmailLogsModal
           isOpen={showEmailLogs}
           onClose={() => {
+            const reservationId = selectedReservationForEmailLogs
             setShowEmailLogs(false)
             setSelectedReservationForEmailLogs(null)
+            if (reservationId) {
+              void refreshFollowUpReservationIds([reservationId])
+            }
+          }}
+          onDeliveryStatusSynced={() => {
+            if (selectedReservationForEmailLogs) {
+              void refreshFollowUpReservationIds([selectedReservationForEmailLogs])
+            }
           }}
           reservationId={selectedReservationForEmailLogs}
         />
@@ -6157,8 +6147,6 @@ export default function AdminReservations() {
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
             locale={locale}
-            emailDropdownOpen={emailDropdownOpen}
-            sendingEmail={sendingEmail}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}
             onPickupTimeClick={handlePickupTimeClick}
@@ -6169,9 +6157,10 @@ export default function AdminReservations() {
             onReviewClick={handleReviewClick}
             onEmailPreview={handleOpenEmailPreview}
             onEmailLogsClick={handleEmailLogsClick}
-            onEmailDropdownToggle={handleEmailDropdownToggle}
             onEditClick={handleEditClick}
             onCustomerClick={handleCustomerClick}
+            similarCustomerProductMap={productMapForCancelReasonQueue}
+            operatorId={operatorId}
             onRefreshReservations={refreshReservations}
             onStatusChange={handleStatusChange}
             generatePriceCalculation={generatePriceCalculation}
@@ -6180,13 +6169,17 @@ export default function AdminReservations() {
             choicesCacheRef={choicesCacheRef}
             residentCustomerBatchMap={residentCustomerBatchMap}
             linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-            cardLayout="simple"
             onOpenTourDetailModal={handleOpenTourDetailModal}
             reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
             onReservationOptionsMutated={handleReservationOptionsMutated}
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            followUpPipelineSnapshot={
+            followUpSnapshotsByReservationId.has(reservation.id)
+              ? followUpSnapshotsByReservationId.get(reservation.id)!
+              : null
+          }
+          followUpPipelineSnapshotLoaded={followUpSnapshotsByReservationId.has(reservation.id)}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
             onCommunicationChannelChange={handleCommunicationChannelChange}

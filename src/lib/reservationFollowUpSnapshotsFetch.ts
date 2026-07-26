@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabase'
+import {
+  normalizeEmailLogTypeForPipeline,
+  resolveEmailLogDeliveryState,
+  type FollowUpEmailDeliveryByType,
+} from '@/lib/emailLogDeliveryState'
 import { emailLogStatusSuccess } from '@/lib/reservationFollowUpPipeline'
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -8,7 +13,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 const CHUNK = 100
-const WAVE = 2
+const WAVE = 3
 
 export type FollowUpManualFlags = {
   confirmation_manual: boolean
@@ -26,6 +31,7 @@ export type FollowUpSnapshotFetchResult = {
   pickupSent: Set<string>
   guestDone: Set<string>
   manualByReservationId: Map<string, FollowUpManualFlags>
+  emailDeliveryByReservationId: Map<string, FollowUpEmailDeliveryByType>
 }
 
 async function fetchFollowUpChunk(part: string[]): Promise<FollowUpSnapshotFetchResult> {
@@ -35,9 +41,15 @@ async function fetchFollowUpChunk(part: string[]): Promise<FollowUpSnapshotFetch
   const pickupSent = new Set<string>()
   const guestDone = new Set<string>()
   const manualByReservationId = new Map<string, FollowUpManualFlags>()
+  const emailDeliveryByReservationId = new Map<string, FollowUpEmailDeliveryByType>()
+  const seenDeliveryKey = new Set<string>()
 
   const [logsResult, manualResult, tokensResult] = await Promise.all([
-    supabase.from('email_logs').select('reservation_id,email_type,status').in('reservation_id', part),
+    supabase
+      .from('email_logs')
+      .select('reservation_id,email_type,status,delivered_at,bounced_at,opened_at,sent_at')
+      .in('reservation_id', part)
+      .order('sent_at', { ascending: false }),
     supabase
       .from('reservation_follow_up_pipeline_manual')
       .select(
@@ -53,12 +65,36 @@ async function fetchFollowUpChunk(part: string[]): Promise<FollowUpSnapshotFetch
 
   for (const row of logsResult.data || []) {
     const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
-    if (!rid || !emailLogStatusSuccess((row as { status?: string }).status)) continue
-    const t = String((row as { email_type?: string }).email_type ?? '')
-    if (t === 'confirmation') confirmationSent.add(rid)
-    if (t === 'resident_inquiry') residentInquirySent.add(rid)
-    if (t === 'departure') departureSent.add(rid)
-    if (t === 'pickup') pickupSent.add(rid)
+    if (!rid) continue
+    const rawType = String((row as { email_type?: string }).email_type ?? '')
+    const normalizedType = normalizeEmailLogTypeForPipeline(rawType)
+    const status = (row as { status?: string }).status
+
+    if (normalizedType) {
+      const deliveryKey = `${rid}:${normalizedType}`
+      if (!seenDeliveryKey.has(deliveryKey)) {
+        seenDeliveryKey.add(deliveryKey)
+        const deliveryState = resolveEmailLogDeliveryState(row as {
+          status?: string | null
+          delivered_at?: string | null
+          bounced_at?: string | null
+          opened_at?: string | null
+        })
+        if (deliveryState !== 'none') {
+          const cur = emailDeliveryByReservationId.get(rid) ?? {}
+          cur[normalizedType] = deliveryState
+          emailDeliveryByReservationId.set(rid, cur)
+        }
+      }
+    }
+
+    if (!emailLogStatusSuccess(status)) continue
+    if (rawType === 'confirmation' || rawType === 'receipt' || rawType === 'both') {
+      confirmationSent.add(rid)
+    }
+    if (rawType === 'resident_inquiry') residentInquirySent.add(rid)
+    if (rawType === 'departure' || rawType === 'voucher') departureSent.add(rid)
+    if (rawType === 'pickup') pickupSent.add(rid)
   }
 
   for (const row of manualResult.data || []) {
@@ -108,6 +144,7 @@ async function fetchFollowUpChunk(part: string[]): Promise<FollowUpSnapshotFetch
     pickupSent,
     guestDone,
     manualByReservationId,
+    emailDeliveryByReservationId,
   }
 }
 
@@ -118,6 +155,7 @@ function mergeFetchResults(target: FollowUpSnapshotFetchResult, part: FollowUpSn
   for (const id of part.pickupSent) target.pickupSent.add(id)
   for (const id of part.guestDone) target.guestDone.add(id)
   part.manualByReservationId.forEach((v, k) => target.manualByReservationId.set(k, v))
+  part.emailDeliveryByReservationId.forEach((v, k) => target.emailDeliveryByReservationId.set(k, v))
 }
 
 /** 예약 id별 Follow-up 파이프라인 원시 데이터 — 청크당 email·manual·token 병렬 조회 */
@@ -133,6 +171,7 @@ export async function fetchFollowUpSnapshotDataForReservationIds(
     pickupSent: new Set(),
     guestDone: new Set(),
     manualByReservationId: new Map(),
+    emailDeliveryByReservationId: new Map(),
   }
   if (unique.length === 0) return merged
 

@@ -1255,8 +1255,6 @@ export default function ReservationActionRequiredModal({
                       tourInfoMap={tourInfoMap}
                       reservationPricingMap={reservationPricingMap}
                       locale={locale}
-                      emailDropdownOpen={emailDropdownOpen}
-                      sendingEmail={sendingEmail}
                       onPricingInfoClick={onPricingInfoClick}
                       onCreateTour={onCreateTour}
                       onPickupTimeClick={onPickupTimeClick}
@@ -1266,7 +1264,6 @@ export default function ReservationActionRequiredModal({
                       onReviewClick={onReviewClick}
                       onEmailPreview={onEmailPreview}
                       onEmailLogsClick={onEmailLogsClick}
-                      onEmailDropdownToggle={onEmailDropdownToggle}
                       onEditClick={onEditClick}
                       onCustomerClick={onCustomerClick}
                       onRefreshReservations={onRefreshReservations}

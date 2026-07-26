@@ -19,6 +19,45 @@ function isRpcMissing(err: { code?: string; message?: string } | null): boolean 
   )
 }
 
+function isRpcWrongSignature(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  const msg = (err.message ?? '').toLowerCase()
+  return (
+    msg.includes('p_operator_id') ||
+    (msg.includes('function') && msg.includes('not found') && msg.includes('uuid'))
+  )
+}
+
+async function callOperationalQueueRpc(
+  supabase: SupabaseClient,
+  customerUuid: string | null,
+  operatorId: string
+) {
+  const withOperator = await supabase.rpc('admin_operational_queue_candidate_ids', {
+    p_customer_id: customerUuid,
+    p_operator_id: operatorId,
+  })
+  if (!withOperator.error || !isRpcWrongSignature(withOperator.error)) {
+    return withOperator
+  }
+  return supabase.rpc('admin_operational_queue_candidate_ids', {
+    p_customer_id: customerUuid,
+  })
+}
+
+/** 타임아웃·서버 오류 시 flat 목록 조회로 폴백 */
+function isRpcUnavailable(err: { code?: string; message?: string; status?: number } | null): boolean {
+  if (!err) return false
+  if (isRpcMissing(err)) return true
+  const code = String(err.code ?? '')
+  const msg = (err.message ?? '').toLowerCase()
+  if (code === '57014' || code === '53300') return true
+  if (msg.includes('timeout') || msg.includes('statement timeout')) return true
+  if (msg.includes('internal server error')) return true
+  if (err.status === 500) return true
+  return false
+}
+
 function parseRpcIdRows(data: unknown): string[] {
   if (!Array.isArray(data)) return []
   const out: string[] = []
@@ -40,20 +79,20 @@ function parseRpcIdRows(data: unknown): string[] {
   return [...new Set(out)]
 }
 
-/** RPC로 운영 큐 후보 예약 id (마이그레이션 미적용 시 null) */
+/** RPC로 운영 큐 후보 예약 id (마이그레이션 미적용·타임아웃 시 null) */
 export async function fetchOperationalQueueCandidateIds(
   supabase: SupabaseClient,
-  customerIdFromUrl: string | null
+  customerIdFromUrl: string | null,
+  operatorId?: string | null
 ): Promise<{ ids: string[] | null; error: Error | null; usedRpc: boolean }> {
   const customerUuid =
     customerIdFromUrl && UUID_RE.test(customerIdFromUrl.trim()) ? customerIdFromUrl.trim() : null
+  const opId = resolveOperatorId(operatorId)
 
-  const { data, error } = await supabase.rpc('admin_operational_queue_candidate_ids', {
-    p_customer_id: customerUuid,
-  })
+  const { data, error } = await callOperationalQueueRpc(supabase, customerUuid, opId)
 
   if (error) {
-    if (isRpcMissing(error)) {
+    if (isRpcUnavailable(error)) {
       return { ids: null, error: null, usedRpc: false }
     }
     return { ids: null, error: error as Error, usedRpc: true }
