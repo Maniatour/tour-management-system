@@ -12,6 +12,14 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
+import {
+  computeImportReservationStatus,
+  didCrossDepartureThreshold,
+  reservationCountsTowardDepartureThreshold,
+  shouldShowDepartureEmailBatchModal,
+  sumReservationPeople,
+  type DepartureBatchModalReason,
+} from '@/lib/tourDepartureThreshold'
 
 /** 입금 자동 기록: Wix Website (payment_methods.id) */
 const PAYMENT_METHOD_WIX_WEBSITE = 'PAYM030'
@@ -176,6 +184,21 @@ export async function POST(
   const child = body.child ?? 0
   const infant = body.infant ?? 0
   const totalPeople = body.total_people ?? body.adults + child + infant
+  const tourDateYmd = String(body.tour_date).slice(0, 10)
+
+  const { data: existingDayReservations } = await client
+    .from('reservations')
+    .select('id, total_people, status')
+    .eq('product_id', body.product_id)
+    .eq('tour_date', tourDateYmd)
+
+  const existingTotalPeople = sumReservationPeople(existingDayReservations || [])
+  const reservationStatus = computeImportReservationStatus(existingTotalPeople, totalPeople)
+  const totalPeopleAfter = existingTotalPeople + totalPeople
+  const crossedDepartureThreshold = didCrossDepartureThreshold(
+    existingTotalPeople,
+    totalPeopleAfter
+  )
 
   const reservationData = {
     id: reservationId,
@@ -194,7 +217,7 @@ export async function POST(
     channel_rn: body.channel_rn ?? null,
     added_by: body.added_by,
     tour_id: null,
-    status: body.status ?? 'confirmed',
+    status: reservationStatus,
     selected_options: null,
     selected_option_prices: null,
     is_private_tour: false,
@@ -296,7 +319,7 @@ export async function POST(
       returnedAmount: 0,
       partnerReceivedAmount: 0,
       commissionAmount: Number(pricingInfo.commission_amount) || 0,
-      reservationStatus: body.status ?? 'confirmed',
+      reservationStatus,
       isOTAChannel,
     }
 
@@ -422,8 +445,8 @@ export async function POST(
     )
   }
 
-  const tourDateYmd = String(body.tour_date).slice(0, 10)
-  const [{ data: dayTours }, { data: dayReservations }] = await Promise.all([
+  const [{ data: dayTours }, { data: dayReservations }, { data: dayReservationsForDeparture }] =
+    await Promise.all([
     client
       .from('tours')
       .select('id, tour_date, max_participants, tour_status, reservation_ids, product_id')
@@ -435,6 +458,11 @@ export async function POST(
       .eq('product_id', body.product_id)
       .eq('tour_date', tourDateYmd)
       .in('status', ['confirmed', 'recruiting']),
+    client
+      .from('reservations')
+      .select('id, total_people, status')
+      .eq('product_id', body.product_id)
+      .eq('tour_date', tourDateYmd),
   ])
 
   const capacityAfter = computeDayTourCapacityTotals(
@@ -451,12 +479,45 @@ export async function POST(
     spotsLeftBefore
   )
 
+  const activeDayReservations = (dayReservationsForDeparture || []).filter((row) =>
+    reservationCountsTowardDepartureThreshold(row.status)
+  )
+  const pendingReservationCount = activeDayReservations.filter(
+    (row) => String(row.status ?? '').trim().toLowerCase() === 'pending'
+  ).length
+  const showDepartureBatch = shouldShowDepartureEmailBatchModal({
+    totalPeopleAfter,
+    crossedThreshold: crossedDepartureThreshold,
+    pendingReservationCount,
+  })
+  let departureBatchReason: DepartureBatchModalReason | null = null
+  if (showDepartureBatch) {
+    departureBatchReason = crossedDepartureThreshold
+      ? 'threshold_crossed'
+      : 'pending_on_confirmed_day'
+  }
+
   return NextResponse.json({
     reservation_id: reservationId,
     status: 'confirmed',
+    reservation_status: reservationStatus,
+    total_people_before: existingTotalPeople,
+    total_people_after: totalPeopleAfter,
+    departure_threshold_crossed: crossedDepartureThreshold,
     open_price_inventory: openPriceInventory,
     product_id: body.product_id,
     tour_date: tourDateYmd,
     spots_left_after: spotsLeftAfter,
+    departure_batch: showDepartureBatch
+      ? {
+          show: true,
+          reason: departureBatchReason,
+          product_id: body.product_id,
+          tour_date: tourDateYmd,
+          total_people: totalPeopleAfter,
+          pending_count: pendingReservationCount,
+          reservation_ids: activeDayReservations.map((row) => row.id),
+        }
+      : null,
   })
 }

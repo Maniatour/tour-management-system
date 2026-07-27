@@ -189,6 +189,157 @@ async function fetchReservationStatusAuditLogsChunked(
   return { rows, error: null }
 }
 
+const TIME_RANGE_PAGE_SIZE = 1000
+
+async function fetchReservationStatusEventsByTimeRange(
+  supabase: SupabaseClient<Database>,
+  args: {
+    rangeStartIso: string
+    rangeEndIso: string
+    shouldAbort?: () => boolean
+  }
+): Promise<{ rows: ReservationStatusEventDbRow[]; error: unknown | null }> {
+  const rows: ReservationStatusEventDbRow[] = []
+  let offset = 0
+
+  for (;;) {
+    if (args.shouldAbort?.()) return { rows, error: null }
+    const { data, error } = await supabase
+      .from('reservation_status_events')
+      .select('reservation_id, from_status, to_status, occurred_at')
+      .gte('occurred_at', args.rangeStartIso)
+      .lte('occurred_at', args.rangeEndIso)
+      .order('occurred_at', { ascending: true })
+      .range(offset, offset + TIME_RANGE_PAGE_SIZE - 1)
+
+    if (error) return { rows, error }
+    const batch = (data || []) as ReservationStatusEventDbRow[]
+    rows.push(...batch)
+    if (batch.length < TIME_RANGE_PAGE_SIZE) break
+    offset += TIME_RANGE_PAGE_SIZE
+  }
+
+  return { rows, error: null }
+}
+
+async function fetchReservationStatusAuditLogsByTimeRange(
+  supabase: SupabaseClient<Database>,
+  args: {
+    rangeStartIso: string
+    rangeEndIso: string
+    shouldAbort?: () => boolean
+  }
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
+  const rows: ReservationStatusAuditRow[] = []
+  let offset = 0
+
+  for (;;) {
+    if (args.shouldAbort?.()) return { rows, error: null }
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('record_id, created_at, changed_fields, old_values, new_values')
+      .eq('table_name', 'reservations')
+      .eq('action', 'UPDATE')
+      .gte('created_at', args.rangeStartIso)
+      .lte('created_at', args.rangeEndIso)
+      .order('created_at', { ascending: true })
+      .range(offset, offset + TIME_RANGE_PAGE_SIZE - 1)
+
+    if (error) return { rows, error }
+    for (const raw of data || []) {
+      const mapped = auditLogRowToStatusAuditRow(
+        raw as {
+          record_id: string | null
+          created_at: string
+          changed_fields: string[] | null
+          old_values: unknown
+          new_values: unknown
+        }
+      )
+      if (mapped) rows.push(mapped)
+    }
+    if (!data || data.length < TIME_RANGE_PAGE_SIZE) break
+    offset += TIME_RANGE_PAGE_SIZE
+  }
+
+  return { rows, error: null }
+}
+
+/**
+ * 예약 id IN 청크 대신 occurred_at/created_at 구간 스캔 — 통계 감사 대량 id 시 수십~수백 요청 절감.
+ */
+export async function fetchReservationStatusTransitionsByTimeRange(
+  supabase: SupabaseClient<Database>,
+  args: {
+    rangeStartIso: string
+    rangeEndIso: string
+    shouldAbort?: () => boolean
+    /** false면 `reservation_status_events`만(빠른 1차). 기본 true */
+    includeAuditLogs?: boolean
+  }
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
+  const includeAuditLogs = args.includeAuditLogs !== false
+
+  const eventsResult = await fetchReservationStatusEventsByTimeRange(supabase, args)
+  if (eventsResult.error) return { rows: [], error: eventsResult.error }
+
+  const eventAuditRows: ReservationStatusAuditRow[] = []
+  for (const row of eventsResult.rows) {
+    const mapped = reservationStatusEventRowToAuditRow(row)
+    if (reservationAuditRowHasStatusFieldChange(mapped)) eventAuditRows.push(mapped)
+  }
+
+  if (!includeAuditLogs) {
+    return { rows: eventAuditRows, error: null }
+  }
+
+  const auditResult = await fetchReservationStatusAuditLogsByTimeRange(supabase, args)
+  if (auditResult.error) return { rows: [], error: auditResult.error }
+
+  return {
+    rows: mergeStatusTransitionRows(eventAuditRows, auditResult.rows),
+    error: null,
+  }
+}
+
+/** `audit_logs`만 구간 스캔 — events 1차 로드 후 백그라운드 보완용 */
+export async function fetchReservationStatusAuditLogsTransitionsByTimeRange(
+  supabase: SupabaseClient<Database>,
+  args: {
+    rangeStartIso: string
+    rangeEndIso: string
+    shouldAbort?: () => boolean
+  }
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
+  return fetchReservationStatusAuditLogsByTimeRange(supabase, args)
+}
+
+function indexStatusAuditRowsByRecordId(
+  rows: ReservationStatusAuditRow[]
+): Record<string, ReservationStatusAuditRow[]> {
+  const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+  for (const row of rows) {
+    const id = String(row.record_id ?? '').trim()
+    if (!id) continue
+    const arr = byRecord.get(id) ?? []
+    arr.push(row)
+    byRecord.set(id, arr)
+  }
+  const out: Record<string, ReservationStatusAuditRow[]> = {}
+  for (const [id, arr] of byRecord) out[id] = arr
+  return out
+}
+
+/** 기존 record_id 맵에 감사 행 병합(중복 전환 제거) */
+export function mergeIndexedStatusAuditRows(
+  prev: Record<string, ReservationStatusAuditRow[]>,
+  incoming: ReservationStatusAuditRow[]
+): Record<string, ReservationStatusAuditRow[]> {
+  if (incoming.length === 0) return prev
+  const merged = mergeStatusTransitionRows(Object.values(prev).flat(), incoming)
+  return indexStatusAuditRowsByRecordId(merged)
+}
+
 /**
  * 심플 카드·등록/취소 차트용 status 전환 조회.
  * `reservation_status_events` 우선, events에 없는 건 `audit_logs`로 보완(5/15 이후 트리거 누락 대응).

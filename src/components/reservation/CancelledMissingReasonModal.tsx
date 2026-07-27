@@ -105,11 +105,23 @@ export default function CancelledMissingReasonModal({
   }
 
   const handleReasonSaved = (reservationId: string) => {
-    setNeedsFollowUpIds((prev) => prev.filter((id) => id !== reservationId))
-    setAwaitingReasonIds((prev) => prev.filter((id) => id !== reservationId))
-    setReservations((prev) => prev.filter((r) => r.id !== reservationId))
+    const id = String(reservationId)
+    const nextNeedsFollowUp = needsFollowUpIds.filter((rid) => String(rid) !== id)
+    const nextAwaitingReason = awaitingReasonIds.filter((rid) => String(rid) !== id)
+    const removed =
+      nextNeedsFollowUp.length < needsFollowUpIds.length ||
+      nextAwaitingReason.length < awaitingReasonIds.length
+    if (!removed) return
+
+    setNeedsFollowUpIds(nextNeedsFollowUp)
+    setAwaitingReasonIds(nextAwaitingReason)
+    setReservations((prev) => prev.filter((r) => String(r.id) !== id))
+    onDataLoadedRef.current?.({
+      unionCount: nextNeedsFollowUp.length + nextAwaitingReason.length,
+      needsFollowUpCount: nextNeedsFollowUp.length,
+      awaitingReasonCount: nextAwaitingReason.length,
+    })
     onQueueChanged?.()
-    void load()
   }
 
   if (!isOpen) return null

@@ -2,8 +2,9 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, Trash2, ListChecks, LayoutList, ClipboardList } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, Trash2, ListChecks, LayoutList, X, BarChart3 } from 'lucide-react'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import {
   reservationAdminManualDocument,
   reservationAdminManualTitles,
@@ -24,6 +25,8 @@ interface ReservationsHeaderProps {
   onAddReservation: () => void
   onActionRequired?: () => void
   actionRequiredCount?: number
+  /** 주간 통계 모달 (카드 뷰·날짜 그룹 등) */
+  onOpenWeeklyStats?: () => void
   /** 데스크톱 제목줄에 필터 버튼 표시 (클릭 시 호출) */
   onOpenFilter?: () => void
   /** soft-delete(status=deleted) 예약 목록 모달 */
@@ -38,6 +41,48 @@ interface ReservationsHeaderProps {
   onPrefetchOperationalQueue?: () => void
 }
 
+type IconHeaderButtonProps = {
+  label: string
+  onClick: () => void
+  icon: React.ReactNode
+  className?: string
+  count?: number
+  onMouseEnter?: () => void
+  onFocus?: () => void
+}
+
+function IconHeaderButton({
+  label,
+  onClick,
+  icon,
+  className = 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+  count = 0,
+  onMouseEnter,
+  onFocus,
+}: IconHeaderButtonProps) {
+  return (
+    <ScheduleHoverTooltip content={label} placement="below">
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={onMouseEnter}
+        onFocus={onFocus}
+        aria-label={label}
+        className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-medium ${className}`}
+      >
+        {icon}
+        {count > 0 && (
+          <span
+            className="absolute -right-1 -top-1 inline-flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-white px-1 text-[10px] font-semibold tabular-nums text-gray-900 shadow-sm ring-1 ring-black/10"
+          >
+            {count}
+          </span>
+        )}
+      </button>
+    </ScheduleHoverTooltip>
+  )
+}
+
 function ReservationsHeader({
   customerIdFromUrl,
   customers,
@@ -49,6 +94,7 @@ function ReservationsHeader({
   onAddReservation,
   onActionRequired,
   actionRequiredCount = 0,
+  onOpenWeeklyStats,
   onOpenFilter,
   onOpenDeletedReservations,
   onOpenFollowUpQueue,
@@ -65,99 +111,80 @@ function ReservationsHeader({
 
   const renderActionRequired = () =>
     typeof onActionRequired === 'function' ? (
-      <button
-        type="button"
+      <IconHeaderButton
+        label={t('actionRequired.button')}
         onClick={onActionRequired}
         onMouseEnter={handleOperationalQueuePrefetch}
         onFocus={handleOperationalQueuePrefetch}
-        className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+        count={actionRequiredCount}
+        className={
           actionRequiredCount > 0
             ? 'bg-amber-500 text-white hover:bg-amber-600'
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-        }`}
-        title={t('actionRequired.button')}
-      >
-        <AlertCircle size={16} />
-        <span className="hidden sm:inline">{t('actionRequired.button')}</span>
-        {actionRequiredCount > 0 && (
-          <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 py-0.5 text-xs">
-            {actionRequiredCount}
-          </span>
-        )}
-      </button>
+        }
+        icon={<AlertCircle className="h-4 w-4" aria-hidden />}
+      />
+    ) : null
+
+  const renderWeeklyStats = () =>
+    typeof onOpenWeeklyStats === 'function' ? (
+      <IconHeaderButton
+        label={t('stats.weeklyStatsOpenModal')}
+        onClick={onOpenWeeklyStats}
+        className="bg-gray-100 text-gray-700 hover:bg-gray-200"
+        icon={<BarChart3 className="h-4 w-4" aria-hidden />}
+      />
     ) : null
 
   const renderFollowUp = () =>
     typeof onOpenFollowUpQueue === 'function' ? (
-      <button
-        type="button"
+      <IconHeaderButton
+        label={t('followUpPipeline.headerButton')}
         onClick={onOpenFollowUpQueue}
         onMouseEnter={handleOperationalQueuePrefetch}
         onFocus={handleOperationalQueuePrefetch}
-        className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+        count={followUpQueueCount}
+        className={
           followUpQueueCount > 0
             ? 'bg-teal-600 text-white hover:bg-teal-700'
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-        }`}
-        title={t('followUpPipeline.headerButton')}
-      >
-        <ListChecks size={16} />
-        <span className="hidden sm:inline">{t('followUpPipeline.headerButton')}</span>
-        {followUpQueueCount > 0 && (
-          <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 py-0.5 text-xs tabular-nums">
-            {followUpQueueCount}
-          </span>
-        )}
-      </button>
+        }
+        icon={<ListChecks className="h-4 w-4" aria-hidden />}
+      />
     ) : null
 
   const renderCancelReasonQueue = () =>
     typeof onOpenCancelReasonQueue === 'function' ? (
-      <button
-        type="button"
+      <IconHeaderButton
+        label={t('cancelReasonQueue.headerButton')}
         onClick={onOpenCancelReasonQueue}
-        className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+        count={cancelReasonQueueCount}
+        className={
           cancelReasonQueueCount > 0
             ? 'bg-rose-600 text-white hover:bg-rose-700'
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-        }`}
-        title={t('cancelReasonQueue.headerButton')}
-      >
-        <ClipboardList size={16} />
-        <span className="hidden sm:inline">{t('cancelReasonQueue.headerButton')}</span>
-        {cancelReasonQueueCount > 0 && (
-          <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 py-0.5 text-xs tabular-nums">
-            {cancelReasonQueueCount}
-          </span>
-        )}
-      </button>
+        }
+        icon={<X className="h-4 w-4" aria-hidden />}
+      />
     ) : null
 
   const renderDeleted = () =>
     typeof onOpenDeletedReservations === 'function' ? (
-      <button
-        type="button"
+      <IconHeaderButton
+        label={t('openDeletedReservationsModal')}
         onClick={onOpenDeletedReservations}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-700 text-white hover:bg-gray-800 md:h-auto md:w-auto md:gap-1.5 md:px-3 md:py-1.5 text-sm font-medium"
-        title={t('openDeletedReservationsModal')}
-        aria-label={t('openDeletedReservationsModal')}
-      >
-        <Trash2 className="h-[1.125rem] w-[1.125rem] shrink-0 md:h-4 md:w-4" aria-hidden />
-        <span className="hidden md:inline">{t('openDeletedReservationsModal')}</span>
-      </button>
+        className="bg-gray-700 text-white hover:bg-gray-800"
+        icon={<Trash2 className="h-4 w-4" aria-hidden />}
+      />
     ) : null
 
   const renderAdd = () => (
-    <button
-      type="button"
+    <IconHeaderButton
+      label={t('addReservation')}
       onClick={onAddReservation}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 md:h-auto md:w-auto md:gap-1.5 md:px-3 md:py-1.5 text-sm font-medium"
-      title={t('addReservation')}
-      aria-label={t('addReservation')}
-    >
-      <Plus className="h-[1.125rem] w-[1.125rem] shrink-0 md:h-4 md:w-4" aria-hidden />
-      <span className="hidden md:inline">{t('addReservation')}</span>
-    </button>
+      className="bg-primary text-primary-foreground hover:bg-primary/90"
+      icon={<Plus className="h-4 w-4" aria-hidden />}
+    />
   )
 
   return (
@@ -257,17 +284,16 @@ function ReservationsHeader({
             )}
           </div>
           {renderActionRequired()}
+          {renderWeeklyStats()}
           {renderCancelReasonQueue()}
           {renderFollowUp()}
           {typeof onOpenFilter === 'function' && (
-            <button
-              type="button"
+            <IconHeaderButton
+              label={t('filter')}
               onClick={onOpenFilter}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
-            >
-              <SlidersHorizontal size={16} />
-              <span>{t('filter')}</span>
-            </button>
+              className="bg-blue-600 text-white hover:bg-primary/90"
+              icon={<SlidersHorizontal className="h-4 w-4" aria-hidden />}
+            />
           )}
           {renderDeleted()}
           {renderAdd()}
@@ -277,6 +303,7 @@ function ReservationsHeader({
       {/* 모바일 2줄: 예약 처리 필요 · Follow-up 단계 · 삭제된 예약 */}
       <div className="flex flex-wrap items-center gap-2 md:hidden">
         {renderActionRequired()}
+        {renderWeeklyStats()}
         {renderCancelReasonQueue()}
         {renderFollowUp()}
         {renderDeleted()}

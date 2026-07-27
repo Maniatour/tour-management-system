@@ -28,3 +28,15 @@ export const RESERVATION_LIST_SELECT = [
   'choices',
   'customer_communication_channel',
 ].join(',') + ',channels(name)'
+
+/** 통계·등록/취소 차트 전용 — embed·JSON 없이 전송량 최소화 */
+export const RESERVATION_STATS_SELECT = [
+  'id',
+  'adults',
+  'child',
+  'infant',
+  'total_people',
+  'created_at',
+  'updated_at',
+  'status',
+].join(',')

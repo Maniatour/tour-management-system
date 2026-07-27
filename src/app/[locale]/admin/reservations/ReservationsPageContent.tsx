@@ -25,6 +25,12 @@ import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpS
 import { useOperationalQueueBadgeSnapshot } from '@/hooks/useOperationalQueueBadgeSnapshot'
 import { useCancellationReasonByReservationId } from '@/hooks/useCancellationReasonByReservationId'
 import { useImagePrefetch } from '@/hooks/useImagePrefetch'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import ReservationsHeader from '@/components/reservation/ReservationsHeader'
 import ReservationsFilters from '@/components/reservation/ReservationsFilters'
 import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
@@ -92,7 +98,8 @@ import {
   operationalQueueHasReservations,
   pickReservationsForOperationalQueue,
 } from '@/lib/operationalQueueFetch'
-import { computeStatisticsActivityIsoRange } from '@/lib/adminReservationStatsRange'
+import { computeStatisticsCoreActivityIsoRange, computeStatisticsYtdExtensionIsoRange } from '@/lib/adminReservationStatsRange'
+import { RESERVATION_STATS_SELECT } from '@/lib/reservationListSelect'
 import {
   browserLocalInclusiveDateKeys,
   browserLocalTodayYmd,
@@ -112,10 +119,14 @@ import {
   collectReservationActivityDateKeys,
   localYmdSetWhereBecameCancelledFromAuditRows,
   isIntoCancelledLikeTransition,
-  reservationIdsSignature,
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
-import { fetchReservationStatusTransitionsChunked } from '@/lib/reservationStatusEventsFetch'
+import {
+  fetchReservationStatusTransitionsChunked,
+  fetchReservationStatusTransitionsByTimeRange,
+  fetchReservationStatusAuditLogsTransitionsByTimeRange,
+  mergeIndexedStatusAuditRows,
+} from '@/lib/reservationStatusEventsFetch'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
@@ -226,7 +237,6 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   sortBy: 'created_at' as 'created_at' | 'tour_date' | 'customer_name' | 'product_name',
   sortOrder: 'desc' as 'asc' | 'desc',
   groupByDate: true,
-  isWeeklyStatsCollapsed: true,
   /** 일별 등록·취소 차트: 7일 / 월간(한 달) / 연간(1~12월) */
   regCancelGranularity: 'week' as 'week' | 'month' | 'year',
   regCancelMonthOffset: 0,
@@ -241,10 +251,22 @@ function localWeekdayIndexFromYmd(ymd: string): number {
   return new Date(y, m - 1, d, 12, 0, 0, 0).getDay()
 }
 
+type RegCancelChartMetricMode = 'people' | 'bookings'
+
+function regCancelChartIncrementForReservation(
+  r: Reservation,
+  mode: RegCancelChartMetricMode
+): number {
+  return mode === 'people'
+    ? getReservationPartySize(r as unknown as Record<string, unknown>)
+    : 1
+}
+
 /** 로드된 예약 기준: `allowedYears`에 속한 연도의 날만 사용, 요일별 일합 평균 */
 function computeAvgDailyRegisteredByWeekdayForYears(
   reservations: Reservation[],
-  allowedYears: Set<number>
+  allowedYears: Set<number>,
+  mode: RegCancelChartMetricMode = 'people'
 ): number[] {
   const daily = new Map<string, number>()
   for (const r of reservations) {
@@ -252,7 +274,7 @@ function computeAvgDailyRegisteredByWeekdayForYears(
     if (!k || k.length < 10) continue
     const y = parseInt(k.slice(0, 4), 10)
     if (!allowedYears.has(y)) continue
-    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    const p = regCancelChartIncrementForReservation(r, mode)
     daily.set(k, (daily.get(k) ?? 0) + p)
   }
   const buckets: number[][] = Array.from({ length: 7 }, () => [])
@@ -264,17 +286,18 @@ function computeAvgDailyRegisteredByWeekdayForYears(
   return buckets.map((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0))
 }
 
-/** 연도 Y: 각 달 m에 대해 (그 달 1~말일 일별 등록 인원 합, 미등록일 0) / 말일 수 */
+/** 연도 Y: 각 달 m에 대해 (그 달 1~말일 일별 등록 합, 미등록일 0) / 말일 수 */
 function computeAvgDailyRegisteredByMonthForCalendarYear(
   reservations: Reservation[],
-  year: number
+  year: number,
+  mode: RegCancelChartMetricMode = 'people'
 ): number[] {
   const daily = new Map<string, number>()
   for (const r of reservations) {
     const k = isoToLocalCalendarDateKey(r.addedTime)
     if (!k || k.length < 10) continue
     if (parseInt(k.slice(0, 4), 10) !== year) continue
-    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    const p = regCancelChartIncrementForReservation(r, mode)
     daily.set(k, (daily.get(k) ?? 0) + p)
   }
   const out: number[] = new Array(13).fill(0)
@@ -333,76 +356,48 @@ function computeSimpleCardStatusAuditPlan(
 }
 
 /**
- * 로컬 `year`년 1/1 ~ (같은 해이면 `throughYmd`까지, 과거 해이면 12/31까지) 각 달력일의
- * 순 등록 인원(등록 − 취소, 차트와 동일한 취소 규칙)을 요일별로 합산한 뒤,
- * 그 기간에 실제 존재한 해당 요일 수로 나눈 일평균(7요소).
- * `throughYmd`는 보통 **어제**(오늘 미완료일 제외).
+ * 올해 1/1 ~ `throughYmd`까지 요일별 **등록** 일평균(7요소).
+ * 평균선은 등록만 사용하므로 0 미만이 되지 않는다.
  */
-function computeYtdNetPeopleAvgByWeekdayForLocalYear(
+function computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
   reservations: Reservation[],
   year: number,
   throughYmd: string,
-  useAuditCancel: boolean,
-  auditByRecordId: Record<string, ReservationStatusAuditRow[]>,
-  cancellationReasonById: ReadonlyMap<string, string>
+  mode: RegCancelChartMetricMode = 'people'
 ): number[] {
   const throughYear = parseInt(throughYmd.slice(0, 4), 10)
-  if (!Number.isFinite(year)) return Array.from({ length: 7 }, () => 0)
-  if (year > throughYear) {
+  if (!Number.isFinite(year) || year > throughYear) {
     return Array.from({ length: 7 }, () => 0)
   }
   const startYmd = `${year}-01-01`
-  let endYmd: string
-  if (year < throughYear) {
-    endYmd = `${year}-12-31`
-  } else {
-    endYmd = throughYmd
-  }
+  const endYmd = year < throughYear ? `${year}-12-31` : throughYmd
   if (startYmd > endYmd) return Array.from({ length: 7 }, () => 0)
 
-  const isCancelledLike = (status: string | undefined) =>
-    isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
-
-  const regByYmd = new Map<string, number>()
+  const daily = new Map<string, number>()
   for (const r of reservations) {
-    const ck = isoToLocalCalendarDateKey(r.addedTime)
-    if (!ck || ck < startYmd || ck > endYmd) continue
-    if (parseInt(ck.slice(0, 4), 10) !== year) continue
-    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
-    regByYmd.set(ck, (regByYmd.get(ck) ?? 0) + p)
+    const k = isoToLocalCalendarDateKey(r.addedTime)
+    if (!k || k.length < 10 || k < startYmd || k > endYmd) continue
+    if (parseInt(k.slice(0, 4), 10) !== year) continue
+    const p = regCancelChartIncrementForReservation(r, mode)
+    daily.set(k, (daily.get(k) ?? 0) + p)
   }
-
-  const cancelByYmd = new Map<string, number>()
-  for (const r of reservations) {
-    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
-    const id = String(r.id ?? '').trim()
-    if (isRebookingReservationByReasonMap(id, cancellationReasonById)) continue
-    if (useAuditCancel && id) {
-      const ymds = localYmdSetWhereBecameCancelledFromAuditRows(auditByRecordId[id])
-      for (const ymd of ymds) {
-        if (ymd < startYmd || ymd > endYmd) continue
-        if (parseInt(ymd.slice(0, 4), 10) !== year) continue
-        cancelByYmd.set(ymd, (cancelByYmd.get(ymd) ?? 0) + p)
-      }
-    } else {
-      const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
-      if (!uk || uk < startYmd || uk > endYmd) continue
-      if (parseInt(uk.slice(0, 4), 10) !== year) continue
-      if (!isCancelledLike(r.status)) continue
-      cancelByYmd.set(uk, (cancelByYmd.get(uk) ?? 0) + p)
-    }
+  const buckets: number[][] = Array.from({ length: 7 }, () => [])
+  for (const [ymd, total] of daily) {
+    buckets[localWeekdayIndexFromYmd(ymd)].push(total)
   }
+  return buckets.map((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0))
+}
 
-  const sums = Array.from({ length: 7 }, () => 0)
-  const counts = Array.from({ length: 7 }, () => 0)
-  for (const ymd of browserLocalInclusiveDateKeys(startYmd, endYmd)) {
-    const net = (regByYmd.get(ymd) ?? 0) - (cancelByYmd.get(ymd) ?? 0)
-    const wd = localWeekdayIndexFromYmd(ymd)
-    sums[wd] += net
-    counts[wd] += 1
-  }
-
-  return sums.map((s, i) => (counts[i] > 0 ? s / counts[i] : 0))
+function reservationTouchesActivityIsoRange(
+  r: Reservation,
+  rangeStartIso: string,
+  rangeEndIso: string
+): boolean {
+  const created = String(r.addedTime ?? '').trim()
+  if (created && created >= rangeStartIso && created <= rangeEndIso) return true
+  const updated = String(r.updated_at ?? '').trim()
+  if (updated && updated >= rangeStartIso && updated <= rangeEndIso) return true
+  return false
 }
 
 /** 심플 카드 상태변경 소그룹: 대기중→취소(영·미 철자)만 기본 펼침 대상 */
@@ -708,9 +703,25 @@ export default function AdminReservations() {
   /** 주간 카드 점진 로드: 필터 바꾸면 이전 백그라운드 병합 무시 */
   const adminCardWeekFetchGenRef = useRef(0)
   /** 통계 패널 전용 예약(확장 활동 구간) — 카드 주간 7일 목록과 분리 로드 */
+  const [weeklyStatsModalOpen, setWeeklyStatsModalOpen] = useState(false)
   const [statisticsReservations, setStatisticsReservations] = useState<Reservation[]>([])
-  const [, setStatisticsReservationsLoading] = useState(false)
+  const [statisticsReservationsLoading, setStatisticsReservationsLoading] = useState(false)
+  /** YTD 평균선 2차 로드(7일 탭) — 차트·요약 표시는 코어 완료 후 가능 */
+  const [statisticsYtdExtensionLoading, setStatisticsYtdExtensionLoading] = useState(false)
   const statisticsFetchGenRef = useRef(0)
+  /** 차트·평균선: 통계·감사 확정 전 중간 집계(예: YTD 평균 -135) 깜빡임 방지 */
+  const regCancelChartStableRowsRef = useRef<
+    Array<{
+      dateKey: string
+      registeredPeople: number
+      registeredCount: number
+      cancelledPeople: number
+      cancelledCount: number
+      avgLineRegistered: number
+      avgLineRegisteredCount: number
+    }>
+  >([])
+  const regCancelChartStableScopeRef = useRef<string | null>(null)
 
   const refreshReservationPricingForIdsRef = useRef(refreshReservationPricingForIds)
   const refreshReservationOptionsPresenceForIdsRef = useRef(refreshReservationOptionsPresenceForIds)
@@ -757,7 +768,6 @@ export default function AdminReservations() {
     sortBy,
     sortOrder,
     groupByDate,
-    isWeeklyStatsCollapsed,
     regCancelGranularity: regCancelGranularityStored,
     regCancelMonthOffset: regCancelMonthOffsetStored,
     regCancelYearOffset: regCancelYearOffsetStored,
@@ -870,16 +880,6 @@ export default function AdminReservations() {
       })),
     [setReservationListUi]
   )
-  const setIsWeeklyStatsCollapsed = useCallback(
-    (v: React.SetStateAction<boolean>) =>
-      setReservationListUi((u) => ({
-        ...u,
-        isWeeklyStatsCollapsed: typeof v === 'function'
-          ? (v as (b: boolean) => boolean)(u.isWeeklyStatsCollapsed)
-          : v,
-      })),
-    [setReservationListUi]
-  )
   const setRegCancelGranularity = useCallback(
     (g: 'week' | 'month' | 'year') => setReservationListUi((u) => ({ ...u, regCancelGranularity: g })),
     [setReservationListUi]
@@ -938,6 +938,7 @@ export default function AdminReservations() {
 
   const {
     badgeSnapshot: operationalBadgeSnapshot,
+    badgeLoading: operationalBadgeLoading,
     clearBadgeSnapshot: clearOperationalBadgeSnapshot,
   } = useOperationalQueueBadgeSnapshot({
     enabled: true,
@@ -1013,6 +1014,9 @@ export default function AdminReservations() {
   const [regCancelChartAuditLoadedSignature, setRegCancelChartAuditLoadedSignature] = useState<
     string | null
   >(null)
+  /** 등록·취소 차트 감사 조회 스코프(구간·필터) — id 시그니처와 분리해 점진 로드 중 깜빡임 방지 */
+  const regCancelChartAuditInFlightSignatureRef = useRef<string | null>(null)
+  const lastRegCancelChartAuditFetchedSignatureRef = useRef<string | null>(null)
   /**
    * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
    * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·그 외=접힘).
@@ -1116,6 +1120,8 @@ export default function AdminReservations() {
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
   const [paymentRecordsByReservationIdForActionBadge, setPaymentRecordsByReservationIdForActionBadge] =
     useState<Map<string, PaymentRecordLike[]>>(() => new Map())
+  /** 운영 큐 배지용 payment_records 조회가 끝난 id 집합 시그니처 */
+  const [operationalPaymentsReadyKey, setOperationalPaymentsReadyKey] = useState<string | null>(null)
 
   // ??????? ??????
   const [emailDropdownOpen, setEmailDropdownOpen] = useState<string | null>(null)
@@ -1585,19 +1591,25 @@ export default function AdminReservations() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationsForTourInfo, toursMapForTourInfo, reservationsAggregateReady])
 
-  // ??? ?? ??? ????? ???????? ??? ID ???
-  useEffect(() => {
+  const operationalPaymentScopeKey = useMemo(() => {
     const idSet = new Set<string>()
-    for (const r of reservations) idSet.add(r.id)
     if (operationalMetricsSnapshot) {
       for (const r of operationalMetricsSnapshot.reservations) idSet.add(r.id)
     }
-    const ids = [...idSet]
-    if (!ids.length) {
+    return [...idSet].sort().join(',')
+  }, [operationalMetricsSnapshot])
+
+  // 운영 큐 배지(처리 필요) — payment_records는 스냅샷 id만 대상으로 조회
+  useEffect(() => {
+    if (!operationalPaymentScopeKey) {
       setReservationIdsWithPayments(new Set())
       setPaymentRecordsByReservationIdForActionBadge(new Map())
+      setOperationalPaymentsReadyKey('')
       return
     }
+    let cancelled = false
+    setOperationalPaymentsReadyKey(null)
+    const ids = operationalPaymentScopeKey.split(',').filter(Boolean)
     const load = async () => {
       const set = new Set<string>()
       const byRes = new Map<string, PaymentRecordLike[]>()
@@ -1608,6 +1620,7 @@ export default function AdminReservations() {
           .from('payment_records')
           .select('reservation_id, payment_status, amount')
           .in('reservation_id', chunk)
+        if (cancelled) return
         if (data) {
           data.forEach((row) => {
             const rid = (row as { reservation_id: string }).reservation_id
@@ -1622,11 +1635,16 @@ export default function AdminReservations() {
           })
         }
       }
+      if (cancelled) return
       setReservationIdsWithPayments(set)
       setPaymentRecordsByReservationIdForActionBadge(byRes)
+      setOperationalPaymentsReadyKey(operationalPaymentScopeKey)
     }
-    load()
-  }, [reservations, operationalMetricsSnapshot])
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [operationalPaymentScopeKey])
 
   /**
    * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
@@ -1656,9 +1674,10 @@ export default function AdminReservations() {
     return m
   }, [hookToursMap, operationalMetricsSnapshot])
 
-  const reservationsForOperationalMetrics = pickReservationsForOperationalQueue(
-    operationalMetricsSnapshot,
-    reservations
+  /** 헤더 배지 — 운영 큐 스냅샷만 사용(주간 목록 폴백 없음 → 숫자 깜빡임 방지) */
+  const reservationsForHeaderBadges = useMemo(
+    () => operationalMetricsSnapshot?.reservations ?? [],
+    [operationalMetricsSnapshot]
   )
 
   /** 운영 큐·배지 스냅샷 pricing + 훅 맵 최신 갱신 병합 */
@@ -1668,13 +1687,12 @@ export default function AdminReservations() {
     return m
   }, [reservationPricingMap, operationalMetricsSnapshot])
 
-  // ??? ?? ??? ?? (??? ?????
   const actionRequiredCount = useMemo(() => {
     const isDeleted = (r: Reservation) => {
       const s = (r.status as string)?.trim?.() ?? ''
       return s.toLowerCase() === 'deleted'
     }
-    const arReservations = reservationsForOperationalMetrics.filter((r) => !isDeleted(r))
+    const arReservations = reservationsForHeaderBadges.filter((r) => !isDeleted(r))
     const todayStr = new Date().toISOString().split('T')[0]
     const d = new Date()
     d.setDate(d.getDate() + 7)
@@ -1765,7 +1783,7 @@ export default function AdminReservations() {
     balanceList.forEach(r => allIds.add(r.id))
     return allIds.size
   }, [
-    reservationsForOperationalMetrics,
+    reservationsForHeaderBadges,
     pricingForOperationalMetrics,
     reservationIdsWithPayments,
     paymentRecordsByReservationIdForActionBadge,
@@ -1791,8 +1809,21 @@ export default function AdminReservations() {
   const cancelledReservationIdsForReasons = useMemo(() => {
     const byId = new Map<string, Reservation>()
     for (const r of filteredReservations) byId.set(r.id, r)
-    if (groupByDate && viewMode !== 'list') {
-      for (const r of statisticsReservations) byId.set(r.id, r)
+    if (operationalMetricsSnapshot) {
+      for (const r of operationalMetricsSnapshot.reservations) byId.set(r.id, r)
+    }
+    if (groupByDate && viewMode !== 'list' && weeklyStatsModalOpen) {
+      const coreRange = computeStatisticsCoreActivityIsoRange({
+        statisticsWeekOffset,
+        regCancelGranularity,
+        regCancelMonthOffset,
+        regCancelYearOffset,
+      })
+      for (const r of statisticsReservations) {
+        if (reservationTouchesActivityIsoRange(r, coreRange.rangeStartIso, coreRange.rangeEndIso)) {
+          byId.set(r.id, r)
+        }
+      }
     }
     return [...byId.values()]
       .filter(
@@ -1800,22 +1831,136 @@ export default function AdminReservations() {
       )
       .map((r) => String(r.id ?? '').trim())
       .filter(Boolean)
-  }, [filteredReservations, statisticsReservations, groupByDate, viewMode])
+  }, [
+    filteredReservations,
+    operationalMetricsSnapshot,
+    statisticsReservations,
+    groupByDate,
+    viewMode,
+    weeklyStatsModalOpen,
+    statisticsWeekOffset,
+    regCancelGranularity,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+  ])
 
-  const { reasonById: cancellationReasonByReservationId } = useCancellationReasonByReservationId(
-    cancelledReservationIdsForReasons
-  )
+  const { reasonById: cancellationReasonByReservationId, loading: cancellationReasonsLoading } =
+    useCancellationReasonByReservationId(cancelledReservationIdsForReasons)
 
-  const regCancelChartAuditIdsSignature = useMemo(
-    () => reservationIdsSignature(reservationsForStatistics.map((r) => r.id)),
-    [reservationsForStatistics]
-  )
-  const regCancelChartAuditReady =
+  /** 차트·감사 조회용 활동 ISO 구간 — 연초 YTD 제외(코어 구간만, 감사 스캔 최소화) */
+  const regCancelChartAuditIsoRange = useMemo(() => {
+    if (!groupByDate) return null
+    return computeStatisticsCoreActivityIsoRange({
+      statisticsWeekOffset,
+      regCancelGranularity,
+      regCancelMonthOffset,
+      regCancelYearOffset,
+    })
+  }, [
+    groupByDate,
+    statisticsWeekOffset,
+    regCancelGranularity,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+  ])
+
+  /** 통계·차트 감사 조회 스코프 — 예약 id 청크와 무관, 스코프가 바뀔 때만 캐시 초기화 */
+  const regCancelChartAuditScopeKey = useMemo(() => {
+    if (!groupByDate || !weeklyStatsModalOpen || viewMode === 'list' || viewMode === 'calendar') {
+      return null
+    }
+    const range = regCancelChartAuditIsoRange
+    if (!range) return null
+    return [
+      range.rangeStartIso,
+      range.rangeEndIso,
+      selectedStatus,
+      selectedChannel,
+      `${dateRange.start}\u0001${dateRange.end}`,
+      debouncedSearchTerm,
+      operatorId ?? '',
+    ].join('\u001f')
+  }, [
+    groupByDate,
+    weeklyStatsModalOpen,
+    viewMode,
+    regCancelChartAuditIsoRange,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
+    debouncedSearchTerm,
+    operatorId,
+  ])
+
+  const regCancelChartAuditScopeSignature = regCancelChartAuditScopeKey ?? ''
+  const regCancelChartAuditPendingRefetch =
+    groupByDate &&
     regCancelChartAuditLoaded &&
-    regCancelChartAuditLoadedSignature === regCancelChartAuditIdsSignature
+    regCancelChartAuditLoadedSignature !== regCancelChartAuditScopeSignature &&
+    !statisticsReservationsLoading
+  const regCancelChartAuditReady =
+    groupByDate &&
+    regCancelChartAuditLoaded &&
+    (regCancelChartAuditLoadedSignature === regCancelChartAuditScopeSignature ||
+      regCancelChartAuditPendingRefetch)
+
   const simpleCardStatusAuditRowsForRequest = regCancelChartAuditReady
     ? regCancelChartAuditRowsByRecordId
     : undefined
+
+  const regCancelChartDisplayScopeKey = useMemo(() => {
+    if (!groupByDate || viewMode === 'list') return null
+    return [
+      statisticsWeekOffset,
+      regCancelGranularity,
+      regCancelMonthOffset,
+      regCancelYearOffset,
+      selectedStatus,
+      selectedChannel,
+      `${dateRange.start}\u0001${dateRange.end}`,
+      debouncedSearchTerm,
+    ].join('\u001f')
+  }, [
+    groupByDate,
+    viewMode,
+    statisticsWeekOffset,
+    regCancelGranularity,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
+    debouncedSearchTerm,
+  ])
+
+  /** 코어 예약 1차 청크 이후 차트 표시(감사·YTD는 백그라운드 정밀화) */
+  const regCancelChartDataReady = useMemo(() => {
+    if (!groupByDate || viewMode === 'list') return true
+    if (!weeklyStatsModalOpen) return true
+    if (!statisticsReservationsLoading) return true
+    return statisticsReservations.length > 0
+  }, [
+    groupByDate,
+    viewMode,
+    weeklyStatsModalOpen,
+    statisticsReservationsLoading,
+    statisticsReservations.length,
+  ])
+
+  const regCancelChartLoading =
+    groupByDate &&
+    viewMode !== 'list' &&
+    weeklyStatsModalOpen &&
+    !regCancelChartDataReady
+
+  const regCancelChartYtdRefining =
+    groupByDate &&
+    viewMode !== 'list' &&
+    weeklyStatsModalOpen &&
+    regCancelGranularity === 'week' &&
+    statisticsYtdExtensionLoading
 
   /** Follow-up 큐 모달·배지: 운영 큐/배지 스냅샷이 있으면 그 범위, 없으면 필터된 목록 */
   const reservationsForFollowUpPipeline = useMemo(
@@ -1915,8 +2060,8 @@ export default function AdminReservations() {
     followUpPipelineManualRefresh,
     {
       priorityReservationIds: followUpPriorityReservationIds,
-      /** 화면에 보이는 카드만 먼저 로드 — 나머지는 스크롤 시 priority로 조회 */
-      loadDeferred: false,
+      /** 운영 큐 배지 정확도: 스냅샷 로드 후 나머지 id도 idle 배치 조회 */
+      loadDeferred: Boolean(operationalMetricsSnapshot?.reservations.length),
     }
   )
 
@@ -2064,9 +2209,10 @@ export default function AdminReservations() {
 
   const followUpQueueUnionCount = useMemo(() => {
     let n = 0
-    for (const r of reservationsForFollowUpPipeline) {
+    for (const r of reservationsForHeaderBadges) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
+      if (!snap) continue
       const cancelReason = cancellationReasonByReservationId.get(String(r.id)) ?? null
       if (
         reservationNeedsCancelFollowUpQueueAttention(
@@ -2082,7 +2228,21 @@ export default function AdminReservations() {
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
-  }, [reservationsForFollowUpPipeline, followUpSnapshotsByReservationId, cancellationReasonByReservationId])
+  }, [
+    reservationsForHeaderBadges,
+    followUpSnapshotsByReservationId,
+    cancellationReasonByReservationId,
+  ])
+
+  /** 운영 큐 배지 스냅샷·결제·Follow-up 스냅샷이 모두 준비된 뒤에만 헤더 숫자 표시 */
+  const operationalBadgeFetchSettled = operationalListReadyForBadge && !operationalBadgeLoading
+  const operationalHeaderCountsReady =
+    operationalBadgeFetchSettled &&
+    operationalPaymentsReadyKey === operationalPaymentScopeKey &&
+    !followUpSnapshotsLoading &&
+    !cancellationReasonsLoading
+  const headerActionRequiredCount = operationalHeaderCountsReady ? actionRequiredCount : 0
+  const headerFollowUpQueueCount = operationalHeaderCountsReady ? followUpQueueUnionCount : 0
   
   // 최근 7일: 브라우저 로컬 달력 기준 오늘을 말일로 한 7일 — 등록일 그룹 키·조회 구간과 동일.
   const formatWeekRange = useCallback(
@@ -2415,68 +2575,126 @@ export default function AdminReservations() {
     mergeReservationListSideDataPrefetch,
   ])
 
+  const mapStatisticsRawRows = useCallback((rows: Record<string, unknown>[]) => {
+    return mapDbReservationRowsToReservations(rows, new Map(), new Map())
+  }, [])
+
+  const mergeStatisticsReservations = useCallback((incoming: Reservation[]) => {
+    if (incoming.length === 0) return
+    setStatisticsReservations((prev) => {
+      const byId = new Map(prev.map((r) => [r.id, r]))
+      for (const r of incoming) byId.set(r.id, r)
+      return [...byId.values()]
+    })
+  }, [])
+
   const loadStatisticsReservations = useCallback(async () => {
-    if (!groupByDate || viewMode === 'list' || viewMode === 'calendar') {
-      setStatisticsReservations([])
+    if (!weeklyStatsModalOpen || !groupByDate || viewMode === 'list' || viewMode === 'calendar') {
       setStatisticsReservationsLoading(false)
+      setStatisticsYtdExtensionLoading(false)
       return
     }
 
     statisticsFetchGenRef.current += 1
     const fetchGen = statisticsFetchGenRef.current
+    setStatisticsReservations([])
     setStatisticsReservationsLoading(true)
 
-    try {
-      const { rangeStartIso, rangeEndIso } = isWeeklyStatsCollapsed
-        ? browserLocalWeekRangeFromOffset(statisticsWeekOffset)
-        : computeStatisticsActivityIsoRange({
-            statisticsWeekOffset,
-            regCancelMonthOffset,
-            regCancelYearOffset,
-          })
+    const statsBaseArgs = {
+      mode: 'card-week' as const,
+      page: 1,
+      pageSize: 20,
+      selectedStatus,
+      selectedChannel,
+      dateRange,
+      customerIdFromUrl,
+      debouncedSearchTerm,
+      sortBy,
+      sortOrder,
+      operatorId,
+      selectFieldsOverride: RESERVATION_STATS_SELECT,
+      includeExactCount: false,
+    }
 
-      const statsArgs = {
-        mode: 'card-week' as const,
-        page: 1,
-        pageSize: 20,
-        selectedStatus,
-        selectedChannel,
-        dateRange,
-        customerIdFromUrl,
-        debouncedSearchTerm,
-        sortBy,
-        sortOrder,
-        operatorId,
-        activityRangeStartIso: rangeStartIso,
-        activityRangeEndIso: rangeEndIso,
-      }
-
-      let merged: Reservation[] = []
-
-      const applyStatsChunk = async (rows: Record<string, unknown>[]) => {
-        if (fetchGen !== statisticsFetchGenRef.current) return false
-        if (rows.length === 0) return true
-        const hydrated = await hydrateAdminListRawRows(rows)
-        if (fetchGen !== statisticsFetchGenRef.current) return false
-        const byId = new Map(merged.map((r) => [r.id, r]))
-        for (const r of hydrated.reservations) byId.set(r.id, r)
-        merged = [...byId.values()]
-        setStatisticsReservations(merged)
-        return true
-      }
-
-      const { error } = await fetchAdminReservationListCardWeekProgressive(supabase, statsArgs, {
-        onFirstChunk: async ({ rows }) => {
-          if (fetchGen !== statisticsFetchGenRef.current) return false
-          merged = []
-          return applyStatsChunk(rows)
+    const runProgressiveFetch = async (
+      rangeStartIso: string,
+      rangeEndIso: string,
+      onChunk: (reservations: Reservation[]) => void
+    ) => {
+      const { error } = await fetchAdminReservationListCardWeekProgressive(
+        supabase,
+        {
+          ...statsBaseArgs,
+          activityRangeStartIso: rangeStartIso,
+          activityRangeEndIso: rangeEndIso,
         },
-        onAdditionalChunk: async ({ rows }) => applyStatsChunk(rows),
+        {
+          onFirstChunk: async ({ rows }) => {
+            if (fetchGen !== statisticsFetchGenRef.current) return false
+            onChunk(mapStatisticsRawRows(rows))
+            return true
+          },
+          onAdditionalChunk: async ({ rows }) => {
+            if (fetchGen !== statisticsFetchGenRef.current) return false
+            onChunk(mapStatisticsRawRows(rows))
+            return true
+          },
+        }
+      )
+      if (error) throw error
+    }
+
+    const needYtdExtension = regCancelGranularity === 'week'
+    if (needYtdExtension) {
+      setStatisticsYtdExtensionLoading(true)
+    } else {
+      setStatisticsYtdExtensionLoading(false)
+    }
+
+    try {
+      const coreRange = computeStatisticsCoreActivityIsoRange({
+        statisticsWeekOffset,
+        regCancelGranularity,
+        regCancelMonthOffset,
+        regCancelYearOffset,
       })
 
-      if (error) throw error
+      const coreFetch = runProgressiveFetch(
+        coreRange.rangeStartIso,
+        coreRange.rangeEndIso,
+        mergeStatisticsReservations
+      )
+
+      const ytdFetch = needYtdExtension
+        ? (() => {
+            const ytdRange = computeStatisticsYtdExtensionIsoRange()
+            return runProgressiveFetch(
+              ytdRange.rangeStartIso,
+              ytdRange.rangeEndIso,
+              mergeStatisticsReservations
+            )
+          })()
+        : null
+
+      await coreFetch
       if (fetchGen !== statisticsFetchGenRef.current) return
-      if (merged.length === 0) setStatisticsReservations([])
+      setStatisticsReservationsLoading(false)
+
+      if (ytdFetch) {
+        void ytdFetch
+          .catch((e) => {
+            if (!isAbortLikeError(e) && process.env.NODE_ENV === 'development') {
+              console.warn('[admin reservations] statistics YTD extension failed:', e)
+            }
+          })
+          .finally(() => {
+            if (fetchGen === statisticsFetchGenRef.current) {
+              setStatisticsYtdExtensionLoading(false)
+            }
+          })
+      } else {
+        setStatisticsYtdExtensionLoading(false)
+      }
     } catch (e) {
       if (isAbortLikeError(e)) return
       const msg =
@@ -2487,16 +2705,16 @@ export default function AdminReservations() {
       }
       if (fetchGen === statisticsFetchGenRef.current) {
         setStatisticsReservations([])
-      }
-    } finally {
-      if (fetchGen === statisticsFetchGenRef.current) {
         setStatisticsReservationsLoading(false)
+        setStatisticsYtdExtensionLoading(false)
       }
     }
   }, [
+    weeklyStatsModalOpen,
     groupByDate,
     viewMode,
     statisticsWeekOffset,
+    regCancelGranularity,
     regCancelMonthOffset,
     regCancelYearOffset,
     selectedStatus,
@@ -2507,8 +2725,8 @@ export default function AdminReservations() {
     sortBy,
     sortOrder,
     operatorId,
-    hydrateAdminListRawRows,
-    isWeeklyStatsCollapsed,
+    mapStatisticsRawRows,
+    mergeStatisticsReservations,
   ])
 
   const loadOperationalQueueSnapshot = useCallback(async () => {
@@ -2640,13 +2858,17 @@ export default function AdminReservations() {
     clearOperationalBadgeSnapshot()
     operationalQueueFetchGenRef.current += 1
     operationalQueueInFlightRef.current = false
-    await Promise.all([loadAdminReservationList(), loadStatisticsReservations()])
+    await Promise.all([
+      loadAdminReservationList(),
+      weeklyStatsModalOpen ? loadStatisticsReservations() : Promise.resolve(),
+    ])
     if (showActionRequiredModalRef.current || followUpQueueModalOpenRef.current) {
       ensureOperationalQueueSnapshot()
     }
   }, [
     loadAdminReservationList,
     loadStatisticsReservations,
+    weeklyStatsModalOpen,
     ensureOperationalQueueSnapshot,
     clearOperationalBadgeSnapshot,
   ])
@@ -2679,9 +2901,9 @@ export default function AdminReservations() {
   }, [loadAdminReservationList, currentPage, reservationListUiHydrated])
 
   useEffect(() => {
-    if (!reservationListUiHydrated) return
+    if (!reservationListUiHydrated || !weeklyStatsModalOpen) return
     void loadStatisticsReservations()
-  }, [loadStatisticsReservations, reservationListUiHydrated])
+  }, [loadStatisticsReservations, reservationListUiHydrated, weeklyStatsModalOpen])
 
   // ??????????? (created_at ???) - ?? ????????????
   const groupedReservations = useMemo(() => {
@@ -2727,15 +2949,13 @@ export default function AdminReservations() {
     return sortedGroups
   }, [filteredReservations, groupByDate, cardsWeekPage, regCancelChartAuditReady, regCancelChartAuditRowsByRecordId])
 
-  /** 목록 조회와 동일하게 주·월·연 차트 구간을 합친 ISO 범위 — 감사(취소 전환) 조회에 사용 */
-  const regCancelChartAuditIsoRange = useMemo(() => {
-    if (!groupByDate) return null
-    return computeStatisticsActivityIsoRange({
-      statisticsWeekOffset,
-      regCancelMonthOffset,
-      regCancelYearOffset,
-    })
-  }, [groupByDate, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
+  useEffect(() => {
+    regCancelChartAuditInFlightSignatureRef.current = null
+    lastRegCancelChartAuditFetchedSignatureRef.current = null
+    setRegCancelChartAuditRowsByRecordId({})
+    setRegCancelChartAuditLoaded(false)
+    setRegCancelChartAuditLoadedSignature(null)
+  }, [regCancelChartAuditScopeKey])
 
   /** 심플 카드 주(카드 주간)가 등록·취소 차트 감사 ISO 구간에 포함되면 차트 조회 결과를 재사용할 수 있다 */
   const chartAuditRangeCoversSimpleCardWeek = useMemo(() => {
@@ -2757,78 +2977,95 @@ export default function AdminReservations() {
   ])
 
   useEffect(() => {
-    if (!groupByDate) {
-      setRegCancelChartAuditRowsByRecordId({})
-      setRegCancelChartAuditLoaded(false)
-      setRegCancelChartAuditLoadedSignature(null)
-      return
-    }
-    if (isWeeklyStatsCollapsed) {
-      setRegCancelChartAuditRowsByRecordId({})
-      setRegCancelChartAuditLoaded(false)
-      setRegCancelChartAuditLoadedSignature(null)
+    if (!groupByDate || !weeklyStatsModalOpen) {
       return
     }
     const range = regCancelChartAuditIsoRange
     if (!range) return
-    const uniqueIds = [...new Set(reservationsForStatistics.map((r) => r.id).filter(Boolean))]
-    const idsSignature = regCancelChartAuditIdsSignature
-    setRegCancelChartAuditLoaded(false)
-    if (uniqueIds.length === 0) {
-      setRegCancelChartAuditRowsByRecordId({})
-      setRegCancelChartAuditLoaded(true)
-      setRegCancelChartAuditLoadedSignature(idsSignature)
+    const scopeSignature = regCancelChartAuditScopeKey
+    if (!scopeSignature) return
+    if (lastRegCancelChartAuditFetchedSignatureRef.current === scopeSignature) {
+      regCancelChartAuditInFlightSignatureRef.current = null
+      return
+    }
+    if (regCancelChartAuditInFlightSignatureRef.current === scopeSignature) {
       return
     }
 
     let cancelled = false
-    /** 목록·필터가 연속 갱신될 때 감사 청크 요청이 폭주하지 않도록 디바운스 (Query Performance 상위 원인 완화) */
-    const debounceMs = 450
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const { rows, error } = await fetchReservationStatusTransitionsChunked(supabase, {
-            reservationIds: uniqueIds,
-            rangeStartIso: range.rangeStartIso,
-            rangeEndIso: range.rangeEndIso,
-            shouldAbort: () => cancelled,
-          })
-          if (cancelled) return
-          const byRecord = new Map<string, ReservationStatusAuditRow[]>()
-          for (const row of rows) {
-            const id = String(row.record_id ?? '').trim()
-            if (!id) continue
-            const arr = byRecord.get(id) ?? []
-            arr.push(row)
-            byRecord.set(id, arr)
-          }
-          if (error) {
-            if (!isAbortLikeError(error) && !cancelled) {
-              console.error('reservation_status_events (reg-cancel chart):', error)
-            }
-            if (isAbortLikeError(error)) return
-          }
-          const next: Record<string, ReservationStatusAuditRow[]> = {}
-          for (const [id, arr] of byRecord) next[id] = arr
-          setRegCancelChartAuditRowsByRecordId(next)
-        } catch (e) {
-          if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events chart fetch failed:', e)
+    regCancelChartAuditInFlightSignatureRef.current = scopeSignature
+    void (async () => {
+      const indexRows = (rows: ReservationStatusAuditRow[]) => {
+        const next: Record<string, ReservationStatusAuditRow[]> = {}
+        for (const row of rows) {
+          const id = String(row.record_id ?? '').trim()
+          if (!id) continue
+          const arr = next[id] ?? []
+          arr.push(row)
+          next[id] = arr
         }
+        return next
+      }
+
+      try {
+        const { rows, error } = await fetchReservationStatusTransitionsByTimeRange(supabase, {
+          rangeStartIso: range.rangeStartIso,
+          rangeEndIso: range.rangeEndIso,
+          shouldAbort: () => cancelled,
+          includeAuditLogs: false,
+        })
         if (cancelled) return
+        if (error) {
+          if (!isAbortLikeError(error) && !cancelled) {
+            console.error('reservation_status_events (reg-cancel chart):', error)
+          }
+          if (isAbortLikeError(error)) return
+        }
+        setRegCancelChartAuditRowsByRecordId(indexRows(rows))
         setRegCancelChartAuditLoaded(true)
-        setRegCancelChartAuditLoadedSignature(idsSignature)
-      })()
-    }, debounceMs)
+        setRegCancelChartAuditLoadedSignature(scopeSignature)
+        lastRegCancelChartAuditFetchedSignatureRef.current = scopeSignature
+
+        const auditSupplement = await fetchReservationStatusAuditLogsTransitionsByTimeRange(supabase, {
+          rangeStartIso: range.rangeStartIso,
+          rangeEndIso: range.rangeEndIso,
+          shouldAbort: () => cancelled,
+        })
+        if (cancelled) return
+        if (!auditSupplement.error && auditSupplement.rows.length > 0) {
+          setRegCancelChartAuditRowsByRecordId((prev) =>
+            mergeIndexedStatusAuditRows(prev, auditSupplement.rows)
+          )
+        } else if (auditSupplement.error && !isAbortLikeError(auditSupplement.error) && !cancelled) {
+          console.error('audit_logs (reg-cancel chart supplement):', auditSupplement.error)
+        }
+      } catch (e) {
+        if (!cancelled && !isAbortLikeError(e)) {
+          console.error('reservation_status_events chart fetch failed:', e)
+        }
+      } finally {
+        if (!cancelled) {
+          regCancelChartAuditInFlightSignatureRef.current = null
+        }
+      }
+    })()
 
     return () => {
       cancelled = true
-      window.clearTimeout(timer)
+      if (regCancelChartAuditInFlightSignatureRef.current === scopeSignature) {
+        regCancelChartAuditInFlightSignatureRef.current = null
+      }
     }
-  }, [groupByDate, isWeeklyStatsCollapsed, regCancelChartAuditIsoRange, reservationsForStatistics, regCancelChartAuditIdsSignature])
+  }, [
+    groupByDate,
+    weeklyStatsModalOpen,
+    regCancelChartAuditIsoRange,
+    regCancelChartAuditScopeKey,
+  ])
 
-  /** 일별·월별·연별 등록/취소 차트 행 — WeeklyStatsPanel */
-  const regCancelChartRows = useMemo(() => {
-    if (isWeeklyStatsCollapsed) return []
+  /** 일별·월별·연별 등록/취소 차트 행 — WeeklyStatsPanel (live 집계) */
+  const regCancelChartRowsLive = useMemo(() => {
+    if (!weeklyStatsModalOpen) return []
     type Row = {
       dateKey: string
       registeredPeople: number
@@ -2837,22 +3074,11 @@ export default function AdminReservations() {
       cancelledCount: number
       /** 7일 탭: 올해 로컬 YTD 순(등록−취소) 요일별 일평균 인원. 월간: 해당 연 등록만 요일 평균. */
       avgLineRegistered: number
+      /** 예약건 기준 평균선(7일 YTD 순·요일 / 월간·연간 등록 건수) */
+      avgLineRegisteredCount: number
     }
     const isCancelledLike = (status: string | undefined) =>
       isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
-
-    const useAuditCancel = groupByDate && regCancelChartAuditReady
-    const cancelYmdByResId = new Map<string, Set<string>>()
-    if (useAuditCancel) {
-      for (const r of reservationsForStatistics) {
-        const id = String(r.id ?? '').trim()
-        if (!id) continue
-        cancelYmdByResId.set(
-          id,
-          localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
-        )
-      }
-    }
 
     const aggregateIntoKeys = (keys: string[], keyFromCreated: (ck: string) => string | null, keyFromUpdated: (uk: string) => string | null) => {
       const rowByKey = new Map<string, Row>()
@@ -2865,11 +3091,12 @@ export default function AdminReservations() {
           cancelledPeople: 0,
           cancelledCount: 0,
           avgLineRegistered: 0,
+          avgLineRegisteredCount: 0,
         }
         rows.push(row)
         rowByKey.set(k, row)
       }
-      for (const r of reservationsForStatistics) {
+      for (const r of statisticsReservations) {
         const p = getReservationPartySize(r as unknown as Record<string, unknown>)
         const id = String(r.id ?? '').trim()
         const isRebookingCancel = isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)
@@ -2885,9 +3112,10 @@ export default function AdminReservations() {
           }
         }
         if (isRebookingCancel) continue
-        if (useAuditCancel && id) {
-          const ymds = cancelYmdByResId.get(id)
-          if (ymds && ymds.size > 0) {
+        if (groupByDate && id) {
+          const auditRows = regCancelChartAuditRowsByRecordId[id]
+          if (auditRows && auditRows.length > 0) {
+            const ymds = localYmdSetWhereBecameCancelledFromAuditRows(auditRows)
             for (const ymd of ymds) {
               const bk = keyFromUpdated(ymd)
               if (bk) {
@@ -2898,8 +3126,20 @@ export default function AdminReservations() {
                 }
               }
             }
+          } else {
+            const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+            if (updatedKey && isCancelledLike(r.status)) {
+              const bk = keyFromUpdated(updatedKey)
+              if (bk) {
+                const row = rowByKey.get(bk)
+                if (row) {
+                  row.cancelledCount += 1
+                  row.cancelledPeople += p
+                }
+              }
+            }
           }
-        } else {
+        } else if (!groupByDate) {
           const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
           if (updatedKey && isCancelledLike(r.status)) {
             const bk = keyFromUpdated(updatedKey)
@@ -2935,58 +3175,98 @@ export default function AdminReservations() {
     }
 
     let wdAvg: number[] = Array.from({ length: 7 }, () => 0)
+    let wdAvgCount: number[] = Array.from({ length: 7 }, () => 0)
     let monthDailyAvgSameYear: number[] | null = null
+    let monthDailyAvgSameYearCount: number[] | null = null
 
     if (regCancelGranularity === 'week') {
       const todayYmd = browserLocalTodayYmd()
       const yesterdayYmd = browserLocalYesterdayYmd()
       const chartYear = parseInt(todayYmd.slice(0, 4), 10)
-      wdAvg = computeYtdNetPeopleAvgByWeekdayForLocalYear(
-        reservationsForStatistics,
-        chartYear,
-        yesterdayYmd,
-        useAuditCancel,
-        regCancelChartAuditRowsByRecordId,
-        cancellationReasonByReservationId
-      )
+      if (!statisticsYtdExtensionLoading) {
+        wdAvg = computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
+          statisticsReservations,
+          chartYear,
+          yesterdayYmd,
+          'people'
+        )
+        wdAvgCount = computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
+          statisticsReservations,
+          chartYear,
+          yesterdayYmd,
+          'bookings'
+        )
+      }
     } else if (regCancelGranularity === 'month') {
       const { startYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
       const y = parseInt(startYmd.slice(0, 4), 10)
-      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(reservationsForStatistics, new Set([y]))
+      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(statisticsReservations, new Set([y]), 'people')
+      wdAvgCount = computeAvgDailyRegisteredByWeekdayForYears(statisticsReservations, new Set([y]), 'bookings')
     } else {
       const chartYear = parseInt(
         browserLocalCalendarYearWindow(regCancelYearOffset).startYmd.slice(0, 4),
         10
       )
       monthDailyAvgSameYear = computeAvgDailyRegisteredByMonthForCalendarYear(
-        reservationsForStatistics,
-        chartYear
+        statisticsReservations,
+        chartYear,
+        'people'
+      )
+      monthDailyAvgSameYearCount = computeAvgDailyRegisteredByMonthForCalendarYear(
+        statisticsReservations,
+        chartYear,
+        'bookings'
       )
     }
 
     return base.map((row) => {
       let avgLine = 0
+      let avgLineCount = 0
       if (regCancelGranularity === 'week' || regCancelGranularity === 'month') {
         if (/^\d{4}-\d{2}-\d{2}$/.test(row.dateKey)) {
           avgLine = wdAvg[localWeekdayIndexFromYmd(row.dateKey)] ?? 0
+          avgLineCount = wdAvgCount[localWeekdayIndexFromYmd(row.dateKey)] ?? 0
         }
       } else if (monthDailyAvgSameYear && /^\d{4}-\d{2}$/.test(row.dateKey)) {
         const mi = parseInt(row.dateKey.slice(5, 7), 10)
         avgLine = monthDailyAvgSameYear[mi] ?? 0
+        avgLineCount = monthDailyAvgSameYearCount?.[mi] ?? 0
       }
-      return { ...row, avgLineRegistered: avgLine }
+      return { ...row, avgLineRegistered: avgLine, avgLineRegisteredCount: avgLineCount }
     })
   }, [
-    isWeeklyStatsCollapsed,
-    reservationsForStatistics,
+    weeklyStatsModalOpen,
+    statisticsReservations,
     regCancelGranularity,
     statisticsWeekOffset,
     regCancelMonthOffset,
     regCancelYearOffset,
     groupByDate,
-    regCancelChartAuditReady,
+    statisticsYtdExtensionLoading,
     regCancelChartAuditRowsByRecordId,
     cancellationReasonByReservationId,
+  ])
+
+  const regCancelChartRows = useMemo(() => {
+    const scope = regCancelChartDisplayScopeKey
+    if (scope !== regCancelChartStableScopeRef.current) {
+      regCancelChartStableScopeRef.current = scope
+      regCancelChartStableRowsRef.current = []
+    }
+    if (!regCancelChartDataReady) {
+      if (statisticsReservations.length > 0) {
+        regCancelChartStableRowsRef.current = regCancelChartRowsLive
+        return regCancelChartRowsLive
+      }
+      return regCancelChartStableRowsRef.current
+    }
+    regCancelChartStableRowsRef.current = regCancelChartRowsLive
+    return regCancelChartRowsLive
+  }, [
+    regCancelChartRowsLive,
+    regCancelChartDataReady,
+    regCancelChartDisplayScopeKey,
+    statisticsReservations.length,
   ])
 
   const regCancelChartRangeSubtitle = useMemo(() => {
@@ -3331,13 +3611,13 @@ export default function AdminReservations() {
 
   /** 통계 주(차트·상단 요약과 동일 구간): 상품·채널·상태별 등록/취소/순 인원 */
   const weeklyStats = useMemo(() => {
-    if (isWeeklyStatsCollapsed) {
+    if (!weeklyStatsModalOpen) {
       return {
         productStats: [],
         channelStats: [],
         statusStats: [],
-        totalReservations: statisticsWeekReservations.length,
-        totalPeople: statisticsWeekReservations.reduce((total, r) => total + r.totalPeople, 0),
+        totalReservations: 0,
+        totalPeople: 0,
       }
     }
     const allReservations = statisticsWeekReservations
@@ -3482,7 +3762,7 @@ export default function AdminReservations() {
       ...(statusTransitionByTarget !== undefined ? { statusTransitionByTarget } : {}),
     }
   }, [
-    isWeeklyStatsCollapsed,
+    weeklyStatsModalOpen,
     statisticsWeekReservations,
     statisticsWeekBoundary,
     reservationsForStatistics,
@@ -4920,14 +5200,17 @@ export default function AdminReservations() {
         onSearchSubmit={handleSearchSubmit}
         onAddReservation={handleHeaderAddReservation}
         onActionRequired={handleOpenActionRequired}
-        actionRequiredCount={actionRequiredCount}
+        actionRequiredCount={headerActionRequiredCount}
         onOpenFilter={handleOpenFilter}
         onOpenDeletedReservations={handleOpenDeletedReservations}
         onOpenFollowUpQueue={handleOpenFollowUpQueue}
-        followUpQueueCount={followUpQueueUnionCount}
+        followUpQueueCount={headerFollowUpQueueCount}
         onOpenCancelReasonQueue={() => setCancelReasonQueueOpen(true)}
         cancelReasonQueueCount={cancelReasonQueueStats.union}
         onPrefetchOperationalQueue={prefetchOperationalQueueSnapshot}
+        {...(viewMode !== 'list' && (groupByDate || debouncedSearchTerm.trim().length > 0)
+          ? { onOpenWeeklyStats: () => setWeeklyStatsModalOpen(true) }
+          : {})}
       />
 
       {/* ???????: ????(???) + ??? ??(??? ??????? ???) */}
@@ -4990,28 +5273,35 @@ export default function AdminReservations() {
         listViewActive={viewMode === 'list'}
       />
 
-      {/* 검색 시 groupByDate 가 꺼져도 주간 통계는 유지(검색 결과·필터 기준) */}
-      {viewMode !== 'list' && (groupByDate || debouncedSearchTerm.trim().length > 0) && (
-        <WeeklyStatsPanel
-          currentWeek={statisticsWeekOffset}
-          onWeekChange={setStatisticsWeekOffset}
-          onInitialLoadChange={setIsInitialLoad}
-          isInitialLoad={isInitialLoad}
-          weeklyStats={weeklyStats}
-          weeklyRegCancelByDay={regCancelChartRows}
-          regCancelGranularity={regCancelGranularity}
-          onRegCancelGranularityChange={setRegCancelGranularity}
-          regCancelMonthOffset={regCancelMonthOffset}
-          onRegCancelMonthOffsetChange={setRegCancelMonthOffset}
-          regCancelYearOffset={regCancelYearOffset}
-          onRegCancelYearOffsetChange={setRegCancelYearOffset}
-          chartRangeSubtitle={regCancelChartRangeSubtitle}
-          isWeeklyStatsCollapsed={isWeeklyStatsCollapsed}
-          onToggleStatsCollapsed={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
-          weekHeaderSummary={statisticsWeekHeaderSummary}
-          formatWeekRange={formatWeekRange}
-        />
-      )}
+      <Dialog open={weeklyStatsModalOpen} onOpenChange={setWeeklyStatsModalOpen}>
+        <DialogContent className="max-h-[92vh] w-[min(100vw-1.5rem,72rem)] max-w-none gap-0 overflow-y-auto p-3 sm:p-4">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{t('stats.weeklyStatsModalTitle')}</DialogTitle>
+          </DialogHeader>
+          {weeklyStatsModalOpen && viewMode !== 'list' && (groupByDate || debouncedSearchTerm.trim().length > 0) ? (
+            <WeeklyStatsPanel
+              embeddedInModal
+              currentWeek={statisticsWeekOffset}
+              onWeekChange={setStatisticsWeekOffset}
+              onInitialLoadChange={setIsInitialLoad}
+              isInitialLoad={isInitialLoad}
+              weeklyStats={weeklyStats}
+              weeklyRegCancelByDay={regCancelChartRows}
+              regCancelGranularity={regCancelGranularity}
+              onRegCancelGranularityChange={setRegCancelGranularity}
+              regCancelMonthOffset={regCancelMonthOffset}
+              onRegCancelMonthOffsetChange={setRegCancelMonthOffset}
+              regCancelYearOffset={regCancelYearOffset}
+              onRegCancelYearOffsetChange={setRegCancelYearOffset}
+              chartRangeSubtitle={regCancelChartRangeSubtitle}
+              weekHeaderSummary={statisticsWeekHeaderSummary}
+              formatWeekRange={formatWeekRange}
+              weeklyRegCancelChartLoading={!!regCancelChartLoading}
+              weeklyRegCancelChartYtdRefining={!!regCancelChartYtdRefining}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {groupByDate && viewMode !== 'list' && !showMainBodyLoading && (
         <div className="mb-4 flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
@@ -5753,7 +6043,10 @@ export default function AdminReservations() {
           })
         }}
         onQueueChanged={() => {
-          void refreshCancelReasonQueueStats()
+          // 저장 직후 서버 재조회는 낙관적 제거를 되돌릴 수 있어 지연 동기화만 수행
+          window.setTimeout(() => {
+            void refreshCancelReasonQueueStats()
+          }, 2500)
         }}
         onCustomersLoaded={(rows) => {
           mergeCustomers?.(rows)

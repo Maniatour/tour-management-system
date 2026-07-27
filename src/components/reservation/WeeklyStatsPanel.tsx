@@ -48,6 +48,8 @@ export type WeeklyRegCancelDayRow = {
    * 월간: 표시 연도 기준 등록 인원만의 요일별 일평균. 연간: 월별 일평균 등록(별 필드).
    */
   avgLineRegistered?: number
+  /** 예약건 기준 평균선 */
+  avgLineRegisteredCount?: number
 }
 
 interface WeeklyStatsPanelProps {
@@ -103,10 +105,14 @@ interface WeeklyStatsPanelProps {
   onRegCancelYearOffsetChange?: (v: React.SetStateAction<number>) => void
   /** 차트에 적용 중인 날짜 구간(로컬) */
   chartRangeSubtitle?: string
-  isWeeklyStatsCollapsed: boolean
-  onToggleStatsCollapsed: () => void
+  /** 모달 안에 임베드될 때 외곽 카드 스타일 완화 */
+  embeddedInModal?: boolean
   weekHeaderSummary: StatisticsWeekHeaderSummary
   formatWeekRange: (weekOffset: number) => { display: string }
+  /** 통계·감사 집계 확정 전 — 차트 중간 값(잘못된 YTD 평균 등) 표시 방지 */
+  weeklyRegCancelChartLoading?: boolean
+  /** 7일 탭 YTD 평균선 2차 로드 중 */
+  weeklyRegCancelChartYtdRefining?: boolean
 }
 
 export default function WeeklyStatsPanel({
@@ -123,16 +129,18 @@ export default function WeeklyStatsPanel({
   regCancelYearOffset: _regCancelYearOffset = 0,
   onRegCancelYearOffsetChange,
   chartRangeSubtitle = '',
-  isWeeklyStatsCollapsed,
-  onToggleStatsCollapsed,
+  embeddedInModal = false,
   weekHeaderSummary,
-  formatWeekRange
+  formatWeekRange,
+  weeklyRegCancelChartLoading = false,
+  weeklyRegCancelChartYtdRefining = false,
 }: WeeklyStatsPanelProps) {
   const t = useTranslations('reservations')
   const locale = useLocale()
   const [productBreakdownExpanded, setProductBreakdownExpanded] = useState(false)
   const [channelBreakdownExpanded, setChannelBreakdownExpanded] = useState(false)
   const [statusBreakdownExpanded, setStatusBreakdownExpanded] = useState(false)
+  const [regCancelMetric, setRegCancelMetric] = useState<'people' | 'bookings'>('people')
   const BREAKDOWN_PREVIEW = 3
 
   const statusUsesTransitionBuckets = weeklyStats.statusTransitionByTarget != null
@@ -155,29 +163,66 @@ export default function WeeklyStatsPanel({
     shortLabel: string
     /** 7일 탭: 툴팁·평균선이 “월요일 평균”처럼 읽히도록 전체 요일명 */
     weekdayLongForAvg?: string
-    /** 스택 하단(초록): 당일 취소 처리 인원(updated_at), 막대 높이는 등록 인원에 맞춤 */
-    cancelStackPeople: number
-    /** 스택 상단(회색): 등록 인원 − 스택에 쓴 취소(겹침 표시) */
-    remainingPeople: number
-    avgLineRegistered: number
+    displayRegistered: number
+    displayCancelled: number
+    /** 스택 하단(초록): 당일 취소, 막대 높이는 등록에 맞춤 */
+    cancelStack: number
+    /** 스택 상단(회색): 등록 − 스택에 쓴 취소(겹침 표시) */
+    remaining: number
+    /** 해당일 순예약(등록−취소) */
+    dayNet: number
+    /** 반올림 평균 순예약(요일 YTD 등) */
+    avgRounded: number
+    /** 해당일 순예약 − 반올림 평균 */
+    dayVsAvgDelta: number
+    avgLine: number
   }
 
-  const formatAxisAvgPeople = useCallback(
+  const metricUnitSuffix = regCancelMetric === 'people' ? t('stats.people') : t('stats.bookingsUnit')
+
+  const formatAxisAvg = useCallback(
     (avg: number) => {
       const n = Number(avg)
       if (!Number.isFinite(n)) return ''
-      const r = Math.round(n * 10) / 10
-      const s = Number.isInteger(r) ? String(r) : r.toFixed(1)
-      return locale === 'ko' ? `${s}${t('stats.people')}` : `${s} ${t('stats.people')}`
+      const r = Math.round(n)
+      return locale === 'ko' ? `${r}${metricUnitSuffix}` : `${r} ${metricUnitSuffix}`
     },
-    [locale, t]
+    [locale, metricUnitSuffix]
+  )
+
+  const formatDayVsAvgDelta = useCallback(
+    (delta: number) => {
+      const n = Number(delta)
+      if (!Number.isFinite(n)) return ''
+      const r = Math.round(n)
+      const signed = r > 0 ? `+${r}` : String(r)
+      return locale === 'ko' ? `${signed}${metricUnitSuffix}` : `${signed} ${metricUnitSuffix}`
+    },
+    [locale, metricUnitSuffix]
+  )
+
+  const formatMetricValue = useCallback(
+    (value: number) => {
+      const r = Math.round(value)
+      return locale === 'ko' ? `${r}${metricUnitSuffix}` : `${r} ${metricUnitSuffix}`
+    },
+    [locale, metricUnitSuffix]
   )
 
   const regCancelChartData = useMemo((): RegCancelChartRow[] => {
     const tag = locale === 'ko' ? 'ko-KR' : 'en-US'
+    const isPeople = regCancelMetric === 'people'
     return weeklyRegCancelByDay.map((row) => {
-      const cancelStackPeople = Math.min(row.cancelledPeople, row.registeredPeople)
-      const remainingPeople = row.registeredPeople - cancelStackPeople
+      const displayRegistered = isPeople ? row.registeredPeople : row.registeredCount
+      const displayCancelled = isPeople ? row.cancelledPeople : row.cancelledCount
+      const cancelStack = Math.min(displayCancelled, displayRegistered)
+      const remaining = displayRegistered - cancelStack
+      const dayNet = displayRegistered - displayCancelled
+      const avgLine = isPeople
+        ? (row.avgLineRegistered ?? 0)
+        : (row.avgLineRegisteredCount ?? 0)
+      const avgRounded = Math.round(avgLine)
+      const dayVsAvgDelta = dayNet - avgRounded
       let shortLabel: string
       let weekdayLongForAvg: string | undefined
       if (/^\d{4}-\d{2}$/.test(row.dateKey)) {
@@ -201,18 +246,37 @@ export default function WeeklyStatsPanel({
       return {
         ...row,
         ...(weekdayLongForAvg ? { weekdayLongForAvg } : {}),
-        cancelStackPeople,
-        remainingPeople,
+        displayRegistered,
+        displayCancelled,
+        cancelStack,
+        remaining,
+        dayNet,
+        avgRounded,
+        dayVsAvgDelta,
         shortLabel,
-        avgLineRegistered: row.avgLineRegistered ?? 0,
+        avgLine,
       }
     })
-  }, [weeklyRegCancelByDay, locale, regCancelGranularity])
+  }, [weeklyRegCancelByDay, locale, regCancelGranularity, regCancelMetric])
+
+  const regCancelPeriodSummary = useMemo(() => {
+    if (regCancelChartData.length === 0) return null
+    const netTotal = regCancelChartData.reduce((sum, row) => sum + row.dayNet, 0)
+    const avgTotal = regCancelChartData.reduce((sum, row) => sum + Math.round(row.avgLine), 0)
+    const diff = netTotal - avgTotal
+    return { netTotal, avgTotal, diff }
+  }, [regCancelChartData])
 
   const regCancelChartHeightPx = regCancelGranularity === 'month' ? 300 : 240
 
   return (
-    <div className="bg-muted/50 border border-border rounded-lg">
+    <div
+      className={
+        embeddedInModal
+          ? 'rounded-lg bg-white'
+          : 'bg-muted/50 border border-border rounded-lg'
+      }
+    >
       {/* 주간 네비게이션 헤더 - 초컴팩트 모바일 최적화 */}
       <div className="p-2 sm:p-4 border-b border-border">
         {/* 1줄: 구간 제목·날짜 + 주 이동·접기 (모바일에서도 같은 줄 우선) */}
@@ -264,25 +328,6 @@ export default function WeeklyStatsPanel({
             >
               →
             </button>
-            {(weeklyStats.totalReservations > 0 ||
-              weekHeaderSummary.regBookings > 0 ||
-              weekHeaderSummary.cancelBookings > 0) && (
-              <button
-                type="button"
-                onClick={onToggleStatsCollapsed}
-                className="p-1 text-primary hover:bg-muted rounded transition-colors"
-                title={isWeeklyStatsCollapsed ? t('stats.weeklyStatsToggleExpand') : t('stats.weeklyStatsToggleCollapse')}
-              >
-                <svg
-                  className={`w-3 h-3 transition-transform ${isWeeklyStatsCollapsed ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            )}
           </div>
         </div>
 
@@ -453,17 +498,78 @@ export default function WeeklyStatsPanel({
       {/* 주간 통계 아코디언 - 초컴팩트 모바일 최적화 */}
       {(weeklyStats.totalReservations > 0 ||
         weekHeaderSummary.regBookings > 0 ||
-        weekHeaderSummary.cancelBookings > 0) &&
-        !isWeeklyStatsCollapsed && (
+        weekHeaderSummary.cancelBookings > 0 ||
+        weeklyRegCancelChartLoading) && (
         <div className="p-2 sm:p-4">
-          {regCancelChartData.length > 0 && (
+          {(regCancelChartData.length > 0 || weeklyRegCancelChartLoading) && (
             <div className="mb-3 sm:mb-4 rounded-lg border border-border bg-white p-2 sm:p-3 shadow-sm">
-              <h5 className="text-xs font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                {t('stats.weeklyRegCancelChartTitle')}
-              </h5>
+              <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                <h5 className="text-xs font-semibold text-gray-800 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  {regCancelMetric === 'people'
+                    ? t('stats.weeklyRegCancelChartTitlePeople')
+                    : t('stats.weeklyRegCancelChartTitleBookings')}
+                </h5>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div
+                    className="inline-flex rounded-md border border-border bg-muted/30 p-0.5"
+                    role="group"
+                    aria-label={t('stats.regCancelChartMetricToggleLabel')}
+                  >
+                    {(['people', 'bookings'] as const).map((metric) => (
+                      <button
+                        key={metric}
+                        type="button"
+                        onClick={() => setRegCancelMetric(metric)}
+                        className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors sm:text-xs ${
+                          regCancelMetric === metric
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {metric === 'people'
+                          ? t('stats.regCancelChartMetricPeople')
+                          : t('stats.regCancelChartMetricBookings')}
+                      </button>
+                    ))}
+                  </div>
+                  {regCancelPeriodSummary &&
+                  !weeklyRegCancelChartLoading &&
+                  !weeklyRegCancelChartYtdRefining ? (
+                    <p
+                      className="max-w-[min(100%,20rem)] text-right text-[10px] font-medium leading-snug tabular-nums text-slate-700 sm:text-xs"
+                      title={t('stats.regCancelChartPeriodSummaryTooltip', {
+                        net: regCancelPeriodSummary.netTotal,
+                        avg: regCancelPeriodSummary.avgTotal,
+                        diff: regCancelPeriodSummary.diff,
+                      })}
+                    >
+                      <span className="text-muted-foreground">{t('stats.regCancelChartPeriodNetLabel')}</span>{' '}
+                      <span className="font-bold text-slate-900">
+                        {formatMetricValue(regCancelPeriodSummary.netTotal)}
+                      </span>
+                      <span className="mx-1 text-muted-foreground">·</span>
+                      <span className="text-muted-foreground">{t('stats.regCancelChartPeriodAvgLabel')}</span>{' '}
+                      <span className="font-semibold">{formatMetricValue(regCancelPeriodSummary.avgTotal)}</span>
+                      <span className="mx-1 text-muted-foreground">·</span>
+                      <span className="text-muted-foreground">{t('stats.regCancelChartPeriodDiffLabel')}</span>{' '}
+                      <span
+                        className={
+                          regCancelPeriodSummary.diff < 0
+                            ? 'font-extrabold text-red-600'
+                            : regCancelPeriodSummary.diff > 0
+                              ? 'font-bold text-slate-900'
+                              : 'font-semibold text-slate-500'
+                        }
+                      >
+                        {formatDayVsAvgDelta(regCancelPeriodSummary.diff)}
+                      </span>
+                    </p>
+                  ) : null}
+                </div>
+              </div>
               {onRegCancelGranularityChange && (
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   {(['week', 'month', 'year'] as const).map((g) => (
@@ -539,6 +645,61 @@ export default function WeeklyStatsPanel({
                   </button>
                 </div>
               ) : null}
+              {weeklyRegCancelChartYtdRefining && !weeklyRegCancelChartLoading ? (
+                <p className="mb-1 text-right text-[10px] text-muted-foreground" role="status">
+                  {t('stats.weeklyRegCancelChartYtdRefining')}
+                </p>
+              ) : null}
+              <div className="relative">
+                {weeklyRegCancelChartLoading ? (
+                  <div
+                    className="flex items-center justify-center rounded-md bg-muted/30 text-xs text-muted-foreground"
+                    style={{ minHeight: regCancelChartHeightPx + (regCancelGranularity === 'week' ? 20 : 0) }}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {t('stats.weeklyRegCancelChartLoading')}
+                  </div>
+                ) : (
+                  <>
+                {regCancelGranularity === 'week' && regCancelChartData.length > 0 ? (
+                  <div
+                    className="pointer-events-none mb-0.5 flex h-4 items-end pr-2"
+                    style={{ paddingLeft: 36 }}
+                    aria-hidden
+                  >
+                    <div
+                      className="grid min-w-0 flex-1"
+                      style={{
+                        gridTemplateColumns: `repeat(${regCancelChartData.length}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {regCancelChartData.map((row) => {
+                        const delta = row.dayVsAvgDelta ?? 0
+                        const isBelowAvg = delta < 0
+                        return (
+                        <div
+                          key={row.dateKey}
+                          className={`text-center text-[10px] font-bold leading-none tabular-nums ${
+                            isBelowAvg
+                                ? 'text-red-600 font-extrabold'
+                                : delta > 0
+                                  ? 'text-slate-800 font-bold'
+                                  : 'text-slate-500 font-semibold'
+                          }`}
+                          title={t('stats.weeklyChartAvgMinusDayNetTooltip', {
+                            avg: row.avgRounded ?? 0,
+                            day: Math.round(row.dayNet ?? 0),
+                            signed: formatDayVsAvgDelta(delta),
+                          })}
+                        >
+                          {formatDayVsAvgDelta(row.dayVsAvgDelta ?? 0)}
+                        </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               <RechartsContainer height={regCancelChartHeightPx}>
                 <ComposedChart
                     data={regCancelChartData}
@@ -566,8 +727,8 @@ export default function WeeklyStatsPanel({
                               const payload = props.payload as { value?: string } | undefined
                               const index = Number(props.index ?? 0)
                               const row = regCancelChartData[index]
-                              const avg = row?.avgLineRegistered ?? 0
-                              const avgLine = formatAxisAvgPeople(avg)
+                              const avg = row?.avgLine ?? 0
+                              const avgLine = formatAxisAvg(avg)
                               return (
                                 <g transform={`translate(${x},${y})`}>
                                   <text
@@ -636,29 +797,70 @@ export default function WeeklyStatsPanel({
                               })}
                             </p>
                             <p className="text-gray-600 mt-0.5">
-                              {t('stats.weeklyChartTooltipNet', {
-                                people: d.remainingPeople,
-                              })}
+                              {regCancelMetric === 'people'
+                                ? t('stats.weeklyChartTooltipNet', {
+                                    people: Math.round(d.dayNet ?? 0),
+                                  })
+                                : t('stats.weeklyChartTooltipNetBookings', {
+                                    count: Math.round(d.dayNet ?? 0),
+                                  })}
                             </p>
                             <p className="text-gray-800 mt-0.5 font-medium">
                               {d.weekdayLongForAvg
                                 ? regCancelGranularity === 'week'
-                                  ? t('stats.weeklyChartTooltipAvgLineWeekdayYtdNet', {
-                                      weekday: d.weekdayLongForAvg,
-                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                    })
-                                  : t('stats.weeklyChartTooltipAvgLineWeekday', {
-                                      weekday: d.weekdayLongForAvg,
-                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                    })
+                                  ? regCancelMetric === 'people'
+                                    ? t('stats.weeklyChartTooltipAvgLineWeekdayYtdNet', {
+                                        weekday: d.weekdayLongForAvg,
+                                        people: Math.round(d.avgLine ?? 0),
+                                      })
+                                    : t('stats.weeklyChartTooltipAvgLineWeekdayYtdNetBookings', {
+                                        weekday: d.weekdayLongForAvg,
+                                        count: Math.round(d.avgLine ?? 0),
+                                      })
+                                  : regCancelMetric === 'people'
+                                    ? t('stats.weeklyChartTooltipAvgLineWeekday', {
+                                        weekday: d.weekdayLongForAvg,
+                                        people: Math.round((d.avgLine ?? 0) * 10) / 10,
+                                      })
+                                    : t('stats.weeklyChartTooltipAvgLineWeekdayBookings', {
+                                        weekday: d.weekdayLongForAvg,
+                                        count: Math.round((d.avgLine ?? 0) * 10) / 10,
+                                      })
                                 : regCancelGranularity === 'week'
-                                  ? t('stats.weeklyChartTooltipAvgLineYtdNet', {
-                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                    })
-                                  : t('stats.weeklyChartTooltipAvgLine', {
-                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                    })}
+                                  ? regCancelMetric === 'people'
+                                    ? t('stats.weeklyChartTooltipAvgLineYtdNet', {
+                                        people: Math.round(d.avgLine ?? 0),
+                                      })
+                                    : t('stats.weeklyChartTooltipAvgLineYtdNetBookings', {
+                                        count: Math.round(d.avgLine ?? 0),
+                                      })
+                                  : regCancelMetric === 'people'
+                                    ? t('stats.weeklyChartTooltipAvgLine', {
+                                        people: Math.round((d.avgLine ?? 0) * 10) / 10,
+                                      })
+                                    : t('stats.weeklyChartTooltipAvgLineBookings', {
+                                        count: Math.round((d.avgLine ?? 0) * 10) / 10,
+                                      })}
                             </p>
+                            {regCancelGranularity === 'week' ? (
+                              <p
+                                className={`mt-0.5 font-semibold ${
+                                  (d.dayVsAvgDelta ?? 0) < 0 ? 'text-red-600' : 'text-slate-700'
+                                }`}
+                              >
+                                {regCancelMetric === 'people'
+                                  ? t('stats.weeklyChartAvgMinusDayNetTooltip', {
+                                      avg: d.avgRounded ?? Math.round(d.avgLine ?? 0),
+                                      day: Math.round(d.dayNet ?? 0),
+                                      signed: formatDayVsAvgDelta(d.dayVsAvgDelta ?? 0),
+                                    })
+                                  : t('stats.weeklyChartAvgMinusDayNetTooltipBookings', {
+                                      avg: d.avgRounded ?? Math.round(d.avgLine ?? 0),
+                                      day: Math.round(d.dayNet ?? 0),
+                                      signed: formatDayVsAvgDelta(d.dayVsAvgDelta ?? 0),
+                                    })}
+                              </p>
+                            ) : null}
                           </div>
                         )
                       }}
@@ -667,14 +869,18 @@ export default function WeeklyStatsPanel({
                     {/* 스택 하단: 당일 취소 처리(updated_at) — 초록 */}
                     <Bar
                       stackId="regCancel"
-                      dataKey="cancelStackPeople"
-                      name={t('stats.weeklyChartCancelledPeople')}
+                      dataKey="cancelStack"
+                      name={
+                        regCancelMetric === 'people'
+                          ? t('stats.weeklyChartCancelledPeople')
+                          : t('stats.weeklyChartCancelledBookings')
+                      }
                       fill="#16a34a"
                       radius={[0, 0, 4, 4]}
                       maxBarSize={48}
                     >
                       <LabelList
-                        dataKey="cancelStackPeople"
+                        dataKey="cancelStack"
                         position="center"
                         content={((props: Record<string, unknown>) => {
                           const idx = Number(props.index ?? 0)
@@ -696,14 +902,14 @@ export default function WeeklyStatsPanel({
                                 className="fill-gray-950 text-[10px] font-bold"
                               >
                                 {v}
-                                {t('stats.people')}
+                                {metricUnitSuffix}
                               </text>
                             ) : null
                           /** 회색(등록−취소) 구간이 없을 때 총등록 라벨은 초록 막대 위에 표시 */
                           const topWhenAllCancel =
                             row &&
-                            row.remainingPeople === 0 &&
-                            row.registeredPeople > 0 ? (
+                            row.remaining === 0 &&
+                            row.displayRegistered > 0 ? (
                               <text
                                 key="reg-top"
                                 x={cx}
@@ -711,7 +917,7 @@ export default function WeeklyStatsPanel({
                                 textAnchor="middle"
                                 className="fill-gray-950 text-[11px] font-bold"
                               >
-                                {row.registeredPeople}
+                                {row.displayRegistered}
                                 {t('stats.people')}
                               </text>
                             ) : null
@@ -728,14 +934,18 @@ export default function WeeklyStatsPanel({
                     {/* 스택 상단: 등록 − 취소 — 회색, 막대 전체 높이 = 등록 인원 */}
                     <Bar
                       stackId="regCancel"
-                      dataKey="remainingPeople"
-                      name={t('stats.weeklyChartNetPeople')}
+                      dataKey="remaining"
+                      name={
+                        regCancelMetric === 'people'
+                          ? t('stats.weeklyChartNetPeople')
+                          : t('stats.weeklyChartNetBookings')
+                      }
                       fill="#d4d4d8"
                       radius={[4, 4, 0, 0]}
                       maxBarSize={48}
                     >
                       <LabelList
-                        dataKey="remainingPeople"
+                        dataKey="remaining"
                         content={((props: Record<string, unknown>) => {
                           const idx = Number(props.index ?? 0)
                           const row = regCancelChartData[idx]
@@ -744,7 +954,7 @@ export default function WeeklyStatsPanel({
                           const x = Number(props.x ?? 0)
                           const y = Number(props.y ?? 0)
                           const w = Number(props.width ?? 0)
-                          const total = row?.registeredPeople ?? 0
+                          const total = row?.displayRegistered ?? 0
                           const centerLabel =
                             v > 0 && h >= 16 ? (
                               <text
@@ -756,12 +966,12 @@ export default function WeeklyStatsPanel({
                                 className="fill-gray-950 text-[10px] font-bold"
                               >
                                 {v}
-                                {t('stats.people')}
+                                {metricUnitSuffix}
                               </text>
                             ) : null
                           /** 회색 구간이 있을 때만 상단 총등록 (전부 취소인 날은 초록 막대에서 표시) */
                           const topLabel =
-                            total > 0 && row && row.remainingPeople > 0 ? (
+                            total > 0 && row && row.remaining > 0 ? (
                               <text
                                 key="top"
                                 x={x + w / 2}
@@ -785,7 +995,7 @@ export default function WeeklyStatsPanel({
                     </Bar>
                     <Line
                       type="linear"
-                      dataKey="avgLineRegistered"
+                      dataKey="avgLine"
                       name={
                         regCancelGranularity === 'week'
                           ? t('stats.regCancelAvgLineWeekYtdNet')
@@ -800,6 +1010,9 @@ export default function WeeklyStatsPanel({
                     />
                   </ComposedChart>
               </RechartsContainer>
+                  </>
+                )}
+              </div>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">

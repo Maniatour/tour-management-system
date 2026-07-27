@@ -25,10 +25,17 @@ import {
 } from '@/lib/resolveImportChannelVariant'
 import { fetchCustomerHintsForImportExtracted } from '@/lib/fetchImportCustomerHints'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import dynamic from 'next/dynamic'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Channel, Customer, PickupHotel } from '@/types/reservation'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import type { TourDepartureConfirmationBatchContext } from '@/components/reservation/TourDepartureConfirmationBatchModal'
+
+const TourDepartureConfirmationBatchModal = dynamic(
+  () => import('@/components/reservation/TourDepartureConfirmationBatchModal'),
+  { ssr: false, loading: () => null }
+)
 
 interface ImportRow {
   id: string
@@ -60,6 +67,13 @@ export default function ReservationImportDetailPage() {
   const [showEmailBody, setShowEmailBody] = useState(true)
   const [emailBodyView, setEmailBodyView] = useState<'preview' | 'code'>('preview')
   const [showProcessedNotice, setShowProcessedNotice] = useState(false)
+  const [departureBatchContext, setDepartureBatchContext] =
+    useState<TourDepartureConfirmationBatchContext | null>(null)
+  const [pendingNavigateAfterDepartureBatch, setPendingNavigateAfterDepartureBatch] =
+    useState<'imports' | 'price_inventory' | null>(null)
+  const [pendingPriceInventoryQuery, setPendingPriceInventoryQuery] = useState<string | null>(
+    null
+  )
   const isEmailHtml = Boolean(
     row?.raw_body_text &&
     (row.raw_body_text.trimStart().startsWith('<') || /<\/html>|<\/body>|<body/i.test(row.raw_body_text))
@@ -431,6 +445,46 @@ export default function ReservationImportDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || res.statusText)
+
+      const departureBatch = data?.departure_batch as
+        | {
+            show?: boolean
+            reason?: 'threshold_crossed' | 'pending_on_confirmed_day'
+            product_id?: string
+            tour_date?: string
+            total_people?: number
+            pending_count?: number
+            reservation_ids?: string[]
+          }
+        | null
+        | undefined
+
+      if (departureBatch?.show && departureBatch.product_id && departureBatch.tour_date) {
+        setDepartureBatchContext({
+          reason: departureBatch.reason ?? 'threshold_crossed',
+          productId: String(departureBatch.product_id),
+          tourDate: String(departureBatch.tour_date),
+          totalPeople: Number(departureBatch.total_people) || 0,
+          pendingCount: Number(departureBatch.pending_count) || 0,
+          reservationIds: Array.isArray(departureBatch.reservation_ids)
+            ? departureBatch.reservation_ids.map(String)
+            : [],
+        })
+        if (data.open_price_inventory && data.product_id && data.tour_date) {
+          const qs = new URLSearchParams({
+            priceInventory: '1',
+            productId: String(data.product_id),
+            date: String(data.tour_date),
+          })
+          setPendingNavigateAfterDepartureBatch('price_inventory')
+          setPendingPriceInventoryQuery(qs.toString())
+        } else {
+          setPendingNavigateAfterDepartureBatch('imports')
+          setPendingPriceInventoryQuery(null)
+        }
+        return
+      }
+
       if (data.open_price_inventory && data.product_id && data.tour_date) {
         const qs = new URLSearchParams({
           priceInventory: '1',
@@ -445,6 +499,19 @@ export default function ReservationImportDetailPage() {
     },
     [id, locale, row, user?.email, router]
   )
+
+  const finishImportNavigation = useCallback(() => {
+    if (pendingNavigateAfterDepartureBatch === 'price_inventory' && pendingPriceInventoryQuery) {
+      router.push(`/${locale}/admin/tours?${pendingPriceInventoryQuery}`)
+      return
+    }
+    router.push(`/${locale}/admin/reservation-imports`)
+  }, [locale, pendingNavigateAfterDepartureBatch, pendingPriceInventoryQuery, router])
+
+  const handleDepartureBatchClose = useCallback(() => {
+    setDepartureBatchContext(null)
+    finishImportNavigation()
+  }, [finishImportNavigation])
 
   /** 저장된 원문으로 파서를 다시 돌려 extracted_data 갱신 (상품 매핑·파서 수정 반영용). 상태와 무관, 본문만 있으면 가능. */
   const handleReparse = async () => {
@@ -829,6 +896,32 @@ export default function ReservationImportDetailPage() {
         importSubmitDisabled={isImportProcessed}
         useServerCustomerInsert
       />
+
+      {departureBatchContext ? (
+        <TourDepartureConfirmationBatchModal
+          isOpen
+          context={departureBatchContext}
+          customers={(customersList ?? []) as Customer[]}
+          products={(productsList ?? []) as unknown as Array<{
+            id: string
+            name: string
+            sub_category?: string
+            product_code?: string | null
+          }>}
+          channels={(channelsList ?? []) as Channel[]}
+          pickupHotels={(pickupHotelsList ?? []) as PickupHotel[]}
+          productOptions={(productOptions ?? []) as Array<{
+            id: string
+            name: string
+            is_required?: boolean
+          }>}
+          optionChoices={(options ?? []) as Array<{ id: string; name: string }>}
+          locale={locale}
+          sentBy={user?.email ?? null}
+          onClose={handleDepartureBatchClose}
+          onDone={handleDepartureBatchClose}
+        />
+      ) : null}
 
       {showProcessedNotice && (
         <div

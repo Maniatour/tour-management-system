@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 
 export type CancellationFollowUpMeta = { reason: string; firstRecordedAt: string | null }
 
@@ -27,28 +28,33 @@ export async function fetchCancellationFollowUpMeta(
   reservationIds: string[]
 ): Promise<Map<string, CancellationFollowUpMeta>> {
   const map = new Map<string, CancellationFollowUpMeta>()
-  const ids = [...new Set(reservationIds.map((x) => String(x).trim()).filter(Boolean))]
-  if (ids.length === 0) return map
-  const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
-    .select('reservation_id, content, created_at')
-    .in('reservation_id', ids)
-    .eq('type', 'cancellation_reason')
-    .order('created_at', { ascending: true })
-  if (error) {
-    console.error('fetchCancellationFollowUpMeta:', error)
-    return map
-  }
+  const chunks = chunkStrings(reservationIds)
+  if (chunks.length === 0) return map
+
   const grouped = new Map<string, Array<{ content: string | null; created_at: string | null }>>()
-  for (const row of data || []) {
-    const typed = row as unknown as { reservation_id: string; content?: string | null; created_at?: string | null }
-    const rid = String(typed.reservation_id)
-    const list = grouped.get(rid) || []
-    list.push({
-      content: typed.content ?? null,
-      created_at: typed.created_at ?? null,
-    })
-    grouped.set(rid, list)
+
+  for (const chunk of chunks) {
+    const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
+      .select('reservation_id, content, created_at')
+      .in('reservation_id', chunk)
+      .eq('type', 'cancellation_reason')
+      .order('created_at', { ascending: true })
+    if (error) {
+      console.error('fetchCancellationFollowUpMeta:', error)
+      continue
+    }
+    for (const row of data || []) {
+      const typed = row as unknown as { reservation_id: string; content?: string | null; created_at?: string | null }
+      const rid = String(typed.reservation_id)
+      const list = grouped.get(rid) || []
+      list.push({
+        content: typed.content ?? null,
+        created_at: typed.created_at ?? null,
+      })
+      grouped.set(rid, list)
+    }
   }
+
   for (const [rid, rows] of grouped) {
     const sorted = [...rows].sort((a, b) =>
       String(a.created_at || '').localeCompare(String(b.created_at || ''))

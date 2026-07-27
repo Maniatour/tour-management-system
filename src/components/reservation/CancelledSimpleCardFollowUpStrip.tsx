@@ -142,7 +142,9 @@ export default function CancelledSimpleCardFollowUpStrip({
         if (error) throw error
       }
       await loadReason()
-      onReasonSaved?.()
+      if (trimmed) {
+        onReasonSaved?.()
+      }
       setReasonOpen(false)
     } catch (e) {
       console.error(e)
